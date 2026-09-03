@@ -14,6 +14,7 @@ import {
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
+  automaticPoolForEnabledProviders,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -589,5 +590,55 @@ describe("providerSetupNeedsEngineRecovery", () => {
       }),
     ).toBe(false);
     expect(providerSetupNeedsEngineRecovery({ status: "checking" })).toBe(false);
+  });
+});
+
+describe("automaticPoolForEnabledProviders", () => {
+  const automatic = {
+    mode: "automatic" as const,
+    providerIds: ["codex"],
+    configured: true,
+    valid: true,
+  };
+
+  it("matches the stored pool to the complete enabled inventory", () => {
+    expect(automaticPoolForEnabledProviders(automatic, ["codex", "claude"])).toEqual({
+      mode: "automatic",
+      providerIds: ["codex", "claude"],
+    });
+    expect(
+      automaticPoolForEnabledProviders(
+        { ...automatic, providerIds: ["codex", "claude"] },
+        ["codex"],
+      ),
+    ).toEqual({ mode: "automatic", providerIds: ["codex"] });
+  });
+
+  it("deduplicates the authoritative inventory", () => {
+    expect(
+      automaticPoolForEnabledProviders(automatic, [
+        "codex",
+        "claude",
+        "claude",
+      ]),
+    ).toEqual({ mode: "automatic", providerIds: ["codex", "claude"] });
+  });
+
+  it("writes nothing when there is nothing to change", () => {
+    expect(automaticPoolForEnabledProviders(automatic, ["codex"])).toBeNull();
+    expect(automaticPoolForEnabledProviders(automatic, [])).toBeNull();
+    expect(automaticPoolForEnabledProviders(null, ["codex"])).toBeNull();
+    expect(
+      automaticPoolForEnabledProviders(
+        { ...automatic, configured: false },
+        ["claude"],
+      ),
+    ).toBeNull();
+    expect(
+      automaticPoolForEnabledProviders(
+        { ...automatic, mode: "fixed", providerIds: ["codex"] },
+        ["claude"],
+      ),
+    ).toBeNull();
   });
 });

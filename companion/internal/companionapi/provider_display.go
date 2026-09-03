@@ -91,6 +91,10 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 		writePreferencesReadError(w, err)
 		return
 	}
+	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
+		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Refresh providers and save Automatic again.")
+		return
+	}
 	if code, message, nextAction := validateProviderDisplay(selection, settings); code != "" {
 		writeError(w, http.StatusConflict, code, message, nextAction)
 		return
@@ -150,11 +154,7 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	}
 	// Only the Automatic pool has to name every enabled provider: it is the set
 	// VibeTV rotates through, so one left out of it is collected and never
-	// shown. "Always show one" names exactly one provider by definition -- that
-	// is what the mode says on the screen, and what Settings writes and keeps --
-	// so measuring it against the enabled set refused the customer's own choice
-	// and offered turning the other providers off as the way to keep it.
-	wholePoolRequired := selection.Mode == providerDisplayModeAutomatic
+	// shown. "Always show one" names exactly one provider by definition.
 	// Setup is complete once VibeTV has something real to show, which is one
 	// working provider -- the rule docs/control-center-ui-principles.md has
 	// carried all along. Demanding every enabled one instead handed a customer
@@ -162,20 +162,48 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	// leave, on a Mac whose first provider was working: the rotation already
 	// skips what it cannot read (daemon.go preferAvailableProviders), so the
 	// broken one costs nothing but the refusal did.
-	for _, setting := range enabled {
-		if _, ok := selected[setting.ID]; wholePoolRequired && !ok {
-			writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
+	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
+		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
+		return
+	}
+	// What VibeTV will actually show, beside what merely works somewhere.
+	readyShown := 0
+	readyAnywhere := 0
+	for _, descriptor := range s.providerDescriptors(settings) {
+		on, _ := descriptor.Value.(bool)
+		if !on || descriptor.Health == nil {
+			continue
+		}
+		// A saved reading counts too: it is still a real reading, and it is the
+		// same rule setup-providers-screen.tsx setupProviderCanDisplay uses to
+		// decide what may be pinned. Refusing here what the display step still
+		// offers would be a loop with no way out.
+		if descriptor.Health.State != string(codexbar.ProviderHealthHealthy) &&
+			descriptor.Health.State != providerHealthStateStale {
+			continue
+		}
+		readyAnywhere++
+		if _, shown := selected[descriptor.ProviderID]; shown {
+			readyShown++
+		}
+	}
+	if readyShown == 0 {
+		// Something works, but not what VibeTV was told to show. Any healthy
+		// provider used to be enough, so a Mac pinned to a provider that had
+		// since been signed out finished setup on the strength of one it had
+		// been told never to show, and the customer reached the live step in
+		// front of a blank VibeTV: a fixed selection pins without fallback
+		// (daemon.go applyProviderDisplaySelection). The two counts can only
+		// differ for a fixed selection -- the pool loop above requires every
+		// enabled provider to be in an Automatic pool, and validateProviderDisplay
+		// requires every selected one to be enabled -- so Automatic keeps the
+		// refusal it had. It is also the display choice, not the provider, that
+		// this names: without another provider to show instead, the display step
+		// would have nothing to offer and the provider step owns the fix.
+		if readyAnywhere > 0 {
+			writeError(w, http.StatusConflict, "provider_display_not_ready", "The provider VibeTV shows is not ready.", "Show a different provider, or switch to Automatic.")
 			return
 		}
-	}
-	ready := 0
-	for _, descriptor := range s.providerDescriptors(settings) {
-		enabled, _ := descriptor.Value.(bool)
-		if enabled && descriptor.Health != nil && descriptor.Health.State == string(codexbar.ProviderHealthHealthy) {
-			ready++
-		}
-	}
-	if ready == 0 {
 		writeError(w, http.StatusConflict, "provider_check_required", "At least one enabled provider must be ready.", "Check your providers and fix or turn off any provider that needs attention.")
 		return
 	}
@@ -206,6 +234,14 @@ func effectiveProviderDisplay(cfg runtimeconfig.Config, settings []codexbar.Prov
 		selection.Configured = true
 		selection.Mode = cfg.ProviderDisplay.Mode
 		selection.ProviderIDs = append([]string(nil), cfg.ProviderDisplay.ProviderIDs...)
+	}
+	if selection.Mode == providerDisplayModeAutomatic {
+		selection.ProviderIDs = selection.ProviderIDs[:0]
+		for _, setting := range settings {
+			if setting.Enabled {
+				selection.ProviderIDs = append(selection.ProviderIDs, setting.ID)
+			}
+		}
 	}
 	selection.ProviderIDs = normalizeProviderIDs(selection.ProviderIDs)
 	code, _, _ := validateProviderDisplay(selection, settings)
@@ -240,6 +276,22 @@ func validateProviderDisplay(selection providerDisplaySelection, settings []code
 		}
 	}
 	return "", "", ""
+}
+
+func automaticProviderDisplayIncludesAllEnabled(selection providerDisplaySelection, settings []codexbar.ProviderSetting) bool {
+	if selection.Mode != providerDisplayModeAutomatic {
+		return true
+	}
+	selected := make(map[string]struct{}, len(selection.ProviderIDs))
+	for _, providerID := range selection.ProviderIDs {
+		selected[providerID] = struct{}{}
+	}
+	for _, setting := range settings {
+		if _, ok := selected[setting.ID]; setting.Enabled && !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeProviderIDs(providerIDs []string) []string {

@@ -162,6 +162,26 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
+  it("continues on an enabled provider with a bounded last-good reading", () => {
+    const html = render({
+      providers: [
+        provider({
+          health: "stale",
+          label: "Codex",
+          message: "Live usage is unavailable. Showing the last saved reading.",
+          providerId: "codex",
+        }),
+      ],
+    });
+
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+    expect(html).toContain(
+      "Live usage is unavailable. Showing the last saved reading.",
+    );
+  });
+
   // CodexBar ships 65 providers and almost all of them are off. Putting the
   // whole inventory on screen buried the customer's own two under a page of
   // names they have never heard of.

@@ -51,6 +51,18 @@ func TestPreferencesListsAllProvidersWithSafeHealth(t *testing.T) {
 	}
 }
 
+func TestProviderDescriptionsStayProviderNeutral(t *testing.T) {
+	for label, want := range map[string]string{
+		"Codex":  "Usage from Codex.",
+		"OpenAI": "Usage from OpenAI.",
+		"":       "Usage from this provider.",
+	} {
+		if got := providerDescription(label); got != want {
+			t.Fatalf("providerDescription(%q)=%q want %q", label, got, want)
+		}
+	}
+}
+
 func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	collectedAt := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
@@ -58,8 +70,11 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 		return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceUnknown}}, nil
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		// A saved reading the device can still show. A bare frame with no usage
+		// is what the collector leaves behind once a reading has expired, and
+		// that one is not a saved reading any more.
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
-			Provider: "codex", Frame: protocol.Frame{Provider: "codex"}, CollectedAt: collectedAt, Stale: true,
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
 		}}}, true
 	}
 
@@ -69,6 +84,40 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
 	if response.Items[0].Health.State != "stale" || response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) {
 		t.Fatalf("unexpected stale health: %#v", response.Items[0].Health)
+	}
+}
+
+func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
+	for _, health := range []codexbar.ProviderHealthState{
+		codexbar.ProviderHealthAuthRequired,
+		codexbar.ProviderHealthSetupRequired,
+	} {
+		t.Run(string(health), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			collectedAt := time.Date(2026, 9, 4, 9, 0, 0, 0, time.UTC)
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{
+					ID: "codex", Label: "Codex", Enabled: true, Health: health, Reported: "Codex sign-in expired.",
+				}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
+				}}}, true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Items) != 1 || response.Items[0].Health.State != providerHealthStateStale ||
+				response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) ||
+				response.Items[0].Health.Reported != "Live usage is unavailable; the last successful reading is still saved. Codex sign-in expired." {
+				t.Fatalf("retained reading lost eligibility after %s refresh: %#v", health, response.Items)
+			}
+		})
 	}
 }
 
@@ -201,9 +250,13 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 	healthStarted := make(chan struct{})
 	releaseHealth := make(chan struct{})
 	healthDone := make(chan struct{})
+	server.providerPreferences.cached = []codexbar.ProviderSetting{{
+		ID: "future-provider", Label: "Future Provider", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+	}}
+	server.providerPreferences.at = time.Time{}
 	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
 		return []codexbar.ProviderSetting{{
-			ID: "future-provider", Label: "Future Provider", Enabled: true, Health: codexbar.ProviderHealthChecking,
+			ID: "future-provider", Label: "Future Provider", Enabled: true,
 		}}, nil
 	}
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
@@ -265,10 +318,74 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 		}
 		time.Sleep(time.Millisecond)
 	}
+	refreshed := httptest.NewRecorder()
+	server.Handler().ServeHTTP(refreshed, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	if err := json.Unmarshal(refreshed.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode refreshed provider inventory: %v", err)
+	}
+	if len(response.Items) != 1 || response.Items[0].Health.State != "healthy" {
+		t.Fatalf("background health result was not observable: %#v", response)
+	}
+}
+
+func TestExactProviderCheckInvalidatesOlderBackgroundHealth(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	healthStarted := make(chan struct{})
+	releaseHealth := make(chan struct{})
+	server.providerPreferences.cached = []codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+	}}
+	server.providerPreferences.at = time.Time{}
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true}}, nil
+	}
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		close(healthStarted)
+		<-releaseHealth
+		return []codexbar.ProviderSetting{{
+			ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired,
+		}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	select {
+	case <-healthStarted:
+	case <-time.After(time.Second):
+		t.Fatal("background health probe did not start")
+	}
+	server.recordExactProviderSetup("codex", 0, codexbar.ProviderSetup{
+		Status:    codexbar.ProviderReady,
+		CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderReady}},
+	})
+	close(releaseHealth)
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		server.providerPreferences.mu.Lock()
+		refreshing := server.providerPreferences.healthRefresh
+		health := server.providerPreferences.cached[0].Health
+		server.providerPreferences.mu.Unlock()
+		if !refreshing {
+			if health != codexbar.ProviderHealthHealthy {
+				t.Fatalf("older background health replaced the exact result: %q", health)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background health result did not settle")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func TestProviderInventoryCacheCarriesReportedHealth(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = nil
 	server.providerPreferences.cached = []codexbar.ProviderSetting{{
 		ID: "codex", Label: "Codex", Enabled: true,
 		Health: codexbar.ProviderHealthAuthRequired, Reported: "CodexBar cached health detail.",

@@ -290,7 +290,7 @@ function SetupProvidersLoadingScreen({
 
 /**
  * Setup may continue once VibeTV has something real to show: one provider that
- * is switched on and has passed its check. That is the rule
+ * is switched on and has a live or bounded last-good reading. That is the rule
  * docs/control-center-ui-principles.md has stated all along.
  *
  * Demanding every enabled provider instead was a trap, because CodexBar
@@ -303,9 +303,7 @@ function SetupProvidersLoadingScreen({
  * replacing an already healthy answer.
  */
 export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
-  return providers.some(
-    (provider) => provider.value && provider.health.state === "healthy",
-  );
+  return providers.some(setupProviderCanDisplay);
 }
 
 /** Keep CodexBar's order inside the on and off groups. */

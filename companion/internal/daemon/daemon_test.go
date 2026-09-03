@@ -3875,13 +3875,13 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 
 	second := collector.providerFrames(current)
 	if len(second) != 2 {
-		t.Fatalf("expected two retained fresh snapshots, got %#v", second)
+		t.Fatalf("expected current and retained snapshots, got %#v", second)
 	}
 	if second[0].Provider != "claude" || second[1].Provider != "codex" {
 		t.Fatalf("expected current CodexBar order first, then retained snapshot; got %#v", second)
 	}
-	if second[0].Stale || second[1].Stale {
-		t.Fatalf("expected retained snapshots within last-good window to stay fresh, got %#v", second)
+	if second[0].Stale || !second[1].Stale || second[1].Frame.UsageUnavailable {
+		t.Fatalf("expected only the omitted provider snapshot to be retained, got %#v", second)
 	}
 
 	current = current.Add(3 * time.Hour)
@@ -4453,6 +4453,9 @@ func TestProviderCollectorUsesInventoryWithoutTreatingFetchFailureAsDisable(t *t
 	if frames := collector.providerFrames(now); len(frames) != 1 || frames[0].Provider != "cursor" {
 		t.Fatalf("transient usage failure pruned enabled provider: %#v", frames)
 	}
+	if usage, ok := LoadPersistedUsage(now); !ok || len(usage.Providers) != 1 || !usage.Providers[0].Retained || !usage.Providers[0].Stale {
+		t.Fatalf("transient usage failure did not mark the saved reading retained: %#v", usage)
+	}
 
 	cursorEnabled = false
 	collector.collectOnce(context.Background())
@@ -4506,9 +4509,24 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 		current = freshAt.Add(age)
 		collector.collectOnce(context.Background())
 		frames := collector.providerFrames(current)
-		if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
+		if len(frames) != 1 || !frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
 			t.Fatalf("expected buffered last-good values at %s, got %#v", age, frames)
 		}
+		if snapshot := collector.providers["gemini"]; !snapshot.Retained {
+			t.Fatalf("buffered last-good values were not marked retained at %s: %#v", age, snapshot)
+		}
+	}
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"gemini": {SessionTokens: 123, UpdatedAt: current},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	if snapshot := collector.providers["gemini"]; !snapshot.Retained {
+		t.Fatalf("token stats made retained quota look live: %#v", snapshot)
+	}
+	if frames := collector.providerFrames(current); len(frames) != 1 || !frames[0].Stale || frames[0].Frame.Session != 73 || frames[0].Frame.SessionTokens != 123 {
+		t.Fatalf("token stats did not preserve retained quota truth: %#v", frames)
 	}
 
 	current = freshAt.Add(10*time.Minute + time.Second)
@@ -4542,8 +4560,11 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 	collector.collectOnce(context.Background())
 	frames = collector.providerFrames(current)
-	if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 12 {
+	if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 12 {
 		t.Fatalf("expected immediate recovery from unavailable state, got %#v", frames)
+	}
+	if snapshot := collector.providers["gemini"]; snapshot.Retained {
+		t.Fatalf("successful collection left the recovered reading retained: %#v", snapshot)
 	}
 }
 
@@ -5550,7 +5571,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			}
 			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Session != 68 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" ||
-				frames[0].Stale || frames[0].Frame.UsageUnavailable {
+				!frames[0].Stale || frames[0].Frame.UsageUnavailable {
 				t.Fatalf("expected dashboard snapshot within last-good window unchanged, got %+v", frames)
 			}
 
@@ -5569,7 +5590,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			current = current.Add(time.Second)
 			collector.collectOnce(context.Background())
 			frames = collector.providerFrames(current)
-			if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 21 ||
+			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 21 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" {
 				t.Fatalf("expected fresh dashboard recovery, got %+v", frames)
 			}
@@ -6152,7 +6173,7 @@ func testParsedFrame(provider string, session, weekly int, reset int64) codexbar
 	}
 }
 
-func TestApplyProviderDisplaySelectionRestrictsAutomaticPoolAndSkipsUnavailable(t *testing.T) {
+func TestApplyProviderDisplaySelectionUsesEveryCurrentlyEnabledAutomaticProvider(t *testing.T) {
 	state := &runtimeState{
 		selector:    codexbar.NewProviderSelector(),
 		lastGood:    protocol.Frame{Provider: "cursor", Session: 88},
@@ -6169,11 +6190,11 @@ func TestApplyProviderDisplaySelectionRestrictsAutomaticPoolAndSkipsUnavailable(
 	})
 
 	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps)
-	if len(got) != 1 || got[0].Frame.Provider != "claude" {
-		t.Fatalf("automatic pool selection=%+v want ready claude only", got)
+	if len(got) != 2 || got[0].Frame.Provider != "claude" || got[1].Frame.Provider != "cursor" {
+		t.Fatalf("automatic selection=%+v want every currently enabled ready provider", got)
 	}
-	if state.hasLastGood {
-		t.Fatalf("last-good outside pool survived: %+v", state.lastGood)
+	if !state.hasLastGood {
+		t.Fatalf("automatic selection cleared a newly enabled provider's last-good frame")
 	}
 }
 

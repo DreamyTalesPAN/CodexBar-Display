@@ -3432,3 +3432,509 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-wizard.tsx`, their regression tests,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-03 — Completed setup survives a restart; a pinned provider must be ready
+
+- User approval: The product owner reviewed the PR #331 bug-detector findings
+  and required all three fixed before the merge (2026-09-03): "Nach Neustart
+  wieder Wizard" for a customer who had already reached Overview, "fester
+  Provider ist kaputt, anderer funktioniert", and provider messages that carry a
+  token or an e-mail address.
+- Approved customer-visible result: **Starting the app on a Mac whose setup is
+  already recorded opens the Control Center directly, with every tab available,
+  while its connected VibeTV is still coming up and has not drawn a frame yet;
+  before, it opened the wizard on "looking for your VibeTV" or held its closing
+  step. Overview renders no theme and no usage until a real frame arrives. A
+  VibeTV that is switched off when the app starts keeps the device step with
+  its recovery picker, as approved before. On the provider step, Continue is refused with
+  "The provider VibeTV shows is not ready." and the display step opens when the
+  provider under "Always show" cannot produce a reading while another one can;
+  Automatic is unchanged. A provider's own message on the provider row keeps its
+  wording but shows `[redacted]` in place of an e-mail address, a cookie or
+  token value, or a key inside an echoed response, in the row and in what Copy
+  puts on the clipboard.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their regression
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the Companion
+  provider-completion gate and provider-message redaction with their tests,
+  `docs/control-center-ui-principles.md` rules 4 and 6, and this approval
+  record.
+
+## 2026-09-03 — Detector follow-up on the three fixes
+
+- User approval: Same instruction as the entry above (2026-09-03): fix the
+  bug-detector findings, push, tag the detector, and repeat until nothing
+  real remains. This entry records the review round on `f3c72a6`.
+- Approved customer-visible result: **No new screen or wording. Two
+  hardenings of the results approved above: a provider message now also
+  redacts a short alphabetic value after `=` or under a password key
+  (`password=letmein` reads `password=[redacted]`), and a launch whose
+  display-selection read fails transiently keeps waiting for a real frame
+  as before instead of deciding for the whole session that setup was never
+  completed. The theme-step assertion in the customer flows reports what was
+  on screen when it fails.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their regression
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the Companion
+  provider-message redaction with its tests, and this approval record.
+
+## 2026-09-03 — Detector round 3 on the three fixes
+
+- User approval: Same instruction as the two entries above (2026-09-03): fix
+  the bug-detector findings and repeat until nothing real remains. This entry
+  records the review round on `406b250`.
+- Approved customer-visible result: **No new screen or wording. A provider
+  message keeps its words only after a browser's `cookies:` prefix, the one
+  prose family the pinned usage engine produces, so `token: letmein` reads
+  `token: [redacted]`. A display-selection read that failed at startup is
+  asked again every five seconds until it answers, so a customer coming back
+  reaches Overview after one dropped request instead of waiting for a frame
+  all launch. Two provider switches saved in the same moment both reach the
+  Automatic pool; before, the second could undo the first.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`, their
+  regression tests, `apps/control-center/scripts/test-customer-flows.mjs`, the
+  Companion provider-message redaction with its tests, and this approval
+  record.
+
+## 2026-09-03 — Detector round 4 on the three fixes
+
+- User approval: Same instruction as the entries above (2026-09-03): fix the
+  bug-detector findings and repeat until nothing real remains. This entry
+  records the review round on `e95035a`.
+- Approved customer-visible result: **A provider whose last reading is older
+  than the ten minutes the Mac App keeps one is no longer shown as having a
+  saved reading: its row reads unavailable, the display step no longer offers
+  it, and setup no longer completes on a pin to it. In Settings, `Run setup
+  again` waits while a display-mode save is still in flight. A provider
+  message also redacts credential values inside a URL query string
+  (`?token=…&session=…`).**
+- Approved files: `apps/control-center/src/components/settings-screen.tsx` and
+  its test, the Companion provider descriptors and provider-message redaction
+  with their tests, and this approval record.
+
+## 2026-09-03 — Detector round 5 on the three fixes
+
+- User approval: Same instruction as the entries above (2026-09-03): fix the
+  bug-detector findings and repeat until nothing real remains. This entry
+  records the review round on `86f3225`.
+- Approved customer-visible result: **`Run setup again` no longer greys out
+  during a display-mode save; instead the reset itself, from Settings and from
+  Support alike, shows `Resetting` until a save still in flight has landed and
+  then proceeds. A provider message also redacts a credential value after a
+  URL's `#`.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/settings-screen.tsx` and its test
+  (restored), `apps/control-center/scripts/test-customer-flows.mjs`, the
+  Companion provider-message redaction with its tests, and this approval
+  record.
+
+## 2026-09-04 — Final detector findings before candidate test
+
+- User approval: The product owner instructed us to review every remaining Bug
+  Detector finding on PR #331, fix real findings, close extreme edge cases, and
+  report only when the final candidate is ready to test (2026-09-04).
+- Approved customer-visible result: **No new screen, wording, or control. A
+  provider message containing credentials inside URL userinfo now shows one
+  `[redacted]` marker instead of the username and password. After `Run setup
+  again`, an older display-selection read that finishes late cannot restore the
+  deleted choice, so the existing Display Mode step is not skipped.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  the Companion provider-message redaction and its regression test, and this
+  approval record.
+
+## 2026-09-04 — Retained provider readings stay honest and usable
+
+- User approval: Same instruction as the entry above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **A switched-on provider whose bounded
+  last-good reading is retained shows the Companion's existing stale-status
+  message and a Check-again action while keeping its on/off switch. If it is the
+  only provider with a usable reading, Continue remains available because the
+  Companion and Display Mode already accept the same retained reading.**
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their
+  regression tests, and this approval record.
+
+## 2026-09-04 — Retained provider status is read-only
+
+- User approval: Same instruction as the entries above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **A stale provider row shows the existing
+  retained-reading message and keeps its switch, but does not add a Check-again
+  action that could replace the still-usable retained state with a temporary
+  retry failure. A slow display-selection read can no longer visibly undo a
+  newer mode saved in Settings.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-provider-row.tsx`, its test,
+  and this approval record.
+
+## 2026-09-04 — Latest display read wins
+
+- User approval: Same instruction as the entries above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  display-selection reads overlap, only the newest result may update Settings;
+  an older failure cannot show an error after a newer read already succeeded.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`
+  and this approval record.
+
+## 2026-09-04 — One display read at a time
+
+- User approval: Same instruction as the entries above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  slow display-selection read is allowed to finish within its normal timeout;
+  repeated refresh ticks share that request instead of continually replacing
+  it, so a returning setup cannot remain stuck on a false read error.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`
+  and this approval record.
+
+## 2026-09-04 — Reset waits for provider toggles
+
+- User approval: Same instruction as the entries above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  `Run setup again` is pressed during a provider toggle, its existing Resetting
+  state waits for the provider and resulting Automatic display save before it
+  clears setup, so an old display choice cannot return afterward.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Keep an installed VibeTV theme during setup
+
+- User approval: After connecting a real VibeTV that already had a theme, the
+  product owner reported that setup still opened `Choose your theme` and began
+  uploading theme files, and required this incorrect setup path to be fixed.
+- Approved customer-visible result: **After Connect, setup uses the VibeTV's
+  confirmed theme state. A VibeTV with an active, successfully rendered theme
+  skips theme selection and no theme install request is made. Only a VibeTV
+  that explicitly reports no active theme is sent to `Choose your theme`.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Preview waiting is not theme setup
+
+- User approval: Same final-candidate instruction as above. The Bug Detector
+  found that a delayed first preview could still send a VibeTV with a confirmed
+  active theme to `Choose your theme`, matching the product owner's fresh
+  real-device report.
+- Approved customer-visible result: **Theme state and preview readiness remain
+  separate. A VibeTV with an active rendered theme waits on `Your VibeTV is
+  live` for its first preview; it never offers an unnecessary theme install.
+  An explicit `theme-missing` state still opens the theme chooser.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Native welcome keeps Ask AI recovery
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **The Help menu on the native welcome
+  screen again offers `Ask AI to fix`. It copies the same safe recovery intent
+  as the Web setup: repair and verify the existing Mac first, identify the
+  repository and native screen, and never clone, commit, push, or open a pull
+  request without a later explicit decision.**
+- Approved files: `macos/VibeTVControlCenter/main.swift`,
+  `macos/VibeTVControlCenter/URLSchemeTests.swift`, and this approval record.
+
+## 2026-09-04 — Existing themes still complete the live handoff
+
+- User approval: Same final-candidate instruction as above. The next exact-head
+  Bug Detector review found that the first frame could close setup early when
+  the connected VibeTV already had a theme.
+- Approved customer-visible result: **A setup that reuses an installed theme
+  still shows the real preview on `Your VibeTV is live` for the approved three
+  seconds before Overview opens. Only a customer whose setup was completed
+  before this app session skips that handoff.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Automatic drops providers that were switched off
+
+- User approval: Same final-candidate instruction as above. The next exact-head
+  Bug Detector review found that switching off the last Automatic provider and
+  then enabling another one could carry the disabled provider into the next
+  display save.
+- Approved customer-visible result: **When Automatic cannot save an empty
+  provider pool, the next provider enabled replaces any explicitly disabled
+  IDs instead of adding to them. The new working provider reaches VibeTV without
+  requiring a manual Display Mode repair.**
+- Approved files: `apps/control-center/src/components/control-center-types.ts`,
+  `control-center-types.test.ts`, `control-center-app.tsx`, and this approval
+  record.
+
+## 2026-09-04 — Retained readings survive health refreshes
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **A bounded last-good provider reading
+  remains visibly stale and usable for setup even if the latest background
+  health check now reports sign-in or setup required. Once that saved reading
+  expires, it remains unavailable as before.**
+- Approved files: `companion/internal/companionapi/preferences.go`, its tests,
+  `provider_display_test.go`, and this approval record.
+
+## 2026-09-04 — Invalid saved display choices stay repairable
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **When a saved display choice becomes
+  invalid and the connected VibeTV cannot render because of it, setup opens
+  Display Mode instead of sending the customer back to the device connection
+  step.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their tests, and
+  this approval record.
+
+## 2026-09-04 — Saved provider readings stay visibly stale
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **When the app keeps a bounded last-good
+  reading, the provider row always says that the value is saved rather than
+  live. Safe provider-specific recovery guidance remains visible after that
+  warning.**
+- Approved files: `companion/internal/companionapi/preferences.go`, its tests,
+  and this approval record.
+
+## 2026-09-04 — Setup reset blocks later provider writes
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **After `Run setup again` starts, later
+  provider switches and display-mode changes cannot write the old setup back
+  while reset is in flight. Existing writes still finish before reset as
+  before.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Theme-step failures stay recoverable
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found two dead ends on
+  `Choose your theme`: an unavailable catalog and a failed install.
+- Approved customer-visible result: **When no theme catalog can be loaded, the
+  existing theme step stays visible behind a `Themes unavailable` dialog with
+  `Reload catalog`. When a theme install fails, its exact message and next
+  action appear in a dialog over the same step with `Try again`.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-provider-dialogs.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.tsx`, its test,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Canceling manual IP lookup restarts discovery
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that canceling a
+  submitted manual IP lookup could leave the Welcome scan permanently running.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  a submitted manual IP lookup replaces the running WiFi scan and is then
+  canceled, setup starts a fresh WiFi scan instead of remaining on Welcome
+  forever. A canceled lookup still cannot connect later.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.tsx`, its test, and
+  this approval record.
+
+## 2026-09-04 — Provider writes win over older reads
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a provider
+  read started before a toggle could arrive later and restore the old value.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  confirmed provider toggle remains visible and authoritative when an older
+  provider read finishes afterward; Automatic display keeps the confirmed
+  switched-on provider pool.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Provider checks win over older reads
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a provider
+  read started before `Check again` could later restore the old provider state.
+- Approved customer-visible result: **No new screen, wording, or control. After
+  `Check again` succeeds, the row waits for a fresh provider read and cannot be
+  reverted by a response that started before the check.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Credential-named provider output is redacted
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that short values
+  under `credential` or `credentials` keys could reach the provider message.
+- Approved customer-visible result: **Provider guidance and its Copy action
+  replace scalar or structured values under credential-named keys with the
+  existing `[redacted]` marker.**
+- Approved files: `companion/internal/companionapi/provider_reported.go`, its
+  test, and this approval record.
+
+## 2026-09-04 — Failed setup reset finishes pending provider changes
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a failed
+  setup reset could interrupt the Automatic-pool half of an earlier provider
+  change.
+- Approved customer-visible result: **No new screen, wording, or control. If
+  setup cannot restart, a provider change that was already saving finishes its
+  Automatic display update instead of leaving the provider switch and VibeTV
+  selection inconsistent. A successful reset still discards the old setup.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Passphrase provider output is redacted
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that short values
+  under `passphrase` or `passcode` keys could reach the provider message.
+- Approved customer-visible result: **Provider guidance and its Copy action
+  replace scalar or structured passphrase and passcode values with the existing
+  `[redacted]` marker. The shared sensitive-field list governs both shapes.**
+- Approved files: `companion/internal/companionapi/provider_reported.go`, its
+  test, and this approval record.
+
+## 2026-09-04 — Token history keeps saved quota visibly stale
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a successful
+  token-history scan could drop the retained marker from an older quota reading.
+- Approved customer-visible result: **A fresh token-history scan may update
+  token totals, but it cannot make saved quota percentages look live. They stay
+  visibly stale until a fresh quota collection replaces them.**
+- Approved files: `companion/internal/daemon/collector.go`, its test, and this
+  approval record.
+
+## 2026-09-04 — Provider race tests wait for an idle read
+
+- User approval: Same instruction as above: make every real finding safe and
+  leave the final candidate fully green. The exact-head CI exposed that the
+  provider race fixture could reuse an earlier allowed single-flight read on a
+  slow runner instead of starting the read the test meant to race.
+- Approved customer-visible result: **No product UI change. The existing
+  provider read/write and provider check/read behavior remains covered, while
+  the browser regression waits for its setup read to finish before creating the
+  intended race.**
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and this
+  approval record.
+
+## 2026-09-04 — Usage API keeps saved quota visibly stale
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that retained
+  quota was stale on the device frame but could still look fresh in Usage.
+- Approved customer-visible result: **Saved quota percentages remain stale in
+  the Usage screen and cannot produce `Usage is up to date`. Independently
+  refreshed token history remains available with its own freshness.**
+- Approved files: `companion/internal/daemon/daemon.go`, its test, and this
+  approval record.
+
+## 2026-09-04 — Provider race tests count before navigation
+
+- User approval: Same instruction as above: leave the final candidate fully
+  green. The exact-head CI showed that Overview could start the intended stale
+  provider read before the fixture took its baseline count.
+- Approved customer-visible result: **No product UI change. The provider race
+  regressions count reads before either navigation can start one and keep the
+  intended stale response open until after the competing write or check.**
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and this
+  approval record.
+
+## 2026-09-04 — Automatic pool retries a failed save
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a provider
+  switch could succeed while its following Automatic-pool save failed once.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  confirmed provider switch stays authoritative and the Automatic display pool
+  retries in the background until a save succeeds or a newer display choice
+  replaces it.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Provider health remains live while visible
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that carried
+  provider health could stop polling before the background result arrived.
+- Approved customer-visible result: **While Settings or provider setup is
+  visible, enabled provider health keeps refreshing without running duplicate
+  provider retries. A carried result shows `Checking` until the current
+  background health result has actually been observed.**
+- Approved files: `companion/internal/companionapi/preferences.go`, its test,
+  `apps/control-center/src/components/provider-preferences-polling.ts`, its
+  test, and this approval record.
+
+## 2026-09-04 — Exact provider checks beat older health scans
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that an older
+  full health scan could finish after a newer successful manual provider check.
+- Approved customer-visible result: **A successful `Check again` result remains
+  authoritative. Any provider-health scan that started earlier is discarded
+  instead of reverting the row or closing setup again.**
+- Approved files: `companion/internal/companionapi/provider_setup.go`,
+  `companion/internal/companionapi/preferences_test.go`, and this approval
+  record.
+
+## 2026-09-04 — Final exact-head provider corrections
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found three remaining provider-state mismatches.
+- Approved customer-visible result: **Continue requires actual usage or an
+  exact successful check; Automatic always follows CodexBar's current enabled
+  providers; provider descriptions make no Companion-owned claims about what a
+  particular integration represents.**
+- Approved files: `companion/internal/codexbar/providers.go`, its test,
+  `companion/internal/companionapi/preferences.go`,
+  `companion/internal/companionapi/provider_display.go`, their tests,
+  `companion/internal/daemon/daemon.go`, its test, and this approval record.
+
+## 2026-09-04 — Empty setup theme catalog recovery
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found that a successful catalog with no live
+  themes left the first setup on an empty chooser.
+- Approved customer-visible result: **When no installable live theme exists,
+  setup shows `Themes unavailable` with `Reload catalog` instead of an empty
+  chooser with a permanently disabled Install button.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  its unit test, and this approval record.
+
+## 2026-09-04 — Disabled-provider polling and complete Automatic retries
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found that an all-disabled provider list stopped
+  observing later CodexBar changes and that a newer toggle could replace an
+  incomplete Automatic-pool repair.
+- Approved customer-visible result: **No new screen, wording, or control. While
+  Settings or provider setup remains visible, switching on a provider directly
+  in CodexBar appears without reloading even when every row was off. If display
+  saving fails across multiple provider changes, the background retry preserves
+  every currently enabled provider instead of retrying only the last toggle.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`,
+  `apps/control-center/src/components/provider-preferences-polling.ts`, their
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-05 — Arbitrary cookie values are redacted
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found that an arbitrary short alphabetic value
+  after `cookies:` could pass through the diagnostic prose exception.
+- Approved customer-visible result: **Provider guidance and its Copy action
+  redact arbitrary values after `cookies:`. Only the evidenced diagnostic
+  beginnings `missing` and `permission` remain readable.**
+- Approved files: `companion/internal/companionapi/provider_reported.go`, its
+  test, and this approval record.

@@ -47,12 +47,16 @@ func TestParseProviderSettingsRejectsUnsafeProviderIDs(t *testing.T) {
 func TestParseProviderHealthClassifiesSafeStatesAndService(t *testing.T) {
 	health := parseProviderHealth([]byte(`[
 		{"provider":"codex","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":5}}},
+		{"provider":"gemini","status":{"indicator":"none"},"usage":{}},
 		{"provider":"claude","status":{"indicator":"major"},"error":{"message":"OAuth token expired: secret-value"}},
 		{"provider":"copilot","status":{"indicator":"minor"},"error":{"message":"No available fetch strategy for copilot"}}
 	]`))
 
 	if health["codex"].health != ProviderHealthHealthy || health["codex"].service != ProviderServiceOperational {
 		t.Fatalf("unexpected codex health: %#v", health["codex"])
+	}
+	if health["gemini"].health != ProviderHealthNoUsage || health["gemini"].service != ProviderServiceOperational {
+		t.Fatalf("empty usage was reported healthy: %#v", health["gemini"])
 	}
 	if health["claude"].health != ProviderHealthAuthRequired || health["claude"].service != ProviderServiceOutage {
 		t.Fatalf("unexpected claude health: %#v", health["claude"])

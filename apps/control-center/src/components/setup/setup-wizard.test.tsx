@@ -72,6 +72,9 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onFindManualTarget: vi.fn(),
     onFinished: vi.fn(),
     onInstallTheme: vi.fn(),
+    themeError: null,
+    onDismissThemeError: vi.fn(),
+    onRetryTheme: vi.fn(),
     onProviderCheck: vi.fn(),
     onProviderToggle: vi.fn(),
     onProvidersContinue: vi.fn(),
@@ -97,6 +100,53 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     ...overrides,
   };
 }
+
+describe("SetupWizard: theme failures", () => {
+  it("shows an unavailable catalog over the theme step and reloads it", () => {
+    const onRetryTheme = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "theme",
+          themeError: {
+            code: "theme_catalog_unavailable",
+            message: "Themes unavailable",
+            nextAction: "Themes could not be loaded right now.",
+          },
+          themeErrorDismissible: false,
+          onRetryTheme,
+          themeRetryLabel: "Reload catalog",
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Themes unavailable")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reload catalog" }));
+    expect(onRetryTheme).toHaveBeenCalledOnce();
+  });
+
+  it("shows a failed install over the theme step and retries it", () => {
+    const onRetryTheme = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "theme",
+          themeError: {
+            code: "theme_install_failed",
+            message: "Theme install did not finish.",
+            nextAction: "Keep VibeTV powered on and try again.",
+          },
+          onRetryTheme,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Theme install did not finish.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryTheme).toHaveBeenCalledOnce();
+  });
+});
 
 describe("SetupWizard: initial provider scan", () => {
   it("shows the provider loading screen instead of the finished list", () => {
@@ -207,6 +257,7 @@ describe("SetupWizard: initial provider scan", () => {
         deviceUsable: setupDeviceIsUsable({
           connectionRecoveryRequired: false,
           deviceConnected: true,
+          displayRemediationRequired: false,
           hasActiveDevice: true,
           hasEnteredControlCenter: false,
           providerSelectionRequired,
@@ -750,6 +801,54 @@ describe("SetupWizard: going back", () => {
 });
 
 describe("SetupWizard: leaving the address dialog", () => {
+  it("restarts a running scan after a submitted manual lookup is canceled", async () => {
+    let settle: (candidate: DeviceCandidate) => void = () => {};
+    const onFindManualTarget = vi.fn(
+      () =>
+        new Promise<DeviceCandidate>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const onSearchDevices = vi.fn();
+    const connect = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "welcome",
+          deviceSearchState: "searching",
+          onFindManualTarget,
+          onSearchDevices,
+          connectSteps: {
+            connect,
+            installFirmware: vi.fn(),
+          } as unknown as SetupWizardProps["connectSteps"],
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enter IP address manually" }),
+    );
+    fireEvent.change(screen.getByLabelText("IP address"), {
+      target: { value: "192.168.1.50" },
+    });
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Enter IP address" }),
+      ).getByRole("button", { name: "Connect" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onSearchDevices).toHaveBeenCalledOnce();
+    await act(async () => {
+      settle({
+        target: "http://192.168.1.50",
+        deviceId: "9517433",
+      } as DeviceCandidate);
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   // The lookup can take a while, and its continuation pairs the VibeTV and can
   // start a firmware install. Cancel used to close the dialog and let both
   // happen anyway, on a VibeTV the customer had decided against.

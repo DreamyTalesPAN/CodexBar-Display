@@ -3,15 +3,17 @@ import { TriangleAlert } from "lucide-react";
 import type { ApiError } from "../control-center-types";
 import { SetupDialog } from "./setup-dialog";
 
-type ProviderStepFailedDialogProps = {
+type StepFailedDialogProps = {
+  dismissible?: boolean;
   error: ApiError | null;
   onOpenChange: (open: boolean) => void;
   /** Offered when the step can simply ask the companion again. */
   onRetry?: () => void;
+  retryLabel?: string;
 };
 
 /**
- * 03e / 04b — the companion refused what the step asked for.
+ * The companion or catalog refused what the current setup step asked for.
  *
  * The provider and display steps write through the companion, and it applies
  * gates the screen cannot fully anticipate: provider state that changed after
@@ -23,11 +25,13 @@ type ProviderStepFailedDialogProps = {
  * Continue simply did nothing, which reads as a broken button rather than as
  * something to fix.
  */
-export function SetupProviderStepFailedDialog({
+export function SetupStepFailedDialog({
+  dismissible = true,
   error,
   onOpenChange,
   onRetry,
-}: ProviderStepFailedDialogProps) {
+  retryLabel = "Try again",
+}: StepFailedDialogProps) {
   const visibleError = error?.code === "COMPANION_UNREACHABLE" ? null : error;
   return (
     <SetupDialog
@@ -38,7 +42,7 @@ export function SetupProviderStepFailedDialog({
       primaryAction={
         onRetry
           ? {
-              label: "Try again",
+              label: retryLabel,
               onSelect: () => {
                 onOpenChange(false);
                 onRetry();
@@ -46,6 +50,7 @@ export function SetupProviderStepFailedDialog({
             }
           : { label: "OK", onSelect: () => onOpenChange(false) }
       }
+      showCloseButton={dismissible}
       title={visibleError?.message ?? ""}
     />
   );

@@ -21,7 +21,7 @@ import {
   SetupDeviceNotFoundDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
-import { SetupProviderStepFailedDialog } from "./setup-provider-dialogs";
+import { SetupStepFailedDialog } from "./setup-provider-dialogs";
 import {
   SetupDisplayModeScreen,
   type SetupDisplayModePreview,
@@ -96,6 +96,12 @@ export type SetupWizardProps = {
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
   onInstallTheme: () => void;
+  /** What stopped the catalog read or install on the theme step. */
+  themeError: ApiError | null;
+  themeErrorDismissible?: boolean;
+  onDismissThemeError: () => void;
+  onRetryTheme: () => void;
+  themeRetryLabel?: string;
   onProviderCheck: (provider: ProviderItem) => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
   /**
@@ -181,6 +187,7 @@ export function SetupWizard(props: SetupWizardProps) {
   // this Cancel left both to happen anyway.
   const manualAttemptRef = useRef(0);
   const directAttempt = useRef("");
+  const manualLookupInFlightRef = useRef(false);
   const [searchErrorDismissed, setSearchErrorDismissed] = useState(false);
   // Held rather than written on every touch: writing on selection ends the
   // step, so Continue was only ever reachable by not changing anything.
@@ -475,6 +482,7 @@ export function SetupWizard(props: SetupWizardProps) {
     <SetupAddressDialog
       onConnect={async (target) => {
         const attempt = (manualAttemptRef.current += 1);
+        manualLookupInFlightRef.current = true;
         const abandoned = () => attempt !== manualAttemptRef.current;
         try {
           const candidate = await props.onFindManualTarget(target);
@@ -497,13 +505,26 @@ export function SetupWizard(props: SetupWizardProps) {
             [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
             null
           );
+        } finally {
+          if (!abandoned()) {
+            manualLookupInFlightRef.current = false;
+          }
         }
       }}
       onOpenChange={(open) => {
         setAddressDialogOpen(open);
         if (!open) {
+          const canceledLookup = manualLookupInFlightRef.current;
           manualAttemptRef.current += 1;
+          manualLookupInFlightRef.current = false;
           setNotFoundDismissed(false);
+          // A submitted manual lookup supersedes the automatic attempt in the
+          // parent. If the customer cancels while both still read "searching",
+          // neither old result is allowed to settle that state, so start the
+          // scan the screen is waiting for again.
+          if (canceledLookup && deviceSearchState === "searching") {
+            searchAgain();
+          }
         }
       }}
       open={addressDialogOpen}
@@ -718,7 +739,7 @@ export function SetupWizard(props: SetupWizardProps) {
           loading={props.providersLoading}
           providers={props.providers}
         />
-        <SetupProviderStepFailedDialog
+        <SetupStepFailedDialog
           error={props.providerError}
           onOpenChange={(open) => !open && props.onDismissProviderError()}
           onRetry={props.onRetryProviders}
@@ -782,7 +803,7 @@ export function SetupWizard(props: SetupWizardProps) {
           saving={props.displaySavePending}
           selectedProviderId={displayProviderId}
         />
-        <SetupProviderStepFailedDialog
+        <SetupStepFailedDialog
           error={props.providerError}
           onOpenChange={(open) => !open && props.onDismissProviderError()}
           onRetry={props.onRetryProviders}
@@ -793,16 +814,26 @@ export function SetupWizard(props: SetupWizardProps) {
 
   if (step === "theme") {
     return (
-      <SetupThemeScreen
-        {...help}
-        installLogs={props.themeInstallLogs}
-        installing={props.installingTheme}
-        onBack={goBack}
-        onInstall={props.onInstallTheme}
-        onSelect={props.onSelectTheme}
-        selectedThemeId={props.selectedThemeId}
-        themes={props.themes}
-      />
+      <>
+        <SetupThemeScreen
+          {...help}
+          installLogs={props.themeInstallLogs}
+          installing={props.installingTheme}
+          onBack={goBack}
+          onInstall={props.onInstallTheme}
+          onSelect={props.onSelectTheme}
+          selectedThemeId={props.selectedThemeId}
+          themes={props.themes}
+        />
+        <SetupStepFailedDialog
+          dismissible={props.themeErrorDismissible}
+          error={props.themeError}
+          onOpenChange={(open) => !open && props.onDismissThemeError()}
+          onRetry={props.onRetryTheme}
+          retryLabel={props.themeRetryLabel}
+        />
+        {props.themeError ? null : usageDialog}
+      </>
     );
   }
 

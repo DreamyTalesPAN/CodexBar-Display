@@ -430,6 +430,11 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 		s.providerPreferences.mu.Unlock()
 		return
 	}
+	// An exact provider check is newer than any full health scan that was
+	// already running. Advance the shared revision while holding the same lock
+	// the background writer uses, so that older scan can never overwrite this
+	// provider after the customer just confirmed it.
+	s.providerPreferences.revision++
 	enabled := false
 	for i := range s.providerPreferences.cached {
 		if s.providerPreferences.cached[i].ID != providerID {

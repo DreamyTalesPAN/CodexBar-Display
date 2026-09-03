@@ -42,8 +42,13 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    kept off the display, and only providers that can actually produce a reading
    reach the display step. This is a deliberate departure from the design's
    "Provider row states" board, decided by the product owner on 2026-08-30.
-4. An existing healthy setup opens Overview without setup writes or extra
-   confirmation. If VibeTV or the Mac App becomes unavailable after Control
+4. An existing setup opens Overview without setup writes or extra
+   confirmation, also on a launch where its connected VibeTV is still coming
+   up: a completed setup is remembered by the Mac App, and Overview reports
+   what is not ready yet rather than reopening setup. A VibeTV that is
+   switched off when the app starts still opens on the device step, where the
+   recovery picker and the automatic reconnect live. If VibeTV or the Mac App
+   becomes unavailable after Control
    Center was entered, the current tab and navigation remain visible, and
    Overview reports the saved VibeTV as not reachable rather than presenting
    stale readings as current. A background service failure is announced in a
@@ -57,7 +62,9 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    and paired with its firmware brought up to date inside the connect step, at
    least one switched-on AI provider has passed its check, a display mode is
    stored wherever the Mac App can store one, a theme is installed, and the
-   first display frame carries real usage data.
+   first display frame carries real usage data. That is decided once: a
+   later launch does not wait for the frame again, but Overview renders no
+   theme and no usage until a real one arrives.
 7. Appearance is additionally locked until theme installs are allowed by the release gate.
 8. During setup, help is the Help control on every wizard screen, offering
    `Ask AI to fix` and `Create support report`. Afterwards Support may stay

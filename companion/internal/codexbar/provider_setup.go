@@ -48,8 +48,9 @@ type ProviderReadiness struct {
 	Detail      string `json:"detail,omitempty"`
 	NextAction  string `json:"nextAction,omitempty"`
 	// Reported is CodexBar's own provider error sentence. It stays internal so
-	// raw account paths never escape through /v1/status or retry responses; the
-	// preferences adapter applies the one evidenced redaction before exposing it.
+	// raw account paths, addresses and credentials never escape through
+	// /v1/status or retry responses; the preferences adapter redacts it before
+	// exposing it.
 	Reported string `json:"-"`
 }
 

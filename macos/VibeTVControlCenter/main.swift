@@ -1009,6 +1009,31 @@ func portConflictDetail(
     "“\(process.name)” (PID \(process.pid)) is using VibeTV’s local port \(port). Quit the app or stop the process, then click Try again."
 }
 
+func nativeSetupAIFixPrompt(
+    appVersion: String,
+    appBuild: String,
+    setupTitle: String,
+    setupDetail: String,
+    macOS: String
+) -> String {
+    """
+    You are an AI support and coding agent. Your first and highest priority is
+    to get this VibeTV setup working on this Mac. Work with the existing local
+    installation and state. Do not clone the repository or open a pull request.
+
+    Repository: https://github.com/DreamyTalesPAN/CodexBar-Display
+    Failing screen: native welcome — macos/VibeTVControlCenter/main.swift
+    Mac App: \(appVersion) (\(appBuild)) · macOS \(macOS)
+    Status: \(setupTitle) — \(setupDetail)
+
+    First diagnose and repair the local setup, then verify that VibeTV works.
+    Only after it works, analyze what failed and compare that finding with the
+    repository source. If a source change would be useful, explain it and ask
+    whether I want a pull request. Never commit, push, or open a pull request
+    without my explicit approval.
+    """
+}
+
 private struct NativeSupportReportSnapshot: Sendable {
     let generatedAt: String
     let setupTitle: String
@@ -2503,6 +2528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc private func showNativeHelpMenu(_ sender: NSButton) {
         let menu = NSMenu()
         for (title, action) in [
+            ("Ask AI to fix", #selector(copyNativeAIFixPrompt)),
             ("Create support report", #selector(createNativeSupportReport)),
             ("Open support log", #selector(openSupportLog)),
         ] {
@@ -2515,6 +2541,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             at: NSPoint(x: 0, y: sender.bounds.height + 4),
             in: sender
         )
+    }
+
+    @objc private func copyNativeAIFixPrompt() {
+        let prompt = nativeSetupAIFixPrompt(
+            appVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "unknown version",
+            appBuild: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String ?? "unknown build",
+            setupTitle: installationStatusTitle,
+            setupDetail: installationStatusDetail,
+            macOS: ProcessInfo.processInfo.operatingSystemVersionString
+        )
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
     }
 
     private func presentInstallationStatus(

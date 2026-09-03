@@ -232,6 +232,8 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 		return codexbar.ProviderHealthAuthRequired
 	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
 		return codexbar.ProviderHealthSetupRequired
+	case codexbar.ProviderNoUsageAvailable:
+		return codexbar.ProviderHealthNoUsage
 	default:
 		return codexbar.ProviderHealthUnavailable
 	}
@@ -461,17 +463,28 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	s.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
 	s.providerPreferences.at = now
 	s.cacheProviderInventory(settings)
-	if inventoryOnly {
-		s.startProviderHealthRefreshLocked()
+	if inventoryOnly && s.startProviderHealthRefreshLocked() {
+		// The inventory copied the previous health only to avoid an empty row.
+		// Once its replacement is running, expose that wait instead of letting
+		// the copied result look current and stop the browser poll.
+		for i := range s.providerPreferences.cached {
+			if !s.providerPreferences.cached[i].Enabled {
+				continue
+			}
+			s.providerPreferences.cached[i].Health = codexbar.ProviderHealthChecking
+			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
+			s.providerPreferences.cached[i].Reported = ""
+		}
+		settings = append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
 	}
 	return append([]codexbar.ProviderSetting(nil), settings...), nil
 }
 
-func (s *Server) startProviderHealthRefreshLocked() {
+func (s *Server) startProviderHealthRefreshLocked() bool {
 	if s.providerPreferences.healthRefresh ||
 		s.providerPreferences.load == nil ||
 		s.providerPreferences.loadInventory == nil {
-		return
+		return false
 	}
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
@@ -501,6 +514,7 @@ func (s *Server) startProviderHealthRefreshLocked() {
 		}
 		s.providerPreferences.at = s.currentTime().UTC()
 	}()
+	return true
 }
 
 func (s *Server) providerInventoryForUsage(ctx context.Context) []codexbar.ProviderSetting {
@@ -583,9 +597,15 @@ func enabledProviderIDs(settings []codexbar.ProviderSetting) map[string]struct{}
 	return enabled
 }
 
+// The state a provider row shows when live usage is unavailable but a saved
+// reading is still on disk. Two places decide from it -- the row itself and the
+// setup-completion gate -- so it is spelled once.
+const providerHealthStateStale = "stale"
+
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
 	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
+	retainedSuccess := make(map[string]struct{})
 	freshSuccess := make(map[string]codexbar.ProviderReadiness)
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok {
@@ -594,8 +614,18 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				if id == "" {
 					id = strings.TrimSpace(strings.ToLower(provider.Frame.Provider))
 				}
-				if id != "" && !provider.CollectedAt.IsZero() {
+				// A saved reading is one the device can still show. Past the
+				// snapshot's maximum age the collector clears it -- usage marked
+				// unavailable, windows dropped -- and a row that still called that
+				// "stale" was offered on the display step and accepted by the
+				// completion gate for a provider that had nothing left to render.
+				frame := provider.Frame.Normalize()
+				if id != "" && !provider.CollectedAt.IsZero() &&
+					!frame.UsageUnavailable && snapshotHasUsableUsage(frame, provider.Meta) {
 					lastSuccess[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
+					if provider.Retained {
+						retainedSuccess[id] = struct{}{}
+					}
 				}
 				if readiness, ready := freshUsableUsageProviderReadiness(provider, now); ready {
 					freshSuccess[readiness.ID] = readiness
@@ -617,6 +647,16 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "disabled"
 			message = "Provider is off."
 			reported = ""
+		} else if _, retained := retainedSuccess[setting.ID]; retained {
+			state = providerHealthStateStale
+			message = "Live usage is unavailable; the last successful reading is still saved."
+			if reported != "" {
+				reported = message + " " + reported
+			}
+		} else if setting.Health == codexbar.ProviderHealthChecking {
+			state = string(codexbar.ProviderHealthChecking)
+			message = providerHealthMessage(codexbar.ProviderHealthChecking)
+			reported = ""
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
 			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
 			state = providerReadinessHealthState(readiness.Status)
@@ -637,7 +677,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
 		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {
-			state = "stale"
+			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
 		items = append(items, preferenceDescriptor{
@@ -646,7 +686,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			Owner:          "codexbar",
 			Type:           preferenceTypeBoolean,
 			Label:          setting.Label,
-			Description:    providerDescription(setting.ID, setting.Label),
+			Description:    providerDescription(setting.Label),
 			ProviderID:     setting.ID,
 			Value:          setting.Enabled,
 			EffectiveValue: setting.Enabled,
@@ -679,22 +719,20 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 		return true
 	}
 	switch setting.Health {
-	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired, codexbar.ProviderHealthUnavailable:
+	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
 		return false
 	default:
 		return true
 	}
 }
 
-func providerDescription(providerID, label string) string {
-	switch strings.TrimSpace(strings.ToLower(providerID)) {
-	case "codex":
-		return "Usage from the Codex subscription linked to your OpenAI account."
-	case "openai":
-		return "Usage from an OpenAI API or organization dashboard setup."
-	default:
-		return "Usage from " + strings.TrimSpace(label) + "."
+func providerDescription(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "Usage from this provider."
 	}
+	return "Usage from " + label + "."
 }
 
 func providerReadinessHealthState(status string) string {
@@ -780,6 +818,8 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Sign in again for this provider."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
+	case codexbar.ProviderHealthNoUsage:
+		return "This account does not expose usage data."
 	case codexbar.ProviderHealthUnavailable:
 		return "Provider is not responding right now."
 	default:

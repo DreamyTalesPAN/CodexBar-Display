@@ -449,6 +449,22 @@ async function main() {
     }
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      await testProviderWriteWinsOverOlderPreferenceRead(
+        browser,
+        appContext.appUrl,
+      );
+      await testProviderPoolRetriesAfterFailedWrite(
+        browser,
+        appContext.appUrl,
+      );
+      await testProviderCheckWinsOverOlderPreferenceRead(
+        browser,
+        appContext.appUrl,
+      );
+      await testFailedSetupResetReconcilesPendingProviderToggle(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderOnboardingUsesSharedHealthyDescriptor(
         browser,
         appContext.appUrl,
@@ -525,7 +541,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testLocalReachableWithoutFrameWaitsForUsage(
+      await testLocalReachableWithoutFrameOpensOverviewWithoutUsage(
         browser,
         appContext.appUrl,
       );
@@ -566,6 +582,18 @@ async function main() {
         appContext.appUrl,
       );
       await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
+        browser,
+        appContext.appUrl,
+      );
+      await testConnectedNotReadyDeviceKeepsControlCenterOpen(
+        browser,
+        appContext.appUrl,
+      );
+      await testFirstSetupStillWaitsForARenderedPreview(
+        browser,
+        appContext.appUrl,
+      );
+      await testTransientDisplayReadStillOpensOverview(
         browser,
         appContext.appUrl,
       );
@@ -721,7 +749,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameWaitsForUsage(
+    await testLocalReachableWithoutFrameOpensOverviewWithoutUsage(
       browser,
       appContext.appUrl,
     );
@@ -770,6 +798,18 @@ async function main() {
       appContext.appUrl,
     );
     await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
+      browser,
+      appContext.appUrl,
+    );
+    await testConnectedNotReadyDeviceKeepsControlCenterOpen(
+      browser,
+      appContext.appUrl,
+    );
+    await testFirstSetupStillWaitsForARenderedPreview(
+      browser,
+      appContext.appUrl,
+    );
+    await testTransientDisplayReadStillOpensOverview(
       browser,
       appContext.appUrl,
     );
@@ -824,12 +864,40 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+    await testProviderWriteWinsOverOlderPreferenceRead(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderPoolRetriesAfterFailedWrite(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderCheckWinsOverOlderPreferenceRead(
+      browser,
+      appContext.appUrl,
+    );
     await testProviderOnboardingUsesSharedHealthyDescriptor(
       browser,
       appContext.appUrl,
     );
     await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
     await testRunSetupAgainReturnsToWifiOnboarding(browser, appContext.appUrl);
+    await testRunSetupAgainWaitsForAPendingDisplaySave(
+      browser,
+      appContext.appUrl,
+    );
+    await testRunSetupAgainWaitsForAPendingProviderToggle(
+      browser,
+      appContext.appUrl,
+    );
+    await testFailedSetupResetReconcilesPendingProviderToggle(
+      browser,
+      appContext.appUrl,
+    );
+    await testRunSetupAgainBlocksLaterProviderWrites(
+      browser,
+      appContext.appUrl,
+    );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testMacAppUpdatePrecedesFirmwareUpdate(browser, appContext.appUrl);
@@ -1413,7 +1481,6 @@ async function testConnectFirmwareUpdateFailureOffersRetry(browser, appUrl) {
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.99",
     device: { connected: false, paired: false, ready: false, active: false },
-    displayFrameStatus: 404,
     searchDevices: [candidate],
     onSelect: () => connected,
     onUpdate: (postData) => firmwareUpdateRequests.push(postData || ""),
@@ -1757,7 +1824,8 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     viewport: desktopViewport,
   });
   const requests = [];
-  await routeCompanionOnline(page, [], () => {}, {
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false },
     searchDevices: [
       {
@@ -1783,6 +1851,7 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
       configured: false,
       valid: false,
     },
+    displayFrameStatus: 404,
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -1805,13 +1874,22 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
   await displayScreen.waitFor({ timeout: 15_000 });
   await displayScreen.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).waitFor({
+  await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({
     timeout: 15_000,
   });
   assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+    (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
-    "A genuine first-time setup must require a theme before Overview",
+    "A VibeTV with a confirmed active theme must skip theme selection",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.waitForTimeout(1_000);
+  assert(
+    (await setupScreen(page, SETUP_LIVE_SCREEN).count()) === 1 &&
+      (await page
+        .getByRole("navigation", { name: "Control Center" })
+        .count()) === 0,
+    "A first setup must keep the rendered preview visible for its live handoff",
   );
   assert(
     requests.filter((request) => request === "POST /v1/device/search")
@@ -1826,7 +1904,7 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   assert(
     (await page.getByRole("button", { name: "Setup", exact: true }).count()) ===
       0,
-    "The connected Control Center must not show a second Setup tab",
+    "The connected Control Center must not show a Setup tab",
   );
   assert(
     (await page
@@ -2279,17 +2357,21 @@ async function testTransientFirstFrameStaysCustomerFriendly(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  // A completed setup opens Overview while the VibeTV is still coming up; the
+  // reconnect detail is for the support report, not the screen.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 20_000 });
   await page.waitForTimeout(1_500);
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "A connected VibeTV must stay in setup until the first usage frame",
-  );
   assert(
     (await page.getByText(technicalStreamDetail, { exact: true }).count()) ===
       0,
-    "Setup must keep reconnect details in the support report",
+    "Overview must keep reconnect details in the support report",
+  );
+  assert(
+    (await page.getByRole("img", { name: /Rendered VibeTV theme/ }).count()) ===
+      0,
+    "No rendered theme should be shown while first usage is pending",
   );
 
   await assertNoMobileOverflow(page);
@@ -3592,7 +3674,7 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
+async function testLocalReachableWithoutFrameOpensOverviewWithoutUsage(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -3608,12 +3690,17 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  // A completed setup is remembered: the shell opens while the VibeTV is still
+  // coming up, and the tabs are not locked again. What it must not do is
+  // pretend to have usage, or repair a VibeTV that is merely not ready yet.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 20_000 });
   await page.waitForTimeout(1_500);
   assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+    (await page.getByRole("img", { name: /Rendered VibeTV theme/ }).count()) ===
       0,
-    "A reachable and paired VibeTV should stay in setup while first usage is pending",
+    "No rendered theme should be shown while first usage is pending",
   );
   assert(
     (await page.getByRole("button", { name: "Setup", exact: true }).count()) ===
@@ -4239,16 +4326,23 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
   assertNoInstallRequests(installRequests);
 
   await installButton.click();
-  // The failed install has nowhere to go but the step's own log, so that is
-  // where the customer has to be told, and Install has to come back.
+  // The failed install stays on its originating step and opens the recovery
+  // dialog. The log remains visible behind it as the detailed history.
   await setupScreen(page, SETUP_THEME_SCREEN)
     .getByRole("status")
     .getByText("> Theme install failed.")
     .waitFor({ timeout: 15_000 });
+  const installFailureDialog = page.getByRole("dialog", {
+    name: "Theme install failed.",
+  });
+  await installFailureDialog.waitFor({ timeout: 10_000 });
+  await installFailureDialog
+    .getByText("Keep VibeTV powered on and retry the install.")
+    .waitFor();
   await waitForEnabled(
     page,
     installButton,
-    "A failed install must leave the customer able to retry",
+    "A failed install must leave the originating step ready behind its dialog",
   );
   assert(
     installRequests.length === 1,
@@ -4258,7 +4352,7 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
   const renderedFinalPreview = setupScreen(page, SETUP_LIVE_SCREEN)
     .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
     .waitFor({ timeout: 20_000 });
-  await installButton.click();
+  await installFailureDialog.getByRole("button", { name: "Try again" }).click();
   await renderedFinalPreview;
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
@@ -4686,7 +4780,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       1,
-    "A failed post-install device read must keep the entered theme setup visible",
+    `A failed post-install device read must keep the entered theme setup visible, got headings ${JSON.stringify(await page.getByRole("heading").allInnerTexts())}`,
   );
 
   companionRoute.setDevice(readyDevice);
@@ -4738,6 +4832,112 @@ async function testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
   await setupNotFoundDialog(page)
     .getByRole("button", { name: "Enter IP manually" })
     .waitFor();
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// A finished setup is finished on the next launch too. Entering the Control
+// Center used to need a rendered usage frame, which a VibeTV that is connected
+// but not yet drawing has not sent -- so quitting the app and starting it again
+// while the VibeTV was still coming up put a customer who was on Overview
+// yesterday onto "looking for your VibeTV", with every tab locked, in front of a
+// VibeTV that was connected the whole time. Only Run setup again reopens setup.
+async function testConnectedNotReadyDeviceKeepsControlCenterOpen(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "known-device-1",
+      ready: false,
+      display: { themeSpec: { active: true, renderOk: true } },
+    },
+    displayFrameResponse: { ok: false },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 20_000 });
+  assert(
+    (await page.getByRole("main", { name: "Welcome" }).count()) === 0 &&
+      (await page.getByRole("heading", { name: SETUP_DEVICE_SCREEN }).count()) ===
+        0,
+    "A completed setup must not reopen the wizard while the VibeTV is still coming up",
+  );
+
+  // The tabs stay unlocked, so the sanctioned way back into setup is reachable
+  // instead of the customer being held in onboarding.
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Run setup again" }).waitFor({
+    timeout: 10_000,
+  });
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// One dropped display-selection read must not decide the launch. The read is
+// asked again on the status cadence, and the customer who was coming back is
+// still let in once it answers.
+async function testTransientDisplayReadStillOpensOverview(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "known-device-1",
+      ready: false,
+      display: { themeSpec: { active: true, renderOk: true } },
+    },
+    displayFrameResponse: { ok: false },
+    providerDisplayGetFailures: 1,
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 30_000 });
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// The other half of the same rule: a Mac that has NOT been through setup still
+// gets the wizard, and still has to see the VibeTV draw before Overview.
+async function testFirstSetupStillWaitsForARenderedPreview(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "unset-up-device",
+      ready: false,
+      display: { themeSpec: { active: true, renderOk: true } },
+    },
+    displayFrameResponse: { ok: false },
+    providerSelectionSetup: {
+      providerSelectionRequired: true,
+      providerSelectionComplete: false,
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("main", { name: SETUP_PROVIDERS_SCREEN }).waitFor({
+    timeout: 20_000,
+  });
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A Mac that never finished setup must still be held by the wizard",
+  );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -6012,6 +6212,219 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   await page.close();
 }
 
+async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const requests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencesDelayMs: 2_000,
+    preferencesSnapshotBeforeDelay: true,
+    preferencesResponse: {
+      ok: true,
+      items: [
+        providerPreferenceFixture("codex", "Codex"),
+        providerPreferenceFixture("claude", "Claude"),
+      ],
+    },
+    providerDisplay: {
+      mode: "automatic",
+      providerIds: ["codex", "claude"],
+      configured: true,
+      valid: true,
+    },
+    onRequest: (path, method, body) =>
+      requests.push({ path, method, body, at: Date.now() }),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  const codex = page.getByRole("switch", { name: "Codex" });
+  await codex.waitFor({ timeout: 10_000 });
+  await waitForPreferenceReadsToSettle(requests, 2_000);
+  const readsBeforeNavigation = requests.filter(
+    (request) =>
+      request.path === "/v1/preferences" && request.method === "GET",
+  ).length;
+  await clickNavigation(page, "Overview");
+  await clickNavigation(page, "Settings");
+  await waitForCondition(
+    () =>
+      requests.filter(
+        (request) =>
+          request.path === "/v1/preferences" && request.method === "GET",
+      ).length > readsBeforeNavigation,
+    "navigation must start the preference read used by this race",
+  );
+
+  await codex.click();
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path ===
+            "/v1/preferences/codexbar.providers.codex.enabled" &&
+          request.method === "PATCH" &&
+          request.body.includes('"value":false'),
+      ),
+    "disabling Codex must save the preference",
+  );
+  await page.waitForTimeout(2_200);
+  assert(
+    !(await codex.isChecked()),
+    "a preference GET that started before the PATCH must not restore the old provider value",
+  );
+  const latestDisplayWrite = requests
+    .filter(
+      (request) =>
+        request.path === "/v1/provider-display" && request.method === "PATCH",
+    )
+    .at(-1);
+  assert(
+    latestDisplayWrite &&
+      !JSON.parse(latestDisplayWrite.body || "{}").providerIds?.includes(
+        "codex",
+      ),
+    `Automatic display must keep the confirmed provider pool, got ${latestDisplayWrite?.body}`,
+  );
+  await page.close();
+}
+
+async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const displayWrites = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencesResponse: {
+      ok: true,
+      items: [
+        providerPreferenceFixture("codex", "Codex"),
+        disabledProviderPreferenceFixture("claude", "Claude"),
+        disabledProviderPreferenceFixture("gemini", "Gemini"),
+      ],
+    },
+    providerDisplay: {
+      mode: "automatic",
+      providerIds: ["codex"],
+      configured: true,
+      valid: true,
+    },
+    providerDisplayPatchFailures: 2,
+    onRequest: (path, method, body) => {
+      if (path === "/v1/provider-display" && method === "PATCH") {
+        displayWrites.push(body);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  const claude = page.getByRole("switch", { name: "Claude" });
+  const gemini = page.getByRole("switch", { name: "Gemini" });
+  await claude.click();
+  await page
+    .getByText("Display selection could not be saved.")
+    .waitFor({ timeout: 10_000 });
+  await gemini.click();
+  await waitForCondition(
+    () => displayWrites.length >= 3,
+    "the failed Automatic pool save was not retried",
+    15_000,
+  );
+  const retriedProviderIds = JSON.parse(
+    displayWrites.at(-1) || "{}",
+  ).providerIds;
+  assert(
+    retriedProviderIds?.includes("claude") &&
+      retriedProviderIds?.includes("gemini"),
+    `the retried Automatic pool must keep every enabled provider, got ${displayWrites.at(-1)}`,
+  );
+  assert(await claude.isChecked(), "the confirmed provider must remain enabled");
+  assert(await gemini.isChecked(), "the second provider must remain enabled");
+  await page.close();
+}
+
+async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const requests = [];
+  let providerRetryFinishedAt = Number.POSITIVE_INFINITY;
+  const codexPreference = {
+    ...providerPreferenceFixture("codex", "Codex"),
+    health: {
+      state: "auth_required",
+      service: "unknown",
+      message: "This provider needs an active sign-in.",
+    },
+  };
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencesDelayMs: 2_000,
+    preferencesSnapshotBeforeDelay: true,
+    preferencesResponse: { ok: true, items: [codexPreference] },
+    onProviderRetry: async (_setup, providerId) => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      providerRetryFinishedAt = Date.now();
+      return exactProviderSetup(providerId, "ready");
+    },
+    onRequest: (path, method, body) =>
+      requests.push({ path, method, body, at: Date.now() }),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  const checkAgain = page.getByRole("button", { name: "Check Codex again" });
+  await checkAgain.waitFor({ timeout: 10_000 });
+  await waitForPreferenceReadsToSettle(requests, 2_000);
+  const readsBeforeNavigation = requests.filter(
+    (request) =>
+      request.path === "/v1/preferences" && request.method === "GET",
+  ).length;
+  await clickNavigation(page, "Overview");
+  await clickNavigation(page, "Settings");
+  await waitForCondition(
+    () =>
+      requests.filter(
+        (request) =>
+          request.path === "/v1/preferences" && request.method === "GET",
+      ).length > readsBeforeNavigation,
+    "navigation must start the stale read used by the provider-check race",
+  );
+
+  await checkAgain.click();
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/providers/retry" && request.method === "POST",
+      ),
+    "Check again must run the exact provider retry",
+  );
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/preferences" &&
+          request.method === "GET" &&
+          request.at >= providerRetryFinishedAt,
+      ),
+    "a successful provider check must start a fresh preference read",
+  );
+  await waitForCondition(
+    async () => (await checkAgain.count()) === 0,
+    "the stale pre-check preference read must not restore the old provider health",
+  );
+  assert(
+    await page.getByRole("switch", { name: "Codex" }).isChecked(),
+    "the confirmed provider must remain enabled after its fresh health read",
+  );
+  await page.close();
+}
+
 async function testProviderOnboardingUsesSharedHealthyDescriptor(
   browser,
   appUrl,
@@ -6337,6 +6750,236 @@ async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+// A reset while a display-mode save was still in flight let that save land
+// after the reset and write the old selection back, so the rerun skipped the
+// display step. The reset waits for the save, from every entry point.
+async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const timeline = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    providerDisplayPatchDelayMs: 1500,
+    searchDelayMs: 300,
+    searchDevices: [],
+    onRequest: (pathname, method) => {
+      if (
+        (pathname === "/v1/provider-display" && method === "PATCH") ||
+        (pathname === "/v1/setup/reset" && method === "POST")
+      ) {
+        timeline.push({ pathname, at: Date.now() });
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: /Manual/ }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname === "/v1/provider-display"),
+    "choosing a display mode in Settings must save it",
+  );
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
+    "Run setup again must reset once the save has landed",
+    20_000,
+  );
+  const patchAt = timeline.find((e) => e.pathname === "/v1/provider-display").at;
+  const resetAt = timeline.find((e) => e.pathname === "/v1/setup/reset").at;
+  assert(
+    resetAt - patchAt >= 1_400,
+    `the reset must wait for the pending display save, but ran ${resetAt - patchAt}ms after it started`,
+  );
+  await page.getByRole("main", { name: "Welcome" }).waitFor({ timeout: 10_000 });
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// A provider toggle can enqueue its Automatic display-pool save only after the
+// preference PATCH answers. Reset must wait for that whole operation, not just
+// for display writes that happened to exist when the button was pressed.
+async function testRunSetupAgainWaitsForAPendingProviderToggle(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const timeline = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencePatchDelayMs: 1500,
+    searchDelayMs: 300,
+    searchDevices: [],
+    onRequest: (pathname, method) => {
+      if (
+        (pathname.startsWith("/v1/preferences/") && method === "PATCH") ||
+        (pathname === "/v1/setup/reset" && method === "POST")
+      ) {
+        timeline.push({ pathname, at: Date.now() });
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("switch", { name: "Codex" }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname.startsWith("/v1/preferences/")),
+    "switching a provider in Settings must save it",
+  );
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
+    "Run setup again must reset once the provider toggle has settled",
+    20_000,
+  );
+  const preferenceAt = timeline.find((entry) =>
+    entry.pathname.startsWith("/v1/preferences/"),
+  ).at;
+  const resetAt = timeline.find(
+    (entry) => entry.pathname === "/v1/setup/reset",
+  ).at;
+  assert(
+    resetAt - preferenceAt >= 1_400,
+    `the reset must wait for the pending provider toggle, but ran ${resetAt - preferenceAt}ms after it started`,
+  );
+  await page.getByRole("main", { name: "Welcome" }).waitFor({ timeout: 10_000 });
+  await page.close();
+}
+
+async function testFailedSetupResetReconcilesPendingProviderToggle(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const requests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencePatchDelayMs: 800,
+    preferencesResponse: {
+      ok: true,
+      items: [
+        providerPreferenceFixture("codex", "Codex"),
+        disabledProviderPreferenceFixture("claude", "Claude"),
+      ],
+    },
+    providerDisplay: {
+      mode: "automatic",
+      providerIds: ["codex"],
+      configured: true,
+      valid: true,
+    },
+    resetError: {
+      status: 409,
+      error: {
+        code: "setup_reset_failed",
+        message: "Setup could not be restarted.",
+        nextAction: "Try again.",
+      },
+    },
+    onRequest: (pathname, method, body) => {
+      if (
+        (pathname.startsWith("/v1/preferences/") && method === "PATCH") ||
+        (pathname === "/v1/setup/reset" && method === "POST") ||
+        (pathname === "/v1/provider-display" && method === "PATCH")
+      ) {
+        requests.push({ pathname, method, body, at: Date.now() });
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("switch", { name: "Claude" }).click();
+  await waitForCondition(
+    () =>
+      requests.some((request) =>
+        request.pathname.startsWith("/v1/preferences/"),
+      ),
+    "enabling Claude must start its provider preference save",
+  );
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () =>
+      requests.some((request) => request.pathname === "/v1/setup/reset"),
+    "the failed setup reset must start after the preference save settles",
+  );
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) => request.pathname === "/v1/provider-display",
+      ),
+    "a failed reset must resume the Automatic pool save skipped while reset was pending",
+  );
+  const resetAt = requests.find(
+    (request) => request.pathname === "/v1/setup/reset",
+  ).at;
+  const displayWrite = requests.find(
+    (request) => request.pathname === "/v1/provider-display",
+  );
+  assert(
+    displayWrite.at >= resetAt,
+    "the deferred Automatic pool save must run only after reset fails",
+  );
+  assert(
+    JSON.parse(displayWrite.body || "{}").providerIds?.includes("claude"),
+    `the failed reset must keep newly enabled Claude visible, got ${displayWrite.body}`,
+  );
+  await page.close();
+}
+
+// Once reset has started, a new Settings write must not land after it and
+// restore the configuration the reset just cleared.
+async function testRunSetupAgainBlocksLaterProviderWrites(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const requests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    resetDelayMs: 1500,
+    searchDelayMs: 300,
+    searchDevices: [],
+    onRequest: (pathname, method) => {
+      if (
+        (pathname === "/v1/setup/reset" && method === "POST") ||
+        (pathname.startsWith("/v1/preferences/") && method === "PATCH")
+      ) {
+        requests.push(pathname);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () => requests.includes("/v1/setup/reset"),
+    "Run setup again did not start its reset",
+  );
+  await page.getByRole("switch", { name: "Codex" }).click();
+  await page.waitForTimeout(250);
+  assert(
+    !requests.some((pathname) => pathname.startsWith("/v1/preferences/")),
+    `a provider write started after setup reset: ${JSON.stringify(requests)}`,
+  );
+  await page.getByRole("main", { name: "Welcome" }).waitFor({
+    timeout: 10_000,
+  });
   await page.close();
 }
 
@@ -8090,13 +8733,11 @@ async function testOverviewWaitsForRealUsage(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  // The wizard's closing step owns the screen until a real frame arrives.
-  await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({ timeout: 10_000 });
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "Overview must not render before a real display frame exists",
-  );
+  // A completed setup is remembered, so Overview opens at once -- and it must
+  // not pretend to have usage: nothing is rendered until a real frame arrives.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
   assert(
     (await page
       .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
@@ -8150,21 +8791,18 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({ timeout: 10_000 });
-  // The handover delay used to open Overview after 2.5 seconds even though
-  // this label-only frame cannot render. Wait past it so the customer-flow
-  // test proves the closing step stays put, rather than sampling too early.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
+  // The handover delay used to render after 2.5 seconds even though this
+  // label-only frame cannot render. Wait past it so the customer-flow test
+  // proves the frame stays rejected, rather than sampling too early.
   await page.waitForTimeout(3_000);
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "A label-only display frame must not open Overview",
-  );
   assert(
     (await page
       .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
       .count()) === 0,
-    "Setup must reject a 200 display frame without a protocol version",
+    "Overview must reject a 200 display frame without a protocol version",
   );
 
   assertNoInstallRequests(installRequests);
@@ -9763,6 +10401,7 @@ async function routeCompanionOnline(
     onSearch,
     onRequest = () => {},
     onReset,
+    resetDelayMs = 0,
     resetError,
     onUpdate,
     onMacAppUpdate,
@@ -9781,6 +10420,7 @@ async function routeCompanionOnline(
     preferencesResponse,
     onPreferencesResponse,
     preferencesDelayMs = 0,
+    preferencesSnapshotBeforeDelay = false,
     preferencesStatus = 200,
     preferencePatchDelayMs = 0,
     preferencePatchFailureIds = [],
@@ -9814,7 +10454,9 @@ async function routeCompanionOnline(
       valid: true,
     },
     providerDisplayGetDelayMs = 0,
+    providerDisplayGetFailures = 0,
     providerDisplayPatchDelayMs = 0,
+    providerDisplayPatchFailures = 0,
     providerSelectionSetup = {
       providerSelectionRequired: false,
       providerSelectionComplete: true,
@@ -9824,6 +10466,8 @@ async function routeCompanionOnline(
   } = {},
 ) {
   let currentDevice = device;
+  let providerDisplayGetFailuresLeft = providerDisplayGetFailures;
+  let providerDisplayPatchFailuresLeft = providerDisplayPatchFailures;
   let currentCompanionVersion = companionVersion;
   let activeInstallJobId = statusThemeInstallJob?.id || "";
   let currentStatusThemeInstallJob = statusThemeInstallJob;
@@ -9920,6 +10564,22 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/provider-display") {
       if (route.request().method() === "PATCH") {
+        if (providerDisplayPatchFailuresLeft > 0) {
+          providerDisplayPatchFailuresLeft -= 1;
+          await route.fulfill({
+            status: 502,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ok: false,
+              error: {
+                code: "provider_display_write_failed",
+                message: "Display selection could not be saved.",
+                nextAction: "Try again in a moment.",
+              },
+            }),
+          });
+          return;
+        }
         if (providerDisplayPatchDelayMs > 0) {
           await new Promise((resolve) =>
             setTimeout(resolve, providerDisplayPatchDelayMs),
@@ -9932,6 +10592,17 @@ async function routeCompanionOnline(
           configured: true,
           valid: true,
         };
+      } else if (providerDisplayGetFailuresLeft > 0) {
+        providerDisplayGetFailuresLeft -= 1;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: { code: "INTERNAL", message: "Display selection read failed." },
+          }),
+        });
+        return;
       } else if (providerDisplayGetDelayMs > 0) {
         await new Promise((resolve) =>
           setTimeout(resolve, providerDisplayGetDelayMs),
@@ -10296,6 +10967,9 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/preferences") {
+      const capturedPreferences = preferencesSnapshotBeforeDelay
+        ? structuredClone(currentPreferences)
+        : null;
       if (preferencesDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, preferencesDelayMs));
       }
@@ -10309,7 +10983,7 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify(
           preferencesStatus === 200
-            ? currentPreferences
+            ? capturedPreferences || currentPreferences
             : {
                 ok: false,
                 error: {
@@ -10521,6 +11195,9 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/setup/reset") {
       onReset?.(route.request().postData() || "", currentDevice);
+      if (resetDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, resetDelayMs));
+      }
       if (resetError) {
         await route.fulfill({
           status: resetError.status || 409,
@@ -11671,6 +12348,18 @@ async function waitForCondition(predicate, message, timeoutMs = 10_000) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(message);
+}
+
+async function waitForPreferenceReadsToSettle(requests, responseDelayMs) {
+  await waitForCondition(() => {
+    const latestRead = requests
+      .filter(
+        (request) =>
+          request.path === "/v1/preferences" && request.method === "GET",
+      )
+      .at(-1);
+    return latestRead && Date.now() - latestRead.at > responseDelayMs + 100;
+  }, "the earlier preference read did not settle before the race setup");
 }
 
 async function assertCompanionRequestTimeoutContract() {

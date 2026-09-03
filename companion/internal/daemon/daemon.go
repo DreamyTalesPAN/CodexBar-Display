@@ -293,6 +293,7 @@ type ProviderUsageSnapshot struct {
 	Source                string
 	Meta                  codexbar.ProviderUsageMeta
 	CollectedAt           time.Time
+	Retained              bool
 	TokenStatsCollectedAt time.Time
 	TokenHistorySettled   bool
 	ActivityObservedAt    time.Time
@@ -1203,6 +1204,13 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 	if !ok || cfg.ProviderDisplay == nil {
 		return preferAvailableProviders(providers)
 	}
+	// Automatic means every provider currently enabled in CodexBar. The
+	// collected list already follows that inventory, while ProviderIDs is only
+	// the snapshot saved when the customer chose the mode. Filtering by that
+	// snapshot silently excluded providers enabled later outside this app.
+	if cfg.ProviderDisplay.Mode == "automatic" {
+		return preferAvailableProviders(providers)
+	}
 	allowed := make(map[string]struct{}, len(cfg.ProviderDisplay.ProviderIDs))
 	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
 		providerID = normalizeProviderKey(providerID)
@@ -1229,10 +1237,7 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			filtered = append(filtered, provider)
 		}
 	}
-	if cfg.ProviderDisplay.Mode == "fixed" {
-		return filtered
-	}
-	return preferAvailableProviders(filtered)
+	return filtered
 }
 
 func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
@@ -1849,6 +1854,9 @@ func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeD
 	if !ok || cfg.ProviderDisplay == nil {
 		return
 	}
+	if cfg.ProviderDisplay.Mode == "automatic" {
+		return
+	}
 	provider := normalizeProviderKey(state.lastGood.Provider)
 	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
 		if normalizeProviderKey(providerID) == provider {
@@ -2427,6 +2435,7 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			Source:                strings.TrimSpace(snapshot.Source),
 			Meta:                  snapshot.Meta,
 			CollectedAt:           snapshot.Collected.UTC(),
+			Retained:              snapshot.Retained,
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
 			TokenHistorySettled:   snapshot.TokenHistorySettled,
 			ActivityObservedAt:    snapshot.ActivityObservedAt.UTC(),
@@ -2471,7 +2480,7 @@ func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
 }
 
 func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
-	return !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
+	return snapshot.Retained || !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {

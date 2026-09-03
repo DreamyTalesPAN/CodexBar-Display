@@ -35,6 +35,7 @@ import {
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
+  automaticPoolForEnabledProviders,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -106,8 +107,10 @@ import {
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
+  setupIdentityIsKnown,
   setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
+  setupWasCompletedBefore,
 } from "./setup/setup-step";
 import {
   SetupUsageDialog,
@@ -135,6 +138,7 @@ const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
+const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -276,6 +280,7 @@ type ThemeInstallStatus = {
   logs: string[];
   result?: ThemeInstallResult;
   error?: string;
+  failure?: ApiError;
 };
 
 type RunCompanion = <T>(
@@ -437,9 +442,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [pendingPreferenceIds, setPendingPreferenceIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [providerPoolReconcilePending, setProviderPoolReconcilePending] =
+    useState(false);
   const providerReconcileDeadlineRef = useRef(0);
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerDisplayReadRef = useRef<Promise<void> | null>(null);
+  const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const providerPreferencesRevisionRef = useRef(0);
+  const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
+  const setupResetInProgressRef = useRef(false);
+  const providerPoolReconcilesAfterResetRef = useRef<Array<() => void>>([]);
+  const providerPoolReconcileRetryRef = useRef<
+    (() => Promise<boolean>) | null
+  >(null);
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -451,7 +468,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     "repairing" | "failed" | null
   >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
-  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
+  const [enteredControlCenterThisSession, setEnteredControlCenterThisSession] =
+    useState(false);
+  // Null until the app knows the Mac's state; then it is the answer to "is this
+  // session a customer coming back, or one being set up", settled once. See
+  // where it is written for why both directions have to stay put.
+  const [sessionSkipsSetup, setSessionSkipsSetup] = useState<boolean | null>(
+    null,
+  );
   // The closing step is shown for a moment before the app takes over, but only
   // to someone who actually walked through setup.
   // Flipped by the wizard once its closing step has been seen. A VibeTV that
@@ -1068,6 +1092,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalized.nextAction,
           ],
           error: themeInstallErrorText(normalized),
+          failure: normalized,
         });
         addEvent({
           label: "Theme install needs attention",
@@ -1687,17 +1712,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           error,
           "That IP address did not answer as a VibeTV.",
         );
-        setLastError(normalized);
-        addEvent({
-          label: "Manual VibeTV connection failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
         // Settle the search this one superseded. Taking over the attempt
         // counter silently ends the running scan, and leaving its state on
         // "searching" strands the device step: nothing to pick, nothing to
         // explain it, and no way to scan again.
         if (searchIsCurrent()) {
+          setLastError(normalized);
+          addEvent({
+            label: "Manual VibeTV connection failed",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
           setDeviceSearchState("not-found");
         }
         throw normalized;
@@ -1775,10 +1800,33 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const resetSetup = useCallback(async () => {
+    if (setupResetInProgressRef.current) {
+      return;
+    }
+    setupResetInProgressRef.current = true;
+    providerPoolReconcilesAfterResetRef.current = [];
+    let resetSucceeded = false;
     const setupGeneration = setupGenerationRef.current;
     setBusyAction("reset-setup");
     setLastError(null);
     try {
+      // A display-mode save still in flight would land after the reset and
+      // write the old selection back, so the rerun skipped the display step.
+      // Every entry point -- Settings, Support -- comes through here, so this
+      // is where the reset waits for it; the busy state above is what the
+      // customer sees meanwhile.
+      for (;;) {
+        const preferenceWrites = providerPreferenceWritesRef.current;
+        await preferenceWrites;
+        const displayWrites = providerDisplayWriteQueueRef.current;
+        await displayWrites;
+        if (
+          preferenceWrites === providerPreferenceWritesRef.current &&
+          displayWrites === providerDisplayWriteQueueRef.current
+        ) {
+          break;
+        }
+      }
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         connectionModeChoiceRequired?: boolean;
@@ -1786,10 +1834,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerSetup?: ProviderSetupInfo;
         setup?: ProviderSelectionSetup;
       }>("/v1/setup/reset", { method: "POST" });
+      resetSucceeded = true;
       if (setupGeneration !== setupGenerationRef.current) {
         return;
       }
       setupGenerationRef.current += 1;
+      providerPoolReconcileRetryRef.current = null;
+      setProviderPoolReconcilePending(false);
       forgetDeviceTarget();
       setDeviceRecoveryGate(resetDeviceRecoveryGate());
       setDeviceTarget("");
@@ -1847,7 +1898,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
-      setHasEnteredControlCenter(false);
+      setEnteredControlCenterThisSession(false);
+      // Run setup again asks the question over.
+      setSessionSkipsSetup(null);
+      if (payload.device) {
+        setDevice(payload.device.connected ? payload.device : null);
+      }
       addEvent({
         label: "Setup restarted",
         detail: "Local VibeTV connection was cleared.",
@@ -1873,6 +1929,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
       setBusyAction(null);
+    } finally {
+      setupResetInProgressRef.current = false;
+      const deferredReconciles = resetSucceeded
+        ? []
+        : providerPoolReconcilesAfterResetRef.current;
+      providerPoolReconcilesAfterResetRef.current = [];
+      for (const reconcile of deferredReconciles) {
+        reconcile();
+      }
     }
   }, [
     addEvent,
@@ -2213,6 +2278,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           progress: 100,
           logs: [...initialLogs, normalized.message, normalized.nextAction],
           error: themeInstallErrorText(normalized),
+          failure: normalized,
         });
         addEvent({
           label: "Theme install needs attention",
@@ -2974,40 +3040,115 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshProviderPreferences = useCallback(
-    async (options?: { quiet?: boolean }) => {
-      try {
-        const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
-          "/v1/preferences?section=providers",
-          undefined,
-          { preserveLastError: Boolean(options?.quiet) },
-        );
-        setProviderPreferences(payload.items || []);
-        setProviderPreferencesError(null);
-      } catch (error) {
-        setProviderPreferencesError(
-          normalizeCaughtError(error, "Provider settings need attention."),
-        );
+    (options?: { quiet?: boolean }) => {
+      if (providerPreferencesReadRef.current) {
+        return providerPreferencesReadRef.current;
       }
+      const read = (async () => {
+        // Start after older writes, then ignore the result if a newer write
+        // begins beside this GET. Otherwise a pre-write snapshot can replace
+        // the PATCH-confirmed row and feed the stale provider back into the
+        // Automatic display pool.
+        for (;;) {
+          const pendingWrites = providerPreferenceWritesRef.current;
+          await pendingWrites;
+          if (pendingWrites === providerPreferenceWritesRef.current) {
+            break;
+          }
+        }
+        const setupGeneration = setupGenerationRef.current;
+        const preferencesRevision = providerPreferencesRevisionRef.current;
+        try {
+          const payload = await runCompanion<{
+            items: PreferenceDescriptor[];
+          }>("/v1/preferences?section=providers", undefined, {
+            preserveLastError: Boolean(options?.quiet),
+          });
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            preferencesRevision !== providerPreferencesRevisionRef.current
+          ) {
+            return;
+          }
+          const items = payload.items || [];
+          providerPreferencesRef.current = items;
+          setProviderPreferences(items);
+          setProviderPreferencesError(null);
+        } catch (error) {
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            preferencesRevision !== providerPreferencesRevisionRef.current
+          ) {
+            return;
+          }
+          setProviderPreferencesError(
+            normalizeCaughtError(error, "Provider settings need attention."),
+          );
+        }
+      })();
+      providerPreferencesReadRef.current = read;
+      void read.finally(() => {
+        if (providerPreferencesReadRef.current === read) {
+          providerPreferencesReadRef.current = null;
+        }
+      });
+      return read;
     },
     [runCompanion],
   );
 
   const refreshProviderDisplay = useCallback(
-    async (options?: { quiet?: boolean }) => {
-      try {
-        const payload = await runCompanion<{
-          selection: ProviderDisplaySelection;
-        }>("/v1/provider-display", undefined, {
-          preserveLastError: Boolean(options?.quiet),
-        });
-        providerDisplayRef.current = payload.selection;
-        setProviderDisplay(payload.selection);
-        setProviderDisplayError(null);
-      } catch (error) {
-        setProviderDisplayError(
-          normalizeCaughtError(error, "Display selection needs attention."),
-        );
+    (options?: { quiet?: boolean }) => {
+      if (providerDisplayReadRef.current) {
+        return providerDisplayReadRef.current;
       }
+      const read = (async () => {
+        // A read starts only after older writes and is discarded if a newer
+        // write starts beside it. Otherwise a slow GET can put the selection it
+        // captured before a PATCH back into both the UI and the next write.
+        for (;;) {
+          const pendingWrites = providerDisplayWriteQueueRef.current;
+          await pendingWrites;
+          if (pendingWrites === providerDisplayWriteQueueRef.current) {
+            break;
+          }
+        }
+        const setupGeneration = setupGenerationRef.current;
+        const displayRevision = providerDisplayRevisionRef.current;
+        try {
+          const payload = await runCompanion<{
+            selection: ProviderDisplaySelection;
+          }>("/v1/provider-display", undefined, {
+            preserveLastError: Boolean(options?.quiet),
+          });
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            displayRevision !== providerDisplayRevisionRef.current
+          ) {
+            return;
+          }
+          providerDisplayRef.current = payload.selection;
+          setProviderDisplay(payload.selection);
+          setProviderDisplayError(null);
+        } catch (error) {
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            displayRevision !== providerDisplayRevisionRef.current
+          ) {
+            return;
+          }
+          setProviderDisplayError(
+            normalizeCaughtError(error, "Display selection needs attention."),
+          );
+        }
+      })();
+      providerDisplayReadRef.current = read;
+      void read.finally(() => {
+        if (providerDisplayReadRef.current === read) {
+          providerDisplayReadRef.current = null;
+        }
+      });
+      return read;
     },
     [runCompanion],
   );
@@ -3020,6 +3161,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setPendingProviderCheckIds((current) => new Set(current).add(providerId));
       const runCheck = async () => {
+        // A provider check changes the health this endpoint reports. Detach
+        // any GET that started before the check so its old snapshot cannot
+        // replace the result we are about to confirm.
+        providerPreferencesRevisionRef.current += 1;
+        providerPreferencesReadRef.current = null;
         try {
           const current = providerPreferencesRef.current?.find(
             (preference) =>
@@ -3032,6 +3178,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
             { method: "POST" },
           );
+          // A poll may have started while the check was running. Require one
+          // read from after the successful retry before clearing the pending
+          // marker.
+          providerPreferencesRevisionRef.current += 1;
+          providerPreferencesReadRef.current = null;
           await refreshProviderPreferences({ quiet: true });
           setProviderPreferencesError(null);
         } catch (error) {
@@ -3058,11 +3209,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const updateProviderDisplay = useCallback(
     (
-      selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+      next:
+        | Pick<ProviderDisplaySelection, "mode" | "providerIds">
+        | ((
+            current: ProviderDisplaySelection | null,
+          ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
       providerId: string,
     ) => {
+      if (setupResetInProgressRef.current) {
+        return Promise.resolve(false);
+      }
+      providerDisplayRevisionRef.current += 1;
       const write = async () => {
         const previous = providerDisplayRef.current;
+        // Derived inside the queue, from what the writes ahead of it left
+        // behind. Two provider toggles whose saves land in the same tick each
+        // derived their pool from the same stored selection, and the second
+        // write undid the first.
+        const selection = typeof next === "function" ? next(previous) : next;
+        if (!selection) {
+          return true;
+        }
         const optimistic = { ...selection, configured: true, valid: true };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;
@@ -3146,52 +3313,58 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
    * they can pick another one.
    */
   const syncAutomaticProviderPool = useCallback(
-    async (item: PreferenceDescriptor, enabled: boolean) => {
+    async (item: PreferenceDescriptor) => {
       const providerId = item.providerId;
-      const display = providerDisplayRef.current;
-      // Maintains an existing selection; never creates one. Writing a pool
-      // before the customer has made the choice marks the display configured
-      // and makes setup skip the very step that asks for it.
-      if (
-        !providerId ||
-        display?.configured !== true ||
-        display.mode !== "automatic"
-      ) {
+      if (!providerId) {
         return;
       }
-      const current = new Set(display.providerIds || []);
-      if (current.has(providerId) === enabled) {
-        return;
+      const reconcile = async (): Promise<boolean> => {
+        const enabledProviderIds = (providerPreferencesRef.current || [])
+          .filter(
+            (preference) =>
+              preference.providerId && preference.value === true,
+          )
+          .map((preference) => preference.providerId as string);
+        const updated = await updateProviderDisplay(
+          (current) =>
+            automaticPoolForEnabledProviders(current, enabledProviderIds),
+          providerId,
+        );
+        if (
+          updated !== false &&
+          providerPoolReconcileRetryRef.current === reconcile
+        ) {
+          providerPoolReconcileRetryRef.current = null;
+          setProviderPoolReconcilePending(false);
+        }
+        return updated;
+      };
+      providerPoolReconcileRetryRef.current = reconcile;
+      setProviderPoolReconcilePending(true);
+      if (setupResetInProgressRef.current) {
+        providerPoolReconcilesAfterResetRef.current.push(() => {
+          void reconcile();
+        });
+        return false;
       }
-      if (enabled) {
-        current.add(providerId);
-      } else {
-        current.delete(providerId);
-      }
-      // An empty pool is a selection the companion refuses. Switching off the
-      // last provider is a real state -- it is what the provider step is for --
-      // so leave the stored pool as it is rather than writing one that cannot
-      // be stored.
-      if (current.size === 0) {
-        return;
-      }
-      return updateProviderDisplay(
-        { mode: "automatic", providerIds: [...current] },
-        providerId,
-      );
+      return reconcile();
     },
     [updateProviderDisplay],
   );
 
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {
+      if (setupResetInProgressRef.current) {
+        return;
+      }
+      providerPreferencesRevisionRef.current += 1;
       if (value) {
         providerReconcileDeadlineRef.current =
           Date.now() + PROVIDER_RECONCILE_WINDOW_MS;
       }
       setPendingPreferenceIds((current) => new Set(current).add(item.id));
-      setProviderPreferences((current) =>
-        (current || []).map((preference) =>
+      const optimisticPreferences = (providerPreferencesRef.current || []).map(
+        (preference) =>
           preference.id === item.id
             ? {
                 ...preference,
@@ -3212,18 +3385,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     },
               }
             : preference,
-        ),
       );
+      providerPreferencesRef.current = optimisticPreferences;
+      setProviderPreferences(optimisticPreferences);
+      let finishPreferenceWrite = () => {};
+      const preferenceWrite = new Promise<void>((resolve) => {
+        finishPreferenceWrite = resolve;
+      });
+      providerPreferenceWritesRef.current = Promise.all([
+        providerPreferenceWritesRef.current,
+        preferenceWrite,
+      ]).then(() => undefined);
       try {
         const payload = await runCompanion<{ item: PreferenceDescriptor }>(
           `/v1/preferences/${encodeURIComponent(item.id)}`,
           { method: "PATCH", body: JSON.stringify({ value }) },
         );
-        setProviderPreferences((current) =>
-          (current || []).map((preference) =>
-            preference.id === payload.item.id ? payload.item : preference,
-          ),
+        const confirmedPreferences = (
+          providerPreferencesRef.current || []
+        ).map((preference) =>
+          preference.id === payload.item.id ? payload.item : preference,
         );
+        providerPreferencesRef.current = confirmedPreferences;
+        setProviderPreferences(confirmedPreferences);
         setProviderPreferencesError(null);
         // Automatic means "every provider that is switched on", so switching
         // one on or off IS the change to the pool. The runtime filters strictly
@@ -3233,10 +3417,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // here is the one central rule that keeps them equal; the alternative
         // was a per-row inclusion control plus a repair effect to finish what it
         // half-did.
-        const displayUpdated = await syncAutomaticProviderPool(
-          payload.item,
-          value,
-        );
+        const displayUpdated = await syncAutomaticProviderPool(payload.item);
         const refreshes = [
           refreshProviderPreferences({ quiet: true }),
           refreshUsage({ quiet: true }),
@@ -3246,15 +3427,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         void Promise.all(refreshes);
       } catch (error) {
-        setProviderPreferences((current) =>
-          (current || []).map((preference) =>
-            preference.id === item.id ? item : preference,
-          ),
+        const restoredPreferences = (
+          providerPreferencesRef.current || []
+        ).map((preference) =>
+          preference.id === item.id ? item : preference,
         );
+        providerPreferencesRef.current = restoredPreferences;
+        setProviderPreferences(restoredPreferences);
         setProviderPreferencesError(
           normalizeCaughtError(error, "Provider could not be updated."),
         );
       } finally {
+        finishPreferenceWrite();
         setPendingPreferenceIds((current) => {
           const next = new Set(current);
           next.delete(item.id);
@@ -3270,6 +3454,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       syncAutomaticProviderPool,
     ],
   );
+
+  useEffect(() => {
+    if (!providerPoolReconcilePending) {
+      return;
+    }
+    let stopped = false;
+    let timer: number | undefined;
+    const schedule = () => {
+      timer = window.setTimeout(() => void retry(), PROVIDER_POOL_RECONCILE_RETRY_MS);
+    };
+    const retry = async () => {
+      if (stopped) {
+        return;
+      }
+      const reconcile = providerPoolReconcileRetryRef.current;
+      if (!reconcile) {
+        return;
+      }
+      if (!setupResetInProgressRef.current) {
+        await reconcile();
+      }
+      if (!stopped && providerPoolReconcileRetryRef.current) {
+        schedule();
+      }
+    };
+    schedule();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [providerPoolReconcilePending]);
 
   useEffect(() => {
     if (
@@ -3628,28 +3845,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the dialog is dismissed.
   const macAppUpdateOfferedVersion =
     companionRelease?.latestVersion || companionRelease?.release || "";
-  const macAppUpdatePromptedFor = useRef("");
-  useEffect(() => {
-    if (
-      hostedSetup ||
-      !hasEnteredControlCenter ||
-      !macAppUpdateAvailable ||
-      !macAppUpdateOfferedVersion ||
-      firmwareUpdateInProgress ||
-      !isNativeControlCenterApp() ||
-      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
-    ) {
-      return;
-    }
-    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    window.location.href = "vibetv://check-for-updates";
-  }, [
-    firmwareUpdateInProgress,
-    hasEnteredControlCenter,
-    hostedSetup,
-    macAppUpdateAvailable,
-    macAppUpdateOfferedVersion,
-  ]);
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
     activeThemeUpgrade.needed &&
@@ -3731,9 +3926,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerSelectionSetup?.providerSelectionComplete === true &&
         displaySetupComplete &&
         (themeSetupComplete || firmwareUpdateInProgress) &&
-        (!setupThemeChoiceRequired || setupFinished)
+        setupFinished
       ) {
-        setHasEnteredControlCenter(true);
+        setEnteredControlCenterThisSession(true);
       }
     },
     [
@@ -3741,11 +3936,77 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       displaySetupComplete,
       firmwareUpdateInProgress,
       setupFinished,
-      setupThemeChoiceRequired,
       themeSetupComplete,
     ],
   );
   const hasActiveDevice = deviceIsActive(device);
+  const themeSetupEntryRequired =
+    companionStatus === "online" && deviceNeedsThemeSetup(device);
+  const themeSetupSessionMatches =
+    deviceCanContinueThemeSetup(device) &&
+    deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
+  const themeSetupRequired =
+    companionStatus === "online" &&
+    !themeSetupComplete &&
+    (themeSetupEntryRequired || themeSetupSessionMatches);
+  const setupIdentityKnown = setupIdentityIsKnown(
+    initialCompanionCheckComplete,
+    providerDisplay,
+    providerDisplayError,
+  );
+  const setupLooksComplete =
+    setupIdentityKnown &&
+    setupWasCompletedBefore({
+      hasActiveDevice,
+      connectionRecoveryRequired,
+      providerSelectionComplete:
+        providerSelectionSetup?.providerSelectionComplete === true,
+      displayConfigured: displaySetupComplete,
+      providerSetupCompletedThisSession,
+      themeSetupRequired,
+    });
+  // Whether this session belongs to a customer coming back or to one being set
+  // up is settled the first time the app knows the Mac's state, and never
+  // revisited. Both directions have to hold.
+  //
+  // Deciding it true later would hand the window back to setup around someone
+  // working in the app: switching off the provider on display is one click in
+  // Settings, and a reconnecting VibeTV can report its theme missing again.
+  //
+  // Deciding it false later is the mirror: a Mac whose provider and display
+  // choices are already recorded but whose VibeTV is gone or switched off
+  // starts on the device step, and pairing or reconnecting one there must not
+  // turn the session into a returning one and take the connect log off the
+  // screen mid firmware install.
+  //
+  // The deciding render reads the fresh value, so nothing flashes.
+  if (sessionSkipsSetup === null && setupIdentityKnown) {
+    setSessionSkipsSetup(setupLooksComplete);
+  }
+  const hasEnteredControlCenter =
+    enteredControlCenterThisSession || (sessionSkipsSetup ?? setupLooksComplete);
+  const macAppUpdatePromptedFor = useRef("");
+  useEffect(() => {
+    if (
+      hostedSetup ||
+      !hasEnteredControlCenter ||
+      !macAppUpdateAvailable ||
+      !macAppUpdateOfferedVersion ||
+      firmwareUpdateInProgress ||
+      !isNativeControlCenterApp() ||
+      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
+    ) {
+      return;
+    }
+    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
+    window.location.href = "vibetv://check-for-updates";
+  }, [
+    firmwareUpdateInProgress,
+    hasEnteredControlCenter,
+    hostedSetup,
+    macAppUpdateAvailable,
+    macAppUpdateOfferedVersion,
+  ]);
   const displaySessionActive = Boolean(
     deviceConnected ||
       ((hasEnteredControlCenter || firmwareUpdateInProgress) &&
@@ -3756,15 +4017,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     displaySessionActive,
     handleDisplayFrame,
   );
-  const themeSetupEntryRequired =
-    companionStatus === "online" && deviceNeedsThemeSetup(device);
-  const themeSetupSessionMatches =
-    deviceCanContinueThemeSetup(device) &&
-    deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
-  const themeSetupRequired =
-    companionStatus === "online" &&
-    !themeSetupComplete &&
-    (themeSetupEntryRequired || themeSetupSessionMatches);
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
@@ -4059,6 +4311,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     providerDisplayWanted,
     providerPreferences,
   );
+  // A display read that failed is asked again on the status cadence. Nothing
+  // else retries it: the startup effect below reads once, polling refreshes
+  // preferences only, and a customer held on the device step has no control
+  // that reads it. Left alone, one dropped request kept a customer who was
+  // coming back frame-gated for the whole launch. The read that succeeds, or
+  // the 404 of a companion that cannot store a display choice, ends it.
+  const providerDisplayRetryWanted =
+    providerDisplayWanted &&
+    providerDisplayError !== null &&
+    !setupIdentityIsKnown(true, providerDisplay, providerDisplayError);
+  useEffect(() => {
+    if (!providerDisplayRetryWanted) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshProviderDisplay({ quiet: true });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [providerDisplayRetryWanted, refreshProviderDisplay]);
 
   useEffect(() => {
     if (!providerPreferencesPollingWanted) {
@@ -4140,6 +4411,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const deviceUsableForSetup = setupDeviceIsUsable({
     deviceConnected,
     connectionRecoveryRequired,
+    displayRemediationRequired:
+      providerDisplay?.configured === true && providerDisplay.valid === false,
     hasActiveDevice,
     hasEnteredControlCenter,
     providerSelectionRequired,
@@ -4148,9 +4421,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ready: deviceReady,
   });
 
-  const setupLiveHandoverActive =
-    providerSetupCompletedThisSession ||
-    setupThemeInstallRequested;
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
     displayConfigured: displaySetupComplete,
@@ -4177,7 +4447,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         startupDeviceSearchState === "searching"),
     themeSetupRequired:
       themeSetupRequired ||
-      (setupLiveHandoverActive && !hasRenderableUsage(displayFrame)) ||
       (setupThemeChoiceRequired &&
         !(
           setupThemeInstallRequested &&
@@ -4231,6 +4500,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallEnabled,
         })?.reason ?? null,
     }));
+  const setupThemeError: ApiError | null =
+    themeInstallStatus?.phase === "error"
+      ? themeInstallStatus.failure ?? {
+          code: "theme_install_failed",
+          message: "Theme install did not finish.",
+          nextAction:
+            themeInstallStatus.error ||
+            themeInstallStatus.message ||
+            "Keep VibeTV powered on and try again.",
+        }
+      : setupThemeCatalogError(catalog.issue, setupThemes.length);
 
   const setupConnectSteps: SetupConnectSteps = {
     checkFirmware: async (connected) => {
@@ -4275,9 +4555,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const error = await selectAndConnectDevice(candidate);
       if (error) {
         throw error;
-      }
-      if (providerSelectionRequired) {
-        setSetupThemeChoiceRequired(true);
       }
       // Read the device back rather than trusting this render's copy, which
       // still describes whatever was connected before this one.
@@ -4371,6 +4648,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             label: item.label,
           }))}
           installingTheme={themeInstallStatus?.phase === "installing"}
+          themeError={setupThemeError}
+          themeErrorDismissible={themeInstallStatus?.phase === "error"}
+          onDismissThemeError={() => {
+            if (themeInstallStatus?.phase === "error") {
+              setThemeInstallStatus(null);
+            }
+          }}
+          onRetryTheme={() => {
+            if (themeInstallStatus?.phase === "error") {
+              void installTheme();
+              return;
+            }
+            window.location.reload();
+          }}
+          themeRetryLabel={
+            setupThemeError?.code === "theme_catalog_unavailable"
+              ? "Reload catalog"
+              : undefined
+          }
           onFindManualTarget={findManualTarget}
           onConfigureWiFi={configureSetupWiFi}
           onCreateSupportReport={loadSupportDiagnostics}
@@ -4621,6 +4917,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 }
 
+export function setupThemeCatalogError(
+  issue: string | undefined,
+  liveThemeCount: number,
+): ApiError | null {
+  if (liveThemeCount > 0) {
+    return null;
+  }
+  return {
+    code: "theme_catalog_unavailable",
+    message: "Themes unavailable",
+    nextAction: issue || "Reload the theme catalog, then try again.",
+  };
+}
+
 function getRuntimeSurfaceSnapshot(): RuntimeSurface {
   return shouldUseHostedSetupShell() ? "hosted-setup" : "local-control-center";
 }
@@ -4783,6 +5093,7 @@ function themeInstallStatusFromJob(
     logs,
     result: job.result,
     error: job.error ? themeInstallErrorText(job.error) : undefined,
+    failure: job.error,
   };
 }
 
