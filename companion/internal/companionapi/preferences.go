@@ -599,7 +599,14 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				if id == "" {
 					id = strings.TrimSpace(strings.ToLower(provider.Frame.Provider))
 				}
-				if id != "" && !provider.CollectedAt.IsZero() {
+				// A saved reading is one the device can still show. Past the
+				// snapshot's maximum age the collector clears it -- usage marked
+				// unavailable, windows dropped -- and a row that still called that
+				// "stale" was offered on the display step and accepted by the
+				// completion gate for a provider that had nothing left to render.
+				frame := provider.Frame.Normalize()
+				if id != "" && !provider.CollectedAt.IsZero() &&
+					!frame.UsageUnavailable && snapshotHasUsableUsage(frame, provider.Meta) {
 					lastSuccess[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
 				}
 				if readiness, ready := freshUsableUsageProviderReadiness(provider, now); ready {

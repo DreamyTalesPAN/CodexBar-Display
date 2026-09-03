@@ -11,6 +11,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
@@ -373,6 +374,53 @@ func TestAutomaticStillCompletesWithOneWorkingProvider(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("a signed-out second provider refused an Automatic setup: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
+}
+
+// Past the snapshot's maximum age the collector clears a reading -- usage
+// unavailable, windows dropped -- so the device shows nothing for it. A row
+// that still read "stale" was offered on the display step and accepted by the
+// completion gate; pinned, it reached the live step in front of a blank VibeTV.
+func TestAnExpiredReadingIsNotAStaleOne(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"codex"},
+	}})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider:    "codex",
+			CollectedAt: now.Add(-time.Hour),
+			Frame:       protocol.Frame{Provider: "codex", UsageUnavailable: true},
+		}}}, true
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, descriptor := range server.providerDescriptors(providerSettingsFixtureFrom(server)) {
+		if descriptor.ProviderID == "codex" && descriptor.Health != nil && descriptor.Health.State == providerHealthStateStale {
+			t.Fatalf("an expired reading was reported as a saved one: %+v", descriptor.Health)
+		}
+	}
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusConflict ||
+		!bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_display_not_ready"`)) {
+		t.Fatalf("a pin on an expired reading finished setup: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func providerSettingsFixtureFrom(server *Server) []codexbar.ProviderSetting {
+	server.providerPreferences.mu.Lock()
+	defer server.providerPreferences.mu.Unlock()
+	return append([]codexbar.ProviderSetting(nil), server.providerPreferences.cached...)
 }
 
 // The switch on a provider row always works. Refusing the write was the one

@@ -58,8 +58,11 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 		return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceUnknown}}, nil
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		// A saved reading the device can still show. A bare frame with no usage
+		// is what the collector leaves behind once a reading has expired, and
+		// that one is not a saved reading any more.
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
-			Provider: "codex", Frame: protocol.Frame{Provider: "codex"}, CollectedAt: collectedAt, Stale: true,
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Stale: true,
 		}}}, true
 	}
 
