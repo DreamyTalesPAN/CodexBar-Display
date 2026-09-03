@@ -109,6 +109,23 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			in:   "GitHub token ghp_16C7e42F292c6912E7710c838347Ae178B4a is invalid.",
 			want: "GitHub token [redacted] is invalid.",
 		},
+		{
+			// The prose exception is for "Chrome cookies: missing auth cookie";
+			// an equals sign never introduces prose, however short the value.
+			name: "a short alphabetic password value",
+			in:   "Login rejected: password=letmein",
+			want: "Login rejected: password=[redacted]",
+		},
+		{
+			name: "a short alphabetic token value",
+			in:   "Rejected token=abcdef for this account.",
+			want: "Rejected token=[redacted] for this account.",
+		},
+		{
+			name: "a password key never gets the prose exception",
+			in:   "Keychain password: hunter",
+			want: "Keychain password: [redacted]",
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
