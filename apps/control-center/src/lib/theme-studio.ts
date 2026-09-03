@@ -144,6 +144,7 @@ const FIXED_THEME_REV = 1;
 const MAX_STORED_THEME_SPEC_BYTES = 4096;
 const MAX_STORED_SCREENSAVER_SPEC_BYTES = 2048;
 const MAX_THEME_PRIMITIVES = 32;
+const MAX_PROVIDER_ASSETS = 16;
 const MAX_GIF_BYTES = 24 * 1024;
 const MAX_GIF_WIDTH = 80;
 const MAX_GIF_HEIGHT = 80;
@@ -528,6 +529,9 @@ function prepareThemePackContent(
       primitive.assetPath = screensaverAssetPath(primitive.assetPath);
     }
     delete primitive.stateAssets;
+    // Screensavers have no live provider updates; strip pa like sa so leftover
+    // /themes/u/ paths do not fail referenced-asset validation.
+    delete primitive.providerAssets;
   }
   return { assets: preparedAssets, spec: normalized };
 }
@@ -587,6 +591,17 @@ export function validateThemeSpec(
   normalized.primitives.forEach((primitive, index) => {
     validatePrimitive(primitive, index, errors, warnings, prepared.assets);
   });
+
+  const providerAssetCount = normalized.primitives.reduce(
+    (total, primitive) =>
+      total + Object.keys(primitive.providerAssets || {}).length,
+    0,
+  );
+  if (providerAssetCount > MAX_PROVIDER_ASSETS) {
+    errors.push(
+      `Too many provider assets: ${providerAssetCount}/${MAX_PROVIDER_ASSETS}.`,
+    );
+  }
 
   const themeJson = deviceThemeSpecJson(normalized);
   const bytes = new TextEncoder().encode(themeJson).byteLength;
@@ -903,6 +918,12 @@ function validatePrimitive(
   }
 
   if (primitive.type === "gif" || primitive.type === "sprite") {
+    if (
+      primitive.type === "gif" &&
+      Object.keys(primitive.providerAssets || {}).length > 0
+    ) {
+      errors.push(`${prefix}: providerAssets is only supported on sprites.`);
+    }
     validateThemeAssetPaths(primitive, prefix, errors);
     const paths = primitiveAssetPaths(primitive);
     for (const assetPath of paths) {

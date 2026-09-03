@@ -15,6 +15,9 @@ import (
 
 const (
 	VersionV1 = 1
+	// MaxProviderAssets matches firmware kMaxCompiledProviderAssets: total
+	// provider→path entries across the whole ThemeSpec, not per sprite.
+	MaxProviderAssets = 16
 )
 
 var (
@@ -104,11 +107,19 @@ func Parse(raw []byte) (Spec, json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return Spec{}, nil, fmt.Errorf("parse theme spec: %w", err)
 	}
+	// Reject before normalize: ThemeSpecRaw is uploaded unchanged, and firmware
+	// exact-matches provider keys against the lowercase wire provider.
+	if err := rejectNonCanonicalProviderAssetKeys(spec); err != nil {
+		return Spec{}, nil, err
+	}
 	spec = normalizeSpec(spec)
 	return spec, json.RawMessage(raw), nil
 }
 
 func Validate(spec Spec) error {
+	if err := rejectNonCanonicalProviderAssetKeys(spec); err != nil {
+		return err
+	}
 	spec = normalizeSpec(spec)
 	if spec.ThemeSpecVersion != VersionV1 {
 		return fmt.Errorf("themeSpecVersion=%d unsupported (expected %d)", spec.ThemeSpecVersion, VersionV1)
@@ -128,10 +139,19 @@ func Validate(spec Spec) error {
 		return errMissingPrimitive
 	}
 
+	totalProviderAssets := 0
 	for i, primitive := range spec.Primitives {
 		if err := validatePrimitive(primitive); err != nil {
 			return fmt.Errorf("primitives[%d]: %w", i, err)
 		}
+		totalProviderAssets += len(primitive.ProviderAssets)
+	}
+	if totalProviderAssets > MaxProviderAssets {
+		return fmt.Errorf(
+			"providerAssets total entries exceed firmware limit: count=%d limit=%d",
+			totalProviderAssets,
+			MaxProviderAssets,
+		)
 	}
 
 	return nil
@@ -539,6 +559,9 @@ func validatePrimitive(p Primitive) error {
 		if err := validateSpriteAssetReferences(p); err != nil {
 			return err
 		}
+		if err := validateProviderAssetReferences(p); err != nil {
+			return err
+		}
 		if !gifAssetReferencesHaveGifExtension(p) {
 			return errors.New("gif primitive assetPath/stateAssets must reference .gif files")
 		}
@@ -652,11 +675,36 @@ func validateSpriteAssetReferences(p Primitive) error {
 	return nil
 }
 
+func rejectNonCanonicalProviderAssetKeys(spec Spec) error {
+	primitives := spec.Primitives
+	if len(primitives) == 0 {
+		primitives = spec.ShortPrimitives
+	}
+	for i, primitive := range primitives {
+		for _, assets := range []map[string]string{
+			primitive.ProviderAssets,
+			primitive.ShortProviderAssets,
+		} {
+			for provider := range assets {
+				canonical := strings.TrimSpace(strings.ToLower(provider))
+				if provider != canonical {
+					return fmt.Errorf(
+						"primitives[%d]: providerAssets key %q must be the lowercase wire provider id",
+						i,
+						provider,
+					)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func validateProviderAssetReferences(p Primitive) error {
 	if len(p.ProviderAssets) == 0 {
 		return nil
 	}
-	if p.Type == "gif" {
+	if p.Type != "sprite" && p.Type != "image" {
 		return errors.New("providerAssets is only supported on sprite primitives")
 	}
 	for provider, assetPath := range p.ProviderAssets {

@@ -1245,9 +1245,11 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
           nullptr)) {
     return false;
   }
-  // State assets are selected by activity. Clearing the cache cancels the old
-  // resumable job and starts the new state's animation at frame zero.
-  if ((changedFields & themespec::kThemeSpecFieldActivity) != 0) {
+  // State assets are selected by activity; provider assets by provider. Clearing
+  // the cache cancels the old resumable CBA job so the new path can own the
+  // buffer instead of failing prepareAnimatedSpriteBuffer forever.
+  if ((changedFields &
+       (themespec::kThemeSpecFieldActivity | themespec::kThemeSpecFieldProvider)) != 0) {
     resetAnimatedSpriteCaches();
   }
   markThemeSpecPartialOk();

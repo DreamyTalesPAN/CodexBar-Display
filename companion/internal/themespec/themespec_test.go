@@ -2,6 +2,7 @@ package themespec
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -389,11 +390,52 @@ func TestValidateAcceptsCompactProviderAssets(t *testing.T) {
 	}
 }
 
+func TestParseRejectsNonCanonicalProviderAssetKeys(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"provider-logo",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"pa":{"Claude":"/themes/u/claude.cbi"},"a":"/themes/u/fallback.cbi"}
+		]
+	}`)
+	if _, _, err := Parse(raw); err == nil {
+		t.Fatal("expected noncanonical providerAssets key to fail Parse")
+	}
+}
+
+func TestValidateRejectsTooManyProviderAssets(t *testing.T) {
+	providerAssets := make(map[string]string, MaxProviderAssets+1)
+	for i := 0; i < MaxProviderAssets+1; i++ {
+		providerAssets[fmt.Sprintf("p%d", i)] = fmt.Sprintf("/themes/u/p%d.cbi", i)
+	}
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "provider-logo",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:           "sprite",
+				X:              0,
+				Y:              0,
+				Width:          24,
+				Height:         24,
+				ProviderAssets: providerAssets,
+				AssetPath:      "/themes/u/fallback.cbi",
+			},
+		},
+	}
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "firmware limit") {
+		t.Fatalf("expected providerAssets aggregate limit error, got %v", err)
+	}
+}
+
 func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
 	tests := []struct {
-		name            string
-		providerAssets  map[string]string
-		primitiveType   string
+		name           string
+		providerAssets map[string]string
+		primitiveType  string
+		assetPath      string
 	}{
 		{
 			name: "reserved idle key",
@@ -414,9 +456,16 @@ func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
 			},
 		},
 		{
-			name:           "gif primitive",
+			name: "gif primitive",
 			providerAssets: map[string]string{"codex": "/themes/u/codex.gif"},
 			primitiveType:  "gif",
+			assetPath:      "/themes/u/fallback.gif",
+		},
+		{
+			name: "noncanonical key",
+			providerAssets: map[string]string{
+				"Claude": "/themes/u/claude.cbi",
+			},
 		},
 	}
 
@@ -425,6 +474,10 @@ func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
 			primitiveType := tt.primitiveType
 			if primitiveType == "" {
 				primitiveType = "sprite"
+			}
+			assetPath := tt.assetPath
+			if assetPath == "" {
+				assetPath = "/themes/u/fallback.cbi"
 			}
 			spec := Spec{
 				ThemeSpecVersion: 1,
@@ -438,7 +491,7 @@ func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
 						Width:          24,
 						Height:         24,
 						ProviderAssets: tt.providerAssets,
-						AssetPath:      "/themes/u/fallback.cbi",
+						AssetPath:      assetPath,
 					},
 				},
 			}

@@ -44,6 +44,7 @@ describe("validateThemeSpec", () => {
       {
         assetPath: "/themes/u/main.cbi",
         height: 1,
+        providerAssets: { cursor: "/themes/u/cursor.cbi" },
         stateAssets: { coding: "/themes/u/coding.cbi" },
         type: "sprite",
         width: 1,
@@ -62,6 +63,7 @@ describe("validateThemeSpec", () => {
       "Test Screensaver",
       {
         "/themes/u/coding.cbi": asset,
+        "/themes/u/cursor.cbi": asset,
         "/themes/u/main.cbi": asset,
       },
       "screensaver",
@@ -79,8 +81,12 @@ describe("validateThemeSpec", () => {
     ]);
     expect(packedSpec.p[0].a).toMatch(/^\/themes\/s\/main-[0-9a-f]{8}\.cbi$/);
     expect(packedSpec.p[0]).not.toHaveProperty("sa");
+    expect(packedSpec.p[0]).not.toHaveProperty("pa");
     expect(spec.primitives[0].stateAssets).toEqual({
       coding: "/themes/u/coding.cbi",
+    });
+    expect(spec.primitives[0].providerAssets).toEqual({
+      cursor: "/themes/u/cursor.cbi",
     });
   });
 
