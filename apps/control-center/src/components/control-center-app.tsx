@@ -3576,12 +3576,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const deviceConnected = deviceIsCustomerConnected(device);
   const deviceReady = deviceIsReady(device);
   const themeSetupComplete = deviceCompletedThemeSetup(device);
+  const displaySetupComplete = setupDisplayIsConfigured(providerDisplay);
   const handleDisplayFrame = useCallback(
     (frame: DisplayFrameSnapshot) => {
       if (
         hasRenderableUsage(frame) &&
         providerSelectionSetup?.providerSelectionComplete === true &&
-        themeSetupComplete &&
+        displaySetupComplete &&
+        (themeSetupComplete || firmwareUpdateInProgress) &&
         (!setupThemeChoiceRequired || setupFinished)
       ) {
         setHasEnteredControlCenter(true);
@@ -3589,6 +3591,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [
       providerSelectionSetup?.providerSelectionComplete,
+      displaySetupComplete,
+      firmwareUpdateInProgress,
       setupFinished,
       setupThemeChoiceRequired,
       themeSetupComplete,
@@ -3597,7 +3601,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const hasActiveDevice = deviceIsActive(device);
   const displaySessionActive = Boolean(
     deviceConnected ||
-      (hasEnteredControlCenter && hasActiveDevice && device?.paired !== false),
+      ((hasEnteredControlCenter || firmwareUpdateInProgress) &&
+        hasActiveDevice &&
+        device?.paired !== false),
   );
   const displayFrame = useLatestDisplayFrame(
     displaySessionActive,
@@ -4001,7 +4007,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setupThemeInstallRequested;
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
-    displayConfigured: setupDisplayIsConfigured(providerDisplay),
+    displayConfigured: displaySetupComplete,
     displaySelectionSupported: setupDisplaySelectionSupported(
       providerDisplay,
       providerDisplayError,

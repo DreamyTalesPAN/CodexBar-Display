@@ -2792,7 +2792,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   // whatever the customer was doing. Its scrim swallows clicks, so the session
   // is only usable again once it is dismissed -- which it must be, rather than
   // trapping the customer behind it.
-  const recovery = page.getByRole("dialog");
+  const recovery = page.locator('[role="dialog"][data-state="open"]');
   await recovery.waitFor({ timeout: 45_000 });
   const recoveryTitle = (
     await recovery.getByRole("heading").first().innerText()
@@ -2808,7 +2808,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   // reachable while the dialog is still standing.
   await clickNavigation(page, "Usage");
   assert(
-    (await page.getByRole("dialog").count()) === 1,
+    (await page.locator('[role="dialog"][data-state="open"]').count()) === 1,
     "the recovery dialog must stay up while the customer keeps working",
   );
 
@@ -3274,17 +3274,33 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 15_000,
   });
-  // The pairing failure hands the screen back to the wizard's device step.
-  await waitForSetupDeviceStep(page, 20_000);
-  await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Not connected", { exact: true })
+    .first()
+    .waitFor({ timeout: 20_000 });
   assert(
     selectRequests.length === 0,
-    "A pairing failure after entering Control Center must wait for an explicit click",
+    "A pairing failure after entering Control Center must not reconnect automatically",
   );
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      1,
+    "A pairing failure after Overview must keep the Control Center open",
+  );
+  assert(
+    (await page.getByRole("heading", { name: SETUP_DEVICE_SCREEN }).count()) ===
+      0,
+    "A pairing failure after Overview must not reopen setup",
+  );
+
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForSetupDeviceStep(page, 20_000);
+  await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
   await waitForCondition(
     () => selectRequests.length === 1,
-    "Pairing recovery must remain reachable after entering Control Center",
+    "Pairing recovery must remain reachable through Run setup again",
   );
   await page.close();
 }
