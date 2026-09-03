@@ -10,10 +10,7 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import {
-  hasRenderableUsage,
-  type DisplayFrameSnapshot,
-} from "../live-vibetv-preview";
+import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
@@ -611,7 +608,8 @@ function SetupFinalStep({
   usage: UsageSnapshot | null;
 }) {
   const sawReadyDevice = useRef(false);
-  const sawRenderableFrame = useRef(false);
+  const [previewReady, setPreviewReady] = useState(false);
+  const markPreviewReady = useCallback(() => setPreviewReady(true), []);
   // Kept in a ref so a re-render cannot restart the timer and leave the
   // customer parked on this step forever.
   const finish = useRef(onFinished);
@@ -623,10 +621,9 @@ function SetupFinalStep({
 
   useEffect(() => {
     sawReadyDevice.current ||= live.device?.ready === true;
-    sawRenderableFrame.current ||= hasRenderableUsage(live.displayFrame);
     if (
       !sawReadyDevice.current ||
-      !sawRenderableFrame.current ||
+      !previewReady ||
       handoverTimer.current !== null
     ) {
       return;
@@ -635,7 +632,7 @@ function SetupFinalStep({
       handoverTimer.current = null;
       finish.current();
     }, HANDOVER_MS);
-  }, [live.device?.ready, live.displayFrame]);
+  }, [live.device?.ready, previewReady]);
 
   useEffect(() => {
     return () => {
@@ -645,5 +642,7 @@ function SetupFinalStep({
     };
   }, []);
 
-  return <SetupLiveScreen {...live} />;
+  return (
+    <SetupLiveScreen {...live} onPreviewReady={markPreviewReady} />
+  );
 }

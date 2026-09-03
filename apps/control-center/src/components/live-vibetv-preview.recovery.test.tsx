@@ -60,6 +60,39 @@ afterEach(() => {
 });
 
 describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
+  it("renders a real frame instead of a stale provider-setup placeholder", async () => {
+    const onPreviewReady = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(matchingPack)));
+
+    render(
+      createElement(LiveVibeTVPreview, {
+        device: {
+          ...connectedDevice,
+          target: "http://192.168.178.73",
+          ready: false,
+          health: { ok: true },
+          stream: {
+            healthy: false,
+            running: true,
+            target: "http://192.168.178.73",
+            errorCode: "provider_setup_required",
+          },
+        },
+        displayFrame: renderableFrame,
+        onPreviewReady,
+        usage: null,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("img", {
+        name: /Rendered VibeTV theme codex showing Codex/i,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Waiting for AI setup/i)).toBeNull();
+    expect(onPreviewReady).toHaveBeenCalled();
+  });
+
   it("keeps retrying the render pack while connected instead of staying on PREVIEW UNAVAILABLE", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn(async () => jsonResponse({}, false));

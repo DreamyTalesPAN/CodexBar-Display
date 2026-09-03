@@ -3981,13 +3981,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallStatus.result?.themeId === selectedThemeId
         )),
   });
+  const setupLiveHandoverActive =
+    providerSetupCompletedThisSession ||
+    setupThemeInstallRequested;
   const setupOwnsScreen =
     !(setupThemeChoiceRequired && !deviceConnected) &&
     (setupStep !== "live" ||
       !(
         setupFinished ||
-        setupComplete ||
-        (hasEnteredControlCenter && !providerSetupCompletedThisSession)
+        (!setupLiveHandoverActive &&
+          (setupComplete || hasEnteredControlCenter))
       ));
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);

@@ -4202,7 +4202,16 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     `Theme setup must not retry on its own, got ${installRequests.length} install requests`,
   );
 
+  const renderedFinalPreview = setupScreen(page, SETUP_LIVE_SCREEN)
+    .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
+    .waitFor({ timeout: 20_000 });
   await installButton.click();
+  await renderedFinalPreview;
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Theme setup must show the real preview on its final screen before Overview",
+  );
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 20_000,
   });

@@ -19,7 +19,11 @@ import type { ProviderItem } from "../provider-picker";
 import { deriveSetupStep, setupDeviceIsUsable } from "./setup-step";
 import { SetupWizard, type SetupWizardProps } from "./setup-wizard";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 // jsdom has no matchMedia; the display step asks it about reduced motion.
 window.matchMedia = ((query: string) => ({
@@ -284,14 +288,46 @@ describe("SetupWizard: initial provider scan", () => {
 });
 
 describe("SetupWizard: live handover", () => {
-  it("keeps setup visible until a fresh preview is actually ready", () => {
+  it("keeps setup visible until the fresh preview is actually rendered", async () => {
     vi.useFakeTimers();
     const onFinished = vi.fn();
+    const themeSpecPath = "/themes/u/claude--6-546f9e.json";
+    const themeSpecHash = "546f9e84";
+    let resolvePack!: () => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePack = () =>
+              resolve({
+                ok: true,
+                status: 200,
+                json: async () => ({
+                  assets: {},
+                  spec: { p: [] },
+                  specHash: themeSpecHash,
+                  specPath: themeSpecPath,
+                  themeId: "claude-creature",
+                }),
+              } as Response);
+          }),
+      ),
+    );
     const waitingDevice = {
       active: true,
+      activeTheme: "claude-creature",
       connected: true,
       paired: true,
       ready: false,
+      display: {
+        themeSpec: {
+          active: true,
+          hash: themeSpecHash,
+          path: themeSpecPath,
+          renderOk: true,
+        },
+      },
     } as SetupWizardProps["device"];
     const readyDevice = { ...waitingDevice, ready: true };
     const invalidFrame = {
@@ -341,29 +377,57 @@ describe("SetupWizard: live handover", () => {
         displayFrame={frame}
       />,
     );
-    act(() => vi.advanceTimersByTime(1_000));
-    rerender(
-      <SetupWizard
-        {...props}
-        device={readyDevice}
-        displayFrame={{ ...frame, savedAt: "2026-09-02T13:42:00Z" }}
-      />,
-    );
-    act(() => vi.advanceTimersByTime(1_499));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolvePack();
+      await Promise.resolve();
+    });
+    expect(
+      screen.getByRole("img", {
+        name: /Rendered VibeTV theme claude-creature showing Claude/i,
+      }),
+    ).toBeTruthy();
+    act(() => vi.advanceTimersByTime(2_499));
     expect(onFinished).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(onFinished).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
   });
 
-  it("finishes a handover that already saw a real preview", () => {
+  it("finishes a handover that already rendered a real preview", async () => {
     vi.useFakeTimers();
     const onFinished = vi.fn();
+    const themeSpecPath = "/themes/u/claude--6-546f9e.json";
+    const themeSpecHash = "546f9e84";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          assets: {},
+          spec: { p: [] },
+          specHash: themeSpecHash,
+          specPath: themeSpecPath,
+          themeId: "claude-creature",
+        }),
+      } as Response)),
+    );
     const readyDevice = {
       active: true,
+      activeTheme: "claude-creature",
       connected: true,
       paired: true,
       ready: true,
+      display: {
+        themeSpec: {
+          active: true,
+          hash: themeSpecHash,
+          path: themeSpecPath,
+          renderOk: true,
+        },
+      },
     } as SetupWizardProps["device"];
     const frame = {
       ok: true,
@@ -382,6 +446,9 @@ describe("SetupWizard: live handover", () => {
     });
     const { rerender } = render(<SetupWizard {...props} />);
 
+    await act(async () => {
+      await Promise.resolve();
+    });
     act(() => vi.advanceTimersByTime(1_000));
     rerender(
       <SetupWizard

@@ -3166,3 +3166,22 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-theme-screen.tsx`, `setup/setup-live-screen.tsx`, their
   regression tests, `apps/control-center/scripts/test-customer-flows.mjs`, and
   this approval record.
+
+## 2026-09-02 — The final live screen shows the real preview
+
+- User approval: The product owner reported that Overview showed the correct
+  live preview while the preceding `Your VibeTV is live` screen still showed
+  `WAITING FOR AI SETUP…`, and explicitly required the missing final preview
+  to be shown there as well (2026-09-02).
+- Approved customer-visible result: **A real display frame takes precedence
+  over a briefly stale provider-setup error on the final screen. `Your VibeTV
+  is live` remains visible until the selected theme has actually rendered that
+  real frame inside the VibeTV image; only then does the short automatic
+  handover to Overview begin.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `live-vibetv-preview.tsx`,
+  `live-vibetv-preview.recovery.test.tsx`,
+  `setup/setup-live-screen.tsx`, `setup/setup-wizard.tsx`,
+  `setup/setup-wizard.test.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
