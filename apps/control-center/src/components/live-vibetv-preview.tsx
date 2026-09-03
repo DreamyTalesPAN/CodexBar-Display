@@ -21,7 +21,7 @@ import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
-  onPreviewReady?: () => void;
+  onPreviewReadyChange?: (ready: boolean) => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -327,7 +327,7 @@ export async function parseLatestDisplayFrameResponse(
 export function LiveVibeTVPreview({
   device,
   displayFrame,
-  onPreviewReady,
+  onPreviewReadyChange,
   updateOwnedDisconnect = false,
   usage,
 }: LiveVibeTVPreviewProps) {
@@ -458,10 +458,8 @@ export function LiveVibeTVPreview({
 
   const previewReady = Boolean(deviceConnected && pack?.spec && frame);
   useEffect(() => {
-    if (previewReady) {
-      onPreviewReady?.();
-    }
-  }, [onPreviewReady, previewReady]);
+    onPreviewReadyChange?.(previewReady);
+  }, [onPreviewReadyChange, previewReady]);
 
   return (
     <figure className="w-full max-w-[520px]">

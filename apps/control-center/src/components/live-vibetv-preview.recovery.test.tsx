@@ -61,7 +61,7 @@ afterEach(() => {
 
 describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
   it("renders a real frame instead of a stale provider-setup placeholder", async () => {
-    const onPreviewReady = vi.fn();
+    const onPreviewReadyChange = vi.fn();
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(matchingPack)));
 
     render(
@@ -79,7 +79,7 @@ describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
           },
         },
         displayFrame: renderableFrame,
-        onPreviewReady,
+        onPreviewReadyChange,
         usage: null,
       }),
     );
@@ -90,7 +90,7 @@ describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
       }),
     ).toBeTruthy();
     expect(screen.queryByText(/Waiting for AI setup/i)).toBeNull();
-    expect(onPreviewReady).toHaveBeenCalled();
+    expect(onPreviewReadyChange).toHaveBeenCalledWith(true);
   });
 
   it("keeps retrying the render pack while connected instead of staying on PREVIEW UNAVAILABLE", async () => {

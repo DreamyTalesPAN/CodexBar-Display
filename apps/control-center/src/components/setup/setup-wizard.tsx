@@ -593,7 +593,7 @@ export function SetupWizard(props: SetupWizardProps) {
   );
 }
 
-const HANDOVER_MS = 2500;
+const PREVIEW_STABILITY_MS = 2500;
 
 /** Shows VibeTV running, then hands the screen back to the app on its own. */
 function SetupFinalStep({
@@ -607,42 +607,29 @@ function SetupFinalStep({
   onFinished: () => void;
   usage: UsageSnapshot | null;
 }) {
-  const sawReadyDevice = useRef(false);
   const [previewReady, setPreviewReady] = useState(false);
-  const markPreviewReady = useCallback(() => setPreviewReady(true), []);
   // Kept in a ref so a re-render cannot restart the timer and leave the
   // customer parked on this step forever.
   const finish = useRef(onFinished);
-  const handoverTimer = useRef<number | null>(null);
 
   useEffect(() => {
     finish.current = onFinished;
   }, [onFinished]);
 
   useEffect(() => {
-    sawReadyDevice.current ||= live.device?.ready === true;
-    if (
-      !sawReadyDevice.current ||
-      !previewReady ||
-      handoverTimer.current !== null
-    ) {
+    if (!previewReady) {
       return;
     }
-    handoverTimer.current = window.setTimeout(() => {
-      handoverTimer.current = null;
+    // There is deliberately no maximum wait. A preview that disappears during
+    // this stability window cancels the handover, so Overview can never replace
+    // the exact screen that is showing "Live preview paused".
+    const timer = window.setTimeout(() => {
       finish.current();
-    }, HANDOVER_MS);
-  }, [live.device?.ready, previewReady]);
-
-  useEffect(() => {
-    return () => {
-      if (handoverTimer.current !== null) {
-        window.clearTimeout(handoverTimer.current);
-      }
-    };
-  }, []);
+    }, PREVIEW_STABILITY_MS);
+    return () => window.clearTimeout(timer);
+  }, [previewReady]);
 
   return (
-    <SetupLiveScreen {...live} onPreviewReady={markPreviewReady} />
+    <SetupLiveScreen {...live} onPreviewReadyChange={setPreviewReady} />
   );
 }

@@ -16,7 +16,7 @@ type SetupLiveScreenProps = {
   displayFrame: DisplayFrameSnapshot | null;
   aiFixPrompt?: () => string;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
-  onPreviewReady?: () => void;
+  onPreviewReadyChange?: (ready: boolean) => void;
   usage: UsageSnapshot | null;
 };
 
@@ -29,7 +29,7 @@ export function SetupLiveScreen({
   displayFrame,
   aiFixPrompt,
   onCreateSupportReport,
-  onPreviewReady,
+  onPreviewReadyChange,
   usage,
 }: SetupLiveScreenProps) {
   return (
@@ -42,7 +42,7 @@ export function SetupLiveScreen({
       <LiveVibeTVPreview
         device={device}
         displayFrame={displayFrame}
-        onPreviewReady={onPreviewReady}
+        onPreviewReadyChange={onPreviewReadyChange}
         usage={usage}
       />
     </SetupWizardScreen>

@@ -352,7 +352,7 @@ describe("SetupWizard: live handover", () => {
     });
     const { rerender } = render(<SetupWizard {...props} />);
 
-    act(() => vi.advanceTimersByTime(10_000));
+    act(() => vi.advanceTimersByTime(300_000));
     expect(onFinished).not.toHaveBeenCalled();
     expect(shownStep()).toBe("Your VibeTV is live");
 
@@ -395,7 +395,7 @@ describe("SetupWizard: live handover", () => {
     expect(onFinished).toHaveBeenCalledTimes(1);
   });
 
-  it("finishes a handover that already rendered a real preview", async () => {
+  it("cancels the handover when the rendered preview disappears", async () => {
     vi.useFakeTimers();
     const onFinished = vi.fn();
     const themeSpecPath = "/themes/u/claude--6-546f9e.json";
@@ -457,7 +457,13 @@ describe("SetupWizard: live handover", () => {
         displayFrame={null}
       />,
     );
-    act(() => vi.advanceTimersByTime(1_500));
+    act(() => vi.advanceTimersByTime(300_000));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    rerender(<SetupWizard {...props} />);
+    act(() => vi.advanceTimersByTime(2_499));
+    expect(onFinished).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
 
     expect(onFinished).toHaveBeenCalledTimes(1);
   });
