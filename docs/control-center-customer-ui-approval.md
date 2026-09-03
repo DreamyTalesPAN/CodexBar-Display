@@ -3211,14 +3211,28 @@ issue scope, or release permission never implies UI permission.
 - User approval: The product owner reported that setup briefly returned from
   Display Mode to Choose AI providers and then moved forward again. They asked
   for the complete flow to be reviewed against the repository's simplicity
-  rules and explicitly approved implementing the simplified result with
-  `ja dann mach` (2026-09-03).
+  rules, required the rehearsal to use a true new-customer Mac state, and
+  explicitly approved implementing the simplified result with `ja dann mach`
+  (2026-09-03).
 - Approved customer-visible result: **After a successful provider Continue,
   setup stays on Display Mode even if an older status request finishes late.
-  A newly connected VibeTV always requires the explicit theme choice before
-  the final live handover, and that handover still waits for a real renderable
-  preview before Overview opens.**
+  A Mac whose first provider setup is still open must make the explicit theme
+  choice before the final live handover; an already completed healthy setup
+  may return directly to Overview. The live handover still waits for a real
+  renderable preview before Overview opens.**
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/src/components/setup/setup-wizard.test.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-03 — Completed setups keep their direct Overview path
+
+- User approval: During the same approved setup-flow review, the product owner
+  required the solution to remain as simple as possible and told us to proceed
+  with the corrected complete flow (2026-09-03).
+- Approved customer-visible result: **Only a genuinely unfinished first-time
+  provider setup adds the explicit theme choice after connecting. A healthy Mac
+  whose provider setup was already completed continues directly to Overview.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
