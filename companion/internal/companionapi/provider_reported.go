@@ -19,13 +19,13 @@ import (
 var (
 	reportedHomePath = regexp.MustCompile(`(?i)/Users/[^/\s)]+`)
 	// A credential-shaped key and its value: `Cookie: ...`, `sessionKey=...`,
-	// `"access_token": "..."`, `?token=...&session=...`. Anchored at a line
-	// start or a separator -- a query string's `?` and `&` among them -- so a
+	// `"access_token": "..."`, `?token=...&session=...`, `#token=...`. Anchored
+	// at a line start or a separator -- a URL's `?`, `&` and `#` among them -- so a
 	// host inside a URL (`https://auth.example.com:8443/login`) is not read as
 	// a key, and the value may carry an auth scheme word so `Authorization:
-	// Bearer x` collapses to one marker instead of two. A value ends at `&`,
-	// so the next query pair is judged on its own.
-	reportedCredentialPair = regexp.MustCompile(`(?im)((?:^|[\s,{(\[?&])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer)[A-Za-z0-9._-]*["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&)\]}"']*[^\s,;&)\]}"'.])`)
+	// Bearer x` collapses to one marker instead of two. A value ends at `&` or
+	// `#`, so the next pair is judged on its own.
+	reportedCredentialPair = regexp.MustCompile(`(?im)((?:^|[\s,{(\[?&#])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer)[A-Za-z0-9._-]*["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&#)\]}"']*[^\s,;&#)\]}"'.])`)
 	// One prose family is evidenced in the pinned engine and must survive:
 	// "Safari cookies: permission denied for ...", "Chrome cookies: missing
 	// auth cookie", "Firefox cookies: missing ory_session_* cookie". Without

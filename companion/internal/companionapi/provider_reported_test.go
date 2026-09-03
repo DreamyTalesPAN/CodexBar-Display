@@ -141,6 +141,11 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			in:   "Callback rejected: https://host/callback?token=abcdefgh&session=hunter&next=home",
 			want: "Callback rejected: https://host/callback?token=[redacted]&session=[redacted]&next=home",
 		},
+		{
+			name: "a credential pair in a URL fragment",
+			in:   "Callback rejected: https://host/callback?next=home#token=hunter",
+			want: "Callback rejected: https://host/callback?next=home#token=[redacted]",
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
