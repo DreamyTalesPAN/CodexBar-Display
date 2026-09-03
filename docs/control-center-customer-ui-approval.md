@@ -3261,3 +3261,17 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-wizard.tsx`, their regression tests,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-03 — Reloads preserve completed setup
+
+- User approval: The product owner explicitly required that once Overview was
+  reached, installing themes or screensavers must never return to the wizard,
+  and clarified that only `Run setup again` may reopen setup (2026-09-03).
+- Approved customer-visible result: **After Overview has opened, a reload,
+  pairing loss, theme or screensaver install, and a VibeTV restart during an
+  already-running firmware update keep the Control Center shell open. A first
+  setup still waits for provider choice, display choice, a completed theme,
+  and a real preview before Overview opens.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
