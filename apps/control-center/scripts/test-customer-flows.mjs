@@ -525,7 +525,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testLocalReachableWithoutFrameWaitsForUsage(
+      await testLocalReachableWithoutFrameOpensOverviewWithoutUsage(
         browser,
         appContext.appUrl,
       );
@@ -566,6 +566,14 @@ async function main() {
         appContext.appUrl,
       );
       await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
+        browser,
+        appContext.appUrl,
+      );
+      await testConnectedNotReadyDeviceKeepsControlCenterOpen(
+        browser,
+        appContext.appUrl,
+      );
+      await testFirstSetupStillWaitsForARenderedPreview(
         browser,
         appContext.appUrl,
       );
@@ -721,7 +729,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameWaitsForUsage(
+    await testLocalReachableWithoutFrameOpensOverviewWithoutUsage(
       browser,
       appContext.appUrl,
     );
@@ -770,6 +778,14 @@ async function main() {
       appContext.appUrl,
     );
     await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
+      browser,
+      appContext.appUrl,
+    );
+    await testConnectedNotReadyDeviceKeepsControlCenterOpen(
+      browser,
+      appContext.appUrl,
+    );
+    await testFirstSetupStillWaitsForARenderedPreview(
       browser,
       appContext.appUrl,
     );
@@ -2279,17 +2295,21 @@ async function testTransientFirstFrameStaysCustomerFriendly(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  // A completed setup opens Overview while the VibeTV is still coming up; the
+  // reconnect detail is for the support report, not the screen.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 20_000 });
   await page.waitForTimeout(1_500);
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "A connected VibeTV must stay in setup until the first usage frame",
-  );
   assert(
     (await page.getByText(technicalStreamDetail, { exact: true }).count()) ===
       0,
-    "Setup must keep reconnect details in the support report",
+    "Overview must keep reconnect details in the support report",
+  );
+  assert(
+    (await page.getByRole("img", { name: /Rendered VibeTV theme/ }).count()) ===
+      0,
+    "No rendered theme should be shown while first usage is pending",
   );
 
   await assertNoMobileOverflow(page);
@@ -3592,7 +3612,7 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
+async function testLocalReachableWithoutFrameOpensOverviewWithoutUsage(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -3608,12 +3628,17 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  // A completed setup is remembered: the shell opens while the VibeTV is still
+  // coming up, and the tabs are not locked again. What it must not do is
+  // pretend to have usage, or repair a VibeTV that is merely not ready yet.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 20_000 });
   await page.waitForTimeout(1_500);
   assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+    (await page.getByRole("img", { name: /Rendered VibeTV theme/ }).count()) ===
       0,
-    "A reachable and paired VibeTV should stay in setup while first usage is pending",
+    "No rendered theme should be shown while first usage is pending",
   );
   assert(
     (await page.getByRole("button", { name: "Setup", exact: true }).count()) ===
@@ -4738,6 +4763,85 @@ async function testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
   await setupNotFoundDialog(page)
     .getByRole("button", { name: "Enter IP manually" })
     .waitFor();
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// A finished setup is finished on the next launch too. Entering the Control
+// Center used to need a rendered usage frame, which a VibeTV that is connected
+// but not yet drawing has not sent -- so quitting the app and starting it again
+// while the VibeTV was still coming up put a customer who was on Overview
+// yesterday onto "looking for your VibeTV", with every tab locked, in front of a
+// VibeTV that was connected the whole time. Only Run setup again reopens setup.
+async function testConnectedNotReadyDeviceKeepsControlCenterOpen(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "known-device-1",
+      ready: false,
+      display: { themeSpec: { active: true, renderOk: true } },
+    },
+    displayFrameResponse: { ok: false },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 20_000 });
+  assert(
+    (await page.getByRole("main", { name: "Welcome" }).count()) === 0 &&
+      (await page.getByRole("heading", { name: SETUP_DEVICE_SCREEN }).count()) ===
+        0,
+    "A completed setup must not reopen the wizard while the VibeTV is still coming up",
+  );
+
+  // The tabs stay unlocked, so the sanctioned way back into setup is reachable
+  // instead of the customer being held in onboarding.
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Run setup again" }).waitFor({
+    timeout: 10_000,
+  });
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// The other half of the same rule: a Mac that has NOT been through setup still
+// gets the wizard, and still has to see the VibeTV draw before Overview.
+async function testFirstSetupStillWaitsForARenderedPreview(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "unset-up-device",
+      ready: false,
+      display: { themeSpec: { active: true, renderOk: true } },
+    },
+    displayFrameResponse: { ok: false },
+    providerSelectionSetup: {
+      providerSelectionRequired: true,
+      providerSelectionComplete: false,
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("main", { name: SETUP_PROVIDERS_SCREEN }).waitFor({
+    timeout: 20_000,
+  });
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A Mac that never finished setup must still be held by the wizard",
+  );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -8090,13 +8194,11 @@ async function testOverviewWaitsForRealUsage(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  // The wizard's closing step owns the screen until a real frame arrives.
-  await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({ timeout: 10_000 });
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "Overview must not render before a real display frame exists",
-  );
+  // A completed setup is remembered, so Overview opens at once -- and it must
+  // not pretend to have usage: nothing is rendered until a real frame arrives.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
   assert(
     (await page
       .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
@@ -8150,21 +8252,18 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({ timeout: 10_000 });
-  // The handover delay used to open Overview after 2.5 seconds even though
-  // this label-only frame cannot render. Wait past it so the customer-flow
-  // test proves the closing step stays put, rather than sampling too early.
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
+  // The handover delay used to render after 2.5 seconds even though this
+  // label-only frame cannot render. Wait past it so the customer-flow test
+  // proves the frame stays rejected, rather than sampling too early.
   await page.waitForTimeout(3_000);
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "A label-only display frame must not open Overview",
-  );
   assert(
     (await page
       .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
       .count()) === 0,
-    "Setup must reject a 200 display frame without a protocol version",
+    "Overview must reject a 200 display frame without a protocol version",
   );
 
   assertNoInstallRequests(installRequests);

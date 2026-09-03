@@ -1,6 +1,12 @@
 package companionapi
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+)
 
 func TestReportedProviderMessageKeepsUsefulGuidance(t *testing.T) {
 	for _, tc := range []struct{ name, in, want string }{
@@ -19,6 +25,38 @@ func TestReportedProviderMessageKeepsUsefulGuidance(t *testing.T) {
 			in:   "No Amp session cookie found. Please log in to ampcode.com in your browser.",
 			want: "No Amp session cookie found. Please log in to ampcode.com in your browser.",
 		},
+		{
+			name: "a signed-in URL whose own host carries an auth word is not read as a credential",
+			in:   "Sign in at https://auth.example.com:8443/login then retry.",
+			want: "Sign in at https://auth.example.com:8443/login then retry.",
+		},
+		{
+			name: "environment variable names the customer has to set survive",
+			in:   "AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY or configure Bedrock in Settings.",
+			want: "AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY or configure Bedrock in Settings.",
+		},
+		{
+			name: "a named OAuth scope survives",
+			in:   "Claude OAuth token missing 'user:profile' scope.",
+			want: "Claude OAuth token missing 'user:profile' scope.",
+		},
+		{
+			// The Full Disk Access family the provider row exists to explain.
+			// A word is prose, not a credential value.
+			name: "the word after a cookie prefix is what went wrong, not a secret",
+			in:   "Chrome cookies: missing auth cookie",
+			want: "Chrome cookies: missing auth cookie",
+		},
+		{
+			name: "a denied permission keeps its reason and loses the account name",
+			in:   "Safari cookies: permission denied for /Users/paulanduschus/Library/Cookies/Cookies.binarycookies",
+			want: "Safari cookies: permission denied for ~/Library/Cookies/Cookies.binarycookies",
+		},
+		{
+			name: "a named cookie the customer has to look for survives",
+			in:   "Firefox cookies: missing ory_session_* cookie",
+			want: "Firefox cookies: missing ory_session_* cookie",
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
@@ -26,21 +64,72 @@ func TestReportedProviderMessageKeepsUsefulGuidance(t *testing.T) {
 	}
 }
 
-func TestReportedProviderMessageRedactsOnlyTheHomePath(t *testing.T) {
+func TestReportedProviderMessageRedactsTheHomePath(t *testing.T) {
 	input := "Windsurf database not found at /Users/paulanduschus/Library/Application Support/Windsurf/User/globalStorage/state.vscdb."
 	want := "Windsurf database not found at ~/Library/Application Support/Windsurf/User/globalStorage/state.vscdb."
 	if got := reportedProviderMessage(input); got != want {
 		t.Fatalf("home path redaction:\n got %q\nwant %q", got, want)
 	}
+}
 
-	for _, message := range []string{
-		"Signed in as hallo@dreamytales.de but the session expired.",
-		"Rejected cookie WorkosCursorSessionToken=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9abcdef.",
-		"Not logged in to Cursor. Please log in via the CodexBar menu.",
-		"No available fetch strategy for copilot.",
+// CodexBar 0.46.0 interpolates the account address and whole HTTP bodies into
+// the sentences this field carries -- "OpenAI dashboard signed in as ",
+// "Antigravity local session is signed in as ", "Unexpected response body (".
+// The provider row publishes that text and offers it as a Copy button, so a
+// session token or an e-mail address reaching a screen is the leak this guards.
+func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{
+			name: "an account address",
+			in:   "Signed in as hallo@dreamytales.de but the session expired.",
+			want: "Signed in as [redacted] but the session expired.",
+		},
+		{
+			name: "a named session token keeps its name and loses its value",
+			in:   "Rejected cookie WorkosCursorSessionToken=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9abcdef.",
+			want: "Rejected cookie WorkosCursorSessionToken=[redacted].",
+		},
+		{
+			name: "an API key inside an echoed response body",
+			in:   `Unexpected response body ({"access_token":"sk-proj-A1b2C3d4E5f6G7h8J9k0L1m2N3o4P5q6"})`,
+			want: `Unexpected response body ({"access_token":[redacted]})`,
+		},
+		{
+			name: "a cookie header",
+			in:   "Set-Cookie: sessionid=abc123def456ghi789jkl012mno345; Path=/",
+			want: "Set-Cookie: [redacted]; Path=/",
+		},
+		{
+			name: "an authorization header collapses to one marker",
+			in:   "Request failed. Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N",
+			want: "Request failed. Authorization: [redacted]",
+		},
+		{
+			name: "a bare token with no key beside it",
+			in:   "GitHub token ghp_16C7e42F292c6912E7710c838347Ae178B4a is invalid.",
+			want: "GitHub token [redacted] is invalid.",
+		},
 	} {
-		if got := reportedProviderMessage(message); got != message {
-			t.Fatalf("CodexBar's sentence was rewritten:\n got %q\nwant %q", got, message)
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The redaction only has to exist in one place because the raw field never
+// reaches the wire on its own: /v1/status, the provider retry response and the
+// diagnostics all marshal the same struct.
+func TestProviderReadinessNeverMarshalsItsReportedText(t *testing.T) {
+	raw, err := json.Marshal(codexbar.ProviderReadiness{
+		ID:       "cursor",
+		Reported: "token=sk-ant-secret123456789",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"reported", "sk-ant-secret123456789"} {
+		if bytes.Contains(raw, []byte(forbidden)) {
+			t.Fatalf("provider readiness published %q: %s", forbidden, raw)
 		}
 	}
 }

@@ -8,6 +8,7 @@ import {
   setupDisplaySelectionSupported,
   setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
+  setupWasCompletedBefore,
   type SetupStepInput,
 } from "./setup-step";
 
@@ -336,7 +337,7 @@ describe("setupDisplaySelectionSupported", () => {
 // and the Back override held them there, with undoing the switch they had just
 // pressed as the only way on.
 describe("setupStepForProviderRefusal", () => {
-  it("names the display step for both display refusals", () => {
+  it("names the display step for every display refusal", () => {
     // The selection names a provider that was switched off.
     expect(setupStepForProviderRefusal("provider_display_invalid")).toBe(
       "display",
@@ -347,6 +348,14 @@ describe("setupStepForProviderRefusal", () => {
     expect(setupStepForProviderRefusal("provider_display_incomplete")).toBe(
       "display",
     );
+    // The provider on display can no longer produce a reading while another one
+    // can. Signing it back in is on the provider screen, but showing a
+    // different one is not -- and nothing else would put that choice back in
+    // front of the customer, because a configured selection stays valid however
+    // the provider is doing.
+    expect(setupStepForProviderRefusal("provider_display_not_ready")).toBe(
+      "display",
+    );
   });
 
   it("keeps everything the provider step can act on", () => {
@@ -354,5 +363,76 @@ describe("setupStepForProviderRefusal", () => {
     expect(setupStepForProviderRefusal("provider_check_required")).toBe(null);
     expect(setupStepForProviderRefusal("COMPANION_TIMEOUT")).toBe(null);
     expect(setupStepForProviderRefusal(undefined)).toBe(null);
+  });
+});
+
+// Entering the Control Center is otherwise proved by the first rendered frame.
+// A VibeTV that is off, or reachable but not yet drawing, never sends one, and
+// the wizard took the window back from a customer whose setup was long finished.
+describe("setupWasCompletedBefore", () => {
+  const returning = {
+    hasActiveDevice: true,
+    connectionRecoveryRequired: false,
+    providerSelectionComplete: true,
+    displayConfigured: true,
+    providerSetupCompletedThisSession: false,
+    themeSetupRequired: false,
+  };
+
+  it("recognises a customer coming back to an unreachable VibeTV", () => {
+    expect(setupWasCompletedBefore(returning)).toBe(true);
+  });
+
+  it("still holds a first setup at the step it is on", () => {
+    // Continue on the provider step has just succeeded, so the companion
+    // already reports the selection complete. The display, theme and closing
+    // steps are still ahead, and the frame requirement still owns them.
+    expect(
+      setupWasCompletedBefore({
+        ...returning,
+        providerSetupCompletedThisSession: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the display step for a selection that no longer stands", () => {
+    expect(
+      setupWasCompletedBefore({ ...returning, displayConfigured: false }),
+    ).toBe(false);
+  });
+
+  it("keeps the theme step for a VibeTV that can still be asked", () => {
+    // themeSetupRequired, never themeSetupComplete: the completed state needs a
+    // connected device, so it is false exactly in the offline case this exists
+    // for, while this one is false when there is nothing to ask.
+    expect(
+      setupWasCompletedBefore({ ...returning, themeSetupRequired: true }),
+    ).toBe(false);
+  });
+
+  it("keeps the device step for a Mac with no VibeTV of its own", () => {
+    // A provider choice made for a VibeTV this Mac no longer has must not carry
+    // anyone past picking one -- including a customer choosing between two that
+    // the startup search has just found.
+    expect(
+      setupWasCompletedBefore({ ...returning, hasActiveDevice: false }),
+    ).toBe(false);
+  });
+
+  it("keeps the device step for a VibeTV that needs its Connect pressed", () => {
+    // A lost pairing is fixed on the device step, the one screen with Connect
+    // on it -- the same line setupDeviceIsUsable draws for someone inside.
+    expect(
+      setupWasCompletedBefore({ ...returning, connectionRecoveryRequired: true }),
+    ).toBe(false);
+  });
+
+  it("does not admit a Mac that never chose a provider", () => {
+    expect(
+      setupWasCompletedBefore({
+        ...returning,
+        providerSelectionComplete: false,
+      }),
+    ).toBe(false);
   });
 });

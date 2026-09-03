@@ -287,6 +287,94 @@ func TestProviderSetupCompletionKeepsAFixedChoiceBesideOtherProviders(t *testing
 	}
 }
 
+// Fixed mode pins without fallback (daemon.go applyProviderDisplaySelection,
+// pinned by TestApplyProviderDisplaySelectionKeepsFixedProviderWithoutFallback).
+// Counting any healthy provider therefore finished setup on the strength of one
+// VibeTV had been told never to show, and carried the customer to the live step
+// in front of a device that can draw nothing.
+func TestProviderSetupCompletionRefusesAFixedChoiceThatCannotShowAnything(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"claude"},
+	}})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		}, nil
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusConflict ||
+		!bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_display_not_ready"`)) {
+		t.Fatalf("a working provider finished setup for a pinned broken one: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProviderSelectionSetupIsComplete() {
+		t.Fatal("a refused completion still recorded setup as complete")
+	}
+}
+
+// The same broken provider must not be routed to the display step when nothing
+// else could be shown instead: that step would have nothing to offer, and
+// signing the provider back in is what the provider step is for.
+func TestOnlyProviderBrokenStaysOnTheProviderStep(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"claude"},
+	}})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		}, nil
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusConflict ||
+		!bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_check_required"`)) {
+		t.Fatalf("a broken only provider was sent to the display step: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+// Automatic rotates and skips what it cannot read, so a second provider that is
+// merely signed out must still not trap the customer. The pool is every enabled
+// provider by construction, so the shown set and the enabled set are equal and
+// the fixed-mode refusal above can never fire here.
+func TestAutomaticStillCompletesWithOneWorkingProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeAutomatic,
+		ProviderIDs: []string{"codex", "claude"},
+	}})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		}, nil
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("a signed-out second provider refused an Automatic setup: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 // The switch on a provider row always works. Refusing the write was the one
 // case where health decided whether a provider may be turned off at all, which
 // is what docs/control-center-ui-principles.md rule 3 forbids: a provider that
