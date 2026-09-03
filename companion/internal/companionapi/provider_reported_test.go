@@ -136,6 +136,11 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			in:   "Stored session: hunter expired.",
 			want: "Stored session: [redacted] expired.",
 		},
+		{
+			name: "credential pairs inside a query string",
+			in:   "Callback rejected: https://host/callback?token=abcdefgh&session=hunter&next=home",
+			want: "Callback rejected: https://host/callback?token=[redacted]&session=[redacted]&next=home",
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
