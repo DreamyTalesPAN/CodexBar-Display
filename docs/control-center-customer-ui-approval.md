@@ -3236,3 +3236,28 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-03 — Setup only returns by explicit customer choice
+
+- User approval: The product owner reported that installing a theme or
+  screensaver after reaching Overview reopened the setup wizard, explicitly
+  required that this must never happen after Overview was reached once, and
+  clarified that `Run setup again` is the deliberate exception. They also
+  explicitly required `Ask AI to fix` to restore the local setup first and
+  never clone a repository or create a pull request without a later customer
+  decision (2026-09-03). During the same review they instructed us to resolve
+  the remaining real Bug Detector findings before another candidate test.
+- Approved customer-visible result: **The first completed setup waits for a
+  real preview and then opens Overview. From that point on, theme installs,
+  screensaver installs, provider refreshes, and temporary reconnects keep the
+  Control Center open; only the explicit `Run setup again` action may return
+  to the wizard. Automatic display keeps every enabled provider, and Manual
+  display chooses a provider that can currently render. `Ask AI to fix` tells
+  the agent to repair and verify this Mac first, then inspect the source and
+  ask before any pull request; it never instructs the agent to clone, commit,
+  push, or open a pull request.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `settings-screen.tsx`, `setup/setup-ai-prompt.ts`, `setup/setup-step.ts`,
+  `setup/setup-wizard.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.

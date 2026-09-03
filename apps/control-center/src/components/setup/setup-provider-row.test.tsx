@@ -57,10 +57,10 @@ describe("SetupProviderRow", () => {
 
       expect(html).toContain("This provider needs an active sign-in.");
       expect(html).toContain('aria-label="Check Claude Code again"');
-      expect(html).toContain('aria-label="Open CodexBar"');
+      expect(html).not.toContain('aria-label="Open CodexBar"');
       expect(html).not.toContain("Copy provider message");
-      expect(html).toContain("lucide-external-link");
-      expect(html.match(/data-slot="button"/g)).toHaveLength(2);
+      expect(html).not.toContain("lucide-external-link");
+      expect(html.match(/data-slot="button"/g)).toHaveLength(1);
     }
   });
 
@@ -80,10 +80,10 @@ describe("SetupProviderRow", () => {
       'aria-label="Copy provider message for Claude Code"',
     );
     expect(html).toContain('aria-label="Check Claude Code again"');
-    expect(html).toContain('aria-label="Open CodexBar"');
+    expect(html).not.toContain('aria-label="Open CodexBar"');
     expect(html).not.toContain('aria-label="Sign in to Claude Code"');
-    expect(html).toContain("lucide-external-link");
-    expect(html.match(/data-slot="button"/g)).toHaveLength(3);
+    expect(html).not.toContain("lucide-external-link");
+    expect(html.match(/data-slot="button"/g)).toHaveLength(2);
   });
 
   it("hands a missing permission to CodexBar without sniffing its text", () => {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   FINISH_CODEXBAR_RECOVERY_URL,
-  OPEN_CODEXBAR_URL,
   isNativeControlCenterUserAgent,
   localThemeRenderPackUrl,
   REPAIR_CODEXBAR_URL,
@@ -27,7 +26,6 @@ describe("native Control Center recovery", () => {
     expect(FINISH_CODEXBAR_RECOVERY_URL).toBe(
       "vibetv://finish-codexbar-recovery",
     );
-    expect(OPEN_CODEXBAR_URL).toBe("vibetv://open-codexbar");
     expect(REPAIR_CONTROL_CENTER_RUNTIME_URL).toBe("vibetv://repair-runtime");
     expect(RESTART_CONTROL_CENTER_URL).toBe(
       "vibetv://restart-control-center",
