@@ -3415,3 +3415,20 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-03 — Cable/WiFi setup keeps the current wizard fixes
+
+- User approval: After reviewing PR 407 against the current PR 331 head, the
+  product owner explicitly instructed us to integrate the reviewed changes on
+  PR 407 while leaving PR 331 untouched (2026-09-03).
+- Approved customer-visible result: **The Cable/WiFi decision stays inside the
+  current setup wizard: one matching Cable or WiFi VibeTV connects
+  automatically, multiple matching VibeTVs require a choice, and Cable-based
+  WiFi setup remains available. Provider, display, theme, and final-preview
+  handovers retain the current wizard behavior. Settings presents Connection
+  as one flat section alongside the other settings.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `settings-screen.tsx`, `setup/setup-device-screen.tsx`,
+  `setup/setup-wizard.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
