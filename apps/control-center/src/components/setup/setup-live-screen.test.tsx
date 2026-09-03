@@ -40,6 +40,14 @@ describe("SetupLiveScreen", () => {
     expect(render()).toContain('data-testid="vibetv-case"');
   });
 
+  it("puts the live headline above the VibeTV", () => {
+    const html = render();
+
+    expect(html.indexOf("Your VibeTV is live")).toBeLessThan(
+      html.indexOf('data-testid="vibetv-case"'),
+    );
+  });
+
   it("has no primary action and no way back", () => {
     const html = render();
 

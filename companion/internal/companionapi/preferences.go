@@ -74,14 +74,15 @@ type preferenceDescriptor struct {
 }
 
 type preferenceHealth struct {
-	State          string `json:"state"`
-	Service        string `json:"service"`
-	Message        string `json:"message"`
-	LastSuccessAt  string `json:"lastSuccessAt,omitempty"`
-	CheckedAt      string `json:"checkedAt,omitempty"`
-	VerifiedAt     string `json:"verifiedAt,omitempty"`
-	NextAction     string `json:"nextAction,omitempty"`
-	RecoveryAction string `json:"recoveryAction,omitempty"`
+	State         string `json:"state"`
+	Service       string `json:"service"`
+	Message       string `json:"message"`
+	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
+	CheckedAt     string `json:"checkedAt,omitempty"`
+	NextAction    string `json:"nextAction,omitempty"`
+	// What the usage service itself said, with its home path redacted. Empty
+	// only when it said nothing, so the screen falls back to generic Detail.
+	Reported string `json:"reported,omitempty"`
 }
 
 type preferencesResponse struct {
@@ -453,6 +454,7 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 			if cached, ok := healthByID[settings[i].ID]; ok && cached.Enabled == settings[i].Enabled {
 				settings[i].Health = cached.Health
 				settings[i].Service = cached.Service
+				settings[i].Reported = cached.Reported
 			}
 		}
 	}
@@ -495,6 +497,7 @@ func (s *Server) startProviderHealthRefreshLocked() {
 			}
 			s.providerPreferences.cached[i].Health = current.Health
 			s.providerPreferences.cached[i].Service = current.Service
+			s.providerPreferences.cached[i].Reported = current.Reported
 		}
 		s.providerPreferences.at = s.currentTime().UTC()
 	}()
@@ -584,7 +587,6 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
 	freshSuccess := make(map[string]codexbar.ProviderReadiness)
-	freshTokenSuccess := make(map[string]codexbar.ProviderReadiness)
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok {
 			for _, provider := range usage.Providers {
@@ -598,9 +600,6 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				if readiness, ready := freshUsableUsageProviderReadiness(provider, now); ready {
 					freshSuccess[readiness.ID] = readiness
 				}
-				if readiness, ready := freshTokenUsageProviderReadiness(provider, now); ready {
-					freshTokenSuccess[readiness.ID] = readiness
-				}
 			}
 		}
 	}
@@ -609,29 +608,28 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	for _, setting := range settings {
 		state := string(setting.Health)
 		message := providerHealthMessage(setting.Health)
+		// Only worth carrying while the provider is on and actually needs the
+		// customer; a healthy row has nothing to report and an off one is off.
+		reported := reportedProviderMessage(setting.Reported)
 		checkedAt := ""
-		verifiedAt := ""
 		nextAction := ""
-		recoveryAction := ""
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
+			reported = ""
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
-			providerReadinessAppliesToSetting(readiness, setting, now) {
+			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
 			state = providerReadinessHealthState(readiness.Status)
-			message = providerReadinessMessage(readiness.Status)
-			checkedAt = readiness.CheckedAt.UTC().Format(time.RFC3339)
-			if !readiness.VerifiedAt.IsZero() {
-				verifiedAt = readiness.VerifiedAt.UTC().Format(time.RFC3339)
+			message = strings.TrimSpace(readiness.Detail)
+			if message == "" {
+				message = providerReadinessMessage(readiness.Status)
 			}
+			reported = reportedProviderMessage(readiness.Reported)
+			checkedAt = readiness.CheckedAt.UTC().Format(time.RFC3339)
 			nextAction = providerReadinessNextAction(readiness.Status)
-			recoveryAction = providerRecoveryAction(readiness.Status)
 		} else if _, ready := freshSuccess[setting.ID]; ready && providerCanUseUsageEvidence(setting) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
-		} else if _, ready := freshTokenSuccess[setting.ID]; ready && providerCanUseUsageEvidence(setting) {
-			state = string(codexbar.ProviderHealthHealthy)
-			message = "Token history is available; usage limits are temporarily unavailable."
 		} else if setting.Service == codexbar.ProviderServiceOutage &&
 			(setting.Health == codexbar.ProviderHealthHealthy ||
 				setting.Health == codexbar.ProviderHealthChecking ||
@@ -656,23 +654,25 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			WriteStrategy:  "codexbar_command",
 			Writable:       true,
 			Health: &preferenceHealth{
-				State:          state,
-				Service:        string(setting.Service),
-				Message:        message,
-				LastSuccessAt:  lastSuccess[setting.ID],
-				CheckedAt:      checkedAt,
-				VerifiedAt:     verifiedAt,
-				NextAction:     nextAction,
-				RecoveryAction: recoveryAction,
+				State:         state,
+				Service:       string(setting.Service),
+				Message:       message,
+				Reported:      reported,
+				LastSuccessAt: lastSuccess[setting.ID],
+				CheckedAt:     checkedAt,
+				NextAction:    nextAction,
 			},
 		})
 	}
 	return items
 }
 
-func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, now time.Time) bool {
+func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
 	age := now.Sub(readiness.CheckedAt)
 	if readiness.CheckedAt.IsZero() || age < 0 || age > providerReadinessFreshness {
+		return false
+	}
+	if collectedAt, err := time.Parse(time.RFC3339Nano, freshSuccess.CollectedAt); err == nil && collectedAt.After(readiness.CheckedAt) {
 		return false
 	}
 	if readiness.Status != codexbar.ProviderReady {
@@ -738,22 +738,6 @@ func providerReadinessMessage(status string) string {
 		return "The usage service needs attention."
 	default:
 		return "Finish setup for this provider."
-	}
-}
-
-func providerRecoveryAction(status string) string {
-	switch status {
-	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
-		return "repair_usage_service"
-	case codexbar.ProviderAuthRequired, codexbar.ProviderPermissionRequired, codexbar.ProviderNoUsageAvailable, codexbar.ProviderNotConfigured:
-		return "open_provider_setup"
-	case codexbar.ProviderTimeout:
-		return "check_again"
-	default:
-		if status == codexbar.ProviderReady {
-			return ""
-		}
-		return "open_provider_setup"
 	}
 }
 

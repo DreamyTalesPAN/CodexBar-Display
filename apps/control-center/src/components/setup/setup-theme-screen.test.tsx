@@ -32,6 +32,14 @@ describe("SetupThemeScreen", () => {
     }
   });
 
+  it("gives the theme choice stronger visual weight", () => {
+    const html = render();
+
+    expect(html).toContain("text-[40px]");
+    expect(html).toContain("text-lg");
+    expect(html).toContain("h-[72px] w-[100px]");
+  });
+
   it("keeps the install action to the one word, whichever theme is chosen", () => {
     for (const selectedThemeId of ["clippy", "synthwave"]) {
       const html = render({ selectedThemeId });

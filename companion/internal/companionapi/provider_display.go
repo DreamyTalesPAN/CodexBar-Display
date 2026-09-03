@@ -116,7 +116,10 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	settings, err := s.cachedProviderSettings(r.Context(), true)
+	// Continue accepts the same fresh descriptors that opened the button in the
+	// provider list. Forcing another CodexBar read here repeated the full scan,
+	// left the button pending, and could contradict the answer still on screen.
+	settings, err := s.cachedProviderSettings(r.Context(), false)
 	if err != nil {
 		writePreferencesReadError(w, err)
 		return
@@ -141,7 +144,6 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusConflict, "provider_display_invalid", "Choose which provider VibeTV should show.", "Select one provider or add providers to Automatic mode.")
 		return
 	}
-	now := s.currentTime().UTC()
 	selected := make(map[string]struct{}, len(selection.ProviderIDs))
 	for _, providerID := range selection.ProviderIDs {
 		selected[providerID] = struct{}{}
@@ -153,15 +155,29 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	// so measuring it against the enabled set refused the customer's own choice
 	// and offered turning the other providers off as the way to keep it.
 	wholePoolRequired := selection.Mode == providerDisplayModeAutomatic
+	// Setup is complete once VibeTV has something real to show, which is one
+	// working provider -- the rule docs/control-center-ui-principles.md has
+	// carried all along. Demanding every enabled one instead handed a customer
+	// whose second provider was merely not signed in a wizard they could not
+	// leave, on a Mac whose first provider was working: the rotation already
+	// skips what it cannot read (daemon.go preferAvailableProviders), so the
+	// broken one costs nothing but the refusal did.
 	for _, setting := range enabled {
 		if _, ok := selected[setting.ID]; wholePoolRequired && !ok {
 			writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
 			return
 		}
-		if !s.providerHasFreshReadiness(setting, now) {
-			writeError(w, http.StatusConflict, "provider_check_required", "Every enabled provider must be ready.", "Check each enabled provider and fix or turn off any provider that needs attention.")
-			return
+	}
+	ready := 0
+	for _, descriptor := range s.providerDescriptors(settings) {
+		enabled, _ := descriptor.Value.(bool)
+		if enabled && descriptor.Health != nil && descriptor.Health.State == string(codexbar.ProviderHealthHealthy) {
+			ready++
 		}
+	}
+	if ready == 0 {
+		writeError(w, http.StatusConflict, "provider_check_required", "At least one enabled provider must be ready.", "Check your providers and fix or turn off any provider that needs attention.")
+		return
 	}
 	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
 		current.SetProviderSelectionSetupComplete(true)

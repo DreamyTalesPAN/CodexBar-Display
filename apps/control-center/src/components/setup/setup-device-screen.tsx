@@ -21,6 +21,7 @@ import type {
 } from "../control-center-types";
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
+import type { ConnectPhase } from "./setup-connect-log";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import {
   SetupWizardScreen,
@@ -32,6 +33,8 @@ type SetupDeviceScreenProps = {
   candidates: DeviceCandidate[];
   alternativeTransport?: SetupTransport;
   connecting?: boolean;
+  /** Names the work in flight, so the button reports it instead of "Connecting" throughout. */
+  connectPhase?: ConnectPhase;
   logLines: SetupLogLine[];
   aiFixPrompt?: () => string;
   onConnect: () => void;
@@ -59,6 +62,7 @@ export function SetupDeviceScreen({
   alternativeTransport,
   candidates,
   connecting = false,
+  connectPhase,
   logLines,
   aiFixPrompt,
   onConnect,
@@ -115,19 +119,27 @@ export function SetupDeviceScreen({
       onCreateSupportReport={onCreateSupportReport}
     >
       <SetupWizardTitle>{title}</SetupWizardTitle>
-      <SetupWizardSubtitle>
-        {showModeChoice
-          ? "Choose Cable or WiFi."
-          : wifiSetupPhase === "credentials"
-            ? "Choose a visible network or enter a hidden WiFi name."
-            : wifiSetupPhase === "waiting"
-              ? "VibeTV is connecting. The app will continue when it appears on WiFi."
-              : searching
-                ? "Looking for VibeTVs on your WiFi."
-                : showCandidates
-                  ? foundLabel(candidates.length, transport)
-                  : "VibeTV is being connected automatically."}
-      </SetupWizardSubtitle>
+      {/*
+        Once a VibeTV is being connected the count is no longer what the
+        customer is waiting on -- the log below is. Reporting one there also
+        outlived its own truth: the search state is neither idle nor searching
+        during a connect, so the count was the only thing left to render.
+      */}
+      {connecting ? null : (
+        <SetupWizardSubtitle>
+          {showModeChoice
+            ? "Choose Cable or WiFi."
+            : wifiSetupPhase === "credentials"
+              ? "Choose a visible network or enter a hidden WiFi name."
+              : wifiSetupPhase === "waiting"
+                ? "VibeTV is connecting. The app will continue when it appears on WiFi."
+                : searching
+                  ? "Looking for VibeTVs on your WiFi."
+                  : showCandidates
+                    ? foundLabel(candidates.length, transport)
+                    : "VibeTV is being connected automatically."}
+        </SetupWizardSubtitle>
+      )}
 
       {showModeChoice ? (
         <div className="mt-4 grid grid-cols-2 gap-3">
@@ -291,7 +303,7 @@ export function SetupDeviceScreen({
           type="button"
         >
           {connecting ? <Spinner data-icon="inline-start" /> : null}
-          <span>{connecting ? "Connecting" : "Connect"}</span>
+          <span>{connecting ? connectingLabel(connectPhase) : "Connect"}</span>
         </Button>
       ) : null}
       {/*
@@ -338,6 +350,22 @@ export function SetupDeviceScreen({
       <SetupLog className="mt-4" lines={logLines} running={connecting} />
     </SetupWizardScreen>
   );
+}
+
+/**
+ * A firmware install is the longest thing behind this button and the one the
+ * customer must not unplug through. Reporting all of it as "Connecting" hid
+ * that entirely.
+ */
+function connectingLabel(phase: ConnectPhase | undefined): string {
+  switch (phase) {
+    case "checking-firmware":
+      return "Checking firmware";
+    case "updating-firmware":
+      return "Updating firmware";
+    default:
+      return "Connecting";
+  }
 }
 
 function foundLabel(count: number, transport?: SetupTransport): string {

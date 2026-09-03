@@ -87,6 +87,8 @@ const (
 	deviceConnectedGraceWindow   = 75 * time.Second
 	displayVerificationAge       = 2 * time.Minute
 	displayStreamWaitTime        = 30 * time.Second
+	themeInstallStreamWaitTime   = 5 * time.Minute
+	themeInstallJobTime          = 7 * time.Minute
 	displayRenderWaitTime        = 12 * time.Second
 	defaultPairAttempts          = 3
 	defaultPairAttemptTimeout    = 5 * time.Second
@@ -122,6 +124,12 @@ var subnetProbeTime = time.Second
 var localNetworkPermissionGOOS = runtime.GOOS
 var errMacAppActionRequired = errors.New("mac app installation requires customer action")
 var errLocalNetworkAccessDenied = errors.New("local network access denied")
+
+// errNoLocalNetwork: the Mac holds no usable network address, so an automatic
+// scan has nowhere to go. Saved private targets would be probed into a void
+// for the whole search window and settle on "0 found" -- the honest answer is
+// that WiFi is off, not that no VibeTV exists.
+var errNoLocalNetwork = errors.New("no local network")
 
 const (
 	localNetworkDenialMinimumSamples  = 8
@@ -203,6 +211,7 @@ type Server struct {
 	scanCableWiFi          func(string, string) ([]protocol.WiFiNetwork, error)
 	transferCableAsset     func(context.Context, string, string, string, string, string, []byte) error
 	subnetTargets          func() []string
+	localNetworkAvailable  func() bool
 	defaultWiFiTarget      func() string
 	streamStatus           func(context.Context, string) displayStreamInfo
 	waitStream             func(context.Context, string) displayStreamInfo
@@ -768,10 +777,9 @@ type usageRefreshTracker struct {
 }
 
 type usageRefreshInfo struct {
-	State        string `json:"state"`
-	RequestedAt  string `json:"requestedAt,omitempty"`
-	BlockedUntil string `json:"blockedUntil,omitempty"`
-	Message      string `json:"message,omitempty"`
+	State       string `json:"state"`
+	RequestedAt string `json:"requestedAt,omitempty"`
+	Message     string `json:"message,omitempty"`
 }
 
 // The collector caps one provider collection at 15 minutes. After that bound,
@@ -808,8 +816,6 @@ type usageProviderInfo struct {
 	WeeklyUnavailable     bool                     `json:"weeklyUnavailable,omitempty"`
 	CollectedAt           string                   `json:"collectedAt,omitempty"`
 	ActivityObservedAt    string                   `json:"activityObservedAt,omitempty"`
-	RateLimited           bool                     `json:"rateLimited,omitempty"`
-	BlockedUntil          string                   `json:"blockedUntil,omitempty"`
 	Windows               []usageWindowInfo        `json:"windows,omitempty"`
 	Status                *usageStatusInfo         `json:"status,omitempty"`
 	Credits               *usageCreditsInfo        `json:"credits,omitempty"`
@@ -967,6 +973,7 @@ func New(opts Options) (*Server, error) {
 		scanCableWiFi:          usb.ScanWiFi,
 		transferCableAsset:     usb.TransferAsset,
 		subnetTargets:          localSubnetTargets,
+		localNetworkAvailable:  hostHasUsableNetwork,
 		defaultWiFiTarget:      setup.DefaultWiFiTarget,
 		streamStatus:           inspectDisplayStream,
 		waitRender:             nil,
@@ -1002,15 +1009,6 @@ func New(opts Options) (*Server, error) {
 		installJobs:        make(map[string]*themeInstallJob),
 		updateJobs:         make(map[string]*firmwareUpdateJob),
 		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
-	}
-	server.waitStream = func(ctx context.Context, target string) displayStreamInfo {
-		return server.waitForDisplayStreamMode(ctx, target, time.Time{}, true)
-	}
-	server.waitStreamAfter = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-		return server.waitForDisplayStreamMode(ctx, target, notBefore, true)
-	}
-	server.waitStreamAfterPair = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-		return server.waitForDisplayStreamMode(ctx, target, notBefore, false)
 	}
 	return server, nil
 }
@@ -1929,25 +1927,14 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 		now = time.Now().UTC()
 	}
 	now = now.UTC()
-	rateLimited, blockedUntil := usageRateLimitState(usage, now)
 
 	s.usageRefreshMu.Lock()
 	requestedAt := s.usageRefresh.RequestedAt
-	if rateLimited {
-		s.usageRefresh.RequestedAt = time.Time{}
-		s.usageRefreshMu.Unlock()
-		return usageRefreshInfo{
-			State:        "rate_limited",
-			RequestedAt:  formatOptionalTime(requestedAt),
-			BlockedUntil: formatOptionalTime(blockedUntil),
-			Message:      usageRefreshMessage("rate_limited", blockedUntil),
-		}
-	}
 	if !requestedAt.IsZero() {
 		if usageHasFreshSnapshotAfter(usage, requestedAt) {
 			s.usageRefresh.RequestedAt = time.Time{}
 			s.usageRefreshMu.Unlock()
-			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh")}
 		}
 		if !now.Before(requestedAt.Add(usageRefreshRequestMaxAge)) {
 			s.usageRefreshMu.Unlock()
@@ -1961,15 +1948,15 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 		return usageRefreshInfo{
 			State:       "refreshing",
 			RequestedAt: formatOptionalTime(requestedAt),
-			Message:     usageRefreshMessage("refreshing", time.Time{}),
+			Message:     usageRefreshMessage("refreshing"),
 		}
 	}
 	s.usageRefreshMu.Unlock()
 
 	if usageHasFreshSnapshot(usage) {
-		return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+		return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh")}
 	}
-	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable", time.Time{})}
+	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable")}
 }
 
 const exactUsageCacheMaxAge = 15 * time.Minute
@@ -2150,22 +2137,6 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 	return fresh
 }
 
-func usageRateLimitState(usage daemon.PersistedUsage, now time.Time) (bool, time.Time) {
-	var latest time.Time
-	rateLimited := false
-	for _, provider := range usage.Providers {
-		if provider.RateLimited {
-			rateLimited = true
-		}
-		blockedUntil := provider.RateLimitedUntil.UTC()
-		if blockedUntil.After(now) && blockedUntil.After(latest) {
-			latest = blockedUntil
-			rateLimited = true
-		}
-	}
-	return rateLimited, latest
-}
-
 func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Time) bool {
 	if requestedAt.IsZero() {
 		return usageHasFreshSnapshot(usage)
@@ -2190,15 +2161,10 @@ func usageHasFreshSnapshot(usage daemon.PersistedUsage) bool {
 	return false
 }
 
-func usageRefreshMessage(state string, blockedUntil time.Time) string {
+func usageRefreshMessage(state string) string {
 	switch state {
 	case "refreshing":
 		return "Refreshing usage. Current values stay visible until new data arrives."
-	case "rate_limited":
-		if !blockedUntil.IsZero() {
-			return "Usage refresh is temporarily limited. Current values stay visible until usage can be collected again."
-		}
-		return "Usage refresh is temporarily limited. Current values stay visible."
 	case "fresh":
 		return "Usage is up to date."
 	default:
@@ -2512,6 +2478,8 @@ func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimecon
 		result.ErrorCode = "device_search_failed"
 		if errors.Is(err, errLocalNetworkAccessDenied) {
 			result.ErrorCode = "local_network_access_denied"
+		} else if errors.Is(err, errNoLocalNetwork) {
+			result.ErrorCode = "network_unavailable"
 		} else if errors.Is(err, context.DeadlineExceeded) {
 			result.ErrorCode = "device_search_incomplete"
 		}
@@ -2811,8 +2779,6 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
-		RateLimited:           snapshot.RateLimited,
-		BlockedUntil:          formatOptionalTime(snapshot.RateLimitedUntil),
 		Windows:               usageWindowsFromMeta(snapshot.Meta),
 		Status:                usageStatusFromMeta(snapshot.Meta),
 		Credits:               usageCreditsFromMeta(snapshot.Meta),
@@ -3234,6 +3200,16 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 				"local_network_access_denied",
 				"Local Network access is off for VibeTV Control Center.",
 				"Open System Settings > Privacy & Security > Local Network, allow VibeTV Control Center, then try again.",
+			)
+			return
+		}
+		if errors.Is(err, errNoLocalNetwork) {
+			writeError(
+				w,
+				http.StatusServiceUnavailable,
+				"network_unavailable",
+				"This Mac isn't connected to a WiFi network.",
+				"Turn on WiFi and connect this Mac to the WiFi your VibeTV uses, then search again.",
 			)
 			return
 		}
@@ -5578,9 +5554,9 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	var stream displayStreamInfo
 	if pairedDuringThemeInstall {
-		stream = s.waitForFreshDisplayStreamAfterPair(ctx, displayTarget, streamStartedAt)
+		stream = s.waitForFreshDisplayStreamAfterPair(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
 	} else {
-		stream = s.waitForFreshDisplayStream(ctx, displayTarget, streamStartedAt)
+		stream = s.waitForFreshDisplayStreamUpTo(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
 	}
 	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 	// A stream that restarted, owns this exact VibeTV, and is only held back by
@@ -5620,22 +5596,24 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
-	device := withDisplayStreamInfo(deviceInfo{
-		Target:    publicTarget(displayTarget),
-		Connected: true,
-		Paired:    true,
-	}, stream)
-	if !s.withVerifiedDeviceHealth(device, health, displayTarget, cfg.DeviceToken, true).Ready {
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_stream_refresh_failed",
-				Message:    "Theme installed, but the continuous VibeTV display stream is not running.",
-				NextAction: "Keep VibeTV powered on, then use Reload image in Control Center.",
-			},
+	if cableMode {
+		device := withDisplayStreamInfo(deviceInfo{
+			Target:    publicTarget(displayTarget),
+			Connected: true,
+			Paired:    true,
+		}, stream)
+		if !s.withVerifiedDeviceHealth(device, health, displayTarget, cfg.DeviceToken, true).Ready {
+			return themeinstall.Result{}, &statusAPIError{
+				status: http.StatusBadGateway,
+				api: apiError{
+					Code:       "display_stream_refresh_failed",
+					Message:    "Theme installed, but the continuous VibeTV display stream is not running.",
+					NextAction: "Keep VibeTV powered on, then use Reload image in Control Center.",
+				},
+			}
 		}
 	}
-	fmt.Fprintln(out, "Display stream: refreshed and rendered")
+	fmt.Fprintln(out, "Theme render: verified")
 	return result, nil
 }
 
@@ -5909,7 +5887,7 @@ const themeInstallAwaitingProviderMessage = "Theme installed. VibeTV shows it on
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
 		defer s.finishThemeInstall()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), themeInstallJobTime)
 		defer cancel()
 		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
 		result, err := s.runThemeInstall(ctx, cfg, req, writer)
@@ -7703,6 +7681,13 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		}
 	}
 	candidates = uniqueStrings(candidates...)
+	// A loopback target (the Virtual VibeTV) needs no WiFi, so it keeps the
+	// scan alive; everything else is unreachable without a network.
+	if explicitTarget == "" &&
+		s.localNetworkAvailable != nil && !s.localNetworkAvailable() &&
+		!anyLoopbackTarget(candidates) {
+		return nil, errNoLocalNetwork
+	}
 	if len(candidates) == 0 {
 		return []deviceSearchEntry{}, nil
 	}
@@ -9310,9 +9295,10 @@ func (s *Server) waitForDisplayStreamMode(
 	target string,
 	notBefore time.Time,
 	stopOnPairingError bool,
+	waitTime time.Duration,
 ) displayStreamInfo {
 	return waitForDisplayStreamAfterProbe(
-		ctx, target, notBefore, stopOnPairingError, inspectDisplayStreamAfter,
+		ctx, target, notBefore, stopOnPairingError, waitTime, inspectDisplayStreamAfter,
 		func(stream displayStreamInfo) bool {
 			return providerSetupStreamForTarget(&stream, target) &&
 				providerSetupNeedsCustomerAction(s.providerSetupForStatus())
@@ -9348,10 +9334,11 @@ func waitForDisplayStreamAfterProbe(
 	target string,
 	notBefore time.Time,
 	stopOnPairingError bool,
+	waitTime time.Duration,
 	inspect func(context.Context, string, time.Time) displayStreamInfo,
 	settled func(displayStreamInfo) bool,
 ) displayStreamInfo {
-	deadline := time.Now().Add(displayStreamWaitTime)
+	deadline := time.Now().Add(waitTime)
 	var last displayStreamInfo
 	for {
 		last = inspect(ctx, target, notBefore)
@@ -9371,17 +9358,24 @@ func waitForDisplayStreamAfterProbe(
 }
 
 func (s *Server) waitForFreshDisplayStream(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	return s.waitForFreshDisplayStreamUpTo(ctx, target, notBefore, displayStreamWaitTime)
+}
+
+func (s *Server) waitForFreshDisplayStreamUpTo(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration) displayStreamInfo {
 	if s.waitStreamAfter != nil {
 		return s.waitStreamAfter(ctx, target, notBefore)
 	}
-	return s.waitStream(ctx, target)
+	if s.waitStream != nil {
+		return s.waitStream(ctx, target)
+	}
+	return s.waitForDisplayStreamMode(ctx, target, notBefore, true, waitTime)
 }
 
-func (s *Server) waitForFreshDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+func (s *Server) waitForFreshDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration) displayStreamInfo {
 	if s.waitStreamAfterPair != nil {
 		return s.waitStreamAfterPair(ctx, target, notBefore)
 	}
-	return s.waitForFreshDisplayStream(ctx, target, notBefore)
+	return s.waitForDisplayStreamMode(ctx, target, notBefore, false, waitTime)
 }
 
 func parseDisplayStreamLaunchState(output string) string {
@@ -9850,6 +9844,58 @@ func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
 	}
+}
+
+// hostHasUsableNetwork reports whether this Mac holds any address a network
+// conversation could use. WiFi off (and nothing else connected) leaves only
+// loopback and link-local self-assignments. Broader than the subnet fan-out's
+// question on purpose: an unusual but connected network must not claim WiFi
+// is off, it just searches like today.
+func hostHasUsableNetwork() bool {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		// Not knowing is not "offline": let the search try.
+		return true
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch value := addr.(type) {
+			case *net.IPNet:
+				ip = value.IP
+			case *net.IPAddr:
+				ip = value.IP
+			}
+			if ip != nil && ip.IsGlobalUnicast() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func anyLoopbackTarget(targets []string) bool {
+	for _, target := range targets {
+		parsed, err := url.Parse(strings.TrimSpace(target))
+		if err != nil {
+			continue
+		}
+		host := parsed.Hostname()
+		if strings.EqualFold(host, "localhost") {
+			return true
+		}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			return true
+		}
+	}
+	return false
 }
 
 func localSubnetTargets() []string {

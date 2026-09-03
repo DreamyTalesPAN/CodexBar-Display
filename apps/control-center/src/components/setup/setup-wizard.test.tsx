@@ -17,9 +17,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DeviceCandidate } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
+import { deriveSetupStep, setupDeviceIsUsable } from "./setup-step";
 import { SetupWizard, type SetupWizardProps } from "./setup-wizard";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 // jsdom has no matchMedia; the display step asks it about reduced motion.
 window.matchMedia = ((query: string) => ({
@@ -68,7 +73,6 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onFinished: vi.fn(),
     onInstallTheme: vi.fn(),
     onProviderCheck: vi.fn(),
-    onProviderRecover: vi.fn(),
     onProviderToggle: vi.fn(),
     onProvidersContinue: vi.fn(),
     onDismissProviderError: vi.fn(),
@@ -80,6 +84,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onSelectConnectionMode: vi.fn(),
     pendingCheckIds: new Set<string>(),
     pendingPreferenceIds: new Set<string>(),
+    providersLoading: false,
     onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
     providers: [provider()],
@@ -92,6 +97,314 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     ...overrides,
   };
 }
+
+describe("SetupWizard: initial provider scan", () => {
+  it("shows the provider loading screen instead of the finished list", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          providers: [],
+          providersLoading: true,
+          step: "providers",
+        })}
+      />,
+    );
+
+    expect(shownStep()).toBe("Choose AI providers");
+    expect(
+      screen.getByText(/reading provider usage on this Mac/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Codex")).toBeNull();
+    expect(
+      (screen.getByRole("searchbox", {
+        name: "Search providers",
+      }) as HTMLInputElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("moves to the loading screen as soon as the firmware check finishes", async () => {
+    let finishFirmwareCheck!: (value: null) => void;
+    const checkFirmware = vi.fn(
+      () =>
+        new Promise<null>((resolve) => {
+          finishFirmwareCheck = resolve;
+        }),
+    );
+    const props = baseProps({
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      providers: [],
+      providersLoading: true,
+      step: "device",
+      connectSteps: {
+        connect: vi.fn(async () => ({})),
+        checkFirmware,
+        installFirmware: vi.fn(),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await act(async () => {
+      rerender(<SetupWizard {...props} step="providers" />);
+    });
+    expect(shownStep()).toBe("Choose your VibeTV");
+
+    await act(async () => finishFirmwareCheck(null));
+
+    expect(shownStep()).toBe("Choose AI providers");
+    expect(
+      screen.getByText(/reading provider usage on this Mac/),
+    ).toBeTruthy();
+  });
+
+  it("moves directly from provider completion to Display Mode after a fresh connection", async () => {
+    let finishFirmwareCheck!: (value: null) => void;
+    let finishProviderCompletion!: (value: boolean) => void;
+    const checkFirmware = vi.fn(
+      () =>
+        new Promise<null>((resolve) => {
+          finishFirmwareCheck = resolve;
+        }),
+    );
+    const onProvidersContinue = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishProviderCompletion = resolve;
+        }),
+    );
+    const onProviderToggle = vi.fn();
+    const installFirmware = vi.fn();
+    const disabledClaude = {
+      ...provider(),
+      effectiveValue: false,
+      health: { message: "", service: "unknown", state: "disabled" },
+      id: "codexbar.providers.claude.enabled",
+      label: "Claude",
+      providerId: "claude",
+      value: false,
+    } as ProviderItem;
+    const enabledClaude = {
+      ...disabledClaude,
+      effectiveValue: true,
+      health: { message: "", service: "operational", state: "healthy" },
+      value: true,
+    } as ProviderItem;
+    const stepAfterConnection = (
+      providerSelectionRequired: boolean,
+      providerSetupCompletedThisSession: boolean,
+    ) =>
+      deriveSetupStep({
+        deviceUsable: setupDeviceIsUsable({
+          connectionRecoveryRequired: false,
+          deviceConnected: true,
+          hasActiveDevice: true,
+          hasEnteredControlCenter: false,
+          providerSelectionRequired,
+          providerSetupCompletedThisSession,
+          themeSetupRequired: false,
+          ready: false,
+        }),
+        displayConfigured: false,
+        displaySelectionSupported: true,
+        initialCheckComplete: true,
+        providerSelectionRequired,
+        searchingForDevice: false,
+        themeSetupRequired: false,
+      });
+    let props = baseProps({
+      connectSteps: {
+        connect: vi.fn(async () => ({ firmware: "1.0.32" })),
+        checkFirmware,
+        installFirmware,
+      },
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          firmware: "1.0.32",
+          known: true,
+          target: "http://192.168.178.73",
+        } as DeviceCandidate,
+      ],
+      displayProviders: [{ id: "claude", label: "Claude" }],
+      onProviderToggle,
+      onProvidersContinue,
+      providers: [disabledClaude],
+      step: "device",
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+      await Promise.resolve();
+    });
+    expect(props.connectSteps.connect).toHaveBeenCalled();
+    expect(checkFirmware).toHaveBeenCalled();
+
+    // Pairing updates the parent state before the firmware check finishes. The
+    // wizard must keep the device screen until that check has actually answered.
+    props = { ...props, step: stepAfterConnection(true, false) };
+    rerender(<SetupWizard {...props} />);
+    expect(shownStep()).toBe("Choose your VibeTV");
+
+    await act(async () => finishFirmwareCheck(null));
+    expect(installFirmware).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Choose AI providers");
+
+    const providerContinue = screen.getByRole("button", { name: "Continue" });
+    expect((providerContinue as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
+    expect(onProviderToggle).toHaveBeenCalledWith(disabledClaude, true);
+    props = { ...props, providers: [enabledClaude] };
+    rerender(<SetupWizard {...props} />);
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(onProvidersContinue).toHaveBeenCalledTimes(1);
+    expect(shownStep()).toBe("Choose AI providers");
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    // The successful completion response clears the provider requirement while
+    // the first usage frame is still missing. That must advance to Display Mode,
+    // not briefly send the freshly connected customer back to Device.
+    await act(async () => {
+      props = { ...props, step: stepAfterConnection(false, true) };
+      rerender(<SetupWizard {...props} />);
+      finishProviderCompletion(true);
+    });
+    expect(shownStep()).toBe("Display Mode");
+    expect(
+      screen.queryByRole("main", { name: "Choose your VibeTV" }),
+    ).toBeNull();
+  });
+});
+
+describe("SetupWizard: live handover", () => {
+  it("keeps setup visible until the fresh preview is actually rendered", async () => {
+    vi.useFakeTimers();
+    const onFinished = vi.fn();
+    const themeSpecPath = "/themes/u/claude--6-546f9e.json";
+    const themeSpecHash = "546f9e84";
+    let resolvePack!: () => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePack = () =>
+              resolve({
+                ok: true,
+                status: 200,
+                json: async () => ({
+                  assets: {},
+                  spec: { p: [] },
+                  specHash: themeSpecHash,
+                  specPath: themeSpecPath,
+                  themeId: "claude-creature",
+                }),
+              } as Response);
+          }),
+      ),
+    );
+    const waitingDevice = {
+      active: true,
+      activeTheme: "claude-creature",
+      connected: true,
+      paired: true,
+      ready: false,
+      display: {
+        themeSpec: {
+          active: true,
+          hash: themeSpecHash,
+          path: themeSpecPath,
+          renderOk: true,
+        },
+      },
+    } as NonNullable<SetupWizardProps["device"]>;
+    const readyDevice: NonNullable<SetupWizardProps["device"]> = {
+      ...waitingDevice,
+      ready: true,
+    };
+    const invalidFrame = {
+      ok: true,
+      frame: { v: 2, provider: "claude", label: "Claude" },
+    } as SetupWizardProps["displayFrame"];
+    const frame = {
+      ok: true,
+      frame: {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        usageSlots: [
+          { id: "session", label: "Session", percent: 44 },
+        ],
+      },
+    } as SetupWizardProps["displayFrame"];
+    const props = baseProps({
+      device: waitingDevice,
+      onFinished,
+      step: "live",
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    act(() => vi.advanceTimersByTime(300_000));
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Your VibeTV is live");
+
+    rerender(<SetupWizard {...props} device={readyDevice} />);
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    rerender(
+      <SetupWizard
+        {...props}
+        device={readyDevice}
+        displayFrame={invalidFrame}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    rerender(
+      <SetupWizard
+        {...props}
+        device={readyDevice}
+        displayFrame={frame}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolvePack();
+      await Promise.resolve();
+    });
+    expect(
+      screen.getByRole("img", {
+        name: /Rendered VibeTV theme claude-creature showing Claude/i,
+      }),
+    ).toBeTruthy();
+    act(() => vi.advanceTimersByTime(2_999));
+    expect(onFinished).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onFinished).toHaveBeenCalledTimes(1);
+  });
+});
 
 function shownStep(): string {
   return document.querySelector("main")?.getAttribute("aria-label") ?? "";
@@ -284,14 +597,34 @@ describe("SetupWizard: going back", () => {
     ).toBeTruthy();
   });
 
-  it("does not offer Back on the step it lands on, and still moves on", async () => {
-    render(<SetupWizard {...baseProps({ step: "display" })} />);
+  // The device step is the first choice the customer makes, so Back reaches
+  // it from the provider step. There is no Continue on it: Connect is what
+  // moves on, and a connect that finishes releases the step again.
+  it("walks back to the device step, and Connect carries the customer on again", async () => {
+    const props = baseProps({
+      step: "display",
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      connectSteps: {
+        connect: vi.fn(async () => null),
+        checkFirmware: vi.fn(async () => null),
+        installFirmware: vi.fn(),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    render(<SetupWizard {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-
-    // No way back from the provider step by design -- so Continue has to work.
+    expect(shownStep()).toBe("Choose AI providers");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose your VibeTV");
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     });
     expect(shownStep()).toBe("Display Mode");
   });
@@ -360,6 +693,27 @@ describe("SetupWizard: going back", () => {
     });
 
     expect(shownStep()).toBe("Choose AI providers");
+  });
+
+  it("keeps a Back press made while provider completion was running", async () => {
+    let settle: (done: boolean) => void = () => {};
+    const onProvidersContinue = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(
+      <SetupWizard {...baseProps({ step: "display", onProvidersContinue })} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose your VibeTV");
+
+    await act(async () => settle(true));
+
+    expect(shownStep()).toBe("Choose your VibeTV");
   });
 
   // The display choice is written optimistically, and the derived step reads
@@ -801,6 +1155,27 @@ describe("SetupWizard: a refusal from the companion", () => {
     expect(onRetryProviders).toHaveBeenCalled();
   });
 
+  // The status poll owns a missing Companion and presents the runtime-recovery
+  // screen. Repeating the same outage as a provider refusal puts two unrelated
+  // recovery paths on top of each other, including during automatic repair.
+  it("does not present a missing Companion as a provider-step refusal", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "providers",
+          providerError: {
+            code: "COMPANION_UNREACHABLE",
+            message: "Mac App did not answer.",
+            nextAction: "Quit and reopen the Mac App.",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("Mac App did not answer.")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
   it("says nothing when nothing was refused", () => {
     render(<SetupWizard {...baseProps({ step: "providers" })} />);
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -842,5 +1217,95 @@ describe("SetupWizard: typing an address while the scan runs", () => {
     });
 
     expect(screen.getByRole("button", { name: "Scan again" })).toBeTruthy();
+  });
+});
+
+// Every one of these dialogs is centred, so two at once are two stacked cards
+// with the lower one's buttons unreachable. That is what a customer met after
+// pressing Connect on a fresh Mac: a failed firmware check landing on "Finish
+// AI setup on this Mac". The step's own failure is about what they just did and
+// wins; the usage incident is still there once that one is answered.
+describe("SetupWizard with a broken usage service", () => {
+  it("shows the usage incident when the step has nothing of its own", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "welcome",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+  });
+
+  it("keeps the recovery action available on the Live step", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "live",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Repair" })).toBeTruthy();
+  });
+
+  it("never stacks it on the step's own failure", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "device",
+          deviceSearchState: "not-found",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("We couldn't find your VibeTV")).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
+  it("never stacks it on a scan that could not be made", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "device",
+          searchError: {
+            code: "search_failed",
+            message: "The Mac refused the local network scan.",
+            nextAction: "Allow Local Network access, then search again.",
+          },
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("We couldn't search for your VibeTV")).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
+  it("lets the customer put the incident away", () => {
+    const onDismissUsageFailure = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "welcome",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+          onDismissUsageFailure,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onDismissUsageFailure).toHaveBeenCalledTimes(1);
   });
 });

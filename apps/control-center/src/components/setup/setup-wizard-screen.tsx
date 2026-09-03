@@ -19,7 +19,7 @@ type SetupWizardScreenProps = {
 
 /**
  * The frame every setup step sits in: one centred column, Help bottom right,
- * Back bottom left. Both corner controls stay above the dialog overlay so the
+ * Back top left. Both corner controls stay above the dialog overlay so the
  * customer is never locked out of help by an error.
  */
 export function SetupWizardScreen({
@@ -51,7 +51,7 @@ export function SetupWizardScreen({
       </div>
 
       {onBack ? (
-        <div className="fixed bottom-5 left-5 z-60">
+        <div className="fixed top-5 left-5 z-60">
           <Button
             className="text-muted-foreground"
             onClick={onBack}
@@ -73,14 +73,33 @@ export function SetupWizardScreen({
   );
 }
 
-export function SetupWizardTitle({ children }: { children: ReactNode }) {
+export function SetupWizardTitle({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <h1 className="mt-2 text-[32px] leading-tight font-black tracking-[-0.04em]">
+    <h1
+      className={cn(
+        "mt-2 text-[32px] leading-tight font-black tracking-[-0.04em]",
+        className,
+      )}
+    >
       {children}
     </h1>
   );
 }
 
-export function SetupWizardSubtitle({ children }: { children: ReactNode }) {
-  return <p className="text-sm text-muted-foreground">{children}</p>;
+export function SetupWizardSubtitle({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <p className={cn("text-sm text-muted-foreground", className)}>{children}</p>
+  );
 }

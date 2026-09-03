@@ -135,7 +135,6 @@ type runtimeDeps struct {
 	resolveUSBDevice      func(string, string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
-	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
@@ -177,9 +176,6 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
-	}
-	if d.firstRunSetupPending == nil {
-		d.firstRunSetupPending = codexbar.FirstRunProviderSetupPending
 	}
 	if d.fetchDashboard == nil {
 		d.fetchDashboard = codexbar.FetchDashboardProviders
@@ -300,8 +296,6 @@ type ProviderUsageSnapshot struct {
 	TokenStatsCollectedAt time.Time
 	TokenHistorySettled   bool
 	ActivityObservedAt    time.Time
-	RateLimited           bool
-	RateLimitedUntil      time.Time
 	Stale                 bool
 }
 
@@ -1173,18 +1167,16 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 
 	result.frame = decision.Selected.Frame
-	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) &&
-		!decision.Selected.RateLimited {
+	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) {
 		// Providers are enumerated but none has ever delivered usage: for the
 		// runtime that is the same customer state as having no providers at
 		// all. Reusing the genuine no-providers failure sends the device the
 		// honest error frame and gives the stream parser its
 		// provider_setup_required classification, instead of the silent
 		// unexplained wait behind the guest-matrix
-		// firmware_current_stream_attention flake. A rate-limited selection is
-		// the one explicit signal of a configured, live provider in a
-		// temporary condition — that state keeps its own unavailable
-		// semantics and simply waits.
+		// firmware_current_stream_attention flake. Whatever CodexBar's error
+		// says -- signed out, rate limited, unreachable -- is CodexBar's to
+		// report; the runtime does not read that text to second-guess it.
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = "collect-usage"
 		result.failureErr = codexbar.ErrNoProviders
@@ -2272,8 +2264,7 @@ func collectorWarmupMaxAge() time.Duration {
 	// Bound the warm-up window in which a cycle waits for the first collection
 	// instead of settling on a provider verdict. The bound must outlast the
 	// five-minute CodexBar command budget plus the observed dashboard recovery
-	// after that command releases the config bootstrap. A definitive answer
-	// still ends warm-up immediately.
+	// after that command. A definitive answer still ends warm-up immediately.
 	const fallback = 7 * time.Minute
 	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
 	if raw == "" {
@@ -2439,8 +2430,6 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
 			TokenHistorySettled:   snapshot.TokenHistorySettled,
 			ActivityObservedAt:    snapshot.ActivityObservedAt.UTC(),
-			RateLimited:           snapshot.RateLimited,
-			RateLimitedUntil:      snapshot.RateLimitedUntil.UTC(),
 			Stale:                 providerUsageSnapshotIsStale(snapshot, now),
 		})
 	}

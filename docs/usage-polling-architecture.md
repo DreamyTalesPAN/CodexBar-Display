@@ -75,13 +75,14 @@ second CodexBar fetch path.
 
 - `refreshing`: the requested collection has not completed; usable last-good
   values remain visible.
-- `rate_limited`: CodexBar reported a provider rate limit; usable last-good
-  values remain visible.
 - `fresh`: at least one usable collector snapshot satisfies the request.
 - `unavailable`: no usable collector snapshot exists.
 
-`blockedUntil` is returned only when CodexBar supplies a real timestamp. The Mac
-App does not synthesize a cooldown from an error message.
+The usage path does not read CodexBar's error text. A provider that cannot
+deliver is unavailable whatever reason CodexBar gives. A provider that has never
+produced a good frame is reported to the VibeTV like no provider at all; one
+with a last-good frame keeps it on screen until it expires and is then sent as
+unavailable.
 
 ## Freshness Signals
 

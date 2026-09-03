@@ -218,25 +218,6 @@ describe("UsageScreen", () => {
     expect(html).toContain("Codex");
   });
 
-  it("shows rate-limit copy without inventing a retry time", () => {
-    const html = renderToStaticMarkup(
-      <UsageScreen
-        companionStatus="online"
-        onRefresh={vi.fn()}
-        usage={{
-          ...usage,
-          refresh: {
-            state: "rate_limited",
-          },
-        }}
-      />,
-    );
-
-    expect(html).toContain("Refresh is temporarily limited");
-    expect(html).toContain("provider allows it");
-    expect(html).not.toContain("Try again after");
-  });
-
   it("does not show the global loading banner when unavailable refresh has token history", () => {
     const html = renderUsage(null, {
       ...usage,

@@ -26,33 +26,45 @@ export type SetupStepInput = {
   /** The first companion check has answered, whatever it said. */
   initialCheckComplete: boolean;
   providerSelectionRequired: boolean;
+  /**
+   * A device search is running and has produced nothing to choose from yet.
+   *
+   * The welcome step owns this wait: its log is the only place that says
+   * "looking for your VibeTV", and a picker offering nothing to pick is not
+   * the screen the customer is on.
+   */
+  searchingForDevice: boolean;
   themeSetupRequired: boolean;
 };
 
 /**
  * Whether the wizard can move past the device step.
  *
- * `ready` is the plain answer, but it needs a rendered usage frame, and a
- * brand-new customer has no provider yet and therefore no usage to render.
- * Such a VibeTV is connected, paired and answering -- it reports
- * `provider_setup_required` -- and the step that fixes it is the provider step,
- * so holding it here is a dead end with the remedy on the other side.
+ * `ready` needs a rendered usage frame, which may arrive well after pairing,
+ * the firmware check, and even the provider inventory. While provider setup is
+ * still open, the successful connection is therefore the whole gate: waiting
+ * for a frame or a particular provider status strands the customer here.
  *
  * Only while the provider selection is still outstanding. Letting it through
  * afterwards would carry a customer whose provider has just died past the
  * remaining steps and tell them their VibeTV is live.
  */
 export function setupDeviceIsUsable(input: {
-  awaitsProviderSetup: boolean;
+  deviceConnected: boolean;
   hasActiveDevice: boolean;
   hasEnteredControlCenter: boolean;
   connectionRecoveryRequired: boolean;
   providerSelectionRequired: boolean;
+  providerSetupCompletedThisSession: boolean;
+  themeSetupRequired: boolean;
   ready: boolean;
 }): boolean {
   return (
     input.ready ||
-    (input.providerSelectionRequired && input.awaitsProviderSetup) ||
+    ((input.providerSelectionRequired ||
+      input.providerSetupCompletedThisSession ||
+      input.themeSetupRequired) &&
+      input.deviceConnected) ||
     (input.hasEnteredControlCenter &&
       input.hasActiveDevice &&
       !input.connectionRecoveryRequired)
@@ -89,6 +101,19 @@ export function setupDisplaySelectionSupported(
   return Boolean(display) || error?.code !== "HTTP_404";
 }
 
+/** The provider screen owns the first inventory wait and its retry dialog. */
+export function setupProviderInventoryIsLoading(
+  providerSelectionRequired: boolean,
+  providerInventory: readonly unknown[] | null,
+  providerInventoryError: unknown | null,
+): boolean {
+  return (
+    providerSelectionRequired &&
+    providerInventory === null &&
+    providerInventoryError === null
+  );
+}
+
 /**
  * Which step the customer's actual state puts them on.
  *
@@ -101,7 +126,12 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
     return "welcome";
   }
   if (!input.deviceUsable) {
-    return "device";
+    // The first status check answers in milliseconds and the search it gates
+    // takes up to 40 seconds, so welcome-until-checked left the whole search
+    // on a picker with nothing in it. The `deviceUsable` guard above is what
+    // keeps this from dragging a connected customer back: pairing returns the
+    // search state to "idle" once it is done.
+    return input.searchingForDevice ? "welcome" : "device";
   }
   if (input.providerSelectionRequired) {
     return "providers";
@@ -118,12 +148,14 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
 /**
  * Where Back goes from a step, or null where there is no way back.
  *
- * Nothing before the provider step can be returned to: the welcome step has no
- * controls, and the device is paired by the time the provider step is reached,
- * so going back to pick another one is a settings job rather than a wizard one.
+ * The welcome step has no controls, so nothing returns to it. The device step
+ * is the first choice the customer makes, and Connect is its way forward
+ * again: a connect that finishes releases the step.
  */
 export function previousSetupStep(step: SetupStep): SetupStep | null {
   switch (step) {
+    case "providers":
+      return "device";
     case "display":
       return "providers";
     case "theme":

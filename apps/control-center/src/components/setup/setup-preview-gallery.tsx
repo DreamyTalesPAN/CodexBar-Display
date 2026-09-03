@@ -25,6 +25,7 @@ import { SetupProvidersScreen } from "./setup-providers-screen";
 import { SetupThemeScreen } from "./setup-theme-screen";
 import { SetupUsageDialog } from "./setup-usage-dialog";
 import { buildAiFixPrompt } from "./setup-ai-prompt";
+import type { SetupStep } from "./setup-step";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
 
 const WELCOME_LINES: SetupLogLine[] = [
@@ -151,6 +152,24 @@ const STEP_ORDER = ["01", "02", "03", "04", "05", "06"] as const;
 type Step = (typeof STEP_ORDER)[number];
 
 type Entry = { id: string; label: string };
+
+/** Every 02x artboard is a state of the device step, and so on. */
+function galleryStep(entryId: string): SetupStep {
+  switch (entryId.slice(0, 2)) {
+    case "01":
+      return "welcome";
+    case "03":
+      return "providers";
+    case "04":
+      return "display";
+    case "05":
+      return "theme";
+    case "06":
+      return "live";
+    default:
+      return "device";
+  }
+}
 
 const ENTRIES: Entry[] = [
   { id: "01", label: "01 Welcome" },
@@ -298,7 +317,7 @@ export function SetupPreviewGallery() {
         { id: "1", at: "14:02:11", label: "Search started", detail: "en0" },
       ],
       osVersion: "15.2",
-      screen: ENTRIES.find((entry) => entry.id === active)?.label ?? active,
+      screen: galleryStep(active),
     });
 
   function screen(): ReactNode {
@@ -407,7 +426,6 @@ export function SetupPreviewGallery() {
             onBack={() => goTo("02")}
             onCheckAgain={noop}
             onContinue={() => goTo("04")}
-            onRecover={noop}
             onToggle={noop}
             pendingCheckIds={NO_PENDING_CHECKS}
             pendingPreferenceIds={NO_PENDING_CHECKS}
@@ -420,7 +438,6 @@ export function SetupPreviewGallery() {
             <SetupProvidersScreen
               onCheckAgain={noop}
               onContinue={noop}
-              onRecover={noop}
               onToggle={noop}
               pendingCheckIds={NO_PENDING_CHECKS}
               pendingPreferenceIds={NO_PENDING_CHECKS}

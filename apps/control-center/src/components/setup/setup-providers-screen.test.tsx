@@ -1,15 +1,26 @@
+// @vitest-environment jsdom
+
+import {
+  act,
+  cleanup,
+  render as renderDom,
+  screen,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PreferenceHealthState } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
-  PROVIDER_READINESS_FRESHNESS_MS,
+  PROVIDER_LOADING_LOG_INTERVAL_MS,
   SetupProvidersScreen,
   setupProviderCanDisplay,
-  setupProviderCheckExpiresAt,
-  setupProviderCheckIsStale,
   setupProviderMatchesQuery,
 } from "./setup-providers-screen";
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 function provider(fields: {
   health: PreferenceHealthState;
@@ -61,7 +72,6 @@ function render(
     <SetupProvidersScreen
       onCheckAgain={vi.fn()}
       onContinue={vi.fn()}
-      onRecover={vi.fn()}
       onToggle={vi.fn()}
       pendingCheckIds={new Set<string>()}
       pendingPreferenceIds={new Set<string>()}
@@ -72,6 +82,51 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
+  it("shows the approved loading state until the provider list is ready", () => {
+    const html = render({ loading: true, providers: [] });
+
+    expect(html).toContain("This can take up to 5 minutes. We&#x27;re sorry.");
+    expect(html).toContain("reading provider usage on this Mac");
+    expect(html).not.toContain("still checking, hang tight");
+    expect(html).toMatch(
+      /<input[^>]*disabled=""[^>]*placeholder="Search providers"/,
+    );
+    expect(html.match(/data-slot="skeleton"/g)).toHaveLength(6);
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+    expect(html).not.toContain("No AI providers match your search.");
+  });
+
+  it("adds another still-checking line every twenty seconds", () => {
+    vi.useFakeTimers();
+    const props = {
+      loading: true,
+      onCheckAgain: vi.fn(),
+      onContinue: vi.fn(),
+      onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(),
+      pendingPreferenceIds: new Set<string>(),
+      providers: [] as ProviderItem[],
+    };
+    const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
+
+    expect(screen.queryAllByText(/still checking, hang tight/)).toHaveLength(0);
+
+    act(() => vi.advanceTimersByTime(PROVIDER_LOADING_LOG_INTERVAL_MS));
+    expect(screen.getAllByText(/still checking, hang tight/)).toHaveLength(1);
+
+    act(() => vi.advanceTimersByTime(PROVIDER_LOADING_LOG_INTERVAL_MS));
+    expect(screen.getAllByText(/still checking, hang tight/)).toHaveLength(2);
+
+    rerender(
+      <SetupProvidersScreen {...props} loading={false} providers={[claude]} />,
+    );
+    act(() => vi.advanceTimersByTime(PROVIDER_LOADING_LOG_INTERVAL_MS));
+    expect(screen.queryAllByText(/still checking, hang tight/)).toHaveLength(0);
+    expect(screen.getByText("Claude Code")).toBeTruthy();
+  });
+
   it("lists every provider it was given, with no collapse", () => {
     const html = render();
 
@@ -99,7 +154,7 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
-  it("continues once every provider that is on is ready", () => {
+  it("continues once an enabled provider is ready", () => {
     const html = render({ providers: [claude, copilot] });
 
     expect(html).not.toMatch(
@@ -107,14 +162,87 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
-  // The companion refuses to write setup complete while any enabled provider
-  // still needs the customer. Letting Continue through here only produced a
-  // button that answered and left the customer on the same step with nothing
-  // said. The way on is to sign the provider in or switch it off.
-  it("cannot continue while a provider that is on still needs the customer", () => {
+  // CodexBar ships 65 providers and almost all of them are off. Putting the
+  // whole inventory on screen buried the customer's own two under a page of
+  // names they have never heard of.
+  it("shows ten providers and offers the rest", () => {
+    const many = Array.from({ length: 14 }, (_, index) =>
+      provider({
+        health: "healthy",
+        label: `Provider ${index}`,
+        providerId: `p${index}`,
+      }),
+    );
+    const html = render({ providers: many });
+
+    expect(html).toContain("Provider 9");
+    expect(html).not.toContain("Provider 10");
+    expect(html).toContain("Show more providers (4 left)");
+  });
+
+  it("does not offer more when everything already fits", () => {
+    const html = render({ providers: [claude, copilot] });
+
+    expect(html).not.toContain("Show more providers");
+  });
+
+  it("puts switched-on providers first without changing either group", () => {
+    const offOpenAI = provider({
+      health: "disabled",
+      label: "OpenAI",
+      providerId: "openai",
+      value: false,
+    });
+    const onCodex = provider({
+      health: "healthy",
+      label: "Codex",
+      providerId: "codex",
+    });
+    const offCursor = provider({
+      health: "disabled",
+      label: "Cursor",
+      providerId: "cursor",
+      value: false,
+    });
+
+    const providers = [offOpenAI, claude, offCursor, onCodex];
+    const html = render({ providers });
+    const labels = ["Claude Code", "Codex", "OpenAI", "Cursor"];
+    const positions = labels.map((label) => html.indexOf(`>${label}</`));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual(
+      [...positions].sort((left, right) => left - right),
+    );
+  });
+
+  // CodexBar switches providers on by itself, so a Mac whose own provider is
+  // working can still carry a second one that is merely not signed in. Holding
+  // the customer there closed the only step with no Back and no Skip, over a
+  // provider the rotation would have skipped anyway.
+  it("continues on one working provider, whatever the others report", () => {
     const html = render({
       providers: [
         claude,
+        provider({
+          health: "auth_required",
+          label: "GitHub Copilot",
+          message: "Sign in required.",
+          providerId: "copilot",
+        }),
+      ],
+    });
+
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
+  // One is the floor, not zero: without a working provider VibeTV has nothing
+  // real to put on the screen, and the companion refuses the completion.
+  it("cannot continue while no provider that is on is ready", () => {
+    const html = render({
+      providers: [
         provider({
           health: "auth_required",
           label: "GitHub Copilot",
@@ -129,17 +257,16 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
-  // The companion asks for an exact check of its own, and the health a provider
-  // reports before that answer arrives is not it. A row could read healthy while
-  // the check the companion wants was still queued, so Continue was open on a
-  // gate that refuses it -- and the row said nothing about the check running.
-  it("waits for a check that is still running", () => {
+  // The row and the completion endpoint now share the same health descriptor.
+  // A manually requested refresh may keep running without replacing that
+  // authoritative healthy answer or holding the customer on this step.
+  it("continues on a healthy provider while a manual check is running", () => {
     const html = render({
       pendingCheckIds: new Set(["claude"]),
       providers: [claude, copilot],
     });
 
-    expect(html).toMatch(
+    expect(html).not.toMatch(
       /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
     );
     // And the row keeps its switch throughout: docs/control-center-ui-principles
@@ -227,72 +354,5 @@ describe("SetupProvidersScreen", () => {
         ),
       ).toBe(false);
     }
-  });
-});
-
-// The companion only accepts an exact check for five minutes. The app used to
-// remember that it had asked for one forever, so when that readiness expired
-// nothing re-armed: Continue was refused, and a row reporting healthy offers no
-// Check again. The same staleness rule now governs both timestamps.
-describe("setupProviderCheckIsStale", () => {
-  const now = Date.UTC(2026, 7, 31, 12, 0, 0);
-
-  it("holds a check the companion still accepts", () => {
-    expect(setupProviderCheckIsStale(now - 60_000, now)).toBe(false);
-  });
-
-  it("lets go once the companion would not accept it any more", () => {
-    expect(
-      setupProviderCheckIsStale(now - PROVIDER_READINESS_FRESHNESS_MS - 1, now),
-    ).toBe(true);
-  });
-
-  it("treats a missing or unreadable time as no check at all", () => {
-    expect(setupProviderCheckIsStale(undefined, now)).toBe(true);
-    expect(setupProviderCheckIsStale(Number.NaN, now)).toBe(true);
-  });
-
-  // A clock that jumped backwards must not lock the check out.
-  it("does not trust a time in the future", () => {
-    expect(setupProviderCheckIsStale(now + 60_000, now)).toBe(true);
-  });
-
-  it("matches the companion's window", () => {
-    expect(PROVIDER_READINESS_FRESHNESS_MS).toBe(5 * 60 * 1000);
-  });
-});
-
-// Making the check re-armable was not enough on its own: nothing on screen
-// changes when a check expires, so the step has to come back for it. This is
-// the moment it has to come back at.
-describe("setupProviderCheckExpiresAt", () => {
-  const now = Date.UTC(2026, 7, 31, 12, 0, 0);
-
-  it("has nothing to wait for when no check still counts", () => {
-    expect(setupProviderCheckExpiresAt([undefined, undefined], now)).toBe(null);
-    expect(
-      setupProviderCheckExpiresAt(
-        [now - PROVIDER_READINESS_FRESHNESS_MS - 1],
-        now,
-      ),
-    ).toBe(null);
-  });
-
-  it("waits for the newest check, not the oldest", () => {
-    const older = now - 4 * 60 * 1000;
-    const newer = now - 60 * 1000;
-
-    expect(setupProviderCheckExpiresAt([older, newer], now)).toBe(
-      newer + PROVIDER_READINESS_FRESHNESS_MS,
-    );
-  });
-
-  it("ignores a check that has already stopped counting", () => {
-    const expired = now - PROVIDER_READINESS_FRESHNESS_MS - 1;
-    const live = now - 60 * 1000;
-
-    expect(setupProviderCheckExpiresAt([expired, live], now)).toBe(
-      live + PROVIDER_READINESS_FRESHNESS_MS,
-    );
   });
 });

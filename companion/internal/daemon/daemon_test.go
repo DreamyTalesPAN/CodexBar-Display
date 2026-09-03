@@ -411,22 +411,6 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 		t.Fatalf("expected an error frame before first usage, got %+v", errorFrame)
 	}
 
-	// A rate-limited selection is a configured, live provider in a temporary
-	// condition: it must keep its unavailable semantics and wait silently
-	// instead of being reclassified as no-providers.
-	rateLimited := unavailable
-	rateLimited.RateLimited = true
-	providers = []codexbar.ParsedFrame{rateLimited}
-	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
-		t.Fatalf("expected the rate-limited cold start to keep waiting, got %v", err)
-	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected no extra frame for the rate-limited wait, got %d", len(sentLines))
-	}
-	if !strings.Contains(logged.String(), "event=usage-waiting") {
-		t.Fatalf("expected the rate-limited wait to log usage-waiting, got %q", logged.String())
-	}
-
 	providers = []codexbar.ParsedFrame{testParsedFrame("claude", 0, 11, 3600)}
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected first available usage frame to send, got %v", err)
@@ -3861,7 +3845,6 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	collector := &providerCollector{
 		now:             func() time.Time { return current },
 		logf:            func(string, ...any) {},
-		resolvePort:     func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
 		order:           []string{"codex", "claude"},
 		interval:        30 * time.Second,
 		timeout:         3 * time.Second,
@@ -4249,45 +4232,6 @@ func TestProviderCollectorUsesFetchCompletionForDashboardWithoutProducerTime(t *
 	}
 }
 
-func TestProviderCollectorUsesAuthoritativeUsageWhileFirstRunSetupIsPending(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
-	pending := true
-	usageCalls := 0
-	dashboardCalls := 0
-	collector := &providerCollector{
-		now:                  func() time.Time { return current },
-		logf:                 func(string, ...any) {},
-		order:                []string{"codex"},
-		interval:             30 * time.Second,
-		timeout:              time.Minute,
-		snapshotMaxAge:       10 * time.Minute,
-		persistInterval:      time.Minute,
-		providers:            make(map[string]providerSnapshot),
-		firstRunSetupPending: func() bool { return pending },
-		dashboard:            staticDashboardServe{info: testDashboardServeInfo(1001)},
-		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-			usageCalls++
-			return []codexbar.ParsedFrame{testParsedFrame("codex", 17, 0, 3600)}, nil
-		},
-		fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
-			dashboardCalls++
-			return []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 24, 0)}, nil
-		},
-	}
-
-	collector.collectOnce(context.Background())
-	if usageCalls != 1 || dashboardCalls != 0 {
-		t.Fatalf("pending first run must use only authoritative usage, usage=%d dashboard=%d", usageCalls, dashboardCalls)
-	}
-	pending = false
-	collector.collectOnce(context.Background())
-	if usageCalls != 1 || dashboardCalls != 1 {
-		t.Fatalf("completed first run may use dashboard, usage=%d dashboard=%d", usageCalls, dashboardCalls)
-	}
-}
-
 func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4603,66 +4547,6 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 }
 
-func TestProviderCollectorReplacesRateLimitMetadataOnLaterUnavailableResponse(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
-	current := testParsedFrame("claude", 64, 32, 3600)
-	collector := &providerCollector{
-		now:             func() time.Time { return now },
-		logf:            func(string, ...any) {},
-		order:           []string{"claude"},
-		snapshotMaxAge:  10 * time.Minute,
-		persistInterval: time.Minute,
-		providers:       make(map[string]providerSnapshot),
-		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{current}, nil
-		},
-	}
-	collector.collectOnce(context.Background())
-
-	blockedUntil := now.Add(2 * time.Minute)
-	current = codexbar.ParsedFrame{
-		Provider:         "claude",
-		RateLimited:      true,
-		RateLimitedUntil: blockedUntil,
-		Frame: protocol.Frame{
-			Provider:         "claude",
-			UsageUnavailable: true,
-		},
-	}
-	collector.collectOnce(context.Background())
-	if got := collector.providers["claude"]; !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
-		t.Fatalf("expected current rate limit metadata, got %#v", got)
-	}
-
-	current.RateLimited = false
-	current.RateLimitedUntil = time.Time{}
-	collector.collectOnce(context.Background())
-	got := collector.providers["claude"]
-	if got.RateLimited || !got.RateLimitedUntil.IsZero() || got.Frame.UsageUnavailable || got.Frame.Session != 64 {
-		t.Fatalf("later unavailable error must clear only obsolete rate limit metadata, got %#v", got)
-	}
-
-	now = now.Add(11 * time.Minute)
-	blockedUntil = now.Add(2 * time.Minute)
-	current.RateLimited = true
-	current.RateLimitedUntil = blockedUntil
-	collector.collectOnce(context.Background())
-	got = collector.providers["claude"]
-	if !got.Frame.UsageUnavailable || !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
-		t.Fatalf("already unavailable provider did not receive current rate limit metadata: %#v", got)
-	}
-
-	current.RateLimited = false
-	current.RateLimitedUntil = time.Time{}
-	collector.collectOnce(context.Background())
-	got = collector.providers["claude"]
-	if !got.Frame.UsageUnavailable || got.RateLimited || !got.RateLimitedUntil.IsZero() {
-		t.Fatalf("already unavailable provider kept obsolete rate limit metadata: %#v", got)
-	}
-}
-
 func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4753,7 +4637,6 @@ func TestProviderCollectorTokenStatsDoNotDependOnDeviceTransport(t *testing.T) {
 	collector := &providerCollector{
 		now:             func() time.Time { return current },
 		logf:            func(string, ...any) {},
-		resolvePort:     func(string) (string, error) { return "", errors.New("no usb serial ports found") },
 		order:           []string{"codex"},
 		interval:        30 * time.Second,
 		snapshotMaxAge:  10 * time.Minute,
@@ -5904,15 +5787,17 @@ func TestRunCycleCanSelectPartialActiveProviderWhenCompleteProviderExists(t *tes
 	}
 }
 
-func TestProviderCollectorCollectOnceSkipsFetchWithoutDevice(t *testing.T) {
+// Reading this Mac's AI usage does not wait for a VibeTV. It used to, and the
+// first read then started the moment the customer pressed Connect -- minutes of
+// silence on a screen with nothing left to say. Nothing reaches a device that is
+// not there: the cycle that would send a frame resolves the device itself.
+func TestProviderCollectorCollectOnceReadsUsageWithoutDevice(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	var fetchCalled bool
-	var logged string
 	collector := &providerCollector{
 		now:             func() time.Time { return time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC) },
-		logf:            func(format string, args ...any) { logged = logged + strings.TrimSpace(format) },
-		resolvePort:     func(string) (string, error) { return "", errors.New("no usb serial ports found") },
+		logf:            func(string, ...any) {},
 		order:           []string{"codex"},
 		interval:        30 * time.Second,
 		timeout:         3 * time.Second,
@@ -5927,77 +5812,47 @@ func TestProviderCollectorCollectOnceSkipsFetchWithoutDevice(t *testing.T) {
 
 	collector.collectOnce(context.Background())
 
-	if fetchCalled {
-		t.Fatalf("expected collector to skip fetchProviders when no device is available")
+	if !fetchCalled {
+		t.Fatal("expected the collector to read usage before a device is paired")
 	}
-	if !strings.Contains(logged, "collector paused reason=no-device") {
-		t.Fatalf("expected no-device pause log, got %q", logged)
-	}
-}
-
-func TestProviderCollectorUsesWiFiTarget(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	const target = "http://192.168.178.65"
-	var resolved string
-	deps := runtimeDeps{
-		now:  func() time.Time { return time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC) },
-		logf: func(string, ...any) {},
-		resolvePort: func(requested string) (string, error) {
-			resolved = requested
-			return requested, nil
-		},
-		fetchProviders: func(_ context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
-		},
-	}
-	collector := newProviderCollector(deps, Options{
-		Transport: "wifi",
-		Target:    target,
-		Interval:  60 * time.Second,
-	})
-	collector.collectOnce(context.Background())
-
-	if resolved != target {
-		t.Fatalf("expected collector to resolve wifi target %q, got %q", target, resolved)
-	}
-	if got := collector.providerFrames(deps.now()); len(got) != 1 {
-		t.Fatalf("expected collector to fetch providers, got %#v", got)
+	if _, ok := collector.providers["codex"]; !ok {
+		t.Fatalf("expected the reading to be kept, got %#v", collector.providers)
 	}
 }
 
-func TestProviderCollectorUsesRuntimeConfigWiFiTarget(t *testing.T) {
+// Resolving which VibeTV to write to is the cycle's job, not the collector's --
+// the collector only reads this Mac. It used to resolve a target purely to
+// decide whether to read at all, which is the wait this removed.
+func TestProviderCollectorReadsUsageOnEveryTransport(t *testing.T) {
 	prepareFastTestEnv(t)
 
-	const target = "http://192.168.178.72"
-	var resolved string
-	deps := runtimeDeps{
-		transportName: "wifi",
-		now:           func() time.Time { return time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC) },
-		logf:          func(string, ...any) {},
-		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
-		loadConfig: func(string) (runtimeconfig.Config, error) {
-			return runtimeconfig.Config{DeviceTarget: target}, nil
-		},
-		resolvePort: func(requested string) (string, error) {
-			resolved = requested
-			return requested, nil
-		},
-		fetchProviders: func(_ context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
-		},
-	}
-	collector := newProviderCollector(deps, Options{
-		Transport: "wifi",
-		Interval:  60 * time.Second,
-	})
-	collector.collectOnce(context.Background())
+	for _, transport := range []string{"wifi", "usb"} {
+		var resolved bool
+		deps := runtimeDeps{
+			transportName: transport,
+			now:           func() time.Time { return time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC) },
+			logf:          func(string, ...any) {},
+			resolvePort: func(requested string) (string, error) {
+				resolved = true
+				return requested, nil
+			},
+			fetchProviders: func(_ context.Context) ([]codexbar.ParsedFrame, error) {
+				return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
+			},
+		}
+		collector := newProviderCollector(deps, Options{
+			Transport: transport,
+			Target:    "http://192.168.178.65",
+			Interval:  60 * time.Second,
+		})
+		collector.collectOnce(context.Background())
 
-	if resolved != target {
-		t.Fatalf("expected collector to resolve runtime config target %q, got %q", target, resolved)
-	}
-	if got := collector.providerFrames(deps.now()); len(got) != 1 {
-		t.Fatalf("expected collector to fetch providers, got %#v", got)
+		if resolved {
+			t.Fatalf("%s: the usage read must not ask for a device", transport)
+		}
+		if got := collector.providerFrames(deps.now()); len(got) != 1 {
+			t.Fatalf("%s: expected collector to fetch providers, got %#v", transport, got)
+		}
 	}
 }
 

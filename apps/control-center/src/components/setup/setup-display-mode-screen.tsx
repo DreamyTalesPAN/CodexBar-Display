@@ -85,9 +85,6 @@ export function SetupDisplayModeScreen({
   saving = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
-  const rotation = rotationFrames(automaticPreview, automaticPreviews, providers);
-  const { index } = useProviderRotation(rotation.length);
-
   return (
     <SetupWizardScreen
       contentWidth="wide"
@@ -101,59 +98,18 @@ export function SetupDisplayModeScreen({
         Show one or multiple AI Providers. You can change this any time.
       </SetupWizardSubtitle>
 
-      <div className="mt-4 grid w-full grid-cols-2 items-stretch gap-4">
-        <ModeCard
-          description="VibeTV switches between your providers based on recent activity and usage."
-          disabled={saving}
-          onSelect={() => onSelectMode("automatic")}
-          selected={mode === "automatic"}
-          title="Automatic"
-        >
-          <PreviewTile frames={rotation} index={index} />
-        </ModeCard>
-        <ModeCard
-          description="VibeTV always shows the one provider you pick — nothing else."
-          disabled={saving}
-          onSelect={() => onSelectMode("fixed")}
-          selected={mode === "fixed"}
-          title="Manual"
-        >
-          <PreviewTile
-            frames={manualPreview ? [manualPreview] : []}
-            index={0}
-          />
-        </ModeCard>
-      </div>
-
-      {mode === "fixed" ? (
-        <div className={cn("mt-4 flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
-          <p className="text-sm font-semibold">Show this provider</p>
-          {providers.map((provider) => (
-            <Item
-              asChild
-              className={selectedItemClass(provider.id === selectedProviderId)}
-              key={provider.id}
-              variant="outline"
-            >
-              <button
-                aria-pressed={provider.id === selectedProviderId}
-                disabled={saving}
-                onClick={() => onSelectProvider(provider.id)}
-                type="button"
-              >
-                <ItemContent>
-                  <ItemTitle>{provider.label}</ItemTitle>
-                </ItemContent>
-                <ItemActions>
-                  <SelectionCheck
-                    selected={provider.id === selectedProviderId}
-                  />
-                </ItemActions>
-              </button>
-            </Item>
-          ))}
-        </div>
-      ) : null}
+      <DisplayModeChoice
+        automaticPreview={automaticPreview}
+        automaticPreviews={automaticPreviews}
+        className="mt-4"
+        manualPreview={manualPreview}
+        mode={mode}
+        onSelectMode={onSelectMode}
+        onSelectProvider={onSelectProvider}
+        providers={providers}
+        saving={saving}
+        selectedProviderId={selectedProviderId}
+      />
 
       <Button
         // Closed while the choice is being written. The screen used to take a
@@ -179,6 +135,100 @@ export function SetupDisplayModeScreen({
         Continue
       </Button>
     </SetupWizardScreen>
+  );
+}
+
+type DisplayModeChoiceProps = Pick<
+  SetupDisplayModeScreenProps,
+  | "automaticPreview"
+  | "automaticPreviews"
+  | "manualPreview"
+  | "mode"
+  | "onSelectMode"
+  | "onSelectProvider"
+  | "providers"
+  | "saving"
+  | "selectedProviderId"
+> & { className?: string };
+
+/**
+ * The display-mode choice itself: two cards showing what each mode would put
+ * on the device, and — for Manual — the provider it would be pinned to.
+ *
+ * Lives outside the wizard screen because Settings offers the same choice. One
+ * component rather than two keeps the two places from drifting, which is how
+ * Settings ended up offering "Always show one" against the wizard's "Manual".
+ */
+export function DisplayModeChoice({
+  automaticPreview,
+  automaticPreviews,
+  className,
+  manualPreview,
+  mode,
+  onSelectMode,
+  onSelectProvider,
+  providers,
+  saving = false,
+  selectedProviderId,
+}: DisplayModeChoiceProps) {
+  const rotation = rotationFrames(
+    automaticPreview,
+    automaticPreviews,
+    providers,
+  );
+  const { index } = useProviderRotation(rotation.length);
+
+  return (
+    <div className={cn("flex w-full flex-col gap-4", className)}>
+      <div className="grid w-full grid-cols-2 items-stretch gap-4">
+        <ModeCard
+          description="VibeTV switches between your providers based on recent activity and usage."
+          disabled={saving}
+          onSelect={() => onSelectMode("automatic")}
+          selected={mode === "automatic"}
+          title="Automatic"
+        >
+          <PreviewTile frames={rotation} index={index} />
+        </ModeCard>
+        <ModeCard
+          description="VibeTV always shows the one provider you pick — nothing else."
+          disabled={saving}
+          onSelect={() => onSelectMode("fixed")}
+          selected={mode === "fixed"}
+          title="Manual"
+        >
+          <PreviewTile frames={manualPreview ? [manualPreview] : []} index={0} />
+        </ModeCard>
+      </div>
+
+      {mode === "fixed" ? (
+        <div className={cn("flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
+          <p className="text-sm font-semibold">Show this provider</p>
+          {providers.map((provider) => (
+            <Item
+              asChild
+              className={selectedItemClass(provider.id === selectedProviderId)}
+              key={provider.id}
+              variant="outline"
+            >
+              <button
+                aria-pressed={provider.id === selectedProviderId}
+                disabled={saving}
+                onClick={() => onSelectProvider(provider.id)}
+                type="button"
+              >
+                <ItemContent>
+                  <ItemTitle>{provider.label}</ItemTitle>
+                </ItemContent>
+                <ItemActions>
+                  <SelectionCheck selected={provider.id === selectedProviderId} />
+                </ItemActions>
+              </button>
+            </Item>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

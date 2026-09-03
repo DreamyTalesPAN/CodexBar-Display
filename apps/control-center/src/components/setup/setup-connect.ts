@@ -44,6 +44,8 @@ export function useSetupConnect(
   steps: SetupConnectSteps,
   /** How far the running firmware install has got, for the frozen log line. */
   firmwareProgress = 0,
+  /** Called once the sequence finished: the device step's way forward. */
+  onDone?: () => void,
 ) {
   const [state, setState] = useState<ConnectState>(IDLE);
   const [failure, setFailure] = useState<ConnectFailure | null>(null);
@@ -121,6 +123,7 @@ export function useSetupConnect(
 
       if (!firmware) {
         setState({ ...base, phase: "done" });
+        onDone?.();
         return;
       }
 
@@ -153,8 +156,9 @@ export function useSetupConnect(
         firmwareTo: firmware.to,
         phase: "done",
       });
+      onDone?.();
     },
-    [steps],
+    [onDone, steps],
   );
 
   const dismissFailure = useCallback(() => setFailure(null), []);

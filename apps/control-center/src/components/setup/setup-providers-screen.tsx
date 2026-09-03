@@ -2,7 +2,7 @@
 
 import type { SupportDiagnostics } from "../control-center-types";
 import { Search, SearchX } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -11,12 +11,18 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
-import { ItemGroup } from "@/components/ui/item";
+import { Item, ItemGroup } from "@/components/ui/item";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
+import { SetupLog, type SetupLogLine } from "./setup-log";
 import { SetupProviderRow } from "./setup-provider-row";
-import { SetupWizardScreen, SetupWizardTitle } from "./setup-wizard-screen";
+import {
+  SetupWizardScreen,
+  SetupWizardSubtitle,
+  SetupWizardTitle,
+} from "./setup-wizard-screen";
 
 type SetupProvidersScreenProps = {
   aiFixPrompt?: () => string;
@@ -24,10 +30,11 @@ type SetupProvidersScreenProps = {
   onCheckAgain: (provider: ProviderItem) => void;
   onContinue: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
-  onRecover: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** The completion this step asked for has not answered yet. */
   continuing?: boolean;
+  /** The Companion is still collecting the first provider inventory. */
+  loading?: boolean;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
   /** Preferences whose on/off write is in flight, by preference id. */
@@ -35,62 +42,51 @@ type SetupProvidersScreenProps = {
   providers: ProviderItem[];
 };
 
-const SIGN_IN_WAIT_MS = 45_000;
+/** How many provider rows are on screen before the customer asks for more. */
+const PROVIDER_PAGE_SIZE = 10;
+export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
 
-export function SetupProvidersScreen({
-  aiFixPrompt,
-  onBack,
+type ProviderListProps = {
+  className?: string;
+  onCheckAgain: (provider: ProviderItem) => void;
+  onToggle: (provider: ProviderItem, enabled: boolean) => void;
+  /** Providers whose exact check is queued or running. */
+  pendingCheckIds: Set<string>;
+  /** Preferences whose on/off write is in flight, by preference id. */
+  pendingPreferenceIds: Set<string>;
+  providers: ProviderItem[];
+};
+
+/**
+ * Search plus one row per provider.
+ *
+ * Outside the wizard screen because Settings shows the same list. It used to
+ * show a different one -- its own cards, badges and inclusion checkboxes --
+ * and the two drifted apart in copy and in behaviour.
+ */
+export function ProviderList({
+  className,
   onCheckAgain,
-  onContinue,
-  onCreateSupportReport,
-  onRecover,
   onToggle,
-  continuing = false,
   pendingCheckIds,
   pendingPreferenceIds,
   providers,
-}: SetupProvidersScreenProps) {
+}: ProviderListProps) {
   const [query, setQuery] = useState("");
-  // Nothing tells us that a recovery is under way -- a sign-in, a macOS
-  // permission, a usage service being restarted -- so this is our own guess
-  // after handing the customer over. It is bounded so one they abandoned
-  // cannot leave the row spinning with nothing to press.
-  const [recoveringIds, setRecoveringIds] = useState<string[]>([]);
-  // Kept per provider so the wait for one can be called off on its own.
-  const waitTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-
-  useEffect(
-    () => () => waitTimers.current.forEach(clearTimeout),
-    [],
+  const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
+  const matching = setupProvidersEnabledFirst(
+    providers.filter((provider) => setupProviderMatchesQuery(provider, query)),
   );
-
-  // Switching a provider off ends the recovery it was waiting for. The check
-  // at the end of that wait is a real provider probe -- the companion asks
-  // CodexBar for live usage -- and running one against a provider the customer
-  // has just turned off is work they did not ask for.
-  const endWait = useCallback((providerId: string) => {
-    const timer = waitTimers.current.get(providerId);
-    if (timer === undefined) {
-      return;
-    }
-    clearTimeout(timer);
-    waitTimers.current.delete(providerId);
-    setRecoveringIds((ids) => ids.filter((id) => id !== providerId));
-  }, []);
-  const matching = providers.filter((provider) =>
-    setupProviderMatchesQuery(provider, query),
-  );
+  // CodexBar's inventory is 65 providers deep and almost all of it is off, so
+  // the whole list buried the customer's own few under a page of names they
+  // have never heard of. Search reaches any of them directly; this is for
+  // everyone who does not know what to search for.
+  const visible = matching.slice(0, shown);
+  const remaining = matching.length - visible.length;
 
   return (
-    <SetupWizardScreen
-      label="Choose AI providers"
-      aiFixPrompt={aiFixPrompt}
-      onBack={onBack}
-      onCreateSupportReport={onCreateSupportReport}
-    >
-      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
-
-      <div className="relative mt-4 w-full">
+    <div className={cn("flex w-full flex-col", className)}>
+      <div className="relative w-full">
         <Search
           aria-hidden
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -98,7 +94,10 @@ export function SetupProvidersScreen({
         <Input
           aria-label="Search providers"
           className="pl-9"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setShown(PROVIDER_PAGE_SIZE);
+          }}
           placeholder="Search providers"
           type="search"
           value={query}
@@ -106,41 +105,18 @@ export function SetupProvidersScreen({
       </div>
 
       <ItemGroup className="mt-3 gap-2">
-        {matching.map((provider) => (
+        {visible.map((provider) => (
           <SetupProviderRow
             checking={pendingCheckIds.has(provider.providerId)}
             enabled={provider.value}
             health={provider.health.state}
             key={provider.id}
             label={provider.label}
+            detail={provider.health.message}
             onCheckAgain={() => onCheckAgain(provider)}
-            onRecover={() => {
-              const providerId = provider.providerId;
-              setRecoveringIds((ids) => [...ids, providerId]);
-              waitTimers.current.set(
-                providerId,
-                setTimeout(() => {
-                  waitTimers.current.delete(providerId);
-                  setRecoveringIds((ids) =>
-                    ids.filter((id) => id !== providerId),
-                  );
-                  // The companion is still holding the failed check that sent
-                  // the customer to sign in, and it holds it for five minutes.
-                  // Coming back without asking again left them looking at the
-                  // old answer with Continue closed.
-                  onCheckAgain(provider);
-                }, SIGN_IN_WAIT_MS),
-              );
-              onRecover(provider);
-            }}
-            onToggle={(enabled) => {
-              if (!enabled) {
-                endWait(provider.providerId);
-              }
-              onToggle(provider, enabled);
-            }}
+            onToggle={(enabled) => onToggle(provider, enabled)}
+            reportedMessage={provider.health.reported}
             saving={pendingPreferenceIds.has(provider.id)}
-            recovering={recoveringIds.includes(provider.providerId)}
           />
         ))}
         {matching.length === 0 ? (
@@ -160,15 +136,69 @@ export function SetupProvidersScreen({
         ) : null}
       </ItemGroup>
 
+      {remaining > 0 ? (
+        <Button
+          className="mt-3 self-center"
+          onClick={() => setShown((count) => count + PROVIDER_PAGE_SIZE)}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <span>{`Show more providers (${remaining} left)`}</span>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+export function SetupProvidersScreen({
+  aiFixPrompt,
+  onBack,
+  onCheckAgain,
+  onContinue,
+  onCreateSupportReport,
+  onToggle,
+  continuing = false,
+  loading = false,
+  pendingCheckIds,
+  pendingPreferenceIds,
+  providers,
+}: SetupProvidersScreenProps) {
+  if (loading) {
+    return (
+      <SetupProvidersLoadingScreen
+        aiFixPrompt={aiFixPrompt}
+        onBack={onBack}
+        onCreateSupportReport={onCreateSupportReport}
+      />
+    );
+  }
+
+  return (
+    <SetupWizardScreen
+      label="Choose AI providers"
+      aiFixPrompt={aiFixPrompt}
+      onBack={onBack}
+      onCreateSupportReport={onCreateSupportReport}
+    >
+      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
+
+      <ProviderList
+        className="mt-4"
+        onCheckAgain={onCheckAgain}
+        onToggle={onToggle}
+        pendingCheckIds={pendingCheckIds}
+        pendingPreferenceIds={pendingPreferenceIds}
+        providers={providers}
+      />
+
       <Button
         className="mt-4 w-full"
         // Closed while the completion is on its way. A second press starts a
         // second one, and each of those forces a live provider read before it
         // writes anything -- so the customer paid for the same slow check twice
         // and either answer could move the step or raise a refusal on its own.
-        disabled={
-          continuing || !setupProvidersCanContinue(providers, pendingCheckIds)
-        }
+        disabled={continuing || !setupProvidersCanContinue(providers)}
         onClick={onContinue}
         type="button"
       >
@@ -178,76 +208,114 @@ export function SetupProvidersScreen({
   );
 }
 
-/**
- * Setup may only continue once VibeTV has something to show, and once nothing
- * that is switched on is still broken. Every other state needs the customer --
- * sign in, allow access, or turn the provider off -- so the button stays
- * closed. This is the same gate the companion applies before it writes setup
- * complete; asking for less here only produced a Continue that answered and
- * did nothing.
- *
- * A check still queued or running is one of those states. The companion asks
- * for an exact check of its own, and the health a provider reports before that
- * check has answered is not it -- so a row could read healthy while the answer
- * the companion wants was still on its way, and Continue was open on a gate
- * that refuses it.
- */
-export function setupProvidersCanContinue(
-  providers: ProviderItem[],
-  pendingCheckIds: Set<string>,
-): boolean {
-  const enabled = providers.filter((provider) => provider.value);
+function SetupProvidersLoadingScreen({
+  aiFixPrompt,
+  onBack,
+  onCreateSupportReport,
+}: Pick<
+  SetupProvidersScreenProps,
+  "aiFixPrompt" | "onBack" | "onCreateSupportReport"
+>) {
+  const [stillCheckingCount, setStillCheckingCount] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setStillCheckingCount((count) => count + 1),
+      PROVIDER_LOADING_LOG_INTERVAL_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const lines: SetupLogLine[] = [
+    {
+      id: "provider-usage",
+      text: "reading provider usage on this Mac",
+      tone: stillCheckingCount > 0 ? "done" : undefined,
+    },
+    ...Array.from({ length: stillCheckingCount }, (_, index) => ({
+      id: `still-checking-${index + 1}`,
+      text: "still checking, hang tight",
+      tone:
+        index < stillCheckingCount - 1 ? ("done" as const) : undefined,
+    })),
+  ];
+
   return (
-    enabled.length > 0 &&
-    enabled.every(
-      (provider) =>
-        provider.health.state === "healthy" &&
-        !pendingCheckIds.has(provider.providerId),
-    )
+    <SetupWizardScreen
+      label="Choose AI providers"
+      aiFixPrompt={aiFixPrompt}
+      onBack={onBack}
+      onCreateSupportReport={onCreateSupportReport}
+    >
+      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
+      <SetupWizardSubtitle>
+        This can take up to 5 minutes. We&apos;re sorry.
+      </SetupWizardSubtitle>
+
+      <SetupLog className="mt-4" lines={lines} running />
+
+      <div className="relative w-full">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          aria-label="Search providers"
+          className="pl-9"
+          disabled
+          placeholder="Search providers"
+          type="search"
+        />
+      </div>
+
+      <ItemGroup aria-hidden className="mt-2 gap-2">
+        {Array.from({ length: 3 }, (_, index) => (
+          <Item
+            className="min-h-14 rounded-[var(--radius-card)] p-4"
+            key={index}
+            variant="outline"
+          >
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="ml-auto h-7 w-12 rounded-full" />
+          </Item>
+        ))}
+      </ItemGroup>
+
+      <Button className="mt-4 w-full" disabled type="button">
+        <span>Continue</span>
+      </Button>
+    </SetupWizardScreen>
   );
 }
 
 /**
- * How long the companion accepts an exact provider check for
- * (`providerReadinessFreshness` in `companion/internal/companionapi`).
- */
-export const PROVIDER_READINESS_FRESHNESS_MS = 5 * 60 * 1000;
-
-/**
- * Whether a check made at this time no longer counts.
+ * Setup may continue once VibeTV has something real to show: one provider that
+ * is switched on and has passed its check. That is the rule
+ * docs/control-center-ui-principles.md has stated all along.
  *
- * The same rule governs the check the companion holds and the one this app
- * last asked for: remembering our own request forever stopped the automatic
- * check re-arming exactly when the readiness it stood for expired, and the
- * customer was left with a Continue the companion refuses and a healthy row
- * offering no way to check again.
+ * Demanding every enabled provider instead was a trap, because CodexBar
+ * switches providers on by itself: one of them merely not signed in closed
+ * Continue on a Mac whose own provider was working. What the device shows is
+ * unaffected -- the rotation already skips a provider it cannot read.
+ *
+ * The same provider descriptor drives this button and the companion's
+ * completion gate. A manually requested check may keep running without
+ * replacing an already healthy answer.
  */
-export function setupProviderCheckIsStale(
-  checkedAt: number | undefined,
-  now: number,
-): boolean {
-  if (checkedAt === undefined || !Number.isFinite(checkedAt)) {
-    return true;
-  }
-  const age = now - checkedAt;
-  return age < 0 || age > PROVIDER_READINESS_FRESHNESS_MS;
+export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
+  return providers.some(
+    (provider) => provider.value && provider.health.state === "healthy",
+  );
 }
 
-/**
- * When the newest of these checks stops counting, or null if none of them still
- * does. Nothing changes on screen at that moment, so the step has to come back
- * for it on a clock rather than wait to be told.
- */
-export function setupProviderCheckExpiresAt(
-  checkedAt: (number | undefined)[],
-  now: number,
-): number | null {
-  const held = checkedAt.filter(
-    (at): at is number => !setupProviderCheckIsStale(at, now),
-  );
-  return held.length === 0
-    ? null
-    : Math.max(...held) + PROVIDER_READINESS_FRESHNESS_MS;
+/** Keep CodexBar's order inside the on and off groups. */
+function setupProvidersEnabledFirst(
+  providers: ProviderItem[],
+): ProviderItem[] {
+  return [
+    ...providers.filter((provider) => provider.value === true),
+    ...providers.filter((provider) => provider.value !== true),
+  ];
 }
 
 /**

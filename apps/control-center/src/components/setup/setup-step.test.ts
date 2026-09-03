@@ -6,6 +6,7 @@ import {
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
+  setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
   type SetupStepInput,
 } from "./setup-step";
@@ -16,6 +17,7 @@ const done: SetupStepInput = {
   displaySelectionSupported: true,
   initialCheckComplete: true,
   providerSelectionRequired: false,
+  searchingForDevice: false,
   themeSetupRequired: false,
 };
 
@@ -24,6 +26,55 @@ describe("deriveSetupStep", () => {
     expect(deriveSetupStep({ ...done, initialCheckComplete: false })).toBe(
       "welcome",
     );
+  });
+
+  it("stays on welcome while the search has nothing to choose from yet", () => {
+    // The first check answers in milliseconds and the search it gates takes up
+    // to 40 seconds, so gating welcome on the check alone put the whole search
+    // on a picker with an empty list and a disabled Connect.
+    expect(
+      deriveSetupStep({
+        ...done,
+        deviceUsable: false,
+        searchingForDevice: true,
+      }),
+    ).toBe("welcome");
+  });
+
+  // The background service restarts several times on a fresh install, and a
+  // search that ran into one of those gaps comes back empty. Handing that over
+  // as an answer is what put a customer on "0 VibeTVs found on your WiFi." with
+  // a dead Connect while the service was still starting.
+  it("stays on welcome while the background service is still coming up", () => {
+    expect(
+      deriveSetupStep({
+        ...done,
+        deviceUsable: false,
+        searchingForDevice: true,
+      }),
+    ).toBe("welcome");
+  });
+
+  it("hands over to the picker as soon as the search has answered", () => {
+    expect(
+      deriveSetupStep({
+        ...done,
+        deviceUsable: false,
+        searchingForDevice: false,
+      }),
+    ).toBe("device");
+  });
+
+  it("never sends a connected customer back to welcome", () => {
+    // Pairing returns the search state to "idle", which reads as "searching"
+    // to everything that only looks at the search state.
+    expect(
+      deriveSetupStep({
+        ...done,
+        providerSelectionRequired: true,
+        searchingForDevice: true,
+      }),
+    ).toBe("providers");
   });
 
   it("asks for a VibeTV before anything that needs one", () => {
@@ -86,16 +137,27 @@ describe("deriveSetupStep", () => {
   });
 });
 
+describe("initial provider inventory", () => {
+  it("loads until the separate preferences request answers", () => {
+    expect(setupProviderInventoryIsLoading(true, null, null)).toBe(true);
+    expect(setupProviderInventoryIsLoading(true, [], null)).toBe(false);
+  });
+
+  it("hands a failed request to the provider error dialog", () => {
+    expect(setupProviderInventoryIsLoading(true, null, {})).toBe(false);
+  });
+});
+
 describe("previousSetupStep", () => {
-  it("offers no way back before the device is paired", () => {
+  it("offers no way back to a step with no choice on it", () => {
     expect(previousSetupStep("welcome")).toBeNull();
     expect(previousSetupStep("device")).toBeNull();
-    expect(previousSetupStep("providers")).toBeNull();
   });
 
   it("walks back through the choices that can be revisited", () => {
     expect(previousSetupStep("theme")).toBe("display");
     expect(previousSetupStep("display")).toBe("providers");
+    expect(previousSetupStep("providers")).toBe("device");
   });
 
   it("has nowhere to go from the last step", () => {
@@ -121,19 +183,19 @@ describe("resolveSetupStep", () => {
 
 describe("setupDeviceIsUsable", () => {
   const coldStart = {
-    awaitsProviderSetup: true,
+    deviceConnected: true,
     connectionRecoveryRequired: false,
     hasActiveDevice: true,
     hasEnteredControlCenter: false,
     providerSelectionRequired: true,
+    providerSetupCompletedThisSession: false,
+    themeSetupRequired: false,
     ready: false,
   };
 
-  // A brand-new customer has CodexBar bundled but no provider signed in, so
-  // their first VibeTV cannot render usage and reports ready:false. Holding
-  // them on the device step puts the remedy -- the provider step -- on the
-  // other side of the wall.
-  it("lets a VibeTV waiting only for a provider reach the provider step", () => {
+  // Pairing and the firmware check are enough. The first usage frame and the
+  // provider inventory may both still be in flight when this step ends.
+  it("lets a connected VibeTV reach the provider step", () => {
     expect(setupDeviceIsUsable(coldStart)).toBe(true);
   });
 
@@ -146,9 +208,29 @@ describe("setupDeviceIsUsable", () => {
     ).toBe(false);
   });
 
-  it("still needs the VibeTV to be answering", () => {
+  it("does not bounce back after Continue completes in this setup", () => {
     expect(
-      setupDeviceIsUsable({ ...coldStart, awaitsProviderSetup: false }),
+      setupDeviceIsUsable({
+        ...coldStart,
+        providerSelectionRequired: false,
+        providerSetupCompletedThisSession: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("lets a connected VibeTV continue to its required theme setup", () => {
+    expect(
+      setupDeviceIsUsable({
+        ...coldStart,
+        providerSelectionRequired: false,
+        themeSetupRequired: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("still needs the VibeTV to be connected", () => {
+    expect(
+      setupDeviceIsUsable({ ...coldStart, deviceConnected: false }),
     ).toBe(false);
   });
 
@@ -156,7 +238,7 @@ describe("setupDeviceIsUsable", () => {
     expect(
       setupDeviceIsUsable({
         ...coldStart,
-        awaitsProviderSetup: false,
+        deviceConnected: false,
         providerSelectionRequired: false,
         ready: true,
       }),
@@ -169,7 +251,7 @@ describe("setupDeviceIsUsable", () => {
     expect(
       setupDeviceIsUsable({
         ...coldStart,
-        awaitsProviderSetup: false,
+        deviceConnected: false,
         hasEnteredControlCenter: true,
         providerSelectionRequired: false,
       }),
@@ -177,7 +259,7 @@ describe("setupDeviceIsUsable", () => {
     expect(
       setupDeviceIsUsable({
         ...coldStart,
-        awaitsProviderSetup: false,
+        deviceConnected: false,
         connectionRecoveryRequired: true,
         hasEnteredControlCenter: true,
         providerSelectionRequired: false,

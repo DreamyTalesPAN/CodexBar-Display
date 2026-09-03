@@ -143,42 +143,8 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Meta:               ProviderUsageMeta{Windows: metaWindows},
 		CollectedAt:        collectedAt.UTC(),
 		ActivityObservedAt: activityObservedAt,
-		RateLimited:        dashboardErrorsAreRateLimited(provider.Error, usageError),
-		RateLimitedUntil:   rateLimitedUntilFromDashboardErrors(provider.Error, usageError),
 		Stale:              frame.UsageUnavailable,
 	}
-}
-
-func dashboardErrorsAreRateLimited(errors ...json.RawMessage) bool {
-	for _, raw := range errors {
-		if len(raw) == 0 {
-			continue
-		}
-		var payload map[string]any
-		if err := json.Unmarshal(raw, &payload); err != nil || len(payload) == 0 {
-			continue
-		}
-		if payloadIsRateLimited(map[string]any{"error": payload}) {
-			return true
-		}
-	}
-	return false
-}
-
-func rateLimitedUntilFromDashboardErrors(errors ...json.RawMessage) time.Time {
-	for _, raw := range errors {
-		if len(raw) == 0 {
-			continue
-		}
-		var payload map[string]any
-		if err := json.Unmarshal(raw, &payload); err != nil || len(payload) == 0 {
-			continue
-		}
-		if blockedUntil := rateLimitedUntilFromPayload(map[string]any{"error": payload}); !blockedUntil.IsZero() {
-			return blockedUntil
-		}
-	}
-	return time.Time{}
 }
 
 func usageWindowsFromDashboardWindows(windows []dashboardusage.UsageWindow, now time.Time) []UsageWindow {

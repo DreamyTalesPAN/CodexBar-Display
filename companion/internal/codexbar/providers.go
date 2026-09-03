@@ -39,6 +39,12 @@ type ProviderSetting struct {
 	DefaultEnabled bool
 	Health         ProviderHealthState
 	Service        ProviderServiceState
+	// What CodexBar itself said went wrong, verbatim. It is the only per-provider
+	// sign-in guidance that exists -- CodexBar publishes no structured
+	// destination, in 0.46.0 or in 0.56.2 -- so throwing it away left the app
+	// with nothing to tell the customer. Never customer-visible as it stands:
+	// five of its sentences carry the account's home path.
+	Reported string
 }
 
 type ProviderSettingsErrorKind string
@@ -88,6 +94,7 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 		if current, ok := health[settings[i].ID]; ok {
 			settings[i].Health = current.health
 			settings[i].Service = current.service
+			settings[i].Reported = current.reported
 		} else if healthErr != nil {
 			settings[i].Health = ProviderHealthUnavailable
 		}
@@ -234,8 +241,9 @@ func validProviderID(id string) bool {
 }
 
 type providerHealth struct {
-	health  ProviderHealthState
-	service ProviderServiceState
+	health   ProviderHealthState
+	service  ProviderServiceState
+	reported string
 }
 
 func parseProviderHealth(raw []byte) map[string]providerHealth {
@@ -254,12 +262,15 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 			continue
 		}
 		state := ProviderHealthHealthy
+		reported := ""
 		if providerPayloadHasError(payload) {
-			state = classifyProviderHealth(providerHealthErrorText(payload["error"]))
+			reported = providerHealthErrorText(payload["error"])
+			state = classifyProviderHealth(reported)
 		}
 		result[id] = providerHealth{
-			health:  state,
-			service: classifyProviderService(firstStringAtPaths(payload, "status.indicator")),
+			health:   state,
+			service:  classifyProviderService(firstStringAtPaths(payload, "status.indicator")),
+			reported: reported,
 		}
 	}
 	return result

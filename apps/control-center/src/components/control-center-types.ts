@@ -365,8 +365,6 @@ export type UsageProviderInfo = {
   weeklyUnavailable?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
-  rateLimited?: boolean;
-  blockedUntil?: string;
   windows?: UsageWindowInfo[];
   status?: UsageStatusInfo;
   credits?: UsageCreditsInfo;
@@ -461,9 +459,8 @@ export type UsageSnapshot = {
 };
 
 export type UsageRefreshInfo = {
-  state: "refreshing" | "rate_limited" | "fresh" | "unavailable" | string;
+  state: "refreshing" | "fresh" | "unavailable" | string;
   requestedAt?: string;
-  blockedUntil?: string;
   message?: string;
 };
 
@@ -514,15 +511,14 @@ export type PreferenceDescriptor = {
     state: PreferenceHealthState;
     service: "operational" | "degraded" | "outage" | "unknown" | string;
     message: string;
+    /**
+     * What the usage service itself said, with its home path redacted.
+     * Absent only when it did not report a sentence.
+     */
+    reported?: string;
     lastSuccessAt?: string;
     checkedAt?: string;
-    verifiedAt?: string;
     nextAction?: string;
-    recoveryAction?:
-      | "open_provider_setup"
-      | "repair_usage_service"
-      | "check_again"
-      | string;
   };
 };
 
@@ -676,12 +672,44 @@ export function providerRecoveryStatusRows(
   return rows;
 }
 
+function providerSetupEngineIsReady(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  return normalizedProviderStatus(providerSetup?.engine?.status) === "ready";
+}
+
+// The recovery reinstalls the usage engine, so it only ever answers a usage
+// service that is not there or cannot answer. CodexBar reports the second under
+// the `codexbar` stand-in, which is not a provider.
+//
+// An engine that reports ready with no failing stand-in is working, and what is
+// missing then is a provider nobody has switched on or signed into yet -- the
+// ordinary state of this wizard, now that the first run no longer switches
+// providers on by itself. Reinstalling the engine cannot switch one on, and
+// running the recovery for it took the background service down every couple of
+// minutes for as long as the customer stayed on the provider step.
+export function providerSetupNeedsEngineRecovery(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  if (!providerSetupRequiresRecovery(providerSetup)) {
+    return false;
+  }
+  return (
+    !providerSetupEngineIsReady(providerSetup) ||
+    (providerSetup?.providers ?? []).some(
+      (provider) =>
+        provider.id === "codexbar" &&
+        normalizedProviderStatus(provider.status) !== "ready",
+    )
+  );
+}
+
 export function providerSetupHasEngineButNoEnabledProvider(
   providerSetup: ProviderSetupInfo | null | undefined,
 ) {
   const providers = providerSetup?.providers ?? [];
   return (
-    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
+    providerSetupEngineIsReady(providerSetup) &&
     providers.length > 0 &&
     // `codexbar` is not a provider. CodexBar reports the usage service itself
     // under that id when its own probe timed out or failed, and the enablement

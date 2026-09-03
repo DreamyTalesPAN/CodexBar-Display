@@ -27,17 +27,28 @@ export function displayPreviewFor(
 }
 
 /**
- * The rotation Automatic moves through: every provider switched on for this
- * Mac, in the order the usage service reports them, so the panel shows the same
- * set the device will.
+ * The rotation Automatic moves through: one frame per provider switched on for
+ * this Mac, in that order, so the panel shows the same set the device will.
+ *
+ * A provider the usage service has not reported yet keeps its place and stays
+ * visibly unavailable. Dropping it instead shrank the rotation to whatever had
+ * already been read -- on a Mac where that was one provider, Automatic held
+ * still and looked exactly like Manual.
  */
 export function displayPreviewsFor(
   usage: UsageSnapshot | null,
-  enabledProviderIds: string[],
+  providers: { id: string; label: string }[],
 ): SetupDisplayModePreview[] {
-  const enabled = new Set(enabledProviderIds);
-  return (usage?.providers || [])
-    .filter((provider) => enabled.has(provider.id))
-    .map((provider) => displayPreviewFor(provider))
-    .filter((preview): preview is SetupDisplayModePreview => preview !== null);
+  const reported = new Map(
+    (usage?.providers || []).map((provider) => [provider.id, provider]),
+  );
+  return providers.map(
+    (provider) =>
+      displayPreviewFor(reported.get(provider.id)) ?? {
+        providerLabel: provider.label,
+        resetLabel: null,
+        sessionPercent: null,
+        weeklyPercent: null,
+      },
+  );
 }

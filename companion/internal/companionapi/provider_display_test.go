@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
@@ -70,7 +71,7 @@ func TestProviderDisplayRejectsDisabledProvider(t *testing.T) {
 	}
 }
 
-func TestProviderSetupCompletionRequiresEveryEnabledProviderFreshAndReady(t *testing.T) {
+func TestProviderSetupCompletionRequiresOneEnabledProviderFreshAndReady(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	server := newTestServer(t, runtimeconfig.Config{
 		DeviceID: "device-a",
@@ -84,16 +85,20 @@ func TestProviderSetupCompletionRequiresEveryEnabledProviderFreshAndReady(t *tes
 	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
-	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderReady))
+	// Nothing ready at all: VibeTV would have nothing real to put on screen.
+	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderAuthRequired))
 	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now, "claude", codexbar.ProviderAuthRequired))
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
 	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_check_required"`)) {
-		t.Fatalf("expected mixed readiness to block setup, status=%d body=%s", recorder.Code, recorder.Body.String())
+		t.Fatalf("expected no ready provider to block setup, status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now, "claude", codexbar.ProviderReady))
+	// One is enough. The other is switched on and merely not signed in, which
+	// the rotation skips on its own -- holding the customer on a step with no
+	// Back and no Skip over it is the trap this rule removes.
+	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderReady))
 	recorder = httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
 	if recorder.Code != http.StatusOK {
@@ -108,7 +113,39 @@ func TestProviderSetupCompletionRequiresEveryEnabledProviderFreshAndReady(t *tes
 	}
 }
 
-func TestProviderSetupCompletionRejectsExpiredExactCheck(t *testing.T) {
+func TestProviderSetupCompletionUsesTheSameHealthyDescriptorAsPreferences(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"claude"},
+	}})
+	loads := 0
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		loads++
+		return []codexbar.ProviderSetting{{
+			ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+		}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	if recorder.Code != http.StatusOK || loads != 1 {
+		t.Fatalf("read provider screen: status=%d loads=%d body=%s", recorder.Code, loads, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("healthy provider descriptor did not complete setup: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if loads != 1 {
+		t.Fatalf("Continue repeated the live provider scan: loads=%d", loads)
+	}
+}
+
+func TestProviderSetupCompletionUsesCurrentHealthAfterExactCheckExpires(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
 		Mode:        providerDisplayModeAutomatic,
@@ -119,13 +156,15 @@ func TestProviderSetupCompletionRejectsExpiredExactCheck(t *testing.T) {
 	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
+	// The expired exact records no longer override CodexBar's current healthy
+	// descriptors, which are the same answer the provider rows show.
 	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now.Add(-providerReadinessFreshness-time.Second), "codex", codexbar.ProviderReady))
-	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now, "claude", codexbar.ProviderReady))
+	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now.Add(-providerReadinessFreshness-time.Second), "claude", codexbar.ProviderReady))
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
-	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_check_required"`)) {
-		t.Fatalf("expired readiness passed setup: status=%d body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("current healthy descriptors did not pass setup: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -259,10 +298,19 @@ func TestSelectedProviderCanBeDisabledAndTheDisplaySaysSo(t *testing.T) {
 		Mode:        providerDisplayModeFixed,
 		ProviderIDs: []string{"codex"},
 	}})
-	server.providerPreferences.load = providerSettingsFixture
+	codexEnabled := true
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: codexEnabled, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
 	writes := 0
-	server.providerPreferences.set = func(context.Context, string, bool) error {
+	server.providerPreferences.set = func(_ context.Context, providerID string, enabled bool) error {
 		writes++
+		if providerID == "codex" {
+			codexEnabled = enabled
+		}
 		return nil
 	}
 
@@ -320,7 +368,7 @@ func TestProviderCanBeDisabledBeforeADisplayIsChosen(t *testing.T) {
 	}
 }
 
-func TestExactProviderReadinessIsRedactedInPreferences(t *testing.T) {
+func TestExactProviderReadinessUsesDetailWhenNothingWasReported(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.now = func() time.Time { return now }
@@ -329,15 +377,18 @@ func TestExactProviderReadinessIsRedactedInPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	setup := exactSetupFixture(now, "codex", codexbar.ProviderAuthRequired)
-	setup.Providers[0].Detail = "/Users/private/account.db secret-token-value"
+	setup.Providers[0].Detail = "This provider needs an active sign-in."
 	setup.Providers[0].NextAction = "Sign in as customer@example.com"
 	server.recordExactProviderSetup("codex", 0, setup)
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
-	body := recorder.Body.String()
-	if recorder.Code != http.StatusOK || bytes.Contains(recorder.Body.Bytes(), []byte("secret-token-value")) || bytes.Contains(recorder.Body.Bytes(), []byte("customer@example.com")) || bytes.Contains(recorder.Body.Bytes(), []byte("/Users/private")) {
-		t.Fatalf("exact readiness leaked raw detail: status=%d body=%s", recorder.Code, body)
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || len(response.Items) != 3 || response.Items[0].Health.Reported != "" || response.Items[0].Health.Message != setup.Providers[0].Detail || bytes.Contains(recorder.Body.Bytes(), []byte("customer@example.com")) {
+		t.Fatalf("exact readiness did not keep Detail as the generic fallback: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -348,9 +399,8 @@ func TestProviderDescriptorsDoNotShowStaleOrContradictedExactReadiness(t *testin
 	server.providerReadinessMu.Lock()
 	server.providerReadiness = make(map[string]providerReadinessRecord)
 	server.providerReadiness["codex"] = providerReadinessRecord{
-		Status:     codexbar.ProviderReady,
-		CheckedAt:  now,
-		VerifiedAt: now,
+		Status:    codexbar.ProviderReady,
+		CheckedAt: now,
 	}
 	server.providerReadiness["claude"] = providerReadinessRecord{
 		Status:    codexbar.ProviderAuthRequired,
@@ -362,7 +412,7 @@ func TestProviderDescriptorsDoNotShowStaleOrContradictedExactReadiness(t *testin
 		{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
 		{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
 	})
-	if items[0].Health.State != "auth_required" || items[0].Health.VerifiedAt != "" {
+	if items[0].Health.State != "auth_required" {
 		t.Fatalf("fresh current auth failure was hidden by old ready record: %+v", items[0].Health)
 	}
 	if items[1].Health.State != "healthy" || items[1].Health.CheckedAt != "" {
@@ -412,49 +462,6 @@ func exactSetupFixture(now time.Time, providerID, status string) codexbar.Provid
 			ID: providerID, Label: providerID, Enabled: providerEnabled(true), Status: status,
 			Detail: "Safe provider status.", NextAction: "Check the provider, then try again.",
 		}},
-	}
-}
-
-// Setup completion asks for provider settings with force=true because it must
-// know the health right now. That read used to be served by the inventory
-// loader with the last known health carried over, so a provider that signed
-// out after its exact check still looked Ready and setup was written complete
-// against a provider the customer would then find broken. The forced read now
-// loads live health, and the contradiction check has something real to see.
-func TestSetupCompletionRefusesAProviderThatSignedOutAfterItsCheck(t *testing.T) {
-	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
-	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
-		Mode:        providerDisplayModeFixed,
-		ProviderIDs: []string{"codex"},
-	}})
-	server.now = func() time.Time { return now }
-
-	// What CodexBar reports today: the customer is signed out.
-	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
-		return []codexbar.ProviderSetting{
-			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
-		}, nil
-	}
-	// The fast path lists providers and knows nothing about health.
-	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
-		return []codexbar.ProviderSetting{
-			{ID: "codex", Label: "Codex", Enabled: true},
-		}, nil
-	}
-	// What the last real check found, before the customer signed out.
-	server.providerPreferences.cached = []codexbar.ProviderSetting{
-		{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
-	}
-	server.providerReadinessMu.Lock()
-	server.providerReadiness = map[string]providerReadinessRecord{
-		"codex": {Status: codexbar.ProviderReady, CheckedAt: now, VerifiedAt: now},
-	}
-	server.providerReadinessMu.Unlock()
-
-	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
-	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_check_required"`)) {
-		t.Fatalf("setup completed against a signed-out provider: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

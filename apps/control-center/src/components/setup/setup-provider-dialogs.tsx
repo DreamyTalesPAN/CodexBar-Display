@@ -14,8 +14,9 @@ type ProviderStepFailedDialogProps = {
  * 03e / 04b — the companion refused what the step asked for.
  *
  * The provider and display steps write through the companion, and it applies
- * gates the screen cannot fully anticipate: a provider whose exact check went
- * stale, a display still naming a provider that has since been turned off.
+ * gates the screen cannot fully anticipate: provider state that changed after
+ * rendering, or a display still naming a provider that has since been turned
+ * off.
  * The provider list itself is read the same way, and a read that failed left
  * the step reporting that no providers matched -- an empty list with a closed
  * Continue and nothing said. Without this the refusal was swallowed and
@@ -27,12 +28,13 @@ export function SetupProviderStepFailedDialog({
   onOpenChange,
   onRetry,
 }: ProviderStepFailedDialogProps) {
+  const visibleError = error?.code === "COMPANION_UNREACHABLE" ? null : error;
   return (
     <SetupDialog
-      description={error?.nextAction ?? ""}
+      description={visibleError?.nextAction ?? ""}
       icon={TriangleAlert}
       onOpenChange={onOpenChange}
-      open={Boolean(error)}
+      open={Boolean(visibleError)}
       primaryAction={
         onRetry
           ? {
@@ -44,7 +46,7 @@ export function SetupProviderStepFailedDialog({
             }
           : { label: "OK", onSelect: () => onOpenChange(false) }
       }
-      title={error?.message ?? ""}
+      title={visibleError?.message ?? ""}
     />
   );
 }
