@@ -1,0 +1,59 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "pixel-battery",
+  "name": "Pixel Battery",
+  "version": "1.15.0",
+  "usage": "live",
+  "minFirmware": "1.0.42",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "provider-assets-v1",
+    "color-stops-v1",
+    "text-valign-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/u/pba-15-9e62e5.json",
+    "file": "theme.json",
+    "bytes": 1473,
+    "sha256": "9e62e56675f7c7bcb8b1663fe80d78947c9954abcedde65a76bd26aa8b9beafd",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/pba-bg.cbi",
+      "file": "assets/pba-bg.cbi",
+      "bytes": 4023,
+      "sha256": "b319e1c04921889e2d77d0b7072e9e5fde594f6e56aaa1afd38f4779f1ffca53",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pba-fb.cbi",
+      "file": "assets/pba-fb.cbi",
+      "bytes": 433,
+      "sha256": "cad422fa747478ddf459f3a98747cf3ec6e967cda7a666c061090aa4babae779",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pba-cu.cbi",
+      "file": "assets/pba-cu.cbi",
+      "bytes": 315,
+      "sha256": "906d24a04594df3f30a9a2d0ded5498518674961c51df0277ff66aebeee1142b",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pba-cl.cbi",
+      "file": "assets/pba-cl.cbi",
+      "bytes": 593,
+      "sha256": "857eb24980be47950ea5f2af0c5b1790087b5c01a19bea87cd8b25a57a339b03",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pba-xo.cbi",
+      "file": "assets/pba-xo.cbi",
+      "bytes": 473,
+      "sha256": "03ed776a6695e57563d689a0a692d84c5eeb40bb425f98d25054d4178231aa04",
+      "contentType": "text/plain"
+    }
+  ]
+}
