@@ -20,7 +20,7 @@ import {
   SetupDeviceNotFoundDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
-import { SetupProviderStepFailedDialog } from "./setup-provider-dialogs";
+import { SetupStepFailedDialog } from "./setup-provider-dialogs";
 import {
   SetupDisplayModeScreen,
   type SetupDisplayModePreview,
@@ -83,6 +83,12 @@ export type SetupWizardProps = {
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
   onInstallTheme: () => void;
+  /** What stopped the catalog read or install on the theme step. */
+  themeError: ApiError | null;
+  themeErrorDismissible?: boolean;
+  onDismissThemeError: () => void;
+  onRetryTheme: () => void;
+  themeRetryLabel?: string;
   onProviderCheck: (provider: ProviderItem) => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
   /**
@@ -495,7 +501,7 @@ export function SetupWizard(props: SetupWizardProps) {
           loading={props.providersLoading}
           providers={props.providers}
         />
-        <SetupProviderStepFailedDialog
+        <SetupStepFailedDialog
           error={props.providerError}
           onOpenChange={(open) => !open && props.onDismissProviderError()}
           onRetry={props.onRetryProviders}
@@ -559,7 +565,7 @@ export function SetupWizard(props: SetupWizardProps) {
           saving={props.displaySavePending}
           selectedProviderId={displayProviderId}
         />
-        <SetupProviderStepFailedDialog
+        <SetupStepFailedDialog
           error={props.providerError}
           onOpenChange={(open) => !open && props.onDismissProviderError()}
           onRetry={props.onRetryProviders}
@@ -570,16 +576,26 @@ export function SetupWizard(props: SetupWizardProps) {
 
   if (step === "theme") {
     return (
-      <SetupThemeScreen
-        {...help}
-        installLogs={props.themeInstallLogs}
-        installing={props.installingTheme}
-        onBack={goBack}
-        onInstall={props.onInstallTheme}
-        onSelect={props.onSelectTheme}
-        selectedThemeId={props.selectedThemeId}
-        themes={props.themes}
-      />
+      <>
+        <SetupThemeScreen
+          {...help}
+          installLogs={props.themeInstallLogs}
+          installing={props.installingTheme}
+          onBack={goBack}
+          onInstall={props.onInstallTheme}
+          onSelect={props.onSelectTheme}
+          selectedThemeId={props.selectedThemeId}
+          themes={props.themes}
+        />
+        <SetupStepFailedDialog
+          dismissible={props.themeErrorDismissible}
+          error={props.themeError}
+          onOpenChange={(open) => !open && props.onDismissThemeError()}
+          onRetry={props.onRetryTheme}
+          retryLabel={props.themeRetryLabel}
+        />
+        {props.themeError ? null : usageDialog}
+      </>
     );
   }
 

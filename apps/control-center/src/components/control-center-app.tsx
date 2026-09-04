@@ -277,6 +277,7 @@ type ThemeInstallStatus = {
   logs: string[];
   result?: ThemeInstallResult;
   error?: string;
+  failure?: ApiError;
 };
 
 type RunCompanion = <T>(
@@ -1044,6 +1045,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalized.nextAction,
           ],
           error: themeInstallErrorText(normalized),
+          failure: normalized,
         });
         addEvent({
           label: "Theme install needs attention",
@@ -2108,6 +2110,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           progress: 100,
           logs: [...initialLogs, normalized.message, normalized.nextAction],
           error: themeInstallErrorText(normalized),
+          failure: normalized,
         });
         addEvent({
           label: "Theme install needs attention",
@@ -4235,6 +4238,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallEnabled,
         })?.reason ?? null,
     }));
+  const setupThemeError: ApiError | null =
+    themeInstallStatus?.phase === "error"
+      ? themeInstallStatus.failure ?? {
+          code: "theme_install_failed",
+          message: "Theme install did not finish.",
+          nextAction:
+            themeInstallStatus.error ||
+            themeInstallStatus.message ||
+            "Keep VibeTV powered on and try again.",
+        }
+      : catalog.issue && setupThemes.length === 0
+        ? {
+            code: "theme_catalog_unavailable",
+            message: "Themes unavailable",
+            nextAction: catalog.issue,
+          }
+        : null;
 
   const setupConnectSteps: SetupConnectSteps = {
     checkFirmware: async (connected) => {
@@ -4354,6 +4374,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             label: item.label,
           }))}
           installingTheme={themeInstallStatus?.phase === "installing"}
+          themeError={setupThemeError}
+          themeErrorDismissible={themeInstallStatus?.phase === "error"}
+          onDismissThemeError={() => {
+            if (themeInstallStatus?.phase === "error") {
+              setThemeInstallStatus(null);
+            }
+          }}
+          onRetryTheme={() => {
+            if (themeInstallStatus?.phase === "error") {
+              void installTheme();
+              return;
+            }
+            window.location.reload();
+          }}
+          themeRetryLabel={
+            catalog.issue && themeInstallStatus?.phase !== "error"
+              ? "Reload catalog"
+              : undefined
+          }
           onFindManualTarget={findManualTarget}
           onCreateSupportReport={loadSupportDiagnostics}
           onFinished={finishSetup}
@@ -4749,6 +4788,7 @@ function themeInstallStatusFromJob(
     logs,
     result: job.result,
     error: job.error ? themeInstallErrorText(job.error) : undefined,
+    failure: job.error,
   };
 }
 

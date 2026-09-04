@@ -3556,3 +3556,18 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Theme-step failures stay recoverable
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found two dead ends on
+  `Choose your theme`: an unavailable catalog and a failed install.
+- Approved customer-visible result: **When no theme catalog can be loaded, the
+  existing theme step stays visible behind a `Themes unavailable` dialog with
+  `Reload catalog`. When a theme install fails, its exact message and next
+  action appear in a dialog over the same step with `Try again`.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-provider-dialogs.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.tsx`, its test,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.

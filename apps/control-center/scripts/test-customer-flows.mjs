@@ -4294,16 +4294,23 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
   assertNoInstallRequests(installRequests);
 
   await installButton.click();
-  // The failed install has nowhere to go but the step's own log, so that is
-  // where the customer has to be told, and Install has to come back.
+  // The failed install stays on its originating step and opens the recovery
+  // dialog. The log remains visible behind it as the detailed history.
   await setupScreen(page, SETUP_THEME_SCREEN)
     .getByRole("status")
     .getByText("> Theme install failed.")
     .waitFor({ timeout: 15_000 });
+  const installFailureDialog = page.getByRole("dialog", {
+    name: "Theme install failed.",
+  });
+  await installFailureDialog.waitFor({ timeout: 10_000 });
+  await installFailureDialog
+    .getByText("Keep VibeTV powered on and retry the install.")
+    .waitFor();
   await waitForEnabled(
     page,
     installButton,
-    "A failed install must leave the customer able to retry",
+    "A failed install must leave the originating step ready behind its dialog",
   );
   assert(
     installRequests.length === 1,
@@ -4313,7 +4320,7 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
   const renderedFinalPreview = setupScreen(page, SETUP_LIVE_SCREEN)
     .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
     .waitFor({ timeout: 20_000 });
-  await installButton.click();
+  await installFailureDialog.getByRole("button", { name: "Try again" }).click();
   await renderedFinalPreview;
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===

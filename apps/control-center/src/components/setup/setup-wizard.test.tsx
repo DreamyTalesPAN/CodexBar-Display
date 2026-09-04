@@ -68,6 +68,9 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onFindManualTarget: vi.fn(),
     onFinished: vi.fn(),
     onInstallTheme: vi.fn(),
+    themeError: null,
+    onDismissThemeError: vi.fn(),
+    onRetryTheme: vi.fn(),
     onProviderCheck: vi.fn(),
     onProviderToggle: vi.fn(),
     onProvidersContinue: vi.fn(),
@@ -91,6 +94,53 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     ...overrides,
   };
 }
+
+describe("SetupWizard: theme failures", () => {
+  it("shows an unavailable catalog over the theme step and reloads it", () => {
+    const onRetryTheme = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "theme",
+          themeError: {
+            code: "theme_catalog_unavailable",
+            message: "Themes unavailable",
+            nextAction: "Themes could not be loaded right now.",
+          },
+          themeErrorDismissible: false,
+          onRetryTheme,
+          themeRetryLabel: "Reload catalog",
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Themes unavailable")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reload catalog" }));
+    expect(onRetryTheme).toHaveBeenCalledOnce();
+  });
+
+  it("shows a failed install over the theme step and retries it", () => {
+    const onRetryTheme = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "theme",
+          themeError: {
+            code: "theme_install_failed",
+            message: "Theme install did not finish.",
+            nextAction: "Keep VibeTV powered on and try again.",
+          },
+          onRetryTheme,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Theme install did not finish.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryTheme).toHaveBeenCalledOnce();
+  });
+});
 
 describe("SetupWizard: initial provider scan", () => {
   it("shows the provider loading screen instead of the finished list", () => {
