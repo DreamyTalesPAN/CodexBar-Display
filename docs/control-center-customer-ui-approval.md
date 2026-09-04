@@ -3680,3 +3680,14 @@ issue scope, or release permission never implies UI permission.
   refreshed token history remains available with its own freshness.**
 - Approved files: `companion/internal/daemon/daemon.go`, its test, and this
   approval record.
+
+## 2026-09-04 — Provider race tests count before navigation
+
+- User approval: Same instruction as above: leave the final candidate fully
+  green. The exact-head CI showed that Overview could start the intended stale
+  provider read before the fixture took its baseline count.
+- Approved customer-visible result: **No product UI change. The provider race
+  regressions count reads before either navigation can start one and keep the
+  intended stale response open until after the competing write or check.**
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and this
+  approval record.

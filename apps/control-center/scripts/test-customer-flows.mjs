@@ -6207,7 +6207,7 @@ async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const requests = [];
   await routeCompanionOnline(page, [], () => {}, {
-    preferencesDelayMs: 800,
+    preferencesDelayMs: 2_000,
     preferencesSnapshotBeforeDelay: true,
     preferencesResponse: {
       ok: true,
@@ -6233,20 +6233,20 @@ async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const codex = page.getByRole("switch", { name: "Codex" });
   await codex.waitFor({ timeout: 10_000 });
-  await waitForPreferenceReadsToSettle(requests, 800);
-  await clickNavigation(page, "Overview");
-  const readsBeforeSettings = requests.filter(
+  await waitForPreferenceReadsToSettle(requests, 2_000);
+  const readsBeforeNavigation = requests.filter(
     (request) =>
       request.path === "/v1/preferences" && request.method === "GET",
   ).length;
+  await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
   await waitForCondition(
     () =>
       requests.filter(
         (request) =>
           request.path === "/v1/preferences" && request.method === "GET",
-      ).length > readsBeforeSettings,
-    "opening Settings must start the preference read used by this race",
+      ).length > readsBeforeNavigation,
+    "navigation must start the preference read used by this race",
   );
 
   await codex.click();
@@ -6261,7 +6261,7 @@ async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
       ),
     "disabling Codex must save the preference",
   );
-  await page.waitForTimeout(1_000);
+  await page.waitForTimeout(2_200);
   assert(
     !(await codex.isChecked()),
     "a preference GET that started before the PATCH must not restore the old provider value",
@@ -6295,7 +6295,7 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     },
   };
   await routeCompanionOnline(page, [], () => {}, {
-    preferencesDelayMs: 600,
+    preferencesDelayMs: 2_000,
     preferencesSnapshotBeforeDelay: true,
     preferencesResponse: { ok: true, items: [codexPreference] },
     onProviderRetry: async (_setup, providerId) => {
@@ -6314,20 +6314,20 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const checkAgain = page.getByRole("button", { name: "Check Codex again" });
   await checkAgain.waitFor({ timeout: 10_000 });
-  await waitForPreferenceReadsToSettle(requests, 600);
-  await clickNavigation(page, "Overview");
-  const readsBeforeSettings = requests.filter(
+  await waitForPreferenceReadsToSettle(requests, 2_000);
+  const readsBeforeNavigation = requests.filter(
     (request) =>
       request.path === "/v1/preferences" && request.method === "GET",
   ).length;
+  await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
   await waitForCondition(
     () =>
       requests.filter(
         (request) =>
           request.path === "/v1/preferences" && request.method === "GET",
-      ).length > readsBeforeSettings,
-    "opening Settings must start the stale read used by the provider-check race",
+      ).length > readsBeforeNavigation,
+    "navigation must start the stale read used by the provider-check race",
   );
 
   await checkAgain.click();
