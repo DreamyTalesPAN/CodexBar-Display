@@ -36,6 +36,28 @@ func TestProviderDisplayDefaultsToAllEnabledProviders(t *testing.T) {
 	}
 }
 
+func TestProviderDisplayAutomaticReconcilesProvidersEnabledInCodexBar(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeAutomatic,
+		ProviderIDs: []string{"codex"},
+	}})
+	server.providerPreferences.load = providerSettingsFixture
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/provider-display", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("get provider display: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response providerDisplayResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Selection.Valid || len(response.Selection.ProviderIDs) != 2 ||
+		response.Selection.ProviderIDs[0] != "codex" || response.Selection.ProviderIDs[1] != "claude" {
+		t.Fatalf("automatic selection did not follow enabled inventory: %+v", response.Selection)
+	}
+}
+
 func TestProviderDisplayPatchPersistsValidatedFixedSelection(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = providerSettingsFixture
@@ -208,7 +230,7 @@ func TestProviderSetupCompletionRejectsCurrentHealthContradictingExactReady(t *t
 	}
 }
 
-func TestProviderSetupCompletionRejectsEnabledProviderOutsideDisplayPool(t *testing.T) {
+func TestProviderSetupCompletionReconcilesEnabledProviderIntoAutomatic(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
 		Mode:        providerDisplayModeAutomatic,
@@ -224,8 +246,8 @@ func TestProviderSetupCompletionRejectsEnabledProviderOutsideDisplayPool(t *test
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
-	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_display_incomplete"`)) {
-		t.Fatalf("enabled provider outside display pool passed setup: status=%d body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("enabled provider was not reconciled into Automatic: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

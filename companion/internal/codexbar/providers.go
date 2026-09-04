@@ -19,6 +19,7 @@ const (
 	ProviderHealthHealthy       ProviderHealthState = "healthy"
 	ProviderHealthAuthRequired  ProviderHealthState = "auth_required"
 	ProviderHealthSetupRequired ProviderHealthState = "setup_required"
+	ProviderHealthNoUsage       ProviderHealthState = "no_usage_available"
 	ProviderHealthUnavailable   ProviderHealthState = "unavailable"
 	ProviderHealthChecking      ProviderHealthState = "checking"
 )
@@ -268,6 +269,8 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
 			state = classifyProviderHealth(reported)
+		} else if !providerPayloadHasUsage(payload) {
+			state = ProviderHealthNoUsage
 		}
 		result[id] = providerHealth{
 			health:   state,

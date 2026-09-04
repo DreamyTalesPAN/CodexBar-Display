@@ -232,6 +232,8 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 		return codexbar.ProviderHealthAuthRequired
 	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
 		return codexbar.ProviderHealthSetupRequired
+	case codexbar.ProviderNoUsageAvailable:
+		return codexbar.ProviderHealthNoUsage
 	default:
 		return codexbar.ProviderHealthUnavailable
 	}
@@ -684,7 +686,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			Owner:          "codexbar",
 			Type:           preferenceTypeBoolean,
 			Label:          setting.Label,
-			Description:    providerDescription(setting.ID, setting.Label),
+			Description:    providerDescription(setting.Label),
 			ProviderID:     setting.ID,
 			Value:          setting.Enabled,
 			EffectiveValue: setting.Enabled,
@@ -717,22 +719,20 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 		return true
 	}
 	switch setting.Health {
-	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired, codexbar.ProviderHealthUnavailable:
+	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
 		return false
 	default:
 		return true
 	}
 }
 
-func providerDescription(providerID, label string) string {
-	switch strings.TrimSpace(strings.ToLower(providerID)) {
-	case "codex":
-		return "Usage from the Codex subscription linked to your OpenAI account."
-	case "openai":
-		return "Usage from an OpenAI API or organization dashboard setup."
-	default:
-		return "Usage from " + strings.TrimSpace(label) + "."
+func providerDescription(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "Usage from this provider."
 	}
+	return "Usage from " + label + "."
 }
 
 func providerReadinessHealthState(status string) string {
@@ -818,6 +818,8 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Sign in again for this provider."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
+	case codexbar.ProviderHealthNoUsage:
+		return "This account does not expose usage data."
 	case codexbar.ProviderHealthUnavailable:
 		return "Provider is not responding right now."
 	default:

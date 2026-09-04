@@ -235,6 +235,14 @@ func effectiveProviderDisplay(cfg runtimeconfig.Config, settings []codexbar.Prov
 		selection.Mode = cfg.ProviderDisplay.Mode
 		selection.ProviderIDs = append([]string(nil), cfg.ProviderDisplay.ProviderIDs...)
 	}
+	if selection.Mode == providerDisplayModeAutomatic {
+		selection.ProviderIDs = selection.ProviderIDs[:0]
+		for _, setting := range settings {
+			if setting.Enabled {
+				selection.ProviderIDs = append(selection.ProviderIDs, setting.ID)
+			}
+		}
+	}
 	selection.ProviderIDs = normalizeProviderIDs(selection.ProviderIDs)
 	code, _, _ := validateProviderDisplay(selection, settings)
 	selection.Valid = code == ""

@@ -5884,7 +5884,7 @@ func testParsedFrame(provider string, session, weekly int, reset int64) codexbar
 	}
 }
 
-func TestApplyProviderDisplaySelectionRestrictsAutomaticPoolAndSkipsUnavailable(t *testing.T) {
+func TestApplyProviderDisplaySelectionUsesEveryCurrentlyEnabledAutomaticProvider(t *testing.T) {
 	state := &runtimeState{
 		selector:    codexbar.NewProviderSelector(),
 		lastGood:    protocol.Frame{Provider: "cursor", Session: 88},
@@ -5901,11 +5901,11 @@ func TestApplyProviderDisplaySelectionRestrictsAutomaticPoolAndSkipsUnavailable(
 	})
 
 	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps)
-	if len(got) != 1 || got[0].Frame.Provider != "claude" {
-		t.Fatalf("automatic pool selection=%+v want ready claude only", got)
+	if len(got) != 2 || got[0].Frame.Provider != "claude" || got[1].Frame.Provider != "cursor" {
+		t.Fatalf("automatic selection=%+v want every currently enabled ready provider", got)
 	}
-	if state.hasLastGood {
-		t.Fatalf("last-good outside pool survived: %+v", state.lastGood)
+	if !state.hasLastGood {
+		t.Fatalf("automatic selection cleared a newly enabled provider's last-good frame")
 	}
 }
 

@@ -3729,3 +3729,16 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `companion/internal/companionapi/provider_setup.go`,
   `companion/internal/companionapi/preferences_test.go`, and this approval
   record.
+
+## 2026-09-04 — Final exact-head provider corrections
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found three remaining provider-state mismatches.
+- Approved customer-visible result: **Continue requires actual usage or an
+  exact successful check; Automatic always follows CodexBar's current enabled
+  providers; provider descriptions make no Companion-owned claims about what a
+  particular integration represents.**
+- Approved files: `companion/internal/codexbar/providers.go`, its test,
+  `companion/internal/companionapi/preferences.go`,
+  `companion/internal/companionapi/provider_display.go`, their tests,
+  `companion/internal/daemon/daemon.go`, its test, and this approval record.

@@ -51,6 +51,18 @@ func TestPreferencesListsAllProvidersWithSafeHealth(t *testing.T) {
 	}
 }
 
+func TestProviderDescriptionsStayProviderNeutral(t *testing.T) {
+	for label, want := range map[string]string{
+		"Codex":  "Usage from Codex.",
+		"OpenAI": "Usage from OpenAI.",
+		"":       "Usage from this provider.",
+	} {
+		if got := providerDescription(label); got != want {
+			t.Fatalf("providerDescription(%q)=%q want %q", label, got, want)
+		}
+	}
+}
+
 func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	collectedAt := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
