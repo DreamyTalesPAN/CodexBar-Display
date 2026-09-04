@@ -4227,6 +4227,18 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 			t.Fatalf("buffered last-good values were not marked retained at %s: %#v", age, snapshot)
 		}
 	}
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"gemini": {SessionTokens: 123, UpdatedAt: current},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	if snapshot := collector.providers["gemini"]; !snapshot.Retained {
+		t.Fatalf("token stats made retained quota look live: %#v", snapshot)
+	}
+	if frames := collector.providerFrames(current); len(frames) != 1 || !frames[0].Stale || frames[0].Frame.Session != 73 || frames[0].Frame.SessionTokens != 123 {
+		t.Fatalf("token stats did not preserve retained quota truth: %#v", frames)
+	}
 
 	current = freshAt.Add(10*time.Minute + time.Second)
 	collector.collectOnce(context.Background())

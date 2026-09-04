@@ -723,6 +723,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Source:    source,
 			Meta:      meta,
 			Collected: snapshot.Collected,
+			Retained:  snapshot.Retained,
 			// A successful scan makes these totals current even when CodexBar
 			// reports that no new activity occurred. UpdatedAt remains the
 			// activity timestamp above, not the token-stat freshness timestamp.

@@ -3645,3 +3645,14 @@ issue scope, or release permission never implies UI permission.
   `[redacted]` marker. The shared sensitive-field list governs both shapes.**
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
+
+## 2026-09-04 — Token history keeps saved quota visibly stale
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a successful
+  token-history scan could drop the retained marker from an older quota reading.
+- Approved customer-visible result: **A fresh token-history scan may update
+  token totals, but it cannot make saved quota percentages look live. They stay
+  visibly stale until a fresh quota collection replaces them.**
+- Approved files: `companion/internal/daemon/collector.go`, its test, and this
+  approval record.
