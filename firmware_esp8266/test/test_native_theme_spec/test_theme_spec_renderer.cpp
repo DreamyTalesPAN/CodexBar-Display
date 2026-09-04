@@ -16,6 +16,7 @@ using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
 using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
+using codexbar_display::themespec::CompiledPrimitiveBounds;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
 using codexbar_display::themespec::CompiledThemeSpecReferencesAsset;
@@ -2186,6 +2187,95 @@ void testProgressColorStopsFallbackToSolidColor() {
   TEST_ASSERT_EQUAL_UINT16(ParseColor("#00FF00", 0), progress->color);
 }
 
+void testProgressColorStopsInvertWhenUsageModeIsUsed() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-stops-used",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111",
+       "cs":[
+         {"gte":75,"c":"#22C55E"},
+         {"gte":50,"c":"#EAB308"},
+         {"gte":25,"c":"#F59E0B"},
+         {"gte":0,"c":"#EF4444"}
+       ]}
+    ]
+  })JSON";
+
+  FrameData usedHigh = testFrame();
+  usedHigh.usageMode = "used";
+  usedHigh.session = 80;
+  RecordingSink usedHighSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, usedHigh, usedHighSink));
+  const RecordedCommand* usedHighProgress = FirstProgressCommand(usedHighSink);
+  TEST_ASSERT_NOT_NULL(usedHighProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EF4444", 0), usedHighProgress->color);
+
+  FrameData usedLow = testFrame();
+  usedLow.usageMode = "used";
+  usedLow.session = 20;
+  RecordingSink usedLowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, usedLow, usedLowSink));
+  const RecordedCommand* usedLowProgress = FirstProgressCommand(usedLowSink);
+  TEST_ASSERT_NOT_NULL(usedLowProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), usedLowProgress->color);
+
+  FrameData remainingHigh = testFrame();
+  remainingHigh.usageMode = "remaining";
+  remainingHigh.session = 80;
+  RecordingSink remainingHighSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, remainingHigh, remainingHighSink));
+  const RecordedCommand* remainingHighProgress = FirstProgressCommand(remainingHighSink);
+  TEST_ASSERT_NOT_NULL(remainingHighProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), remainingHighProgress->color);
+}
+
+void testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"valign-dirty",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":68,"y":20,"w":156,"h":16,"b":"l","s":2,"f":2,"va":"middle"}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1, static_cast<unsigned>(scene.primitiveCount));
+
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), true, bounds));
+  // font 2 size 2: visual 32, clip pad +4 = 36. middle of h=16 at y=20 → 12.
+  TEST_ASSERT_EQUAL_INT(12, bounds.y);
+  TEST_ASSERT_TRUE(bounds.height >= 36);
+  TEST_ASSERT_TRUE(bounds.y + bounds.height >= 12 + 36);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"valign-dirty-bottom",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":68,"y":20,"w":156,"h":16,"b":"l","s":2,"f":2,"va":"bottom"}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), true, bounds));
+  // bottom of h=16 at y=20 with 32px glyphs → y=4, clip 36.
+  TEST_ASSERT_EQUAL_INT(4, bounds.y);
+  TEST_ASSERT_TRUE(bounds.height >= 36);
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testProgressColorStopsCompileRejectsTooManyEntries() {
   const char* spec = R"JSON({
     "v":1,
@@ -3218,8 +3308,11 @@ int main() {
   RUN_TEST(testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider);
   RUN_TEST(testProviderAssetsCompileRejectsTooManyEntries);
   RUN_TEST(testProgressColorStopsSelectFillByPercent);
+  RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);
   RUN_TEST(testProgressColorStopsCompileRejectsTooManyEntries);
+  RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
+  RUN_TEST(testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);

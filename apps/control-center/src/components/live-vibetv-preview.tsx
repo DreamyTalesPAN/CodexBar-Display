@@ -953,7 +953,11 @@ function ThemeProgress({
     "#7BEF7B",
   );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
-  const fillColor = resolveProgressFillColor(primitive, percent);
+  const fillColor = resolveProgressFillColor(
+    primitive,
+    percent,
+    frame.usageMode,
+  );
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
@@ -1622,6 +1626,7 @@ export function progressPercent(
 function resolveProgressFillColor(
   primitive: ThemePrimitive,
   percent: number,
+  usageMode?: string,
 ): string {
   const stops = [...(primitive.colorStops || primitive.cs || [])]
     .map((stop) => ({
@@ -1631,8 +1636,10 @@ function resolveProgressFillColor(
     .filter((stop) => stop.gte >= 0 && stop.gte <= 100 && stop.color)
     .sort((a, b) => b.gte - a.gte);
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const remainingStyle =
+    usageMode === "used" ? 100 - clamped : clamped;
   for (const stop of stops) {
-    if (clamped >= stop.gte) {
+    if (remainingStyle >= stop.gte) {
       return colorFor(stop.color, "#FFFFFF");
     }
   }

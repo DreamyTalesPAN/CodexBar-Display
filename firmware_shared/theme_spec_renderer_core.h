@@ -1602,7 +1602,7 @@ inline int ApproxTextWidth(const char* text, int size) {
   return static_cast<int>(std::strlen(text)) * 6 * size;
 }
 
-inline int ApproxTextHeight(int font, int size) {
+inline int VisualFontHeight(int font, int size) {
   if (size <= 0) {
     return 0;
   }
@@ -1626,7 +1626,15 @@ inline int ApproxTextHeight(int font, int size) {
       baseHeight = 8;
       break;
   }
-  return (baseHeight * size) + 4;
+  return baseHeight * size;
+}
+
+inline int ApproxTextHeight(int font, int size) {
+  const int visual = VisualFontHeight(font, size);
+  if (visual <= 0) {
+    return 0;
+  }
+  return visual + 4;
 }
 
 // Vertical box for valign: explicit h/height, else the pre-shrink font lane
@@ -1666,10 +1674,23 @@ inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const 
   return ClampPct(frame.session);
 }
 
-inline uint16_t ResolveProgressFillColor(const CompiledPrimitive& primitive, int percent) {
+// colorStops are authored against remaining-style percent (high = healthy).
+// Frames in usageMode=used send the inverted number, so match 100-percent.
+inline int RemainingStyleProgressPercent(int percent, const char* usageMode) {
   const int clamped = ClampPct(percent);
+  if (usageMode != nullptr && std::strcmp(usageMode, "used") == 0) {
+    return 100 - clamped;
+  }
+  return clamped;
+}
+
+inline uint16_t ResolveProgressFillColor(
+    const CompiledPrimitive& primitive,
+    int percent,
+    const char* usageMode) {
+  const int remainingStyle = RemainingStyleProgressPercent(percent, usageMode);
   for (uint8_t i = 0; i < primitive.colorStopCount; ++i) {
-    if (clamped >= primitive.colorStops[i].gte) {
+    if (remainingStyle >= primitive.colorStops[i].gte) {
       return primitive.colorStops[i].color;
     }
   }
@@ -1779,9 +1800,15 @@ inline bool CompiledPrimitiveBounds(
     if (primitive.size <= 0) {
       return false;
     }
-    bounds.height = primitive.height > 0
-                        ? primitive.height
-                        : ApproxTextHeight(primitive.font, primitive.size);
+    const int visualGlyph = VisualFontHeight(primitive.font, primitive.size);
+    const int clipH = ApproxTextHeight(primitive.font, primitive.size);
+    const int boxH = TextValignBoxHeight(primitive.height, primitive.font, primitive.size);
+    const int alignedY = AlignedTextY(primitive.y, boxH, visualGlyph, primitive.valign);
+    const int boxBottom = primitive.y + boxH;
+    const int glyphBottom = alignedY + clipH;
+    bounds.y = alignedY < primitive.y ? alignedY : primitive.y;
+    const int bottom = boxBottom > glyphBottom ? boxBottom : glyphBottom;
+    bounds.height = bottom - bounds.y;
     bounds.width = primitive.maxWidth;
     if (bounds.width <= 0) {
       if (requireStableTextBounds) {
@@ -1873,7 +1900,7 @@ inline bool DrawCompiledPrimitive(
     cmd.segments = primitive.segments;
     cmd.segmentGap = primitive.segmentGap;
     cmd.borderRadius = primitive.borderRadius;
-    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent);
+    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent, frame.usageMode);
     cmd.bgColor = primitive.bg;
     cmd.borderColor = primitive.border;
     if (cmd.width <= 0 || cmd.height <= 0) {
