@@ -25,7 +25,7 @@ var (
 	// A credential key whose value is a JSON object or array can contain short
 	// nested secrets. Redact the rest of that line before the pair scanner can
 	// consume only the opening delimiter and skip the nested key.
-	reportedStructuredCredential = regexp.MustCompile(`(?im)((?:^|[\s,{(\[?&#])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer)[A-Za-z0-9._-]*["']?\s*[:=]\s*)[\{\[].*$`)
+	reportedStructuredCredential = regexp.MustCompile(`(?is)((?:^|[\s,{(\[?&#])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer)[A-Za-z0-9._-]*["']?\s*[:=]\s*)[\{\[].*$`)
 	// A credential-shaped key and its value: `Cookie: ...`, `sessionKey=...`,
 	// `"access_token": "..."`, `?token=...&session=...`, `#token=...`. Anchored
 	// at a line start or a separator -- a URL's `?`, `&` and `#` among them -- so a

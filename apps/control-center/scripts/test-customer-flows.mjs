@@ -863,6 +863,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testRunSetupAgainBlocksLaterProviderWrites(
+      browser,
+      appContext.appUrl,
+    );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testMacAppUpdatePrecedesFirmwareUpdate(browser, appContext.appUrl);
@@ -6598,6 +6602,49 @@ async function testRunSetupAgainWaitsForAPendingProviderToggle(browser, appUrl) 
   await page.close();
 }
 
+// Once reset has started, a new Settings write must not land after it and
+// restore the configuration the reset just cleared.
+async function testRunSetupAgainBlocksLaterProviderWrites(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const requests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    resetDelayMs: 1500,
+    searchDelayMs: 300,
+    searchDevices: [],
+    onRequest: (pathname, method) => {
+      if (
+        (pathname === "/v1/setup/reset" && method === "POST") ||
+        (pathname.startsWith("/v1/preferences/") && method === "PATCH")
+      ) {
+        requests.push(pathname);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () => requests.includes("/v1/setup/reset"),
+    "Run setup again did not start its reset",
+  );
+  await page.getByRole("switch", { name: "Codex" }).click();
+  await page.waitForTimeout(250);
+  assert(
+    !requests.some((pathname) => pathname.startsWith("/v1/preferences/")),
+    `a provider write started after setup reset: ${JSON.stringify(requests)}`,
+  );
+  await page.getByRole("main", { name: "Welcome" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.close();
+}
+
 async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -10008,6 +10055,7 @@ async function routeCompanionOnline(
     onSearch,
     onRequest = () => {},
     onReset,
+    resetDelayMs = 0,
     resetError,
     onUpdate,
     onMacAppUpdate,
@@ -10776,6 +10824,9 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/setup/reset") {
       onReset?.(route.request().postData() || "", currentDevice);
+      if (resetDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, resetDelayMs));
+      }
       if (resetError) {
         await route.fulfill({
           status: resetError.status || 409,

@@ -161,6 +161,11 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			in:   `Unexpected response body ({"token":{"access_token":"hunter"}})`,
 			want: `Unexpected response body ({"token":[redacted]`,
 		},
+		{
+			name: "multiline credential object",
+			in:   "Unexpected response body ({\"token\": {\n  \"value\": \"hunter\"\n}})",
+			want: `Unexpected response body ({"token": [redacted]`,
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)

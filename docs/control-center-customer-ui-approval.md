@@ -3544,3 +3544,15 @@ issue scope, or release permission never implies UI permission.
   warning.**
 - Approved files: `companion/internal/companionapi/preferences.go`, its tests,
   and this approval record.
+
+## 2026-09-04 — Setup reset blocks later provider writes
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **After `Run setup again` starts, later
+  provider switches and display-mode changes cannot write the old setup back
+  while reset is in flight. Existing writes still finish before reset as
+  before.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.

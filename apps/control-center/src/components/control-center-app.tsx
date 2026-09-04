@@ -408,6 +408,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
+  const setupResetInProgressRef = useRef(false);
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -1648,6 +1649,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const resetSetup = useCallback(async () => {
+    if (setupResetInProgressRef.current) {
+      return;
+    }
+    setupResetInProgressRef.current = true;
     const setupGeneration = setupGenerationRef.current;
     setBusyAction("reset-setup");
     setLastError(null);
@@ -1760,6 +1765,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
       setBusyAction(null);
+    } finally {
+      setupResetInProgressRef.current = false;
     }
   }, [
     addEvent,
@@ -2987,6 +2994,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
       providerId: string,
     ) => {
+      if (setupResetInProgressRef.current) {
+        return Promise.resolve(false);
+      }
       providerDisplayRevisionRef.current += 1;
       const write = async () => {
         const previous = providerDisplayRef.current;
@@ -3110,6 +3120,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {
+      if (setupResetInProgressRef.current) {
+        return;
+      }
       if (value) {
         providerReconcileDeadlineRef.current =
           Date.now() + PROVIDER_RECONCILE_WINDOW_MS;
