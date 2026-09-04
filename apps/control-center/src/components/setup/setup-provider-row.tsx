@@ -152,7 +152,7 @@ export function SetupProviderRow({
           <>
             <SetupProviderRowMessage>{guidance}</SetupProviderRowMessage>
             {copyReportedMessage}
-            {checking ? (
+            {variant === "stale" ? null : checking ? (
               <>
                 <span className="sr-only">Checking {label}…</span>
                 <Spinner />

@@ -40,7 +40,7 @@ describe("SetupProviderRow", () => {
     expect(stale).toContain(
       "Live usage is unavailable. Showing the last saved reading.",
     );
-    expect(stale).toContain('aria-label="Check Claude Code again"');
+    expect(stale).not.toContain('aria-label="Check Claude Code again"');
   });
 
   // A check that is slow or stuck must not hold the customer on the step: the

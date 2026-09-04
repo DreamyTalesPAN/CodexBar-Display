@@ -404,6 +404,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const providerReconcileDeadlineRef = useRef(0);
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
@@ -2864,21 +2865,38 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const refreshProviderDisplay = useCallback(
     async (options?: { quiet?: boolean }) => {
+      // A read starts only after older writes and is discarded if a newer
+      // write starts beside it. Otherwise a slow GET can put the selection it
+      // captured before a PATCH back into both the UI and the next write.
+      for (;;) {
+        const pendingWrites = providerDisplayWriteQueueRef.current;
+        await pendingWrites;
+        if (pendingWrites === providerDisplayWriteQueueRef.current) {
+          break;
+        }
+      }
       const setupGeneration = setupGenerationRef.current;
+      const displayRevision = providerDisplayRevisionRef.current;
       try {
         const payload = await runCompanion<{
           selection: ProviderDisplaySelection;
         }>("/v1/provider-display", undefined, {
           preserveLastError: Boolean(options?.quiet),
         });
-        if (setupGeneration !== setupGenerationRef.current) {
+        if (
+          setupGeneration !== setupGenerationRef.current ||
+          displayRevision !== providerDisplayRevisionRef.current
+        ) {
           return;
         }
         providerDisplayRef.current = payload.selection;
         setProviderDisplay(payload.selection);
         setProviderDisplayError(null);
       } catch (error) {
-        if (setupGeneration !== setupGenerationRef.current) {
+        if (
+          setupGeneration !== setupGenerationRef.current ||
+          displayRevision !== providerDisplayRevisionRef.current
+        ) {
           return;
         }
         setProviderDisplayError(
@@ -2944,6 +2962,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
       providerId: string,
     ) => {
+      providerDisplayRevisionRef.current += 1;
       const write = async () => {
         const previous = providerDisplayRef.current;
         // Derived inside the queue, from what the writes ahead of it left
