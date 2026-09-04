@@ -362,6 +362,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	} else {
 		c.order = mergeProviderOrder(providerOrderFromFrames(allProviders), c.order)
 	}
+	// A successful fetch-all only refreshes providers that returned usable
+	// usage below. Keep every older snapshot non-live until it is replaced;
+	// CodexBar may omit an enabled provider while another one succeeds.
+	for key, snapshot := range c.providers {
+		if snapshot.Retained {
+			continue
+		}
+		snapshot.Retained = true
+		c.providers[key] = snapshot
+		updated = true
+	}
 	for _, parsed := range allProviders {
 		frame := parsed.Frame.Normalize()
 		if strings.TrimSpace(frame.Error) != "" {

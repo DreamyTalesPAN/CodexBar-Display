@@ -3586,13 +3586,13 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 
 	second := collector.providerFrames(current)
 	if len(second) != 2 {
-		t.Fatalf("expected two retained fresh snapshots, got %#v", second)
+		t.Fatalf("expected current and retained snapshots, got %#v", second)
 	}
 	if second[0].Provider != "claude" || second[1].Provider != "codex" {
 		t.Fatalf("expected current CodexBar order first, then retained snapshot; got %#v", second)
 	}
-	if second[0].Stale || second[1].Stale {
-		t.Fatalf("expected retained snapshots within last-good window to stay fresh, got %#v", second)
+	if second[0].Stale || !second[1].Stale || second[1].Frame.UsageUnavailable {
+		t.Fatalf("expected only the omitted provider snapshot to be retained, got %#v", second)
 	}
 
 	current = current.Add(3 * time.Hour)
