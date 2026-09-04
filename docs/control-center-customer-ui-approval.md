@@ -3634,3 +3634,14 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Passphrase provider output is redacted
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that short values
+  under `passphrase` or `passcode` keys could reach the provider message.
+- Approved customer-visible result: **Provider guidance and its Copy action
+  replace scalar or structured passphrase and passcode values with the existing
+  `[redacted]` marker. The shared sensitive-field list governs both shapes.**
+- Approved files: `companion/internal/companionapi/provider_reported.go`, its
+  test, and this approval record.

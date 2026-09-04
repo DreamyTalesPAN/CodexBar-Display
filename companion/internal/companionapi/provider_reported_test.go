@@ -152,6 +152,16 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			want: `Unexpected response body ({"credentials":[redacted]`,
 		},
 		{
+			name: "a short passphrase value",
+			in:   `Unexpected response body ({"passphrase":"hunter"})`,
+			want: `Unexpected response body ({"passphrase":[redacted]})`,
+		},
+		{
+			name: "a structured passcode value",
+			in:   `Unexpected response body ({"passcode":{"value":"hunter"}})`,
+			want: `Unexpected response body ({"passcode":[redacted]`,
+		},
+		{
 			name: "credential pairs inside a query string",
 			in:   "Callback rejected: https://host/callback?token=abcdefgh&session=hunter&next=home",
 			want: "Callback rejected: https://host/callback?token=[redacted]&session=[redacted]&next=home",
