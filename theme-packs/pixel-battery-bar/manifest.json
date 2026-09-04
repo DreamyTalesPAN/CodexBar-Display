@@ -1,0 +1,59 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "pixel-battery-bar",
+  "name": "Pixel Battery Bar",
+  "version": "1.6.0",
+  "usage": "live",
+  "minFirmware": "1.0.42",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "provider-assets-v1",
+    "color-stops-v1",
+    "text-valign-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/u/pbb-6-c5598f.json",
+    "file": "theme.json",
+    "bytes": 1414,
+    "sha256": "c5598f8f5bd64aece9828d8dcdfed663ae819f9bc12763c76cfd6a74f4d7a796",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/pbb-bg.cbi",
+      "file": "assets/pbb-bg.cbi",
+      "bytes": 4023,
+      "sha256": "b319e1c04921889e2d77d0b7072e9e5fde594f6e56aaa1afd38f4779f1ffca53",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pbb-fb.cbi",
+      "file": "assets/pbb-fb.cbi",
+      "bytes": 433,
+      "sha256": "cad422fa747478ddf459f3a98747cf3ec6e967cda7a666c061090aa4babae779",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pbb-cu.cbi",
+      "file": "assets/pbb-cu.cbi",
+      "bytes": 315,
+      "sha256": "906d24a04594df3f30a9a2d0ded5498518674961c51df0277ff66aebeee1142b",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pbb-cl.cbi",
+      "file": "assets/pbb-cl.cbi",
+      "bytes": 593,
+      "sha256": "857eb24980be47950ea5f2af0c5b1790087b5c01a19bea87cd8b25a57a339b03",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pbb-xo.cbi",
+      "file": "assets/pbb-xo.cbi",
+      "bytes": 473,
+      "sha256": "03ed776a6695e57563d689a0a692d84c5eeb40bb425f98d25054d4178231aa04",
+      "contentType": "text/plain"
+    }
+  ]
+}

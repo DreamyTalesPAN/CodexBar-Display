@@ -64,6 +64,42 @@
       "bytes": 807
     },
     {
+      "id": "pixel-battery",
+      "title": "Pixel Battery",
+      "usage": "live",
+      "version": "1.15.0",
+      "themeRev": 15,
+      "themeSpecPath": "/themes/u/pba-15-9e62e5.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "provider-assets-v1",
+        "color-stops-v1",
+        "text-valign-v1"
+      ],
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.15.0.zip",
+      "sha256": "e470a35cd0b019195247e5a9d9d2ea291a08475b48b546138a001b6c9e207677",
+      "bytes": 2819
+    },
+    {
+      "id": "pixel-battery-bar",
+      "title": "Pixel Battery Bar",
+      "usage": "live",
+      "version": "1.6.0",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/pbb-6-c5598f.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "provider-assets-v1",
+        "color-stops-v1",
+        "text-valign-v1"
+      ],
+      "downloadAsset": "vibetv-theme-pixel-battery-bar-v1.6.0.zip",
+      "sha256": "7253b9aaa6fe26dad222e9db7b5e3d7f0142edec0668c3a59776ccc717bd702e",
+      "bytes": 2808
+    },
+    {
       "id": "reset-countdown",
       "title": "Reset Countdown",
       "usage": "screensaver",

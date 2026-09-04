@@ -1635,7 +1635,10 @@ function themeCapabilityBlocker(
     (capability) =>
       capability !== "usage-slots-v1" &&
       capability !== "usage-windows-v1" &&
-      capability !== "provider-slots-v1",
+      capability !== "provider-slots-v1" &&
+      capability !== "provider-assets-v1" &&
+      capability !== "color-stops-v1" &&
+      capability !== "text-valign-v1",
   );
   if (unsupported.length > 0) {
     return {
@@ -1654,6 +1657,15 @@ function themeCapabilityBlocker(
     }
     if (capability === "provider-slots-v1") {
       return device.capabilities?.theme?.supportsProviderSlotsV1 !== true;
+    }
+    if (capability === "provider-assets-v1") {
+      return device.capabilities?.theme?.supportsProviderAssetsV1 !== true;
+    }
+    if (capability === "color-stops-v1") {
+      return device.capabilities?.theme?.supportsColorStopsV1 !== true;
+    }
+    if (capability === "text-valign-v1") {
+      return device.capabilities?.theme?.supportsTextValignV1 !== true;
     }
     return true;
   });

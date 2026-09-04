@@ -16,6 +16,7 @@ using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
 using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
+using codexbar_display::themespec::CompiledPrimitiveBounds;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
 using codexbar_display::themespec::CompiledThemeSpecReferencesAsset;
@@ -27,12 +28,14 @@ using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecRegionPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecStaticPrimitives;
 using codexbar_display::themespec::ReleaseCompiledThemeSpec;
+using codexbar_display::themespec::ParseColor;
 using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
 using codexbar_display::themespec::kThemeSpecFieldActivity;
 using codexbar_display::themespec::kThemeSpecFieldLabel;
 using codexbar_display::themespec::kThemeSpecFieldReset;
+using codexbar_display::themespec::kThemeSpecFieldProvider;
 using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldUsageWindows;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
@@ -72,6 +75,7 @@ struct RecordedCommand {
   int maxWidth = 0;
   bool fitShrink = false;
   int align = 0;
+  int valign = 0;
   int percent = 0;
   int style = 0;
   int segments = 0;
@@ -134,6 +138,8 @@ class RecordingSink final : public Sink {
     cmd.maxWidth = text.maxWidth;
     cmd.fitShrink = text.fitShrink;
     cmd.align = text.align;
+    cmd.valign = text.valign;
+    cmd.height = text.height;
     cmd.fg = text.fg;
     cmd.bg = text.bg;
     cmd.hasBg = text.hasBg;
@@ -210,6 +216,43 @@ FrameData testFrame() {
   frame.totalTokens = 9012;
   frame.hasTokenTotals = true;
   return frame;
+}
+
+const RecordedCommand* FirstSpriteCommand(const RecordingSink& sink) {
+  for (const RecordedCommand& cmd : sink.commands) {
+    if (cmd.type == CommandType::Sprite) {
+      return &cmd;
+    }
+  }
+  return nullptr;
+}
+
+const RecordedCommand* LastSpriteCommand(const RecordingSink& sink) {
+  for (auto it = sink.commands.rbegin(); it != sink.commands.rend(); ++it) {
+    if (it->type == CommandType::Sprite) {
+      return &(*it);
+    }
+  }
+  return nullptr;
+}
+
+size_t SpriteCommandCount(const RecordingSink& sink) {
+  size_t count = 0;
+  for (const RecordedCommand& cmd : sink.commands) {
+    if (cmd.type == CommandType::Sprite) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+const RecordedCommand* FirstProgressCommand(const RecordingSink& sink) {
+  for (const RecordedCommand& cmd : sink.commands) {
+    if (cmd.type == CommandType::Progress) {
+      return &cmd;
+    }
+  }
+  return nullptr;
 }
 
 bool renderSpec(const char* spec, const FrameData& frame, RecordingSink& sink) {
@@ -1386,6 +1429,55 @@ void testCompactTextWidthMapsToMaxWidthForAlignment() {
   TEST_ASSERT_EQUAL_INT(1, text.align);
 }
 
+void testAlignedTextYUsesVisualGlyphBox() {
+  TEST_ASSERT_EQUAL_INT(36, codexbar_display::themespec::TextValignBoxHeight(0, 2, 2));
+  TEST_ASSERT_EQUAL_INT(32, codexbar_display::themespec::TextValignBoxHeight(32, 2, 2));
+  TEST_ASSERT_EQUAL_INT(20, codexbar_display::themespec::AlignedTextY(20, 32, 32, 0));
+  TEST_ASSERT_EQUAL_INT(20, codexbar_display::themespec::AlignedTextY(20, 32, 32, 1));
+  TEST_ASSERT_EQUAL_INT(28, codexbar_display::themespec::AlignedTextY(20, 32, 16, 1));
+  TEST_ASSERT_EQUAL_INT(36, codexbar_display::themespec::AlignedTextY(20, 32, 16, 2));
+}
+
+void testCompactValignMapsToTextCommand() {
+  const char* spec = R"JSON({
+    "v": 1,
+    "id": "codex-test",
+    "rev": 1,
+    "p": [
+      {"t":"tx","x":68,"y":20,"w":156,"h":32,"b":"l","s":2,"f":2,"ft":"shrink","va":"middle","c":"#F8FAFC"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
+
+  const RecordedCommand& text = sink.commands[1];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
+  TEST_ASSERT_EQUAL_STRING("Codex", text.text.c_str());
+  TEST_ASSERT_EQUAL_INT(68, text.x);
+  TEST_ASSERT_EQUAL_INT(20, text.y);
+  TEST_ASSERT_EQUAL_INT(32, text.height);
+  TEST_ASSERT_EQUAL_INT(1, text.valign);
+  TEST_ASSERT_TRUE(text.fitShrink);
+}
+
+void testValignCenterAliasIsMiddle() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"text","x":68,"y":20,"width":156,"height":32,"binding":"label","valign":"center"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_INT(1, sink.commands[1].valign);
+  TEST_ASSERT_EQUAL_INT(32, sink.commands[1].height);
+}
+
 void testRendersMulticolorRlePixelsAsFillRects() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -1913,6 +2005,293 @@ void testChangedPrimitivePassHandlesTextWithoutMaxWidth() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands.back().type));
 }
 
+void testProviderAssetsSelectSpriteByProvider() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-logo",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"a":"/themes/u/fallback.cbi","pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}
+    ]
+  })JSON";
+
+  FrameData cursorFrame = testFrame();
+  cursorFrame.provider = "cursor";
+  RecordingSink cursorSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, cursorFrame, cursorSink));
+  const RecordedCommand* cursorSprite = FirstSpriteCommand(cursorSink);
+  TEST_ASSERT_NOT_NULL(cursorSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cursor.cbi", cursorSprite->assetPath.c_str());
+
+  FrameData claudeFrame = testFrame();
+  claudeFrame.provider = "claude";
+  RecordingSink claudeSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, claudeFrame, claudeSink));
+  const RecordedCommand* claudeSprite = FirstSpriteCommand(claudeSink);
+  TEST_ASSERT_NOT_NULL(claudeSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/claude.cbi", claudeSprite->assetPath.c_str());
+
+  FrameData unknownFrame = testFrame();
+  unknownFrame.provider = "codex";
+  RecordingSink fallbackSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, unknownFrame, fallbackSink));
+  const RecordedCommand* fallbackSprite = FirstSpriteCommand(fallbackSink);
+  TEST_ASSERT_NOT_NULL(fallbackSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/fallback.cbi", fallbackSprite->assetPath.c_str());
+}
+
+void testProviderAssetsBeatActivityStateAssets() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-over-activity",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"a":"/themes/u/fallback.cbi","sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/coding.cbi"},"pa":{"codex":"/themes/u/codex.cbi"}}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+  frame.provider = "codex";
+  frame.activity = "coding";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  const RecordedCommand* sprite = FirstSpriteCommand(sink);
+  TEST_ASSERT_NOT_NULL(sprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/codex.cbi", sprite->assetPath.c_str());
+}
+
+void testProviderAssetsProviderChangeUsesPartialRender() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-partial",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}
+    ]
+  })JSON";
+
+  FrameData cursorFrame = testFrame();
+  cursorFrame.provider = "cursor";
+  RecordingSink firstSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, cursorFrame, firstSink));
+
+  FrameData claudeFrame = testFrame();
+  claudeFrame.provider = "claude";
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, claudeFrame, kThemeSpecFieldProvider, firstSink));
+  const RecordedCommand* partialSprite = LastSpriteCommand(firstSink);
+  TEST_ASSERT_NOT_NULL(partialSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/claude.cbi", partialSprite->assetPath.c_str());
+}
+
+void testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-only-map",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}
+    ]
+  })JSON";
+
+  FrameData unknownFrame = testFrame();
+  unknownFrame.provider = "codex";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, unknownFrame, sink));
+  TEST_ASSERT_EQUAL_UINT32(0, static_cast<unsigned>(SpriteCommandCount(sink)));
+}
+
+void testProviderAssetsCompileRejectsTooManyEntries() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-overflow",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{
+        "p01":"/themes/u/a01.cbi","p02":"/themes/u/a02.cbi","p03":"/themes/u/a03.cbi","p04":"/themes/u/a04.cbi",
+        "p05":"/themes/u/a05.cbi","p06":"/themes/u/a06.cbi","p07":"/themes/u/a07.cbi","p08":"/themes/u/a08.cbi",
+        "p09":"/themes/u/a09.cbi","p10":"/themes/u/a10.cbi","p11":"/themes/u/a11.cbi","p12":"/themes/u/a12.cbi",
+        "p13":"/themes/u/a13.cbi","p14":"/themes/u/a14.cbi","p15":"/themes/u/a15.cbi","p16":"/themes/u/a16.cbi",
+        "p17":"/themes/u/a17.cbi"
+      }}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_FALSE(CompileThemeSpec(spec, doc, scene));
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testProgressColorStopsSelectFillByPercent() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-stops",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","ps":"segments","sg":10,"c":"#111111",
+       "cs":[
+         {"gte":75,"c":"#22C55E"},
+         {"gte":50,"c":"#EAB308"},
+         {"gte":25,"c":"#F59E0B"},
+         {"gte":0,"c":"#EF4444"}
+       ]}
+    ]
+  })JSON";
+
+  FrameData greenFrame = testFrame();
+  greenFrame.session = 80;
+  RecordingSink greenSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, greenFrame, greenSink));
+  const RecordedCommand* green = FirstProgressCommand(greenSink);
+  TEST_ASSERT_NOT_NULL(green);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), green->color);
+
+  FrameData yellowFrame = testFrame();
+  yellowFrame.session = 55;
+  RecordingSink yellowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, yellowFrame, yellowSink));
+  const RecordedCommand* yellow = FirstProgressCommand(yellowSink);
+  TEST_ASSERT_NOT_NULL(yellow);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EAB308", 0), yellow->color);
+
+  FrameData orangeFrame = testFrame();
+  orangeFrame.session = 30;
+  RecordingSink orangeSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, orangeFrame, orangeSink));
+  const RecordedCommand* orange = FirstProgressCommand(orangeSink);
+  TEST_ASSERT_NOT_NULL(orange);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#F59E0B", 0), orange->color);
+
+  FrameData redFrame = testFrame();
+  redFrame.session = 10;
+  RecordingSink redSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, redFrame, redSink));
+  const RecordedCommand* red = FirstProgressCommand(redSink);
+  TEST_ASSERT_NOT_NULL(red);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EF4444", 0), red->color);
+}
+
+void testProgressColorStopsFallbackToSolidColor() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-fallback",
+    "rev":1,
+    "p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","ps":"segments","sg":8,"c":"#00FF00"}]
+  })JSON";
+  FrameData frame = testFrame();
+  frame.session = 12;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  const RecordedCommand* progress = FirstProgressCommand(sink);
+  TEST_ASSERT_NOT_NULL(progress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#00FF00", 0), progress->color);
+}
+
+void testProgressColorStopsInvertWhenUsageModeIsUsed() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-stops-used",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111",
+       "cs":[
+         {"gte":75,"c":"#22C55E"},
+         {"gte":50,"c":"#EAB308"},
+         {"gte":25,"c":"#F59E0B"},
+         {"gte":0,"c":"#EF4444"}
+       ]}
+    ]
+  })JSON";
+
+  FrameData usedHigh = testFrame();
+  usedHigh.usageMode = "used";
+  usedHigh.session = 80;
+  RecordingSink usedHighSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, usedHigh, usedHighSink));
+  const RecordedCommand* usedHighProgress = FirstProgressCommand(usedHighSink);
+  TEST_ASSERT_NOT_NULL(usedHighProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EF4444", 0), usedHighProgress->color);
+
+  FrameData usedLow = testFrame();
+  usedLow.usageMode = "used";
+  usedLow.session = 20;
+  RecordingSink usedLowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, usedLow, usedLowSink));
+  const RecordedCommand* usedLowProgress = FirstProgressCommand(usedLowSink);
+  TEST_ASSERT_NOT_NULL(usedLowProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), usedLowProgress->color);
+
+  FrameData remainingHigh = testFrame();
+  remainingHigh.usageMode = "remaining";
+  remainingHigh.session = 80;
+  RecordingSink remainingHighSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, remainingHigh, remainingHighSink));
+  const RecordedCommand* remainingHighProgress = FirstProgressCommand(remainingHighSink);
+  TEST_ASSERT_NOT_NULL(remainingHighProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), remainingHighProgress->color);
+}
+
+void testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"valign-dirty",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":68,"y":20,"w":156,"h":16,"b":"l","s":2,"f":2,"va":"middle"}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1, static_cast<unsigned>(scene.primitiveCount));
+
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), true, bounds));
+  // font 2 size 2: visual 32, clip pad +4 = 36. middle of h=16 at y=20 → 12.
+  TEST_ASSERT_EQUAL_INT(12, bounds.y);
+  TEST_ASSERT_TRUE(bounds.height >= 36);
+  TEST_ASSERT_TRUE(bounds.y + bounds.height >= 12 + 36);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"valign-dirty-bottom",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":68,"y":20,"w":156,"h":16,"b":"l","s":2,"f":2,"va":"bottom"}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), true, bounds));
+  // bottom of h=16 at y=20 with 32px glyphs → y=4, clip 36.
+  TEST_ASSERT_EQUAL_INT(4, bounds.y);
+  TEST_ASSERT_TRUE(bounds.height >= 36);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testProgressColorStopsCompileRejectsTooManyEntries() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-overflow",
+    "rev":1,
+    "p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#FFFFFF","cs":[
+      {"gte":80,"c":"#111111"},{"gte":60,"c":"#222222"},{"gte":40,"c":"#333333"},
+      {"gte":20,"c":"#444444"},{"gte":0,"c":"#555555"}
+    ]}]
+  })JSON";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_FALSE(CompileThemeSpec(spec, doc, scene));
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testStateAssetsUseActivityWithIdleFallback() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -2084,6 +2463,25 @@ void testThemeSpecActivityChangeUsesPartialRenderEvent() {
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldActivity, event.themeSpecChangedFields);
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+}
+
+void testThemeSpecProviderChangeUsesPartialRenderEvent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"cursor","label":"Cursor","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"themeSpec":{"v":1,"id":"provider-logo","rev":1,"p":[{"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_STRING("cursor", state.current.provider.c_str());
+
+  const char* claudeFrame = R"JSON({"v":2,"provider":"claude","label":"Claude","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, claudeFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & kThemeSpecFieldProvider) != 0);
+  TEST_ASSERT_EQUAL_STRING("claude", state.current.provider.c_str());
 }
 
 void testLegacyThemeFieldsAreIgnored() {
@@ -2883,6 +3281,9 @@ int main() {
   RUN_TEST(testUpdateNoticeSurfaceChangeRestoresOldSurface);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
+  RUN_TEST(testAlignedTextYUsesVisualGlyphBox);
+  RUN_TEST(testCompactValignMapsToTextCommand);
+  RUN_TEST(testValignCenterAliasIsMiddle);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
   RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);
@@ -2901,6 +3302,17 @@ int main() {
   RUN_TEST(testCompiledThemeSpecFullPartialAndAnimatedPasses);
   RUN_TEST(testChangedPrimitivePassReportsNoAffectedPrimitiveForUnusedReset);
   RUN_TEST(testChangedPrimitivePassHandlesTextWithoutMaxWidth);
+  RUN_TEST(testProviderAssetsSelectSpriteByProvider);
+  RUN_TEST(testProviderAssetsBeatActivityStateAssets);
+  RUN_TEST(testProviderAssetsProviderChangeUsesPartialRender);
+  RUN_TEST(testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider);
+  RUN_TEST(testProviderAssetsCompileRejectsTooManyEntries);
+  RUN_TEST(testProgressColorStopsSelectFillByPercent);
+  RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
+  RUN_TEST(testProgressColorStopsFallbackToSolidColor);
+  RUN_TEST(testProgressColorStopsCompileRejectsTooManyEntries);
+  RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
+  RUN_TEST(testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
@@ -2908,6 +3320,7 @@ int main() {
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
   RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
+  RUN_TEST(testThemeSpecProviderChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testStoredThemeBootActivationRestoresFrameAndFullRenderIntent);

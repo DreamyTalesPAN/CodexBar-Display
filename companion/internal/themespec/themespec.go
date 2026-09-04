@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -14,6 +15,9 @@ import (
 
 const (
 	VersionV1 = 1
+	// MaxProviderAssets matches firmware kMaxCompiledProviderAssets: total
+	// provider→path entries across the whole ThemeSpec, not per sprite.
+	MaxProviderAssets = 16
 )
 
 var (
@@ -27,6 +31,12 @@ var (
 	colorPattern         = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
 	hexPattern           = regexp.MustCompile(`^[A-Fa-f0-9]+$`)
 )
+
+type ColorStop struct {
+	Gte   int    `json:"gte"`
+	Color string `json:"color,omitempty"`
+	C     string `json:"c,omitempty"`
+}
 
 type Primitive struct {
 	Type             string            `json:"type"`
@@ -49,6 +59,8 @@ type Primitive struct {
 	ShortBinding     string            `json:"b,omitempty"`
 	FontSize         int               `json:"fontSize,omitempty"`
 	ShortSize        int               `json:"s,omitempty"`
+	Valign           string            `json:"valign,omitempty"`
+	ShortValign      string            `json:"va,omitempty"`
 	Color            string            `json:"color,omitempty"`
 	ShortColor       string            `json:"c,omitempty"`
 	BgColor          string            `json:"bgColor,omitempty"`
@@ -61,6 +73,10 @@ type Primitive struct {
 	ShortAsset       string            `json:"a,omitempty"`
 	StateAssets      map[string]string `json:"stateAssets,omitempty"`
 	ShortStateAssets map[string]string `json:"sa,omitempty"`
+	ProviderAssets      map[string]string `json:"providerAssets,omitempty"`
+	ShortProviderAssets map[string]string `json:"pa,omitempty"`
+	ColorStops       []ColorStop       `json:"colorStops,omitempty"`
+	ShortColorStops  []ColorStop       `json:"cs,omitempty"`
 	Data             string            `json:"data,omitempty"`
 	ShortData        string            `json:"d,omitempty"`
 	Palette          []string          `json:"p,omitempty"`
@@ -93,11 +109,20 @@ func Parse(raw []byte) (Spec, json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return Spec{}, nil, fmt.Errorf("parse theme spec: %w", err)
 	}
+	// Reject before normalize: ThemeSpecRaw is uploaded unchanged, so values
+	// firmware exact-matches (provider keys, valign, #RRGGBB) must already
+	// be the installed form.
+	if err := rejectNonCanonicalInstalledValues(spec); err != nil {
+		return Spec{}, nil, err
+	}
 	spec = normalizeSpec(spec)
 	return spec, json.RawMessage(raw), nil
 }
 
 func Validate(spec Spec) error {
+	if err := rejectNonCanonicalInstalledValues(spec); err != nil {
+		return err
+	}
 	spec = normalizeSpec(spec)
 	if spec.ThemeSpecVersion != VersionV1 {
 		return fmt.Errorf("themeSpecVersion=%d unsupported (expected %d)", spec.ThemeSpecVersion, VersionV1)
@@ -117,10 +142,19 @@ func Validate(spec Spec) error {
 		return errMissingPrimitive
 	}
 
+	totalProviderAssets := 0
 	for i, primitive := range spec.Primitives {
 		if err := validatePrimitive(primitive); err != nil {
 			return fmt.Errorf("primitives[%d]: %w", i, err)
 		}
+		totalProviderAssets += len(primitive.ProviderAssets)
+	}
+	if totalProviderAssets > MaxProviderAssets {
+		return fmt.Errorf(
+			"providerAssets total entries exceed firmware limit: count=%d limit=%d",
+			totalProviderAssets,
+			MaxProviderAssets,
+		)
 	}
 
 	return nil
@@ -153,6 +187,15 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	}
 	if specUsesProviderSlots(spec) && !caps.SupportsProviderSlotsV1 {
 		return errors.New("device does not advertise provider-slots-v1 support")
+	}
+	if specUsesProviderAssets(spec) && !caps.SupportsProviderAssetsV1 {
+		return errors.New("device does not advertise provider-assets-v1 support")
+	}
+	if specUsesColorStops(spec) && !caps.SupportsColorStopsV1 {
+		return errors.New("device does not advertise color-stops-v1 support")
+	}
+	if specUsesTextValign(spec) && !caps.SupportsTextValignV1 {
+		return errors.New("device does not advertise text-valign-v1 support")
 	}
 	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
 		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
@@ -211,6 +254,38 @@ func specUsesLegacyUsageSlots(spec Spec) bool {
 			strings.Contains(primitive.Text, "{usageSlot") ||
 			strings.Contains(primitive.Text, "{us1") ||
 			strings.Contains(primitive.Text, "{us2") {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesProviderAssets(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if len(primitive.ProviderAssets) > 0 || len(primitive.ShortProviderAssets) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesColorStops(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if len(primitive.ColorStops) > 0 || len(primitive.ShortColorStops) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesTextValign(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		valign := primitive.Valign
+		if valign == "" {
+			valign = primitive.ShortValign
+		}
+		switch valign {
+		case "middle", "center", "bottom":
 			return true
 		}
 	}
@@ -300,6 +375,7 @@ func normalizeSpec(spec Spec) Spec {
 		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
 		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
 		spec.Primitives[i].StateAssets = normalizeStateAssets(spec.Primitives[i].StateAssets)
+		spec.Primitives[i].ProviderAssets = normalizeProviderAssets(spec.Primitives[i].ProviderAssets)
 		spec.Primitives[i].Data = strings.TrimSpace(spec.Primitives[i].Data)
 		for j := range spec.Primitives[i].Palette {
 			spec.Primitives[i].Palette[j] = strings.TrimSpace(spec.Primitives[i].Palette[j])
@@ -340,6 +416,10 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.FontSize == 0 {
 		p.FontSize = p.ShortSize
 	}
+	if p.Valign == "" {
+		p.Valign = p.ShortValign
+	}
+	p.Valign = normalizeValign(p.Valign)
 	if p.Color == "" {
 		p.Color = p.ShortColor
 	}
@@ -358,10 +438,61 @@ func normalizePrimitive(p Primitive) Primitive {
 	if len(p.StateAssets) == 0 && len(p.ShortStateAssets) > 0 {
 		p.StateAssets = p.ShortStateAssets
 	}
+	if len(p.ProviderAssets) == 0 && len(p.ShortProviderAssets) > 0 {
+		p.ProviderAssets = p.ShortProviderAssets
+	}
+	if len(p.ColorStops) == 0 && len(p.ShortColorStops) > 0 {
+		p.ColorStops = p.ShortColorStops
+	}
+	p.ColorStops = normalizeColorStops(p.ColorStops)
 	if p.Data == "" {
 		p.Data = p.ShortData
 	}
 	return p
+}
+
+func normalizeValign(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "middle", "center":
+		return "middle"
+	case "bottom":
+		return "bottom"
+	default:
+		return ""
+	}
+}
+
+func normalizeColorStops(stops []ColorStop) []ColorStop {
+	if len(stops) == 0 {
+		return nil
+	}
+	normalized := make([]ColorStop, 0, len(stops))
+	for _, stop := range stops {
+		color := strings.TrimSpace(stop.Color)
+		if color == "" {
+			color = strings.TrimSpace(stop.C)
+		}
+		normalized = append(normalized, ColorStop{
+			Gte:   stop.Gte,
+			Color: color,
+			C:     color,
+		})
+	}
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].Gte > normalized[j].Gte
+	})
+	return normalized
+}
+
+func normalizeProviderAssets(providerAssets map[string]string) map[string]string {
+	if len(providerAssets) == 0 {
+		return nil
+	}
+	normalized := make(map[string]string, len(providerAssets))
+	for provider, assetPath := range providerAssets {
+		normalized[strings.TrimSpace(strings.ToLower(provider))] = strings.TrimSpace(assetPath)
+	}
+	return normalized
 }
 
 func normalizeStateAssets(stateAssets map[string]string) map[string]string {
@@ -472,6 +603,11 @@ func validatePrimitive(p Primitive) error {
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("rect/progress primitive requires width/height > 0")
 		}
+		if p.Type == "progress" {
+			if err := validateColorStops(p); err != nil {
+				return err
+			}
+		}
 	case "gif":
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("gif primitive requires width/height > 0")
@@ -482,6 +618,9 @@ func validatePrimitive(p Primitive) error {
 		if err := validateSpriteAssetReferences(p); err != nil {
 			return err
 		}
+		if err := validateProviderAssetReferences(p); err != nil {
+			return err
+		}
 		if !gifAssetReferencesHaveGifExtension(p) {
 			return errors.New("gif primitive assetPath/stateAssets must reference .gif files")
 		}
@@ -490,6 +629,9 @@ func validatePrimitive(p Primitive) error {
 			return errors.New("sprite primitive requires assetPath or stateAssets under /themes/")
 		}
 		if err := validateSpriteAssetReferences(p); err != nil {
+			return err
+		}
+		if err := validateProviderAssetReferences(p); err != nil {
 			return err
 		}
 		if p.Width < 0 || p.Height < 0 {
@@ -571,7 +713,7 @@ func gifAssetReferencesHaveGifExtension(p Primitive) bool {
 }
 
 func hasSpriteAssetReference(p Primitive) bool {
-	return strings.TrimSpace(p.AssetPath) != "" || len(p.StateAssets) > 0
+	return strings.TrimSpace(p.AssetPath) != "" || len(p.StateAssets) > 0 || len(p.ProviderAssets) > 0
 }
 
 func validateSpriteAssetReferences(p Primitive) error {
@@ -587,6 +729,155 @@ func validateSpriteAssetReferences(p Primitive) error {
 		}
 		if !isSafeThemeAssetPath(assetPath) {
 			return fmt.Errorf("stateAssets[%s] must be under /themes/", state)
+		}
+	}
+	return nil
+}
+
+func rejectNonCanonicalInstalledValues(spec Spec) error {
+	if err := rejectNonCanonicalProviderAssetKeys(spec); err != nil {
+		return err
+	}
+	primitives := spec.Primitives
+	if len(primitives) == 0 {
+		primitives = spec.ShortPrimitives
+	}
+	for i, primitive := range primitives {
+		if err := rejectCanonicalValign(primitive.Valign, i, "valign"); err != nil {
+			return err
+		}
+		if err := rejectCanonicalValign(primitive.ShortValign, i, "va"); err != nil {
+			return err
+		}
+		for _, color := range []struct {
+			key   string
+			value string
+		}{
+			{"color", primitive.Color},
+			{"c", primitive.ShortColor},
+			{"bgColor", primitive.BgColor},
+			{"bg", primitive.ShortBg},
+			{"borderColor", primitive.BorderColor},
+			{"bc", primitive.ShortBorder},
+		} {
+			if err := rejectCanonicalColor(color.value, i, color.key); err != nil {
+				return err
+			}
+		}
+		stops := primitive.ColorStops
+		if len(stops) == 0 {
+			stops = primitive.ShortColorStops
+		}
+		for j, stop := range stops {
+			if err := rejectCanonicalColor(stop.Color, i, fmt.Sprintf("colorStops[%d].color", j)); err != nil {
+				return err
+			}
+			if err := rejectCanonicalColor(stop.C, i, fmt.Sprintf("colorStops[%d].c", j)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func rejectCanonicalValign(value string, index int, key string) error {
+	if value == "" {
+		return nil
+	}
+	switch value {
+	case "middle", "center", "bottom":
+		return nil
+	default:
+		return fmt.Errorf(
+			"primitives[%d]: %s %q must be middle, center, or bottom as uploaded",
+			index,
+			key,
+			value,
+		)
+	}
+}
+
+func rejectCanonicalColor(value string, index int, key string) error {
+	if value == "" {
+		return nil
+	}
+	if !colorPattern.MatchString(value) {
+		return fmt.Errorf("primitives[%d]: %s %q must be #RRGGBB as uploaded", index, key, value)
+	}
+	return nil
+}
+
+func rejectNonCanonicalProviderAssetKeys(spec Spec) error {
+	primitives := spec.Primitives
+	if len(primitives) == 0 {
+		primitives = spec.ShortPrimitives
+	}
+	for i, primitive := range primitives {
+		for _, assets := range []map[string]string{
+			primitive.ProviderAssets,
+			primitive.ShortProviderAssets,
+		} {
+			for provider := range assets {
+				canonical := strings.TrimSpace(strings.ToLower(provider))
+				if provider != canonical {
+					return fmt.Errorf(
+						"primitives[%d]: providerAssets key %q must be the lowercase wire provider id",
+						i,
+						provider,
+					)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validateProviderAssetReferences(p Primitive) error {
+	if len(p.ProviderAssets) == 0 {
+		return nil
+	}
+	if p.Type != "sprite" && p.Type != "image" {
+		return errors.New("providerAssets is only supported on sprite primitives")
+	}
+	for provider, assetPath := range p.ProviderAssets {
+		if !stateNamePattern.MatchString(provider) {
+			return fmt.Errorf("providerAssets provider %q must match [a-z0-9][a-z0-9_-]{0,31}", provider)
+		}
+		if provider == "idle" || provider == "coding" {
+			return fmt.Errorf("providerAssets provider %q is reserved; use stateAssets for idle and coding", provider)
+		}
+		if !isSafeThemeAssetPath(assetPath) {
+			return fmt.Errorf("providerAssets[%s] must be under /themes/", provider)
+		}
+	}
+	return nil
+}
+
+func validateColorStops(p Primitive) error {
+	if len(p.ColorStops) == 0 {
+		return nil
+	}
+	if p.Type != "progress" {
+		return errors.New("colorStops is only supported on progress primitives")
+	}
+	if len(p.ColorStops) > 4 {
+		return errors.New("colorStops supports at most 4 entries")
+	}
+	seen := map[int]struct{}{}
+	for i, stop := range p.ColorStops {
+		if stop.Gte < 0 || stop.Gte > 100 {
+			return fmt.Errorf("colorStops[%d].gte must be between 0 and 100", i)
+		}
+		if _, ok := seen[stop.Gte]; ok {
+			return fmt.Errorf("colorStops[%d].gte %d is duplicated", i, stop.Gte)
+		}
+		seen[stop.Gte] = struct{}{}
+		color := strings.TrimSpace(stop.Color)
+		if color == "" {
+			color = strings.TrimSpace(stop.C)
+		}
+		if !colorPattern.MatchString(color) {
+			return fmt.Errorf("colorStops[%d] color must be #RRGGBB", i)
 		}
 	}
 	return nil

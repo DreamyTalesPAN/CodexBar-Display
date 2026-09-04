@@ -165,13 +165,16 @@ Example:
 Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`, `sprite`, `pixels`) and validated by companion before send.
-- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/ft/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives.
+- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/ft/al/va/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives. `va` is optional vertical text align (`middle`/`center`/`bottom`).
 - A primitive may declare usage-lane ownership with `slot: 1|2` (compact `sl`). The renderer skips the entire primitive when that slot is absent, including static decoration and progress tracks. Themes that use slot bindings or ownership require the advertised `usage-slots-v1` capability.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
 - Text primitives scale with `fontSize`. When `fit` is `shrink` (compact `ft`), the renderer treats that size as the maximum and chooses the largest supported integer size that fits `maxWidth`/`width`.
+- Text primitive `align` (compact `al`) is horizontal: `center` / `right`; omit is left. `valign` (compact `va`) is vertical and separate: `middle` / `center` (same meaning), `bottom`; omit is top. After shrink chooses a size, firmware offsets `y` using the visual glyph height (`tft.fontHeight()`), not the `fontHeight + 4` clip pad. The vertical box is explicit `h` / `height` when set; otherwise it is `ApproxTextHeight` of the pre-shrink `fontSize` so shrink still sits in the original lane. `y` is the top of that box. Clip height stays `fontHeight + 4` and moves with the glyphs.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
 - `gif` and `sprite` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
 - Animated state assets use `stateAssets` (compact key `sa`) with `idle` and `coding` states. The renderer selects `coding` for coding activity and otherwise falls back to `idle`, then `assetPath`.
+- Sprite primitives may also declare `providerAssets` (compact key `pa`) as a map from the lowercase wire `provider` key to an asset path. The renderer checks `pa[provider]` first, then `stateAssets`, then `assetPath`. Unknown providers fall back to `assetPath`; omit `assetPath` to hide the sprite when no `pa` entry matches.
+- Progress primitives may declare `colorStops` (compact key `cs`) as up to four `{ "gte": N, "c": "#RRGGBB" }` entries. The renderer picks the first stop whose `gte` is `<=` the bound percent after sorting stops descending by `gte`. Missing `cs` keeps the solid `color`/`c` fill. Old firmware ignores `cs`.
 - `sprite` primitives reference uploaded `CBI1` static sprites or `CBA1` animated sprites under `/themes/...`. `CBA1` stores `width height frameCount fps`, one shared palette of up to 26 colors, then RLE rows for each frame. The browser should convert source sprite sheets into this format before upload. Animated sprites may set `bgColor`/`bg` as the local clear color used between frames.
 - `pixels` primitives support the existing transparent 1-bit row-major bitmap in hex `data`; set bits are drawn with `color`.
 - `pixels` primitives may also use multicolor RLE with palette `p` and rows `r`, for example `{"type":"pixels","width":16,"height":1,"p":["#FF0000"],"r":["5.4a7."]}`. `.` is transparent, `a` maps to `p[0]`, `b` maps to `p[1]`, and an optional decimal run length before the token repeats it. Every expanded row must equal `width`, and row count must equal `height`.
@@ -253,7 +256,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "preferredProtocolVersion": 2,
   "board": "esp8266-smalltv-st7789",
   "firmware": "1.0.0",
-  "features": ["theme", "theme-spec-v1"],
+  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {
@@ -272,6 +275,10 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
     "theme": {
       "supportsThemeSpecV1": true,
       "supportsUsageSlotsV1": true,
+      "supportsProviderSlotsV1": true,
+      "supportsProviderAssetsV1": true,
+      "supportsColorStopsV1": true,
+      "supportsTextValignV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -306,6 +313,9 @@ Fields:
   - `standby.screensaverSlot` reports whether `POST /screensaver/active` exists.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
   - `theme.supportsUsageSlotsV1` gates dynamic slot bindings and primitive lane ownership.
+  - `theme.supportsProviderAssetsV1` gates `providerAssets` / `pa` sprite maps. Older firmware ignores `pa` and draws `assetPath` / `a`; that fallback is compatible only when `a` is a valid sprite. Hosts still require the capability (or `minFirmware` 1.0.42) before installing a pack that uses `pa`.
+  - `theme.supportsColorStopsV1` gates `colorStops` / `cs`. Older firmware uses solid `c`. Stops are authored against remaining-style percent; when the frame `usageMode` is `used`, firmware matches `100 - percent` so warning colors stay correct.
+  - `theme.supportsTextValignV1` gates `valign` / `va`. Older firmware treats `y` as the glyph top, so shrink+middle is not a compatible fallback. Hosts must not install a spec that emits `va` onto firmware without this capability.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.

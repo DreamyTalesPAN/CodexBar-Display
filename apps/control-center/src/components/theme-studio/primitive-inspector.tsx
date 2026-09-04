@@ -160,6 +160,16 @@ export function PrimitiveInspector({
               ]}
             />
           </div>
+          <SelectField
+            label="Vertical align"
+            value={primitive.valign || "top"}
+            onChange={(value) => onChange("valign", value)}
+            options={[
+              ["top", "Top"],
+              ["middle", "Middle"],
+              ["bottom", "Bottom"],
+            ]}
+          />
           {primitive.fit === "shrink" &&
           primitive.width !== undefined &&
           textPrimitiveNaturalWidth(primitive) > primitive.width ? (

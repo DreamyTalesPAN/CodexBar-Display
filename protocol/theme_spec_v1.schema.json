@@ -160,6 +160,40 @@
               "shrink"
             ]
           },
+          "align": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ]
+          },
+          "al": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ]
+          },
+          "valign": {
+            "type": "string",
+            "enum": [
+              "top",
+              "middle",
+              "center",
+              "bottom"
+            ]
+          },
+          "va": {
+            "type": "string",
+            "enum": [
+              "top",
+              "middle",
+              "center",
+              "bottom"
+            ]
+          },
           "color": {
             "type": "string",
             "pattern": "^#[A-Fa-f0-9]{6}$"
@@ -403,6 +437,40 @@
             "type": "string",
             "enum": [
               "shrink"
+            ]
+          },
+          "align": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ]
+          },
+          "al": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ]
+          },
+          "valign": {
+            "type": "string",
+            "enum": [
+              "top",
+              "middle",
+              "center",
+              "bottom"
+            ]
+          },
+          "va": {
+            "type": "string",
+            "enum": [
+              "top",
+              "middle",
+              "center",
+              "bottom"
             ]
           },
           "color": {

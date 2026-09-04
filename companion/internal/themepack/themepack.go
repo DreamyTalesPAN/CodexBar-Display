@@ -113,6 +113,18 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 			if !caps.SupportsProviderSlotsV1 {
 				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureProviderSlotsV1)
 			}
+		case protocol.FeatureProviderAssetsV1:
+			if !caps.SupportsProviderAssetsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureProviderAssetsV1)
+			}
+		case protocol.FeatureColorStopsV1:
+			if !caps.SupportsColorStopsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureColorStopsV1)
+			}
+		case protocol.FeatureTextValignV1:
+			if !caps.SupportsTextValignV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureTextValignV1)
+			}
 		default:
 			return fmt.Errorf("theme pack requires unsupported capability %q", capability)
 		}
@@ -406,7 +418,12 @@ func validateManifestFields(manifest Manifest) error {
 	}
 	for _, capability := range manifest.RequiredCapabilities {
 		switch strings.TrimSpace(strings.ToLower(capability)) {
-		case protocol.FeatureUsageSlotsV1, protocol.FeatureUsageWindowsV1, protocol.FeatureProviderSlotsV1:
+		case protocol.FeatureUsageSlotsV1,
+			protocol.FeatureUsageWindowsV1,
+			protocol.FeatureProviderSlotsV1,
+			protocol.FeatureProviderAssetsV1,
+			protocol.FeatureColorStopsV1,
+			protocol.FeatureTextValignV1:
 		default:
 			return fmt.Errorf("required capability %q is unsupported", capability)
 		}
@@ -542,6 +559,11 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 				return fmt.Errorf("primitives[%d].stateAssets[%s] references %s, but manifest assets do not include it", index, state, assetPath)
 			}
 		}
+		for provider, assetPath := range primitive.ProviderAssets {
+			if _, ok := available[assetPath]; !ok {
+				return fmt.Errorf("primitives[%d].providerAssets[%s] references %s, but manifest assets do not include it", index, provider, assetPath)
+			}
+		}
 	}
 	return nil
 }
@@ -572,6 +594,9 @@ func referencedSpriteAssets(spec themespec.Spec) map[string]struct{} {
 			refs[primitive.AssetPath] = struct{}{}
 		}
 		for _, assetPath := range primitive.StateAssets {
+			refs[assetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.ProviderAssets {
 			refs[assetPath] = struct{}{}
 		}
 	}
@@ -750,6 +775,9 @@ func referencedGIFAssets(spec themespec.Spec) map[string]struct{} {
 			refs[primitive.AssetPath] = struct{}{}
 		}
 		for _, assetPath := range primitive.StateAssets {
+			refs[assetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.ProviderAssets {
 			refs[assetPath] = struct{}{}
 		}
 	}

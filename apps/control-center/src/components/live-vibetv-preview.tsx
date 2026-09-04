@@ -132,6 +132,8 @@ export type ThemePrimitive = {
   br?: number;
   align?: string;
   al?: string;
+  valign?: string;
+  va?: string;
   maxWidth?: number;
   mw?: number;
   progressStyle?: string;
@@ -140,10 +142,14 @@ export type ThemePrimitive = {
   sg?: number;
   segmentGap?: number;
   gg?: number;
+  colorStops?: Array<{ gte?: number; color?: string; c?: string }>;
+  cs?: Array<{ gte?: number; color?: string; c?: string }>;
   assetPath?: string;
   a?: string;
   stateAssets?: Record<string, string>;
   sa?: Record<string, string>;
+  providerAssets?: Record<string, string>;
+  pa?: Record<string, string>;
   data?: string;
   d?: string;
   r?: string[];
@@ -692,9 +698,12 @@ function ThemePrimitiveNode({
         font={font}
         fontSize={fontSize}
         fontWeight={themeFontWeight(font)}
+        height={height}
+        maxSize={maxSize}
         maxWidth={maxWidth}
         size={size}
         text={text}
+        valign={primitive.valign || primitive.va}
         x={x}
         y={y}
       />
@@ -805,9 +814,12 @@ function ThemeTextPrimitive({
   font,
   fontSize,
   fontWeight,
+  height,
+  maxSize,
   maxWidth,
   size,
   text,
+  valign,
   x,
   y,
 }: {
@@ -816,9 +828,12 @@ function ThemeTextPrimitive({
   font: number;
   fontSize: number;
   fontWeight: number;
+  height: number;
+  maxSize: number;
   maxWidth: number;
   size: number;
   text: string;
+  valign?: string;
   x: number;
   y: number;
 }) {
@@ -838,6 +853,8 @@ function ThemeTextPrimitive({
       measurement.key === measurementKey ? measurement.width : undefined,
     );
   const layout = themeTextLayout(x, maxWidth, align, textWidth);
+  const boxHeight = themeTextValignBoxHeight(height, font, maxSize);
+  const textY = themeTextAlignedY(y, boxHeight, fontSize, valign);
 
   useEffect(() => {
     const node = textRef.current;
@@ -866,7 +883,7 @@ function ThemeTextPrimitive({
     fontSize,
     fontWeight,
     letterSpacing: "0",
-    y: y + fontSize * 0.8,
+    y: textY + fontSize * 0.8,
   };
   const textNode = firmwareMetrics ? (
     <text
@@ -910,7 +927,7 @@ function ThemeTextPrimitive({
             height={Math.ceil(fontSize) + 4}
             width={layout.clipWidth}
             x={x}
-            y={y}
+            y={textY}
           />
         </clipPath>
       </defs>
@@ -936,7 +953,11 @@ function ThemeProgress({
     "#7BEF7B",
   );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
-  const fillColor = colorFor(primitive.color || primitive.c, "#FFFFFF");
+  const fillColor = resolveProgressFillColor(
+    primitive,
+    percent,
+    frame.usageMode,
+  );
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
@@ -1602,11 +1623,39 @@ export function progressPercent(
   return frame.sessionUnavailable ? 0 : frame.session;
 }
 
+function resolveProgressFillColor(
+  primitive: ThemePrimitive,
+  percent: number,
+  usageMode?: string,
+): string {
+  const stops = [...(primitive.colorStops || primitive.cs || [])]
+    .map((stop) => ({
+      gte: typeof stop.gte === "number" ? stop.gte : -1,
+      color: stop.color || stop.c || "",
+    }))
+    .filter((stop) => stop.gte >= 0 && stop.gte <= 100 && stop.color)
+    .sort((a, b) => b.gte - a.gte);
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const remainingStyle =
+    usageMode === "used" ? 100 - clamped : clamped;
+  for (const stop of stops) {
+    if (remainingStyle >= stop.gte) {
+      return colorFor(stop.color, "#FFFFFF");
+    }
+  }
+  return colorFor(primitive.color || primitive.c, "#FFFFFF");
+}
+
 function usageLaneText(value: number, unavailable: boolean): string {
   return unavailable ? "??" : String(value);
 }
 
 function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
+  const providerAssets = primitive.providerAssets || primitive.pa || {};
+  const provider = (frame.provider || "").trim().toLowerCase();
+  if (provider && providerAssets[provider]) {
+    return providerAssets[provider];
+  }
   const stateAssets = primitive.stateAssets || primitive.sa || {};
   if (frame.activity === "coding" && stateAssets.coding) {
     return stateAssets.coding;
@@ -1877,6 +1926,35 @@ function alignedTextX(
     return x + maxWidth;
   }
   return x;
+}
+
+export function themeTextValignBoxHeight(
+  explicitHeight: number,
+  font: number,
+  maxSize: number,
+): number {
+  if (explicitHeight > 0) {
+    return explicitHeight;
+  }
+  return themeFontSize(font, maxSize) + 4;
+}
+
+export function themeTextAlignedY(
+  boxY: number,
+  boxHeight: number,
+  glyphHeight: number,
+  valign: string | undefined,
+): number {
+  if (boxHeight <= 0) {
+    return boxY;
+  }
+  if (valign === "middle" || valign === "center") {
+    return boxY + Math.trunc((boxHeight - glyphHeight) / 2);
+  }
+  if (valign === "bottom") {
+    return boxY + boxHeight - glyphHeight;
+  }
+  return boxY;
 }
 
 export function themeTextLayout(

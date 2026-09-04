@@ -2,6 +2,7 @@ package themespec
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -270,6 +271,31 @@ func TestValidateAcceptsCompactStateAssets(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsCompactValign(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"p":[
+			{"t":"tx","x":68,"y":20,"w":156,"h":32,"b":"l","s":2,"va":"center"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact valign spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact valign spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].Valign; got != "middle" {
+		t.Fatalf("compact va=center should normalize to middle, got %q", got)
+	}
+	if got := spec.Primitives[0].Height; got != 32 {
+		t.Fatalf("compact h should normalize to height 32, got %d", got)
+	}
+}
+
 func TestValidateAcceptsCompactActivityBinding(t *testing.T) {
 	raw := []byte(`{
 		"v":1,
@@ -334,6 +360,224 @@ func TestValidateRejectsInvalidStateAssets(t *testing.T) {
 				},
 			}
 
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsProviderAssetsForSprite(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "provider-logo",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:   "sprite",
+				X:      0,
+				Y:      0,
+				Width:  24,
+				Height: 24,
+				ProviderAssets: map[string]string{
+					"cursor": "/themes/u/cursor.cbi",
+					"claude": "/themes/u/claude.cbi",
+				},
+				AssetPath: "/themes/u/fallback.cbi",
+			},
+		},
+	}
+
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected providerAssets spec to validate, got %v", err)
+	}
+}
+
+func TestValidateAcceptsCompactProviderAssets(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"provider-logo",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"pa":{"cursor":"/themes/u/cursor.cbi"},"a":"/themes/u/fallback.cbi"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact providerAssets spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact providerAssets spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].ProviderAssets["cursor"]; got != "/themes/u/cursor.cbi" {
+		t.Fatalf("compact providerAssets did not normalize, got %q", got)
+	}
+}
+
+func TestParseRejectsNonCanonicalProviderAssetKeys(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"provider-logo",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"pa":{"Claude":"/themes/u/claude.cbi"},"a":"/themes/u/fallback.cbi"}
+		]
+	}`)
+	if _, _, err := Parse(raw); err == nil {
+		t.Fatal("expected noncanonical providerAssets key to fail Parse")
+	}
+}
+
+func TestValidateRejectsTooManyProviderAssets(t *testing.T) {
+	providerAssets := make(map[string]string, MaxProviderAssets+1)
+	for i := 0; i < MaxProviderAssets+1; i++ {
+		providerAssets[fmt.Sprintf("p%d", i)] = fmt.Sprintf("/themes/u/p%d.cbi", i)
+	}
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "provider-logo",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:           "sprite",
+				X:              0,
+				Y:              0,
+				Width:          24,
+				Height:         24,
+				ProviderAssets: providerAssets,
+				AssetPath:      "/themes/u/fallback.cbi",
+			},
+		},
+	}
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "firmware limit") {
+		t.Fatalf("expected providerAssets aggregate limit error, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
+	tests := []struct {
+		name           string
+		providerAssets map[string]string
+		primitiveType  string
+		assetPath      string
+	}{
+		{
+			name: "reserved idle key",
+			providerAssets: map[string]string{
+				"idle": "/themes/u/idle.cbi",
+			},
+		},
+		{
+			name: "reserved coding key",
+			providerAssets: map[string]string{
+				"coding": "/themes/u/coding.cbi",
+			},
+		},
+		{
+			name: "unsafe path",
+			providerAssets: map[string]string{
+				"codex": "/themes/../codex.cbi",
+			},
+		},
+		{
+			name: "gif primitive",
+			providerAssets: map[string]string{"codex": "/themes/u/codex.gif"},
+			primitiveType:  "gif",
+			assetPath:      "/themes/u/fallback.gif",
+		},
+		{
+			name: "noncanonical key",
+			providerAssets: map[string]string{
+				"Claude": "/themes/u/claude.cbi",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			primitiveType := tt.primitiveType
+			if primitiveType == "" {
+				primitiveType = "sprite"
+			}
+			assetPath := tt.assetPath
+			if assetPath == "" {
+				assetPath = "/themes/u/fallback.cbi"
+			}
+			spec := Spec{
+				ThemeSpecVersion: 1,
+				ThemeID:          "provider-logo",
+				ThemeRev:         1,
+				Primitives: []Primitive{
+					{
+						Type:           primitiveType,
+						X:              0,
+						Y:              0,
+						Width:          24,
+						Height:         24,
+						ProviderAssets: tt.providerAssets,
+						AssetPath:      assetPath,
+					},
+				},
+			}
+
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsProgressColorStops(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"color-stops",
+		"rev":1,
+		"p":[
+			{"t":"p","x":0,"y":0,"w":40,"h":10,"b":"s","c":"#22C55E","cs":[
+				{"gte":75,"c":"#22C55E"},
+				{"gte":50,"c":"#EAB308"},
+				{"gte":25,"c":"#F59E0B"},
+				{"gte":0,"c":"#EF4444"}
+			]}
+		]
+	}`)
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected colorStops to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].ColorStops[0].Gte; got != 75 {
+		t.Fatalf("expected sorted highest gte first, got %d", got)
+	}
+}
+
+func TestValidateRejectsInvalidProgressColorStops(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "too many",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":80,"c":"#111111"},{"gte":60,"c":"#222222"},{"gte":40,"c":"#333333"},{"gte":20,"c":"#444444"},{"gte":0,"c":"#555555"}]}]}`,
+		},
+		{
+			name: "bad color",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":0,"c":"red"}]}]}`,
+		},
+		{
+			name: "gte out of range",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":101,"c":"#EF4444"}]}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, _, err := Parse([]byte(tt.raw))
+			if err != nil {
+				return
+			}
 			if err := Validate(spec); err == nil {
 				t.Fatalf("expected validation error")
 			}
@@ -657,5 +901,88 @@ func TestValidateRejectsInvalidUsageSlotOwnership(t *testing.T) {
 	}
 	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "slot must be 1 or 2") {
 		t.Fatalf("expected invalid slot rejection, got %v", err)
+	}
+}
+
+func TestParseRejectsNonCanonicalValignAndColors(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "uppercase valign",
+			raw:  `{"v":1,"id":"raw-valign","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","va":"CENTER"}]}`,
+		},
+		{
+			name: "padded valign",
+			raw:  `{"v":1,"id":"raw-valign","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","valign":" middle"}]}`,
+		},
+		{
+			name: "padded color",
+			raw:  `{"v":1,"id":"raw-color","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","c":" #22C55E"}]}`,
+		},
+		{
+			name: "short color",
+			raw:  `{"v":1,"id":"raw-color","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","c":"#22C"}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, raw, err := Parse([]byte(tt.raw)); err == nil {
+				t.Fatalf("expected Parse to reject noncanonical uploaded JSON, raw=%s", raw)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsNonCanonicalValignOnStruct(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "raw-valign",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "text", X: 0, Y: 0, Binding: "label", Valign: "CENTER"},
+		},
+	}
+	if err := Validate(spec); err == nil {
+		t.Fatal("expected Validate to reject valign that firmware will ignore")
+	}
+}
+
+func TestValidateAgainstCapabilitiesRequiresProviderAssetsColorStopsAndValign(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"gated-features",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":8,"h":8,"a":"/themes/u/fb.cbi","pa":{"codex":"/themes/u/xo.cbi"}},
+			{"t":"tx","x":0,"y":10,"w":80,"h":16,"b":"l","va":"middle"},
+			{"t":"p","x":0,"y":40,"w":40,"h":8,"b":"s","c":"#22C55E","cs":[{"gte":0,"c":"#EF4444"}]}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "provider-assets-v1") {
+		t.Fatalf("expected provider-assets-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsProviderAssetsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "color-stops-v1") {
+		t.Fatalf("expected color-stops-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsColorStopsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "text-valign-v1") {
+		t.Fatalf("expected text-valign-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsTextValignV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err != nil {
+		t.Fatalf("expected capable device to accept spec: %v", err)
 	}
 }
