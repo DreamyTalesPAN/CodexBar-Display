@@ -4164,6 +4164,9 @@ func TestProviderCollectorUsesInventoryWithoutTreatingFetchFailureAsDisable(t *t
 	if frames := collector.providerFrames(now); len(frames) != 1 || frames[0].Provider != "cursor" {
 		t.Fatalf("transient usage failure pruned enabled provider: %#v", frames)
 	}
+	if usage, ok := LoadPersistedUsage(now); !ok || len(usage.Providers) != 1 || !usage.Providers[0].Retained {
+		t.Fatalf("transient usage failure did not mark the saved reading retained: %#v", usage)
+	}
 
 	cursorEnabled = false
 	collector.collectOnce(context.Background())
@@ -4220,6 +4223,9 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 		if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
 			t.Fatalf("expected buffered last-good values at %s, got %#v", age, frames)
 		}
+		if snapshot := collector.providers["gemini"]; !snapshot.Retained {
+			t.Fatalf("buffered last-good values were not marked retained at %s: %#v", age, snapshot)
+		}
 	}
 
 	current = freshAt.Add(10*time.Minute + time.Second)
@@ -4255,6 +4261,9 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	frames = collector.providerFrames(current)
 	if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 12 {
 		t.Fatalf("expected immediate recovery from unavailable state, got %#v", frames)
+	}
+	if snapshot := collector.providers["gemini"]; snapshot.Retained {
+		t.Fatalf("successful collection left the recovered reading retained: %#v", snapshot)
 	}
 }
 

@@ -291,6 +291,7 @@ type ProviderUsageSnapshot struct {
 	Source                string
 	Meta                  codexbar.ProviderUsageMeta
 	CollectedAt           time.Time
+	Retained              bool
 	TokenStatsCollectedAt time.Time
 	TokenHistorySettled   bool
 	ActivityObservedAt    time.Time
@@ -2266,6 +2267,7 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			Source:                strings.TrimSpace(snapshot.Source),
 			Meta:                  snapshot.Meta,
 			CollectedAt:           snapshot.Collected.UTC(),
+			Retained:              snapshot.Retained,
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
 			TokenHistorySettled:   snapshot.TokenHistorySettled,
 			ActivityObservedAt:    snapshot.ActivityObservedAt.UTC(),

@@ -364,7 +364,7 @@ func TestRetainedReadingStillCompletesAfterHealthRefresh(t *testing.T) {
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
-			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: now.Add(-time.Minute), Stale: true,
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: now.Add(-time.Minute), Retained: true,
 		}}}, true
 	}
 	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {

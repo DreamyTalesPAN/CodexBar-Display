@@ -609,7 +609,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				if id != "" && !provider.CollectedAt.IsZero() &&
 					!frame.UsageUnavailable && snapshotHasUsableUsage(frame, provider.Meta) {
 					lastSuccess[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
-					if provider.Stale {
+					if provider.Retained {
 						retainedSuccess[id] = struct{}{}
 					}
 				}

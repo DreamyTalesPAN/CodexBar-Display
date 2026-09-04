@@ -29,6 +29,7 @@ type providerSnapshot struct {
 	Source              string                     `json:"source,omitempty"`
 	Meta                codexbar.ProviderUsageMeta `json:"meta,omitempty"`
 	Collected           time.Time                  `json:"collectedAt"`
+	Retained            bool                       `json:"retained,omitempty"`
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
@@ -321,6 +322,14 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if inventoryAuthoritative {
 			updated = c.applyProviderInventoryLocked(inventory)
 		}
+		for key, snapshot := range c.providers {
+			if snapshot.Retained {
+				continue
+			}
+			snapshot.Retained = true
+			c.providers[key] = snapshot
+			updated = true
+		}
 		c.lastFetchErr = err
 		if codexbar.FetchErrorKindOf(err) == codexbar.FetchErrorNoProviders {
 			// CodexBar answered with zero providers: a definitive enumeration,
@@ -378,6 +387,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			lastGood, exists := c.providers[key]
 			if exists {
 				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
+					lastGood.Retained = true
+					c.providers[key] = lastGood
+					updated = true
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true

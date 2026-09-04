@@ -62,7 +62,7 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 		// is what the collector leaves behind once a reading has expired, and
 		// that one is not a saved reading any more.
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
-			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Stale: true,
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
 		}}}, true
 	}
 
@@ -90,7 +90,7 @@ func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
 			}
 			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
-					Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Stale: true,
+					Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Retained: true,
 				}}}, true
 			}
 
