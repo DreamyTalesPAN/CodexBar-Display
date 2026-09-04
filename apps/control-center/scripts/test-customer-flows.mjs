@@ -1821,6 +1821,7 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
       configured: false,
       valid: false,
     },
+    displayFrameStatus: 404,
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -1849,7 +1850,7 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
   await displayScreen.waitFor({ timeout: 15_000 });
   await displayScreen.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("navigation", { name: "Control Center" }).waitFor({
+  await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({
     timeout: 15_000,
   });
   assert(
@@ -1858,6 +1859,11 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     "A VibeTV with a confirmed active theme must skip theme selection",
   );
   assertNoInstallRequests(installRequests);
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A delayed preview must wait on the live handoff instead of opening Overview",
+  );
   assert(
     requests.filter((request) => request === "POST /v1/device/search")
       .length === 1,

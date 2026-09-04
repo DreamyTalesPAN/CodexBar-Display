@@ -3457,3 +3457,29 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Preview waiting is not theme setup
+
+- User approval: Same final-candidate instruction as above. The Bug Detector
+  found that a delayed first preview could still send a VibeTV with a confirmed
+  active theme to `Choose your theme`, matching the product owner's fresh
+  real-device report.
+- Approved customer-visible result: **Theme state and preview readiness remain
+  separate. A VibeTV with an active rendered theme waits on `Your VibeTV is
+  live` for its first preview; it never offers an unnecessary theme install.
+  An explicit `theme-missing` state still opens the theme chooser.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Native welcome keeps Ask AI recovery
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **The Help menu on the native welcome
+  screen again offers `Ask AI to fix`. It copies the same safe recovery intent
+  as the Web setup: repair and verify the existing Mac first, identify the
+  repository and native screen, and never clone, commit, push, or open a pull
+  request without a later explicit decision.**
+- Approved files: `macos/VibeTVControlCenter/main.swift`,
+  `macos/VibeTVControlCenter/URLSchemeTests.swift`, and this approval record.

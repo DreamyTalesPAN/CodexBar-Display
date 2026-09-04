@@ -4123,9 +4123,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ready: deviceReady,
   });
 
-  const setupLiveHandoverActive =
-    providerSetupCompletedThisSession ||
-    setupThemeInstallRequested;
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
     displayConfigured: displaySetupComplete,
@@ -4152,7 +4149,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         startupDeviceSearchState === "searching"),
     themeSetupRequired:
       themeSetupRequired ||
-      (setupLiveHandoverActive && !hasRenderableUsage(displayFrame)) ||
       (setupThemeChoiceRequired &&
         !(
           setupThemeInstallRequested &&
