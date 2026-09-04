@@ -404,6 +404,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const providerReconcileDeadlineRef = useRef(0);
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerDisplayReadRef = useRef<Promise<void> | null>(null);
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
@@ -2864,45 +2865,57 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshProviderDisplay = useCallback(
-    async (options?: { quiet?: boolean }) => {
-      // A read starts only after older writes and is discarded if a newer
-      // write starts beside it. Otherwise a slow GET can put the selection it
-      // captured before a PATCH back into both the UI and the next write.
-      for (;;) {
-        const pendingWrites = providerDisplayWriteQueueRef.current;
-        await pendingWrites;
-        if (pendingWrites === providerDisplayWriteQueueRef.current) {
-          break;
-        }
+    (options?: { quiet?: boolean }) => {
+      if (providerDisplayReadRef.current) {
+        return providerDisplayReadRef.current;
       }
-      const setupGeneration = setupGenerationRef.current;
-      const displayRevision = ++providerDisplayRevisionRef.current;
-      try {
-        const payload = await runCompanion<{
-          selection: ProviderDisplaySelection;
-        }>("/v1/provider-display", undefined, {
-          preserveLastError: Boolean(options?.quiet),
-        });
-        if (
-          setupGeneration !== setupGenerationRef.current ||
-          displayRevision !== providerDisplayRevisionRef.current
-        ) {
-          return;
+      const read = (async () => {
+        // A read starts only after older writes and is discarded if a newer
+        // write starts beside it. Otherwise a slow GET can put the selection it
+        // captured before a PATCH back into both the UI and the next write.
+        for (;;) {
+          const pendingWrites = providerDisplayWriteQueueRef.current;
+          await pendingWrites;
+          if (pendingWrites === providerDisplayWriteQueueRef.current) {
+            break;
+          }
         }
-        providerDisplayRef.current = payload.selection;
-        setProviderDisplay(payload.selection);
-        setProviderDisplayError(null);
-      } catch (error) {
-        if (
-          setupGeneration !== setupGenerationRef.current ||
-          displayRevision !== providerDisplayRevisionRef.current
-        ) {
-          return;
+        const setupGeneration = setupGenerationRef.current;
+        const displayRevision = providerDisplayRevisionRef.current;
+        try {
+          const payload = await runCompanion<{
+            selection: ProviderDisplaySelection;
+          }>("/v1/provider-display", undefined, {
+            preserveLastError: Boolean(options?.quiet),
+          });
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            displayRevision !== providerDisplayRevisionRef.current
+          ) {
+            return;
+          }
+          providerDisplayRef.current = payload.selection;
+          setProviderDisplay(payload.selection);
+          setProviderDisplayError(null);
+        } catch (error) {
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            displayRevision !== providerDisplayRevisionRef.current
+          ) {
+            return;
+          }
+          setProviderDisplayError(
+            normalizeCaughtError(error, "Display selection needs attention."),
+          );
         }
-        setProviderDisplayError(
-          normalizeCaughtError(error, "Display selection needs attention."),
-        );
-      }
+      })();
+      providerDisplayReadRef.current = read;
+      void read.finally(() => {
+        if (providerDisplayReadRef.current === read) {
+          providerDisplayReadRef.current = null;
+        }
+      });
+      return read;
     },
     [runCompanion],
   );
