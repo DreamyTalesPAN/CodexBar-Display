@@ -3669,3 +3669,14 @@ issue scope, or release permission never implies UI permission.
   intended race.**
 - Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and this
   approval record.
+
+## 2026-09-04 — Usage API keeps saved quota visibly stale
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that retained
+  quota was stale on the device frame but could still look fresh in Usage.
+- Approved customer-visible result: **Saved quota percentages remain stale in
+  the Usage screen and cannot produce `Usage is up to date`. Independently
+  refreshed token history remains available with its own freshness.**
+- Approved files: `companion/internal/daemon/daemon.go`, its test, and this
+  approval record.

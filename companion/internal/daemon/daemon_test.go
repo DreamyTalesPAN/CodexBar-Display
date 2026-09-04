@@ -4164,7 +4164,7 @@ func TestProviderCollectorUsesInventoryWithoutTreatingFetchFailureAsDisable(t *t
 	if frames := collector.providerFrames(now); len(frames) != 1 || frames[0].Provider != "cursor" {
 		t.Fatalf("transient usage failure pruned enabled provider: %#v", frames)
 	}
-	if usage, ok := LoadPersistedUsage(now); !ok || len(usage.Providers) != 1 || !usage.Providers[0].Retained {
+	if usage, ok := LoadPersistedUsage(now); !ok || len(usage.Providers) != 1 || !usage.Providers[0].Retained || !usage.Providers[0].Stale {
 		t.Fatalf("transient usage failure did not mark the saved reading retained: %#v", usage)
 	}
 

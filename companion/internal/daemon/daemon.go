@@ -2312,7 +2312,7 @@ func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
 }
 
 func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
-	return !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
+	return snapshot.Retained || !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {
