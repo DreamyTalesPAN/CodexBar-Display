@@ -3371,3 +3371,17 @@ issue scope, or release permission never implies UI permission.
   (restored), `apps/control-center/scripts/test-customer-flows.mjs`, the
   Companion provider-message redaction with its tests, and this approval
   record.
+
+## 2026-09-04 — Final detector findings before candidate test
+
+- User approval: The product owner instructed us to review every remaining Bug
+  Detector finding on PR #331, fix real findings, close extreme edge cases, and
+  report only when the final candidate is ready to test (2026-09-04).
+- Approved customer-visible result: **No new screen, wording, or control. A
+  provider message containing credentials inside URL userinfo now shows one
+  `[redacted]` marker instead of the username and password. After `Run setup
+  again`, an older display-selection read that finishes late cannot restore the
+  deleted choice, so the existing Display Mode step is not skipped.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  the Companion provider-message redaction and its regression test, and this
+  approval record.
