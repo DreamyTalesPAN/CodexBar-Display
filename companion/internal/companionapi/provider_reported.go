@@ -29,7 +29,7 @@ var (
 	// A credential key whose value is a JSON object or array can contain short
 	// nested secrets. Redact the rest of that line before the pair scanner can
 	// consume only the opening delimiter and skip the nested key.
-	reportedStructuredCredential = regexp.MustCompile(`(?is)((?:^|[\s,{(\[?&#])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer)[A-Za-z0-9._-]*["']?\s*[:=]\s*)[\{\[].*$`)
+	reportedStructuredCredential = regexp.MustCompile(`(?is)((?:^|[\s,{(\[?&#])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer|credential)[A-Za-z0-9._-]*["']?\s*[:=]\s*)[\{\[].*$`)
 	// A credential-shaped key and its value: `Cookie: ...`, `sessionKey=...`,
 	// `"access_token": "..."`, `?token=...&session=...`, `#token=...`. Anchored
 	// at a line start or a separator -- a URL's `?`, `&` and `#` among them -- so a
@@ -37,7 +37,7 @@ var (
 	// a key, and the value may carry an auth scheme word so `Authorization:
 	// Bearer x` collapses to one marker instead of two. A value ends at `&` or
 	// `#`, so the next pair is judged on its own.
-	reportedCredentialPair = regexp.MustCompile(`(?im)((?:^|[\s,{(\[?&#])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer)[A-Za-z0-9._-]*["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&#)\]}"']*[^\s,;&#)\]}"'.])`)
+	reportedCredentialPair = regexp.MustCompile(`(?im)((?:^|[\s,{(\[?&#])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer|credential)[A-Za-z0-9._-]*["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&#)\]}"']*[^\s,;&#)\]}"'.])`)
 	// One prose family is evidenced in the pinned engine and must survive:
 	// "Safari cookies: permission denied for ...", "Chrome cookies: missing
 	// auth cookie", "Firefox cookies: missing ory_session_* cookie". Without

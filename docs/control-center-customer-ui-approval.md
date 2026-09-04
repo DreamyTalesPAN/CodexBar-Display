@@ -3609,3 +3609,28 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Credential-named provider output is redacted
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that short values
+  under `credential` or `credentials` keys could reach the provider message.
+- Approved customer-visible result: **Provider guidance and its Copy action
+  replace scalar or structured values under credential-named keys with the
+  existing `[redacted]` marker.**
+- Approved files: `companion/internal/companionapi/provider_reported.go`, its
+  test, and this approval record.
+
+## 2026-09-04 — Failed setup reset finishes pending provider changes
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a failed
+  setup reset could interrupt the Automatic-pool half of an earlier provider
+  change.
+- Approved customer-visible result: **No new screen, wording, or control. If
+  setup cannot restart, a provider change that was already saving finishes its
+  Automatic display update instead of leaving the provider switch and VibeTV
+  selection inconsistent. A successful reset still discards the old setup.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.

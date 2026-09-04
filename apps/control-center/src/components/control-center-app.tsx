@@ -412,6 +412,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const setupResetInProgressRef = useRef(false);
+  const providerPoolReconcilesAfterResetRef = useRef<Array<() => void>>([]);
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -1657,6 +1658,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     setupResetInProgressRef.current = true;
+    providerPoolReconcilesAfterResetRef.current = [];
+    let resetSucceeded = false;
     const setupGeneration = setupGenerationRef.current;
     setBusyAction("reset-setup");
     setLastError(null);
@@ -1684,6 +1687,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerSetup?: ProviderSetupInfo;
         setup?: ProviderSelectionSetup;
       }>("/v1/setup/reset", { method: "POST" });
+      resetSucceeded = true;
       if (setupGeneration !== setupGenerationRef.current) {
         return;
       }
@@ -1771,6 +1775,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setBusyAction(null);
     } finally {
       setupResetInProgressRef.current = false;
+      const deferredReconciles = resetSucceeded
+        ? []
+        : providerPoolReconcilesAfterResetRef.current;
+      providerPoolReconcilesAfterResetRef.current = [];
+      for (const reconcile of deferredReconciles) {
+        reconcile();
+      }
     }
   }, [
     addEvent,
@@ -3158,16 +3169,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             preference.providerId !== (enabled ? providerId : ""),
         )
         .map((preference) => preference.providerId as string);
-      return updateProviderDisplay(
-        (current) =>
-          automaticPoolAfterToggle(
-            current,
-            providerId,
-            enabled,
-            disabledProviderIds,
-          ),
-        providerId,
-      );
+      const reconcile = () =>
+        updateProviderDisplay(
+          (current) =>
+            automaticPoolAfterToggle(
+              current,
+              providerId,
+              enabled,
+              disabledProviderIds,
+            ),
+          providerId,
+        );
+      if (setupResetInProgressRef.current) {
+        providerPoolReconcilesAfterResetRef.current.push(() => {
+          void reconcile();
+        });
+        return false;
+      }
+      return reconcile();
     },
     [updateProviderDisplay],
   );

@@ -142,6 +142,16 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			want: "Stored session: [redacted] expired.",
 		},
 		{
+			name: "a short scalar credential value",
+			in:   `Unexpected response body ({"credential":"hunter"})`,
+			want: `Unexpected response body ({"credential":[redacted]})`,
+		},
+		{
+			name: "a structured credentials value",
+			in:   `Unexpected response body ({"credentials":{"value":"hunter"}})`,
+			want: `Unexpected response body ({"credentials":[redacted]`,
+		},
+		{
 			name: "credential pairs inside a query string",
 			in:   "Callback rejected: https://host/callback?token=abcdefgh&session=hunter&next=home",
 			want: "Callback rejected: https://host/callback?token=[redacted]&session=[redacted]&next=home",

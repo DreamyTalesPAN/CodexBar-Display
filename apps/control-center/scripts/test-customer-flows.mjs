@@ -458,6 +458,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testFailedSetupResetReconcilesPendingProviderToggle(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderOnboardingUsesSharedHealthyDescriptor(
         browser,
         appContext.appUrl,
@@ -876,6 +880,10 @@ async function main() {
       appContext.appUrl,
     );
     await testRunSetupAgainWaitsForAPendingProviderToggle(
+      browser,
+      appContext.appUrl,
+    );
+    await testFailedSetupResetReconcilesPendingProviderToggle(
       browser,
       appContext.appUrl,
     );
@@ -6777,6 +6785,91 @@ async function testRunSetupAgainWaitsForAPendingProviderToggle(browser, appUrl) 
     `the reset must wait for the pending provider toggle, but ran ${resetAt - preferenceAt}ms after it started`,
   );
   await page.getByRole("main", { name: "Welcome" }).waitFor({ timeout: 10_000 });
+  await page.close();
+}
+
+async function testFailedSetupResetReconcilesPendingProviderToggle(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const requests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencePatchDelayMs: 800,
+    preferencesResponse: {
+      ok: true,
+      items: [
+        providerPreferenceFixture("codex", "Codex"),
+        disabledProviderPreferenceFixture("claude", "Claude"),
+      ],
+    },
+    providerDisplay: {
+      mode: "automatic",
+      providerIds: ["codex"],
+      configured: true,
+      valid: true,
+    },
+    resetError: {
+      status: 409,
+      error: {
+        code: "setup_reset_failed",
+        message: "Setup could not be restarted.",
+        nextAction: "Try again.",
+      },
+    },
+    onRequest: (pathname, method, body) => {
+      if (
+        (pathname.startsWith("/v1/preferences/") && method === "PATCH") ||
+        (pathname === "/v1/setup/reset" && method === "POST") ||
+        (pathname === "/v1/provider-display" && method === "PATCH")
+      ) {
+        requests.push({ pathname, method, body, at: Date.now() });
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("switch", { name: "Claude" }).click();
+  await waitForCondition(
+    () =>
+      requests.some((request) =>
+        request.pathname.startsWith("/v1/preferences/"),
+      ),
+    "enabling Claude must start its provider preference save",
+  );
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () =>
+      requests.some((request) => request.pathname === "/v1/setup/reset"),
+    "the failed setup reset must start after the preference save settles",
+  );
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) => request.pathname === "/v1/provider-display",
+      ),
+    "a failed reset must resume the Automatic pool save skipped while reset was pending",
+  );
+  const resetAt = requests.find(
+    (request) => request.pathname === "/v1/setup/reset",
+  ).at;
+  const displayWrite = requests.find(
+    (request) => request.pathname === "/v1/provider-display",
+  );
+  assert(
+    displayWrite.at >= resetAt,
+    "the deferred Automatic pool save must run only after reset fails",
+  );
+  assert(
+    JSON.parse(displayWrite.body || "{}").providerIds?.includes("claude"),
+    `the failed reset must keep newly enabled Claude visible, got ${displayWrite.body}`,
+  );
   await page.close();
 }
 
