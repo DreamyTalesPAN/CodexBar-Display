@@ -681,6 +681,54 @@ describe("SetupWizard: going back", () => {
 });
 
 describe("SetupWizard: leaving the address dialog", () => {
+  it("restarts a running scan after a submitted manual lookup is canceled", async () => {
+    let settle: (candidate: DeviceCandidate) => void = () => {};
+    const onFindManualTarget = vi.fn(
+      () =>
+        new Promise<DeviceCandidate>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const onSearchDevices = vi.fn();
+    const connect = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "welcome",
+          deviceSearchState: "searching",
+          onFindManualTarget,
+          onSearchDevices,
+          connectSteps: {
+            connect,
+            installFirmware: vi.fn(),
+          } as unknown as SetupWizardProps["connectSteps"],
+        })}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enter IP address manually" }),
+    );
+    fireEvent.change(screen.getByLabelText("IP address"), {
+      target: { value: "192.168.1.50" },
+    });
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Enter IP address" }),
+      ).getByRole("button", { name: "Connect" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onSearchDevices).toHaveBeenCalledOnce();
+    await act(async () => {
+      settle({
+        target: "http://192.168.1.50",
+        deviceId: "9517433",
+      } as DeviceCandidate);
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   // The lookup can take a while, and its continuation pairs the VibeTV and can
   // start a firmware install. Cancel used to close the dialog and let both
   // happen anyway, on a VibeTV the customer had decided against.

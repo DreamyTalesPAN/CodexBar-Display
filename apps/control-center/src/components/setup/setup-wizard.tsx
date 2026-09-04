@@ -156,6 +156,7 @@ export function SetupWizard(props: SetupWizardProps) {
   // continuation pairs the VibeTV and can start a firmware install, so without
   // this Cancel left both to happen anyway.
   const manualAttemptRef = useRef(0);
+  const manualLookupInFlightRef = useRef(false);
   const [searchErrorDismissed, setSearchErrorDismissed] = useState(false);
   // Held rather than written on every touch: writing on selection ends the
   // step, so Continue was only ever reachable by not changing anything.
@@ -284,6 +285,7 @@ export function SetupWizard(props: SetupWizardProps) {
     <SetupAddressDialog
       onConnect={async (target) => {
         const attempt = (manualAttemptRef.current += 1);
+        manualLookupInFlightRef.current = true;
         const abandoned = () => attempt !== manualAttemptRef.current;
         try {
           const candidate = await props.onFindManualTarget(target);
@@ -306,13 +308,26 @@ export function SetupWizard(props: SetupWizardProps) {
             [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
             null
           );
+        } finally {
+          if (!abandoned()) {
+            manualLookupInFlightRef.current = false;
+          }
         }
       }}
       onOpenChange={(open) => {
         setAddressDialogOpen(open);
         if (!open) {
+          const canceledLookup = manualLookupInFlightRef.current;
           manualAttemptRef.current += 1;
+          manualLookupInFlightRef.current = false;
           setNotFoundDismissed(false);
+          // A submitted manual lookup supersedes the automatic attempt in the
+          // parent. If the customer cancels while both still read "searching",
+          // neither old result is allowed to settle that state, so start the
+          // scan the screen is waiting for again.
+          if (canceledLookup && deviceSearchState === "searching") {
+            searchAgain();
+          }
         }
       }}
       open={addressDialogOpen}

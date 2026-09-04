@@ -1563,17 +1563,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           error,
           "That IP address did not answer as a VibeTV.",
         );
-        setLastError(normalized);
-        addEvent({
-          label: "Manual VibeTV connection failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
         // Settle the search this one superseded. Taking over the attempt
         // counter silently ends the running scan, and leaving its state on
         // "searching" strands the device step: nothing to pick, nothing to
         // explain it, and no way to scan again.
         if (searchIsCurrent()) {
+          setLastError(normalized);
+          addEvent({
+            label: "Manual VibeTV connection failed",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
           setDeviceSearchState("not-found");
         }
         throw normalized;

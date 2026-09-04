@@ -3571,3 +3571,16 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/setup/setup-wizard.tsx`, its test,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Canceling manual IP lookup restarts discovery
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that canceling a
+  submitted manual IP lookup could leave the Welcome scan permanently running.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  a submitted manual IP lookup replaces the running WiFi scan and is then
+  canceled, setup starts a fresh WiFi scan instead of remaining on Welcome
+  forever. A canceled lookup still cannot connect later.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.tsx`, its test, and
+  this approval record.
