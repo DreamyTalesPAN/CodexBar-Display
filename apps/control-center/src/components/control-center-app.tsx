@@ -2993,6 +2993,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         new Set(current).add(providerId),
       );
       const runCheck = async () => {
+        // A provider check changes the health this endpoint reports. Detach
+        // any GET that started before the check so its old snapshot cannot
+        // replace the result we are about to confirm.
+        providerPreferencesRevisionRef.current += 1;
+        providerPreferencesReadRef.current = null;
         try {
           const current = providerPreferencesRef.current?.find(
             (preference) =>
@@ -3005,6 +3010,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
             { method: "POST" },
           );
+          // A poll may have started while the check was running. Require one
+          // read from after the successful retry before clearing the pending
+          // marker.
+          providerPreferencesRevisionRef.current += 1;
+          providerPreferencesReadRef.current = null;
           await refreshProviderPreferences({ quiet: true });
           setProviderPreferencesError(null);
         } catch (error) {

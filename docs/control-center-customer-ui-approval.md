@@ -3597,3 +3597,15 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Provider checks win over older reads
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a provider
+  read started before `Check again` could later restore the old provider state.
+- Approved customer-visible result: **No new screen, wording, or control. After
+  `Check again` succeeds, the row waits for a fresh provider read and cannot be
+  reverted by a response that started before the check.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.

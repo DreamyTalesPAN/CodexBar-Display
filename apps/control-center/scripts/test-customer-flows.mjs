@@ -454,6 +454,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testProviderCheckWinsOverOlderPreferenceRead(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderOnboardingUsesSharedHealthyDescriptor(
         browser,
         appContext.appUrl,
@@ -854,6 +858,10 @@ async function main() {
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
     await testProviderWriteWinsOverOlderPreferenceRead(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderCheckWinsOverOlderPreferenceRead(
       browser,
       appContext.appUrl,
     );
@@ -6261,6 +6269,83 @@ async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
         "codex",
       ),
     `Automatic display must keep the confirmed provider pool, got ${latestDisplayWrite?.body}`,
+  );
+  await page.close();
+}
+
+async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const requests = [];
+  let providerRetryFinishedAt = Number.POSITIVE_INFINITY;
+  const codexPreference = {
+    ...providerPreferenceFixture("codex", "Codex"),
+    health: {
+      state: "auth_required",
+      service: "unknown",
+      message: "This provider needs an active sign-in.",
+    },
+  };
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencesDelayMs: 600,
+    preferencesSnapshotBeforeDelay: true,
+    preferencesResponse: { ok: true, items: [codexPreference] },
+    onProviderRetry: async (_setup, providerId) => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      providerRetryFinishedAt = Date.now();
+      return exactProviderSetup(providerId, "ready");
+    },
+    onRequest: (path, method, body) =>
+      requests.push({ path, method, body, at: Date.now() }),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  const checkAgain = page.getByRole("button", { name: "Check Codex again" });
+  await checkAgain.waitFor({ timeout: 10_000 });
+  await clickNavigation(page, "Overview");
+  const readsBeforeSettings = requests.filter(
+    (request) =>
+      request.path === "/v1/preferences" && request.method === "GET",
+  ).length;
+  await clickNavigation(page, "Settings");
+  await waitForCondition(
+    () =>
+      requests.filter(
+        (request) =>
+          request.path === "/v1/preferences" && request.method === "GET",
+      ).length > readsBeforeSettings,
+    "opening Settings must start the stale read used by the provider-check race",
+  );
+
+  await checkAgain.click();
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/providers/retry" && request.method === "POST",
+      ),
+    "Check again must run the exact provider retry",
+  );
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/preferences" &&
+          request.method === "GET" &&
+          request.at >= providerRetryFinishedAt,
+      ),
+    "a successful provider check must start a fresh preference read",
+  );
+  await waitForCondition(
+    async () => (await checkAgain.count()) === 0,
+    "the stale pre-check preference read must not restore the old provider health",
+  );
+  assert(
+    await page.getByRole("switch", { name: "Codex" }).isChecked(),
+    "the confirmed provider must remain enabled after its fresh health read",
   );
   await page.close();
 }
