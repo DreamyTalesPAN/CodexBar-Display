@@ -22,6 +22,10 @@ var (
 	// `https://user:pass@host`).
 	// Redact it as one span so neither the username nor password reaches the UI.
 	reportedURLUserinfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s?#]+@`)
+	// A Cookie request header can contain several semicolon-separated pairs.
+	// Redact the complete header value; otherwise the generic pair rule stops at
+	// the first semicolon and can leave later cookies visible.
+	reportedCookieHeader = regexp.MustCompile(`(?im)((?:^|[\s,{(\[])cookie\s*:\s*)[^\r\n]*`)
 	// A credential key whose value is a JSON object or array can contain short
 	// nested secrets. Redact the rest of that line before the pair scanner can
 	// consume only the opening delimiter and skip the nested key.
@@ -68,6 +72,7 @@ func reportedProviderMessage(raw string) string {
 	// the pair rule must claim `Authorization: Bearer x` before the bare rule.
 	message = reportedHomePath.ReplaceAllString(message, "~")
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
+	message = reportedCookieHeader.ReplaceAllString(message, "${1}"+reportedRedacted)
 	message = reportedStructuredCredential.ReplaceAllString(message, "${1}\""+reportedRedacted+"\"")
 	message = reportedCredentialPair.ReplaceAllStringFunc(message, func(match string) string {
 		idx := reportedCredentialPair.FindStringSubmatchIndex(match)
