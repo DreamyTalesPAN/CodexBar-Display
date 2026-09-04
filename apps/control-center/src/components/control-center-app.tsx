@@ -35,7 +35,7 @@ import {
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
-  automaticPoolAfterToggle,
+  automaticPoolForEnabledProviders,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -3164,28 +3164,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
    * they can pick another one.
    */
   const syncAutomaticProviderPool = useCallback(
-    async (item: PreferenceDescriptor, enabled: boolean) => {
+    async (item: PreferenceDescriptor) => {
       const providerId = item.providerId;
       if (!providerId) {
         return;
       }
-      const disabledProviderIds = (providerPreferencesRef.current || [])
-        .filter(
-          (preference) =>
-            preference.providerId &&
-            preference.value === false &&
-            preference.providerId !== (enabled ? providerId : ""),
-        )
-        .map((preference) => preference.providerId as string);
       const reconcile = async (): Promise<boolean> => {
+        const enabledProviderIds = (providerPreferencesRef.current || [])
+          .filter(
+            (preference) =>
+              preference.providerId && preference.value === true,
+          )
+          .map((preference) => preference.providerId as string);
         const updated = await updateProviderDisplay(
           (current) =>
-            automaticPoolAfterToggle(
-              current,
-              providerId,
-              enabled,
-              disabledProviderIds,
-            ),
+            automaticPoolForEnabledProviders(current, enabledProviderIds),
           providerId,
         );
         if (
@@ -3275,10 +3268,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // here is the one central rule that keeps them equal; the alternative
         // was a per-row inclusion control plus a repair effect to finish what it
         // half-did.
-        const displayUpdated = await syncAutomaticProviderPool(
-          payload.item,
-          value,
-        );
+        const displayUpdated = await syncAutomaticProviderPool(payload.item);
         const refreshes = [
           refreshProviderPreferences({ quiet: true }),
           refreshUsage({ quiet: true }),

@@ -12,7 +12,7 @@ import {
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
-  automaticPoolAfterToggle,
+  automaticPoolForEnabledProviders,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -523,7 +523,7 @@ describe("providerSetupNeedsEngineRecovery", () => {
   });
 });
 
-describe("automaticPoolAfterToggle", () => {
+describe("automaticPoolForEnabledProviders", () => {
   const automatic = {
     mode: "automatic" as const,
     providerIds: ["codex"],
@@ -531,51 +531,43 @@ describe("automaticPoolAfterToggle", () => {
     valid: true,
   };
 
-  it("adds and removes one provider from the stored pool", () => {
-    expect(automaticPoolAfterToggle(automatic, "claude", true)).toEqual({
+  it("matches the stored pool to the complete enabled inventory", () => {
+    expect(automaticPoolForEnabledProviders(automatic, ["codex", "claude"])).toEqual({
       mode: "automatic",
       providerIds: ["codex", "claude"],
     });
     expect(
-      automaticPoolAfterToggle(
+      automaticPoolForEnabledProviders(
         { ...automatic, providerIds: ["codex", "claude"] },
-        "claude",
-        false,
+        ["codex"],
       ),
     ).toEqual({ mode: "automatic", providerIds: ["codex"] });
   });
 
-  it("derives the second toggle from what the first one wrote", () => {
-    // Two saves landing in the same tick used to derive their pool from the
-    // same stored selection, and the second undid the first. Fed the first
-    // result, the second keeps it.
-    const afterClaude = automaticPoolAfterToggle(automatic, "claude", true);
-    const afterCursor = automaticPoolAfterToggle(
-      { ...automatic, ...afterClaude },
-      "cursor",
-      true,
-    );
-    expect(afterCursor?.providerIds).toEqual(["codex", "claude", "cursor"]);
-  });
-
-  it("drops a disabled provider before adding its replacement", () => {
+  it("deduplicates the authoritative inventory", () => {
     expect(
-      automaticPoolAfterToggle(automatic, "claude", true, ["codex"]),
-    ).toEqual({ mode: "automatic", providerIds: ["claude"] });
+      automaticPoolForEnabledProviders(automatic, [
+        "codex",
+        "claude",
+        "claude",
+      ]),
+    ).toEqual({ mode: "automatic", providerIds: ["codex", "claude"] });
   });
 
   it("writes nothing when there is nothing to change", () => {
-    expect(automaticPoolAfterToggle(automatic, "codex", true)).toBeNull();
-    expect(automaticPoolAfterToggle(automatic, "codex", false)).toBeNull();
-    expect(automaticPoolAfterToggle(null, "codex", true)).toBeNull();
+    expect(automaticPoolForEnabledProviders(automatic, ["codex"])).toBeNull();
+    expect(automaticPoolForEnabledProviders(automatic, [])).toBeNull();
+    expect(automaticPoolForEnabledProviders(null, ["codex"])).toBeNull();
     expect(
-      automaticPoolAfterToggle({ ...automatic, configured: false }, "claude", true),
+      automaticPoolForEnabledProviders(
+        { ...automatic, configured: false },
+        ["claude"],
+      ),
     ).toBeNull();
     expect(
-      automaticPoolAfterToggle(
+      automaticPoolForEnabledProviders(
         { ...automatic, mode: "fixed", providerIds: ["codex"] },
-        "claude",
-        true,
+        ["claude"],
       ),
     ).toBeNull();
   });

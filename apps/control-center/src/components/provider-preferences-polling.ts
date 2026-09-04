@@ -20,14 +20,7 @@ export function providerPreferencesNeedPolling(
   providerDisplayWanted: boolean,
   preferences: PreferenceDescriptor[] | null,
 ): boolean {
-  return Boolean(
-    providerDisplayWanted &&
-      preferences?.some(
-        (preference) =>
-          preference.section === "providers" &&
-          preference.value === true,
-      ),
-  );
+  return providerDisplayWanted && preferences !== null;
 }
 
 /**

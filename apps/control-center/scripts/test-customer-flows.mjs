@@ -6299,6 +6299,7 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
       items: [
         providerPreferenceFixture("codex", "Codex"),
         disabledProviderPreferenceFixture("claude", "Claude"),
+        disabledProviderPreferenceFixture("gemini", "Gemini"),
       ],
     },
     providerDisplay: {
@@ -6307,7 +6308,7 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
       configured: true,
       valid: true,
     },
-    providerDisplayPatchFailures: 1,
+    providerDisplayPatchFailures: 2,
     onRequest: (path, method, body) => {
       if (path === "/v1/provider-display" && method === "PATCH") {
         displayWrites.push(body);
@@ -6321,17 +6322,27 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   });
   await clickNavigation(page, "Settings");
   const claude = page.getByRole("switch", { name: "Claude" });
+  const gemini = page.getByRole("switch", { name: "Gemini" });
   await claude.click();
+  await page
+    .getByText("Display selection could not be saved.")
+    .waitFor({ timeout: 10_000 });
+  await gemini.click();
   await waitForCondition(
-    () => displayWrites.length >= 2,
+    () => displayWrites.length >= 3,
     "the failed Automatic pool save was not retried",
     15_000,
   );
+  const retriedProviderIds = JSON.parse(
+    displayWrites.at(-1) || "{}",
+  ).providerIds;
   assert(
-    JSON.parse(displayWrites.at(-1) || "{}").providerIds?.includes("claude"),
-    `the retried Automatic pool must include Claude, got ${displayWrites.at(-1)}`,
+    retriedProviderIds?.includes("claude") &&
+      retriedProviderIds?.includes("gemini"),
+    `the retried Automatic pool must keep every enabled provider, got ${displayWrites.at(-1)}`,
   );
   assert(await claude.isChecked(), "the confirmed provider must remain enabled");
+  assert(await gemini.isChecked(), "the second provider must remain enabled");
   await page.close();
 }
 

@@ -107,7 +107,9 @@ describe("provider preference polling", () => {
     );
     expect(
       providerPreferencesNeedPolling(true, [provider("checking", false)]),
-    ).toBe(false);
+    ).toBe(true);
+    expect(providerPreferencesNeedPolling(true, [])).toBe(true);
+    expect(providerPreferencesNeedPolling(true, null)).toBe(false);
   });
 
   it("waits for an unresolved read before scheduling the next one", async () => {
