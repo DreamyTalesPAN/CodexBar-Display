@@ -2876,7 +2876,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
       }
       const setupGeneration = setupGenerationRef.current;
-      const displayRevision = providerDisplayRevisionRef.current;
+      const displayRevision = ++providerDisplayRevisionRef.current;
       try {
         const payload = await runCompanion<{
           selection: ProviderDisplaySelection;

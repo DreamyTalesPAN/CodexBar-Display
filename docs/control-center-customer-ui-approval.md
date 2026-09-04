@@ -3411,3 +3411,13 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/src/components/setup/setup-provider-row.tsx`, its test,
   and this approval record.
+
+## 2026-09-04 — Latest display read wins
+
+- User approval: Same instruction as the entries above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  display-selection reads overlap, only the newest result may update Settings;
+  an older failure cannot show an error after a newer read already succeeded.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`
+  and this approval record.
