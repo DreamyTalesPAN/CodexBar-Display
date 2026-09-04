@@ -6233,6 +6233,7 @@ async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const codex = page.getByRole("switch", { name: "Codex" });
   await codex.waitFor({ timeout: 10_000 });
+  await waitForPreferenceReadsToSettle(requests, 800);
   await clickNavigation(page, "Overview");
   const readsBeforeSettings = requests.filter(
     (request) =>
@@ -6313,6 +6314,7 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const checkAgain = page.getByRole("button", { name: "Check Codex again" });
   await checkAgain.waitFor({ timeout: 10_000 });
+  await waitForPreferenceReadsToSettle(requests, 600);
   await clickNavigation(page, "Overview");
   const readsBeforeSettings = requests.filter(
     (request) =>
@@ -12248,6 +12250,18 @@ async function waitForCondition(predicate, message, timeoutMs = 10_000) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(message);
+}
+
+async function waitForPreferenceReadsToSettle(requests, responseDelayMs) {
+  await waitForCondition(() => {
+    const latestRead = requests
+      .filter(
+        (request) =>
+          request.path === "/v1/preferences" && request.method === "GET",
+      )
+      .at(-1);
+    return latestRead && Date.now() - latestRead.at > responseDelayMs + 100;
+  }, "the earlier preference read did not settle before the race setup");
 }
 
 async function assertCompanionRequestTimeoutContract() {

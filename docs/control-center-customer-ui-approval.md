@@ -3656,3 +3656,16 @@ issue scope, or release permission never implies UI permission.
   visibly stale until a fresh quota collection replaces them.**
 - Approved files: `companion/internal/daemon/collector.go`, its test, and this
   approval record.
+
+## 2026-09-04 — Provider race tests wait for an idle read
+
+- User approval: Same instruction as above: make every real finding safe and
+  leave the final candidate fully green. The exact-head CI exposed that the
+  provider race fixture could reuse an earlier allowed single-flight read on a
+  slow runner instead of starting the read the test meant to race.
+- Approved customer-visible result: **No product UI change. The existing
+  provider read/write and provider check/read behavior remains covered, while
+  the browser regression waits for its setup read to finish before creating the
+  intended race.**
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and this
+  approval record.
