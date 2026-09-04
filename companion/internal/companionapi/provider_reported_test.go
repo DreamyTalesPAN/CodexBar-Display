@@ -146,6 +146,11 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			in:   "Callback rejected: https://host/callback?next=home#token=hunter",
 			want: "Callback rejected: https://host/callback?next=home#token=[redacted]",
 		},
+		{
+			name: "credentials embedded in URL userinfo",
+			in:   "Proxy rejected https://auth:hunter@127.0.0.1/login.",
+			want: "Proxy rejected https://[redacted]@127.0.0.1/login.",
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)

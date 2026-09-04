@@ -2864,16 +2864,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const refreshProviderDisplay = useCallback(
     async (options?: { quiet?: boolean }) => {
+      const setupGeneration = setupGenerationRef.current;
       try {
         const payload = await runCompanion<{
           selection: ProviderDisplaySelection;
         }>("/v1/provider-display", undefined, {
           preserveLastError: Boolean(options?.quiet),
         });
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         providerDisplayRef.current = payload.selection;
         setProviderDisplay(payload.selection);
         setProviderDisplayError(null);
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         setProviderDisplayError(
           normalizeCaughtError(error, "Display selection needs attention."),
         );

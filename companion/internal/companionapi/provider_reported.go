@@ -18,6 +18,9 @@ import (
 // silently dropped sentence would not be.
 var (
 	reportedHomePath = regexp.MustCompile(`(?i)/Users/[^/\s)]+`)
+	// URL userinfo carries credentials before the host (`https://user:pass@host`).
+	// Redact it as one span so neither the username nor password reaches the UI.
+	reportedURLUserinfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s:]+:[^/@\s]+@`)
 	// A credential-shaped key and its value: `Cookie: ...`, `sessionKey=...`,
 	// `"access_token": "..."`, `?token=...&session=...`, `#token=...`. Anchored
 	// at a line start or a separator -- a URL's `?`, `&` and `#` among them -- so a
@@ -59,6 +62,7 @@ func reportedProviderMessage(raw string) string {
 	// Order matters: a redacted span must never be rescanned as a secret, and
 	// the pair rule must claim `Authorization: Bearer x` before the bare rule.
 	message = reportedHomePath.ReplaceAllString(message, "~")
+	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
 	message = reportedCredentialPair.ReplaceAllStringFunc(message, func(match string) string {
 		idx := reportedCredentialPair.FindStringSubmatchIndex(match)
 		if idx == nil {
