@@ -256,7 +256,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "preferredProtocolVersion": 2,
   "board": "esp8266-smalltv-st7789",
   "firmware": "1.0.0",
-  "features": ["theme", "theme-spec-v1"],
+  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {
@@ -275,6 +275,10 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
     "theme": {
       "supportsThemeSpecV1": true,
       "supportsUsageSlotsV1": true,
+      "supportsProviderSlotsV1": true,
+      "supportsProviderAssetsV1": true,
+      "supportsColorStopsV1": true,
+      "supportsTextValignV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -309,6 +313,9 @@ Fields:
   - `standby.screensaverSlot` reports whether `POST /screensaver/active` exists.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
   - `theme.supportsUsageSlotsV1` gates dynamic slot bindings and primitive lane ownership.
+  - `theme.supportsProviderAssetsV1` gates `providerAssets` / `pa` sprite maps. Older firmware ignores `pa` and draws `assetPath` / `a`; that fallback is compatible only when `a` is a valid sprite. Hosts still require the capability (or `minFirmware` 1.0.42) before installing a pack that uses `pa`.
+  - `theme.supportsColorStopsV1` gates `colorStops` / `cs`. Older firmware uses solid `c`. Stops are authored against remaining-style percent; when the frame `usageMode` is `used`, firmware matches `100 - percent` so warning colors stay correct.
+  - `theme.supportsTextValignV1` gates `valign` / `va`. Older firmware treats `y` as the glyph top, so shrink+middle is not a compatible fallback. Hosts must not install a spec that emits `va` onto firmware without this capability.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.

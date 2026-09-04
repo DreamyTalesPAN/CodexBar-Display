@@ -423,15 +423,24 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	missingSlots := isMissingUsageCapabilityError(err, protocol.FeatureUsageSlotsV1)
 	missingWindows := isMissingUsageCapabilityError(err, protocol.FeatureUsageWindowsV1)
 	missingProviderSlots := isMissingUsageCapabilityError(err, protocol.FeatureProviderSlotsV1)
+	missingProviderAssets := isMissingUsageCapabilityError(err, protocol.FeatureProviderAssetsV1)
+	missingColorStops := isMissingUsageCapabilityError(err, protocol.FeatureColorStopsV1)
+	missingTextValign := isMissingUsageCapabilityError(err, protocol.FeatureTextValignV1)
 	if (!missingSlots || caps.SupportsUsageSlotsV1) &&
 		(!missingWindows || caps.SupportsUsageWindowsV1) &&
-		(!missingProviderSlots || caps.SupportsProviderSlotsV1) {
+		(!missingProviderSlots || caps.SupportsProviderSlotsV1) &&
+		(!missingProviderAssets || caps.SupportsProviderAssetsV1) &&
+		(!missingColorStops || caps.SupportsColorStopsV1) &&
+		(!missingTextValign || caps.SupportsTextValignV1) {
 		return false
 	}
 	updatedCaps := caps
 	updatedCaps.SupportsUsageSlotsV1 = true
 	updatedCaps.SupportsUsageWindowsV1 = true
 	updatedCaps.SupportsProviderSlotsV1 = true
+	updatedCaps.SupportsProviderAssetsV1 = true
+	updatedCaps.SupportsColorStopsV1 = true
+	updatedCaps.SupportsTextValignV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 

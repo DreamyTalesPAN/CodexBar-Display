@@ -640,19 +640,30 @@ export function buildThemePack(
   const usesUsageWindows = themeStudioSpecUsesUsageWindows(normalized);
   const usesUsageSlots = themeStudioSpecUsesUsageSlots(normalized);
   const usesProviderSlots = themeStudioSpecUsesProviderSlots(normalized);
+  const usesProviderAssets = themeStudioSpecUsesProviderAssets(normalized);
+  const usesColorStops = themeStudioSpecUsesColorStops(normalized);
+  const usesTextValign = themeStudioSpecUsesTextValign(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
+  // valign has no compatible old-firmware look; pa/cs keep a/c fallbacks but
+  // still declare their capabilities so old devices are not given the spec.
   const requiredCapabilities = [
     ...(usesUsageWindows ? ["usage-windows-v1"] : []),
     ...(usesUsageSlots && !usesUsageWindows ? ["usage-slots-v1"] : []),
     ...(usesProviderSlots ? ["provider-slots-v1"] : []),
+    ...(usesProviderAssets ? ["provider-assets-v1"] : []),
+    ...(usesColorStops ? ["color-stops-v1"] : []),
+    ...(usesTextValign ? ["text-valign-v1"] : []),
   ];
-  const minFirmware = usesProviderSlots
-    ? "1.0.41"
-    : usesUsageWindows || usesUsageSlots
-      ? "1.0.40"
-      : "1.0.24";
+  const minFirmware =
+    usesProviderAssets || usesColorStops || usesTextValign
+      ? "1.0.42"
+      : usesProviderSlots
+        ? "1.0.41"
+        : usesUsageWindows || usesUsageSlots
+          ? "1.0.40"
+          : "1.0.24";
   const validation = validateThemeSpec(normalized, prepared.assets, usage);
   if (validation.errors.length > 0) {
     throw new Error(validation.errors[0]);
@@ -745,6 +756,31 @@ export function themeStudioSpecUsesUsageWindows(
       primitive.usageIndex !== undefined ||
       primitive.binding?.startsWith("usage.") ||
       primitive.text?.includes("{usage."),
+  );
+}
+
+export function themeStudioSpecUsesProviderAssets(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) => Object.keys(primitive.providerAssets || {}).length > 0,
+  );
+}
+
+export function themeStudioSpecUsesColorStops(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) => (primitive.colorStops || []).length > 0,
+  );
+}
+
+export function themeStudioSpecUsesTextValign(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.valign === "middle" || primitive.valign === "bottom",
   );
 }
 

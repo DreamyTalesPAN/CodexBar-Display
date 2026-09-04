@@ -411,4 +411,63 @@ describe("buildThemePack capability declaration", () => {
     expect(pack.manifest.requiredCapabilities).toBeUndefined();
     expect(pack.manifest.minFirmware).toBe("1.0.24");
   });
+
+  it("declares provider assets, color stops, and valign on 1.0.42", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        assetPath: "/themes/u/fb.cbi",
+        providerAssets: { codex: "/themes/u/xo.cbi" },
+        type: "sprite",
+        x: 0,
+        y: 0,
+        width: 32,
+        height: 32,
+      },
+      {
+        binding: "label",
+        color: "#FFFFFF",
+        fit: "shrink",
+        height: 32,
+        type: "text",
+        valign: "middle",
+        width: 120,
+        x: 40,
+        y: 0,
+      },
+      {
+        binding: "session",
+        color: "#22C55E",
+        colorStops: [
+          { color: "#22C55E", gte: 75 },
+          { color: "#EF4444", gte: 0 },
+        ],
+        height: 10,
+        type: "progress",
+        width: 40,
+        x: 0,
+        y: 40,
+      },
+    ];
+    const asset = {
+      contentType: "text/plain",
+      data: "CBI1\n1 1\n1\n#FFFFFF\na\n",
+      encoding: "text" as const,
+    };
+    const pack = buildThemePack(
+      spec,
+      "Pixel Battery",
+      {
+        "/themes/u/fb.cbi": asset,
+        "/themes/u/xo.cbi": asset,
+      },
+    );
+
+    expect(pack.manifest.requiredCapabilities).toEqual([
+      "provider-assets-v1",
+      "color-stops-v1",
+      "text-valign-v1",
+    ]);
+    expect(pack.manifest.minFirmware).toBe("1.0.42");
+  });
 });

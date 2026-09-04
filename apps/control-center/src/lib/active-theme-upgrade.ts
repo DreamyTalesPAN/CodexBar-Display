@@ -57,6 +57,12 @@ export function resolveActiveThemeUpgrade(
     device.capabilities?.theme?.supportsUsageSlotsV1 !== true;
   const needsUsageWindows =
     device.capabilities?.theme?.supportsUsageWindowsV1 !== true;
+  const needsProviderAssets =
+    device.capabilities?.theme?.supportsProviderAssetsV1 !== true;
+  const needsColorStops =
+    device.capabilities?.theme?.supportsColorStopsV1 !== true;
+  const needsTextValign =
+    device.capabilities?.theme?.supportsTextValignV1 !== true;
   const theme = resolveActiveLiveTheme(themes, device);
   if (!theme) {
     return {
@@ -83,7 +89,11 @@ export function resolveActiveThemeUpgrade(
   const needsRequiredCapability =
     (theme.requiredCapabilities.includes("usage-slots-v1") && needsUsageSlots) ||
     (theme.requiredCapabilities.includes("usage-windows-v1") &&
-      needsUsageWindows);
+      needsUsageWindows) ||
+    (theme.requiredCapabilities.includes("provider-assets-v1") &&
+      needsProviderAssets) ||
+    (theme.requiredCapabilities.includes("color-stops-v1") && needsColorStops) ||
+    (theme.requiredCapabilities.includes("text-valign-v1") && needsTextValign);
   return {
     needed: needsRequiredCapability || pathIsOutdated,
     needsFirmwareCapability: needsRequiredCapability,

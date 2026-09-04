@@ -109,9 +109,10 @@ func Parse(raw []byte) (Spec, json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return Spec{}, nil, fmt.Errorf("parse theme spec: %w", err)
 	}
-	// Reject before normalize: ThemeSpecRaw is uploaded unchanged, and firmware
-	// exact-matches provider keys against the lowercase wire provider.
-	if err := rejectNonCanonicalProviderAssetKeys(spec); err != nil {
+	// Reject before normalize: ThemeSpecRaw is uploaded unchanged, so values
+	// firmware exact-matches (provider keys, valign, #RRGGBB) must already
+	// be the installed form.
+	if err := rejectNonCanonicalInstalledValues(spec); err != nil {
 		return Spec{}, nil, err
 	}
 	spec = normalizeSpec(spec)
@@ -119,7 +120,7 @@ func Parse(raw []byte) (Spec, json.RawMessage, error) {
 }
 
 func Validate(spec Spec) error {
-	if err := rejectNonCanonicalProviderAssetKeys(spec); err != nil {
+	if err := rejectNonCanonicalInstalledValues(spec); err != nil {
 		return err
 	}
 	spec = normalizeSpec(spec)
@@ -187,6 +188,15 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if specUsesProviderSlots(spec) && !caps.SupportsProviderSlotsV1 {
 		return errors.New("device does not advertise provider-slots-v1 support")
 	}
+	if specUsesProviderAssets(spec) && !caps.SupportsProviderAssetsV1 {
+		return errors.New("device does not advertise provider-assets-v1 support")
+	}
+	if specUsesColorStops(spec) && !caps.SupportsColorStopsV1 {
+		return errors.New("device does not advertise color-stops-v1 support")
+	}
+	if specUsesTextValign(spec) && !caps.SupportsTextValignV1 {
+		return errors.New("device does not advertise text-valign-v1 support")
+	}
 	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
 		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
 	}
@@ -244,6 +254,38 @@ func specUsesLegacyUsageSlots(spec Spec) bool {
 			strings.Contains(primitive.Text, "{usageSlot") ||
 			strings.Contains(primitive.Text, "{us1") ||
 			strings.Contains(primitive.Text, "{us2") {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesProviderAssets(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if len(primitive.ProviderAssets) > 0 || len(primitive.ShortProviderAssets) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesColorStops(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if len(primitive.ColorStops) > 0 || len(primitive.ShortColorStops) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesTextValign(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		valign := primitive.Valign
+		if valign == "" {
+			valign = primitive.ShortValign
+		}
+		switch valign {
+		case "middle", "center", "bottom":
 			return true
 		}
 	}
@@ -688,6 +730,79 @@ func validateSpriteAssetReferences(p Primitive) error {
 		if !isSafeThemeAssetPath(assetPath) {
 			return fmt.Errorf("stateAssets[%s] must be under /themes/", state)
 		}
+	}
+	return nil
+}
+
+func rejectNonCanonicalInstalledValues(spec Spec) error {
+	if err := rejectNonCanonicalProviderAssetKeys(spec); err != nil {
+		return err
+	}
+	primitives := spec.Primitives
+	if len(primitives) == 0 {
+		primitives = spec.ShortPrimitives
+	}
+	for i, primitive := range primitives {
+		if err := rejectCanonicalValign(primitive.Valign, i, "valign"); err != nil {
+			return err
+		}
+		if err := rejectCanonicalValign(primitive.ShortValign, i, "va"); err != nil {
+			return err
+		}
+		for _, color := range []struct {
+			key   string
+			value string
+		}{
+			{"color", primitive.Color},
+			{"c", primitive.ShortColor},
+			{"bgColor", primitive.BgColor},
+			{"bg", primitive.ShortBg},
+			{"borderColor", primitive.BorderColor},
+			{"bc", primitive.ShortBorder},
+		} {
+			if err := rejectCanonicalColor(color.value, i, color.key); err != nil {
+				return err
+			}
+		}
+		stops := primitive.ColorStops
+		if len(stops) == 0 {
+			stops = primitive.ShortColorStops
+		}
+		for j, stop := range stops {
+			if err := rejectCanonicalColor(stop.Color, i, fmt.Sprintf("colorStops[%d].color", j)); err != nil {
+				return err
+			}
+			if err := rejectCanonicalColor(stop.C, i, fmt.Sprintf("colorStops[%d].c", j)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func rejectCanonicalValign(value string, index int, key string) error {
+	if value == "" {
+		return nil
+	}
+	switch value {
+	case "middle", "center", "bottom":
+		return nil
+	default:
+		return fmt.Errorf(
+			"primitives[%d]: %s %q must be middle, center, or bottom as uploaded",
+			index,
+			key,
+			value,
+		)
+	}
+}
+
+func rejectCanonicalColor(value string, index int, key string) error {
+	if value == "" {
+		return nil
+	}
+	if !colorPattern.MatchString(value) {
+		return fmt.Errorf("primitives[%d]: %s %q must be #RRGGBB as uploaded", index, key, value)
 	}
 	return nil
 }

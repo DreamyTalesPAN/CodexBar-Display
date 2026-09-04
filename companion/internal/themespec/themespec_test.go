@@ -576,7 +576,7 @@ func TestValidateRejectsInvalidProgressColorStops(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			spec, _, err := Parse([]byte(tt.raw))
 			if err != nil {
-				t.Fatalf("parse: %v", err)
+				return
 			}
 			if err := Validate(spec); err == nil {
 				t.Fatalf("expected validation error")
@@ -901,5 +901,88 @@ func TestValidateRejectsInvalidUsageSlotOwnership(t *testing.T) {
 	}
 	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "slot must be 1 or 2") {
 		t.Fatalf("expected invalid slot rejection, got %v", err)
+	}
+}
+
+func TestParseRejectsNonCanonicalValignAndColors(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "uppercase valign",
+			raw:  `{"v":1,"id":"raw-valign","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","va":"CENTER"}]}`,
+		},
+		{
+			name: "padded valign",
+			raw:  `{"v":1,"id":"raw-valign","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","valign":" middle"}]}`,
+		},
+		{
+			name: "padded color",
+			raw:  `{"v":1,"id":"raw-color","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","c":" #22C55E"}]}`,
+		},
+		{
+			name: "short color",
+			raw:  `{"v":1,"id":"raw-color","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","c":"#22C"}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, raw, err := Parse([]byte(tt.raw)); err == nil {
+				t.Fatalf("expected Parse to reject noncanonical uploaded JSON, raw=%s", raw)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsNonCanonicalValignOnStruct(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "raw-valign",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "text", X: 0, Y: 0, Binding: "label", Valign: "CENTER"},
+		},
+	}
+	if err := Validate(spec); err == nil {
+		t.Fatal("expected Validate to reject valign that firmware will ignore")
+	}
+}
+
+func TestValidateAgainstCapabilitiesRequiresProviderAssetsColorStopsAndValign(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"gated-features",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":8,"h":8,"a":"/themes/u/fb.cbi","pa":{"codex":"/themes/u/xo.cbi"}},
+			{"t":"tx","x":0,"y":10,"w":80,"h":16,"b":"l","va":"middle"},
+			{"t":"p","x":0,"y":40,"w":40,"h":8,"b":"s","c":"#22C55E","cs":[{"gte":0,"c":"#EF4444"}]}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "provider-assets-v1") {
+		t.Fatalf("expected provider-assets-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsProviderAssetsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "color-stops-v1") {
+		t.Fatalf("expected color-stops-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsColorStopsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "text-valign-v1") {
+		t.Fatalf("expected text-valign-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsTextValignV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err != nil {
+		t.Fatalf("expected capable device to accept spec: %v", err)
 	}
 }

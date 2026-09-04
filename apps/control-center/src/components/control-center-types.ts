@@ -270,6 +270,9 @@ export type DeviceInfo = {
       supportsUsageSlotsV1?: boolean;
       supportsUsageWindowsV1?: boolean;
       supportsProviderSlotsV1?: boolean;
+      supportsProviderAssetsV1?: boolean;
+      supportsColorStopsV1?: boolean;
+      supportsTextValignV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;

@@ -3,11 +3,14 @@ package protocol
 import "strings"
 
 const (
-	FeatureTheme           = "theme"
-	FeatureThemeSpecV1     = "theme-spec-v1"
-	FeatureUsageSlotsV1    = "usage-slots-v1"
-	FeatureUsageWindowsV1  = "usage-windows-v1"
-	FeatureProviderSlotsV1 = "provider-slots-v1"
+	FeatureTheme             = "theme"
+	FeatureThemeSpecV1       = "theme-spec-v1"
+	FeatureUsageSlotsV1      = "usage-slots-v1"
+	FeatureUsageWindowsV1    = "usage-windows-v1"
+	FeatureProviderSlotsV1   = "provider-slots-v1"
+	FeatureProviderAssetsV1  = "provider-assets-v1"
+	FeatureColorStopsV1      = "color-stops-v1"
+	FeatureTextValignV1      = "text-valign-v1"
 	DefaultMaxFrameBytes  = 512
 	DefaultMinBrightness  = 10
 	DefaultMaxBrightness  = 100
@@ -37,10 +40,13 @@ type StandbyCapabilities struct {
 }
 
 type ThemeCapabilities struct {
-	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
-	SupportsUsageSlotsV1    bool     `json:"supportsUsageSlotsV1,omitempty"`
-	SupportsUsageWindowsV1  bool     `json:"supportsUsageWindowsV1,omitempty"`
-	SupportsProviderSlotsV1 bool     `json:"supportsProviderSlotsV1,omitempty"`
+	SupportsThemeSpecV1      bool     `json:"supportsThemeSpecV1,omitempty"`
+	SupportsUsageSlotsV1     bool     `json:"supportsUsageSlotsV1,omitempty"`
+	SupportsUsageWindowsV1   bool     `json:"supportsUsageWindowsV1,omitempty"`
+	SupportsProviderSlotsV1  bool     `json:"supportsProviderSlotsV1,omitempty"`
+	SupportsProviderAssetsV1 bool     `json:"supportsProviderAssetsV1,omitempty"`
+	SupportsColorStopsV1     bool     `json:"supportsColorStopsV1,omitempty"`
+	SupportsTextValignV1     bool     `json:"supportsTextValignV1,omitempty"`
 	MaxUsageWindows         int      `json:"maxUsageWindows,omitempty"`
 	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
 	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
@@ -157,6 +163,9 @@ type DeviceCapabilities struct {
 	SupportsUsageSlotsV1       bool
 	SupportsUsageWindowsV1     bool
 	SupportsProviderSlotsV1    bool
+	SupportsProviderAssetsV1   bool
+	SupportsColorStopsV1       bool
+	SupportsTextValignV1       bool
 	MaxUsageWindows            int
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
@@ -203,6 +212,9 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	supportsUsageWindowsV1 := h.HasFeature(FeatureUsageWindowsV1) || h.Capabilities.Theme.SupportsUsageWindowsV1
 	supportsUsageSlotsV1 := h.HasFeature(FeatureUsageSlotsV1) || h.Capabilities.Theme.SupportsUsageSlotsV1 || supportsUsageWindowsV1
 	supportsProviderSlotsV1 := h.HasFeature(FeatureProviderSlotsV1) || h.Capabilities.Theme.SupportsProviderSlotsV1
+	supportsProviderAssetsV1 := h.HasFeature(FeatureProviderAssetsV1) || h.Capabilities.Theme.SupportsProviderAssetsV1
+	supportsColorStopsV1 := h.HasFeature(FeatureColorStopsV1) || h.Capabilities.Theme.SupportsColorStopsV1
+	supportsTextValignV1 := h.HasFeature(FeatureTextValignV1) || h.Capabilities.Theme.SupportsTextValignV1
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
@@ -221,6 +233,9 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsUsageSlotsV1:       supportsUsageSlotsV1,
 		SupportsUsageWindowsV1:     supportsUsageWindowsV1,
 		SupportsProviderSlotsV1:    supportsProviderSlotsV1,
+		SupportsProviderAssetsV1:   supportsProviderAssetsV1,
+		SupportsColorStopsV1:       supportsColorStopsV1,
+		SupportsTextValignV1:       supportsTextValignV1,
 		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,
