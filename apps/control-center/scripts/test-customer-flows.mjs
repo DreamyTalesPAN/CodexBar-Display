@@ -1795,7 +1795,8 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     viewport: desktopViewport,
   });
   const requests = [];
-  await routeCompanionOnline(page, [], () => {}, {
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false },
     searchDevices: [
       {
@@ -1848,14 +1849,15 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
   await displayScreen.waitFor({ timeout: 15_000 });
   await displayScreen.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).waitFor({
+  await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 15_000,
   });
   assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+    (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
-    "A genuine first-time setup must require a theme before Overview",
+    "A VibeTV with a confirmed active theme must skip theme selection",
   );
+  assertNoInstallRequests(installRequests);
   assert(
     requests.filter((request) => request === "POST /v1/device/search")
       .length === 1,
@@ -1864,7 +1866,7 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   assert(
     (await page.getByRole("button", { name: "Setup", exact: true }).count()) ===
       0,
-    "The connected Control Center must not show a second Setup tab",
+    "The connected Control Center must not show a Setup tab",
   );
   assert(
     (await page

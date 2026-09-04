@@ -4235,9 +4235,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (error) {
         throw error;
       }
-      if (providerSelectionRequired) {
-        setSetupThemeChoiceRequired(true);
-      }
       // Read the device back rather than trusting this render's copy, which
       // still describes whatever was connected before this one.
       const connected = await refreshDevice({ quiet: true });

@@ -3444,3 +3444,16 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Keep an installed VibeTV theme during setup
+
+- User approval: After connecting a real VibeTV that already had a theme, the
+  product owner reported that setup still opened `Choose your theme` and began
+  uploading theme files, and required this incorrect setup path to be fixed.
+- Approved customer-visible result: **After Connect, setup uses the VibeTV's
+  confirmed theme state. A VibeTV with an active, successfully rendered theme
+  skips theme selection and no theme install request is made. Only a VibeTV
+  that explicitly reports no active theme is sent to `Choose your theme`.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
