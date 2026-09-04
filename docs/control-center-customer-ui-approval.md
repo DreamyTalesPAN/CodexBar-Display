@@ -3753,3 +3753,20 @@ issue scope, or release permission never implies UI permission.
   chooser with a permanently disabled Install button.**
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   its unit test, and this approval record.
+
+## 2026-09-04 — Disabled-provider polling and complete Automatic retries
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found that an all-disabled provider list stopped
+  observing later CodexBar changes and that a newer toggle could replace an
+  incomplete Automatic-pool repair.
+- Approved customer-visible result: **No new screen, wording, or control. While
+  Settings or provider setup remains visible, switching on a provider directly
+  in CodexBar appears without reloading even when every row was off. If display
+  saving fails across multiple provider changes, the background retry preserves
+  every currently enabled provider instead of retrying only the last toggle.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`,
+  `apps/control-center/src/components/provider-preferences-polling.ts`, their
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
