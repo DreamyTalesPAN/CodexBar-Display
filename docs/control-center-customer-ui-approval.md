@@ -3717,3 +3717,15 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `companion/internal/companionapi/preferences.go`, its test,
   `apps/control-center/src/components/provider-preferences-polling.ts`, its
   test, and this approval record.
+
+## 2026-09-04 — Exact provider checks beat older health scans
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that an older
+  full health scan could finish after a newer successful manual provider check.
+- Approved customer-visible result: **A successful `Check again` result remains
+  authoritative. Any provider-health scan that started earlier is discarded
+  instead of reverting the row or closing setup again.**
+- Approved files: `companion/internal/companionapi/provider_setup.go`,
+  `companion/internal/companionapi/preferences_test.go`, and this approval
+  record.
