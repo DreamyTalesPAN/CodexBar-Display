@@ -3742,3 +3742,14 @@ issue scope, or release permission never implies UI permission.
   `companion/internal/companionapi/preferences.go`,
   `companion/internal/companionapi/provider_display.go`, their tests,
   `companion/internal/daemon/daemon.go`, its test, and this approval record.
+
+## 2026-09-04 — Empty setup theme catalog recovery
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found that a successful catalog with no live
+  themes left the first setup on an empty chooser.
+- Approved customer-visible result: **When no installable live theme exists,
+  setup shows `Themes unavailable` with `Reload catalog` instead of an empty
+  chooser with a permanently disabled Install button.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  its unit test, and this approval record.

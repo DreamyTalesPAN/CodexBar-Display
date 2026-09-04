@@ -4371,13 +4371,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             themeInstallStatus.message ||
             "Keep VibeTV powered on and try again.",
         }
-      : catalog.issue && setupThemes.length === 0
-        ? {
-            code: "theme_catalog_unavailable",
-            message: "Themes unavailable",
-            nextAction: catalog.issue,
-          }
-        : null;
+      : setupThemeCatalogError(catalog.issue, setupThemes.length);
 
   const setupConnectSteps: SetupConnectSteps = {
     checkFirmware: async (connected) => {
@@ -4512,7 +4506,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             window.location.reload();
           }}
           themeRetryLabel={
-            catalog.issue && themeInstallStatus?.phase !== "error"
+            setupThemeError?.code === "theme_catalog_unavailable"
               ? "Reload catalog"
               : undefined
           }
@@ -4747,6 +4741,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ) : null}
     </>
   );
+}
+
+export function setupThemeCatalogError(
+  issue: string | undefined,
+  liveThemeCount: number,
+): ApiError | null {
+  if (liveThemeCount > 0) {
+    return null;
+  }
+  return {
+    code: "theme_catalog_unavailable",
+    message: "Themes unavailable",
+    nextAction: issue || "Reload the theme catalog, then try again.",
+  };
 }
 
 function getRuntimeSurfaceSnapshot(): RuntimeSurface {
