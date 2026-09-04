@@ -75,6 +75,39 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	}
 }
 
+func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
+	for _, health := range []codexbar.ProviderHealthState{
+		codexbar.ProviderHealthAuthRequired,
+		codexbar.ProviderHealthSetupRequired,
+	} {
+		t.Run(string(health), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			collectedAt := time.Date(2026, 9, 4, 9, 0, 0, 0, time.UTC)
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{
+					ID: "codex", Label: "Codex", Enabled: true, Health: health,
+				}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: collectedAt, Stale: true,
+				}}}, true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Items) != 1 || response.Items[0].Health.State != providerHealthStateStale ||
+				response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) {
+				t.Fatalf("retained reading lost eligibility after %s refresh: %#v", health, response.Items)
+			}
+		})
+	}
+}
+
 func TestPreferencesMarkFreshCollectorProviderHealthy(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	collectedAt := time.Date(2026, 7, 28, 12, 45, 0, 0, time.UTC)

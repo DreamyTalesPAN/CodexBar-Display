@@ -591,6 +591,7 @@ const providerHealthStateStale = "stale"
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
 	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
+	retainedSuccess := make(map[string]struct{})
 	freshSuccess := make(map[string]codexbar.ProviderReadiness)
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok {
@@ -608,6 +609,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				if id != "" && !provider.CollectedAt.IsZero() &&
 					!frame.UsageUnavailable && snapshotHasUsableUsage(frame, provider.Meta) {
 					lastSuccess[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
+					if provider.Stale {
+						retainedSuccess[id] = struct{}{}
+					}
 				}
 				if readiness, ready := freshUsableUsageProviderReadiness(provider, now); ready {
 					freshSuccess[readiness.ID] = readiness
@@ -629,6 +633,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "disabled"
 			message = "Provider is off."
 			reported = ""
+		} else if _, retained := retainedSuccess[setting.ID]; retained {
+			state = providerHealthStateStale
+			message = "Live usage is unavailable; the last successful reading is still saved."
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
 			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
 			state = providerReadinessHealthState(readiness.Status)

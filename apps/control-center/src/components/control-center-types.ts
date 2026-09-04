@@ -760,23 +760,24 @@ export function deviceCompletedThemeSetup(
  * names one provider on purpose, and widening it would undo the customer's
  * choice; a fixed selection whose provider was just switched off is left alone
  * too -- the companion refuses it, and refusing is what hands the customer
- * back to the display step where they can pick another one. An empty pool is a
- * selection the companion refuses, and switching off the last provider is a
- * real state -- it is what the provider step is for -- so the stored pool is
- * left as it is rather than written as one that cannot be stored.
+ * back to the display step where they can pick another one. Explicitly disabled
+ * IDs are removed before a replacement is added. An empty pool is a selection
+ * the companion refuses, and switching off the last provider is a real state --
+ * it is what the provider step is for -- so the stored pool is left as it is
+ * rather than written as one that cannot be stored.
  */
 export function automaticPoolAfterToggle(
   display: ProviderDisplaySelection | null,
   providerId: string,
   enabled: boolean,
+  disabledProviderIds: readonly string[] = [],
 ): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
   if (display?.configured !== true || display.mode !== "automatic") {
     return null;
   }
-  const pool = new Set(display.providerIds || []);
-  if (pool.has(providerId) === enabled) {
-    return null;
-  }
+  const disabled = new Set(disabledProviderIds);
+  const currentPool = display.providerIds || [];
+  const pool = new Set(currentPool.filter((id) => !disabled.has(id)));
   if (enabled) {
     pool.add(providerId);
   } else {
@@ -785,5 +786,12 @@ export function automaticPoolAfterToggle(
   if (pool.size === 0) {
     return null;
   }
-  return { mode: "automatic", providerIds: [...pool] };
+  const providerIds = [...pool];
+  if (
+    providerIds.length === currentPool.length &&
+    providerIds.every((id, index) => id === currentPool[index])
+  ) {
+    return null;
+  }
+  return { mode: "automatic", providerIds };
 }

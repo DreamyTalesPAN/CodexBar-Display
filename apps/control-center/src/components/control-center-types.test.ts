@@ -558,6 +558,12 @@ describe("automaticPoolAfterToggle", () => {
     expect(afterCursor?.providerIds).toEqual(["codex", "claude", "cursor"]);
   });
 
+  it("drops a disabled provider before adding its replacement", () => {
+    expect(
+      automaticPoolAfterToggle(automatic, "claude", true, ["codex"]),
+    ).toEqual({ mode: "automatic", providerIds: ["claude"] });
+  });
+
   it("writes nothing when there is nothing to change", () => {
     expect(automaticPoolAfterToggle(automatic, "codex", true)).toBeNull();
     expect(automaticPoolAfterToggle(automatic, "codex", false)).toBeNull();

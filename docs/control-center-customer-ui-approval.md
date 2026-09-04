@@ -3496,3 +3496,28 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-04 — Automatic drops providers that were switched off
+
+- User approval: Same final-candidate instruction as above. The next exact-head
+  Bug Detector review found that switching off the last Automatic provider and
+  then enabling another one could carry the disabled provider into the next
+  display save.
+- Approved customer-visible result: **When Automatic cannot save an empty
+  provider pool, the next provider enabled replaces any explicitly disabled
+  IDs instead of adding to them. The new working provider reaches VibeTV without
+  requiring a manual Display Mode repair.**
+- Approved files: `apps/control-center/src/components/control-center-types.ts`,
+  `control-center-types.test.ts`, `control-center-app.tsx`, and this approval
+  record.
+
+## 2026-09-04 — Retained readings survive health refreshes
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **A bounded last-good provider reading
+  remains visibly stale and usable for setup even if the latest background
+  health check now reports sign-in or setup required. Once that saved reading
+  expires, it remains unavailable as before.**
+- Approved files: `companion/internal/companionapi/preferences.go`, its tests,
+  `provider_display_test.go`, and this approval record.

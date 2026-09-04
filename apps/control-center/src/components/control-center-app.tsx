@@ -3086,8 +3086,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!providerId) {
         return;
       }
+      const disabledProviderIds = (providerPreferencesRef.current || [])
+        .filter(
+          (preference) =>
+            preference.providerId &&
+            preference.value === false &&
+            preference.providerId !== (enabled ? providerId : ""),
+        )
+        .map((preference) => preference.providerId as string);
       return updateProviderDisplay(
-        (current) => automaticPoolAfterToggle(current, providerId, enabled),
+        (current) =>
+          automaticPoolAfterToggle(
+            current,
+            providerId,
+            enabled,
+            disabledProviderIds,
+          ),
         providerId,
       );
     },
@@ -3101,8 +3115,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           Date.now() + PROVIDER_RECONCILE_WINDOW_MS;
       }
       setPendingPreferenceIds((current) => new Set(current).add(item.id));
-      setProviderPreferences((current) =>
-        (current || []).map((preference) =>
+      const optimisticPreferences = (providerPreferencesRef.current || []).map(
+        (preference) =>
           preference.id === item.id
             ? {
                 ...preference,
@@ -3123,8 +3137,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     },
               }
             : preference,
-        ),
       );
+      providerPreferencesRef.current = optimisticPreferences;
+      setProviderPreferences(optimisticPreferences);
       let finishPreferenceWrite = () => {};
       const preferenceWrite = new Promise<void>((resolve) => {
         finishPreferenceWrite = resolve;
@@ -3138,11 +3153,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           `/v1/preferences/${encodeURIComponent(item.id)}`,
           { method: "PATCH", body: JSON.stringify({ value }) },
         );
-        setProviderPreferences((current) =>
-          (current || []).map((preference) =>
-            preference.id === payload.item.id ? payload.item : preference,
-          ),
+        const confirmedPreferences = (
+          providerPreferencesRef.current || []
+        ).map((preference) =>
+          preference.id === payload.item.id ? payload.item : preference,
         );
+        providerPreferencesRef.current = confirmedPreferences;
+        setProviderPreferences(confirmedPreferences);
         setProviderPreferencesError(null);
         // Automatic means "every provider that is switched on", so switching
         // one on or off IS the change to the pool. The runtime filters strictly
@@ -3165,11 +3182,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         void Promise.all(refreshes);
       } catch (error) {
-        setProviderPreferences((current) =>
-          (current || []).map((preference) =>
-            preference.id === item.id ? item : preference,
-          ),
+        const restoredPreferences = (
+          providerPreferencesRef.current || []
+        ).map((preference) =>
+          preference.id === item.id ? item : preference,
         );
+        providerPreferencesRef.current = restoredPreferences;
+        setProviderPreferences(restoredPreferences);
         setProviderPreferencesError(
           normalizeCaughtError(error, "Provider could not be updated."),
         );

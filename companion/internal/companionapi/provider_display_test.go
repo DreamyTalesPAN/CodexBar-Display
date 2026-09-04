@@ -350,6 +350,34 @@ func TestOnlyProviderBrokenStaysOnTheProviderStep(t *testing.T) {
 	}
 }
 
+func TestRetainedReadingStillCompletesAfterHealthRefresh(t *testing.T) {
+	now := time.Date(2026, 9, 4, 9, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"codex"},
+	}})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{
+			ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired,
+		}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: now.Add(-time.Minute), Stale: true,
+		}}}, true
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("retained reading stopped setup after health refresh: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 // Automatic rotates and skips what it cannot read, so a second provider that is
 // merely signed out must still not trap the customer. The pool is every enabled
 // provider by construction, so the shown set and the enabled set are equal and
