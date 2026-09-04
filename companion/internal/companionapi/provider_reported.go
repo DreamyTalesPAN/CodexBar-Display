@@ -44,10 +44,9 @@ var (
 	// "Safari cookies: permission denied for ...", "Chrome cookies: missing
 	// auth cookie", "Firefox cookies: missing ory_session_* cookie". Without
 	// this the rule ate the one word that says what went wrong and left the
-	// private path standing. Nothing else gets the benefit: `token: letmein`
-	// and `password=hunter` are values however short.
-	reportedPlainWord = regexp.MustCompile(`^[A-Za-z]{1,15}$`)
-	reportedProseKey  = regexp.MustCompile(`(?i)cookies:\s*$`)
+	// private path standing. Only the evidenced diagnostic starts get that
+	// benefit: arbitrary cookie, token and password values remain secrets.
+	reportedCookieProse = regexp.MustCompile(`(?i)cookies:\s*(?:missing|permission)$`)
 	// The same credential with no key in front of it. It is the only rule that
 	// catches a short scheme-prefixed token (`Bearer abc12345`); a long one is
 	// caught by reportedOpaque.
@@ -82,7 +81,7 @@ func reportedProviderMessage(raw string) string {
 			return match
 		}
 		prefix, value := match[idx[2]:idx[3]], match[idx[3]:]
-		if reportedPlainWord.MatchString(value) && reportedProseKey.MatchString(prefix) {
+		if reportedCookieProse.MatchString(prefix + value) {
 			return match
 		}
 		return prefix + reportedRedacted

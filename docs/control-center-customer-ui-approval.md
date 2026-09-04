@@ -3770,3 +3770,14 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/provider-preferences-polling.ts`, their
   tests, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-05 — Arbitrary cookie values are redacted
+
+- User approval: Fix every real Bug Detector finding before the final candidate
+  test. The exact-head review found that an arbitrary short alphabetic value
+  after `cookies:` could pass through the diagnostic prose exception.
+- Approved customer-visible result: **Provider guidance and its Copy action
+  redact arbitrary values after `cookies:`. Only the evidenced diagnostic
+  beginnings `missing` and `permission` remain readable.**
+- Approved files: `companion/internal/companionapi/provider_reported.go`, its
+  test, and this approval record.

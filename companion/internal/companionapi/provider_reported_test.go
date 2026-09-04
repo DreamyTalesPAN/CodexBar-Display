@@ -105,6 +105,11 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			want: "Cookie: [redacted]",
 		},
 		{
+			name: "an arbitrary short cookie value",
+			in:   "Chrome cookies: hunter",
+			want: "Chrome cookies: [redacted]",
+		},
+		{
 			name: "an authorization header collapses to one marker",
 			in:   "Request failed. Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N",
 			want: "Request failed. Authorization: [redacted]",
