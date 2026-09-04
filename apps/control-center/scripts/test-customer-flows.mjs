@@ -450,6 +450,10 @@ async function main() {
     }
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      await testProviderWriteWinsOverOlderPreferenceRead(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderOnboardingUsesSharedHealthyDescriptor(
         browser,
         appContext.appUrl,
@@ -849,6 +853,10 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+    await testProviderWriteWinsOverOlderPreferenceRead(
+      browser,
+      appContext.appUrl,
+    );
     await testProviderOnboardingUsesSharedHealthyDescriptor(
       browser,
       appContext.appUrl,
@@ -6179,6 +6187,84 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   await page.close();
 }
 
+async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const requests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencesDelayMs: 800,
+    preferencesSnapshotBeforeDelay: true,
+    preferencesResponse: {
+      ok: true,
+      items: [
+        providerPreferenceFixture("codex", "Codex"),
+        providerPreferenceFixture("claude", "Claude"),
+      ],
+    },
+    providerDisplay: {
+      mode: "automatic",
+      providerIds: ["codex", "claude"],
+      configured: true,
+      valid: true,
+    },
+    onRequest: (path, method, body) =>
+      requests.push({ path, method, body, at: Date.now() }),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  const codex = page.getByRole("switch", { name: "Codex" });
+  await codex.waitFor({ timeout: 10_000 });
+  await clickNavigation(page, "Overview");
+  const readsBeforeSettings = requests.filter(
+    (request) =>
+      request.path === "/v1/preferences" && request.method === "GET",
+  ).length;
+  await clickNavigation(page, "Settings");
+  await waitForCondition(
+    () =>
+      requests.filter(
+        (request) =>
+          request.path === "/v1/preferences" && request.method === "GET",
+      ).length > readsBeforeSettings,
+    "opening Settings must start the preference read used by this race",
+  );
+
+  await codex.click();
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path ===
+            "/v1/preferences/codexbar.providers.codex.enabled" &&
+          request.method === "PATCH" &&
+          request.body.includes('"value":false'),
+      ),
+    "disabling Codex must save the preference",
+  );
+  await page.waitForTimeout(1_000);
+  assert(
+    !(await codex.isChecked()),
+    "a preference GET that started before the PATCH must not restore the old provider value",
+  );
+  const latestDisplayWrite = requests
+    .filter(
+      (request) =>
+        request.path === "/v1/provider-display" && request.method === "PATCH",
+    )
+    .at(-1);
+  assert(
+    latestDisplayWrite &&
+      !JSON.parse(latestDisplayWrite.body || "{}").providerIds?.includes(
+        "codex",
+      ),
+    `Automatic display must keep the confirmed provider pool, got ${latestDisplayWrite?.body}`,
+  );
+  await page.close();
+}
+
 async function testProviderOnboardingUsesSharedHealthyDescriptor(
   browser,
   appUrl,
@@ -10081,6 +10167,7 @@ async function routeCompanionOnline(
     preferencesResponse,
     onPreferencesResponse,
     preferencesDelayMs = 0,
+    preferencesSnapshotBeforeDelay = false,
     preferencesStatus = 200,
     preferencePatchDelayMs = 0,
     preferencePatchFailureIds = [],
@@ -10606,6 +10693,9 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/preferences") {
+      const capturedPreferences = preferencesSnapshotBeforeDelay
+        ? structuredClone(currentPreferences)
+        : null;
       if (preferencesDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, preferencesDelayMs));
       }
@@ -10619,7 +10709,7 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify(
           preferencesStatus === 200
-            ? currentPreferences
+            ? capturedPreferences || currentPreferences
             : {
                 ok: false,
                 error: {

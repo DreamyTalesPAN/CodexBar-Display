@@ -408,6 +408,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayReadRef = useRef<Promise<void> | null>(null);
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const setupResetInProgressRef = useRef(false);
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
@@ -2868,20 +2870,59 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshProviderPreferences = useCallback(
-    async (options?: { quiet?: boolean }) => {
-      try {
-        const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
-          "/v1/preferences?section=providers",
-          undefined,
-          { preserveLastError: Boolean(options?.quiet) },
-        );
-        setProviderPreferences(payload.items || []);
-        setProviderPreferencesError(null);
-      } catch (error) {
-        setProviderPreferencesError(
-          normalizeCaughtError(error, "Provider settings need attention."),
-        );
+    (options?: { quiet?: boolean }) => {
+      if (providerPreferencesReadRef.current) {
+        return providerPreferencesReadRef.current;
       }
+      const read = (async () => {
+        // Start after older writes, then ignore the result if a newer write
+        // begins beside this GET. Otherwise a pre-write snapshot can replace
+        // the PATCH-confirmed row and feed the stale provider back into the
+        // Automatic display pool.
+        for (;;) {
+          const pendingWrites = providerPreferenceWritesRef.current;
+          await pendingWrites;
+          if (pendingWrites === providerPreferenceWritesRef.current) {
+            break;
+          }
+        }
+        const setupGeneration = setupGenerationRef.current;
+        const preferencesRevision = providerPreferencesRevisionRef.current;
+        try {
+          const payload = await runCompanion<{
+            items: PreferenceDescriptor[];
+          }>("/v1/preferences?section=providers", undefined, {
+            preserveLastError: Boolean(options?.quiet),
+          });
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            preferencesRevision !== providerPreferencesRevisionRef.current
+          ) {
+            return;
+          }
+          const items = payload.items || [];
+          providerPreferencesRef.current = items;
+          setProviderPreferences(items);
+          setProviderPreferencesError(null);
+        } catch (error) {
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            preferencesRevision !== providerPreferencesRevisionRef.current
+          ) {
+            return;
+          }
+          setProviderPreferencesError(
+            normalizeCaughtError(error, "Provider settings need attention."),
+          );
+        }
+      })();
+      providerPreferencesReadRef.current = read;
+      void read.finally(() => {
+        if (providerPreferencesReadRef.current === read) {
+          providerPreferencesReadRef.current = null;
+        }
+      });
+      return read;
     },
     [runCompanion],
   );
@@ -3126,6 +3167,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (setupResetInProgressRef.current) {
         return;
       }
+      providerPreferencesRevisionRef.current += 1;
       if (value) {
         providerReconcileDeadlineRef.current =
           Date.now() + PROVIDER_RECONCILE_WINDOW_MS;

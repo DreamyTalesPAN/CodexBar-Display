@@ -3584,3 +3584,16 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/src/components/setup/setup-wizard.tsx`, its test, and
   this approval record.
+
+## 2026-09-04 — Provider writes win over older reads
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a provider
+  read started before a toggle could arrive later and restore the old value.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  confirmed provider toggle remains visible and authoritative when an older
+  provider read finishes afterward; Automatic display keeps the confirmed
+  switched-on provider pool.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
