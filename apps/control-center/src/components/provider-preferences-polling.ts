@@ -25,16 +25,16 @@ export function providerPreferencesNeedPolling(
       preferences?.some(
         (preference) =>
           preference.section === "providers" &&
-          preference.value === true &&
-          preference.health?.state === "checking",
+          preference.value === true,
       ),
   );
 }
 
 /**
- * Re-reads the inventory-only `checking` answer until CodexBar's background
- * health result arrives. The next read is scheduled only after the previous
- * one settles, so a slow Companion cannot build up overlapping requests.
+ * Re-reads enabled providers while their screen is visible. That lets the
+ * browser observe CodexBar's background health result and also notices a later
+ * sign-out without reopening Settings. The next read is scheduled only after
+ * the previous one settles, so a slow Companion cannot build up overlaps.
  */
 export function startProviderPreferencesPolling({
   refresh,

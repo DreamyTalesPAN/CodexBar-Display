@@ -42,7 +42,7 @@ function provider(health: PreferenceHealthState, value = true): ProviderItem {
 }
 
 describe("provider preference polling", () => {
-  it("re-reads checking preferences until health arrives, without retrying the provider", async () => {
+  it("keeps enabled provider health current without retrying the provider", async () => {
     vi.useFakeTimers();
     const requests: string[] = [];
     const retryProvider = vi.fn();
@@ -91,7 +91,7 @@ describe("provider preference polling", () => {
     ).toBe(false);
 
     await advance(PROVIDER_PREFERENCES_POLL_INTERVAL_MS);
-    expect(requests).toEqual([PREFERENCES_PATH]);
+    expect(requests).toEqual([PREFERENCES_PATH, PREFERENCES_PATH]);
     expect(retryProvider).not.toHaveBeenCalled();
   });
 
@@ -103,7 +103,7 @@ describe("provider preference polling", () => {
       false,
     );
     expect(providerPreferencesNeedPolling(true, [provider("healthy")])).toBe(
-      false,
+      true,
     );
     expect(
       providerPreferencesNeedPolling(true, [provider("checking", false)]),

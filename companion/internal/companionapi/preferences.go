@@ -461,17 +461,28 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	s.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
 	s.providerPreferences.at = now
 	s.cacheProviderInventory(settings)
-	if inventoryOnly {
-		s.startProviderHealthRefreshLocked()
+	if inventoryOnly && s.startProviderHealthRefreshLocked() {
+		// The inventory copied the previous health only to avoid an empty row.
+		// Once its replacement is running, expose that wait instead of letting
+		// the copied result look current and stop the browser poll.
+		for i := range s.providerPreferences.cached {
+			if !s.providerPreferences.cached[i].Enabled {
+				continue
+			}
+			s.providerPreferences.cached[i].Health = codexbar.ProviderHealthChecking
+			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
+			s.providerPreferences.cached[i].Reported = ""
+		}
+		settings = append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
 	}
 	return append([]codexbar.ProviderSetting(nil), settings...), nil
 }
 
-func (s *Server) startProviderHealthRefreshLocked() {
+func (s *Server) startProviderHealthRefreshLocked() bool {
 	if s.providerPreferences.healthRefresh ||
 		s.providerPreferences.load == nil ||
 		s.providerPreferences.loadInventory == nil {
-		return
+		return false
 	}
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
@@ -501,6 +512,7 @@ func (s *Server) startProviderHealthRefreshLocked() {
 		}
 		s.providerPreferences.at = s.currentTime().UTC()
 	}()
+	return true
 }
 
 func (s *Server) providerInventoryForUsage(ctx context.Context) []codexbar.ProviderSetting {
@@ -639,6 +651,10 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			if reported != "" {
 				reported = message + " " + reported
 			}
+		} else if setting.Health == codexbar.ProviderHealthChecking {
+			state = string(codexbar.ProviderHealthChecking)
+			message = providerHealthMessage(codexbar.ProviderHealthChecking)
+			reported = ""
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
 			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
 			state = providerReadinessHealthState(readiness.Status)

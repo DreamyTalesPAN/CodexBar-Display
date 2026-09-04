@@ -454,6 +454,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testProviderPoolRetriesAfterFailedWrite(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderCheckWinsOverOlderPreferenceRead(
         browser,
         appContext.appUrl,
@@ -862,6 +866,10 @@ async function main() {
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
     await testProviderWriteWinsOverOlderPreferenceRead(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderPoolRetriesAfterFailedWrite(
       browser,
       appContext.appUrl,
     );
@@ -6282,6 +6290,51 @@ async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
   await page.close();
 }
 
+async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const displayWrites = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencesResponse: {
+      ok: true,
+      items: [
+        providerPreferenceFixture("codex", "Codex"),
+        disabledProviderPreferenceFixture("claude", "Claude"),
+      ],
+    },
+    providerDisplay: {
+      mode: "automatic",
+      providerIds: ["codex"],
+      configured: true,
+      valid: true,
+    },
+    providerDisplayPatchFailures: 1,
+    onRequest: (path, method, body) => {
+      if (path === "/v1/provider-display" && method === "PATCH") {
+        displayWrites.push(body);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  const claude = page.getByRole("switch", { name: "Claude" });
+  await claude.click();
+  await waitForCondition(
+    () => displayWrites.length >= 2,
+    "the failed Automatic pool save was not retried",
+    15_000,
+  );
+  assert(
+    JSON.parse(displayWrites.at(-1) || "{}").providerIds?.includes("claude"),
+    `the retried Automatic pool must include Claude, got ${displayWrites.at(-1)}`,
+  );
+  assert(await claude.isChecked(), "the confirmed provider must remain enabled");
+  await page.close();
+}
+
 async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const requests = [];
@@ -10383,6 +10436,7 @@ async function routeCompanionOnline(
     providerDisplayGetDelayMs = 0,
     providerDisplayGetFailures = 0,
     providerDisplayPatchDelayMs = 0,
+    providerDisplayPatchFailures = 0,
     providerSelectionSetup = {
       providerSelectionRequired: false,
       providerSelectionComplete: true,
@@ -10393,6 +10447,7 @@ async function routeCompanionOnline(
 ) {
   let currentDevice = device;
   let providerDisplayGetFailuresLeft = providerDisplayGetFailures;
+  let providerDisplayPatchFailuresLeft = providerDisplayPatchFailures;
   let currentCompanionVersion = companionVersion;
   let activeInstallJobId = statusThemeInstallJob?.id || "";
   let currentStatusThemeInstallJob = statusThemeInstallJob;
@@ -10489,6 +10544,22 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/provider-display") {
       if (route.request().method() === "PATCH") {
+        if (providerDisplayPatchFailuresLeft > 0) {
+          providerDisplayPatchFailuresLeft -= 1;
+          await route.fulfill({
+            status: 502,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ok: false,
+              error: {
+                code: "provider_display_write_failed",
+                message: "Display selection could not be saved.",
+                nextAction: "Try again in a moment.",
+              },
+            }),
+          });
+          return;
+        }
         if (providerDisplayPatchDelayMs > 0) {
           await new Promise((resolve) =>
             setTimeout(resolve, providerDisplayPatchDelayMs),

@@ -238,9 +238,13 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 	healthStarted := make(chan struct{})
 	releaseHealth := make(chan struct{})
 	healthDone := make(chan struct{})
+	server.providerPreferences.cached = []codexbar.ProviderSetting{{
+		ID: "future-provider", Label: "Future Provider", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+	}}
+	server.providerPreferences.at = time.Time{}
 	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
 		return []codexbar.ProviderSetting{{
-			ID: "future-provider", Label: "Future Provider", Enabled: true, Health: codexbar.ProviderHealthChecking,
+			ID: "future-provider", Label: "Future Provider", Enabled: true,
 		}}, nil
 	}
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
@@ -302,10 +306,19 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 		}
 		time.Sleep(time.Millisecond)
 	}
+	refreshed := httptest.NewRecorder()
+	server.Handler().ServeHTTP(refreshed, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	if err := json.Unmarshal(refreshed.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode refreshed provider inventory: %v", err)
+	}
+	if len(response.Items) != 1 || response.Items[0].Health.State != "healthy" {
+		t.Fatalf("background health result was not observable: %#v", response)
+	}
 }
 
 func TestProviderInventoryCacheCarriesReportedHealth(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = nil
 	server.providerPreferences.cached = []codexbar.ProviderSetting{{
 		ID: "codex", Label: "Codex", Enabled: true,
 		Health: codexbar.ProviderHealthAuthRequired, Reported: "CodexBar cached health detail.",

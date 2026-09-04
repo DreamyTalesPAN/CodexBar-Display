@@ -136,6 +136,7 @@ const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
+const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -403,6 +404,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [pendingPreferenceIds, setPendingPreferenceIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [providerPoolReconcilePending, setProviderPoolReconcilePending] =
+    useState(false);
   const providerReconcileDeadlineRef = useRef(0);
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerDisplayReadRef = useRef<Promise<void> | null>(null);
@@ -413,6 +416,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const setupResetInProgressRef = useRef(false);
   const providerPoolReconcilesAfterResetRef = useRef<Array<() => void>>([]);
+  const providerPoolReconcileRetryRef = useRef<
+    (() => Promise<boolean>) | null
+  >(null);
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -1692,6 +1698,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return;
       }
       setupGenerationRef.current += 1;
+      providerPoolReconcileRetryRef.current = null;
+      setProviderPoolReconcilePending(false);
       forgetDeviceTarget();
       setDeviceRecoveryGate(resetDeviceRecoveryGate());
       setDeviceTarget("");
@@ -3169,8 +3177,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             preference.providerId !== (enabled ? providerId : ""),
         )
         .map((preference) => preference.providerId as string);
-      const reconcile = () =>
-        updateProviderDisplay(
+      const reconcile = async (): Promise<boolean> => {
+        const updated = await updateProviderDisplay(
           (current) =>
             automaticPoolAfterToggle(
               current,
@@ -3180,6 +3188,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ),
           providerId,
         );
+        if (
+          updated !== false &&
+          providerPoolReconcileRetryRef.current === reconcile
+        ) {
+          providerPoolReconcileRetryRef.current = null;
+          setProviderPoolReconcilePending(false);
+        }
+        return updated;
+      };
+      providerPoolReconcileRetryRef.current = reconcile;
+      setProviderPoolReconcilePending(true);
       if (setupResetInProgressRef.current) {
         providerPoolReconcilesAfterResetRef.current.push(() => {
           void reconcile();
@@ -3296,6 +3315,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       syncAutomaticProviderPool,
     ],
   );
+
+  useEffect(() => {
+    if (!providerPoolReconcilePending) {
+      return;
+    }
+    let stopped = false;
+    let timer: number | undefined;
+    const schedule = () => {
+      timer = window.setTimeout(() => void retry(), PROVIDER_POOL_RECONCILE_RETRY_MS);
+    };
+    const retry = async () => {
+      if (stopped) {
+        return;
+      }
+      const reconcile = providerPoolReconcileRetryRef.current;
+      if (!reconcile) {
+        return;
+      }
+      if (!setupResetInProgressRef.current) {
+        await reconcile();
+      }
+      if (!stopped && providerPoolReconcileRetryRef.current) {
+        schedule();
+      }
+    };
+    schedule();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [providerPoolReconcilePending]);
 
   useEffect(() => {
     if (

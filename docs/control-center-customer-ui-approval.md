@@ -3691,3 +3691,29 @@ issue scope, or release permission never implies UI permission.
   intended stale response open until after the competing write or check.**
 - Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and this
   approval record.
+
+## 2026-09-04 — Automatic pool retries a failed save
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that a provider
+  switch could succeed while its following Automatic-pool save failed once.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  confirmed provider switch stays authoritative and the Automatic display pool
+  retries in the background until a save succeeds or a newer display choice
+  replaces it.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-04 — Provider health remains live while visible
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test. The exact-head review found that carried
+  provider health could stop polling before the background result arrived.
+- Approved customer-visible result: **While Settings or provider setup is
+  visible, enabled provider health keeps refreshing without running duplicate
+  provider retries. A carried result shows `Checking` until the current
+  background health result has actually been observed.**
+- Approved files: `companion/internal/companionapi/preferences.go`, its test,
+  `apps/control-center/src/components/provider-preferences-polling.ts`, its
+  test, and this approval record.
