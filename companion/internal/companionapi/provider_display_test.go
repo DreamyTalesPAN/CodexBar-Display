@@ -72,6 +72,18 @@ func TestProviderDisplayRejectsDisabledProvider(t *testing.T) {
 	}
 }
 
+func TestProviderDisplayRejectsIncompleteAutomaticPool(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = providerSettingsFixture
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/v1/provider-display", bytes.NewBufferString(`{"mode":"automatic","providerIds":["codex"]}`))
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_display_incomplete"`)) {
+		t.Fatalf("expected incomplete automatic pool conflict, status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestProviderSetupCompletionRequiresOneEnabledProviderFreshAndReady(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	server := newTestServer(t, runtimeconfig.Config{

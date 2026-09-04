@@ -91,6 +91,10 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 		writePreferencesReadError(w, err)
 		return
 	}
+	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
+		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Refresh providers and save Automatic again.")
+		return
+	}
 	if code, message, nextAction := validateProviderDisplay(selection, settings); code != "" {
 		writeError(w, http.StatusConflict, code, message, nextAction)
 		return
@@ -150,11 +154,7 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	}
 	// Only the Automatic pool has to name every enabled provider: it is the set
 	// VibeTV rotates through, so one left out of it is collected and never
-	// shown. "Always show one" names exactly one provider by definition -- that
-	// is what the mode says on the screen, and what Settings writes and keeps --
-	// so measuring it against the enabled set refused the customer's own choice
-	// and offered turning the other providers off as the way to keep it.
-	wholePoolRequired := selection.Mode == providerDisplayModeAutomatic
+	// shown. "Always show one" names exactly one provider by definition.
 	// Setup is complete once VibeTV has something real to show, which is one
 	// working provider -- the rule docs/control-center-ui-principles.md has
 	// carried all along. Demanding every enabled one instead handed a customer
@@ -162,11 +162,9 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	// leave, on a Mac whose first provider was working: the rotation already
 	// skips what it cannot read (daemon.go preferAvailableProviders), so the
 	// broken one costs nothing but the refusal did.
-	for _, setting := range enabled {
-		if _, ok := selected[setting.ID]; wholePoolRequired && !ok {
-			writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
-			return
-		}
+	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
+		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
+		return
 	}
 	// What VibeTV will actually show, beside what merely works somewhere.
 	readyShown := 0
@@ -270,6 +268,22 @@ func validateProviderDisplay(selection providerDisplaySelection, settings []code
 		}
 	}
 	return "", "", ""
+}
+
+func automaticProviderDisplayIncludesAllEnabled(selection providerDisplaySelection, settings []codexbar.ProviderSetting) bool {
+	if selection.Mode != providerDisplayModeAutomatic {
+		return true
+	}
+	selected := make(map[string]struct{}, len(selection.ProviderIDs))
+	for _, providerID := range selection.ProviderIDs {
+		selected[providerID] = struct{}{}
+	}
+	for _, setting := range settings {
+		if _, ok := selected[setting.ID]; setting.Enabled && !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeProviderIDs(providerIDs []string) []string {

@@ -961,7 +961,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
-			Stale:              frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 		})
 	}
 	return frames

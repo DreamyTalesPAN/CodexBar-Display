@@ -4220,7 +4220,7 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 		current = freshAt.Add(age)
 		collector.collectOnce(context.Background())
 		frames := collector.providerFrames(current)
-		if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
+		if len(frames) != 1 || !frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
 			t.Fatalf("expected buffered last-good values at %s, got %#v", age, frames)
 		}
 		if snapshot := collector.providers["gemini"]; !snapshot.Retained {
@@ -4259,7 +4259,7 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 	collector.collectOnce(context.Background())
 	frames = collector.providerFrames(current)
-	if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 12 {
+	if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 12 {
 		t.Fatalf("expected immediate recovery from unavailable state, got %#v", frames)
 	}
 	if snapshot := collector.providers["gemini"]; snapshot.Retained {
@@ -5270,7 +5270,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			}
 			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Session != 68 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" ||
-				frames[0].Stale || frames[0].Frame.UsageUnavailable {
+				!frames[0].Stale || frames[0].Frame.UsageUnavailable {
 				t.Fatalf("expected dashboard snapshot within last-good window unchanged, got %+v", frames)
 			}
 
@@ -5289,7 +5289,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			current = current.Add(time.Second)
 			collector.collectOnce(context.Background())
 			frames = collector.providerFrames(current)
-			if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 21 ||
+			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 21 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" {
 				t.Fatalf("expected fresh dashboard recovery, got %+v", frames)
 			}
