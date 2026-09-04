@@ -1449,7 +1449,6 @@ async function testConnectFirmwareUpdateFailureOffersRetry(browser, appUrl) {
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.99",
     device: { connected: false, paired: false, ready: false, active: false },
-    displayFrameStatus: 404,
     searchDevices: [candidate],
     onSelect: () => connected,
     onUpdate: (postData) => firmwareUpdateRequests.push(postData || ""),
@@ -1859,10 +1858,13 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     "A VibeTV with a confirmed active theme must skip theme selection",
   );
   assertNoInstallRequests(installRequests);
+  await page.waitForTimeout(1_000);
   assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "A delayed preview must wait on the live handoff instead of opening Overview",
+    (await setupScreen(page, SETUP_LIVE_SCREEN).count()) === 1 &&
+      (await page
+        .getByRole("navigation", { name: "Control Center" })
+        .count()) === 0,
+    "A first setup must keep the rendered preview visible for its live handoff",
   );
   assert(
     requests.filter((request) => request === "POST /v1/device/search")

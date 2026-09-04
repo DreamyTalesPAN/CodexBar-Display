@@ -3628,7 +3628,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerSelectionSetup?.providerSelectionComplete === true &&
         displaySetupComplete &&
         (themeSetupComplete || firmwareUpdateInProgress) &&
-        (!setupThemeChoiceRequired || setupFinished)
+        setupFinished
       ) {
         setEnteredControlCenterThisSession(true);
       }
@@ -3638,7 +3638,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       displaySetupComplete,
       firmwareUpdateInProgress,
       setupFinished,
-      setupThemeChoiceRequired,
       themeSetupComplete,
     ],
   );

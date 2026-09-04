@@ -3483,3 +3483,16 @@ issue scope, or release permission never implies UI permission.
   request without a later explicit decision.**
 - Approved files: `macos/VibeTVControlCenter/main.swift`,
   `macos/VibeTVControlCenter/URLSchemeTests.swift`, and this approval record.
+
+## 2026-09-04 — Existing themes still complete the live handoff
+
+- User approval: Same final-candidate instruction as above. The next exact-head
+  Bug Detector review found that the first frame could close setup early when
+  the connected VibeTV already had a theme.
+- Approved customer-visible result: **A setup that reuses an installed theme
+  still shows the real preview on `Your VibeTV is live` for the approved three
+  seconds before Overview opens. Only a customer whose setup was completed
+  before this app session skips that handoff.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
