@@ -156,6 +156,11 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			in:   "Callback rejected https://api-token@127.0.0.1/callback.",
 			want: "Callback rejected https://[redacted]@127.0.0.1/callback.",
 		},
+		{
+			name: "nested credential object",
+			in:   `Unexpected response body ({"token":{"access_token":"hunter"}})`,
+			want: `Unexpected response body ({"token":[redacted]`,
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)

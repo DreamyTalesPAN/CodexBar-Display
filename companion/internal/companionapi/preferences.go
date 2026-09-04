@@ -636,6 +636,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		} else if _, retained := retainedSuccess[setting.ID]; retained {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
+			if reported != "" {
+				reported = message + " " + reported
+			}
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
 			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
 			state = providerReadinessHealthState(readiness.Status)

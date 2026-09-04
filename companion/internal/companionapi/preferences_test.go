@@ -85,7 +85,7 @@ func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
 			collectedAt := time.Date(2026, 9, 4, 9, 0, 0, 0, time.UTC)
 			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
 				return []codexbar.ProviderSetting{{
-					ID: "codex", Label: "Codex", Enabled: true, Health: health,
+					ID: "codex", Label: "Codex", Enabled: true, Health: health, Reported: "Codex sign-in expired.",
 				}}, nil
 			}
 			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -101,7 +101,8 @@ func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
 				t.Fatal(err)
 			}
 			if len(response.Items) != 1 || response.Items[0].Health.State != providerHealthStateStale ||
-				response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) {
+				response.Items[0].Health.LastSuccessAt != collectedAt.Format(time.RFC3339) ||
+				response.Items[0].Health.Reported != "Live usage is unavailable; the last successful reading is still saved. Codex sign-in expired." {
 				t.Fatalf("retained reading lost eligibility after %s refresh: %#v", health, response.Items)
 			}
 		})

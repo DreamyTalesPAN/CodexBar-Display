@@ -3533,3 +3533,14 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/src/components/setup/setup-step.ts`, their tests, and
   this approval record.
+
+## 2026-09-04 — Saved provider readings stay visibly stale
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **When the app keeps a bounded last-good
+  reading, the provider row always says that the value is saved rather than
+  live. Safe provider-specific recovery guidance remains visible after that
+  warning.**
+- Approved files: `companion/internal/companionapi/preferences.go`, its tests,
+  and this approval record.
