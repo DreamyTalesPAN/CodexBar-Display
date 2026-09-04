@@ -21,6 +21,7 @@ export type SetupProviderRowVariant =
   | "outage"
   | "permission"
   | "sign_in"
+  | "stale"
   | "timed_out"
   | "toggle";
 
@@ -40,11 +41,13 @@ export function setupProviderRowVariant(
   switch (health) {
     case "checking":
       return "checking";
-    // "stale" is a provider that already produced a real reading, so it stays
-    // usable; "disabled" is simply off.
+    // "stale" is still usable because it carries a bounded last-good reading,
+    // but the row must say that the live collection failed.
+    case "stale":
+      return "stale";
+    // "disabled" is simply off.
     case "disabled":
     case "healthy":
-    case "stale":
       return "toggle";
     case "auth_required":
     case "setup_required":
@@ -128,6 +131,8 @@ export function SetupProviderRow({
           ? "No usage data on this account"
           : variant === "outage"
             ? "Service outage — try again later"
+            : variant === "stale"
+              ? "Live usage is unavailable"
             : "Check timed out";
   const guidance = reportedMessage || detail || fallbackMessage;
 

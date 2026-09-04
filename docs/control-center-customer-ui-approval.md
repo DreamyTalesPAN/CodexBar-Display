@@ -3385,3 +3385,16 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   the Companion provider-message redaction and its regression test, and this
   approval record.
+
+## 2026-09-04 — Retained provider readings stay honest and usable
+
+- User approval: Same instruction as the entry above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **A switched-on provider whose bounded
+  last-good reading is retained shows the Companion's existing stale-status
+  message and a Check-again action while keeping its on/off switch. If it is the
+  only provider with a usable reading, Continue remains available because the
+  Companion and Display Mode already accept the same retained reading.**
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their
+  regression tests, and this approval record.

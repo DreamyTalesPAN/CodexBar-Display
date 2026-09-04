@@ -31,9 +31,16 @@ describe("SetupProviderRow", () => {
   });
 
   it("keeps a provider that already produced a reading switchable", () => {
-    for (const health of ["stale", "disabled"]) {
-      expect(render({ health })).toContain('role="switch"');
-    }
+    expect(render({ health: "disabled" })).toContain('role="switch"');
+    const stale = render({
+      detail: "Live usage is unavailable. Showing the last saved reading.",
+      health: "stale",
+    });
+    expect(stale).toContain('role="switch"');
+    expect(stale).toContain(
+      "Live usage is unavailable. Showing the last saved reading.",
+    );
+    expect(stale).toContain('aria-label="Check Claude Code again"');
   });
 
   // A check that is slow or stuck must not hold the customer on the step: the
