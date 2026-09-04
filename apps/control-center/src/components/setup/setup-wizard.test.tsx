@@ -201,6 +201,7 @@ describe("SetupWizard: initial provider scan", () => {
         deviceUsable: setupDeviceIsUsable({
           connectionRecoveryRequired: false,
           deviceConnected: true,
+          displayRemediationRequired: false,
           hasActiveDevice: true,
           hasEnteredControlCenter: false,
           providerSelectionRequired,

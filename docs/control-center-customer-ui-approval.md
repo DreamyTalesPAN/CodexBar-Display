@@ -3521,3 +3521,15 @@ issue scope, or release permission never implies UI permission.
   expires, it remains unavailable as before.**
 - Approved files: `companion/internal/companionapi/preferences.go`, its tests,
   `provider_display_test.go`, and this approval record.
+
+## 2026-09-04 — Invalid saved display choices stay repairable
+
+- User approval: Same instruction as above: fix every real Bug Detector finding
+  before the final candidate test.
+- Approved customer-visible result: **When a saved display choice becomes
+  invalid and the connected VibeTV cannot render because of it, setup opens
+  Display Mode instead of sending the customer back to the device connection
+  step.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their tests, and
+  this approval record.

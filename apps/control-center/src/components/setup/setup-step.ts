@@ -54,6 +54,7 @@ export function setupDeviceIsUsable(input: {
   hasActiveDevice: boolean;
   hasEnteredControlCenter: boolean;
   connectionRecoveryRequired: boolean;
+  displayRemediationRequired: boolean;
   providerSelectionRequired: boolean;
   providerSetupCompletedThisSession: boolean;
   themeSetupRequired: boolean;
@@ -63,6 +64,7 @@ export function setupDeviceIsUsable(input: {
     input.ready ||
     ((input.providerSelectionRequired ||
       input.providerSetupCompletedThisSession ||
+      input.displayRemediationRequired ||
       input.themeSetupRequired) &&
       input.deviceConnected) ||
     (input.hasEnteredControlCenter &&

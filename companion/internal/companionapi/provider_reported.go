@@ -18,9 +18,10 @@ import (
 // silently dropped sentence would not be.
 var (
 	reportedHomePath = regexp.MustCompile(`(?i)/Users/[^/\s)]+`)
-	// URL userinfo carries credentials before the host (`https://user:pass@host`).
+	// URL userinfo carries credentials before the host (`https://token@host` or
+	// `https://user:pass@host`).
 	// Redact it as one span so neither the username nor password reaches the UI.
-	reportedURLUserinfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s:]+:[^/@\s]+@`)
+	reportedURLUserinfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s?#]+@`)
 	// A credential-shaped key and its value: `Cookie: ...`, `sessionKey=...`,
 	// `"access_token": "..."`, `?token=...&session=...`, `#token=...`. Anchored
 	// at a line start or a separator -- a URL's `?`, `&` and `#` among them -- so a

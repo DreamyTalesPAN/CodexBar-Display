@@ -4133,6 +4133,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const deviceUsableForSetup = setupDeviceIsUsable({
     deviceConnected,
     connectionRecoveryRequired,
+    displayRemediationRequired:
+      providerDisplay?.configured === true && providerDisplay.valid === false,
     hasActiveDevice,
     hasEnteredControlCenter,
     providerSelectionRequired,

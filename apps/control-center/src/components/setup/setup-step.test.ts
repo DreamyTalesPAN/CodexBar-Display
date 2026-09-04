@@ -187,6 +187,7 @@ describe("setupDeviceIsUsable", () => {
   const coldStart = {
     deviceConnected: true,
     connectionRecoveryRequired: false,
+    displayRemediationRequired: false,
     hasActiveDevice: true,
     hasEnteredControlCenter: false,
     providerSelectionRequired: true,
@@ -216,6 +217,16 @@ describe("setupDeviceIsUsable", () => {
         ...coldStart,
         providerSelectionRequired: false,
         providerSetupCompletedThisSession: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("lets a connected VibeTV reach an invalid saved display choice", () => {
+    expect(
+      setupDeviceIsUsable({
+        ...coldStart,
+        providerSelectionRequired: false,
+        displayRemediationRequired: true,
       }),
     ).toBe(true);
   });
