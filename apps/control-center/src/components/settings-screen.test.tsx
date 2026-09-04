@@ -1,7 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { DeviceInfo, StandbySettings } from "./control-center-types";
+import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
+
+const providerPicker: ProviderPickerProps = {
+  display: null,
+  items: [],
+  pendingCheckIds: new Set(),
+  pendingPreferenceIds: new Set(),
+  onCheck: vi.fn(),
+  onDisplayChange: vi.fn(),
+  onPreferenceChange: vi.fn(),
+};
 
 const standbyDevice: DeviceInfo = {
   active: true,
@@ -18,12 +29,40 @@ const savedStandby: StandbySettings = {
   screensaverPath: "/themes/s/night.json",
 };
 
+function provider(
+  providerId: string,
+  label: string,
+  value: boolean,
+): ProviderItem {
+  return {
+    allowsDefault: false,
+    availability: { state: "available" },
+    effectiveValue: value,
+    health: {
+      message: value ? "Ready." : "Off.",
+      service: "operational",
+      state: value ? "healthy" : "disabled",
+    },
+    id: `codexbar.providers.${providerId}.enabled`,
+    label,
+    owner: "codexbar",
+    providerId,
+    section: "providers",
+    type: "boolean",
+    value,
+    writable: true,
+    writeStrategy: "codexbar_command",
+  };
+}
+
 function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
+  picker: ProviderPickerProps = providerPicker,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
+      automaticPreviews={[]}
       brightness={70}
       busyAction={null}
       device={device}
@@ -34,6 +73,7 @@ function render(
       onSaveBrightness={vi.fn()}
       onSaveStandby={vi.fn()}
       onStandbyBrightnessChange={vi.fn()}
+      providerPicker={picker}
     />,
   );
 }
@@ -51,7 +91,7 @@ describe("SettingsScreen standby controls", () => {
   it("keeps every screensaver setting visible while the screensaver is off", () => {
     const html = render(standbyDevice);
 
-    expect(html).toContain(">Screensaver</h3>");
+    expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain("Show screensaver");
     expect(html.indexOf('id="vibetv-standby"')).toBeLessThan(
       html.indexOf('for="vibetv-standby"'),
@@ -131,23 +171,90 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toContain("minimum");
     expect(html).not.toContain("Save brightness");
     expect(html).toContain('data-slot="item-separator"');
+    // Nothing on this screen is a card any more: the provider list carries its
+    // own rows, and the card that used to wrap them took the page's only
+    // heading with it.
     expect(html).not.toContain('data-slot="card"');
+    expect(html).toContain(">AI providers</h2>");
   });
 
-  it("uses responsive intro and control columns for every section", () => {
+  // Asserted as structure rather than as class strings: counting the class
+  // string is what let three copies of it accumulate in the first place.
+  it("gives every section a heading and a control column", () => {
+    const html = render(standbyDevice);
+    const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
+
+    expect(headings).toHaveLength(5);
+    expect(html).toContain(">Display</h2>");
+    expect(html).toContain(">Display mode</h2>");
+    expect(html).toContain(">AI providers</h2>");
+    expect(html).toContain(">Screensaver</h2>");
+    expect(html).toContain(">Setup</h2>");
+    expect(html).toContain("Connect this Mac to another VibeTV.");
+    expect(html.match(/<section /g)).toHaveLength(5);
+  });
+
+  // The provider list is the longest thing on the page, so it closes it rather
+  // than pushing the short settings below it off the screen.
+  it("puts AI providers last", () => {
+    const html = render(standbyDevice);
+    const order = (html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || []).map((tag) =>
+      tag.replace(/<[^>]+>/g, ""),
+    );
+
+    expect(order).toEqual([
+      "Display",
+      "Display mode",
+      "Screensaver",
+      "Setup",
+      "AI providers",
+    ]);
+  });
+
+  it("keeps enabled providers first in Settings without reordering either group", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      items: [
+        provider("openai", "OpenAI", false),
+        provider("claude", "Claude Code", true),
+        provider("cursor", "Cursor", false),
+        provider("codex", "Codex", true),
+      ],
+    });
+    const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
+    const positions = ["Claude Code", "Codex", "OpenAI", "Cursor"].map(
+      (label) => providerSection.indexOf(`>${label}</`),
+    );
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual(
+      [...positions].sort((left, right) => left - right),
+    );
+  });
+
+  it("leaves the display mode cards usable when no write is in flight", () => {
+    const html = render(standbyDevice);
+    const cards = html.match(/<button aria-pressed="(?:true|false)"[^>]*>/g) || [];
+
+    expect(cards.length).toBeGreaterThanOrEqual(2);
+    expect(cards.some((card) => card.includes('disabled=""'))).toBe(false);
+  });
+
+  // The design puts the reading beside its label. It stays an <output>, so a
+  // screen reader still announces it as it changes.
+  it("shows the brightness reading next to its label", () => {
     const html = render(standbyDevice);
 
-    expect(html.match(/grid-cols-1/g)).toHaveLength(3);
-    expect(
-      html.match(/md:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/g),
-    ).toHaveLength(3);
-    expect(html).toMatch(
-      /<h3>Setup<\/h3>.*Connect this Mac to another VibeTV\.<\/p><\/div><div data-slot="item-actions"/,
-    );
+    expect(html).toMatch(/for="vibetv-brightness"[^>]*>Brightness<\/label>/);
+    expect(html).toContain(">70%</output>");
+    // It no longer rides the thumb: no absolute placement, no computed offset.
+    expect(html).not.toMatch(/<output[^>]*class="[^"]*absolute/);
+    expect(html).not.toMatch(/<output[^>]*style="left:/);
   });
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
+        automaticPreviews={[]}
         brightness={50}
         busyAction="firmware-update"
         device={standbyDevice}
@@ -158,6 +265,7 @@ describe("SettingsScreen standby controls", () => {
         onSaveBrightness={vi.fn()}
         onSaveStandby={vi.fn()}
         onStandbyBrightnessChange={vi.fn()}
+        providerPicker={providerPicker}
       />,
     );
 

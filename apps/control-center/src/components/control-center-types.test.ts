@@ -10,7 +10,9 @@ import {
   deviceNeedsThemeSetup,
   providerRecoveryStatusRows,
   providerSetupIsChecking,
+  providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
+  automaticPoolForEnabledProviders,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -469,5 +471,104 @@ describe("providerRecoveryStatusRows", () => {
         text: "This provider needs an active sign-in.",
       },
     ]);
+  });
+});
+
+// The automatic recovery unregisters the background service for some twenty
+// seconds and reinstalls the engine. Running it for a Mac whose customer has
+// simply not picked a provider yet made the VibeTV report "no provider" again
+// afterwards, and it started over: nine teardowns while the customer read the
+// provider list.
+describe("providerSetupNeedsEngineRecovery", () => {
+  it("leaves a working engine alone when no provider is signed in", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "ready" },
+        providers: [{ id: "codex", enabled: true, status: "auth_required" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("recovers a usage service that cannot answer", () => {
+    // `codexbar` is not a provider: CodexBar reports itself under that id when
+    // its own probe timed out, and then the engine really is the problem.
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "ready" },
+        providers: [{ id: "codexbar", status: "timeout" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("recovers an engine that is not there", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "not_configured" },
+        providers: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("asks for nothing while the usage service is ready or still checking", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "ready",
+        engine: { status: "ready" },
+      }),
+    ).toBe(false);
+    expect(providerSetupNeedsEngineRecovery({ status: "checking" })).toBe(false);
+  });
+});
+
+describe("automaticPoolForEnabledProviders", () => {
+  const automatic = {
+    mode: "automatic" as const,
+    providerIds: ["codex"],
+    configured: true,
+    valid: true,
+  };
+
+  it("matches the stored pool to the complete enabled inventory", () => {
+    expect(automaticPoolForEnabledProviders(automatic, ["codex", "claude"])).toEqual({
+      mode: "automatic",
+      providerIds: ["codex", "claude"],
+    });
+    expect(
+      automaticPoolForEnabledProviders(
+        { ...automatic, providerIds: ["codex", "claude"] },
+        ["codex"],
+      ),
+    ).toEqual({ mode: "automatic", providerIds: ["codex"] });
+  });
+
+  it("deduplicates the authoritative inventory", () => {
+    expect(
+      automaticPoolForEnabledProviders(automatic, [
+        "codex",
+        "claude",
+        "claude",
+      ]),
+    ).toEqual({ mode: "automatic", providerIds: ["codex", "claude"] });
+  });
+
+  it("writes nothing when there is nothing to change", () => {
+    expect(automaticPoolForEnabledProviders(automatic, ["codex"])).toBeNull();
+    expect(automaticPoolForEnabledProviders(automatic, [])).toBeNull();
+    expect(automaticPoolForEnabledProviders(null, ["codex"])).toBeNull();
+    expect(
+      automaticPoolForEnabledProviders(
+        { ...automatic, configured: false },
+        ["claude"],
+      ),
+    ).toBeNull();
+    expect(
+      automaticPoolForEnabledProviders(
+        { ...automatic, mode: "fixed", providerIds: ["codex"] },
+        ["claude"],
+      ),
+    ).toBeNull();
   });
 });

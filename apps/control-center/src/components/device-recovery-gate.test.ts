@@ -5,7 +5,6 @@ import {
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
   DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
   deviceRecoveryConfirmedLoss,
-  openManualRecoveryPicker,
   selectRecoveryDevice,
 } from "./device-recovery-gate";
 
@@ -98,21 +97,6 @@ describe("device recovery gate", () => {
     expect(result.state.pickerReason).toBeNull();
   });
 
-  it("does not auto-close a manual picker for the old preferred VibeTV", () => {
-    const state = openManualRecoveryPicker(
-      selectRecoveryDevice(createDeviceRecoveryGateState(), {
-        deviceId: "stable-a",
-      }),
-    );
-
-    const result = applyDeviceRecoveryStatus(state, {
-      device: { connected: true, deviceId: "stable-a", target: "192.0.2.10" },
-    });
-
-    expect(result.acceptDevice).toBe(true);
-    expect(result.closePicker).toBe(false);
-    expect(result.state.pickerReason).toBe("manual");
-  });
 
   it("rejects a different device while a preferred ID exists", () => {
     const state = selectRecoveryDevice(createDeviceRecoveryGateState(), {

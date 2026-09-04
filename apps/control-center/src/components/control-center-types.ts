@@ -90,6 +90,18 @@ export type ProviderSetupInfo = {
   providers?: ProviderReadinessInfo[];
 };
 
+export type ProviderSelectionSetup = {
+  providerSelectionRequired: boolean;
+  providerSelectionComplete: boolean;
+};
+
+export type ProviderDisplaySelection = {
+  mode: "automatic" | "fixed";
+  providerIds: string[];
+  configured: boolean;
+  valid: boolean;
+};
+
 export type SupportDiagnostics = {
   ok?: boolean;
   schemaVersion?: number;
@@ -344,8 +356,6 @@ export type UsageProviderInfo = {
   weeklyUnavailable?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
-  rateLimited?: boolean;
-  blockedUntil?: string;
   windows?: UsageWindowInfo[];
   status?: UsageStatusInfo;
   credits?: UsageCreditsInfo;
@@ -440,9 +450,8 @@ export type UsageSnapshot = {
 };
 
 export type UsageRefreshInfo = {
-  state: "refreshing" | "rate_limited" | "fresh" | "unavailable" | string;
+  state: "refreshing" | "fresh" | "unavailable" | string;
   requestedAt?: string;
-  blockedUntil?: string;
   message?: string;
 };
 
@@ -468,6 +477,8 @@ export type PreferenceDescriptor = {
   owner: "codexbar" | "vibetv" | "device";
   type: PreferenceType;
   label: string;
+  description?: string;
+  providerId?: string;
   value: PreferenceValue;
   effectiveValue: PreferenceValue;
   allowsDefault: boolean;
@@ -491,7 +502,14 @@ export type PreferenceDescriptor = {
     state: PreferenceHealthState;
     service: "operational" | "degraded" | "outage" | "unknown" | string;
     message: string;
+    /**
+     * What the usage service itself said, with its home path redacted.
+     * Absent only when it did not report a sentence.
+     */
+    reported?: string;
     lastSuccessAt?: string;
+    checkedAt?: string;
+    nextAction?: string;
   };
 };
 
@@ -575,30 +593,6 @@ export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
-// A ready engine means CodexBar is installed: the Companion only reports it
-// after finding the binary, reading its config and accepting its version
-// (companion/internal/codexbar/provider_setup.go). Whatever is still missing --
-// a sign-in, a macOS permission, a switch, an account with no usage, or simply
-// nothing reported yet -- is settled inside CodexBar, and the download page
-// fixes none of it. Which of those it is stays CodexBar's to say; this only
-// reads that CodexBar is there.
-//
-// The provider list deliberately does not enter into it. An earlier version
-// asked for a provider other than the `codexbar` stand-in and treated an empty
-// list as the "nothing to report yet" state. The Companion never sends an empty
-// list: an empty `usage --json` becomes exactly that stand-in
-// ([{id:"codexbar",status:"not_configured"}]), so the state this predicate
-// exists for -- providers switched back on, none opened once, seen on the bench
-// on 2026-08-21 -- was the one state it still sent to the download.
-//
-// The download route belongs to an engine that is NOT ready: CodexBar missing,
-// too old, or broken. That is the case a download actually fixes.
-export function providerSetupCodexBarAnswered(
-  providerSetup: ProviderSetupInfo | null | undefined,
-) {
-  return normalizedProviderStatus(providerSetup?.engine?.status) === "ready";
-}
-
 // A usable engine with every provider switched off is not a missing install:
 // the customer has CodexBar and turned the switches off. Telling them to
 // download it sends them after software they already have. CodexBar still owns
@@ -649,12 +643,44 @@ export function providerRecoveryStatusRows(
   return rows;
 }
 
+function providerSetupEngineIsReady(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  return normalizedProviderStatus(providerSetup?.engine?.status) === "ready";
+}
+
+// The recovery reinstalls the usage engine, so it only ever answers a usage
+// service that is not there or cannot answer. CodexBar reports the second under
+// the `codexbar` stand-in, which is not a provider.
+//
+// An engine that reports ready with no failing stand-in is working, and what is
+// missing then is a provider nobody has switched on or signed into yet -- the
+// ordinary state of this wizard, now that the first run no longer switches
+// providers on by itself. Reinstalling the engine cannot switch one on, and
+// running the recovery for it took the background service down every couple of
+// minutes for as long as the customer stayed on the provider step.
+export function providerSetupNeedsEngineRecovery(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  if (!providerSetupRequiresRecovery(providerSetup)) {
+    return false;
+  }
+  return (
+    !providerSetupEngineIsReady(providerSetup) ||
+    (providerSetup?.providers ?? []).some(
+      (provider) =>
+        provider.id === "codexbar" &&
+        normalizedProviderStatus(provider.status) !== "ready",
+    )
+  );
+}
+
 export function providerSetupHasEngineButNoEnabledProvider(
   providerSetup: ProviderSetupInfo | null | undefined,
 ) {
   const providers = providerSetup?.providers ?? [];
   return (
-    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
+    providerSetupEngineIsReady(providerSetup) &&
     providers.length > 0 &&
     // `codexbar` is not a provider. CodexBar reports the usage service itself
     // under that id when its own probe timed out or failed, and the enablement
@@ -722,4 +748,40 @@ export function deviceCompletedThemeSetup(
     device?.display?.themeSpec?.active === true &&
     device.display.themeSpec.renderOk === true
   );
+}
+
+/**
+ * The Automatic pool for the complete enabled-provider inventory, or null
+ * when nothing is to be written.
+ *
+ * Maintains an existing selection; never creates one. Writing a pool before the
+ * customer has made the choice marks the display configured and makes setup
+ * skip the very step that asks for it. Only for Automatic: a fixed selection
+ * names one provider on purpose, and widening it would undo the customer's
+ * choice; a fixed selection whose provider was just switched off is left alone
+ * too -- the companion refuses it, and refusing is what hands the customer
+ * back to the display step where they can pick another one. An empty pool is a
+ * selection the companion refuses, and switching off the last provider is a
+ * real state -- it is what the provider step is for -- so the stored pool is
+ * left as it is rather than written as one that cannot be stored.
+ */
+export function automaticPoolForEnabledProviders(
+  display: ProviderDisplaySelection | null,
+  enabledProviderIds: readonly string[],
+): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
+  if (display?.configured !== true || display.mode !== "automatic") {
+    return null;
+  }
+  const currentPool = display.providerIds || [];
+  const providerIds = [...new Set(enabledProviderIds)];
+  if (providerIds.length === 0) {
+    return null;
+  }
+  if (
+    providerIds.length === currentPool.length &&
+    providerIds.every((id, index) => id === currentPool[index])
+  ) {
+    return null;
+  }
+  return { mode: "automatic", providerIds };
 }
