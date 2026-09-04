@@ -407,6 +407,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayReadRef = useRef<Promise<void> | null>(null);
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -1656,7 +1657,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // Every entry point -- Settings, Support -- comes through here, so this
       // is where the reset waits for it; the busy state above is what the
       // customer sees meanwhile.
-      await providerDisplayWriteQueueRef.current;
+      for (;;) {
+        const preferenceWrites = providerPreferenceWritesRef.current;
+        await preferenceWrites;
+        const displayWrites = providerDisplayWriteQueueRef.current;
+        await displayWrites;
+        if (
+          preferenceWrites === providerPreferenceWritesRef.current &&
+          displayWrites === providerDisplayWriteQueueRef.current
+        ) {
+          break;
+        }
+      }
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;
@@ -3113,6 +3125,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             : preference,
         ),
       );
+      let finishPreferenceWrite = () => {};
+      const preferenceWrite = new Promise<void>((resolve) => {
+        finishPreferenceWrite = resolve;
+      });
+      providerPreferenceWritesRef.current = Promise.all([
+        providerPreferenceWritesRef.current,
+        preferenceWrite,
+      ]).then(() => undefined);
       try {
         const payload = await runCompanion<{ item: PreferenceDescriptor }>(
           `/v1/preferences/${encodeURIComponent(item.id)}`,
@@ -3154,6 +3174,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           normalizeCaughtError(error, "Provider could not be updated."),
         );
       } finally {
+        finishPreferenceWrite();
         setPendingPreferenceIds((current) => {
           const next = new Set(current);
           next.delete(item.id);

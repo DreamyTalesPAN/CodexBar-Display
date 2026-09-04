@@ -859,6 +859,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testRunSetupAgainWaitsForAPendingProviderToggle(
+      browser,
+      appContext.appUrl,
+    );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testMacAppUpdatePrecedesFirmwareUpdate(browser, appContext.appUrl);
@@ -6529,6 +6533,58 @@ async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
   );
   await page.getByRole("main", { name: "Welcome" }).waitFor({ timeout: 10_000 });
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// A provider toggle can enqueue its Automatic display-pool save only after the
+// preference PATCH answers. Reset must wait for that whole operation, not just
+// for display writes that happened to exist when the button was pressed.
+async function testRunSetupAgainWaitsForAPendingProviderToggle(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const timeline = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    preferencePatchDelayMs: 1500,
+    searchDelayMs: 300,
+    searchDevices: [],
+    onRequest: (pathname, method) => {
+      if (
+        (pathname.startsWith("/v1/preferences/") && method === "PATCH") ||
+        (pathname === "/v1/setup/reset" && method === "POST")
+      ) {
+        timeline.push({ pathname, at: Date.now() });
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("switch", { name: "Codex" }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname.startsWith("/v1/preferences/")),
+    "switching a provider in Settings must save it",
+  );
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
+    "Run setup again must reset once the provider toggle has settled",
+    20_000,
+  );
+  const preferenceAt = timeline.find((entry) =>
+    entry.pathname.startsWith("/v1/preferences/"),
+  ).at;
+  const resetAt = timeline.find(
+    (entry) => entry.pathname === "/v1/setup/reset",
+  ).at;
+  assert(
+    resetAt - preferenceAt >= 1_400,
+    `the reset must wait for the pending provider toggle, but ran ${resetAt - preferenceAt}ms after it started`,
+  );
+  await page.getByRole("main", { name: "Welcome" }).waitFor({ timeout: 10_000 });
   await page.close();
 }
 

@@ -3432,3 +3432,15 @@ issue scope, or release permission never implies UI permission.
   it, so a returning setup cannot remain stuck on a false read error.**
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`
   and this approval record.
+
+## 2026-09-04 — Reset waits for provider toggles
+
+- User approval: Same instruction as the entries above: resolve every real Bug
+  Detector finding on PR #331 before reporting the candidate ready to test.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  `Run setup again` is pressed during a provider toggle, its existing Resetting
+  state waits for the provider and resulting Automatic display save before it
+  clears setup, so an old display choice cannot return afterward.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
