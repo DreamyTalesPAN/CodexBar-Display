@@ -572,7 +572,7 @@ function compiledStringBytes(value?: string): number {
   if (!value) {
     return 0;
   }
-  return value.length + 1;
+  return new TextEncoder().encode(value).byteLength + 1;
 }
 
 function compactBindingValue(binding?: string): string | undefined {

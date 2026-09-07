@@ -63,6 +63,24 @@ describe("validateThemeSpec", () => {
     );
   });
 
+  it("counts compiled strings as UTF-8 bytes", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        color: "#FFFFFF",
+        text: "é".repeat(600),
+        type: "text",
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    const result = validateThemeSpec(spec);
+    expect(result.errors).toContain(
+      "Compiled string pool is too large: 1201/1024 bytes.",
+    );
+  });
+
   it("rejects colorStops and valign on the wrong primitive types", () => {
     const colorStopsOnRect = validSpec();
     colorStopsOnRect.primitives[0].colorStops = [{ color: "#EF4444", gte: 0 }];

@@ -2188,6 +2188,23 @@ void testProgressColorStopsFallbackToSolidColor() {
   TEST_ASSERT_EQUAL_UINT16(ParseColor("#00FF00", 0), progress->color);
 }
 
+void testProgressColorStopsPreferLongColorAlias() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-alias",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111",
+       "cs":[{"gte":0,"color":"#22C55E","c":"#EF4444"}]}
+    ]
+  })JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  const RecordedCommand* progress = FirstProgressCommand(sink);
+  TEST_ASSERT_NOT_NULL(progress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), progress->color);
+}
+
 void testProgressColorStopsInvertWhenUsageModeIsUsed() {
   const char* spec = R"JSON({
     "v":1,
@@ -3362,6 +3379,7 @@ int main() {
   RUN_TEST(testProgressColorStopsSelectFillByPercent);
   RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);
+  RUN_TEST(testProgressColorStopsPreferLongColorAlias);
   RUN_TEST(testProgressColorStopsCompileRejectsTooManyEntries);
   RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);

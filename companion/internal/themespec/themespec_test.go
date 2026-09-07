@@ -667,6 +667,29 @@ func TestValidateRejectsInvalidProgressColorStops(t *testing.T) {
 	}
 }
 
+func TestParseRejectsMissingProgressColorStopThreshold(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "missing",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"c":"#EF4444"}]}]}`,
+		},
+		{
+			name: "null",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":null,"c":"#EF4444"}]}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := Parse([]byte(tt.raw)); err == nil || !strings.Contains(err.Error(), "gte is required") {
+				t.Fatalf("expected missing gte error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateRejectsUnknownPrimitiveType(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,

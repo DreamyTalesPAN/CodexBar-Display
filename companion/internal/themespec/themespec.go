@@ -37,9 +37,26 @@ var (
 )
 
 type ColorStop struct {
-	Gte   int    `json:"gte"`
-	Color string `json:"color,omitempty"`
-	C     string `json:"c,omitempty"`
+	Gte    int    `json:"gte"`
+	Color  string `json:"color,omitempty"`
+	C      string `json:"c,omitempty"`
+	gteSet bool
+}
+
+func (s *ColorStop) UnmarshalJSON(data []byte) error {
+	var decoded struct {
+		Gte   *int   `json:"gte"`
+		Color string `json:"color,omitempty"`
+		C     string `json:"c,omitempty"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*s = ColorStop{Color: decoded.Color, C: decoded.C, gteSet: decoded.Gte != nil}
+	if decoded.Gte != nil {
+		s.Gte = *decoded.Gte
+	}
+	return nil
 }
 
 type Primitive struct {
@@ -112,6 +129,9 @@ func Parse(raw []byte) (Spec, json.RawMessage, error) {
 	var spec Spec
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return Spec{}, nil, fmt.Errorf("parse theme spec: %w", err)
+	}
+	if err := rejectMissingColorStopThresholds(spec); err != nil {
+		return Spec{}, nil, err
 	}
 	// Reject before normalize: ThemeSpecRaw is uploaded unchanged, so values
 	// firmware exact-matches (provider keys, valign, #RRGGBB) must already
@@ -484,9 +504,10 @@ func normalizeColorStops(stops []ColorStop) []ColorStop {
 			color = strings.TrimSpace(stop.C)
 		}
 		normalized = append(normalized, ColorStop{
-			Gte:   stop.Gte,
-			Color: color,
-			C:     color,
+			Gte:    stop.Gte,
+			Color:  color,
+			C:      color,
+			gteSet: stop.gteSet,
 		})
 	}
 	sort.SliceStable(normalized, func(i, j int) bool {
@@ -788,6 +809,23 @@ func rejectNonCanonicalInstalledValues(spec Spec) error {
 			}
 			if err := rejectCanonicalColor(stop.C, i, fmt.Sprintf("colorStops[%d].c", j)); err != nil {
 				return err
+			}
+		}
+	}
+	return nil
+}
+
+func rejectMissingColorStopThresholds(spec Spec) error {
+	primitives := spec.Primitives
+	if len(primitives) == 0 {
+		primitives = spec.ShortPrimitives
+	}
+	for i, primitive := range primitives {
+		for _, stops := range [][]ColorStop{primitive.ColorStops, primitive.ShortColorStops} {
+			for j, stop := range stops {
+				if !stop.gteSet {
+					return fmt.Errorf("primitives[%d]: colorStops[%d].gte is required", i, j)
+				}
 			}
 		}
 	}

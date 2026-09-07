@@ -1713,9 +1713,9 @@ inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimiti
       return false;
     }
     const int gte = stop["gte"] | -1;
-    const char* color = JsonStringOrNull(stop["c"]);
+    const char* color = JsonStringOrNull(stop["color"]);
     if (color == nullptr || color[0] == '\0') {
-      color = JsonStringOrNull(stop["color"]);
+      color = JsonStringOrNull(stop["c"]);
     }
     if (gte < 0 || gte > 100 || color == nullptr || color[0] == '\0') {
       return false;
