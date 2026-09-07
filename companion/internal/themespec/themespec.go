@@ -39,48 +39,48 @@ type ColorStop struct {
 }
 
 type Primitive struct {
-	Type             string            `json:"type"`
-	ShortType        string            `json:"t,omitempty"`
-	X                int               `json:"x,omitempty"`
-	Y                int               `json:"y,omitempty"`
-	Width            int               `json:"width,omitempty"`
-	ShortWidth       int               `json:"w,omitempty"`
-	Height           int               `json:"height,omitempty"`
-	ShortHeight      int               `json:"h,omitempty"`
-	Slot             int               `json:"slot,omitempty"`
-	ShortSlot        int               `json:"sl,omitempty"`
-	ProviderSlot     int               `json:"providerSlot,omitempty"`
-	ShortProvSlot    int               `json:"pl,omitempty"`
-	UsageIndex       *int              `json:"usageIndex,omitempty"`
-	ShortUsageIndex  *int              `json:"ui,omitempty"`
-	Text             string            `json:"text,omitempty"`
-	ShortText        string            `json:"v,omitempty"`
-	Binding          string            `json:"binding,omitempty"`
-	ShortBinding     string            `json:"b,omitempty"`
-	FontSize         int               `json:"fontSize,omitempty"`
-	ShortSize        int               `json:"s,omitempty"`
-	Valign           string            `json:"valign,omitempty"`
-	ShortValign      string            `json:"va,omitempty"`
-	Color            string            `json:"color,omitempty"`
-	ShortColor       string            `json:"c,omitempty"`
-	BgColor          string            `json:"bgColor,omitempty"`
-	ShortBg          string            `json:"bg,omitempty"`
-	BorderColor      string            `json:"borderColor,omitempty"`
-	ShortBorder      string            `json:"bc,omitempty"`
-	BorderRadius     int               `json:"borderRadius,omitempty"`
-	ShortRadius      int               `json:"br,omitempty"`
-	AssetPath        string            `json:"assetPath,omitempty"`
-	ShortAsset       string            `json:"a,omitempty"`
-	StateAssets      map[string]string `json:"stateAssets,omitempty"`
-	ShortStateAssets map[string]string `json:"sa,omitempty"`
+	Type                string            `json:"type"`
+	ShortType           string            `json:"t,omitempty"`
+	X                   int               `json:"x,omitempty"`
+	Y                   int               `json:"y,omitempty"`
+	Width               int               `json:"width,omitempty"`
+	ShortWidth          int               `json:"w,omitempty"`
+	Height              int               `json:"height,omitempty"`
+	ShortHeight         int               `json:"h,omitempty"`
+	Slot                int               `json:"slot,omitempty"`
+	ShortSlot           int               `json:"sl,omitempty"`
+	ProviderSlot        int               `json:"providerSlot,omitempty"`
+	ShortProvSlot       int               `json:"pl,omitempty"`
+	UsageIndex          *int              `json:"usageIndex,omitempty"`
+	ShortUsageIndex     *int              `json:"ui,omitempty"`
+	Text                string            `json:"text,omitempty"`
+	ShortText           string            `json:"v,omitempty"`
+	Binding             string            `json:"binding,omitempty"`
+	ShortBinding        string            `json:"b,omitempty"`
+	FontSize            int               `json:"fontSize,omitempty"`
+	ShortSize           int               `json:"s,omitempty"`
+	Valign              string            `json:"valign,omitempty"`
+	ShortValign         string            `json:"va,omitempty"`
+	Color               string            `json:"color,omitempty"`
+	ShortColor          string            `json:"c,omitempty"`
+	BgColor             string            `json:"bgColor,omitempty"`
+	ShortBg             string            `json:"bg,omitempty"`
+	BorderColor         string            `json:"borderColor,omitempty"`
+	ShortBorder         string            `json:"bc,omitempty"`
+	BorderRadius        int               `json:"borderRadius,omitempty"`
+	ShortRadius         int               `json:"br,omitempty"`
+	AssetPath           string            `json:"assetPath,omitempty"`
+	ShortAsset          string            `json:"a,omitempty"`
+	StateAssets         map[string]string `json:"stateAssets,omitempty"`
+	ShortStateAssets    map[string]string `json:"sa,omitempty"`
 	ProviderAssets      map[string]string `json:"providerAssets,omitempty"`
 	ShortProviderAssets map[string]string `json:"pa,omitempty"`
-	ColorStops       []ColorStop       `json:"colorStops,omitempty"`
-	ShortColorStops  []ColorStop       `json:"cs,omitempty"`
-	Data             string            `json:"data,omitempty"`
-	ShortData        string            `json:"d,omitempty"`
-	Palette          []string          `json:"p,omitempty"`
-	Rows             []string          `json:"r,omitempty"`
+	ColorStops          []ColorStop       `json:"colorStops,omitempty"`
+	ShortColorStops     []ColorStop       `json:"cs,omitempty"`
+	Data                string            `json:"data,omitempty"`
+	ShortData           string            `json:"d,omitempty"`
+	Palette             []string          `json:"p,omitempty"`
+	Rows                []string          `json:"r,omitempty"`
 }
 
 type Spec struct {
@@ -603,11 +603,6 @@ func validatePrimitive(p Primitive) error {
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("rect/progress primitive requires width/height > 0")
 		}
-		if p.Type == "progress" {
-			if err := validateColorStops(p); err != nil {
-				return err
-			}
-		}
 	case "gif":
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("gif primitive requires width/height > 0")
@@ -677,6 +672,9 @@ func validatePrimitive(p Primitive) error {
 	if p.BorderColor != "" && !colorPattern.MatchString(p.BorderColor) {
 		return errUnsupportedColor
 	}
+	if err := validateColorStops(p); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -743,6 +741,11 @@ func rejectNonCanonicalInstalledValues(spec Spec) error {
 		primitives = spec.ShortPrimitives
 	}
 	for i, primitive := range primitives {
+		if primitive.Valign != "" || primitive.ShortValign != "" {
+			if primitiveTypeName(primitive) != "text" {
+				return fmt.Errorf("primitives[%d]: valign is only supported on text primitives", i)
+			}
+		}
 		if err := rejectCanonicalValign(primitive.Valign, i, "valign"); err != nil {
 			return err
 		}
@@ -785,16 +788,23 @@ func rejectCanonicalValign(value string, index int, key string) error {
 		return nil
 	}
 	switch value {
-	case "middle", "center", "bottom":
+	case "top", "middle", "center", "bottom":
 		return nil
 	default:
 		return fmt.Errorf(
-			"primitives[%d]: %s %q must be middle, center, or bottom as uploaded",
+			"primitives[%d]: %s %q must be top, middle, center, or bottom as uploaded",
 			index,
 			key,
 			value,
 		)
 	}
+}
+
+func primitiveTypeName(p Primitive) string {
+	if strings.TrimSpace(p.Type) != "" {
+		return expandPrimitiveType(p.Type)
+	}
+	return expandPrimitiveType(p.ShortType)
 }
 
 func rejectCanonicalColor(value string, index int, key string) error {
@@ -817,13 +827,21 @@ func rejectNonCanonicalProviderAssetKeys(spec Spec) error {
 			primitive.ProviderAssets,
 			primitive.ShortProviderAssets,
 		} {
-			for provider := range assets {
+			for provider, assetPath := range assets {
 				canonical := strings.TrimSpace(strings.ToLower(provider))
 				if provider != canonical {
 					return fmt.Errorf(
 						"primitives[%d]: providerAssets key %q must be the lowercase wire provider id",
 						i,
 						provider,
+					)
+				}
+				if assetPath != strings.TrimSpace(assetPath) {
+					return fmt.Errorf(
+						"primitives[%d]: providerAssets[%s] path %q must not have surrounding whitespace",
+						i,
+						provider,
+						assetPath,
 					)
 				}
 			}

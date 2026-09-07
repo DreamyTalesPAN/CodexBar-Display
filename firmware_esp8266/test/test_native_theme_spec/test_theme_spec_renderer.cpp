@@ -37,6 +37,7 @@ using codexbar_display::themespec::kThemeSpecFieldLabel;
 using codexbar_display::themespec::kThemeSpecFieldReset;
 using codexbar_display::themespec::kThemeSpecFieldProvider;
 using codexbar_display::themespec::kThemeSpecFieldSession;
+using codexbar_display::themespec::kThemeSpecFieldUsageMode;
 using codexbar_display::themespec::kThemeSpecFieldUsageWindows;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
@@ -2469,7 +2470,7 @@ void testThemeSpecProviderChangeUsesPartialRenderEvent() {
   RuntimeState state;
   SerialConsumeEvent event;
 
-  const char* firstFrame = R"JSON({"v":2,"provider":"cursor","label":"Cursor","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"themeSpec":{"v":1,"id":"provider-logo","rev":1,"p":[{"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}]}})JSON";
+  const char* firstFrame = R"JSON({"v":2,"provider":"cursor","label":"Cursor","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"themeSpec":{"v":1,"id":"logo-map","rev":1,"p":[{"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}]}})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_FALSE(event.themeSpecPartialRender);
@@ -2482,6 +2483,23 @@ void testThemeSpecProviderChangeUsesPartialRenderEvent() {
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & kThemeSpecFieldProvider) != 0);
   TEST_ASSERT_EQUAL_STRING("claude", state.current.provider.c_str());
+}
+
+void testThemeSpecColorStopsUsageModeChangeUsesPartialRenderEvent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":20,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageMode":"remaining","themeSpec":{"v":1,"id":"stops-map","rev":1,"p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111","cs":[{"gte":75,"c":"#22C55E"},{"gte":0,"c":"#EF4444"}]}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+
+  const char* usedFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":20,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageMode":"used"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & kThemeSpecFieldUsageMode) != 0);
 }
 
 void testLegacyThemeFieldsAreIgnored() {
@@ -3321,6 +3339,7 @@ int main() {
   RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testThemeSpecProviderChangeUsesPartialRenderEvent);
+  RUN_TEST(testThemeSpecColorStopsUsageModeChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testStoredThemeBootActivationRestoresFrameAndFullRenderIntent);

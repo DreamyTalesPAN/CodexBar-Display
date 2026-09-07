@@ -571,6 +571,14 @@ inline bool ThemeSpecUsesActivity(const String& raw) {
          raw.indexOf("\"sa\"") >= 0;
 }
 
+inline bool ThemeSpecUsesProviderAssets(const String& raw) {
+  return raw.indexOf("providerAssets") >= 0 || raw.indexOf("\"pa\":") >= 0;
+}
+
+inline bool ThemeSpecUsesColorStops(const String& raw) {
+  return raw.indexOf("colorStops") >= 0 || raw.indexOf("\"cs\":") >= 0;
+}
+
 inline bool ThemeSpecUsesTokenFields(const String& raw) {
   return ThemeSpecUsesBinding(raw, "sessionTokens", "st") ||
          ThemeSpecUsesBinding(raw, "weekTokens", "wt") ||
@@ -753,7 +761,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
                          ThemeSpecUsesBinding(raw, "weekly", "w") ||
                          ThemeSpecUsesBinding(raw, "reset", "r") ||
                          usesUsageWindows;
-  return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
+  return ((ThemeSpecUsesBinding(raw, "provider", "pr") || ThemeSpecUsesProviderAssets(raw)) &&
+          previous.provider != next.provider) ||
          (usesLabel &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
@@ -771,7 +780,7 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
            (previous.usageUnavailable != next.usageUnavailable ||
             previous.sessionUnavailable != next.sessionUnavailable ||
             previous.weeklyUnavailable != next.weeklyUnavailable)) ||
-         (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
+         ((ThemeSpecUsesBinding(raw, "usageMode", "u") || ThemeSpecUsesColorStops(raw)) &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
          (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
          FrameTokenStatsVisualChanged(previous, next, raw);

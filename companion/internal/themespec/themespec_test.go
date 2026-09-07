@@ -296,6 +296,38 @@ func TestParseAcceptsCompactValign(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsExplicitTopValign(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"va-top",
+		"rev":1,
+		"p":[
+			{"t":"tx","x":0,"y":0,"b":"l","va":"top"}
+		]
+	}`)
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse explicit top valign: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected va=top to validate, got %v", err)
+	}
+}
+
+func TestParseRejectsValignOnNonText(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"va-rect",
+		"rev":1,
+		"p":[
+			{"t":"r","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","va":"middle"}
+		]
+	}`)
+	if _, _, err := Parse(raw); err == nil {
+		t.Fatal("expected valign on a rect to fail Parse")
+	}
+}
+
 func TestValidateAcceptsCompactActivityBinding(t *testing.T) {
 	raw := []byte(`{
 		"v":1,
@@ -429,6 +461,20 @@ func TestParseRejectsNonCanonicalProviderAssetKeys(t *testing.T) {
 	}
 }
 
+func TestParseRejectsPaddedProviderAssetPaths(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"logo-map",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":8,"h":8,"a":"/themes/u/x.cbi","pa":{"codex":" /themes/u/x.cbi "}}
+		]
+	}`)
+	if _, _, err := Parse(raw); err == nil {
+		t.Fatal("expected padded providerAssets path to fail Parse")
+	}
+}
+
 func TestValidateRejectsTooManyProviderAssets(t *testing.T) {
 	providerAssets := make(map[string]string, MaxProviderAssets+1)
 	for i := 0; i < MaxProviderAssets+1; i++ {
@@ -481,7 +527,7 @@ func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
 			},
 		},
 		{
-			name: "gif primitive",
+			name:           "gif primitive",
 			providerAssets: map[string]string{"codex": "/themes/u/codex.gif"},
 			primitiveType:  "gif",
 			assetPath:      "/themes/u/fallback.gif",
@@ -570,6 +616,10 @@ func TestValidateRejectsInvalidProgressColorStops(t *testing.T) {
 		{
 			name: "gte out of range",
 			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":101,"c":"#EF4444"}]}]}`,
+		},
+		{
+			name: "on rect",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"r","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":0,"c":"#EF4444"}]}]}`,
 		},
 	}
 	for _, tt := range tests {

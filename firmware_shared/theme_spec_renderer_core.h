@@ -1737,6 +1737,9 @@ inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimiti
   for (uint8_t i = 0; i < count; ++i) {
     out.colorStops[i] = compiled[i];
   }
+  if (count > 0) {
+    out.liveFields |= kThemeSpecFieldUsageMode;
+  }
   return true;
 }
 
