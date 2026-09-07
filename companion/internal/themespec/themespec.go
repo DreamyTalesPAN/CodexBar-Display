@@ -18,6 +18,10 @@ const (
 	// MaxProviderAssets matches firmware kMaxCompiledProviderAssets: total
 	// provider→path entries across the whole ThemeSpec, not per sprite.
 	MaxProviderAssets = 16
+	// MaxCompiledThemeSpecStringBytes matches firmware
+	// kMaxCompiledThemeSpecStringBytes: null-terminated compiled strings
+	// (bindings, text, asset paths, provider keys/paths, pixel data).
+	MaxCompiledThemeSpecStringBytes = 1024
 )
 
 var (
@@ -154,6 +158,13 @@ func Validate(spec Spec) error {
 			"providerAssets total entries exceed firmware limit: count=%d limit=%d",
 			totalProviderAssets,
 			MaxProviderAssets,
+		)
+	}
+	if stringBytes := compiledThemeSpecStringBytes(spec); stringBytes > MaxCompiledThemeSpecStringBytes {
+		return fmt.Errorf(
+			"theme spec compiled string pool exceeds firmware limit: bytes=%d limit=%d",
+			stringBytes,
+			MaxCompiledThemeSpecStringBytes,
 		)
 	}
 
@@ -848,6 +859,43 @@ func rejectNonCanonicalProviderAssetKeys(spec Spec) error {
 		}
 	}
 	return nil
+}
+
+func addCompiledStringStorage(value string, stringBytes *int) {
+	if value == "" {
+		return
+	}
+	*stringBytes += len(value) + 1
+}
+
+// compiledThemeSpecStringBytes mirrors firmware CountCompiledThemeSpecStorage.
+func compiledThemeSpecStringBytes(spec Spec) int {
+	stringBytes := 0
+	for _, primitive := range spec.Primitives {
+		switch primitive.Type {
+		case "text":
+			addCompiledStringStorage(primitive.Binding, &stringBytes)
+			addCompiledStringStorage(primitive.Text, &stringBytes)
+		case "progress":
+			addCompiledStringStorage(primitive.Binding, &stringBytes)
+		case "gif", "sprite", "image":
+			addCompiledStringStorage(primitive.AssetPath, &stringBytes)
+			if primitive.StateAssets != nil {
+				addCompiledStringStorage(primitive.StateAssets["idle"], &stringBytes)
+				addCompiledStringStorage(primitive.StateAssets["coding"], &stringBytes)
+			}
+			if primitive.Type == "gif" {
+				break
+			}
+			for provider, assetPath := range primitive.ProviderAssets {
+				addCompiledStringStorage(provider, &stringBytes)
+				addCompiledStringStorage(assetPath, &stringBytes)
+			}
+		case "pixels":
+			addCompiledStringStorage(primitive.Data, &stringBytes)
+		}
+	}
+	return stringBytes
 }
 
 func validateProviderAssetReferences(p Primitive) error {

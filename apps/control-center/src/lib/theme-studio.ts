@@ -146,6 +146,7 @@ const MAX_STORED_THEME_SPEC_BYTES = 4096;
 const MAX_STORED_SCREENSAVER_SPEC_BYTES = 2048;
 const MAX_THEME_PRIMITIVES = 32;
 const MAX_PROVIDER_ASSETS = 16;
+const MAX_COMPILED_THEME_SPEC_STRING_BYTES = 1024;
 const MAX_GIF_BYTES = 24 * 1024;
 const MAX_GIF_WIDTH = 80;
 const MAX_GIF_HEIGHT = 80;
@@ -567,6 +568,51 @@ function screensaverAssetPath(path: string): string {
   )}${pathSuffix}${extension}`;
 }
 
+function compiledStringBytes(value?: string): number {
+  if (!value) {
+    return 0;
+  }
+  return value.length + 1;
+}
+
+function compactBindingValue(binding?: string): string | undefined {
+  if (!binding) {
+    return undefined;
+  }
+  return COMPACT_BINDINGS[binding] || binding;
+}
+
+// Mirrors firmware CountCompiledThemeSpecStorage: null-terminated compiled
+// strings, using the compact binding spellings Theme Studio actually emits.
+function compiledThemeSpecStringBytes(
+  primitives: ThemeStudioPrimitive[],
+): number {
+  let stringBytes = 0;
+  for (const primitive of primitives) {
+    if (primitive.type === "text") {
+      stringBytes += compiledStringBytes(compactBindingValue(primitive.binding));
+      stringBytes += compiledStringBytes(primitive.text);
+    } else if (primitive.type === "progress") {
+      stringBytes += compiledStringBytes(compactBindingValue(primitive.binding));
+    } else if (primitive.type === "gif" || primitive.type === "sprite") {
+      stringBytes += compiledStringBytes(primitive.assetPath);
+      stringBytes += compiledStringBytes(primitive.stateAssets?.idle);
+      stringBytes += compiledStringBytes(primitive.stateAssets?.coding);
+      if (primitive.type === "sprite") {
+        for (const [provider, assetPath] of Object.entries(
+          primitive.providerAssets || {},
+        )) {
+          stringBytes += compiledStringBytes(provider);
+          stringBytes += compiledStringBytes(assetPath);
+        }
+      }
+    } else if (primitive.type === "pixels") {
+      stringBytes += compiledStringBytes(primitive.data);
+    }
+  }
+  return stringBytes;
+}
+
 export function validateThemeSpec(
   spec: ThemeStudioSpec,
   assets: Record<string, ThemeStudioAsset> = {},
@@ -607,6 +653,13 @@ export function validateThemeSpec(
   if (providerAssetCount > MAX_PROVIDER_ASSETS) {
     errors.push(
       `Too many provider assets: ${providerAssetCount}/${MAX_PROVIDER_ASSETS}.`,
+    );
+  }
+
+  const stringPoolBytes = compiledThemeSpecStringBytes(normalized.primitives);
+  if (stringPoolBytes > MAX_COMPILED_THEME_SPEC_STRING_BYTES) {
+    errors.push(
+      `Compiled string pool is too large: ${stringPoolBytes}/${MAX_COMPILED_THEME_SPEC_STRING_BYTES} bytes.`,
     );
   }
 

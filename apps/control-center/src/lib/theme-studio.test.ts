@@ -38,6 +38,31 @@ describe("validateThemeSpec", () => {
     expect(result.themeSpecPath).toMatch(/^\/themes\/u\//);
   });
 
+  it("rejects provider maps that overflow the firmware string pool", () => {
+    const spec = validSpec();
+    const keyPrefix = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const path = `/themes/u/${"b".repeat(17)}.cbi`;
+    const providerAssets: Record<string, string> = {};
+    for (let i = 0; i < 16; i += 1) {
+      providerAssets[`${keyPrefix}${String(i).padStart(2, "0")}`] = path;
+    }
+    spec.primitives = [
+      {
+        height: 8,
+        providerAssets,
+        type: "sprite",
+        width: 8,
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    const result = validateThemeSpec(spec);
+    expect(result.errors.some((error) => error.includes("string pool"))).toBe(
+      true,
+    );
+  });
+
   it("rejects colorStops and valign on the wrong primitive types", () => {
     const colorStopsOnRect = validSpec();
     colorStopsOnRect.primitives[0].colorStops = [{ color: "#EF4444", gte: 0 }];
@@ -220,17 +245,17 @@ describe("validateThemeSpec", () => {
 
   it("enforces the central 2 KB screensaver budget without motion lint", () => {
     const spec = validSpec();
-    spec.primitives = [
-      {
-        color: "#FFFFFF",
-        fontSize: 1,
-        text: "x".repeat(2300),
-        type: "text",
-        width: 240,
-        x: 0,
-        y: 0,
-      },
-    ];
+    spec.primitives = Array.from({ length: 32 }, (_, index) => ({
+      bgColor: "#000000",
+      borderColor: "#111111",
+      borderRadius: 2,
+      color: "#FFFFFF",
+      height: 20,
+      type: "rect" as const,
+      width: 20,
+      x: index % 12,
+      y: Math.floor(index / 12),
+    }));
 
     const live = validateThemeSpec(spec);
     const screensaver = validateThemeSpec(spec, {}, "screensaver");

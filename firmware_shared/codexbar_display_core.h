@@ -572,11 +572,11 @@ inline bool ThemeSpecUsesActivity(const String& raw) {
 }
 
 inline bool ThemeSpecUsesProviderAssets(const String& raw) {
-  return raw.indexOf("providerAssets") >= 0 || raw.indexOf("\"pa\":") >= 0;
+  return ThemeSpecUsesBinding(raw, "providerAssets", "pa");
 }
 
 inline bool ThemeSpecUsesColorStops(const String& raw) {
-  return raw.indexOf("colorStops") >= 0 || raw.indexOf("\"cs\":") >= 0;
+  return ThemeSpecUsesBinding(raw, "colorStops", "cs");
 }
 
 inline bool ThemeSpecUsesTokenFields(const String& raw) {

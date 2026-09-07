@@ -501,6 +501,38 @@ func TestValidateRejectsTooManyProviderAssets(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsProviderAssetsStringPoolOverflow(t *testing.T) {
+	// 16 × (32-char key + NUL + 31-char path + NUL) = 1040, over the 1024-byte
+	// compiled string pool, even though the 16-entry cap is satisfied.
+	providerAssets := make(map[string]string, MaxProviderAssets)
+	key := strings.Repeat("a", 32)
+	path := "/themes/u/" + strings.Repeat("b", 17) + ".cbi"
+	if len(key) != 32 || len(path) != 31 {
+		t.Fatalf("fixture lengths: key=%d path=%d", len(key), len(path))
+	}
+	for i := 0; i < MaxProviderAssets; i++ {
+		providerAssets[fmt.Sprintf("%s%02d", key[:30], i)] = path
+	}
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "pool-overflow",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:           "sprite",
+				X:              0,
+				Y:              0,
+				Width:          8,
+				Height:         8,
+				ProviderAssets: providerAssets,
+			},
+		},
+	}
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "string pool") {
+		t.Fatalf("expected compiled string pool error, got %v", err)
+	}
+}
+
 func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
 	tests := []struct {
 		name           string
