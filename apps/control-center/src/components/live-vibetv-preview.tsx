@@ -21,9 +21,12 @@ import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
+  onPreviewReady?: () => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
+
+const PREVIEW_HANDOVER_MS = 3000;
 
 export type ThemePackAsset = {
   contentType: string;
@@ -326,6 +329,7 @@ export async function parseLatestDisplayFrameResponse(
 export function LiveVibeTVPreview({
   device,
   displayFrame,
+  onPreviewReady,
   updateOwnedDisconnect = false,
   usage,
 }: LiveVibeTVPreviewProps) {
@@ -454,18 +458,21 @@ export function LiveVibeTVPreview({
     };
   }, [themeId, themeSpecHash, themeSpecPath, packRetryNonce]);
 
+  const previewReady = Boolean(deviceConnected && pack?.spec && frame);
+  useEffect(() => {
+    if (!previewReady || !onPreviewReady) {
+      return;
+    }
+    const timer = window.setTimeout(onPreviewReady, PREVIEW_HANDOVER_MS);
+    return () => window.clearTimeout(timer);
+  }, [onPreviewReady, previewReady]);
+
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
         {updateOwnedDisconnect ? (
           <FirmwareUpdateRestarting />
-        ) : awaitingProviderSetup ? (
-          <ThemeSpecLoading
-            message="Waiting for AI setup…"
-            status="loading"
-            themeId={themeId}
-          />
-        ) : !deviceConnected || (!deviceReady && !waitingForUsage && !frame) ? (
+        ) : !deviceConnected ? (
           <ThemePreviewOffline />
         ) : pack?.spec && frame ? (
           <ThemeSpecSVG
@@ -476,6 +483,14 @@ export function LiveVibeTVPreview({
           />
         ) : frame ? (
           <ThemeSpecLoading status={packStatus} themeId={themeId} />
+        ) : awaitingProviderSetup ? (
+          <ThemeSpecLoading
+            message="Waiting for AI setup…"
+            status="loading"
+            themeId={themeId}
+          />
+        ) : !deviceReady && !waitingForUsage ? (
+          <ThemePreviewOffline />
         ) : waitingForUsage ? (
           <ThemeSpecLoading
             message="Waiting for usage…"

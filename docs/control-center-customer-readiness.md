@@ -78,7 +78,7 @@ curl -fsS http://127.0.0.1:47832/v1/diagnostics
 Search for VibeTV devices without changing them:
 
 ```bash
-curl -fsS -X POST http://127.0.0.1:47832/v1/device/discover \
+curl -fsS -X POST http://127.0.0.1:47832/v1/device/search \
   -H 'Content-Type: application/json' \
   -d '{}'
 ```

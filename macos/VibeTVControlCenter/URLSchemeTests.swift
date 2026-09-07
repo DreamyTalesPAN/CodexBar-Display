@@ -49,6 +49,22 @@ func runURLSchemeTests() {
         ) == "“node” (PID 83979) is using VibeTV’s local port 47832. Quit the app or stop the process, then click Try again.",
         "the native failure screen must identify the blocking process and pid"
     )
+    let nativeAIPrompt = nativeSetupAIFixPrompt(
+        appVersion: "1.0.99",
+        appBuild: "199",
+        setupTitle: "Starting Control Center",
+        setupDetail: "Preparing the Mac App.",
+        macOS: "Version 26.0"
+    )
+    require(
+        nativeAIPrompt.contains("DreamyTalesPAN/CodexBar-Display")
+            && nativeAIPrompt.contains("macos/VibeTVControlCenter/main.swift")
+            && nativeAIPrompt.contains("1.0.99 (199)")
+            && nativeAIPrompt.contains("Starting Control Center — Preparing the Mac App.")
+            && nativeAIPrompt.contains("Do not clone the repository")
+            && nativeAIPrompt.contains("Never commit, push, or open a pull request"),
+        "the native welcome Help menu must copy the approved Ask AI recovery prompt"
+    )
     let repairStatus = InstallationStatus(
         title: "Usage service needs repair",
         detail: "Repair the usage service before continuing.",
@@ -349,6 +365,12 @@ func runURLSchemeTests() {
             "unexpected open-CodexBar action must be rejected: \(rejectedOpenURL)"
         )
     }
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://open-sign-in?url=https%3A%2F%2Fchatgpt.com")!
+        ) == nil,
+        "provider sign-in must stay inside CodexBar instead of opening a website"
+    )
     require(
         nativeControlCenterAction(
             for: URL(string: "vibetv://check-for-updates")!

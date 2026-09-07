@@ -65,64 +65,6 @@ const device: ThemeLibraryDeviceInfo = {
   },
 };
 
-function renderThemeSetup({
-  busyAction = null,
-  readinessError,
-  setupDevice = device,
-  setupTheme = theme,
-  firmwareStatus = "update_available",
-}: {
-  busyAction?: string | null;
-  readinessError?: { message: string; nextAction?: string };
-  setupDevice?: ThemeLibraryDeviceInfo;
-  setupTheme?: ThemeProduct;
-  firmwareStatus?:
-    | "update_available"
-    | "check_failed"
-    | "no_board_release";
-}) {
-  return renderToStaticMarkup(
-    <ThemeLibraryScreen
-      busyAction={busyAction}
-      companionStatus="online"
-      device={setupDevice}
-      firmwareUpdate={{
-        checkedAt: "2026-07-29T14:00:00Z",
-        installedFirmware: setupDevice.firmware,
-        latestFirmware:
-          firmwareStatus === "update_available" ? "1.0.40" : undefined,
-        updateAvailable: firmwareStatus === "update_available",
-        status: firmwareStatus,
-        message:
-          firmwareStatus === "update_available"
-            ? "Firmware update available."
-            : "No update is available for this VibeTV.",
-      }}
-      firmwareUpdateStatus={
-        firmwareStatus === "update_available"
-          ? null
-          : {
-              phase: "error",
-              message: "The update could not be checked.",
-              retryAllowed: true,
-            }
-      }
-      onInstallCustomTheme={async () => false}
-      onInstallFirmwareUpdate={vi.fn()}
-      onInstallTheme={vi.fn()}
-      onCreateSupportReport={vi.fn()}
-      onSaveStandby={vi.fn()}
-      onSelectTheme={vi.fn()}
-      selectedThemeId=""
-      readinessError={readinessError}
-      setupMode
-      storefrontConfigured
-      themeInstallEnabled
-      themes={[setupTheme]}
-    />,
-  );
-}
-
 function renderLibrary(
   usage: ThemeStudioUsage,
   catalog = themes,
@@ -152,7 +94,7 @@ function renderLibrary(
   );
 }
 
-describe("theme setup firmware update eligibility", () => {
+describe("themeNeedsUpgradeableFirmware", () => {
   it("recognizes a known missing theme capability as firmware-upgradeable", () => {
     expect(themeNeedsUpgradeableFirmware(theme, device, true)).toBe(true);
   });
@@ -182,14 +124,6 @@ describe("theme setup firmware update eligibility", () => {
         true,
       ),
     ).toBe(false);
-    const html = renderThemeSetup({
-      setupTheme: {
-        ...theme,
-        compatibleBoards: ["esp32_lilygo_t_display_s3"],
-      },
-    });
-    expect(html).not.toContain("<span>Update VibeTV</span>");
-    expect(html).toContain("Not Supported");
   });
 
   it("does not claim an unknown capability can be fixed by firmware", () => {
@@ -203,120 +137,45 @@ describe("theme setup firmware update eligibility", () => {
         true,
       ),
     ).toBe(false);
-    const html = renderThemeSetup({
-      setupTheme: {
-        ...theme,
-        requiredCapabilities: ["future-theme-protocol"],
-      },
-    });
-    expect(html).not.toContain("<span>Update VibeTV</span>");
-    expect(html).toContain("Not Supported");
   });
 
   it("keeps the update path unavailable when theme installs are disabled", () => {
     expect(themeNeedsUpgradeableFirmware(theme, device, false)).toBe(false);
   });
 
-  it.each(["check_failed", "no_board_release"] as const)(
-    "keeps firmware writes unavailable when the update status is %s",
-    (firmwareStatus) => {
-      const html = renderThemeSetup({ firmwareStatus });
-      expect(html).toContain("VibeTV update needs attention");
-      expect(html).not.toContain("<span>Update VibeTV</span>");
-    },
-  );
-
-  it("shows one explicit write action for a known available update", () => {
-    const html = renderThemeSetup({});
-    expect(html).toContain("Update VibeTV to continue");
-    expect(html.match(/<span>Update VibeTV<\/span>/g)).toHaveLength(1);
-  });
-});
-
-describe("mandatory theme setup readiness", () => {
-  const compatibleMissingThemeDevice: ThemeLibraryDeviceInfo = {
-    ...device,
-    firmware: "1.0.40",
-    capabilities: {
-      theme: {
-        supportsThemeSpecV1: true,
-        supportsUsageSlotsV1: true,
-      },
-    },
-  };
-
-  it("shows one shared activity state without unexplained Wait labels", () => {
-    const html = renderThemeSetup({
-      busyAction: "firmware-check",
-      firmwareStatus: "check_failed",
-      setupDevice: compatibleMissingThemeDevice,
-    });
-
-    expect(html).toContain('role="status"');
-    expect(html.match(/data-slot="spinner"/g)).toHaveLength(1);
-    expect(html).toContain("Checking theme readiness");
-    expect(html).toContain(
-      "VibeTV is checking firmware support before theme install becomes available.",
-    );
-    expect(html).toContain('disabled=""');
-    expect(html).toContain(">Install</button>");
-    expect(html).not.toContain(">Wait</button>");
-  });
-
-  it("automatically exposes Install when the readiness action finishes", () => {
-    const html = renderThemeSetup({
-      firmwareStatus: "check_failed",
-      setupDevice: compatibleMissingThemeDevice,
-    });
-    const installButton = html.match(/<button[^>]*>Install<\/button>/)?.[0];
-
-    expect(html).not.toContain('role="status"');
-    expect(installButton).toBeTruthy();
-    expect(installButton).not.toContain('disabled=""');
-  });
-
-  it("turns a bounded readiness failure into a support action", () => {
-    const html = renderThemeSetup({
-      firmwareStatus: "update_available",
-      readinessError: {
-        message: "Mac App took too long to answer.",
-        nextAction: "Keep VibeTV powered on and create a support report.",
-      },
-      setupDevice: compatibleMissingThemeDevice,
-    });
-
-    expect(html).toContain("Theme setup needs attention");
-    expect(html).toContain(
-      "Keep VibeTV powered on and create a support report.",
-    );
-    expect(html).toContain(">Create support report</button>");
-    expect(html).not.toContain(">Wait</button>");
-  });
-
-  it("leaves provider recovery to the provider screen", () => {
-    const html = renderThemeSetup({
-      busyAction: "providers-retry",
-      firmwareStatus: "check_failed",
-      setupDevice: compatibleMissingThemeDevice,
-    });
-
-    expect(html).not.toContain("Checking theme readiness");
-    expect(html).not.toContain("Checking VibeTV readiness");
-    expect(html).not.toContain(">Wait</button>");
-  });
-
-  it("keeps theme choices in one vertical list", () => {
-    const html = renderThemeSetup({});
-    const itemGroup = html.match(
-      /<div role="list" data-slot="item-group" class="([^"]+)"/,
-    )?.[1];
-
-    expect(itemGroup).toContain("flex-col");
-    expect(itemGroup).not.toContain("grid-cols");
-  });
 });
 
 describe("ThemeLibraryScreen Appearance sections", () => {
+  // The setup arm used to wrap or hide each of these; nothing asserted the
+  // Appearance arm, so unwrapping it could have changed the tab in silence.
+  it("makes the preview reachable and offers Edit on every theme", () => {
+    const html = renderLibrary("live");
+
+    expect(html).toContain('aria-label="Preview Live Theme"');
+    expect(html).toContain("<span>Edit</span>");
+  });
+
+  it("says Wait rather than a blocked label while another action runs", () => {
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction="install"
+        companionStatus="online"
+        device={null}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSaveStandby={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        storefrontConfigured={false}
+        themeInstallEnabled={false}
+        themes={themes}
+        usage="live"
+      />,
+    );
+
+    expect(html).toContain("Wait");
+  });
+
   it("keeps the existing Themes list restricted to live packs", () => {
     const html = renderLibrary("live");
 

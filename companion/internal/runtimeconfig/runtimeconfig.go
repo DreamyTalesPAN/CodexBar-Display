@@ -40,11 +40,18 @@ type permissionMigrationCache struct {
 var processPermissionMigrations permissionMigrationCache
 
 type Config struct {
-	Theme        string        `json:"theme,omitempty"`
-	DeviceTarget string        `json:"deviceTarget,omitempty"`
-	DeviceToken  string        `json:"deviceToken,omitempty"`
-	DeviceID     string        `json:"deviceId,omitempty"`
-	KnownDevices []KnownDevice `json:"knownDevices,omitempty"`
+	Theme                          string                 `json:"theme,omitempty"`
+	DeviceTarget                   string                 `json:"deviceTarget,omitempty"`
+	DeviceToken                    string                 `json:"deviceToken,omitempty"`
+	DeviceID                       string                 `json:"deviceId,omitempty"`
+	KnownDevices                   []KnownDevice          `json:"knownDevices,omitempty"`
+	ProviderDisplay                *ProviderDisplayConfig `json:"providerDisplay,omitempty"`
+	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
+}
+
+type ProviderDisplayConfig struct {
+	Mode        string   `json:"mode"`
+	ProviderIDs []string `json:"providerIds"`
 }
 
 type KnownDevice struct {
@@ -315,11 +322,91 @@ func (cfg *Config) Normalize() {
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	if cfg.ProviderDisplay != nil {
+		cfg.ProviderDisplay.Normalize()
+	}
 	cfg.normalizeKnownDevices()
+}
+
+func (cfg *ProviderDisplayConfig) Normalize() {
+	if cfg == nil {
+		return
+	}
+	cfg.Mode = strings.TrimSpace(strings.ToLower(cfg.Mode))
+	seen := make(map[string]struct{}, len(cfg.ProviderIDs))
+	providerIDs := make([]string, 0, len(cfg.ProviderIDs))
+	for _, raw := range cfg.ProviderIDs {
+		providerID := strings.TrimSpace(strings.ToLower(raw))
+		if providerID == "" {
+			continue
+		}
+		if _, ok := seen[providerID]; ok {
+			continue
+		}
+		seen[providerID] = struct{}{}
+		providerIDs = append(providerIDs, providerID)
+	}
+	cfg.ProviderIDs = providerIDs
+}
+
+// ProviderSelectionSetupIsComplete preserves completed legacy installations
+// while requiring the provider step for a new or explicitly restarted setup.
+func (cfg Config) ProviderSelectionSetupIsComplete() bool {
+	if cfg.ProviderSelectionSetupComplete != nil {
+		return *cfg.ProviderSelectionSetupComplete
+	}
+	return cfg.hasPairedDevice()
+}
+
+// hasPairedDevice reports whether this config was already set up, before the
+// completion flag existed to say so. The device id is the modern answer, but a
+// VibeTV that never reported one leaves the target and token behind -- and
+// reading that as "never set up" sends a customer who has been using VibeTV for
+// months back through onboarding on the update that adds the flag.
+//
+// The token is what makes the target proof. Discovery writes a target of its
+// own before pairing has produced anything, so a setup abandoned after the
+// search leaves one behind too -- and counting that as finished carried the
+// customer past the provider and display steps, or, with no provider able to
+// render usage yet, held them on the device step with nothing that could
+// release it.
+func (cfg Config) hasPairedDevice() bool {
+	if strings.TrimSpace(cfg.DeviceID) != "" {
+		return true
+	}
+	return strings.TrimSpace(cfg.DeviceTarget) != "" &&
+		strings.TrimSpace(cfg.DeviceToken) != ""
+}
+
+// ProviderDisplayPredatesSetup reports an installation that was set up before
+// the display choice existed to be made. It has no selection stored and never
+// had a step that could store one, and rule 4 of
+// docs/control-center-ui-principles.md says an existing healthy setup opens
+// Overview without extra confirmation -- so it is not asked for one now. A new
+// customer has neither the flag nor a paired VibeTV, and a reset clears both,
+// so a setup that is actually being run still asks.
+func (cfg Config) ProviderDisplayPredatesSetup() bool {
+	return cfg.ProviderDisplay == nil &&
+		cfg.ProviderSelectionSetupComplete == nil &&
+		cfg.hasPairedDevice()
+}
+
+func (cfg *Config) SetProviderSelectionSetupComplete(complete bool) {
+	if cfg == nil {
+		return
+	}
+	cfg.ProviderSelectionSetupComplete = new(bool)
+	*cfg.ProviderSelectionSetupComplete = complete
 }
 
 func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	device = normalizeKnownDevice(device)
+	// Stamping the flag for the first time must not overwrite what the config
+	// already implied: a legacy install being pinned to a stable identity has a
+	// target and no id, and writing false here made the loss permanent.
+	if cfg.ProviderSelectionSetupComplete == nil && !cfg.hasPairedDevice() {
+		cfg.SetProviderSelectionSetupComplete(false)
+	}
 	cfg.DeviceID = device.DeviceID
 	cfg.DeviceTarget = device.Target
 	cfg.DeviceToken = device.DeviceToken

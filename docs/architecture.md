@@ -82,7 +82,7 @@ Important endpoints include:
 
 - `GET /v1/status`
 - `GET /v1/usage`
-- `POST /v1/device/discover`
+- `POST /v1/device/search`
 - `POST /v1/device/repair`
 - `POST /v1/themes/install`
 - `POST /v1/firmware/install`

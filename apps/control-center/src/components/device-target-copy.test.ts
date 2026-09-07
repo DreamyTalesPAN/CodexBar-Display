@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  deviceTargetHelpText,
-  formatDeviceTargetInput,
+  candidateAddress,
   normalizeManualDeviceTarget,
 } from "./device-target-copy";
 
@@ -15,16 +14,6 @@ describe("VibeTV address input", () => {
     );
   });
 
-  it("keeps transport details out of the input", () => {
-    expect(formatDeviceTargetInput("http://192.168.178.72/hello")).toBe(
-      "192.168.178.72",
-    );
-    expect(formatDeviceTargetInput("https://VibeTV.local/setup")).toBe(
-      "vibetv.local",
-    );
-    expect(formatDeviceTargetInput("vibetv.local")).toBe("vibetv.local");
-  });
-
   it.each([
     "",
     "vibetv.local",
@@ -36,12 +25,8 @@ describe("VibeTV address input", () => {
     expect(normalizeManualDeviceTarget(value)).toBeNull();
   });
 
-  it("keeps unreachable and invalid input guidance customer-readable", () => {
-    expect(deviceTargetHelpText({ code: "device_not_found" })).toContain(
-      "did not answer",
-    );
-    expect(deviceTargetHelpText({ code: "invalid_device_target" })).toContain(
-      "only the IP address",
-    );
+  it("shows the customer the address without its transport details", () => {
+    expect(candidateAddress("http://192.168.178.72")).toBe("192.168.178.72");
+    expect(candidateAddress("192.168.178.72/")).toBe("192.168.178.72");
   });
 });

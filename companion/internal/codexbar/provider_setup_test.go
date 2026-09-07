@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
@@ -91,9 +89,6 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	if mode := fileMode(t, path); mode.Perm() != 0o600 {
 		t.Fatalf("expected config file 0600, got %o", mode.Perm())
 	}
-	if !firstRunProviderSetupPending(path) {
-		t.Fatal("new config must remain pending until the collector's first usage answer")
-	}
 }
 
 func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
@@ -121,9 +116,6 @@ func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T
 	}
 	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("invalid config was published: %v", statErr)
-	}
-	if _, statErr := os.Stat(firstRunMarkerPath(path)); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("invalid config marker was published: %v", statErr)
 	}
 }
 
@@ -158,104 +150,6 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 	data, err := os.ReadFile(standard)
 	if err != nil || string(data) != `{"existing":true}` {
 		t.Fatalf("existing config changed: data=%q err=%v", data, err)
-	}
-}
-
-func TestEnsureConfigDiscardsFirstRunMarkerWhenAnotherConfigWins(t *testing.T) {
-	t.Setenv("CODEXBAR_CONFIG", "")
-	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEXBAR_BIN", bin)
-	originalBootstrap := runConfigBootstrapCommandFn
-	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
-
-	home := t.TempDir()
-	path := filepath.Join(home, ".codexbar", "config.json")
-	runConfigBootstrapCommandFn = func(
-		_ context.Context,
-		_ string,
-		_ string,
-		args ...string,
-	) ([]byte, error) {
-		if reflect.DeepEqual(args, []string{"config", "dump", "--format", "json"}) {
-			return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
-		}
-		if reflect.DeepEqual(args, []string{"config", "validate", "--format", "json"}) {
-			if err := os.WriteFile(path, []byte(`{"existing":true}`), 0o600); err != nil {
-				t.Fatalf("publish competing config: %v", err)
-			}
-			return []byte(`{}`), nil
-		}
-		t.Fatalf("unexpected bootstrap command: %v", args)
-		return nil, nil
-	}
-
-	gotPath, err := EnsureConfig(home)
-	if err != nil {
-		t.Fatalf("EnsureConfig: %v", err)
-	}
-	if gotPath != path {
-		t.Fatalf("expected competing config path %q, got %q", path, gotPath)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil || string(data) != `{"existing":true}` {
-		t.Fatalf("competing config changed: data=%q err=%v", data, err)
-	}
-	if firstRunProviderSetupPending(path) {
-		t.Fatal("losing config publication retained the first-run marker")
-	}
-}
-
-func TestEnsureConfigPreservesFirstRunMarkerWhenParallelBootstrapWins(t *testing.T) {
-	t.Setenv("CODEXBAR_CONFIG", "")
-	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEXBAR_BIN", bin)
-	originalBootstrap := runConfigBootstrapCommandFn
-	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
-	runConfigBootstrapCommandFn = func(context.Context, string, string, ...string) ([]byte, error) {
-		return nil, errors.New("parallel bootstrap loser must reuse the winning config")
-	}
-
-	home := t.TempDir()
-	path := filepath.Join(home, ".codexbar", "config.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	winnerLock, err := writerlock.AcquireAt(path + ".vibetv-bootstrap.lock")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer winnerLock.Release()
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := EnsureConfig(home)
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		t.Fatalf("parallel bootstrap loser did not wait for the winner: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	if err := os.WriteFile(path, []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(firstRunMarkerPath(path), []byte("pending\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	winnerLock.Release()
-
-	if err := <-done; err != nil {
-		t.Fatalf("EnsureConfig: %v", err)
-	}
-	if !firstRunProviderSetupPending(path) {
-		t.Fatal("losing parallel bootstrap consumed the winner's first-run marker")
 	}
 }
 
@@ -535,48 +429,6 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	// answer that question. Only CodexBar's own inventory can.
 	if got.Providers[0].Enabled != nil {
 		t.Fatalf("aggregate usage must leave enablement unknown: %+v", got.Providers[0])
-	}
-}
-
-func TestProbeProviderSetupWaitsForFirstRunInventory(t *testing.T) {
-	originalUsage := runUsageCommandFn
-	originalVersion := runVersionCommandFn
-	defer func() {
-		runUsageCommandFn = originalUsage
-		runVersionCommandFn = originalVersion
-	}()
-	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEXBAR_BIN", bin)
-	configPath := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"version":1,"providers":[]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEXBAR_CONFIG", configPath)
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.46.0"), nil
-	}
-	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		t.Fatal("the normal readiness probe must not overtake first-run inventory")
-		return nil, nil
-	}
-
-	got := ProbeProviderSetup(context.Background(), t.TempDir())
-	if got.Status != "checking" || got.Engine.Status != ProviderReady {
-		t.Fatalf("first-run inventory must remain the visible checking state: %+v", got)
-	}
-
-	if err := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupFailedState); err != nil {
-		t.Fatal(err)
-	}
-	got = ProbeProviderSetup(context.Background(), t.TempDir())
-	if got.Status != "setup_required" || len(got.Providers) != 1 || got.Providers[0].Status != ProviderEngineError {
-		t.Fatalf("a failed first-run inventory must enter recovery: %+v", got)
 	}
 }
 
@@ -869,6 +721,28 @@ func TestProbeProviderSetupDisclosesSwitchedOffBesideFailingProvider(t *testing.
 		if provider.Status != ProviderNotConfigured {
 			t.Fatalf("switched-off providers report not_configured: %+v", provider)
 		}
+	}
+}
+
+func TestProviderReadinessKeepsReportedMessageInternal(t *testing.T) {
+	const message = "Codex connection failed: codex account authentication required to read rate limits"
+	providers := providerReadinessFromOutput(
+		[]byte(`[{"provider":"codex","error":{"message":"`+message+`"}}]`),
+		errors.New("provider failed"),
+		nil,
+	)
+	if len(providers) != 1 {
+		t.Fatalf("unexpected provider readiness: %+v", providers)
+	}
+	if got := providers[0].Reported; got != message {
+		t.Fatalf("reported message = %q, want %q", got, message)
+	}
+	encoded, err := json.Marshal(providers[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), message) {
+		t.Fatalf("raw reported message leaked from provider setup JSON: %s", encoded)
 	}
 }
 

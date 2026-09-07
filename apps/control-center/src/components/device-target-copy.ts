@@ -27,27 +27,10 @@ export function normalizeManualDeviceTarget(value: string): string | null {
   return `http://${host}`;
 }
 
-export function formatDeviceTargetInput(value: string): string {
-  const trimmed = value.trim();
-  if (!/^https?:\/\//i.test(trimmed)) {
-    return value;
-  }
+export function candidateAddress(target: string): string {
   try {
-    return new URL(trimmed).hostname;
+    return new URL(target).hostname || target;
   } catch {
-    return trimmed.replace(/^https?:\/\//i, "").split("/")[0];
+    return target.replace(/^https?:\/\//i, "").replace(/\/$/, "");
   }
-}
-
-export function deviceTargetHelpText(error?: { code?: string } | null): string {
-  if (error?.code === "multiple_devices_found") {
-    return "More than one VibeTV answered. Enter the address shown on the VibeTV screen.";
-  }
-  if (error?.code === "device_not_found") {
-    return "That VibeTV did not answer. Check the VibeTV screen for its IP address.";
-  }
-  if (error?.code === "invalid_device_target") {
-    return "Enter only the IP address shown on the VibeTV screen.";
-  }
-  return "Enter the IP address shown on the VibeTV screen.";
 }

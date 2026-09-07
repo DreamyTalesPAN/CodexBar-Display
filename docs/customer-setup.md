@@ -61,9 +61,11 @@ happens in the app on your own Mac.
 ## 3. Install The Mac App
 
 1. Select `Download Mac App`.
-2. Open the downloaded disk image.
-3. Drag `VibeTV Control Center` into `Applications`.
-4. Open `VibeTV Control Center` from `Applications`.
+2. Open the downloaded DMG.
+3. Drag `VibeTV Control Center` to `Applications` and wait for the copy to
+   finish.
+4. Open `VibeTV Control Center` from `Applications`. If macOS asks, choose
+   `Open`.
 
 The app must run from `Applications`. On first open it installs its own
 background service, so VibeTV keeps receiving display updates after you close
@@ -78,27 +80,38 @@ http://127.0.0.1:47832/control-center
 If another program already occupies that port, the app picks a different
 loopback port by itself.
 
-## 4. Connect VibeTV
+## 4. Finish Setup In The App
 
-Control Center will try to find VibeTV on the same WiFi.
+Control Center takes you through six steps, one screen at a time. It moves on
+when the step is really done, not when a button was pressed.
 
-If it finds exactly one device, it connects automatically.
+1. A welcome screen with nothing to press. It shows what it is doing: starting
+   the background service, reading provider usage on this Mac, and looking for
+   your VibeTV.
+2. `Choose your VibeTV` lists what answered on this WiFi. Pick yours and select
+   `Connect`. If a firmware update is needed, it happens here — leave VibeTV
+   powered on until the log says it is done.
+   If your VibeTV is not in the list, select `Enter IP address manually` and
+   type the address shown on the VibeTV screen, for example `192.168.178.123`.
+3. `Choose AI providers` — switch on the tools whose usage VibeTV should show.
+   At least one has to be switched on and working before you can continue.
+4. `Display Mode` — `Automatic` rotates through your providers, `Manual` pins
+   the display to one of them.
+5. `Choose your theme`, then `Install`. The install runs on the device and
+   reports its steps.
+6. `Your VibeTV is live`. This screen hands over to Control Center by itself.
 
-If it cannot find the device, enter the address shown on VibeTV, for example:
-
-```text
-192.168.178.123
-```
-
-Then select `Connect VibeTV`.
+If something goes wrong, the app says so in a dialog over the step that caused
+it. The step stays visible behind it, so you can see where you are.
 
 ## What Success Looks Like
 
 - Control Center says VibeTV is connected.
 - VibeTV stops waiting on the setup screen.
+- The theme you chose is running on VibeTV.
 - Usage appears on the display.
-- Overview, Usage, Theme Library, Settings, Updates, and Support are available
-  in Control Center.
+- Overview, Usage, Settings, Appearance, Updates, and Support are available in
+  Control Center.
 
 ## What The Mac App Does
 
@@ -144,10 +157,13 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 
 ## If Something Does Not Work
 
+- On any setup screen, `Help` offers `Ask AI to fix`, which copies a prompt
+  describing your exact situation, and `Create support report`. Try that before
+  any command below.
 - If Control Center says the Mac App is not running, make sure `VibeTV Control
   Center` is in `Applications` and open it again.
 - If Control Center cannot find VibeTV, make sure your Mac and VibeTV are on
-  the same WiFi.
+  the same WiFi, then use `Enter IP address manually`.
 - If `.local` does not work, use the IP address shown on VibeTV.
 - If VibeTV is still on `VibeTV-Setup`, finish WiFi setup first.
 - If the app shows one clear action, use that action before trying support

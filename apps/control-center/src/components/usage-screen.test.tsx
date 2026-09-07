@@ -27,27 +27,6 @@ const usage: UsageSnapshot = {
   ],
 };
 
-const codexPreference = {
-  id: "provider.codex.enabled",
-  section: "providers",
-  owner: "codexbar" as const,
-  type: "boolean" as const,
-  label: "Codex",
-  value: true,
-  effectiveValue: true,
-  allowsDefault: false,
-  availability: {
-    state: "available" as const,
-  },
-  writeStrategy: "codexbar_command" as const,
-  writable: true,
-  health: {
-    state: "healthy",
-    service: "operational",
-    message: "Provider is working.",
-  },
-};
-
 function renderUsage(
   busyAction: string | null = null,
   snapshot: UsageSnapshot = usage,
@@ -56,10 +35,7 @@ function renderUsage(
     <UsageScreen
       busyAction={busyAction}
       companionStatus="online"
-      onPreferenceChange={vi.fn()}
       onRefresh={vi.fn()}
-      pendingPreferenceIds={new Set()}
-      preferences={[]}
       usage={snapshot}
     />,
   );
@@ -70,10 +46,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={null}
         usage={null}
       />,
     );
@@ -89,10 +62,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
         usage={null}
         usageError={{
           code: "COMPANION_TIMEOUT",
@@ -112,10 +82,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[codexPreference]}
         usage={{
           ...usage,
           tokenUsageReady: false,
@@ -137,8 +104,8 @@ describe("UsageScreen", () => {
     expect(html).toContain("Codex");
     expect(html).toContain("Session: 12% used");
     expect(html).toContain("Weekly: 34% used");
-    expect(html).toContain("AI providers");
-    expect(html).toContain('aria-label="Disable Codex"');
+    expect(html).not.toContain("AI providers");
+    expect(html).not.toContain('aria-label="Disable Codex"');
     expect(html).not.toContain("Loading usage");
     expect(html).not.toContain("Total tokens in the last 30 days");
     expect(html).not.toContain("Tokens used over time");
@@ -148,10 +115,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
         usage={{
           ...usage,
           tokenUsageUpdating: true,
@@ -172,10 +136,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
         usage={{
           ...usage,
           tokenUsageUpdating: false,
@@ -192,10 +153,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
         usage={{
           ...usage,
           tokenUsageReady: true,
@@ -214,6 +172,14 @@ describe("UsageScreen", () => {
     expect(html).toContain("zero tokens");
     expect(html).toContain("No data");
     expect(html).not.toContain("Loading usage");
+  });
+
+  it("points an empty usage result to provider settings", () => {
+    const html = renderUsage(null, { ...usage, providers: [] });
+
+    expect(html).toContain("No provider usage is available yet.");
+    expect(html).toContain("Manage providers in Settings, then refresh usage.");
+    expect(html).not.toContain("Enable a provider below");
   });
 
   it("shows a dedicated token usage refresh action", () => {
@@ -237,10 +203,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
         usage={{
           ...usage,
           refresh: {
@@ -253,28 +216,6 @@ describe("UsageScreen", () => {
     expect(html).toContain("Refreshing usage");
     expect(html).toContain("Current values stay visible");
     expect(html).toContain("Codex");
-  });
-
-  it("shows rate-limit copy without inventing a retry time", () => {
-    const html = renderToStaticMarkup(
-      <UsageScreen
-        companionStatus="online"
-        onPreferenceChange={vi.fn()}
-        onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
-        usage={{
-          ...usage,
-          refresh: {
-            state: "rate_limited",
-          },
-        }}
-      />,
-    );
-
-    expect(html).toContain("Refresh is temporarily limited");
-    expect(html).toContain("provider allows it");
-    expect(html).not.toContain("Try again after");
   });
 
   it("does not show the global loading banner when unavailable refresh has token history", () => {
@@ -380,20 +321,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[
-          {
-            ...codexPreference,
-            health: {
-              state: "healthy",
-              service: "operational",
-              message:
-                "Token history is available; usage limits are temporarily unavailable.",
-            },
-          },
-        ]}
         usage={{
           ...usage,
           providers: [
@@ -427,9 +355,6 @@ describe("UsageScreen", () => {
     expect(html).toContain("Session: ??");
     expect(html).toContain("Weekly: ??");
     expect(html).toContain("Usage limits are stale.");
-    expect(html).toContain(
-      "Token history is available; usage limits are temporarily unavailable.",
-    );
     expect(html).not.toContain("Provider is not responding right now.");
     expect(html).not.toContain(">Unavailable<");
   });

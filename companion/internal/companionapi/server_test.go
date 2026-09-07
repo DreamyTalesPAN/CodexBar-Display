@@ -35,6 +35,16 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 )
 
+func TestThemeInstallJobOutlivesFreshStreamWait(t *testing.T) {
+	if themeInstallJobTime <= themeInstallStreamWaitTime+displayRenderWaitTime {
+		t.Fatalf(
+			"theme install job %s must outlive stream and render verification %s",
+			themeInstallJobTime,
+			themeInstallStreamWaitTime+displayRenderWaitTime,
+		)
+	}
+}
+
 func TestStatusWorksWithoutDevice(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
@@ -881,6 +891,66 @@ func TestDeviceSearchProbesEveryRememberedVibeTV(t *testing.T) {
 	}
 	if len(devices) != 2 {
 		t.Fatalf("expected every remembered VibeTV to be probed, got %+v", devices)
+	}
+}
+
+func TestDeviceSearchRefusesWithoutLocalNetwork(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: "http://192.168.178.73",
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.localNetworkAvailable = func() bool { return false }
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	server.Handler().ServeHTTP(rec, req)
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("offline refusal took %s; must not wait out the search window", elapsed)
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "network_unavailable" {
+		t.Fatalf("code=%q body=%s", got.Error.Code, rec.Body.String())
+	}
+	if got.Error.Message == "" || got.Error.NextAction == "" {
+		t.Fatalf("refusal must carry a reason and a next action, got %+v", got.Error)
+	}
+}
+
+// The Virtual VibeTV lives on loopback, which needs no WiFi. A saved loopback
+// target keeps the search alive however offline the Mac is.
+func TestDeviceSearchWithoutLocalNetworkStillProbesLoopbackTargets(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"active-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`)
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: device.URL,
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.localNetworkAvailable = func() bool { return false }
+
+	devices, err := server.searchDevices(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("expected the loopback VibeTV, got %+v", devices)
 	}
 }
 
@@ -2399,7 +2469,7 @@ func TestUsageManualRefreshIgnoresDisabledPersistedProviders(t *testing.T) {
 				},
 				{
 					Provider: "claude", Frame: protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24},
-					CollectedAt: now.Add(-time.Minute), RateLimited: true, RateLimitedUntil: now.Add(time.Minute),
+					CollectedAt: now.Add(-time.Minute),
 				},
 			},
 		}, true
@@ -2454,120 +2524,6 @@ func TestUsageTokenHistoryIgnoresDisabledPersistedProviders(t *testing.T) {
 	if rec.Code != http.StatusOK || !got.TokenUsageReady || len(got.Providers) != 1 ||
 		got.Providers[0].ID != "codex" || got.Providers[0].TotalTokens != 120 || got.Providers[0].Cost == nil {
 		t.Fatalf("disabled persisted provider cleared visible token history: status=%d got=%+v", rec.Code, got)
-	}
-}
-
-func TestUsageManualRefreshReportsRateLimitAndBlockedUntil(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
-	blockedUntil := now.Add(2 * time.Minute)
-	server.now = func() time.Time { return now }
-	server.wakeDisplayStream = func() {}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{
-			SavedAt:         now.Add(-time.Minute),
-			CurrentProvider: "claude",
-			Providers: []daemon.ProviderUsageSnapshot{{
-				Provider:         "claude",
-				Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
-				CollectedAt:      now.Add(-time.Minute),
-				RateLimited:      true,
-				RateLimitedUntil: blockedUntil,
-			}},
-		}, true
-	}
-
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-
-	var got usageResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if rec.Code != http.StatusOK || got.Refresh.State != "rate_limited" {
-		t.Fatalf("expected rate-limited response, status=%d got %+v", rec.Code, got)
-	}
-	if got.Refresh.BlockedUntil != blockedUntil.Format(time.RFC3339) || got.Providers[0].BlockedUntil != blockedUntil.Format(time.RFC3339) {
-		t.Fatalf("expected exact blockedUntil to be exposed, got refresh=%+v provider=%+v", got.Refresh, got.Providers[0])
-	}
-	if got.Providers[0].Session != 64 {
-		t.Fatalf("expected last-good value to remain visible, got %+v", got.Providers[0])
-	}
-}
-
-func TestUsageRefreshRateLimitWithoutBlockedUntilDoesNotInventTimestamp(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-	server.wakeDisplayStream = func() {}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{
-			SavedAt:         now.Add(-time.Minute),
-			CurrentProvider: "claude",
-			Providers: []daemon.ProviderUsageSnapshot{{
-				Provider:    "claude",
-				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
-				CollectedAt: now.Add(-time.Minute),
-				RateLimited: true,
-			}},
-		}, true
-	}
-
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-
-	var got usageResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if got.Refresh.State != "rate_limited" || got.Refresh.BlockedUntil != "" || got.Providers[0].BlockedUntil != "" {
-		t.Fatalf("expected rate limit without invented blockedUntil, got %+v provider=%+v", got.Refresh, got.Providers[0])
-	}
-}
-
-func TestUsageRefreshStateClearsAfterRecovery(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
-	blockedUntil := now.Add(2 * time.Minute)
-	server.now = func() time.Time { return now }
-	server.wakeDisplayStream = func() {}
-	recovered := false
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		snapshot := daemon.ProviderUsageSnapshot{
-			Provider:         "claude",
-			Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
-			CollectedAt:      now.Add(-time.Minute),
-			RateLimited:      true,
-			RateLimitedUntil: blockedUntil,
-		}
-		if recovered {
-			snapshot.Frame.Session = 72
-			snapshot.CollectedAt = now.Add(time.Minute)
-			snapshot.RateLimited = false
-			snapshot.RateLimitedUntil = time.Time{}
-		}
-		return daemon.PersistedUsage{
-			SavedAt:         snapshot.CollectedAt,
-			CurrentProvider: "claude",
-			Providers:       []daemon.ProviderUsageSnapshot{snapshot},
-		}, true
-	}
-
-	first := httptest.NewRecorder()
-	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-	recovered = true
-	second := httptest.NewRecorder()
-	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
-
-	var got usageResponse
-	if err := json.Unmarshal(second.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if second.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Refresh.BlockedUntil != "" || got.Providers[0].RateLimited {
-		t.Fatalf("expected recovery to clear rate-limit state, status=%d got %+v", second.Code, got)
-	}
-	if got.Providers[0].Session != 72 {
-		t.Fatalf("expected recovered provider value, got %+v", got.Providers[0])
 	}
 }
 
@@ -3174,13 +3130,13 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		return displayStreamInfo{Running: true, Healthy: true}
 	}
 
-	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect, nil)
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, displayStreamWaitTime, inspect, nil)
 	if !got.Healthy || calls.Load() != 2 {
 		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
 	}
 
 	calls.Store(0)
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect, nil)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, displayStreamWaitTime, inspect, nil)
 	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
@@ -3205,7 +3161,7 @@ func TestWaitForDisplayStreamStopsOnSettledStream(t *testing.T) {
 	}
 
 	got := waitForDisplayStreamAfterProbe(
-		context.Background(), "http://192.0.2.10", time.Now(), true, inspect, settled,
+		context.Background(), "http://192.0.2.10", time.Now(), true, displayStreamWaitTime, inspect, settled,
 	)
 	if got.ErrorCode != "provider_setup_required" || calls.Load() != 1 {
 		t.Fatalf("settled stream must end the wait at once, got=%+v calls=%d", got, calls.Load())
@@ -9506,6 +9462,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return nil
 	}
 	server.defaultWiFiTarget = func() string { return "http://127.0.0.1:1" }
+	server.localNetworkAvailable = func() bool { return true }
 	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
 		return nil
 	}
@@ -10245,6 +10202,63 @@ func TestThemeInstallStillFailsWhenStreamIsBroken(t *testing.T) {
 	var out bytes.Buffer
 	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out); err == nil {
 		t.Fatal("a broken display stream must still fail the install")
+	}
+}
+
+// Hardware, esp8266-smalltv-st7789, 2026-09-03: the device had already
+// rendered the installed Mini Classic theme with real Claude usage, but the
+// restarted LaunchAgent had not yet updated its stream-health log. The final
+// readiness check overwrote that stronger render proof with "Theme install
+// failed" even though the display was correct and the stream recovered on its
+// own moments later.
+func TestThemeInstallCompletesWhenRenderProofPrecedesStreamHealth(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"theme_spec_frame"},"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"path":"/themes/u/mini.json","renderOk":true}}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini-classic"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running: true,
+			Target:  target,
+			Detail:  "Display stream is starting.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		fullCount := uint64(8)
+		partialCount := uint64(3)
+		renderOK := true
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_frame"
+		health.Display.ActiveTheme = "mini-classic"
+		health.Display.ThemeSpec.Active = true
+		health.Display.ThemeSpec.Path = "/themes/u/mini.json"
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		return health, nil
+	}
+
+	var out bytes.Buffer
+	result, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini-classic"}, &out)
+	if err != nil {
+		t.Fatalf("a verified theme render must complete the install while stream health catches up: %v", err)
+	}
+	if result.ThemeID != "mini-classic" {
+		t.Fatalf("unexpected theme result: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Theme render: verified") {
+		t.Fatalf("missing verified render log:\n%s", out.String())
 	}
 }
 
