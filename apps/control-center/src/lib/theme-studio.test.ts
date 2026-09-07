@@ -38,6 +38,20 @@ describe("validateThemeSpec", () => {
     expect(result.themeSpecPath).toMatch(/^\/themes\/u\//);
   });
 
+  it("rejects colorStops and valign on the wrong primitive types", () => {
+    const colorStopsOnRect = validSpec();
+    colorStopsOnRect.primitives[0].colorStops = [{ color: "#EF4444", gte: 0 }];
+    expect(validateThemeSpec(colorStopsOnRect).errors).toContain(
+      "Element 1: colorStops is only supported on progress.",
+    );
+
+    const valignOnRect = validSpec();
+    valignOnRect.primitives[0].valign = "middle";
+    expect(validateThemeSpec(valignOnRect).errors).toContain(
+      "Element 1: vertical align is only supported on text.",
+    );
+  });
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [

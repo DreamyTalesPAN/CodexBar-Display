@@ -884,6 +884,19 @@ function validatePrimitive(
     }
   }
 
+  if (
+    primitive.valign &&
+    primitive.type !== "text"
+  ) {
+    errors.push(`${prefix}: vertical align is only supported on text.`);
+  }
+  if (
+    (primitive.colorStops || []).length > 0 &&
+    primitive.type !== "progress"
+  ) {
+    errors.push(`${prefix}: colorStops is only supported on progress.`);
+  }
+
   if (primitive.type === "text") {
     if ((!primitive.text || primitive.text.trim() === "") && !primitive.binding) {
       errors.push(`${prefix}: text or binding is required.`);
