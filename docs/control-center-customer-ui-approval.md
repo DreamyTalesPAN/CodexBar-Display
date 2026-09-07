@@ -3938,3 +3938,24 @@ issue scope, or release permission never implies UI permission.
   beginnings `missing` and `permission` remain readable.**
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
+
+## 2026-09-07 — Continue the Claude Design Cable/WiFi setup
+
+- User approval: The user supplied their Claude Design setup as the reference
+  for PR #407, required access through MCP, and then explicitly asked to
+  continue with that design: "lass mal hier weitermachen, review kommt dann
+  ganz am ende". The reference read through MCP is `Setup Wizard Redesign.dc.html`
+  in project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`.
+- Approved customer-visible result: The existing discovery matrix still decides
+  whether to connect directly, list devices, or offer Cable/WiFi. The connection
+  chooser uses the reference's two selectable cards, actual discovery counts,
+  and one `Connect` button. Device rows label Cable/WiFi and keep the device
+  name readable on narrow screens. WiFi credentials use the full-width network
+  picker; after submission the same form stays visible and disabled while the
+  app waits, with a sent status only after confirmed submission. The existing
+  rescan recovery remains available. The no-device dialog offers Cable or the
+  phone setup; phone instructions use a dismissible, reopenable dialog with
+  manual IP entry and rescan. Back is available before a connection operation.
+- Approved files: `setup-device-screen.tsx`, `setup-device-card.tsx`,
+  `setup-device-dialogs.tsx`, `setup-wizard.tsx`, their tests,
+  `setup-preview-gallery.tsx`, `test-customer-flows.mjs`, and this record.

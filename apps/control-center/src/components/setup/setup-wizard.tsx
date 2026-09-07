@@ -167,11 +167,12 @@ export function SetupWizard(props: SetupWizardProps) {
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [preferredTransport, setPreferredTransport] =
-    useState<SetupTransport | null>(null);
+    useState<SetupTransport | "choose" | null>(null);
   const [wifiSetup, setWiFiSetup] = useState<{
     phase: "credentials" | "waiting";
     deviceId?: string;
     viaCable: boolean;
+    credentialsSent?: boolean;
   } | null>(null);
   const [wifiNetworks, setWiFiNetworks] = useState<WiFiNetwork[]>([]);
   const [wifiScanning, setWiFiScanning] = useState(false);
@@ -207,9 +208,10 @@ export function SetupWizard(props: SetupWizardProps) {
     () =>
       decideSetupConnection({
         candidates: deviceCandidates,
-        choiceRequired: props.connectionModeChoiceRequired,
+        choiceRequired:
+          preferredTransport === "choose" || props.connectionModeChoiceRequired,
         savedMode: props.connectionMode,
-        preferredTransport,
+        preferredTransport: preferredTransport === "choose" ? null : preferredTransport,
       }),
     [
       deviceCandidates,
@@ -585,6 +587,19 @@ export function SetupWizard(props: SetupWizardProps) {
           connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state)}
           onConnect={startConnect}
+          onBack={
+            connect.state.phase === "idle" &&
+            preferredTransport &&
+            preferredTransport !== "choose" &&
+            wifiSetup?.phase !== "waiting"
+              ? () => {
+                  setPreferredTransport("choose");
+                  setWiFiSetup(null);
+                  setSelectedTarget(null);
+                  searchAgain();
+                }
+              : undefined
+          }
           onChooseTransport={(transport) => void chooseTransport(transport)}
           onConfigureWiFi={async (ssid, password) => {
             try {
@@ -593,6 +608,7 @@ export function SetupWizard(props: SetupWizardProps) {
                 phase: "waiting",
                 deviceId: deviceId || wifiSetup?.deviceId,
                 viaCable: true,
+                credentialsSent: true,
               });
               window.setTimeout(onSearchDevices, 1500);
             } catch {
@@ -605,21 +621,30 @@ export function SetupWizard(props: SetupWizardProps) {
           onSelect={(candidate) => setSelectedTarget(candidateKey(candidate))}
           searching={searchingForDevices}
           selectedTarget={preselected}
-          showModeChoice={connectionDecision.kind === "mode"}
-          showCandidates={showCandidateList}
+          showModeChoice={!wifiSetup && connectionDecision.kind === "mode"}
+          showCandidates={showCandidateList && !wifiSetup}
           transport={connectionDecision.transport}
           wifiNetworks={wifiNetworks}
           wifiScanError={wifiScanError}
           wifiScanning={wifiScanning}
           wifiSetupPhase={wifiSetup?.phase}
           wifiWaitingViaCable={wifiSetup?.viaCable}
+          wifiCredentialsSent={wifiSetup?.credentialsSent}
         />
         {addressDialog}
         <SetupDeviceNotFoundDialog
           onEnterAddressManually={openAddressDialog}
           onOpenChange={(open) => setNotFoundDismissed(!open)}
           onScanAgain={searchAgain}
-          open={searchFailed}
+          onUseCable={() => {
+            setNotFoundDismissed(true);
+            void chooseTransport("cable");
+          }}
+          onSetUpWiFi={() => {
+            setNotFoundDismissed(true);
+            void chooseTransport("wifi");
+          }}
+          open={searchFailed && !wifiSetup}
         />
         {/*
           A scan that could not be made at all. Without this the step showed a

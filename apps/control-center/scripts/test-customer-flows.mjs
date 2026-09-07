@@ -2003,18 +2003,12 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
   await dialog.waitFor({ timeout: 10_000 });
   await dialog
     .getByText(
-      "Connect VibeTV by Cable, or set up WiFi with your phone, then scan again.",
+      "Pick the way that fits your desk, then scan again.",
       { exact: true },
     )
     .waitFor();
-  for (const step of [
-    "Connect VibeTV to this Mac with a data-capable Cable, or wait for the VibeTV-Setup network.",
-    "On your phone, join the WiFi network VibeTV-Setup.",
-    "Open 192.168.4.1 and choose your home WiFi.",
-    "Wait until the screen says WiFi connected.",
-  ]) {
-    await dialog.getByText(step, { exact: true }).waitFor({ timeout: 10_000 });
-  }
+  await dialog.getByRole("button", { name: /Use the cable/ }).waitFor();
+  await dialog.getByRole("button", { name: /Set up WiFi with your phone/ }).waitFor();
   const scanAgain = dialog.getByRole("button", { name: "Scan again" });
   const manualEntry = dialog.getByRole("button", { name: "Enter IP manually" });
   await scanAgain.waitFor({ timeout: 10_000 });
@@ -2022,7 +2016,7 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
   const notFoundInformationOrderIsCorrect = await page.evaluate(() => {
     const dialogElement = document.querySelector('[role="dialog"]');
     const firstSetupStep = [
-      ...(dialogElement?.querySelectorAll("li") || []),
+      ...(dialogElement?.querySelectorAll("button") || []),
     ][0];
     const scanButton = [
       ...(dialogElement?.querySelectorAll("button") || []),

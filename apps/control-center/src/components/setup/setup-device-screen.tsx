@@ -4,15 +4,17 @@ import { Button } from "@/components/ui/button";
 import { ItemGroup } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Cable, Wifi } from "lucide-react";
+import { Cable, LockKeyhole, Wifi } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type {
   DeviceCandidate,
@@ -21,6 +23,9 @@ import type {
 } from "../control-center-types";
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
+import { SetupWiFiPhoneDialog } from "./setup-device-dialogs";
+import { selectedItemClass } from "./setup-selectable-card";
+import { cn } from "@/lib/utils";
 import type { ConnectPhase } from "./setup-connect-log";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import {
@@ -38,6 +43,7 @@ type SetupDeviceScreenProps = {
   logLines: SetupLogLine[];
   aiFixPrompt?: () => string;
   onConnect: () => void;
+  onBack?: () => void;
   onChooseTransport: (transport: SetupTransport) => void;
   onConfigureWiFi: (ssid: string, password: string) => Promise<void>;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
@@ -56,6 +62,7 @@ type SetupDeviceScreenProps = {
   wifiScanning?: boolean;
   wifiSetupPhase?: "credentials" | "waiting";
   wifiWaitingViaCable?: boolean;
+  wifiCredentialsSent?: boolean;
 };
 
 export function SetupDeviceScreen({
@@ -66,6 +73,7 @@ export function SetupDeviceScreen({
   logLines,
   aiFixPrompt,
   onConnect,
+  onBack,
   onChooseTransport,
   onConfigureWiFi,
   onCreateSupportReport,
@@ -83,39 +91,49 @@ export function SetupDeviceScreen({
   wifiScanning = false,
   wifiSetupPhase,
   wifiWaitingViaCable = false,
+  wifiCredentialsSent = false,
 }: SetupDeviceScreenProps) {
   const [wifiName, setWifiName] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
   const [manualWiFiName, setManualWiFiName] = useState(false);
   const [wifiError, setWifiError] = useState("");
+  const [wifiSubmitting, setWiFiSubmitting] = useState(false);
+  const [connectionChoice, setConnectionChoice] =
+    useState<SetupTransport>("cable");
+  const waitingForWiFi = wifiSetupPhase === "waiting" && wifiWaitingViaCable;
+  const showWiFiForm =
+    wifiSetupPhase === "credentials" || (waitingForWiFi && wifiCredentialsSent);
+  const wifiBusy = connecting || wifiSubmitting || waitingForWiFi;
 
   async function submitWiFi(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (wifiBusy || wifiScanning) return;
     const ssid = wifiName.trim();
     if (!ssid) {
       setWifiError("Enter your WiFi name.");
       return;
     }
     setWifiError("");
-    await onConfigureWiFi(ssid, wifiPassword);
-    setWifiPassword("");
+    setWiFiSubmitting(true);
+    try {
+      await onConfigureWiFi(ssid, wifiPassword);
+    } finally {
+      setWiFiSubmitting(false);
+    }
   }
 
   const title = showModeChoice
-    ? "Choose how VibeTV connects"
-    : wifiSetupPhase === "credentials"
+    ? "How should VibeTV connect?"
+    : wifiSetupPhase
       ? "Connect VibeTV to WiFi"
-      : wifiSetupPhase === "waiting"
-        ? "Connect VibeTV to WiFi"
-        : showCandidates
-          ? "Choose your VibeTV"
-          : connecting
-            ? "Connecting to VibeTV"
-            : "Choose your VibeTV";
+      : connecting && !showCandidates
+        ? "Connecting to VibeTV"
+        : "Choose your VibeTV";
   return (
     <SetupWizardScreen
       label="Choose your VibeTV"
       aiFixPrompt={aiFixPrompt}
+      onBack={wifiBusy ? undefined : onBack}
       onCreateSupportReport={onCreateSupportReport}
     >
       <SetupWizardTitle>{title}</SetupWizardTitle>
@@ -128,13 +146,15 @@ export function SetupDeviceScreen({
       {connecting ? null : (
         <SetupWizardSubtitle>
           {showModeChoice
-            ? "Choose Cable or WiFi."
-            : wifiSetupPhase === "credentials"
-              ? "Choose a visible network or enter a hidden WiFi name."
+            ? "You can change this later in Settings."
+            : showWiFiForm
+              ? "Pick the network VibeTV should join. The details are sent over the cable."
               : wifiSetupPhase === "waiting"
                 ? "VibeTV is connecting. The app will continue when it appears on WiFi."
                 : searching
-                  ? "Looking for VibeTVs on your WiFi."
+                  ? transport === "cable"
+                    ? "Looking for VibeTVs connected by Cable."
+                    : "Looking for VibeTVs on your WiFi."
                   : showCandidates
                     ? foundLabel(candidates.length, transport)
                     : "VibeTV is being connected automatically."}
@@ -142,140 +162,190 @@ export function SetupDeviceScreen({
       )}
 
       {showModeChoice ? (
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <Button
-            className="h-auto min-h-28 flex-col gap-3 whitespace-normal"
+        <>
+          <ToggleGroup
+            aria-label="Connection method"
+            className="mt-4 grid w-full grid-cols-2 items-stretch gap-4"
             disabled={connecting}
-            onClick={() => onChooseTransport("cable")}
-            type="button"
+            onValueChange={(value) => {
+              if (value === "cable" || value === "wifi")
+                setConnectionChoice(value);
+            }}
+            type="single"
+            value={connectionChoice}
             variant="outline"
           >
-            <Cable aria-hidden />
-            <span>Cable</span>
-          </Button>
+            {(["cable", "wifi"] as const).map((mode) => {
+              const Icon = mode === "cable" ? Cable : Wifi;
+              const count = candidates.filter((candidate) =>
+                mode === "cable"
+                  ? candidate.transport === "cable"
+                  : candidate.transport !== "cable",
+              ).length;
+              return (
+                <ToggleGroupItem
+                  aria-label={mode === "cable" ? "Cable" : "WiFi"}
+                  className={cn(
+                    selectedItemClass(connectionChoice === mode),
+                    "h-auto min-w-0 flex-col items-start justify-start gap-2 p-4 whitespace-normal bg-card data-[state=on]:bg-card",
+                  )}
+                  key={mode}
+                  value={mode}
+                >
+                  <Icon aria-hidden />
+                  <span>{mode === "cable" ? "Cable" : "WiFi"}</span>
+                  <span className="text-xs leading-relaxed font-normal text-muted-foreground">
+                    {mode === "cable"
+                      ? "Fastest and most reliable. VibeTV needs no network access."
+                      : "No cable on your desk — VibeTV can stand anywhere."}
+                  </span>
+                  <span className="mt-auto flex items-center gap-2 pt-1 font-mono text-xs font-normal text-muted-foreground">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        count
+                          ? "bg-[var(--vibetv-support)]"
+                          : "bg-muted-foreground",
+                      )}
+                    />
+                    {count} {count === 1 ? "VibeTV" : "VibeTVs"} found
+                  </span>
+                </ToggleGroupItem>
+              );
+            })}
+          </ToggleGroup>
           <Button
-            className="h-auto min-h-28 flex-col gap-3 whitespace-normal"
+            className="mt-4 w-full"
             disabled={connecting}
-            onClick={() => onChooseTransport("wifi")}
+            onClick={() => onChooseTransport(connectionChoice)}
             type="button"
-            variant="outline"
           >
-            <Wifi aria-hidden />
-            <span>WiFi</span>
+            Connect
           </Button>
-        </div>
+        </>
       ) : null}
 
-      {wifiSetupPhase === "credentials" ? (
-        <form className="mt-4 grid gap-4 text-left" onSubmit={submitWiFi}>
-          <Field>
-            <FieldLabel htmlFor="setup-wifi-network">WiFi network</FieldLabel>
-            {manualWiFiName ? (
-              <Input
-                autoComplete="off"
-                disabled={wifiScanning || connecting}
-                id="setup-wifi-network"
-                maxLength={32}
-                onChange={(event) => {
-                  setWifiName(event.target.value);
-                  setWifiError("");
-                }}
-                placeholder="WiFi name"
-                value={wifiName}
-              />
-            ) : (
-              <Select
-                disabled={wifiScanning || connecting}
-                onValueChange={(value) => {
-                  setWifiName(value);
-                  setWifiError("");
-                }}
-                value={wifiName}
+      {showWiFiForm ? (
+        <form className="mt-4 w-full text-left" onSubmit={submitWiFi}>
+          <FieldGroup className="gap-4">
+            <Field>
+              <FieldLabel htmlFor="setup-wifi-network">WiFi network</FieldLabel>
+              {manualWiFiName ? (
+                <Input
+                  autoComplete="off"
+                  disabled={wifiScanning || wifiBusy}
+                  id="setup-wifi-network"
+                  maxLength={32}
+                  onChange={(event) => {
+                    setWifiName(event.target.value);
+                    setWifiError("");
+                  }}
+                  placeholder="WiFi name"
+                  value={wifiName}
+                />
+              ) : (
+                <Select
+                  disabled={wifiScanning || wifiBusy}
+                  onValueChange={(value) => {
+                    setWifiName(value);
+                    setWifiError("");
+                  }}
+                  value={wifiName}
+                >
+                  <SelectTrigger className="w-full" id="setup-wifi-network">
+                    <SelectValue
+                      placeholder={
+                        wifiScanning
+                          ? "Scanning…"
+                          : wifiNetworks.length === 0
+                            ? "No networks found"
+                            : "Choose WiFi"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {wifiNetworks.map((network) => (
+                        <SelectItem key={network.ssid} value={network.ssid}>
+                          <Wifi aria-hidden />
+                          <span className="min-w-0 flex-1 truncate">
+                            {network.ssid}
+                          </span>
+                          {network.encrypted ? (
+                            <LockKeyhole aria-label="Encrypted" />
+                          ) : null}
+                          <span className="sr-only">
+                            {signalLabel(network.rssi)} signal
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
+            <div className="flex flex-wrap justify-between gap-2">
+              <Button
+                disabled={wifiScanning || wifiBusy}
+                onClick={onScanWiFiNetworks}
+                size="sm"
+                type="button"
+                variant="link"
               >
-                <SelectTrigger className="w-full" id="setup-wifi-network">
-                  <SelectValue
-                    placeholder={
-                      wifiScanning
-                        ? "Scanning…"
-                        : wifiNetworks.length === 0
-                          ? "No networks found"
-                          : "Choose WiFi"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {wifiNetworks.map((network) => (
-                    <SelectItem key={network.ssid} value={network.ssid}>
-                      {network.ssid} · {signalLabel(network.rssi)} ·{" "}
-                      {network.encrypted ? "Encrypted" : "Open"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </Field>
-          <div className="flex flex-wrap gap-2">
+                Scan again
+              </Button>
+              <Button
+                disabled={wifiScanning || wifiBusy}
+                onClick={() => {
+                  setManualWiFiName((current) => !current);
+                  setWifiName("");
+                }}
+                size="sm"
+                type="button"
+                variant="link"
+              >
+                {manualWiFiName
+                  ? "Choose visible network"
+                  : "Enter hidden network"}
+              </Button>
+            </div>
+            <Field>
+              <FieldLabel htmlFor="setup-wifi-password">
+                WiFi password
+              </FieldLabel>
+              <Input
+                autoComplete="current-password"
+                disabled={wifiScanning || wifiBusy}
+                id="setup-wifi-password"
+                maxLength={64}
+                onChange={(event) => setWifiPassword(event.target.value)}
+                type="password"
+                value={wifiPassword}
+              />
+            </Field>
+            {wifiError || wifiScanError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {wifiError || wifiScanError}
+              </p>
+            ) : null}
             <Button
-              disabled={wifiScanning || connecting}
-              onClick={onScanWiFiNetworks}
-              size="sm"
-              type="button"
-              variant="link"
+              disabled={wifiScanning || wifiBusy || !wifiName.trim()}
+              type="submit"
             >
-              Scan again
+              {wifiBusy ? <Spinner data-icon="inline-start" /> : null}
+              {wifiBusy ? "Connecting to WiFi…" : "Connect to WiFi"}
             </Button>
-            <Button
-              disabled={wifiScanning || connecting}
-              onClick={() => {
-                setManualWiFiName((current) => !current);
-                setWifiName("");
-              }}
-              size="sm"
-              type="button"
-              variant="link"
-            >
-              {manualWiFiName
-                ? "Choose visible network"
-                : "Enter hidden network"}
-            </Button>
-          </div>
-          <Field>
-            <FieldLabel htmlFor="setup-wifi-password">WiFi password</FieldLabel>
-            <Input
-              autoComplete="current-password"
-              disabled={wifiScanning || connecting}
-              id="setup-wifi-password"
-              maxLength={64}
-              onChange={(event) => setWifiPassword(event.target.value)}
-              type="password"
-              value={wifiPassword}
-            />
-          </Field>
-          {wifiError || wifiScanError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {wifiError || wifiScanError}
-            </p>
-          ) : null}
-          <Button
-            disabled={wifiScanning || connecting || !wifiName.trim()}
-            type="submit"
-          >
-            Connect to WiFi
-          </Button>
+          </FieldGroup>
         </form>
       ) : null}
 
       {wifiSetupPhase === "waiting" && !wifiWaitingViaCable ? (
-        <ol className="mt-4 grid list-decimal gap-2 pl-5 text-left text-sm text-muted-foreground">
-          <li>Plug in VibeTV and wait for the VibeTV-Setup network.</li>
-          <li>
-            On your phone, join WiFi <strong>VibeTV-Setup</strong>.
-          </li>
-          <li>
-            Open <strong>192.168.4.1</strong> and choose your home WiFi.
-          </li>
-          <li>Return here when VibeTV says WiFi connected.</li>
-        </ol>
+        <SetupWiFiPhoneDialog
+          onEnterAddressManually={onEnterAddressManually}
+          onScanAgain={onSearchAgain}
+          scanning={searching}
+        />
       ) : null}
 
       {showCandidates ? (
@@ -312,7 +382,10 @@ export function SetupDeviceScreen({
         answered with nothing on a screen whose only remaining control was the
         address field. One standing control covers every way a scan can end.
       */}
-      {!showModeChoice && wifiSetupPhase !== "credentials" && !searching ? (
+      {!showModeChoice &&
+      !connecting &&
+      !searching &&
+      (!wifiSetupPhase || waitingForWiFi) ? (
         <Button
           disabled={connecting}
           onClick={onSearchAgain}
@@ -320,10 +393,14 @@ export function SetupDeviceScreen({
           type="button"
           variant="link"
         >
-          {wifiSetupPhase === "waiting" ? "Scan WiFi again" : "Search again"}
+          Search again
         </Button>
       ) : null}
-      {!showModeChoice && wifiSetupPhase !== "credentials" ? (
+      {!showModeChoice &&
+      !showWiFiForm &&
+      !connecting &&
+      transport !== "cable" &&
+      !wifiSetupPhase ? (
         <Button
           disabled={connecting}
           onClick={onEnterAddressManually}
@@ -335,7 +412,7 @@ export function SetupDeviceScreen({
         </Button>
       ) : null}
 
-      {alternativeTransport ? (
+      {alternativeTransport && !showWiFiForm ? (
         <Button
           disabled={connecting}
           onClick={() => onChooseTransport(alternativeTransport)}
@@ -347,7 +424,28 @@ export function SetupDeviceScreen({
         </Button>
       ) : null}
 
-      <SetupLog className="mt-4" lines={logLines} running={connecting} />
+      {!showModeChoice ? (
+        <SetupLog
+          className="mt-4"
+          lines={
+            waitingForWiFi && wifiCredentialsSent
+              ? [
+                  {
+                    id: "wifi-sent",
+                    text: "WiFi details sent over cable",
+                    tone: "done",
+                  },
+                  {
+                    id: "wifi-wait",
+                    text: "waiting for VibeTV on the network",
+                  },
+                  ...logLines,
+                ]
+              : logLines
+          }
+          running={connecting || wifiBusy}
+        />
+      ) : null}
     </SetupWizardScreen>
   );
 }

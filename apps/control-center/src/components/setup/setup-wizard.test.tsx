@@ -551,8 +551,10 @@ describe("SetupWizard: direct connection", () => {
     const { rerender } = render(<SetupWizard {...props} />);
 
     fireEvent.click(
-      screen.getByRole("button", { name: "WiFi", exact: true }),
+      screen.getByRole("radio", { name: "WiFi" }),
     );
+    expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     await screen.findByRole("heading", { name: "Connect VibeTV to WiFi" });
     fireEvent.click(
       screen.getByRole("button", { name: "Enter hidden network" }),
@@ -560,8 +562,16 @@ describe("SetupWizard: direct connection", () => {
     fireEvent.change(screen.getByLabelText("WiFi network"), {
       target: { value: "Home" },
     });
+    expect(screen.queryByText("WiFi details sent over cable")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
     await waitFor(() => expect(onConfigureWiFi).toHaveBeenCalledWith("Home", ""));
+    const network = screen.getByLabelText("WiFi network") as HTMLInputElement;
+    expect(network.value).toBe("Home");
+    expect(network.disabled).toBe(true);
+    const waiting = screen.getByRole("button", { name: "Connecting to WiFi…" }) as HTMLButtonElement;
+    expect(waiting.disabled).toBe(true);
+    fireEvent.submit(network.closest("form")!);
+    expect(onConfigureWiFi).toHaveBeenCalledTimes(1);
 
     rerender(
       <SetupWizard
@@ -576,6 +586,31 @@ describe("SetupWizard: direct connection", () => {
 });
 
 describe("SetupWizard: going back", () => {
+  it("returns from WiFi credentials to the choice even after the Mac saved Cable mode", async () => {
+    const connect = vi.fn();
+    const props = baseProps({
+      step: "device",
+      connectionModeChoiceRequired: true,
+      deviceSearchState: "multiple",
+      deviceCandidates: [
+        { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" },
+        { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" },
+      ],
+      connectSteps: { connect, checkFirmware: vi.fn(), installFirmware: vi.fn() },
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "wifi_credentials_required", deviceId: "cable-device" }),
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByRole("heading", { name: "Connect VibeTV to WiFi" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Enter hidden network" }).hasAttribute("disabled")).toBe(false));
+    rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "How should VibeTV connect?" })).toBeTruthy();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   // The derived step stays "display" throughout: the server already accepted
   // the providers, which is exactly why Back is offered there at all. Before
   // the fix the override outlived the visit and the customer was held on the

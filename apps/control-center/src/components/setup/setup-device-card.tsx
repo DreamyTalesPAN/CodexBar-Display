@@ -11,6 +11,7 @@ import {
 import type { DeviceCandidate } from "../control-center-types";
 import { candidateAddress } from "../device-target-copy";
 import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
+import { cn } from "@/lib/utils";
 
 type SetupDeviceCardProps = {
   candidate: DeviceCandidate;
@@ -26,7 +27,11 @@ export function SetupDeviceCard({
   const address = candidateAddress(candidate.target);
   const cable = candidate.transport === "cable";
   return (
-    <Item asChild className={selectedItemClass(selected)} variant="outline">
+    <Item
+      asChild
+      className={cn(selectedItemClass(selected), "bg-card px-4 py-3.5")}
+      variant="outline"
+    >
       <button
         aria-checked={selected}
         onClick={onSelect}
@@ -34,13 +39,18 @@ export function SetupDeviceCard({
         type="button"
       >
         <ItemContent>
-          <ItemTitle>
-            VibeTV {candidate.deviceId || address}
+          <ItemTitle className="flex-wrap">
+            <span className="whitespace-nowrap">
+              VibeTV {candidate.deviceId || address}
+            </span>
+            {candidate.transport ? (
+              <Badge variant="secondary">{cable ? "Cable" : "WiFi"}</Badge>
+            ) : null}
             {candidate.known ? (
               <Badge variant="secondary">Previously connected</Badge>
             ) : null}
           </ItemTitle>
-          <ItemDescription className={cable ? "text-xs" : "font-mono text-xs"}>
+          <ItemDescription className="font-mono text-xs">
             {cable ? "" : address}
             {!cable && candidate.firmware ? " · " : ""}
             {candidate.firmware ? `Firmware ${candidate.firmware}` : ""}
