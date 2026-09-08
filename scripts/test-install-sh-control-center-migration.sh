@@ -30,7 +30,7 @@ assert_contains() {
   local haystack needle
   haystack="$1"
   needle="$2"
-  printf '%s\n' "$haystack" | grep -F "$needle" >/dev/null \
+  printf '%s\n' "$haystack" | grep -F -e "$needle" >/dev/null \
     || die "expected output to contain: ${needle}"
 }
 
@@ -38,7 +38,7 @@ assert_not_contains() {
   local haystack needle
   haystack="$1"
   needle="$2"
-  if printf '%s\n' "$haystack" | grep -F "$needle" >/dev/null; then
+  if printf '%s\n' "$haystack" | grep -F -e "$needle" >/dev/null; then
     die "expected output not to contain: ${needle}"
   fi
 }
@@ -377,6 +377,39 @@ run_reinstall_preserves_connection_mode() {
   done
 }
 
+run_flash_requires_port_before_install() {
+  local root output
+  root="${TMP_WORK_DIR}/flash-without-port"
+  write_fake_commands "${root}/fake-bin"
+  mkdir -p "${root}/home" "${root}/global-bin"
+  : > "${root}/curl.log"
+  : > "${root}/codexbar-display.log"
+  if output="$(run_installer "$root" --version 9.9.9 --flash-firmware)"; then
+    die "firmware install without an explicit port must fail before setup"
+  fi
+  assert_contains "$output" "--flash-firmware requires --port"
+  [[ ! -s "${root}/curl.log" && ! -s "${root}/codexbar-display.log" ]] \
+    || die "missing port must fail before downloads or setup"
+}
+
+run_flash_forwards_explicit_port() {
+  local root output form
+  for form in split equals; do
+    root="${TMP_WORK_DIR}/flash-with-port-${form}"
+    write_fake_commands "${root}/fake-bin"
+    mkdir -p "${root}/home" "${root}/global-bin"
+    if [[ "$form" == "split" ]]; then
+      output="$(run_installer "$root" --version 9.9.9 --flash-firmware -- --port /dev/mock --transport usb)" || die "$output"
+      assert_contains "$(cat "${root}/codexbar-display.log")" "upgrade --repo DreamyTalesPAN/CodexBar-Display --port /dev/mock"
+    else
+      output="$(run_installer "$root" --version 9.9.9 --flash-firmware -- --port=/dev/mock --transport usb)" || die "$output"
+      assert_contains "$(cat "${root}/codexbar-display.log")" "upgrade --repo DreamyTalesPAN/CodexBar-Display --port=/dev/mock"
+    fi
+  done
+}
+
+run_flash_requires_port_before_install
+run_flash_forwards_explicit_port
 run_reinstall_preserves_connection_mode
 run_install_sh_enables_control_center_in_daemon
 run_fresh_install_starts_without_theme_pack
