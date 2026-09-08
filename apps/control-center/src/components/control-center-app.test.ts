@@ -123,11 +123,13 @@ describe("connection mode choice status", () => {
 
   it("finishes a submitted WiFi choice only after active WiFi confirmation", () => {
     expect(statusConfirmsSubmittedWiFiChoice({
+      connectionMode: "wifi",
       connectionModeChoiceRequired: false,
       device: { ...base, connected: false },
     })).toBe(false);
     expect(
       statusConfirmsSubmittedWiFiChoice({
+        connectionMode: "wifi",
         connectionModeChoiceRequired: false,
         device: {
           ...base,
@@ -138,6 +140,7 @@ describe("connection mode choice status", () => {
     ).toBe(true);
     expect(
       statusConfirmsSubmittedWiFiChoice({
+        connectionMode: "wifi",
         connectionModeChoiceRequired: false,
         device: {
           ...base,
@@ -146,6 +149,14 @@ describe("connection mode choice status", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it.each([undefined, "", "cable"])("does not accept retained Cable health while mode is %s", (connectionMode) => {
+    expect(statusConfirmsSubmittedWiFiChoice({
+      connectionMode,
+      connectionModeChoiceRequired: false,
+      device: { ...base, target: "", connected: true },
+    })).toBe(false);
   });
 });
 

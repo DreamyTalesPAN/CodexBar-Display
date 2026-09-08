@@ -3124,17 +3124,32 @@ bool findObsoleteThemeSlotAsset(
 // Cable owns the whole install while the serial port is locked, so the device
 // sweeps the selected slot before an install and after activation. Finding
 // one file per pass releases the directory iterator before removal.
-void cleanupCableThemeSlot(
+bool cleanupCableThemeSlot(
     const String& activeSpecPath,
     CableTransferActivation activation,
     bool deferUntilHidden = true) {
   if (activation == CableTransferActivation::kNone || !LittleFS.begin()) {
-    return;
+    return false;
   }
   if (activation == CableTransferActivation::kScreensaver &&
       (standbyState.active || screensaverPreviewState.showing)) {
-    cableScreensaverCleanupPending = deferUntilHidden;
-    return;
+    if (deferUntilHidden) {
+      cableScreensaverCleanupPending = true;
+      return true;
+    }
+    // Cable preparation runs in the loop: release the visible screensaver
+    // before reclaiming files, and never acknowledge an incomplete sweep.
+    String livePath;
+    if (!readActiveThemeSpecPath(livePath) ||
+        !renderStoredThemeSpecForStandby(livePath)) {
+      return false;
+    }
+    screensaver_preview::Cancel(screensaverPreviewState);
+    screensaverPreviewLivePath = "";
+    standbyLiveThemePath = "";
+    standbyState.active = false;
+    standby::NoteUsageActivity(standbyState, millis());
+    applyDeviceSettings();
   }
   if (activation == CableTransferActivation::kScreensaver) {
     cableScreensaverCleanupPending = false;
@@ -3147,7 +3162,7 @@ void cleanupCableThemeSlot(
       (!readStoredThemeSpec(activeSpecPath, raw, error) ||
        !codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene))) {
     codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
-    return;
+    return false;
   }
   const String slotPrefix = activation == CableTransferActivation::kScreensaver
       ? "/themes/s/"
@@ -3168,12 +3183,15 @@ void cleanupCableThemeSlot(
       break;
     }
     if (!LittleFS.remove(obsoletePath)) {
-      break;
+      codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+      return false;
     }
     ESP.wdtFeed();
   }
   codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+  return true;
 }
+
 #endif
 
 void handleThemeActive() {
@@ -3761,7 +3779,10 @@ bool startCableTransfer(JsonDocument& doc) {
       destination = deviceSettings.standby.screensaverPath;
     }
     // Preparation must never queue a sweep between this pack's uploads.
-    cleanupCableThemeSlot(destination, targetActivation, false);
+    if (!cleanupCableThemeSlot(destination, targetActivation, false)) {
+      emitSerialError("transfer-rejected");
+      return true;
+    }
     emitCableTransferReply("prepared");
 #else
     emitSerialError("transfer-rejected");

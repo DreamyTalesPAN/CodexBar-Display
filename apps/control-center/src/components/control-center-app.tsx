@@ -319,10 +319,12 @@ export function connectionModeChoiceStatus(payload: {
 }
 
 export function statusConfirmsSubmittedWiFiChoice(payload: {
+  connectionMode?: string;
   connectionModeChoiceRequired?: boolean;
   device?: DeviceInfo;
 }) {
   return Boolean(
+    payload.connectionMode === "wifi" &&
     payload.connectionModeChoiceRequired === false &&
     payload.device?.active === true &&
     payload.device.connected === true &&

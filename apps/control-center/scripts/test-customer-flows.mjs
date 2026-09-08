@@ -1642,6 +1642,16 @@ async function testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appUrl) 
   await waitForCondition(() => searches > 0, "Settings must search after requesting WiFi");
   const waiting = page.getByRole("heading", { name: "Connect VibeTV to WiFi", exact: true });
   await waiting.waitFor({ timeout: 10_000 });
+  companion.setDevice({
+    ...cable,
+    target: "",
+    connected: true, // The server may retain the last healthy Cable status.
+    capabilities: { ...cable.capabilities, transport: { supported: ["usb", "wifi"] } },
+  });
+  await page.waitForResponse(async (response) => response.url().endsWith("/v1/status") && (await response.json()).connectionMode === "");
+  assert(await waiting.isVisible(), "Retained Cable health must not finish an uncommitted WiFi switch");
+  const searchesWhilePending = searches;
+  await waitForCondition(() => searches > searchesWhilePending, "Uncommitted WiFi must keep the wizard discovery loop mounted");
   companion.setDevice({ ...wifi, connected: false, ready: false });
   await page.waitForResponse(async (response) => response.url().endsWith("/v1/status") && (await response.json()).device?.connected === false);
   assert(await waiting.isVisible(), "Offline saved WiFi must not finish the Settings switch");
@@ -11379,6 +11389,7 @@ async function routeCompanionOnline(
           providerSetup: currentProviderSetup,
           setup: currentProviderSelectionSetup,
           device: responseDevice,
+          connectionMode: responseDevice?.capabilities?.transport?.mode || "",
           connectionModeChoiceRequired,
           ...(statusFirmwareUpdateJob
             ? { firmwareUpdate: statusFirmwareUpdateJob }

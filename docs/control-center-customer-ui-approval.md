@@ -4139,3 +4139,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Complete the authorized setup/Settings corrections and push PR #407.
 - Result: Preserve the approved Cable/WiFi flow together with the #419 ThemeSpec capabilities and immediate provider selection now on main.
 - Validation: Keep both countdown regression suites and await the hidden-network control after the asynchronous WiFi scan. This changes test synchronization, not the approved flow.
+
+## 2026-09-08 — Require committed WiFi before closing Settings setup
+
+- User approval: Finish the authorized PR #407 corrections and push.
+- Approved customer-visible result: Retained Cable health during a mode transition does not close WiFi setup or stop discovery. Only a connected same-device snapshot with committed WiFi mode can finish it.
+- Validation: Unit and browser regressions include the server grace-period snapshot with connected=true but no committed mode.

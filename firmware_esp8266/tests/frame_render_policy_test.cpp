@@ -203,8 +203,11 @@ bool testCableThemeTransferKeepsCleanupOutsideUploads(const std::string& source)
           cleanup.find("CompiledThemeSpecReferencesAsset(") != std::string::npos &&
           cleanup.find("standbyState.active || screensaverPreviewState.showing") != std::string::npos &&
           cleanup.find("bool deferUntilHidden = true") != std::string::npos &&
-          cleanup.find("cableScreensaverCleanupPending = deferUntilHidden") != std::string::npos &&
-          source.find("cleanupCableThemeSlot(destination, targetActivation, false)") != std::string::npos &&
+          cleanup.find("if (deferUntilHidden)") != std::string::npos &&
+          cleanup.find("renderStoredThemeSpecForStandby(livePath)") != std::string::npos &&
+          cleanup.find("screensaver_preview::Cancel(screensaverPreviewState)") != std::string::npos &&
+          cleanup.find("return false;") != std::string::npos &&
+          source.find("if (!cleanupCableThemeSlot(destination, targetActivation, false))") != std::string::npos &&
           cleanup.find("LittleFS.remove(obsoletePath)") != std::string::npos,
       "Cable cleanup must preserve slot assets and defer only after activation, never during preparation");
 }
