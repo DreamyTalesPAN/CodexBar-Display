@@ -3125,13 +3125,14 @@ bool findObsoleteThemeSlotAsset(
 // one file per pass releases the directory iterator before removal.
 void cleanupCableThemeSlot(
     const String& activeSpecPath,
-    CableTransferActivation activation) {
+    CableTransferActivation activation,
+    bool deferUntilHidden = true) {
   if (activation == CableTransferActivation::kNone || !LittleFS.begin()) {
     return;
   }
   if (activation == CableTransferActivation::kScreensaver &&
       (standbyState.active || screensaverPreviewState.showing)) {
-    cableScreensaverCleanupPending = true;
+    cableScreensaverCleanupPending = deferUntilHidden;
     return;
   }
   if (activation == CableTransferActivation::kScreensaver) {
@@ -3758,7 +3759,8 @@ bool startCableTransfer(JsonDocument& doc) {
     } else {
       destination = deviceSettings.standby.screensaverPath;
     }
-    cleanupCableThemeSlot(destination, targetActivation);
+    // Preparation must never queue a sweep between this pack's uploads.
+    cleanupCableThemeSlot(destination, targetActivation, false);
     emitCableTransferReply("prepared");
 #else
     emitSerialError("transfer-rejected");
