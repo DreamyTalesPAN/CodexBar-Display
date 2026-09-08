@@ -3802,3 +3802,17 @@ issue scope, or release permission never implies UI permission.
   layout and vertically centered provider label.
 - Evidence boundary: This records the owner's explicit requested results;
   it is not a claim of hardware acceptance or approval to merge or release.
+
+### Follow-up — validate imported provider maps before export
+
+- User approval: Carries forward Paul's 2026-09-08 instruction to take over
+  PR #419 and fix its remaining defects ("ok dann leg los"). This is a
+  validation correction within that work; no separate design approval or
+  hardware acceptance is claimed.
+- Approved customer-visible result: Imported provider-logo maps attached to
+  non-sprite elements are rejected in Theme Studio using its existing
+  "providerAssets is only supported on sprites" validation message, before
+  export produces a pack that installation would reject. The existing message
+  and validation flow are reused; the correction extends the same check from
+  GIFs to every unsupported element type. Valid themes and the inspector's
+  controls keep their existing behavior.
