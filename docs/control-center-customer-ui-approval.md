@@ -3999,3 +3999,18 @@ issue scope, or release permission never implies UI permission.
   `setup-display-mode-screen.tsx`, `setup-display-previews.ts`,
   `setup-preview-gallery.tsx`, their tests, the native Edit menu, the Companion
   device/provider/collector/USB fixes and their regression tests, and this record.
+
+## 2026-09-08 — Keep theme verification on its entered step
+
+- User approval: Finish the requested setup fixes and push PR #407, including
+  the final CI/review corrections.
+- Approved customer-visible result: A failed quiet device read after installing
+  a theme leaves setup waiting for display confirmation. It does not declare
+  the entire Mac App unavailable or restart the welcome screen. The existing
+  status poll still reports a real connection loss, and explicit device checks
+  retain their error handling.
+- Validation: The full customer-flow regression covers the failed readback;
+  subsequent status responses are delayed so recovery cannot rely on a fast
+  poll. This scenario is also included in the focused theme-missing suite.
+- Approved files: `control-center-app.tsx`, `test-customer-flows.mjs`, and this
+  record.

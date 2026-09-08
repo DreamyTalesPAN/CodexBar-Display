@@ -403,6 +403,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appContext.appUrl);
       console.log("control-center theme-missing flow test passed");
       return;
     }
@@ -4706,6 +4707,8 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
       // reachable and its theme is still missing.
       deviceAfterThemeInstall: { ...themeMissingDevice, ready: true },
       deviceReadFailuresAfterThemeInstall: 1,
+      // A fast status refresh must not hide the failed readback's UI transition.
+      statusDelayAfterFirstMs: 5_000,
       installStatusSequence: [
         {
           phase: "complete",

@@ -898,6 +898,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return null;
         }
+        // A failed verification read is not a new connection verdict. The
+        // regular status poll owns connectivity while setup awaits confirmation.
+        if (quiet) {
+          return null;
+        }
         const normalized = normalizeCaughtError(
           error,
           "VibeTV needs attention.",
@@ -906,17 +911,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           markCompanionAccessBlocked();
         } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
-        } else if (!quiet) {
+        } else {
           applyPolledDeviceSnapshot(null, "/v1/device");
         }
-        if (!quiet) {
-          setLastError(normalized);
-          addEvent({
-            label: "Device check needs attention",
-            detail: normalized.nextAction,
-            tone: "attention",
-          });
-        }
+        setLastError(normalized);
+        addEvent({
+          label: "Device check needs attention",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
         return null;
       }
     },
