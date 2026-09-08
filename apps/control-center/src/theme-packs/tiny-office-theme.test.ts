@@ -5,7 +5,7 @@ import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, primitiveUsageSlotVisible, renderTextPrimitive,
-  ThemeSpecPreview, themeFirmwareTextMetrics, themeTextFittedSize,
+  ThemeSpecPreview, themeFirmwareTextMetrics, themeTextFittedSize, themeTextAlignedY,
   type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { importThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
@@ -34,7 +34,7 @@ describe("Tiny Office theme pack", () => {
     const parsed = importThemeSpec(JSON.parse(rawSpec));
     const validation = validateThemeSpec(parsed, pack.assets || {}, "live");
     expect(validation.errors).toEqual([]);
-    expect(primitives).toHaveLength(12);
+    expect(primitives).toHaveLength(13);
     expect(Buffer.byteLength(rawSpec)).toBeLessThan(2048);
     let animated = 0;
     for (const asset of Object.values(pack.assets || {})) {
@@ -56,7 +56,6 @@ describe("Tiny Office theme pack", () => {
       expect(Number(lines[2])).toBeLessThanOrEqual(26);
     }
     expect(animated).toBe(2);
-    expect(primitives.filter((p) => p.b === "usageMode" || p.binding === "usageMode")).toHaveLength(0);
   });
 
   it("uses the provider display/update-notice binding exactly once", () => {
@@ -72,16 +71,34 @@ describe("Tiny Office theme pack", () => {
     const values = texts.map((p) => text(p));
     expect(values).toContain("Session");
     expect(values).toContain("Weekly");
-    expect(values).not.toContain("used");
+    expect(values).toContain("used");
     expect(values).toContain("76%");
     expect(values).toContain("42%");
     const changed = frame("coding", [{ id: "weekly", label: "Codex Spark Weekly", percent: 100, resetSecs: 60 }], "remaining");
     const visible = texts.filter((p) => primitiveUsageSlotVisible(p, changed)).map((p) => text(p, changed));
     expect(visible).toContain("Codex Spark Weekly");
     expect(visible).toContain("100%");
+    expect(visible).toContain("remaining");
+    expect(visible).not.toContain("used");
     expect(visible).not.toContain("Weekly");
     const unavailable = frame("idle", []);
-    expect(primitives.filter((p) => primitiveUsageSlotVisible(p, unavailable))).toHaveLength(4);
+    expect(primitives.filter((p) => primitiveUsageSlotVisible(p, unavailable))).toHaveLength(5);
+  });
+
+  it("centers the shrunken Spark label alongside the full-size percentage", () => {
+    const data = frame("coding", [slots[0], { id: "codex-spark", label: "Codex Spark 5-hour", percent: 0, resetSecs: 60 }]);
+    const label = primitives.find((p) => p.v === "{usageSlot2Label}")!;
+    const percent = primitives.find((p) => p.v === "{usageSlot2Percent}%")!;
+    const centers = [label, percent].map((p) => {
+      const size = themeTextFittedSize(text(p, data), p.f!, p.s!, p.w!, true);
+      const height = 16 * size; // TFT_eSPI font 2 height.
+      return themeTextAlignedY(p.y, p.h!, height, p.va) + height / 2;
+    });
+    expect(themeTextFittedSize(text(label, data), label.f!, label.s!, label.w!, true)).toBe(1);
+    expect(centers).toEqual([186, 186]);
+    const manifest = JSON.parse(readFileSync(path.join(root, "theme-packs/tiny-office/manifest.json"), "utf8"));
+    expect(manifest.minFirmware).toBe("1.0.42");
+    expect(manifest.requiredCapabilities).toContain("text-valign-v1");
   });
 
   it("shows unavailable reset once instead of inventing a countdown", () => {
@@ -129,7 +146,16 @@ describe("Tiny Office theme pack", () => {
     const previewDir = process.env.VIBETV_THEME_PREVIEW_DIR;
     if (previewDir) {
       mkdirSync(previewDir, { recursive: true });
-      for (const [name, markup] of Object.entries({ idle, coding })) {
+      const sparkSlots = [
+        { id: "weekly", label: "Weekly", percent: 50, resetSecs: 554400 },
+        { id: "codex-spark", label: "Codex Spark 5-hour", percent: 0, resetSecs: 18000 },
+      ];
+      const previews = {
+        idle, coding,
+        "spark-used": render(frame("coding", sparkSlots, "used", "Codex")),
+        "spark-remaining": render(frame("coding", sparkSlots, "remaining", "Codex")),
+      };
+      for (const [name, markup] of Object.entries(previews)) {
         writeFileSync(path.join(previewDir, `${name}.svg`), markup.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" '));
       }
     }

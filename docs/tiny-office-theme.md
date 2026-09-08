@@ -33,13 +33,15 @@ Before changing a published version, bump the version in the compiler and
 ## Runtime
 
 - Exactly one `label` binding carries the provider display name and firmware
-  update notices. The used/remaining mode is intentionally not displayed.
+  update notices. The header also shows the current `used`/`remaining` mode.
 - Two slot-bound lanes show the actual window names and percentages. Missing
   slots are hidden by the existing renderer; no synthetic windows are added.
   Labels, percentages and the reset time use TFT_eSPI font 2 at size 2 (32 px)
   with fit shrink, so long CodexBar window names such as `Codex Spark Weekly`
   and `Reset unavailable` drop to size 1 instead of being clipped. The test
-  measures those exact values against the firmware font metrics.
+  measures those exact values against the firmware font metrics. Text stays
+  vertically centered in its 32 px lane after shrinking; this requires firmware
+  1.0.42 with `text-valign-v1`.
 - The reset row uses slot 1's reset binding, without duplicating the renderer's
   unavailable message or inventing a reset time.
 - `stateAssets` swaps the whole office scene for `idle` versus `coding`,
@@ -55,9 +57,12 @@ Before changing a published version, bump the version in the compiler and
   drawn at 240x240. Each static asset is below 10,000 pixels.
 - Every text primitive ends at or above row 240 at its unshrunk height; the
   firmware clips vertically instead of shrinking, and the test asserts this.
-- Twelve primitives, 1,409 source ThemeSpec bytes, 8,012-byte v0.5.0 ZIP.
+- Thirteen primitives; source ThemeSpec stays within the 2,048-byte wire budget.
 
 ## History
+
+- v0.6.0 (rev 7): show used/remaining in the header and vertically center
+  shrunken labels and values. Local validation; hardware acceptance pending.
 
 - v0.5.0 (rev 6): reset value moved up so its 32 px stay inside the panel,
   scene cropped to 108 px. First published revision.

@@ -250,7 +250,7 @@ assert(specBytes.length < 2048);
 assert(spec.p.length < 16);
 const manifest = {
   kind: "vibetv-theme-pack", schemaVersion: 1, id: "tiny-office", name: "Tiny Office",
-  version: "0.5.0", minFirmware: "1.0.40", usage: "live", requiredCapabilities: ["usage-slots-v1"],
+  version: "0.6.0", minFirmware: "1.0.42", usage: "live", requiredCapabilities: ["usage-slots-v1", "text-valign-v1"],
   themeSpec: {
     path: `/themes/u/to-${spec.rev}-${hash(specBytes).slice(0, 8)}.json`, file: "theme.json",
     bytes: specBytes.length, sha256: hash(specBytes), contentType: "application/json",
