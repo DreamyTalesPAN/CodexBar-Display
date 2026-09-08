@@ -525,6 +525,37 @@ describe("SetupWizard: direct connection", () => {
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
   });
 
+  it.each([
+    { message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry." },
+    { message: "VibeTV could not save these WiFi details.", nextAction: "Check the Cable and try again." },
+  ])("shows a rejected WiFi submission and allows retry: $message", async (failure) => {
+    const onConfigureWiFi = vi.fn()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValue("configured-device");
+    render(<SetupWizard {...baseProps({
+      step: "device",
+      initialWiFiSetup: { status: "wifi_credentials_required", deviceId: "configured-device" },
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onConfigureWiFi,
+    })} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter hidden network" }));
+    fireEvent.change(screen.getByLabelText("WiFi network"), { target: { value: "Home" } });
+    fireEvent.change(screen.getByLabelText("WiFi password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(failure.message);
+    expect(alert.textContent).toContain(failure.nextAction);
+    expect((screen.getByLabelText("WiFi network") as HTMLInputElement).value).toBe("Home");
+    expect((screen.getByLabelText("WiFi password") as HTMLInputElement).value).toBe("test-password");
+    const retry = screen.getByRole("button", { name: "Connect to WiFi" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+    fireEvent.click(retry);
+    await screen.findByRole("button", { name: "Connecting to WiFi…" });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onConfigureWiFi).toHaveBeenCalledTimes(2);
+    expect(onConfigureWiFi).toHaveBeenLastCalledWith("Home", "test-password");
+  });
+
   it.each(["choice", "failed-cable", "settings"] as const)("connects the same VibeTV over WiFi from %s", async (entry) => {
     const cable: DeviceCandidate = {
       target: "cable://vibetv",

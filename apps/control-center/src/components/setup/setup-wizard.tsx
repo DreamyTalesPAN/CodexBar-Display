@@ -650,17 +650,13 @@ export function SetupWizard(props: SetupWizardProps) {
           )}
           onConfigureWiFi={async (ssid, password) => {
             setWiFiScanError(null);
-            try {
-              const deviceId = await props.onConfigureWiFi(ssid, password);
-              setWiFiSetup({
-                phase: "waiting",
-                deviceId: deviceId || wifiSetup?.deviceId,
-                viaCable: true,
-                credentialsSent: true,
-              });
-            } catch {
-              // The app owns and displays the normalized API error.
-            }
+            const deviceId = await props.onConfigureWiFi(ssid, password);
+            setWiFiSetup({
+              phase: "waiting",
+              deviceId: deviceId || wifiSetup?.deviceId,
+              viaCable: true,
+              credentialsSent: true,
+            });
           }}
           onEnterAddressManually={openAddressDialog}
           onSearchAgain={searchAgain}

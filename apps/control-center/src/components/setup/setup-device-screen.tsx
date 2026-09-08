@@ -17,6 +17,7 @@ import {
 import { Cable, LockKeyhole, Wifi } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type {
+  ApiError,
   DeviceCandidate,
   SupportDiagnostics,
   WiFiNetwork,
@@ -126,6 +127,12 @@ export function SetupDeviceScreen({
     setWiFiSubmitting(true);
     try {
       await onConfigureWiFi(ssid, wifiPassword);
+    } catch (error) {
+      const failure = error as ApiError;
+      setWifiError(
+        [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
+          "VibeTV could not save these WiFi details. Check the Cable and try again.",
+      );
     } finally {
       setWiFiSubmitting(false);
     }

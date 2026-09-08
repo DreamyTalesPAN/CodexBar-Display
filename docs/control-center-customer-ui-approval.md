@@ -4157,3 +4157,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Complete the authorized PR #407 CI/review corrections and push.
 - Approved customer-visible result: The approved saved-WiFi recovery flow is unchanged. Its tests await the actual asynchronous failure dialog before closing it and choosing WiFi.
 - Validation: Full UI unit suite; assertions still require reconnection to the same saved device. Tiny Office geometry tests use the existing zero default for optional y coordinates so standalone TypeScript validation also passes.
+
+## 2026-09-08 — Show failed WiFi submissions in the existing form
+
+- User approval: Paul authorized completing the setup/Settings fixes without further questions and pushing PR #407.
+- Approved customer-visible result: If sending WiFi details fails, the existing form error line shows the failure and recovery instruction. Entered details remain available and Connect to WiFi can be retried; successful submission clears the error and shows the existing waiting state.
+- Validation: Wizard regressions reject the submission, verify visible message/instruction and retained inputs, then successfully retry. No new control or screen.
