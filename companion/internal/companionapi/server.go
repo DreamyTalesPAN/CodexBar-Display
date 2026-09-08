@@ -3498,9 +3498,9 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 	freshWiFiChoice := mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" &&
 		(cfg.ConnectionModeChoiceRequired || runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "")
-	cableConnected := strings.TrimSpace(s.currentCableConnectionChoiceDevice().DeviceID) != ""
+	cableConnected := false
 	var cablePort string
-	if freshWiFiChoice && !cableConnected {
+	if freshWiFiChoice {
 		cablePort, err = s.resolveCablePort("", requestedDeviceID)
 		cableConnected = err == nil
 		if errcode.Of(err) == errcode.TransportMultipleDevices {

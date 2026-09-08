@@ -8557,28 +8557,42 @@ func TestSetupResetReselectsAuthenticatedKnownWiFiWithoutCable(t *testing.T) {
 }
 
 func TestSetupConnectionModeStartsWiFiDiscoveryWithoutCable(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	server.currentCableHello = func() (protocol.DeviceHello, bool) {
-		return protocol.DeviceHello{}, false
-	}
-	server.resolveCablePort = func(string, string) (string, error) {
-		return "", errors.New("no Cable connected")
+	for _, cached := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cached=%t", cached), func(t *testing.T) {
+
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.currentCableHello = func() (protocol.DeviceHello, bool) {
+				return protocol.DeviceHello{
+					Kind: "hello", DeviceID: "unplugged-device",
+					Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
+				}, cached
+			}
+			resolutions := 0
+			server.resolveCablePort = func(string, string) (string, error) {
+				resolutions++
+				return "", errors.New("no Cable connected")
+			}
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+			req.Header.Set("Content-Type", "application/json")
+			server.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), "waiting_for_wifi") {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			cfg, err := server.config()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ConnectionMode != "wifi" || cfg.ConnectionModeChoiceRequired || !cfg.CableAutoBindDisabled || cfg.DeviceID != "" || cfg.DeviceTarget != "" {
+				t.Fatalf("fresh WiFi discovery persisted wrong state: %+v", cfg)
+			}
+			if resolutions != 1 {
+				t.Fatalf("Cable presence must be resolved once, got %d", resolutions)
+			}
+		})
 	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
-	req.Header.Set("Content-Type", "application/json")
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), "waiting_for_wifi") {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	cfg, err := server.config()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ConnectionMode != "wifi" || cfg.ConnectionModeChoiceRequired || !cfg.CableAutoBindDisabled || cfg.DeviceID != "" || cfg.DeviceTarget != "" {
-		t.Fatalf("fresh WiFi discovery persisted wrong state: %+v", cfg)
-	}
 }
 
 func TestSetupResetPrefersConnectedCableDeviceOverKnownWiFi(t *testing.T) {
