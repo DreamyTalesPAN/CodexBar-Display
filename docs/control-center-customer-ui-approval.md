@@ -4369,3 +4369,15 @@ issue scope, or release permission never implies UI permission.
   completed provider health and guidance while collection runs. Initial and
   newly enabled providers still show checking, and an explicit row retry still
   shows its existing pending indicator. No layout, copy or action is added.
+
+## 2026-09-08 — Skip Display Mode for one enabled provider (#423)
+
+- User approval: "Nur wenn ich zwei oder mehr AI Provider ausgewählt habe,
+  soll ich auf Display Mode kommen und da wählen können zwischen Automatic
+  und Manual. Lass uns das in diesem PR auch noch fixen."
+- Approved customer-visible result: Continue on the provider step saves Manual
+  with the sole enabled provider and skips Display Mode. Two or more enabled
+  providers still show the Automatic/Manual choice, regardless of which ones
+  have usable readings. Existing readiness and save-failure checks remain in
+  effect. Back from the theme returns directly to providers when only one is
+  enabled, and Continue reevaluates the current toggles after edits.

@@ -283,9 +283,16 @@ export function SetupWizard(props: SetupWizardProps) {
   // `setupDisplayIsConfigured`: that value also decides whether setup owns the
   // screen at all, so waiting there threw a customer out of Settings and back
   // into the wizard for the length of every display save.
+  const enabledProviders = props.providers.filter((provider) => provider.value);
+  const soleProvider = enabledProviders.length === 1 ? enabledProviders[0] : null;
   const step =
-    props.displaySavePending && derived === "theme" ? "display" : derived;
-  const back = previousSetupStep(step);
+    providersContinuing && derived !== "welcome" && derived !== "device"
+      ? "providers"
+      : props.displaySavePending && derived === "theme"
+        ? "display"
+        : derived;
+  const back =
+    step === "theme" && soleProvider ? "providers" : previousSetupStep(step);
   // Counted so a write started before a Back press cannot undo it: the display
   // save can still be running when the customer leaves, and its continuation
   // used to release the override and carry them forward from the step they had
@@ -845,7 +852,20 @@ export function SetupWizard(props: SetupWizardProps) {
             // customer on to a screen that cannot render it.
             setProvidersContinuing(true);
             const navigation = navigations.current;
-            void Promise.resolve(props.onProvidersContinue())
+            const complete = async () => {
+              if (soleProvider) {
+                const saved = await props.onDisplayContinue({
+                  mode: "fixed",
+                  providerIds: [soleProvider.providerId],
+                });
+                if (saved === false || navigation !== navigations.current) {
+                  return false;
+                }
+                setDisplayDraft(null);
+              }
+              return props.onProvidersContinue();
+            };
+            void complete()
               .then((done) => {
                 if (done === false || navigation !== navigations.current) {
                   return;
@@ -858,7 +878,11 @@ export function SetupWizard(props: SetupWizardProps) {
                   setWentBackTo(done);
                   return;
                 }
-                goForward();
+                if (enabledProviders.length > 1) {
+                  setWentBackTo("display");
+                } else {
+                  goForward();
+                }
               })
               .finally(() => setProvidersContinuing(false));
           }}

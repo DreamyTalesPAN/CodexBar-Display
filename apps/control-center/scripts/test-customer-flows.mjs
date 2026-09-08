@@ -476,6 +476,7 @@ async function main() {
         appContext.appUrl,
       );
       await testProviderMigrationHandoff(browser, appContext.appUrl);
+      await testSingleProviderSkipsDisplayMode(browser, appContext.appUrl);
       console.log("control-center provider settings test passed");
       return;
     }
@@ -920,6 +921,7 @@ async function main() {
       appContext.appUrl,
     );
     await testProviderMigrationHandoff(browser, appContext.appUrl);
+    await testSingleProviderSkipsDisplayMode(browser, appContext.appUrl);
     await testProviderOnboardingUsesSharedHealthyDescriptor(
       browser,
       appContext.appUrl,
@@ -2017,12 +2019,13 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     "A ready provider must let the first-time setup continue",
   );
   await providersContinue.click();
-  const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
-  await displayScreen.waitFor({ timeout: 15_000 });
-  await displayScreen.getByRole("button", { name: "Continue" }).click();
   await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({
     timeout: 15_000,
   });
+  assert(
+    !(await setupScreen(page, SETUP_DISPLAY_SCREEN).isVisible()),
+    "A single enabled provider must skip Display Mode",
+  );
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
@@ -12765,6 +12768,46 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+async function testSingleProviderSkipsDisplayMode(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const writes = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    device: themeMissingDevice,
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
+    providerDisplay: { mode: "automatic", providerIds: [], configured: false, valid: false },
+    providerDisplayPatchDelayMs: 500,
+    preferencesResponse: { ok: true, items: [providerPreferenceFixture("codex", "Codex"), disabledProviderPreferenceFixture("claude", "Claude")] },
+    onRequest: (path, method, body) => { if (method !== "GET") writes.push({ path, method, body }); },
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const providers = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+  await providers.waitFor({ timeout: 15_000 });
+  await providers.getByRole("button", { name: "Continue" }).click();
+  await waitForCondition(() => writes.some((request) => request.path === "/v1/provider-display"), "single provider must save a display choice");
+  assert(await providers.isVisible(), "provider step must remain visible while Manual is being saved");
+  const theme = setupScreen(page, SETUP_THEME_SCREEN);
+  await theme.waitFor({ timeout: 15_000 });
+  const firstSave = writes.findIndex((request) => request.path === "/v1/provider-display");
+  const completion = writes.findIndex((request) => request.path === "/v1/setup/providers/complete");
+  assert(firstSave >= 0 && completion > firstSave, "Manual must be saved before provider completion");
+  assert(JSON.stringify(JSON.parse(writes[firstSave].body)) === JSON.stringify({ mode: "fixed", providerIds: ["codex"] }), "sole enabled provider must be saved as Manual");
+  await theme.getByRole("button", { name: "Back" }).click();
+  await providers.waitFor();
+  await providers.getByRole("switch", { name: "Claude" }).click();
+  await waitForCondition(async () => !(await providers.getByRole("button", { name: "Continue" }).isDisabled()), "second provider toggle did not settle");
+  await providers.getByRole("button", { name: "Continue" }).click();
+  const display = setupScreen(page, SETUP_DISPLAY_SCREEN);
+  await display.waitFor({ timeout: 15_000 });
+  await display.getByRole("button", { name: "Back" }).click();
+  await providers.getByRole("switch", { name: "Codex" }).click();
+  await waitForCondition(async () => !(await providers.getByRole("button", { name: "Continue" }).isDisabled()), "single-provider toggle did not settle");
+  await providers.getByRole("button", { name: "Continue" }).click();
+  await theme.waitFor({ timeout: 15_000 });
+  const lastSave = writes.filter((request) => request.path === "/v1/provider-display").at(-1);
+  assert(JSON.stringify(JSON.parse(lastSave.body)) === JSON.stringify({ mode: "fixed", providerIds: ["claude"] }), "returning to one provider must save the current sole provider");
+  await page.close();
+}
 
 async function testProviderMigrationHandoff(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
