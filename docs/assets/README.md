@@ -4,20 +4,25 @@ Updated for issue #431 on 2026-09-08.
 
 ## Product renders
 
-Reused without alteration from the existing **VibeTV 21-image set, 2026-09-08**
+Web exports from the existing **VibeTV 21-image set, 2026-09-08**
 (`vibetv-complete-set-20260908/final/`). These are Blender + AI product renders,
-1448 × 1086 pixels, with illustrative example data. They are not hardware
+originally 1448 × 1086 pixels, with illustrative example data. They are not hardware
 screenshots. Mini Classic uses the image set's larger usage-label typography.
 
 | Repository file | Original file |
 | --- | --- |
-| [vibetv-theme-mini.png](vibetv-theme-mini.png) | `mini-classic__01_neon_lime.png` |
-| [vibetv-theme-claude.png](vibetv-theme-claude.png) | `claude-creature__02_cozy_desk.png` |
-| [vibetv-theme-clippy.png](vibetv-theme-clippy.png) | `clippy__03_amber_studio.png` |
-| [vibetv-theme-synthwave.png](vibetv-theme-synthwave.png) | `synthwave__01_neon_lime.png` |
-| [vibetv-screensaver-night-clock.png](vibetv-screensaver-night-clock.png) | `night-clock__02_cozy_desk.png` |
-| [vibetv-screensaver-reset-countdown.png](vibetv-screensaver-reset-countdown.png) | `reset-countdown__01_neon_lime.png` |
-| [vibetv-screensaver-token-fire.png](vibetv-screensaver-token-fire.png) | `token-fire__03_amber_studio.png` |
+| [vibetv-theme-mini.jpg](vibetv-theme-mini.jpg) | `mini-classic__01_neon_lime.png` |
+| [vibetv-theme-claude.jpg](vibetv-theme-claude.jpg) | `claude-creature__02_cozy_desk.png` |
+| [vibetv-theme-clippy.jpg](vibetv-theme-clippy.jpg) | `clippy__03_amber_studio.png` |
+| [vibetv-theme-synthwave.jpg](vibetv-theme-synthwave.jpg) | `synthwave__01_neon_lime.png` |
+| [vibetv-screensaver-night-clock.jpg](vibetv-screensaver-night-clock.jpg) | `night-clock__02_cozy_desk.png` |
+| [vibetv-screensaver-reset-countdown.jpg](vibetv-screensaver-reset-countdown.jpg) | `reset-countdown__01_neon_lime.png` |
+| [vibetv-screensaver-token-fire.jpg](vibetv-screensaver-token-fire.jpg) | `token-fire__03_amber_studio.png` |
+
+JPEG exports use quality 85: Mini Classic is 1120 × 840 for the 560-pixel hero;
+the other product renders are 480 × 360 for the 240-pixel gallery cells.
+Only size and encoding changed; the full-resolution originals stay in the source
+image set outside the repository.
 
 ## Current screen previews
 

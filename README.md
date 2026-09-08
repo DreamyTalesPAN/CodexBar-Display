@@ -6,7 +6,7 @@ important changes before they interrupt your work.
 
 <p align="center">
   <a href="https://vibetv.shop/products/vibe-tv">
-    <img src="docs/assets/vibetv-theme-mini.png" alt="VibeTV product render showing Mini Classic against a neon-lime background" width="560">
+    <img src="docs/assets/vibetv-theme-mini.jpg" alt="VibeTV product render showing Mini Classic against a neon-lime background" width="560">
   </a>
 </p>
 
@@ -23,13 +23,13 @@ Six live themes are included. Choose a look in the Control Center Theme Library.
 <table>
   <tr><th>Mini Classic</th><th>Claude Creature</th><th>Clippy</th></tr>
   <tr>
-    <td align="center"><img src="docs/assets/vibetv-theme-mini.png" alt="Mini Classic product render with session and weekly usage" width="240"></td>
-    <td align="center"><img src="docs/assets/vibetv-theme-claude.png" alt="Claude Creature product render with its orange character and usage values" width="240"></td>
-    <td align="center"><img src="docs/assets/vibetv-theme-clippy.png" alt="Clippy product render with retro window and usage bars" width="240"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-mini.jpg" alt="Mini Classic product render with session and weekly usage" width="240"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-claude.jpg" alt="Claude Creature product render with its orange character and usage values" width="240"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-clippy.jpg" alt="Clippy product render with retro window and usage bars" width="240"></td>
   </tr>
   <tr><th>Synthwave</th><th>Pixel Battery</th><th>Tiny Office</th></tr>
   <tr>
-    <td align="center"><img src="docs/assets/vibetv-theme-synthwave.png" alt="Synthwave product render with neon skyline and usage bars" width="240"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-synthwave.jpg" alt="Synthwave product render with neon skyline and usage bars" width="240"></td>
     <td align="center"><img src="docs/assets/vibetv-theme-pixel-battery.png" alt="Pixel Battery screen preview with segmented usage batteries" width="180"></td>
     <td align="center"><img src="docs/assets/vibetv-theme-tiny-office.png" alt="Tiny Office screen preview with a pixel-art developer desk" width="180"></td>
   </tr>
@@ -45,7 +45,7 @@ live theme in the Control Center Screensavers tab.
 
 | Night Clock | Reset Countdown | Token Fire |
 | --- | --- | --- |
-| <img src="docs/assets/vibetv-screensaver-night-clock.png" alt="Night Clock screensaver product render showing the time and next resets" width="240"> | <img src="docs/assets/vibetv-screensaver-reset-countdown.png" alt="Reset Countdown screensaver product render with a forest and reset timer" width="240"> | <img src="docs/assets/vibetv-screensaver-token-fire.png" alt="Token Fire screensaver product render with a fireplace and token totals" width="240"> |
+| <img src="docs/assets/vibetv-screensaver-night-clock.jpg" alt="Night Clock screensaver product render showing the time and next resets" width="240"> | <img src="docs/assets/vibetv-screensaver-reset-countdown.jpg" alt="Reset Countdown screensaver product render with a forest and reset timer" width="240"> | <img src="docs/assets/vibetv-screensaver-token-fire.jpg" alt="Token Fire screensaver product render with a fireplace and token totals" width="240"> |
 
 Screensaver renders also use illustrative example data. Available values depend
 on the provider and data freshness.
