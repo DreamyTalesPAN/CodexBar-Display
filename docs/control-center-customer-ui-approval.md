@@ -4381,3 +4381,15 @@ issue scope, or release permission never implies UI permission.
   have usable readings. Existing readiness and save-failure checks remain in
   effect. Back from the theme returns directly to providers when only one is
   enabled, and Continue reevaluates the current toggles after edits.
+
+## 2026-09-08 — Reach providers after a successful connection
+
+- User approval: After installing the test DMG, the user reported being stuck
+  on the completed connection/firmware log and unable to reach the provider
+  list: "jetzt bin ich wieder hier stuck und komme nicht weiter zur providerliste".
+- Approved customer-visible result: Completing Connect and the firmware check
+  opens provider selection when the connected device is waiting for usage,
+  including when a previous provider setup is saved. The provider step keeps its existing
+  readiness checks and waits for Continue; a later background device update
+  cannot skip the choice. A real device loss and unfinished or failed firmware
+  work still keep the connection/recovery step.

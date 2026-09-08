@@ -477,6 +477,7 @@ async function main() {
       );
       await testProviderMigrationHandoff(browser, appContext.appUrl);
       await testSingleProviderSkipsDisplayMode(browser, appContext.appUrl);
+      await testReconnectReachesProvidersWithoutFreshUsage(browser, appContext.appUrl);
       console.log("control-center provider settings test passed");
       return;
     }
@@ -1236,6 +1237,7 @@ async function newCustomerPage(browser, appUrl, options) {
 
 async function testStartupStateMachine(browser, appUrl) {
   await testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl);
+  await testReconnectReachesProvidersWithoutFreshUsage(browser, appUrl);
   await testMultipleVibeTVsRequireAChoice(browser, appUrl);
   await testMissingVibeTVOffersRetry(browser, appUrl);
   await testDeniedLocalNetworkShowsRecovery(browser, appUrl);
@@ -12768,6 +12770,35 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+async function testReconnectReachesProvidersWithoutFreshUsage(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const connected = {
+    ...companionDevice,
+    ready: false,
+    connectionState: "awaiting_usage",
+    stream: { ...companionDevice.stream, running: true, healthy: false },
+  };
+  const route = await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchDevices: [{ target: companionDevice.target, deviceId: "customer-device", board: companionDevice.board, firmware: companionDevice.firmware, networkMode: "station", known: true }],
+    onSelect: () => connected,
+    providerSelectionSetup: { providerSelectionRequired: false, providerSelectionComplete: true },
+    providerDisplay: { mode: "automatic", providerIds: ["codex"], configured: true, valid: true },
+    preferencesResponse: { ok: true, items: [{ ...providerPreferenceFixture("codex", "Codex"), health: { state: "stale", service: "unknown", message: "Live usage is unavailable; the last successful reading is still saved." } }] },
+    displayFrameStatus: 404,
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await connectDiscoveredVibeTV(page, { deviceId: "customer-device" });
+  const providers = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+  await providers.waitFor({ timeout: 15_000 });
+  await providers.getByText("Live usage is unavailable; the last successful reading is still saved.", { exact: true }).waitFor();
+  assert(!(await providers.getByRole("button", { name: "Continue" }).isDisabled()), "a bounded last-good reading must keep the existing Continue action available");
+  route.setDevice(companionDevice);
+  await page.waitForTimeout(6_000);
+  assert(await providers.isVisible(), "fresh device readiness must not skip the provider choice after reconnecting");
+  await page.close();
+}
 
 async function testSingleProviderSkipsDisplayMode(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });

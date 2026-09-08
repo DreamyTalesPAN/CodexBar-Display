@@ -153,6 +153,29 @@ describe("SetupWizard: theme failures", () => {
 });
 
 describe("SetupWizard: initial provider scan", () => {
+  it("reopens providers after connecting without fresh usage and preserves real device loss", async () => {
+    const device = { active: true, connected: true, paired: true, ready: false };
+    const props = baseProps({
+      step: "device",
+      device,
+      deviceCandidates: [{ deviceId: "vibetv-1", target: "http://192.168.178.73", known: true }],
+      connectSteps: {
+        connect: vi.fn(async () => device),
+        checkFirmware: vi.fn(async () => null),
+        installFirmware: vi.fn(),
+      },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(shownStep()).toBe("Choose AI providers");
+    rerender(<SetupWizard {...props} step="live" device={{ ...device, ready: true }} />);
+    expect(shownStep()).toBe("Choose AI providers");
+    rerender(<SetupWizard {...props} device={{ ...device, connected: false }} />);
+    expect(shownStep()).toBe("Choose your VibeTV");
+  });
+
   it("shows the provider loading screen instead of the finished list", () => {
     render(
       <SetupWizard

@@ -11,9 +11,14 @@ import type {
   UsageSnapshot,
   WiFiNetwork,
 } from "../control-center-types";
+import { deviceIsCustomerConnected } from "../control-center-types";
 import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
-import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
+import {
+  useSetupConnect,
+  type ConnectedDevice,
+  type SetupConnectSteps,
+} from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
 import {
   SetupAddressDialog,
@@ -213,10 +218,14 @@ export function SetupWizard(props: SetupWizardProps) {
     setWentBackTo(null);
     onConnectionComplete?.();
   }, [onConnectionComplete]);
+  const finishConnection = useCallback((device: ConnectedDevice) => {
+    setWentBackTo(device?.ready === false ? "providers" : null);
+    onConnectionComplete?.();
+  }, [onConnectionComplete]);
   const connect = useSetupConnect(
     connectSteps,
     props.firmwareProgress,
-    goForward,
+    finishConnection,
   );
   const { reset: resetConnect } = connect;
   const connectionCandidates = useMemo(
@@ -271,11 +280,20 @@ export function SetupWizard(props: SetupWizardProps) {
   // reset ("idle") releases the step.
   const connectSettled =
     connect.state.phase === "idle" || connect.state.phase === "done";
-  // A completed connection waits for the next saved setup snapshot on its log.
-  const derived =
-    connectSettled && !(connect.state.phase === "done" && derivedStep === "welcome")
-      ? resolveSetupStep(derivedStep, wentBackTo)
-      : "device";
+  // A completed connection owns entry to provider selection, even when an
+  // earlier setup is saved and the first fresh usage frame is still missing.
+  // A real device loss still returns to the connection step.
+  const connectedProviderStep =
+    wentBackTo === "providers" &&
+    connect.state.phase === "done" &&
+    deviceIsCustomerConnected(props.device) &&
+    derivedStep === "device";
+  const derived = connectSettled && !(connect.state.phase === "done" && derivedStep === "welcome")
+    ? resolveSetupStep(
+        connectedProviderStep ? "providers" : derivedStep,
+        wentBackTo,
+      )
+    : "device";
   // The display choice is written optimistically so it does not flicker, and
   // the derived step reads that optimism as done -- which would put the
   // customer on the theme step, picking or even installing, on the strength of

@@ -4567,7 +4567,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               "Keep the selected VibeTV connected by Cable and retry.",
           };
         }
-        return { board: selected.device?.board, firmware: selected.device?.firmware };
+        return selected.device ?? {};
       }
       const connected = await selectAndConnectDevice(candidate);
       if (!connected || "code" in connected) {
@@ -4575,7 +4575,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       // Selection already returned the verified handshake. A second probe can
       // race the transport worker's restart and discard that fresh identity.
-      return { board: connected.board, firmware: connected.firmware };
+      return connected;
     },
     installFirmware: async () => {
       lastFirmwareErrorRef.current = null;
