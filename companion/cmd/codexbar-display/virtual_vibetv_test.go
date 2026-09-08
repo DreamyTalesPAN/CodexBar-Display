@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/virtualvibetv"
 )
@@ -23,7 +24,7 @@ func TestRunInstallUpdateUsesDedicatedRawOTAAndDoesNotFlashAlreadyCurrentDevice(
 	t.Cleanup(func() {
 		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort = previousClient, previousPoll, previousPort
 	})
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t, t.TempDir())
 	firmwareHTTPVerifyPollInterval = time.Millisecond
 
 	image := []byte("virtual raw OTA candidate")
@@ -71,7 +72,7 @@ func TestRunInstallUpdateAcceptsDroppedRawOTAResponseWithoutSecondFlash(t *testi
 	t.Cleanup(func() {
 		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort, firmwareInterruptedVerifyTimeout = previousClient, previousPoll, previousPort, previousTimeout
 	})
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t, t.TempDir())
 	firmwareHTTPVerifyPollInterval, firmwareInterruptedVerifyTimeout = time.Millisecond, 100*time.Millisecond
 
 	image := []byte("accepted raw OTA then disconnected")

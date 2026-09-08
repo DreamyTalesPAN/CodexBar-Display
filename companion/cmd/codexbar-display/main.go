@@ -31,6 +31,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
@@ -62,8 +63,8 @@ var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilit
 }
 var doctorCheckCompanionHealthFn = checkDoctorCompanionHealth
 var doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
-	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-	return exec.Command("launchctl", "print", service).CombinedOutput()
+	status, err := service.New(label, "", false).Status(context.Background())
+	return []byte(status.Raw), err
 }
 
 var displayStreamSensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
@@ -106,6 +107,10 @@ func main() {
 		err = runOpenControlCenter(args[1:])
 	case "service":
 		err = runService(args[1:])
+	case "prepare-codexbar":
+		err = runPinnedCodexBar(args[1:], false)
+	case "validate-codexbar":
+		err = runPinnedCodexBar(args[1:], true)
 	case "version":
 		err = runVersion(args[1:])
 	case "upgrade":
@@ -404,10 +409,7 @@ func listenCompanionAPI(addr string, allowFallback bool) (net.Listener, error) {
 
 func runtimeEndpointPath(home string) string {
 	return filepath.Join(
-		home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(home),
 		"run",
 		"runtime-endpoint.json",
 	)
@@ -2140,7 +2142,11 @@ func runtimeSupportDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display"), nil
+	root := runtimepaths.Root(home)
+	if root == "" {
+		return "", errors.New("user config directory is unavailable")
+	}
+	return root, nil
 }
 
 func resolvePathFromCwd(path string) (string, error) {

@@ -13,7 +13,12 @@ API=127.0.0.1:47899
 DEV_PORT=47898
 DEV_ADDR="127.0.0.1:${DEV_PORT}"
 export HOME="$WORK/home"
-mkdir -p "$HOME/Library/Application Support/codexbar-display"
+export XDG_CONFIG_HOME="$WORK/home/.config"
+TEST_RUNTIME_ROOT="$XDG_CONFIG_HOME/codexbar-display"
+if [[ "$(uname -s)" == Darwin ]]; then
+  TEST_RUNTIME_ROOT="$HOME/Library/Application Support/codexbar-display"
+fi
+mkdir -p "$TEST_RUNTIME_ROOT"
 
 cleanup() {
   [[ -n "${RUNTIME_PID:-}" ]] && kill "$RUNTIME_PID" 2>/dev/null || true
@@ -112,7 +117,7 @@ LCTL
 chmod +x "$WORK/bin/launchctl"
 export PATH="$WORK/bin:$PATH"
 
-cat > "$HOME/Library/Application Support/codexbar-display/config.json" <<CFG
+cat > "$TEST_RUNTIME_ROOT/config.json" <<CFG
 {
   "deviceTarget": "http://${DEV_ADDR}",
   "deviceToken": "virtual-pair-token",

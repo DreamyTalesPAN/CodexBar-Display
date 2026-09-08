@@ -21,6 +21,8 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
@@ -75,9 +77,11 @@ type deps struct {
 	lookPath        func(string) (string, error)
 	runCommand      commandRunner
 	isInteractive   func() bool
+	serviceForHome  func(string) service.Manager
 }
 
 func (d deps) withDefaults() deps {
+	injectedRunner := d.runCommand != nil
 	if d.stdin == nil {
 		d.stdin = os.Stdin
 	}
@@ -127,6 +131,16 @@ func (d deps) withDefaults() deps {
 	}
 	if d.isInteractive == nil {
 		d.isInteractive = stdinIsInteractive
+	}
+	if d.serviceForHome == nil {
+		d.serviceForHome = func(home string) service.Manager {
+			if injectedRunner {
+				return service.NewDarwin(launchAgentLabel, home, d.uid(), false, func(ctx context.Context, name string, args ...string) (string, error) {
+					return d.runCommand(ctx, "", name, args...)
+				})
+			}
+			return service.New(launchAgentLabel, home, false)
+		}
 	}
 	return d
 }
@@ -410,9 +424,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 
 	if opts.DryRun {
-		installPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
+		installPath := runtimepaths.Path(home, "bin", "codexbar-display")
 		plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-		backupDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "backups")
+		backupDir := runtimepaths.Path(home, "backups")
 		fmt.Fprintf(d.stdout, "Dry-run: would install companion binary to %s\n", installPath)
 		fmt.Fprintf(d.stdout, "Dry-run: would ensure backup dir %s\n", backupDir)
 		if strings.TrimSpace(opts.Theme) != "" {
@@ -793,8 +807,7 @@ func flashFirmware(ctx context.Context, d deps, executablePath, port, firmwareEn
 		}
 	}
 
-	service := launchServiceTarget(d.uid())
-	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
+	_ = d.serviceForHome("").Stop(ctx, false)
 
 	output, err := d.runCommand(ctx, "", executablePath, "upgrade", "--port", port, "--firmware-env", firmwareEnv)
 	if err != nil {
@@ -835,7 +848,7 @@ func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
 func flashRecoveryHint(output, port string, uid int) string {
 	lower := strings.ToLower(output)
 	if strings.Contains(lower, "failed to connect") || strings.Contains(lower, "could not open") || strings.Contains(lower, "resource busy") {
-		return fmt.Sprintf("ensure no process holds %s, run `launchctl bootout %s 2>/dev/null || true`, then rerun setup", port, launchServiceTarget(uid))
+		return fmt.Sprintf("ensure no process holds %s, run `codexbar-display service stop`, then rerun setup", port)
 	}
 	return "check USB cable/device, then retry setup or pass an explicit --port"
 }
@@ -854,7 +867,7 @@ func containsString(all []string, target string) bool {
 }
 
 func installBinary(sourcePath, home string) (string, error) {
-	targetDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin")
+	targetDir := runtimepaths.Path(home, "bin")
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return "", err
 	}
@@ -910,7 +923,7 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 	if err := os.MkdirAll(launchAgentDir, 0o755); err != nil {
 		return "", err
 	}
-	logDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs")
+	logDir := runtimepaths.Path(home, "logs")
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return "", err
 	}
@@ -937,7 +950,7 @@ func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string
 	} else if strings.TrimSpace(port) != "" {
 		args = append(args, "--port", strings.TrimSpace(port))
 	}
-	logDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs")
+	logDir := runtimepaths.Path(home, "logs")
 	outLog := filepath.Join(logDir, "daemon.out.log")
 	errLog := filepath.Join(logDir, "daemon.err.log")
 
@@ -1006,146 +1019,41 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 }
 
 func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
-	domain := fmt.Sprintf("gui/%d", d.uid())
-	service := launchServiceTarget(d.uid())
-
-	bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
-	_, _ = d.runCommand(ctx, "", "launchctl", "enable", service)
-
-	output, err := bootstrapLaunchAgentWithRetry(ctx, d, domain, service, plistPath, 3, 300*time.Millisecond)
+	home, err := d.homeDir()
 	if err != nil {
-		return &StepError{
-			Step:   "launchagent-bootstrap",
-			Err:    err,
-			Hint:   "check LaunchAgent plist path/permissions and rerun setup",
-			Output: tailLines(output, 20),
-		}
+		return err
 	}
-
-	output, err = d.runCommand(ctx, "", "launchctl", "kickstart", "-k", service)
-	if err != nil {
-		return &StepError{
-			Step:   "launchagent-kickstart",
-			Err:    err,
-			Hint:   "run `launchctl print " + service + "` and inspect ~/Library/Application Support/codexbar-display/logs/daemon.err.log",
-			Output: tailLines(output, 20),
-		}
+	manager := d.serviceForHome(home)
+	if err := manager.Install(ctx); err != nil {
+		return &StepError{Step: "launchagent-bootstrap", Err: err, Hint: "check LaunchAgent plist path/permissions and rerun setup"}
 	}
-
-	status, err := waitForLaunchAgentState(ctx, d, service, 10, 500*time.Millisecond)
-	if err != nil {
-		return &StepError{
-			Step:   "launchagent-verify",
-			Err:    err,
-			Hint:   "run `launchctl print " + service + "` manually to inspect state",
-			Output: tailLines(status, 20),
-		}
+	if err := manager.Start(ctx); err != nil {
+		return &StepError{Step: "launchagent-kickstart", Err: err, Hint: "inspect daemon.err.log and run codexbar-display service start"}
 	}
-	if !launchAgentStateHealthy(status) {
-		return &StepError{
-			Step:   "launchagent-verify",
-			Err:    errors.New("launch agent not in running/waiting state"),
-			Hint:   "inspect ~/Library/Application Support/codexbar-display/logs/daemon.err.log and run `launchctl kickstart -k " + service + "`",
-			Output: tailLines(status, 20),
-		}
-	}
-
-	return nil
-}
-
-func bootstrapLaunchAgentWithRetry(ctx context.Context, d deps, domain, service, plistPath string, attempts int, delay time.Duration) (string, error) {
-	if attempts <= 0 {
-		attempts = 1
-	}
-
-	var lastOutput string
+	var status service.Status
 	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		output, err := d.runCommand(ctx, "", "launchctl", "bootstrap", domain, plistPath)
+	for attempt := 0; attempt < 10; attempt++ {
+		current, err := manager.Status(ctx)
 		if err == nil {
-			return output, nil
-		}
-		lastOutput = output
-		lastErr = err
-
-		if launchAgentLoaded(ctx, d, service) {
-			return output, nil
-		}
-
-		if attempt < attempts {
-			bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
-			select {
-			case <-ctx.Done():
-				return lastOutput, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-	}
-
-	return lastOutput, lastErr
-}
-
-func launchAgentLoaded(ctx context.Context, d deps, service string) bool {
-	_, err := d.runCommand(ctx, "", "launchctl", "print", service)
-	return err == nil
-}
-
-func bootoutLaunchAgentBestEffort(ctx context.Context, d deps, domain, service, plistPath string) {
-	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
-	if strings.TrimSpace(plistPath) != "" {
-		_, _ = d.runCommand(ctx, "", "launchctl", "bootout", domain, plistPath)
-	}
-}
-
-func waitForLaunchAgentState(ctx context.Context, d deps, service string, attempts int, delay time.Duration) (string, error) {
-	if attempts <= 0 {
-		attempts = 1
-	}
-	if delay <= 0 {
-		delay = 500 * time.Millisecond
-	}
-
-	var lastStatus string
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		status, err := d.runCommand(ctx, "", "launchctl", "print", service)
-		if err == nil {
-			lastStatus = status
-			if launchAgentStateHealthy(status) {
-				return status, nil
+			status = current
+			if service.Healthy(current.State) {
+				return nil
 			}
 		} else {
 			lastErr = err
 		}
-
-		if i == attempts-1 {
-			break
-		}
-
-		select {
-		case <-ctx.Done():
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return lastStatus, ctxErr
+		if attempt < 9 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
 			}
-			return lastStatus, errors.New("setup context canceled")
-		case <-time.After(delay):
 		}
 	}
-
-	if lastErr != nil && strings.TrimSpace(lastStatus) == "" {
-		return lastStatus, lastErr
+	if lastErr == nil || status.Raw != "" {
+		lastErr = errors.New("launch agent not in running/waiting state")
 	}
-	return lastStatus, nil
-}
-
-func launchAgentStateHealthy(status string) bool {
-	return strings.Contains(status, "state = running") ||
-		strings.Contains(status, "state = waiting") ||
-		strings.Contains(status, "state = spawn scheduled")
-}
-
-func launchServiceTarget(uid int) string {
-	return fmt.Sprintf("gui/%d/%s", uid, launchAgentLabel)
+	return &StepError{Step: "launchagent-verify", Err: lastErr, Hint: "inspect daemon.err.log and run codexbar-display service status", Output: tailLines(status.Raw, 20)}
 }
 
 func tailLines(text string, maxLines int) string {
@@ -1172,17 +1080,12 @@ func runSystemCommand(ctx context.Context, dir string, name string, args ...stri
 }
 
 func stopLaunchAgentBestEffort(ctx context.Context, d deps) {
-	domain := fmt.Sprintf("gui/%d", d.uid())
-	service := launchServiceTarget(d.uid())
-	plistPath := ""
-	if home, err := d.homeDir(); err == nil {
-		plistPath = filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-	}
-	bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
+	home, _ := d.homeDir()
+	_ = d.serviceForHome(home).Uninstall(ctx)
 }
 
 func installRecoveryAssets(repoRoot, home string) (string, string, error) {
-	appSupportDir := filepath.Join(home, "Library", "Application Support", "codexbar-display")
+	appSupportDir := runtimepaths.Root(home)
 	backupDir := filepath.Join(appSupportDir, "backups")
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		return "", "", err
