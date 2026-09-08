@@ -3836,3 +3836,27 @@ issue scope, or release permission never implies UI permission.
   persists for each missing firmware capability; a complete capability
   readback can show "Update complete". Browser fixtures now distinguish those
   outcomes explicitly, without weakening the visible assertions.
+
+### 2026-09-08 — Pixel Battery bench refinements and immediate provider selection
+
+- User approval: Paul requested larger reset text and consistently large,
+  vertically centered percentages, reported battery-area redraw flicker and
+  delayed manual provider switching, then approved the installed result
+  ("ok passt so") and instructed us to push and fix relevant CI/review findings.
+- Approved customer-visible result: Pixel Battery revision 16 keeps percentage digits at size 2,
+  centers both rows against their batteries, places a smaller percent glyph
+  alongside, and enlarges the reset line. Countdown-only changes invalidate
+  reset text without repainting battery progress. Manual provider selection
+  wakes the existing display loop immediately using collector-owned snapshots;
+  explicit usage refresh still collects before waking the display.
+- Bench evidence: VibeTV 14799300 on firmware 99.1.835 rendered revision 16 with
+  zero reported render failures. The native Mac overview displayed the updated
+  layout. App 99.1.836 sent Codex and Claude frames after 0.225 s and 0.413 s
+  respectively in the API-to-device measurement; the user accepted this state.
+  The final settings-button walkthrough was not completed because provider
+  status checks temporarily hid its choices; no completed UI-click proof is
+  claimed for that final measurement.
+- Scope: The user explicitly requested local, unsigned candidate work and
+  deferred signing. Full signed cold/warm update rehearsals remain a separate
+  acceptance gate and are not claimed here. This records local validation and
+  approval to push the PR branch, not approval to merge, release, or sign.

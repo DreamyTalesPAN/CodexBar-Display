@@ -3,17 +3,17 @@ package protocol
 import "strings"
 
 const (
-	FeatureTheme             = "theme"
-	FeatureThemeSpecV1       = "theme-spec-v1"
-	FeatureUsageSlotsV1      = "usage-slots-v1"
-	FeatureUsageWindowsV1    = "usage-windows-v1"
-	FeatureProviderSlotsV1   = "provider-slots-v1"
-	FeatureProviderAssetsV1  = "provider-assets-v1"
-	FeatureColorStopsV1      = "color-stops-v1"
-	FeatureTextValignV1      = "text-valign-v1"
-	DefaultMaxFrameBytes  = 512
-	DefaultMinBrightness  = 10
-	DefaultMaxBrightness  = 100
+	FeatureTheme            = "theme"
+	FeatureThemeSpecV1      = "theme-spec-v1"
+	FeatureUsageSlotsV1     = "usage-slots-v1"
+	FeatureUsageWindowsV1   = "usage-windows-v1"
+	FeatureProviderSlotsV1  = "provider-slots-v1"
+	FeatureProviderAssetsV1 = "provider-assets-v1"
+	FeatureColorStopsV1     = "color-stops-v1"
+	FeatureTextValignV1     = "text-valign-v1"
+	DefaultMaxFrameBytes    = 512
+	DefaultMinBrightness    = 10
+	DefaultMaxBrightness    = 100
 )
 
 type DisplayBrightnessCapabilities struct {
@@ -47,21 +47,21 @@ type ThemeCapabilities struct {
 	SupportsProviderAssetsV1 bool     `json:"supportsProviderAssetsV1,omitempty"`
 	SupportsColorStopsV1     bool     `json:"supportsColorStopsV1,omitempty"`
 	SupportsTextValignV1     bool     `json:"supportsTextValignV1,omitempty"`
-	MaxUsageWindows         int      `json:"maxUsageWindows,omitempty"`
-	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
-	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
-	MaxStoredThemeSpecBytes int      `json:"maxStoredThemeSpecBytes,omitempty"`
-	MaxThemePrimitives      int      `json:"maxThemePrimitives,omitempty"`
-	MaxThemeGifAssets       int      `json:"maxThemeGifAssets,omitempty"`
-	MaxThemeGifBytes        int      `json:"maxThemeGifBytes,omitempty"`
-	MaxThemeGifWidth        int      `json:"maxThemeGifWidth,omitempty"`
-	MaxThemeGifHeight       int      `json:"maxThemeGifHeight,omitempty"`
-	MaxThemeGifPixels       int      `json:"maxThemeGifPixels,omitempty"`
-	MaxThemeGifLzwBits      int      `json:"maxThemeGifLzwBits,omitempty"`
-	SupportedPrimitiveTypes []string `json:"supportedPrimitiveTypes,omitempty"`
-	BuiltinThemes           []string `json:"builtinThemes,omitempty"`
-	CachedThemeID           string   `json:"cachedThemeId,omitempty"`
-	CachedThemeRev          int      `json:"cachedThemeRev,omitempty"`
+	MaxUsageWindows          int      `json:"maxUsageWindows,omitempty"`
+	SupportsStoredThemes     bool     `json:"supportsStoredThemes,omitempty"`
+	MaxThemeSpecBytes        int      `json:"maxThemeSpecBytes,omitempty"`
+	MaxStoredThemeSpecBytes  int      `json:"maxStoredThemeSpecBytes,omitempty"`
+	MaxThemePrimitives       int      `json:"maxThemePrimitives,omitempty"`
+	MaxThemeGifAssets        int      `json:"maxThemeGifAssets,omitempty"`
+	MaxThemeGifBytes         int      `json:"maxThemeGifBytes,omitempty"`
+	MaxThemeGifWidth         int      `json:"maxThemeGifWidth,omitempty"`
+	MaxThemeGifHeight        int      `json:"maxThemeGifHeight,omitempty"`
+	MaxThemeGifPixels        int      `json:"maxThemeGifPixels,omitempty"`
+	MaxThemeGifLzwBits       int      `json:"maxThemeGifLzwBits,omitempty"`
+	SupportedPrimitiveTypes  []string `json:"supportedPrimitiveTypes,omitempty"`
+	BuiltinThemes            []string `json:"builtinThemes,omitempty"`
+	CachedThemeID            string   `json:"cachedThemeId,omitempty"`
+	CachedThemeRev           int      `json:"cachedThemeRev,omitempty"`
 }
 
 type TransportCapabilities struct {

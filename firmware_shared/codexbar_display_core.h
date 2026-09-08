@@ -487,11 +487,11 @@ inline bool DecodeResetTrustRecord(
   return true;
 }
 
-inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next) {
+inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
   return previous.id != next.id ||
          previous.label != next.label ||
          previous.percent != next.percent ||
-         previous.resetSecs != next.resetSecs ||
+         (includeReset && previous.resetSecs != next.resetSecs) ||
          previous.available != next.available;
 }
 
@@ -770,7 +770,9 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
          (usesUsageWindows && [&]() {
            for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-             if (ThemeSpecUsesUsageWindowBinding(raw, i) && UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
+             if (ThemeSpecUsesUsageWindowBinding(raw, i) &&
+                 UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i],
+                                    ThemeSpecUsesUsageWindowResetBinding(raw, i))) {
                return true;
              }
            }
@@ -811,8 +813,11 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
     fields |= themespec::kThemeSpecFieldReset;
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
+    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
       fields |= ThemeSpecUsageWindowField(i);
+    }
+    if (previous.usageWindows[i].resetSecs != next.usageWindows[i].resetSecs) {
+      fields |= themespec::kThemeSpecFieldUsageWindowReset;
     }
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {

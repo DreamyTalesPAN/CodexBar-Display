@@ -826,6 +826,52 @@ void testHighestAdvertisedUsageWindowBindingCompiles() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testUsageCountdownRefreshDoesNotRepaintBatteryArea() {
+  for (const char* binding : {"usageSlot1Reset", "us1r", "usage.0.reset"}) {
+    for (bool isTemplate : {false, true}) {
+      std::string spec = R"JSON({"v":1,"id":"battery-refresh","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/bg.cbi"},{"t":"p","x":29,"y":92,"w":128,"h":26,"sl":1,"b":"us1p"},{"t":"p","x":29,"y":158,"w":128,"h":26,"sl":2,"b":"us2p"},{"t":"tx","x":16,"y":212,"w":208,"sl":1,)JSON";
+      spec += isTemplate ? "\"v\":\"Reset in {" : "\"b\":\"";
+      spec += binding;
+      spec += isTemplate ? "}\"}]}" : "\"}]}";
+      codexbar_display::core::Frame before;
+      before.usageWindows[0].available = true;
+      before.usageWindows[0].percent = 42;
+      before.usageWindows[0].resetSecs = 3600;
+      auto after = before;
+      after.usageWindows[0].resetSecs = 3540;
+      const uint32_t fields = codexbar_display::core::ThemeSpecLiveChangedFields(before, after);
+      RecordingSink sink;
+      auto frame = testFrame();
+      frame.usageSlot1Available = true;
+      frame.usageSlot2Available = true;
+      frame.usageWindows[0].available = true;
+      frame.usageWindows[0].percent = 42;
+      frame.usageWindows[0].resetSecs = 3540;
+      frame.usageWindows[1].available = true;
+      frame.usageWindows[1].percent = 50;
+      TEST_ASSERT_TRUE(renderChangedSpec(spec.c_str(), frame, fields, sink));
+      TEST_ASSERT_NULL(FirstProgressCommand(sink));
+      bool clipped = false;
+      for (const auto& cmd : sink.commands) {
+        if (cmd.type == CommandType::BeginClip) {
+          clipped = true;
+          TEST_ASSERT_EQUAL_INT(212, cmd.y);
+        }
+      }
+      TEST_ASSERT_TRUE(clipped);
+    }
+  }
+}
+
+void testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3600}],"themeSpec":{"v":1,"id":"battery","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"sl":1,"b":"us1p"}]}})JSON", 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3540}]})JSON", 2000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+}
+
 void testCompactUsageWindowBindingTriggersLiveRedraw() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3415,6 +3461,8 @@ int main() {
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
+  RUN_TEST(testUsageCountdownRefreshDoesNotRepaintBatteryArea);
+  RUN_TEST(testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
   RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);

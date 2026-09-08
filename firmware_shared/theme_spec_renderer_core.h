@@ -29,6 +29,8 @@ constexpr uint32_t kThemeSpecFieldUsageWindows = 1UL << 12;
 constexpr uint32_t kThemeSpecFieldUsageSlot1 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldProviderSlots = 1UL << 13;
+// A ticking reset must not invalidate slot-owned labels, sprites, or progress bars.
+constexpr uint32_t kThemeSpecFieldUsageWindowReset = 1UL << 14;
 constexpr size_t kMaxThemeSpecProviderSlots = 2;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
@@ -915,74 +917,6 @@ inline bool TemplateUsesField(const char* raw, const char* a, const char* b, con
   return false;
 }
 
-inline bool BindingUsesField(const char* binding, uint32_t fields) {
-  if ((fields & kThemeSpecFieldProvider) != 0 && StringEqualsAny(binding, "provider", "pr")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldLabel) != 0 && StringEqualsAny(binding, "label", "providerLabel", "l")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldSession) != 0 && StringEqualsAny(binding, "session", "sessionPercent", "s")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldWeekly) != 0 && StringEqualsAny(binding, "weekly", "weeklyPercent", "w")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldReset) != 0 && StringEqualsAny(binding, "reset", "resetCountdown", "r")) {
-    return true;
-  }
-  if (ProviderSlotBindingIndex(binding) >= 0) {
-    return (fields & kThemeSpecFieldProviderSlots) != 0;
-  }
-  const int slotIndex = UsageWindowBindingIndex(binding);
-  if (slotIndex >= 0) {
-    return (fields & kThemeSpecFieldUsageWindows) != 0;
-  }
-  if ((fields & kThemeSpecFieldUsageMode) != 0 && StringEqualsAny(binding, "usageMode", "u")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldActivity) != 0 && StringEqualsAny(binding, "activity", "act")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldTime) != 0 && StringEqualsAny(binding, "time", "tm")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldDate) != 0 && StringEqualsAny(binding, "date", "dt")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldSessionTokens) != 0 && StringEqualsAny(binding, "sessionTokens", "st")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldWeekTokens) != 0 && StringEqualsAny(binding, "weekTokens", "wt")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldTotalTokens) != 0 && StringEqualsAny(binding, "totalTokens", "tt")) {
-    return true;
-  }
-  return false;
-}
-
-inline bool TextTemplateUsesField(const char* raw, uint32_t fields) {
-  return ((fields & kThemeSpecFieldUsageWindows) != 0 && std::strstr(SafeText(raw), "{usage.") != nullptr) ||
-         ((fields & kThemeSpecFieldUsageWindows) != 0 && (TemplateUsesField(raw, "usageSlot1Label", "us1l") || TemplateUsesField(raw, "usageSlot1Percent", "us1p") || TemplateUsesField(raw, "usageSlot1Reset", "us1r") || TemplateUsesField(raw, "usageSlot1Available", "us1a"))) ||
-         ((fields & kThemeSpecFieldUsageWindows) != 0 && (TemplateUsesField(raw, "usageSlot2Label", "us2l") || TemplateUsesField(raw, "usageSlot2Percent", "us2p") || TemplateUsesField(raw, "usageSlot2Reset", "us2r") || TemplateUsesField(raw, "usageSlot2Available", "us2a"))) ||
-         ((fields & kThemeSpecFieldProviderSlots) != 0 && (TemplateUsesField(raw, "providerSlot1Label", "pv1l") || TemplateUsesField(raw, "providerSlot1Percent", "pv1p") || TemplateUsesField(raw, "providerSlot1Reset", "pv1r") || TemplateUsesField(raw, "providerSlot1Available", "pv1a"))) ||
-         ((fields & kThemeSpecFieldProviderSlots) != 0 && (TemplateUsesField(raw, "providerSlot2Label", "pv2l") || TemplateUsesField(raw, "providerSlot2Percent", "pv2p") || TemplateUsesField(raw, "providerSlot2Reset", "pv2r") || TemplateUsesField(raw, "providerSlot2Available", "pv2a"))) ||
-         ((fields & kThemeSpecFieldProvider) != 0 && TemplateUsesField(raw, "provider", "pr")) ||
-         ((fields & kThemeSpecFieldLabel) != 0 && TemplateUsesField(raw, "label", "providerLabel", "l")) ||
-         ((fields & kThemeSpecFieldSession) != 0 && TemplateUsesField(raw, "session", "sessionPercent", "s")) ||
-         ((fields & kThemeSpecFieldWeekly) != 0 && TemplateUsesField(raw, "weekly", "weeklyPercent", "w")) ||
-         ((fields & kThemeSpecFieldReset) != 0 && TemplateUsesField(raw, "reset", "resetCountdown", "r")) ||
-         ((fields & kThemeSpecFieldUsageMode) != 0 && TemplateUsesField(raw, "usageMode", "u")) ||
-         ((fields & kThemeSpecFieldActivity) != 0 && TemplateUsesField(raw, "activity", "act")) ||
-         ((fields & kThemeSpecFieldTime) != 0 && TemplateUsesField(raw, "time", "tm")) ||
-         ((fields & kThemeSpecFieldDate) != 0 && TemplateUsesField(raw, "date", "dt")) ||
-         ((fields & kThemeSpecFieldSessionTokens) != 0 && TemplateUsesField(raw, "sessionTokens", "st")) ||
-         ((fields & kThemeSpecFieldWeekTokens) != 0 && TemplateUsesField(raw, "weekTokens", "wt")) ||
-         ((fields & kThemeSpecFieldTotalTokens) != 0 && TemplateUsesField(raw, "totalTokens", "tt"));
-}
-
-
 inline uint32_t BindingFieldMask(const char* binding) {
   if (StringEqualsAny(binding, "provider", "pr")) {
     return kThemeSpecFieldProvider;
@@ -1003,7 +937,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProviderSlots;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
-    return kThemeSpecFieldUsageWindows;
+    const bool reset = std::strcmp(UsageWindowField(binding), "reset") == 0 ||
+                       StringEqualsAny(binding, "us1r", "us2r");
+    return kThemeSpecFieldUsageWindows | (reset ? kThemeSpecFieldUsageWindowReset : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u")) {
     return kThemeSpecFieldUsageMode;
@@ -1031,6 +967,17 @@ inline uint32_t BindingFieldMask(const char* binding) {
 
 inline uint32_t TextTemplateFieldMask(const char* raw) {
   uint32_t fields = 0;
+  if (TemplateUsesField(raw, "usageSlot1Reset", "us1r") ||
+      TemplateUsesField(raw, "usageSlot2Reset", "us2r")) {
+    fields |= kThemeSpecFieldUsageWindowReset;
+  }
+  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
+    char binding[24];
+    std::snprintf(binding, sizeof(binding), "usage.%u.reset", static_cast<unsigned>(i));
+    if (TemplateUsesField(raw, binding, nullptr)) {
+      fields |= kThemeSpecFieldUsageWindowReset;
+    }
+  }
   if (TemplateUsesField(raw, "provider", "pr")) {
     fields |= kThemeSpecFieldProvider;
   }
@@ -1418,11 +1365,11 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     if (!CompileProgressColorStops(primitive, out)) {
       return false;
     }
-    const uint32_t slotField = BindingFieldMask(out.binding) & kThemeSpecFieldUsageWindows;
-    if (slotField != 0) {
-      out.liveFields |= slotField;
+    const uint32_t bindingFields = BindingFieldMask(out.binding);
+    if ((bindingFields & kThemeSpecFieldUsageWindows) != 0) {
+      out.liveFields |= bindingFields;
     } else {
-      out.liveFields |= BindingUsesField(out.binding, kThemeSpecFieldWeekly) ? kThemeSpecFieldWeekly : kThemeSpecFieldSession;
+      out.liveFields |= (bindingFields & kThemeSpecFieldWeekly) != 0 ? kThemeSpecFieldWeekly : kThemeSpecFieldSession;
     }
     return out.width > 0 && out.height > 0;
   }

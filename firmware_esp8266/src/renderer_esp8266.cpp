@@ -565,7 +565,7 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
     }
     for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
       if (core::ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
-        countdownFields |= core::ThemeSpecUsageWindowField(i);
+        countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
       }
     }
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
