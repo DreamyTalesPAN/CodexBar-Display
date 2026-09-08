@@ -376,7 +376,11 @@ func runCodexBarCommand(
     let pipe = Pipe()
     process.executableURL = executableURL
     process.arguments = arguments
-    process.environment = environment
+    // Assigning nil here empties the child environment instead of inheriting
+    // it. The Companion then has no HOME and cannot stage its private CodexBar.
+    if let environment {
+        process.environment = environment
+    }
     process.standardOutput = pipe
     process.standardError = mergeStandardError
         ? pipe

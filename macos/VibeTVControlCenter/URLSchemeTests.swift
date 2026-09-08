@@ -216,6 +216,27 @@ func runURLSchemeTests() {
         verboseResult?.exitCode == 0 && verboseResult?.output.count == 200000,
         "command output must be drained while a verbose child process is running"
     )
+    let environmentCommand = commandFixtureDirectory.appendingPathComponent("environment-command")
+    try! Data(
+        """
+        #!/bin/sh
+        printf '%s' "$HOME"
+        """.utf8
+    ).write(to: environmentCommand)
+    try! FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: environmentCommand.path
+    )
+    let environmentResult = runCodexBarCommand(
+        executableURL: environmentCommand,
+        arguments: []
+    )
+    require(
+        environmentResult?.exitCode == 0
+            && environmentResult?.output == ProcessInfo.processInfo.environment["HOME"]
+            && !(environmentResult?.output.isEmpty ?? true),
+        "the Companion child must inherit the app environment so it can find HOME"
+    )
     require(
         RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
         "healthy native runtime must refresh the WebView"
