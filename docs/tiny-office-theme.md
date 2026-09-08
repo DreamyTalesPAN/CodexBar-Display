@@ -100,10 +100,24 @@ slot `live`). The v0.2.0 to v0.4.0 drafts and the published v0.5.0 (rev 6,
   animation as intended. The v0.4.0 draft showed the reset value clipped at
   the bottom edge on the device, which v0.5.0 fixes.
 
-Not yet done: a 10–20 minute soak and repeated theme switches
-(synthwave → tiny-office → synthwave). Any further hardware write needs a new
-explicit approval for that exact test; do not flash firmware or run cold/warm
-customer rehearsals as an implicit theme smoke test.
+Soak (v0.5.0, rev 6, read-only `/health` samples once per minute, 08:09–08:24
+UTC on 2026-09-08, after the theme had already been active for ~2.5 hours):
+
+- 16/16 samples `renderOk: true`, `renderFailures: 0`, `bootId` unchanged.
+- `freeHeap` 13224 B in 15 samples (12904 B once), `maxFreeBlock` 9960 B,
+  fragmentation 22–24 %; `cbaCompletedFrames` +222/min (66–69 ms per frame),
+  `cbaBufferAllocationFailures: 0`.
+
+Theme switches (with explicit approval, Companion `POST /v1/themes/install`,
+slot `live`): tiny-office → synthwave v1.1.3 (rev 5,
+`/themes/u/synthwa-5-0f760a.json`) → tiny-office v0.5.0 (rev 6). Both installs
+reported `Theme is active on VibeTV.`; `/health` after each activation:
+`renderOk: true`, `renderFailures: 0`, no reboot, `display.gif.decoderOpen:
+false`. Heap went 13.2 KB (tiny-office) → 24.0 KB (synthwave, CBA buffer
+released) → 13.2 KB (tiny-office again), so switching away frees the
+animation buffer and switching back re-allocates it without failures.
+
+Any further hardware write needs a new explicit approval for that exact test.
 
 ## Artwork provenance
 
