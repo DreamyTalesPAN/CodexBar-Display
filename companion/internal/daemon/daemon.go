@@ -133,7 +133,6 @@ type runtimeDeps struct {
 	resolvePort           func(string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
-	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
@@ -175,9 +174,6 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
-	}
-	if d.firstRunSetupPending == nil {
-		d.firstRunSetupPending = codexbar.FirstRunProviderSetupPending
 	}
 	if d.fetchDashboard == nil {
 		d.fetchDashboard = codexbar.FetchDashboardProviders
@@ -295,11 +291,10 @@ type ProviderUsageSnapshot struct {
 	Source                string
 	Meta                  codexbar.ProviderUsageMeta
 	CollectedAt           time.Time
+	Retained              bool
 	TokenStatsCollectedAt time.Time
 	TokenHistorySettled   bool
 	ActivityObservedAt    time.Time
-	RateLimited           bool
-	RateLimitedUntil      time.Time
 	Stale                 bool
 }
 
@@ -1005,6 +1000,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -1021,18 +1017,16 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 
 	result.frame = decision.Selected.Frame
-	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) &&
-		!decision.Selected.RateLimited {
+	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) {
 		// Providers are enumerated but none has ever delivered usage: for the
 		// runtime that is the same customer state as having no providers at
 		// all. Reusing the genuine no-providers failure sends the device the
 		// honest error frame and gives the stream parser its
 		// provider_setup_required classification, instead of the silent
 		// unexplained wait behind the guest-matrix
-		// firmware_current_stream_attention flake. A rate-limited selection is
-		// the one explicit signal of a configured, live provider in a
-		// temporary condition — that state keeps its own unavailable
-		// semantics and simply waits.
+		// firmware_current_stream_attention flake. Whatever CodexBar's error
+		// says -- signed out, rate limited, unreachable -- is CodexBar's to
+		// report; the runtime does not read that text to second-guess it.
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = "collect-usage"
 		result.failureErr = codexbar.ErrNoProviders
@@ -1052,6 +1046,60 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
+}
+
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) []codexbar.ParsedFrame {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil {
+		return preferAvailableProviders(providers)
+	}
+	// Automatic means every provider currently enabled in CodexBar. The
+	// collected list already follows that inventory, while ProviderIDs is only
+	// the snapshot saved when the customer chose the mode. Filtering by that
+	// snapshot silently excluded providers enabled later outside this app.
+	if cfg.ProviderDisplay.Mode == "automatic" {
+		return preferAvailableProviders(providers)
+	}
+	allowed := make(map[string]struct{}, len(cfg.ProviderDisplay.ProviderIDs))
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		providerID = normalizeProviderKey(providerID)
+		if providerID != "" {
+			allowed[providerID] = struct{}{}
+		}
+	}
+	if state != nil && state.hasLastGood {
+		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
+			state.lastGood = protocol.Frame{}
+			state.lastGoodAt = time.Time{}
+			state.hasLastGood = false
+			state.lastPersistedGood = protocol.Frame{}
+			state.lastPersistedAt = time.Time{}
+			state.hasPersistedGood = false
+			if state.selector != nil {
+				state.selector.SetCurrentProvider("")
+			}
+		}
+	}
+	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
+			filtered = append(filtered, provider)
+		}
+	}
+	return filtered
+}
+
+func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
+	available := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if !provider.Stale && !provider.Frame.UsageUnavailable {
+			available = append(available, provider)
+		}
+	}
+	if len(available) > 0 {
+		return available
+	}
+	return providers
 }
 
 // providerResetSlots turns every provider with a live usage countdown into one
@@ -1501,6 +1549,7 @@ func nextClockTransition(now time.Time) *protocol.ClockSchedule {
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
@@ -1550,6 +1599,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 	invalidateLastGoodDisabledByInventory(state, collector, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
@@ -1631,6 +1681,40 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 		return
 	}
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
+}
+
+func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
+	if state == nil || !state.hasLastGood {
+		return
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil {
+		return
+	}
+	if cfg.ProviderDisplay.Mode == "automatic" {
+		return
+	}
+	provider := normalizeProviderKey(state.lastGood.Provider)
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		if normalizeProviderKey(providerID) == provider {
+			return
+		}
+	}
+
+	state.lastGood = protocol.Frame{}
+	state.lastGoodAt = time.Time{}
+	state.hasLastGood = false
+	state.lastPersistedGood = protocol.Frame{}
+	state.lastPersistedAt = time.Time{}
+	state.hasPersistedGood = false
+	if state.selector != nil {
+		state.selector.SetCurrentProvider("")
+	}
+	if err := clearPersistedLastGood(); err != nil {
+		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+		return
+	}
+	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-display-selection\n", provider)
 }
 
 func clearPersistedDisplayFrame(state *runtimeState) error {
@@ -2023,10 +2107,11 @@ func providerSnapshotMaxAge() time.Duration {
 
 func collectorWarmupMaxAge() time.Duration {
 	// Bound the warm-up window in which a cycle waits for the first collection
-	// instead of settling on a provider verdict. The bound must outlast the
-	// synchronous first-run provider detection (a ~90s-4min probe holds the
-	// config bootstrap, and the dashboard serve starts only after it), or a
-	// fresh Mac reports a fabricated collection error mid-setup.
+	// instead of settling on a provider verdict. It must outlast a first read
+	// on a slow Mac, or a fresh one reports a fabricated collection error
+	// mid-setup. Generous on purpose: it only delays a "no providers" verdict,
+	// and the first-run inventory that used to make it necessary -- a 90s-4min
+	// probe holding the config bootstrap -- is gone.
 	const fallback = 5 * time.Minute
 	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
 	if raw == "" {
@@ -2189,11 +2274,10 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			Source:                strings.TrimSpace(snapshot.Source),
 			Meta:                  snapshot.Meta,
 			CollectedAt:           snapshot.Collected.UTC(),
+			Retained:              snapshot.Retained,
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
 			TokenHistorySettled:   snapshot.TokenHistorySettled,
 			ActivityObservedAt:    snapshot.ActivityObservedAt.UTC(),
-			RateLimited:           snapshot.RateLimited,
-			RateLimitedUntil:      snapshot.RateLimitedUntil.UTC(),
 			Stale:                 providerUsageSnapshotIsStale(snapshot, now),
 		})
 	}
@@ -2235,7 +2319,7 @@ func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
 }
 
 func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
-	return !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
+	return snapshot.Retained || !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {

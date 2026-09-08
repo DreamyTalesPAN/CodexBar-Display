@@ -29,11 +29,10 @@ type providerSnapshot struct {
 	Source              string                     `json:"source,omitempty"`
 	Meta                codexbar.ProviderUsageMeta `json:"meta,omitempty"`
 	Collected           time.Time                  `json:"collectedAt"`
+	Retained            bool                       `json:"retained,omitempty"`
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
-	RateLimited         bool                       `json:"rateLimited,omitempty"`
-	RateLimitedUntil    time.Time                  `json:"rateLimitedUntil,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -45,13 +44,11 @@ type providerCollector struct {
 	now                   func() time.Time
 	logf                  func(string, ...any)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
-	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
 	dashboard             codexbar.DashboardServe
-	resolvePort           func(string) (string, error)
 	requestedPort         string
 	requestedPortFn       func() string
 	transportName         string
@@ -100,13 +97,11 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		now:                   nowFn,
 		logf:                  logFn,
 		fetchProviders:        deps.fetchProviders,
-		firstRunSetupPending:  deps.firstRunSetupPending,
 		fetchDashboard:        deps.fetchDashboard,
 		fetchInventory:        deps.fetchInventory,
 		fetchTokenStats:       deps.fetchTokenStats,
 		fetchTokenStatsReport: deps.fetchTokenStatsReport,
 		dashboard:             deps.dashboard,
-		resolvePort:           deps.resolvePort,
 		requestedPort:         requestedDeviceTarget(opts),
 		transportName:         usageSourceOrDefault(deps.transportName, "usb"),
 		order:                 collectorProviderOrder(),
@@ -293,13 +288,12 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	if c == nil {
 		return
 	}
-	if c.resolvePort != nil {
-		requestedPort := c.resolveRequestedPort()
-		if _, err := c.resolvePort(requestedPort); err != nil {
-			c.logf("collector paused reason=no-device transport=%s target=%s err=%v\n", usageSourceOrDefault(c.transportName, "usb"), requestedPort, err)
-			return
-		}
-	}
+	// Deliberately not waiting for a device. Reading this Mac's AI usage has
+	// nothing to do with whether a VibeTV has been paired yet, and holding it
+	// back until pairing meant the first read started the moment the customer
+	// pressed Connect -- minutes of silence on a screen that had nothing left
+	// to say. The cycle that would send a frame resolves the device itself and
+	// returns without one, so nothing is written to a device that is not there.
 
 	now := c.now()
 	c.beginFirstCollect(now)
@@ -327,6 +321,14 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		c.mu.Lock()
 		if inventoryAuthoritative {
 			updated = c.applyProviderInventoryLocked(inventory)
+		}
+		for key, snapshot := range c.providers {
+			if snapshot.Retained {
+				continue
+			}
+			snapshot.Retained = true
+			c.providers[key] = snapshot
+			updated = true
 		}
 		c.lastFetchErr = err
 		if codexbar.FetchErrorKindOf(err) == codexbar.FetchErrorNoProviders {
@@ -360,6 +362,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	} else {
 		c.order = mergeProviderOrder(providerOrderFromFrames(allProviders), c.order)
 	}
+	// A successful fetch-all only refreshes providers that returned usable
+	// usage below. Keep every older snapshot non-live until it is replaced;
+	// CodexBar may omit an enabled provider while another one succeeds.
+	for key, snapshot := range c.providers {
+		if snapshot.Retained {
+			continue
+		}
+		snapshot.Retained = true
+		c.providers[key] = snapshot
+		updated = true
+	}
 	for _, parsed := range allProviders {
 		frame := parsed.Frame.Normalize()
 		if strings.TrimSpace(frame.Error) != "" {
@@ -384,23 +397,20 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists {
-				lastGood.RateLimited = parsed.RateLimited
-				lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
-				c.providers[key] = lastGood
-				updated = true
 				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
+					lastGood.Retained = true
+					c.providers[key] = lastGood
+					updated = true
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
 				c.providers[key] = lastGood
 			} else {
 				c.providers[key] = providerSnapshot{
-					Provider:         key,
-					Frame:            frame,
-					Source:           strings.TrimSpace(parsed.Source),
-					Collected:        parsedCollectedAt,
-					RateLimited:      parsed.RateLimited,
-					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
+					Provider:  key,
+					Frame:     frame,
+					Source:    strings.TrimSpace(parsed.Source),
+					Collected: parsedCollectedAt,
 				}
 			}
 			updated = true
@@ -414,8 +424,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Collected:           parsedCollectedAt,
 			TokenStatsCollected: parsedTokenStatsCollectedAt(parsed, now),
 			ActivityObservedAt:  parsed.ActivityObservedAt,
-			RateLimited:         false,
-			RateLimitedUntil:    time.Time{},
 		}
 		if previous, exists := c.providers[key]; exists {
 			// Only a token scan can change the history, so a quota collection
@@ -443,13 +451,6 @@ func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) 
 }
 
 func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now time.Time) ([]codexbar.ParsedFrame, string, error) {
-	// The first complete inventory is itself the authoritative collector read.
-	// Do not consult a dashboard snapshot made from CodexBar's untouched default
-	// switches while that one-time collection is still pending.
-	if c.firstRunSetupPending != nil && c.firstRunSetupPending() && c.fetchProviders != nil {
-		providers, err := c.fetchProviders(ctx)
-		return providers, "codexbar-usage-json", err
-	}
 	if c.dashboard != nil && c.fetchDashboard != nil {
 		info := c.dashboard.Info()
 		if strings.TrimSpace(info.Endpoint) != "" && info.Running {
@@ -496,8 +497,10 @@ func (c *providerCollector) beginFirstCollect(now time.Time) {
 	}
 	c.firstCollectStarted = true
 	if !c.warmupUntil.IsZero() {
-		// Pairing may happen long after runtime startup. The bounded waiting
-		// window belongs to the first real CodexBar request, not app launch.
+		// The window belongs to the first real CodexBar request rather than to
+		// app launch. Those now coincide -- the read no longer waits for a
+		// device -- but anchoring on the request keeps it correct if anything
+		// ever delays the first one again.
 		c.warmupUntil = now.Add(collectorWarmupMaxAge())
 	}
 }
@@ -731,14 +734,13 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Source:    source,
 			Meta:      meta,
 			Collected: snapshot.Collected,
+			Retained:  snapshot.Retained,
 			// A successful scan makes these totals current even when CodexBar
 			// reports that no new activity occurred. UpdatedAt remains the
 			// activity timestamp above, not the token-stat freshness timestamp.
 			TokenStatsCollected: now,
 			TokenHistorySettled: providerSettled,
 			ActivityObservedAt:  activityObservedAt,
-			RateLimited:         snapshot.RateLimited,
-			RateLimitedUntil:    snapshot.RateLimitedUntil,
 		}
 		updated++
 	}
@@ -971,22 +973,10 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
-			RateLimited:        snapshot.RateLimited,
-			RateLimitedUntil:   snapshot.RateLimitedUntil,
-			Stale:              frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 		})
 	}
 	return frames
-}
-
-func (c *providerCollector) resolveRequestedPort() string {
-	if c == nil {
-		return ""
-	}
-	if c.requestedPortFn != nil {
-		return strings.TrimSpace(c.requestedPortFn())
-	}
-	return strings.TrimSpace(c.requestedPort)
 }
 
 func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.Time) bool {

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mergeDeviceInfo } from "./control-center-app";
+import {
+  mergeDeviceInfo,
+  setupThemeCatalogError,
+} from "./control-center-app";
 import { deviceAwaitsProviderSetup } from "./control-center-types";
 
 const TARGET = "http://192.168.178.153";
@@ -101,5 +104,23 @@ describe("provider incident", () => {
         withStream({ running: true, healthy: true, lastTarget: TARGET }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("setup theme catalog", () => {
+  it("offers catalog recovery when no live theme exists", () => {
+    expect(setupThemeCatalogError(undefined, 0)).toEqual({
+      code: "theme_catalog_unavailable",
+      message: "Themes unavailable",
+      nextAction: "Reload the theme catalog, then try again.",
+    });
+  });
+
+  it("keeps the catalog's safe issue and accepts a live theme", () => {
+    expect(setupThemeCatalogError("Themes are not available right now.", 0))
+      .toMatchObject({
+        nextAction: "Themes are not available right now.",
+      });
+    expect(setupThemeCatalogError(undefined, 1)).toBeNull();
   });
 });

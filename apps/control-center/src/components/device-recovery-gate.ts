@@ -3,7 +3,7 @@ import type { DeviceInfo } from "./control-center-types";
 export const DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT = 3;
 export const DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT = 12;
 
-export type DeviceRecoveryPickerReason = "confirmed-loss" | "manual";
+export type DeviceRecoveryPickerReason = "confirmed-loss";
 
 export type DeviceRecoveryGateState = {
   preferredDeviceId: string;
@@ -54,16 +54,6 @@ export function selectRecoveryDevice(
   };
 }
 
-export function openManualRecoveryPicker(
-  state: DeviceRecoveryGateState,
-): DeviceRecoveryGateState {
-  return {
-    ...state,
-    failedNormalChecks: 0,
-    pickerReason: "manual",
-  };
-}
-
 export function applyDeviceRecoveryStatus(
   state: DeviceRecoveryGateState,
   status: {
@@ -90,7 +80,7 @@ export function applyDeviceRecoveryStatus(
       state: {
         preferredDeviceId,
         failedNormalChecks: 0,
-        pickerReason: state.pickerReason === "manual" ? "manual" : null,
+        pickerReason: null,
       },
     };
   }

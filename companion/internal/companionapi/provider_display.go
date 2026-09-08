@@ -1,0 +1,312 @@
+package companionapi
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+)
+
+const (
+	providerDisplayModeAutomatic = "automatic"
+	providerDisplayModeFixed     = "fixed"
+	providerReadinessFreshness   = 5 * time.Minute
+)
+
+type providerDisplaySelection struct {
+	Mode        string   `json:"mode"`
+	ProviderIDs []string `json:"providerIds"`
+	Configured  bool     `json:"configured"`
+	Valid       bool     `json:"valid"`
+}
+
+type providerDisplayResponse struct {
+	OK        bool                     `json:"ok"`
+	Selection providerDisplaySelection `json:"selection"`
+}
+
+type setupProgress struct {
+	ProviderSelectionRequired bool `json:"providerSelectionRequired"`
+	ProviderSelectionComplete bool `json:"providerSelectionComplete"`
+}
+
+type providerSetupCompleteResponse struct {
+	OK    bool          `json:"ok"`
+	Setup setupProgress `json:"setup"`
+}
+
+func setupProgressForConfig(cfg runtimeconfig.Config) setupProgress {
+	complete := cfg.ProviderSelectionSetupIsComplete()
+	return setupProgress{
+		ProviderSelectionRequired: !complete,
+		ProviderSelectionComplete: complete,
+	}
+}
+
+func (s *Server) handleProviderDisplay(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleProviderDisplayGet(w, r)
+	case http.MethodPatch:
+		s.handleProviderDisplayPatch(w, r)
+	default:
+		requireMethod(w, r, http.MethodGet, http.MethodPatch)
+	}
+}
+
+func (s *Server) handleProviderDisplayGet(w http.ResponseWriter, r *http.Request) {
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	settings, err := s.cachedProviderSettings(r.Context(), false)
+	if err != nil {
+		writePreferencesReadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, providerDisplayResponse{
+		OK:        true,
+		Selection: effectiveProviderDisplay(cfg, settings),
+	})
+}
+
+func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Mode        string   `json:"mode"`
+		ProviderIDs []string `json:"providerIds"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	selection := providerDisplaySelection{
+		Mode:        strings.TrimSpace(strings.ToLower(request.Mode)),
+		ProviderIDs: normalizeProviderIDs(request.ProviderIDs),
+		Configured:  true,
+	}
+	settings, err := s.cachedProviderSettings(r.Context(), false)
+	if err != nil {
+		writePreferencesReadError(w, err)
+		return
+	}
+	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
+		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Refresh providers and save Automatic again.")
+		return
+	}
+	if code, message, nextAction := validateProviderDisplay(selection, settings); code != "" {
+		writeError(w, http.StatusConflict, code, message, nextAction)
+		return
+	}
+	selection.Valid = true
+	_, err = s.updateConfig(func(cfg *runtimeconfig.Config) {
+		cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
+			Mode:        selection.Mode,
+			ProviderIDs: append([]string(nil), selection.ProviderIDs...),
+		}
+	})
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
+	writeJSON(w, http.StatusOK, providerDisplayResponse{OK: true, Selection: selection})
+}
+
+func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	// Continue accepts the same fresh descriptors that opened the button in the
+	// provider list. Forcing another CodexBar read here repeated the full scan,
+	// left the button pending, and could contradict the answer still on screen.
+	settings, err := s.cachedProviderSettings(r.Context(), false)
+	if err != nil {
+		writePreferencesReadError(w, err)
+		return
+	}
+	enabled := make([]codexbar.ProviderSetting, 0, len(settings))
+	for _, setting := range settings {
+		if setting.Enabled {
+			enabled = append(enabled, setting)
+		}
+	}
+	if len(enabled) == 0 {
+		writeError(w, http.StatusConflict, "provider_required", "Choose at least one AI provider.", "Turn on a provider, then wait for the check to finish.")
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	selection := effectiveProviderDisplay(cfg, settings)
+	if !selection.Valid {
+		writeError(w, http.StatusConflict, "provider_display_invalid", "Choose which provider VibeTV should show.", "Select one provider or add providers to Automatic mode.")
+		return
+	}
+	selected := make(map[string]struct{}, len(selection.ProviderIDs))
+	for _, providerID := range selection.ProviderIDs {
+		selected[providerID] = struct{}{}
+	}
+	// Only the Automatic pool has to name every enabled provider: it is the set
+	// VibeTV rotates through, so one left out of it is collected and never
+	// shown. "Always show one" names exactly one provider by definition.
+	// Setup is complete once VibeTV has something real to show, which is one
+	// working provider -- the rule docs/control-center-ui-principles.md has
+	// carried all along. Demanding every enabled one instead handed a customer
+	// whose second provider was merely not signed in a wizard they could not
+	// leave, on a Mac whose first provider was working: the rotation already
+	// skips what it cannot read (daemon.go preferAvailableProviders), so the
+	// broken one costs nothing but the refusal did.
+	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
+		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
+		return
+	}
+	// What VibeTV will actually show, beside what merely works somewhere.
+	readyShown := 0
+	readyAnywhere := 0
+	for _, descriptor := range s.providerDescriptors(settings) {
+		on, _ := descriptor.Value.(bool)
+		if !on || descriptor.Health == nil {
+			continue
+		}
+		// A saved reading counts too: it is still a real reading, and it is the
+		// same rule setup-providers-screen.tsx setupProviderCanDisplay uses to
+		// decide what may be pinned. Refusing here what the display step still
+		// offers would be a loop with no way out.
+		if descriptor.Health.State != string(codexbar.ProviderHealthHealthy) &&
+			descriptor.Health.State != providerHealthStateStale {
+			continue
+		}
+		readyAnywhere++
+		if _, shown := selected[descriptor.ProviderID]; shown {
+			readyShown++
+		}
+	}
+	if readyShown == 0 {
+		// Something works, but not what VibeTV was told to show. Any healthy
+		// provider used to be enough, so a Mac pinned to a provider that had
+		// since been signed out finished setup on the strength of one it had
+		// been told never to show, and the customer reached the live step in
+		// front of a blank VibeTV: a fixed selection pins without fallback
+		// (daemon.go applyProviderDisplaySelection). The two counts can only
+		// differ for a fixed selection -- the pool loop above requires every
+		// enabled provider to be in an Automatic pool, and validateProviderDisplay
+		// requires every selected one to be enabled -- so Automatic keeps the
+		// refusal it had. It is also the display choice, not the provider, that
+		// this names: without another provider to show instead, the display step
+		// would have nothing to offer and the provider step owns the fix.
+		if readyAnywhere > 0 {
+			writeError(w, http.StatusConflict, "provider_display_not_ready", "The provider VibeTV shows is not ready.", "Show a different provider, or switch to Automatic.")
+			return
+		}
+		writeError(w, http.StatusConflict, "provider_check_required", "At least one enabled provider must be ready.", "Check your providers and fix or turn off any provider that needs attention.")
+		return
+	}
+	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+		current.SetProviderSelectionSetupComplete(true)
+	})
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, providerSetupCompleteResponse{OK: true, Setup: setupProgressForConfig(cfg)})
+}
+
+func effectiveProviderDisplay(cfg runtimeconfig.Config, settings []codexbar.ProviderSetting) providerDisplaySelection {
+	selection := providerDisplaySelection{Mode: providerDisplayModeAutomatic}
+	if cfg.ProviderDisplay == nil {
+		for _, setting := range settings {
+			if setting.Enabled {
+				selection.ProviderIDs = append(selection.ProviderIDs, setting.ID)
+			}
+		}
+		// An install from before this choice existed is already set up and
+		// working, and the pool synthesised above is exactly what choosing
+		// Automatic would write. Reporting it as still to be made sent every
+		// such customer through the wizard on the update that adds the step.
+		selection.Configured = cfg.ProviderDisplayPredatesSetup()
+	} else {
+		selection.Configured = true
+		selection.Mode = cfg.ProviderDisplay.Mode
+		selection.ProviderIDs = append([]string(nil), cfg.ProviderDisplay.ProviderIDs...)
+	}
+	if selection.Mode == providerDisplayModeAutomatic {
+		selection.ProviderIDs = selection.ProviderIDs[:0]
+		for _, setting := range settings {
+			if setting.Enabled {
+				selection.ProviderIDs = append(selection.ProviderIDs, setting.ID)
+			}
+		}
+	}
+	selection.ProviderIDs = normalizeProviderIDs(selection.ProviderIDs)
+	code, _, _ := validateProviderDisplay(selection, settings)
+	selection.Valid = code == ""
+	return selection
+}
+
+func validateProviderDisplay(selection providerDisplaySelection, settings []codexbar.ProviderSetting) (string, string, string) {
+	switch selection.Mode {
+	case providerDisplayModeAutomatic:
+		if len(selection.ProviderIDs) == 0 {
+			return "provider_display_empty", "Automatic mode needs at least one provider.", "Choose a provider for automatic display."
+		}
+	case providerDisplayModeFixed:
+		if len(selection.ProviderIDs) != 1 {
+			return "provider_display_fixed_invalid", "Always show needs one provider.", "Choose exactly one provider to show."
+		}
+	default:
+		return "provider_display_mode_invalid", "This display mode is not available.", "Choose Always show or Automatic."
+	}
+	available := make(map[string]bool, len(settings))
+	for _, setting := range settings {
+		available[setting.ID] = setting.Enabled
+	}
+	for _, providerID := range selection.ProviderIDs {
+		enabled, exists := available[providerID]
+		if !exists {
+			return "provider_display_unknown", "This provider is no longer available.", "Refresh providers and choose another one."
+		}
+		if !enabled {
+			return "provider_display_disabled", "A displayed provider is turned off.", "Turn it on or choose another displayed provider."
+		}
+	}
+	return "", "", ""
+}
+
+func automaticProviderDisplayIncludesAllEnabled(selection providerDisplaySelection, settings []codexbar.ProviderSetting) bool {
+	if selection.Mode != providerDisplayModeAutomatic {
+		return true
+	}
+	selected := make(map[string]struct{}, len(selection.ProviderIDs))
+	for _, providerID := range selection.ProviderIDs {
+		selected[providerID] = struct{}{}
+	}
+	for _, setting := range settings {
+		if _, ok := selected[setting.ID]; setting.Enabled && !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeProviderIDs(providerIDs []string) []string {
+	seen := make(map[string]struct{}, len(providerIDs))
+	normalized := make([]string, 0, len(providerIDs))
+	for _, raw := range providerIDs {
+		providerID := strings.TrimSpace(strings.ToLower(raw))
+		if providerID == "" {
+			continue
+		}
+		if _, ok := seen[providerID]; ok {
+			continue
+		}
+		seen[providerID] = struct{}{}
+		normalized = append(normalized, providerID)
+	}
+	return normalized
+}

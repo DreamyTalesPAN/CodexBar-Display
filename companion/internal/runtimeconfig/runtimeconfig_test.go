@@ -221,6 +221,35 @@ func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	}
 }
 
+func TestProviderDisplayNormalizeAndSetupMigration(t *testing.T) {
+	cfg := Config{ProviderDisplay: &ProviderDisplayConfig{
+		Mode:        " Automatic ",
+		ProviderIDs: []string{" Codex ", "codex", " CLAUDE ", ""},
+	}}
+	cfg.Normalize()
+
+	if cfg.ProviderDisplay.Mode != "automatic" || !reflect.DeepEqual(cfg.ProviderDisplay.ProviderIDs, []string{"codex", "claude"}) {
+		t.Fatalf("unexpected provider display normalization: %+v", cfg.ProviderDisplay)
+	}
+	if cfg.ProviderSelectionSetupIsComplete() {
+		t.Fatal("new configuration must require provider setup")
+	}
+
+	cfg.SetActiveDevice(KnownDevice{DeviceID: "device-a", Target: "192.168.1.20"})
+	if cfg.ProviderSelectionSetupIsComplete() {
+		t.Fatal("first device selection must keep provider setup open")
+	}
+	cfg.SetProviderSelectionSetupComplete(true)
+	if !cfg.ProviderSelectionSetupIsComplete() {
+		t.Fatal("explicit completion was not preserved")
+	}
+
+	legacy := Config{DeviceID: "existing-device"}
+	if !legacy.ProviderSelectionSetupIsComplete() {
+		t.Fatal("legacy connected installation should remain complete")
+	}
+}
+
 func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 	cfg := Config{
 		DeviceID:     "device-a",
@@ -308,5 +337,75 @@ func TestCommittedDeviceSelectionDoesNotRollBack(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, selected) {
 		t.Fatalf("committed config changed: got=%+v want=%+v", got, selected)
+	}
+}
+
+// A VibeTV paired before device ids were recorded leaves a target and a token
+// and no id. Reading that as "never set up" sent a customer who had been using
+// VibeTV for months back through onboarding on the update that added the flag.
+func TestLegacyPairedTargetWithoutDeviceIDStaysSetUp(t *testing.T) {
+	legacy := Config{
+		DeviceTarget: "http://192.168.178.73",
+		DeviceToken:  "token",
+	}
+	if !legacy.ProviderSelectionSetupIsComplete() {
+		t.Fatal("a paired legacy install was treated as never set up")
+	}
+
+	// Pinning it to a stable identity must not write the loss into the config.
+	pinned := legacy
+	pinned.SetActiveDevice(KnownDevice{
+		DeviceID:    "9517433",
+		Target:      "http://192.168.178.73",
+		DeviceToken: "token",
+	})
+	if pinned.ProviderSelectionSetupComplete != nil &&
+		!*pinned.ProviderSelectionSetupComplete {
+		t.Fatal("pinning a legacy install persisted an incomplete setup")
+	}
+	if !pinned.ProviderSelectionSetupIsComplete() {
+		t.Fatal("a pinned legacy install was treated as never set up")
+	}
+}
+
+// A config with nothing paired is a new customer, and they do belong in setup.
+func TestFreshConfigStillRequiresSetup(t *testing.T) {
+	fresh := Config{}
+	if fresh.ProviderSelectionSetupIsComplete() {
+		t.Fatal("a fresh config skipped setup")
+	}
+
+	fresh.SetActiveDevice(KnownDevice{DeviceID: "9517433", Target: "http://x"})
+	if fresh.ProviderSelectionSetupComplete == nil ||
+		*fresh.ProviderSelectionSetupComplete {
+		t.Fatal("a new install must be stamped as not yet complete")
+	}
+}
+
+// Discovery writes a target before pairing has produced a token or an id, so a
+// setup abandoned after the search leaves exactly the shape a legacy install
+// leaves minus its token. Counting it as finished carried the customer past the
+// provider and display steps on the next launch -- or, with no provider able to
+// render usage, held them on the device step, because nothing was left that
+// could ask for a provider.
+func TestADiscoveredTargetWithoutPairingIsNotASetUpInstall(t *testing.T) {
+	discovered := Config{DeviceTarget: "http://192.168.178.73"}
+	if discovered.ProviderSelectionSetupIsComplete() {
+		t.Fatal("an abandoned discovery was treated as a finished setup")
+	}
+	if discovered.ProviderDisplayPredatesSetup() {
+		t.Fatal("an abandoned discovery was excused the display choice")
+	}
+
+	// And pinning it records that it is not finished, rather than preserving
+	// an inference that was never true.
+	pinned := discovered
+	pinned.SetActiveDevice(KnownDevice{
+		DeviceID:    "9517433",
+		Target:      "http://192.168.178.73",
+		DeviceToken: "token",
+	})
+	if pinned.ProviderSelectionSetupIsComplete() {
+		t.Fatal("pinning an unpaired discovery marked setup complete")
 	}
 }

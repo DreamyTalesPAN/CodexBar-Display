@@ -20,6 +20,7 @@ import { buildThemePack } from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
+  checkForMacAppUpdate,
   companionRequestUrl,
   finishCodexBarRecovery,
   isLocalCompanionOrigin,
@@ -28,14 +29,13 @@ import {
   localControlCenterUrl,
   launchCodexBarRepair,
   needsLoopbackTargetAddressSpace,
-  openCodexBarApp,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
-  deviceAwaitsProviderSetup,
+  automaticPoolForEnabledProviders,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -45,6 +45,7 @@ import {
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   providerSetupIsChecking,
+  providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
   type ActiveTab,
   type AppearanceSection,
@@ -57,45 +58,68 @@ import {
   type DeviceSearchState,
   type DeviceState,
   type ProviderSetupInfo,
+  type ProviderDisplaySelection,
+  type ProviderSelectionSetup,
   type PreferenceDescriptor,
   type StandbySettings,
   type SupportDiagnostics,
   type UsageSnapshot,
 } from "./control-center-types";
-import { DeviceStartupScreen } from "./device-startup-screen";
 import {
   applyDeviceRecoveryStatus,
   deviceRecoveryConfirmedLoss,
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
   DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
-  openManualRecoveryPicker,
   resetDeviceRecoveryGate,
   selectRecoveryDevice,
   type DeviceRecoveryGateState,
   type DeviceRecoveryPickerReason,
 } from "./device-recovery-gate";
 import { useCompanionRelease } from "./companion-installer-actions";
-import { HostedSetupShell } from "./hosted-setup-shell";
 import { LogsScreen } from "./logs-screen";
 import {
   hasRenderableUsage,
   type DisplayFrameSnapshot,
   useLatestDisplayFrame,
 } from "./live-vibetv-preview";
-import { MacAppRecoveryScreen } from "./mac-app-recovery-screen";
 import { OverviewScreen } from "./overview-screen";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
   providerUsageNeedsReconcile,
   scheduleProviderUsageReconcile,
 } from "./provider-usage-reconcile";
-import { SetupScreen } from "./setup-screen";
-import { SetupStatusScreen } from "./setup-status-screen";
+import {
+  providerPreferencesNeedPolling,
+  startProviderPreferencesPolling,
+} from "./provider-preferences-polling";
+import { isProviderItem } from "./provider-picker";
+import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
+import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
+import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
+import type { SetupConnectSteps } from "./setup/setup-connect";
+import { displayPreviewsFor } from "./setup/setup-display-previews";
+import { setupProviderCanDisplay } from "./setup/setup-providers-screen";
+import {
+  deriveSetupStep,
+  setupDeviceIsUsable,
+  setupDisplayIsConfigured,
+  setupDisplaySelectionSupported,
+  setupIdentityIsKnown,
+  setupProviderInventoryIsLoading,
+  setupStepForProviderRefusal,
+  setupWasCompletedBefore,
+} from "./setup/setup-step";
+import {
+  SetupUsageDialog,
+  setupUsageCauseFor,
+} from "./setup/setup-usage-dialog";
+import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
+import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen } from "./settings-screen";
-import { SupportReportActions } from "./support-report-actions";
 import { collectSupportReport } from "./support-report";
 import {
+  buildThemeInstallBlocker,
   ThemeLibraryScreen,
   themeNeedsUpgradeableFirmware,
 } from "./theme-library-screen";
@@ -112,13 +136,22 @@ const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
-const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
+const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
+// launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
+// (main.swift:3759-3761), then the process start, then the 5s poll that sees it
+// -- about seventeen seconds before the app has learnt anything. Repairing at
+// twelve took the service down again just as launchd was bringing it up, and
+// turned a restart into an outage.
+const LAUNCHD_RECOVERY_GRACE_MS = 25_000;
 // Only a safety net for a native side that never answers at all, so it has to
 // outlast the repair's own bounded worst case: 8s initial health gate + 20s
 // unregister quiesce + 2s settle + 35s health wait, plus provisioning and app
 // launch (main.swift:37-43). At 55s this fired while the repair was still
 // working, reported failure, and then discarded the successful native result.
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 120_000;
+// The Help menu hands the last 20 of these to an AI along with the current
+// screen, so the log has to be at least that deep.
+const RECENT_EVENT_LIMIT = 20;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 
@@ -225,9 +258,6 @@ type FirmwareUpdateStatus = {
   error?: string;
 };
 
-type RepairConnectionOutcome =
-  "ready" | "waiting" | "failed" | "pairing-rate-limited" | "stale";
-
 type FirmwareUpdateResponse = {
   job?: FirmwareUpdateJob;
 };
@@ -248,6 +278,7 @@ type ThemeInstallStatus = {
   logs: string[];
   result?: ThemeInstallResult;
   error?: string;
+  failure?: ApiError;
 };
 
 type RunCompanion = <T>(
@@ -314,15 +345,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceSession, setDeviceSession] = useState<{
     device: DeviceInfo | null;
     themeSetupIdentity: ThemeSetupDeviceIdentity | null;
-    providerIncidentOpen: boolean;
   }>({
     device: null,
     themeSetupIdentity: null,
-    providerIncidentOpen: false,
   });
   const device = deviceSession.device;
   const themeSetupIdentity = deviceSession.themeSetupIdentity;
-  const providerIncidentOpen = deviceSession.providerIncidentOpen;
   const setDevice = useCallback(
     (
       update:
@@ -339,9 +367,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [brightness, setBrightness] = useState<number | null>(null);
   const [standby, setStandby] = useState<StandbySettings | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [selectingDeviceTarget, setSelectingDeviceTarget] = useState<
-    string | undefined
-  >();
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
@@ -363,20 +388,79 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >(null);
   const [providerPreferencesError, setProviderPreferencesError] =
     useState<ApiError | null>(null);
+  const [providerDisplay, setProviderDisplay] =
+    useState<ProviderDisplaySelection | null>(null);
+  const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
+  const [providerDisplayError, setProviderDisplayError] =
+    useState<ApiError | null>(null);
+  const [providerSelectionSetup, setProviderSelectionSetup] =
+    useState<ProviderSelectionSetup | null>(null);
+  const [pendingProviderCheckIds, setPendingProviderCheckIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [pendingProviderDisplayId, setPendingProviderDisplayId] = useState<
+    string | null
+  >(null);
   const [pendingPreferenceIds, setPendingPreferenceIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [providerPoolReconcilePending, setProviderPoolReconcilePending] =
+    useState(false);
   const providerReconcileDeadlineRef = useRef(0);
+  const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerDisplayReadRef = useRef<Promise<void> | null>(null);
+  const providerDisplayRevisionRef = useRef(0);
+  const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const providerPreferencesRevisionRef = useRef(0);
+  const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
+  const setupResetInProgressRef = useRef(false);
+  const providerPoolReconcilesAfterResetRef = useRef<Array<() => void>>([]);
+  const providerPoolReconcileRetryRef = useRef<
+    (() => Promise<boolean>) | null
+  >(null);
+  const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
-  const [setupResetVersion, setSetupResetVersion] = useState(0);
+  // null until the app has to step in. launchd brings the service back on its
+  // own, and saying so first turned a restart nobody would have noticed into a
+  // dialog over whatever the customer was doing.
   const [runtimeRecoveryPhase, setRuntimeRecoveryPhase] = useState<
-    "repairing" | "failed"
-  >("repairing");
+    "repairing" | "failed" | null
+  >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
-  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
-  const [showCodexBarFallback, setShowCodexBarFallback] = useState(false);
+  const [enteredControlCenterThisSession, setEnteredControlCenterThisSession] =
+    useState(false);
+  // Null until the app knows the Mac's state; then it is the answer to "is this
+  // session a customer coming back, or one being set up", settled once. See
+  // where it is written for why both directions have to stay put.
+  const [sessionSkipsSetup, setSessionSkipsSetup] = useState<boolean | null>(
+    null,
+  );
+  // The closing step is shown for a moment before the app takes over, but only
+  // to someone who actually walked through setup.
+  // Flipped by the wizard once its closing step has been seen. A VibeTV that
+  // was already set up reaches the shell without it, because nothing put the
+  // customer on a step to close.
+  const [setupFinished, setSetupFinished] = useState(false);
+  const finishSetup = useCallback(() => setSetupFinished(true), []);
+  // The completion response clears providerSelectionRequired before the first
+  // renderable frame necessarily exists. Keep this setup's confirmed device
+  // usable so the next screen is Display Mode, never a flash of Connect.
+  const [
+    providerSetupCompletedThisSession,
+    setProviderSetupCompletedThisSession,
+  ] = useState(false);
+  const [setupThemeInstallRequested, setSetupThemeInstallRequested] =
+    useState(false);
+  const [setupThemeChoiceRequired, setSetupThemeChoiceRequired] =
+    useState(false);
+  // Dismissing the recovery dialog only hides it; the repair itself runs on.
+  const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
+  // Hiding the usage dialog hides the announcement; the repair itself runs on.
+  const [usageFailureHidden, setUsageFailureHidden] = useState(false);
+  const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const brightnessDirtyRef = useRef(false);
@@ -442,17 +526,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" && companionInstallationMode === "legacy",
   );
 
-  const handleDeviceTargetChange = useCallback((target: string) => {
-    setDeviceTarget(target);
-    if (target.trim() === "") {
-      forgetDeviceTarget();
-    }
-  }, []);
-
   const mergeDevice = useCallback((next: DeviceInfo) => {
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError(null);
+    }
+    if (deviceNeedsThemeSetup(next)) {
+      setSetupThemeChoiceRequired(true);
     }
     setDeviceSession((current) => {
       const mergedDevice = mergeDeviceInfo(current.device, next);
@@ -462,23 +542,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           current.themeSetupIdentity,
           mergedDevice,
         ),
-        providerIncidentOpen: deviceAwaitsProviderSetup(mergedDevice),
       };
     });
   }, []);
 
-  // Connectivity and provider readiness are different questions. A VibeTV that
-  // was waiting for a provider and is now confirmed gone is a connection
-  // problem: carrying its incident past the loss held the AI recovery screen in
-  // front of the reconnect picker for a device that is not there at all. Only
-  // the recovery gate's confirmed-loss paths use this -- a single missed poll or
-  // a Mac App outage must still keep the incident, because the repair takes the
-  // Mac App down on purpose.
+  useEffect(() => {
+    providerPreferencesRef.current = providerPreferences;
+  }, [providerPreferences]);
+
   const markDeviceLost = useCallback(() => {
     setDeviceSession((current) => ({
       ...current,
       device: markDeviceDisconnected(current.device),
-      providerIncidentOpen: false,
     }));
   }, []);
 
@@ -492,7 +567,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ...event,
           },
           ...current,
-        ].slice(0, 10),
+        ].slice(0, RECENT_EVENT_LIMIT),
       );
     },
     [],
@@ -524,7 +599,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState(
         next.paired ? "paired" : next.connected ? "online" : "unknown",
       );
-      setDeviceCandidates([]);
+      // Deliberately not clearing deviceCandidates: setup holds the device
+      // step for the whole connect-and-firmware sequence, so emptying the list
+      // here took the customer's own selection off the screen mid-connect and
+      // left the count reading "0 VibeTVs found on your WiFi." Only a fresh
+      // scan and a confirmed device loss clear the list.
       setDeviceSearchState("idle");
     },
     [mergeDevice, setDeviceRecoveryGate],
@@ -747,31 +826,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [],
   );
-
-  const refreshCompanionFeatures = useCallback(async () => {
-    try {
-      const payload = await runCompanion<{
-        companion?: CompanionInfo;
-        providerSetup?: ProviderSetupInfo;
-      }>("/v1/status", undefined, { preserveLastError: true });
-      setCompanionStatus("online");
-      setCompanionInfo(payload.companion || null);
-      setProviderSetup(payload.providerSetup || null);
-      setThemeInstallEnabled(
-        Boolean(payload.companion?.features?.themeInstallEnabled),
-      );
-    } catch (error) {
-      const normalized = normalizeCaughtError(
-        error,
-        "Mac App needs attention.",
-      );
-      if (isLocalNetworkAccessError(normalized)) {
-        markCompanionAccessBlocked();
-      } else {
-        markCompanionUnavailable();
-      }
-    }
-  }, [markCompanionAccessBlocked, markCompanionUnavailable, runCompanion]);
 
   const refreshDevice = useCallback(
     async ({ quiet = false }: { quiet?: boolean } = {}) => {
@@ -1000,6 +1054,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalized.nextAction,
           ],
           error: themeInstallErrorText(normalized),
+          failure: normalized,
         });
         addEvent({
           label: "Theme install needs attention",
@@ -1055,6 +1110,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstall?: ThemeInstallJob;
           firmwareUpdate?: FirmwareUpdateJob;
           providerSetup?: ProviderSetupInfo;
+          setup?: ProviderSelectionSetup;
         }>("/v1/status", undefined, { preserveLastError: quiet });
         if (setupGeneration !== setupGenerationRef.current) {
           return;
@@ -1064,6 +1120,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
         setProviderSetup(payload.providerSetup || null);
+        setProviderSelectionSetup(payload.setup || null);
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
           setLastError(pairingRejection);
@@ -1215,6 +1272,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         themeInstall?: ThemeInstallJob;
         firmwareUpdate?: FirmwareUpdateJob;
         providerSetup?: ProviderSetupInfo;
+        setup?: ProviderSelectionSetup;
       }>("/v1/status", undefined, { preserveLastError: true });
       if (setupGeneration !== setupGenerationRef.current) {
         return;
@@ -1222,6 +1280,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setProviderSetup(payload.providerSetup || null);
+      setProviderSelectionSetup(payload.setup || null);
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
         setLastError(pairingRejection);
@@ -1267,209 +1326,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     resumeThemeInstallJob,
     runCompanion,
   ]);
-
-  const repairConnection = useCallback(
-    async (options?: {
-      targetOverride?: string;
-      expectedDeviceId?: string;
-      forcePair?: boolean;
-      quiet?: boolean;
-    }) => {
-      const setupGeneration = setupGenerationRef.current;
-      const quiet = Boolean(options?.quiet);
-      const target =
-        typeof options?.targetOverride === "string"
-          ? normalizeDeviceTarget(options.targetOverride)
-          : "";
-      setBusyAction("repair");
-      try {
-        if (companionStatus === "missing") {
-          handleCompanionUnavailableForRepair(quiet);
-          return "failed" as RepairConnectionOutcome;
-        }
-        if (companionStatus !== "online") {
-          try {
-            const statusPayload = await runCompanion<{
-              companion?: CompanionInfo;
-              device?: DeviceInfo;
-              providerSetup?: ProviderSetupInfo;
-            }>("/v1/status", undefined, { preserveLastError: quiet });
-            if (setupGeneration !== setupGenerationRef.current) {
-              return "stale" as RepairConnectionOutcome;
-            }
-            setCompanionStatus("online");
-            setCompanionInfo(statusPayload.companion || null);
-            setProviderSetup(statusPayload.providerSetup || null);
-            setThemeInstallEnabled(
-              Boolean(statusPayload.companion?.features?.themeInstallEnabled),
-            );
-            if (statusPayload.device?.target) {
-              acceptDeviceSnapshot(statusPayload.device);
-            } else {
-              setDevice((current) => markDeviceDisconnected(current));
-              setDeviceState("offline");
-            }
-            if (
-              !target &&
-              statusPayload.device &&
-              deviceIsReady(statusPayload.device)
-            ) {
-              setLastError(null);
-              void loadSettings();
-              return "ready" as RepairConnectionOutcome;
-            }
-          } catch (statusError) {
-            const normalized = normalizeCaughtError(
-              statusError,
-              "Mac App needs attention.",
-            );
-            if (isLocalNetworkAccessError(normalized)) {
-              markCompanionAccessBlocked();
-              if (!quiet) {
-                setLastError(normalized);
-                addEvent({
-                  label: "Browser access needs attention",
-                  detail: normalized.nextAction,
-                  tone: "attention",
-                });
-              }
-            } else {
-              handleCompanionUnavailableForRepair(quiet);
-            }
-            return "failed" as RepairConnectionOutcome;
-          }
-        }
-        const payload = await runCompanion<{ device: DeviceInfo }>(
-          "/v1/device/repair",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              ...(target ? { target } : {}),
-              ...(options?.expectedDeviceId
-                ? { expectedDeviceId: options.expectedDeviceId }
-                : {}),
-              ...(options?.forcePair ? { forcePair: true } : {}),
-            }),
-          },
-          {
-            preserveLastError: quiet,
-            timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS,
-          },
-        );
-        if (setupGeneration !== setupGenerationRef.current) {
-          return "stale" as RepairConnectionOutcome;
-        }
-        setCompanionStatus("online");
-        void refreshCompanionFeatures();
-        setLastError(null);
-        acceptDeviceSnapshot(payload.device);
-        const ready = deviceIsReady(payload.device);
-        const outcome: RepairConnectionOutcome = ready
-          ? "ready"
-          : payload.device.connected && payload.device.paired
-            ? "waiting"
-            : "failed";
-        addEvent({
-          label: quiet ? "Connection repaired" : "VibeTV connection fixed",
-          detail: ready
-            ? "VibeTV is ready."
-            : payload.device.connected
-              ? "VibeTV was found, but its screen is not ready yet."
-              : "VibeTV is waiting for signal.",
-          tone: ready ? "ready" : "attention",
-        });
-        if (ready) {
-          void loadSettings();
-        }
-        return outcome;
-      } catch (error) {
-        if (setupGeneration !== setupGenerationRef.current) {
-          return "stale" as RepairConnectionOutcome;
-        }
-        const normalized = connectionErrorForCustomer(
-          normalizeCaughtError(error, "VibeTV connection needs attention."),
-        );
-        if (isLocalNetworkAccessError(normalized)) {
-          markCompanionAccessBlocked();
-        } else if (isCompanionMissingError(normalized)) {
-          markCompanionUnavailable();
-        } else {
-          try {
-            const statusPayload = await runCompanion<{
-              device?: DeviceInfo;
-            }>("/v1/status", undefined, { preserveLastError: true });
-            if (setupGeneration !== setupGenerationRef.current) {
-              return "stale" as RepairConnectionOutcome;
-            }
-            const statusDevice = statusPayload.device;
-            if (
-              deviceMatchesExpectedConnection(
-                statusDevice,
-                target,
-                options?.expectedDeviceId,
-              )
-            ) {
-              acceptDeviceSnapshot(statusDevice);
-              setLastError(null);
-              return deviceIsReady(statusDevice) ? "ready" : "waiting";
-            }
-          } catch {
-            // Keep the original repair error when the read-only status check
-            // cannot prove that the expected VibeTV is connected and paired.
-          }
-          setCompanionStatus("online");
-          void refreshCompanionFeatures();
-          setDevice((current) => markDeviceDisconnected(current, target));
-          setDeviceState("offline");
-        }
-        if (!quiet || isConnectionRecoveryError(normalized)) {
-          setLastError(normalized);
-          if (isConnectionRecoveryError(normalized) && target) {
-            const candidate: DeviceCandidate = {
-              target,
-              deviceId: options?.expectedDeviceId,
-              firmware:
-                normalized.code === "legacy_pairing_recovery_required"
-                  ? "1.0.38"
-                  : undefined,
-              networkMode: "station",
-            };
-            pendingPairingCandidate.current = candidate;
-            setDeviceCandidates([candidate]);
-            setDeviceSearchState("multiple");
-          }
-          addEvent({
-            label: "Fix connection needs attention",
-            detail: normalized.nextAction,
-            tone: "attention",
-          });
-        }
-        if (
-          normalized.code === "pairing_rate_limited" ||
-          normalized.code === "connect_temporarily_unavailable"
-        ) {
-          return "pairing-rate-limited" as RepairConnectionOutcome;
-        }
-        return "failed" as RepairConnectionOutcome;
-      } finally {
-        if (setupGeneration === setupGenerationRef.current) {
-          setBusyAction(null);
-        }
-      }
-    },
-    [
-      addEvent,
-      acceptDeviceSnapshot,
-      companionStatus,
-      handleCompanionUnavailableForRepair,
-      loadSettings,
-      markCompanionAccessBlocked,
-      markCompanionUnavailable,
-      refreshCompanionFeatures,
-      runCompanion,
-      setDevice,
-    ],
-  );
 
   const searchAndConnect = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
@@ -1539,20 +1395,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     void searchAndConnect();
   }, [deviceRecoveryPickerReason, searchAndConnect]);
 
+  // Resolves with null once the VibeTV is connected, or with the error the
+  // customer should be shown. The setup wizard needs the outcome to choose a
+  // dialog; every other caller ignores it and reads the state instead.
   const selectAndConnectDevice = useCallback(
-    async (candidate: DeviceCandidate) => {
+    async (candidate: DeviceCandidate): Promise<ApiError | null> => {
       if (!candidate.deviceId) {
-        setLastError({
+        const error: ApiError = {
           code: "device_identity_missing",
           message: "This VibeTV did not provide a stable device identity.",
           nextAction: "Search again, then choose a VibeTV with a device ID.",
-        });
+        };
+        setLastError(error);
         setDeviceSearchState("repair-failed");
-        return;
+        return error;
       }
       const setupGeneration = setupGenerationRef.current;
       pendingPairingCandidate.current = candidate;
-      setSelectingDeviceTarget(candidate.target);
       setBusyAction("select");
       setLastError(null);
       try {
@@ -1568,10 +1427,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
         );
         if (setupGeneration !== setupGenerationRef.current) {
-          return;
+          return null;
         }
         acceptDeviceSnapshot(payload.device);
-        setDeviceCandidates([]);
         pendingPairingCandidate.current = null;
         setDeviceSearchState("idle");
         setLastError(null);
@@ -1582,9 +1440,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "ready",
         });
         void loadSettings();
+        return null;
       } catch (error) {
         if (setupGeneration !== setupGenerationRef.current) {
-          return;
+          return null;
         }
         const normalized = connectionErrorForCustomer(
           normalizeCaughtError(
@@ -1599,7 +1458,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             { preserveLastError: true },
           );
           if (setupGeneration !== setupGenerationRef.current) {
-            return;
+            return null;
           }
           if (
             deviceMatchesExpectedConnection(
@@ -1609,7 +1468,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             )
           ) {
             acceptDeviceSnapshot(statusPayload.device);
-            setDeviceCandidates([]);
             pendingPairingCandidate.current = null;
             setDeviceSearchState("idle");
             setLastError(null);
@@ -1620,7 +1478,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               tone: "ready",
             });
             void loadSettings();
-            return;
+            return null;
           }
         } catch {
           // Keep the select error unless a read-only status check proves that
@@ -1636,9 +1494,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           detail: normalized.nextAction,
           tone: "attention",
         });
+        return normalized;
       } finally {
         if (setupGeneration === setupGenerationRef.current) {
-          setSelectingDeviceTarget(undefined);
           setBusyAction(null);
         }
       }
@@ -1672,8 +1530,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     selectAndConnectDevice,
   ]);
 
-  const connectManualTarget = useCallback(
-    async (targetOverride: string) => {
+  // Resolves with the VibeTV at that address, or throws the error the customer
+  // must be shown. Connecting is deliberately left to the wizard's connect
+  // sequence: a typed address then gets the same pairing, firmware check and
+  // log as a chosen card, instead of a second connect path of its own.
+  const findManualTarget = useCallback(
+    async (targetOverride: string): Promise<DeviceCandidate> => {
       const setupGeneration = setupGenerationRef.current;
       const searchAttempt = ++deviceSearchAttemptRef.current;
       const searchIsCurrent = () =>
@@ -1681,9 +1543,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         searchAttempt === deviceSearchAttemptRef.current;
       const target = normalizeDeviceTarget(targetOverride);
       setBusyAction("manual-target");
-      setDeviceCandidates([]);
-      setDeviceSearchState("not-found");
-      setLastError(null);
       try {
         const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
           "/v1/device/search",
@@ -1693,9 +1552,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           },
           { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
         );
-        if (!searchIsCurrent()) {
-          return;
-        }
         const candidate = (payload.devices || []).find(
           (entry) =>
             entry.networkMode !== "setup" &&
@@ -1703,37 +1559,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalizeDeviceTarget(entry.target) === target,
         );
         if (!candidate) {
-          setLastError({
+          throw {
             code: "device_not_found",
             message: "No VibeTV answered at that IP address.",
             nextAction:
               "Check the IP address shown on the VibeTV screen, then try again.",
-          });
-          return;
+          } satisfies ApiError;
         }
-        await selectAndConnectDevice(candidate);
+        return candidate;
       } catch (error) {
-        if (!searchIsCurrent()) {
-          return;
-        }
         const normalized = normalizeCaughtError(
           error,
           "That IP address did not answer as a VibeTV.",
         );
-        setLastError(normalized);
-        setDeviceSearchState("not-found");
-        addEvent({
-          label: "Manual VibeTV connection failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
+        // Settle the search this one superseded. Taking over the attempt
+        // counter silently ends the running scan, and leaving its state on
+        // "searching" strands the device step: nothing to pick, nothing to
+        // explain it, and no way to scan again.
+        if (searchIsCurrent()) {
+          setLastError(normalized);
+          addEvent({
+            label: "Manual VibeTV connection failed",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
+          setDeviceSearchState("not-found");
+        }
+        throw normalized;
       } finally {
         if (searchIsCurrent()) {
           setBusyAction(null);
         }
       }
     },
-    [addEvent, runCompanion, selectAndConnectDevice],
+    [addEvent, runCompanion],
   );
 
   const reloadDisplay = useCallback(
@@ -1801,27 +1660,50 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const resetSetup = useCallback(async () => {
+    if (setupResetInProgressRef.current) {
+      return;
+    }
+    setupResetInProgressRef.current = true;
+    providerPoolReconcilesAfterResetRef.current = [];
+    let resetSucceeded = false;
     const setupGeneration = setupGenerationRef.current;
     setBusyAction("reset-setup");
     setLastError(null);
     try {
+      // A display-mode save still in flight would land after the reset and
+      // write the old selection back, so the rerun skipped the display step.
+      // Every entry point -- Settings, Support -- comes through here, so this
+      // is where the reset waits for it; the busy state above is what the
+      // customer sees meanwhile.
+      for (;;) {
+        const preferenceWrites = providerPreferenceWritesRef.current;
+        await preferenceWrites;
+        const displayWrites = providerDisplayWriteQueueRef.current;
+        await displayWrites;
+        if (
+          preferenceWrites === providerPreferenceWritesRef.current &&
+          displayWrites === providerDisplayWriteQueueRef.current
+        ) {
+          break;
+        }
+      }
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;
         providerSetup?: ProviderSetupInfo;
+        setup?: ProviderSelectionSetup;
       }>("/v1/setup/reset", { method: "POST" });
+      resetSucceeded = true;
       if (setupGeneration !== setupGenerationRef.current) {
         return;
       }
       setupGenerationRef.current += 1;
+      providerPoolReconcileRetryRef.current = null;
+      setProviderPoolReconcilePending(false);
       forgetDeviceTarget();
       setDeviceRecoveryGate(resetDeviceRecoveryGate());
       setDeviceTarget("");
-      setDeviceSession({
-        device: null,
-        themeSetupIdentity: null,
-        providerIncidentOpen: false,
-      });
+      setDeviceSession({ device: null, themeSetupIdentity: null });
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
@@ -1838,6 +1720,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setUsage(null);
       setUsageError(null);
       setProviderSetup(null);
+      // The reset deletes the saved display choice on the companion, so
+      // holding the old one here would let a slow or failed re-read skip the
+      // display step over a selection that no longer exists.
+      providerDisplayRef.current = null;
+      setProviderDisplay(null);
+      setProviderDisplayError(null);
+      // The latch that says the wizard has already handed the screen back.
+      // Left standing, the rerun reaches its closing step and is treated as
+      // finished before it renders, so the customer never sees VibeTV running.
+      setSetupFinished(false);
+      setProviderSetupCompletedThisSession(false);
+      setSetupThemeInstallRequested(false);
+      setSetupThemeChoiceRequired(false);
       didRunAutoDisplayReload.current = false;
       didRunAutomaticDeviceSearch.current = false;
       didRunSetupVerification.current = false;
@@ -1846,10 +1741,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setProviderSetup(payload.providerSetup || null);
+      setProviderSelectionSetup(
+        payload.setup || {
+          providerSelectionRequired: true,
+          providerSelectionComplete: false,
+        },
+      );
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
-      setHasEnteredControlCenter(false);
+      setEnteredControlCenterThisSession(false);
+      // Run setup again asks the question over.
+      setSessionSkipsSetup(null);
       if (payload.device) {
         setDevice(payload.device.connected ? payload.device : null);
       }
@@ -1858,7 +1761,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         detail: "Local VibeTV connection was cleared.",
         tone: "unknown",
       });
-      setSetupResetVersion((current) => current + 1);
       setBusyAction(null);
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
@@ -1879,6 +1781,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
       setBusyAction(null);
+    } finally {
+      setupResetInProgressRef.current = false;
+      const deferredReconciles = resetSucceeded
+        ? []
+        : providerPoolReconcilesAfterResetRef.current;
+      providerPoolReconcilesAfterResetRef.current = [];
+      for (const reconcile of deferredReconciles) {
+        reconcile();
+      }
     }
   }, [
     addEvent,
@@ -2220,6 +2131,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           progress: 100,
           logs: [...initialLogs, normalized.message, normalized.nextAction],
           error: themeInstallErrorText(normalized),
+          failure: normalized,
         });
         addEvent({
           label: "Theme install needs attention",
@@ -2285,6 +2197,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const connectionRecoveryRequired =
     isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
+
+  // A search the background service did not survive answered nothing, and
+  // nothing is not an answer. The service restarts several times while it
+  // installs its usage engine on a fresh Mac, so the first search regularly
+  // lands in one of those gaps; keeping its empty result told the customer
+  // their VibeTV was not on the network. Once the service is back, search again.
+  const companionWasOnline = useRef(false);
+  // Sticky: a service that has answered once is one launchd will restart.
+  const companionEverOnline = useRef(false);
+  useEffect(() => {
+    const online = companionStatus === "online";
+    const returned = online && !companionWasOnline.current;
+    companionWasOnline.current = online;
+    companionEverOnline.current = companionEverOnline.current || online;
+    if (!returned || deviceIsCustomerConnected(device)) {
+      return;
+    }
+    didRunAutomaticDeviceSearch.current = false;
+    setDeviceSearchState((current) =>
+      current === "not-found" || current === "failed" ? "idle" : current,
+    );
+  }, [companionStatus, device]);
 
   useEffect(() => {
     if (
@@ -2460,7 +2394,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
       if (!board || !firmware) {
         setFirmwareUpdate(null);
-        return;
+        return null;
       }
 
       const params = new URLSearchParams({
@@ -2476,6 +2410,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             { preserveLastError: true },
           );
           setFirmwareUpdate(payload);
+          return payload;
         } else {
           const response = await fetch(
             `/api/firmware/latest?${params.toString()}`,
@@ -2486,19 +2421,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (!response.ok) {
             throw new Error(`firmware check failed: ${response.status}`);
           }
-          setFirmwareUpdate((await response.json()) as FirmwareUpdateInfo);
+          const payload = (await response.json()) as FirmwareUpdateInfo;
+          setFirmwareUpdate(payload);
+          return payload;
         }
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
-          return;
+          return null;
         }
-        setFirmwareUpdate({
+        const failed: FirmwareUpdateInfo = {
           checkedAt: new Date().toISOString(),
           installedFirmware: firmware,
           updateAvailable: false,
           status: "check_failed",
           message: "Firmware check failed.",
-        });
+        };
+        setFirmwareUpdate(failed);
+        return failed;
       }
     },
     [deviceBoard, deviceFirmware, runCompanion],
@@ -2809,6 +2748,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         markCompanionUnavailable();
       }
       setLastError(normalized);
+      lastFirmwareErrorRef.current = normalized;
       setFirmwareUpdateStatus({
         phase: "error",
         startedAt,
@@ -2949,33 +2889,333 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshProviderPreferences = useCallback(
-    async (options?: { quiet?: boolean }) => {
-      try {
-        const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
-          "/v1/preferences?section=providers",
-          undefined,
-          { preserveLastError: Boolean(options?.quiet) },
-        );
-        setProviderPreferences(payload.items || []);
-        setProviderPreferencesError(null);
-      } catch (error) {
-        setProviderPreferencesError(
-          normalizeCaughtError(error, "Provider settings need attention."),
-        );
+    (options?: { quiet?: boolean }) => {
+      if (providerPreferencesReadRef.current) {
+        return providerPreferencesReadRef.current;
       }
+      const read = (async () => {
+        // Start after older writes, then ignore the result if a newer write
+        // begins beside this GET. Otherwise a pre-write snapshot can replace
+        // the PATCH-confirmed row and feed the stale provider back into the
+        // Automatic display pool.
+        for (;;) {
+          const pendingWrites = providerPreferenceWritesRef.current;
+          await pendingWrites;
+          if (pendingWrites === providerPreferenceWritesRef.current) {
+            break;
+          }
+        }
+        const setupGeneration = setupGenerationRef.current;
+        const preferencesRevision = providerPreferencesRevisionRef.current;
+        try {
+          const payload = await runCompanion<{
+            items: PreferenceDescriptor[];
+          }>("/v1/preferences?section=providers", undefined, {
+            preserveLastError: Boolean(options?.quiet),
+          });
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            preferencesRevision !== providerPreferencesRevisionRef.current
+          ) {
+            return;
+          }
+          const items = payload.items || [];
+          providerPreferencesRef.current = items;
+          setProviderPreferences(items);
+          setProviderPreferencesError(null);
+        } catch (error) {
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            preferencesRevision !== providerPreferencesRevisionRef.current
+          ) {
+            return;
+          }
+          setProviderPreferencesError(
+            normalizeCaughtError(error, "Provider settings need attention."),
+          );
+        }
+      })();
+      providerPreferencesReadRef.current = read;
+      void read.finally(() => {
+        if (providerPreferencesReadRef.current === read) {
+          providerPreferencesReadRef.current = null;
+        }
+      });
+      return read;
     },
     [runCompanion],
   );
 
+  const refreshProviderDisplay = useCallback(
+    (options?: { quiet?: boolean }) => {
+      if (providerDisplayReadRef.current) {
+        return providerDisplayReadRef.current;
+      }
+      const read = (async () => {
+        // A read starts only after older writes and is discarded if a newer
+        // write starts beside it. Otherwise a slow GET can put the selection it
+        // captured before a PATCH back into both the UI and the next write.
+        for (;;) {
+          const pendingWrites = providerDisplayWriteQueueRef.current;
+          await pendingWrites;
+          if (pendingWrites === providerDisplayWriteQueueRef.current) {
+            break;
+          }
+        }
+        const setupGeneration = setupGenerationRef.current;
+        const displayRevision = providerDisplayRevisionRef.current;
+        try {
+          const payload = await runCompanion<{
+            selection: ProviderDisplaySelection;
+          }>("/v1/provider-display", undefined, {
+            preserveLastError: Boolean(options?.quiet),
+          });
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            displayRevision !== providerDisplayRevisionRef.current
+          ) {
+            return;
+          }
+          providerDisplayRef.current = payload.selection;
+          setProviderDisplay(payload.selection);
+          setProviderDisplayError(null);
+        } catch (error) {
+          if (
+            setupGeneration !== setupGenerationRef.current ||
+            displayRevision !== providerDisplayRevisionRef.current
+          ) {
+            return;
+          }
+          setProviderDisplayError(
+            normalizeCaughtError(error, "Display selection needs attention."),
+          );
+        }
+      })();
+      providerDisplayReadRef.current = read;
+      void read.finally(() => {
+        if (providerDisplayReadRef.current === read) {
+          providerDisplayReadRef.current = null;
+        }
+      });
+      return read;
+    },
+    [runCompanion],
+  );
+
+  const checkProvider = useCallback(
+    (item: PreferenceDescriptor) => {
+      const providerId = item.providerId?.trim().toLowerCase();
+      if (!providerId) {
+        return Promise.resolve();
+      }
+      setPendingProviderCheckIds((current) =>
+        new Set(current).add(providerId),
+      );
+      const runCheck = async () => {
+        // A provider check changes the health this endpoint reports. Detach
+        // any GET that started before the check so its old snapshot cannot
+        // replace the result we are about to confirm.
+        providerPreferencesRevisionRef.current += 1;
+        providerPreferencesReadRef.current = null;
+        try {
+          const current = providerPreferencesRef.current?.find(
+            (preference) =>
+              preference.providerId?.trim().toLowerCase() === providerId,
+          );
+          if (!current?.value) {
+            return;
+          }
+          await runCompanion(
+            `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
+            { method: "POST" },
+          );
+          // A poll may have started while the check was running. Require one
+          // read from after the successful retry before clearing the pending
+          // marker.
+          providerPreferencesRevisionRef.current += 1;
+          providerPreferencesReadRef.current = null;
+          await refreshProviderPreferences({ quiet: true });
+          setProviderPreferencesError(null);
+        } catch (error) {
+          setProviderPreferencesError(
+            normalizeCaughtError(error, `${item.label} could not be checked.`),
+          );
+        } finally {
+          setPendingProviderCheckIds((current) => {
+            const next = new Set(current);
+            next.delete(providerId);
+            return next;
+          });
+        }
+      };
+      const queuedCheck = providerCheckQueueRef.current.then(
+        runCheck,
+        runCheck,
+      );
+      providerCheckQueueRef.current = queuedCheck;
+      return queuedCheck;
+    },
+    [refreshProviderPreferences, runCompanion],
+  );
+
+  const updateProviderDisplay = useCallback(
+    (
+      next:
+        | Pick<ProviderDisplaySelection, "mode" | "providerIds">
+        | ((
+            current: ProviderDisplaySelection | null,
+          ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
+      providerId: string,
+    ) => {
+      if (setupResetInProgressRef.current) {
+        return Promise.resolve(false);
+      }
+      providerDisplayRevisionRef.current += 1;
+      const write = async () => {
+        const previous = providerDisplayRef.current;
+        // Derived inside the queue, from what the writes ahead of it left
+        // behind. Two provider toggles whose saves land in the same tick each
+        // derived their pool from the same stored selection, and the second
+        // write undid the first.
+        const selection = typeof next === "function" ? next(previous) : next;
+        if (!selection) {
+          return true;
+        }
+        const optimistic = { ...selection, configured: true, valid: true };
+        setPendingProviderDisplayId(providerId);
+        providerDisplayRef.current = optimistic;
+        setProviderDisplay(optimistic);
+        try {
+          const payload = await runCompanion<{
+            selection: ProviderDisplaySelection;
+          }>("/v1/provider-display", {
+            method: "PATCH",
+            body: JSON.stringify(selection),
+          });
+          providerDisplayRef.current = payload.selection;
+          setProviderDisplay(payload.selection);
+          setProviderDisplayError(null);
+          void refreshUsage({ quiet: true });
+          return true;
+        } catch (error) {
+          providerDisplayRef.current = previous;
+          setProviderDisplay(previous);
+          setProviderDisplayError(
+            normalizeCaughtError(
+              error,
+              "Display selection could not be saved.",
+            ),
+          );
+          return false;
+        } finally {
+          setPendingProviderDisplayId(null);
+        }
+      };
+      const queued = providerDisplayWriteQueueRef.current.then(write, write);
+      providerDisplayWriteQueueRef.current = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
+    },
+    [refreshUsage, runCompanion],
+  );
+
+  const completeProviderSetup = useCallback(async () => {
+    setBusyAction("provider-setup-complete");
+    try {
+      const payload = await runCompanion<{
+        setup: ProviderSelectionSetup;
+      }>("/v1/setup/providers/complete", { method: "POST" });
+      setProviderSelectionSetup(payload.setup);
+      setProviderSetupCompletedThisSession(true);
+      setSetupThemeInstallRequested(false);
+      setProviderDisplayError(null);
+      setLastError(null);
+      return true;
+    } catch (error) {
+      const refusal = normalizeCaughtError(
+        error,
+        "Provider setup is not complete yet.",
+      );
+      // The selection is read again so the step it names shows what is
+      // actually saved, and that read runs before the refusal is written
+      // because a read that succeeds clears it.
+      const step = setupStepForProviderRefusal(refusal.code);
+      if (step) {
+        await refreshProviderDisplay({ quiet: true });
+        setProviderDisplayError(refusal);
+        return step;
+      }
+      setProviderDisplayError(refusal);
+      return false;
+    } finally {
+      setBusyAction(null);
+    }
+  }, [refreshProviderDisplay, runCompanion]);
+
+  /**
+   * Keeps the Automatic pool equal to the set of switched-on providers.
+   *
+   * Only for Automatic: a fixed selection names one provider on purpose, and
+   * widening it would undo the customer's choice. A fixed selection whose
+   * provider was just switched off is left alone too -- the companion refuses
+   * it, and refusing is what hands the customer back to the display step where
+   * they can pick another one.
+   */
+  const syncAutomaticProviderPool = useCallback(
+    async (item: PreferenceDescriptor) => {
+      const providerId = item.providerId;
+      if (!providerId) {
+        return;
+      }
+      const reconcile = async (): Promise<boolean> => {
+        const enabledProviderIds = (providerPreferencesRef.current || [])
+          .filter(
+            (preference) =>
+              preference.providerId && preference.value === true,
+          )
+          .map((preference) => preference.providerId as string);
+        const updated = await updateProviderDisplay(
+          (current) =>
+            automaticPoolForEnabledProviders(current, enabledProviderIds),
+          providerId,
+        );
+        if (
+          updated !== false &&
+          providerPoolReconcileRetryRef.current === reconcile
+        ) {
+          providerPoolReconcileRetryRef.current = null;
+          setProviderPoolReconcilePending(false);
+        }
+        return updated;
+      };
+      providerPoolReconcileRetryRef.current = reconcile;
+      setProviderPoolReconcilePending(true);
+      if (setupResetInProgressRef.current) {
+        providerPoolReconcilesAfterResetRef.current.push(() => {
+          void reconcile();
+        });
+        return false;
+      }
+      return reconcile();
+    },
+    [updateProviderDisplay],
+  );
+
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {
+      if (setupResetInProgressRef.current) {
+        return;
+      }
+      providerPreferencesRevisionRef.current += 1;
       if (value) {
         providerReconcileDeadlineRef.current =
           Date.now() + PROVIDER_RECONCILE_WINDOW_MS;
       }
       setPendingPreferenceIds((current) => new Set(current).add(item.id));
-      setProviderPreferences((current) =>
-        (current || []).map((preference) =>
+      const optimisticPreferences = (providerPreferencesRef.current || []).map(
+        (preference) =>
           preference.id === item.id
             ? {
                 ...preference,
@@ -2996,33 +3236,60 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     },
               }
             : preference,
-        ),
       );
+      providerPreferencesRef.current = optimisticPreferences;
+      setProviderPreferences(optimisticPreferences);
+      let finishPreferenceWrite = () => {};
+      const preferenceWrite = new Promise<void>((resolve) => {
+        finishPreferenceWrite = resolve;
+      });
+      providerPreferenceWritesRef.current = Promise.all([
+        providerPreferenceWritesRef.current,
+        preferenceWrite,
+      ]).then(() => undefined);
       try {
         const payload = await runCompanion<{ item: PreferenceDescriptor }>(
           `/v1/preferences/${encodeURIComponent(item.id)}`,
           { method: "PATCH", body: JSON.stringify({ value }) },
         );
-        setProviderPreferences((current) =>
-          (current || []).map((preference) =>
-            preference.id === payload.item.id ? payload.item : preference,
-          ),
+        const confirmedPreferences = (
+          providerPreferencesRef.current || []
+        ).map((preference) =>
+          preference.id === payload.item.id ? payload.item : preference,
         );
+        providerPreferencesRef.current = confirmedPreferences;
+        setProviderPreferences(confirmedPreferences);
         setProviderPreferencesError(null);
-        void Promise.all([
+        // Automatic means "every provider that is switched on", so switching
+        // one on or off IS the change to the pool. The runtime filters strictly
+        // by the stored list (daemon.go applyProviderDisplaySelection), so a
+        // provider left out of it is enabled, healthy, and permanently invisible
+        // on the device -- with nothing on screen saying why. Writing the pool
+        // here is the one central rule that keeps them equal; the alternative
+        // was a per-row inclusion control plus a repair effect to finish what it
+        // half-did.
+        const displayUpdated = await syncAutomaticProviderPool(payload.item);
+        const refreshes = [
           refreshProviderPreferences({ quiet: true }),
           refreshUsage({ quiet: true }),
-        ]);
+        ];
+        if (displayUpdated !== false) {
+          refreshes.push(refreshProviderDisplay({ quiet: true }));
+        }
+        void Promise.all(refreshes);
       } catch (error) {
-        setProviderPreferences((current) =>
-          (current || []).map((preference) =>
-            preference.id === item.id ? item : preference,
-          ),
+        const restoredPreferences = (
+          providerPreferencesRef.current || []
+        ).map((preference) =>
+          preference.id === item.id ? item : preference,
         );
+        providerPreferencesRef.current = restoredPreferences;
+        setProviderPreferences(restoredPreferences);
         setProviderPreferencesError(
           normalizeCaughtError(error, "Provider could not be updated."),
         );
       } finally {
+        finishPreferenceWrite();
         setPendingPreferenceIds((current) => {
           const next = new Set(current);
           next.delete(item.id);
@@ -3030,8 +3297,47 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       }
     },
-    [refreshProviderPreferences, refreshUsage, runCompanion],
+    [
+      refreshProviderDisplay,
+      refreshProviderPreferences,
+      refreshUsage,
+      runCompanion,
+      syncAutomaticProviderPool,
+    ],
   );
+
+  useEffect(() => {
+    if (!providerPoolReconcilePending) {
+      return;
+    }
+    let stopped = false;
+    let timer: number | undefined;
+    const schedule = () => {
+      timer = window.setTimeout(() => void retry(), PROVIDER_POOL_RECONCILE_RETRY_MS);
+    };
+    const retry = async () => {
+      if (stopped) {
+        return;
+      }
+      const reconcile = providerPoolReconcileRetryRef.current;
+      if (!reconcile) {
+        return;
+      }
+      if (!setupResetInProgressRef.current) {
+        await reconcile();
+      }
+      if (!stopped && providerPoolReconcileRetryRef.current) {
+        schedule();
+      }
+    };
+    schedule();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [providerPoolReconcilePending]);
 
   useEffect(() => {
     if (
@@ -3067,7 +3373,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
   ]);
 
-  const loadSupportDiagnostics = useCallback(async () => {
+  // Resolves with the collected report, or null when nothing could be read.
+  // The Help menu saves what it gets and says which of the two happened.
+  const loadSupportDiagnostics = useCallback(async (): Promise<
+    SupportDiagnostics | null
+  > => {
     const setupGeneration = setupGenerationRef.current;
     setSupportReportBusy(true);
     try {
@@ -3102,7 +3412,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         },
       );
       if (setupGeneration !== setupGenerationRef.current) {
-        return;
+        return null;
       }
       setSupportDiagnostics(payload);
       const partial = Boolean(payload.collectionErrors?.length);
@@ -3126,9 +3436,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ? "attention"
             : "ready",
       });
+      return payload;
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
-        return;
+        return null;
       }
       const normalized = normalizeCaughtError(error, "Support report failed.");
       if (isLocalNetworkAccessError(normalized)) {
@@ -3143,6 +3454,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         detail: normalized.nextAction,
         tone: "attention",
       });
+      return null;
     } finally {
       setSupportReportBusy(false);
     }
@@ -3178,6 +3490,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const payload = await runCompanion<{
         providerSetup?: ProviderSetupInfo;
       }>("/v1/providers/retry", { method: "POST" });
+      await refreshProviderPreferences({ quiet: true });
       if (setupGeneration === setupGenerationRef.current) {
         const setup = payload.providerSetup || null;
         setProviderSetup(setup);
@@ -3196,7 +3509,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     }
     return null;
-  }, [runCompanion]);
+  }, [refreshProviderPreferences, runCompanion]);
 
   // One place tells the native side it may drop the temporary CodexBar, and it
   // is the same place that clears the outstanding flag. Every exit from a
@@ -3208,14 +3521,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const repairUsageService = useCallback(() => {
     if (!isNativeControlCenterApp()) {
-      void retryProviderSetup().then((setup) => {
-        if (
-          providerRecoveryManualAttempted.current &&
-          (!setup || providerSetupRequiresRecovery(setup))
-        ) {
-          setShowCodexBarFallback(true);
-        }
-      });
+      void retryProviderSetup();
       return;
     }
     if (codexBarRepairTimeout.current !== null) {
@@ -3243,9 +3549,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         detail: "The managed usage service did not return in time.",
         tone: "attention",
       });
-      if (providerRecoveryManualAttempted.current) {
-        setShowCodexBarFallback(true);
-      }
       endCodexBarRecovery();
     }, NATIVE_RUNTIME_REPAIR_TIMEOUT_MS);
   }, [addEvent, endCodexBarRecovery, retryProviderSetup]);
@@ -3267,13 +3570,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         void retryProviderSetup()
           .then((setup) => {
             if (!setup || providerSetupRequiresRecovery(setup)) {
-              if (providerRecoveryManualAttempted.current) {
-                setShowCodexBarFallback(true);
-              }
               return;
             }
             providerRecoveryManualAttempted.current = false;
-            setShowCodexBarFallback(false);
           })
           .finally(endCodexBarRecovery);
         return;
@@ -3289,9 +3588,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         detail: "The managed usage service could not restart.",
         tone: "attention",
       });
-      if (providerRecoveryManualAttempted.current) {
-        setShowCodexBarFallback(true);
-      }
       endCodexBarRecovery();
     };
     window.addEventListener(NATIVE_CODEXBAR_REPAIR_RESULT_EVENT, handleResult);
@@ -3317,7 +3613,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const retryUsageService = useCallback(() => {
     providerRecoveryManualAttempted.current = true;
-    setShowCodexBarFallback(false);
     repairUsageService();
   }, [repairUsageService]);
 
@@ -3400,28 +3695,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the dialog is dismissed.
   const macAppUpdateOfferedVersion =
     companionRelease?.latestVersion || companionRelease?.release || "";
-  const macAppUpdatePromptedFor = useRef("");
-  useEffect(() => {
-    if (
-      hostedSetup ||
-      !hasEnteredControlCenter ||
-      !macAppUpdateAvailable ||
-      !macAppUpdateOfferedVersion ||
-      firmwareUpdateInProgress ||
-      !isNativeControlCenterApp() ||
-      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
-    ) {
-      return;
-    }
-    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    window.location.href = "vibetv://check-for-updates";
-  }, [
-    firmwareUpdateInProgress,
-    hasEnteredControlCenter,
-    hostedSetup,
-    macAppUpdateAvailable,
-    macAppUpdateOfferedVersion,
-  ]);
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
       activeThemeUpgrade.needed &&
@@ -3433,6 +3706,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       requiresMacAppMigration ||
+      (setupThemeChoiceRequired && !setupFinished) ||
       !themeInstallEnabled ||
       companionStatus !== "online" ||
       !deviceIsReady(device) ||
@@ -3476,6 +3750,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     pendingUpgrade,
     requiresMacAppMigration,
     screensaverPath,
+    setupFinished,
+    setupThemeChoiceRequired,
     setupPreviewStep,
     themeInstallEnabled,
     themeInstallStatus?.phase,
@@ -3491,30 +3767,106 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     macAppMigrationAvailable;
   const deviceConnected = deviceIsCustomerConnected(device);
   const deviceReady = deviceIsReady(device);
-  const handleDisplayFrame = useCallback((frame: DisplayFrameSnapshot) => {
-    if (hasRenderableUsage(frame)) {
-      setHasEnteredControlCenter(true);
-    }
-  }, []);
+  const themeSetupComplete = deviceCompletedThemeSetup(device);
+  const displaySetupComplete = setupDisplayIsConfigured(providerDisplay);
+  const handleDisplayFrame = useCallback(
+    (frame: DisplayFrameSnapshot) => {
+      if (
+        hasRenderableUsage(frame) &&
+        providerSelectionSetup?.providerSelectionComplete === true &&
+        displaySetupComplete &&
+        (themeSetupComplete || firmwareUpdateInProgress) &&
+        setupFinished
+      ) {
+        setEnteredControlCenterThisSession(true);
+      }
+    },
+    [
+      providerSelectionSetup?.providerSelectionComplete,
+      displaySetupComplete,
+      firmwareUpdateInProgress,
+      setupFinished,
+      themeSetupComplete,
+    ],
+  );
   const hasActiveDevice = deviceIsActive(device);
-  const displaySessionActive = Boolean(
-    deviceConnected ||
-      (hasEnteredControlCenter && hasActiveDevice && device?.paired !== false),
-  );
-  const displayFrame = useLatestDisplayFrame(
-    displaySessionActive,
-    handleDisplayFrame,
-  );
   const themeSetupEntryRequired =
     companionStatus === "online" && deviceNeedsThemeSetup(device);
   const themeSetupSessionMatches =
     deviceCanContinueThemeSetup(device) &&
     deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
-  const themeSetupComplete = deviceCompletedThemeSetup(device);
   const themeSetupRequired =
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
+  const setupIdentityKnown = setupIdentityIsKnown(
+    initialCompanionCheckComplete,
+    providerDisplay,
+    providerDisplayError,
+  );
+  const setupLooksComplete =
+    setupIdentityKnown &&
+    setupWasCompletedBefore({
+      hasActiveDevice,
+      connectionRecoveryRequired,
+      providerSelectionComplete:
+        providerSelectionSetup?.providerSelectionComplete === true,
+      displayConfigured: displaySetupComplete,
+      providerSetupCompletedThisSession,
+      themeSetupRequired,
+    });
+  // Whether this session belongs to a customer coming back or to one being set
+  // up is settled the first time the app knows the Mac's state, and never
+  // revisited. Both directions have to hold.
+  //
+  // Deciding it true later would hand the window back to setup around someone
+  // working in the app: switching off the provider on display is one click in
+  // Settings, and a reconnecting VibeTV can report its theme missing again.
+  //
+  // Deciding it false later is the mirror: a Mac whose provider and display
+  // choices are already recorded but whose VibeTV is gone or switched off
+  // starts on the device step, and pairing or reconnecting one there must not
+  // turn the session into a returning one and take the connect log off the
+  // screen mid firmware install.
+  //
+  // The deciding render reads the fresh value, so nothing flashes.
+  if (sessionSkipsSetup === null && setupIdentityKnown) {
+    setSessionSkipsSetup(setupLooksComplete);
+  }
+  const hasEnteredControlCenter =
+    enteredControlCenterThisSession || (sessionSkipsSetup ?? setupLooksComplete);
+  const macAppUpdatePromptedFor = useRef("");
+  useEffect(() => {
+    if (
+      hostedSetup ||
+      !hasEnteredControlCenter ||
+      !macAppUpdateAvailable ||
+      !macAppUpdateOfferedVersion ||
+      firmwareUpdateInProgress ||
+      !isNativeControlCenterApp() ||
+      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
+    ) {
+      return;
+    }
+    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
+    window.location.href = "vibetv://check-for-updates";
+  }, [
+    firmwareUpdateInProgress,
+    hasEnteredControlCenter,
+    hostedSetup,
+    macAppUpdateAvailable,
+    macAppUpdateOfferedVersion,
+  ]);
+  const displaySessionActive = Boolean(
+    deviceConnected ||
+      ((hasEnteredControlCenter || firmwareUpdateInProgress) &&
+        hasActiveDevice &&
+        device?.paired !== false),
+  );
+  const displayFrame = useLatestDisplayFrame(
+    displaySessionActive,
+    handleDisplayFrame,
+  );
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
@@ -3547,41 +3899,54 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // screen in front of a repair that had just succeeded.
   const providerRecoveryBusy =
     busyAction === "usage-service-repair" || busyAction === "providers-retry";
+  // What the VibeTV reports as `provider_setup_required` is the ordinary state
+  // of a Mac whose customer has not picked a provider yet -- nothing is
+  // switched on for CodexBar to read. Treating it as a broken usage service
+  // sent the automatic recovery after it, and that recovery unregisters the
+  // background service for some twenty seconds before it reinstalls the engine
+  // (main.swift:3162-3204). The VibeTV then reported "no provider" again and it
+  // started over: a Mac left on the provider step tore its own background
+  // service down every couple of minutes.
+  //
+  // Only CodexBar's own verdict on its engine decides now. Reinstalling an
+  // engine that reports ready cannot switch a provider on.
   const providerRecoveryRequired =
     (companionStatus === "online" || providerRecoveryBusy) &&
-    (providerIncidentOpen ||
-      deviceAwaitsProviderSetup(device) ||
-      (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));
-  const initialProviderCheckInProgress =
-    themeSetupRequired &&
-    waitingForFirstUsage &&
-    providerSetupIsChecking(providerSetup);
+    providerSetupNeedsEngineRecovery(providerSetup);
+  // A usage service that cannot answer is not the provider step's private
+  // problem: it can fail at any moment, and it used to say so only there.
+  const usageFailure = providerRecoveryRequired
+    ? setupUsageCauseFor(providerSetup)
+    : null;
+
+  // A dismissal covers the incident it was made during, not the next one. A
+  // "checking" answer is the probe still running, not the incident ending:
+  // the companion reports it during every cache refresh, and treating it as
+  // the end re-opened a dismissed dialog every thirty seconds.
+  useEffect(() => {
+    if (usageFailure || providerSetupIsChecking(providerSetup)) {
+      return;
+    }
+    const timer = window.setTimeout(() => setUsageFailureHidden(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [providerSetup, usageFailure]);
 
   useEffect(() => {
     if (!providerRecoveryRequired) {
       // A Mac App that briefly disappears does not end a provider incident, and
       // the native repair takes it down on purpose. Ending the incident on that
       // gap would relaunch the automatic repair instead of showing the approved
-      // Try again. Only a reachable Mac App that no longer needs recovery ends
-      // one.
-      if (companionStatus === "online") {
-        // The fallback is earned inside one incident and must not outlive it.
-        // The realistic way out of a fallback screen is the customer fixing
-        // CodexBar himself, which is exactly what its copy tells him to do --
-        // and that path cleared nothing, so the next incident could open with
-        // the download already on screen before anything had been tried. The
-        // clear at the start of an incident does not cover it: that one sits
-        // behind the theme-install deferral.
-        //
-        // Only when an incident had actually started, and deferred for the
-        // same reason that clear is: a synchronous setState in an effect
-        // cascades a second render pass.
-        const incidentWasOpen = providerRecoveryAttempted.current;
+      // Try again. A "checking" answer does not end one either -- the companion
+      // reports it during every cache refresh, and re-arming on it fired the
+      // automatic repair once per probe cycle, tearing the background service
+      // down over and over. Only a reachable Mac App whose settled answer no
+      // longer needs recovery ends one.
+      if (
+        companionStatus === "online" &&
+        !providerSetupIsChecking(providerSetup)
+      ) {
         providerRecoveryAttempted.current = false;
         providerRecoveryManualAttempted.current = false;
-        if (incidentWasOpen) {
-          window.setTimeout(() => setShowCodexBarFallback(false), 0);
-        }
       }
       return;
     }
@@ -3598,10 +3963,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     providerRecoveryAttempted.current = true;
     const timer = window.setTimeout(() => {
-      // Every incident starts without the CodexBar fallback. It is earned by a
-      // customer retry that fails in this incident, never inherited from the
-      // previous one.
-      setShowCodexBarFallback(false);
       if (isNativeControlCenterApp()) {
         repairUsageService();
       }
@@ -3614,6 +3975,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     companionStatus,
     providerRecoveryRequired,
+    providerSetup,
     repairUsageService,
     themeInstallInProgress,
   ]);
@@ -3629,9 +3991,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !setupPreviewStep &&
     companionStatus === "online" &&
     deviceReady &&
+    providerSelectionSetup?.providerSelectionComplete &&
     hasEnteredControlCenter,
   );
-  const needsRuntimeRecovery = companionStatus === "missing";
+  const providerPickerProps = {
+    display: providerDisplay,
+    displayError: providerDisplayError,
+    displayPendingProviderId: pendingProviderDisplayId,
+    items: providerPreferences,
+    preferencesError: providerPreferencesError,
+    pendingCheckIds: pendingProviderCheckIds,
+    pendingPreferenceIds,
+    onCheck: checkProvider,
+    onDisplayChange: updateProviderDisplay,
+    onPreferenceChange: updateProviderPreference,
+  };
+  // The usage-service recovery unregisters the background service on purpose
+  // and re-registers it some twenty seconds later. That is this page's own
+  // request, so reporting it as an outage announced our own work as a fault.
+  const needsRuntimeRecovery =
+    companionStatus === "missing" && !providerRecoveryBusy;
+
   const controlCenterAvailable =
     hasActiveDevice && !connectionRecoveryRequired && !recoveryPickerOpen;
   const disabledTabs: ActiveTab[] = hasEnteredControlCenter
@@ -3670,22 +4050,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       clearRuntimeRepairTimeout();
       runtimeRepairAttempted.current = false;
       const resetTimer = window.setTimeout(() => {
-        setRuntimeRecoveryPhase("repairing");
+        setRuntimeRecoveryPhase(null);
+        setRuntimeRecoveryHidden(false);
       }, 0);
       return () => window.clearTimeout(resetTimer);
-    }
-    if (!isNativeControlCenterApp()) {
-      const failureTimer = window.setTimeout(() => {
-        setRuntimeRecoveryPhase("failed");
-      }, 0);
-      return () => window.clearTimeout(failureTimer);
     }
     if (runtimeRepairAttempted.current) {
       return;
     }
-    const timer = window.setTimeout(() => {
-      requestRuntimeRepair();
-    }, LAUNCHD_RECOVERY_GRACE_MS);
+    // A service that never answered has no restart coming: repairing it is the
+    // only way forward and the customer is told at once. One that disappeared
+    // mid-session gets the grace first, and hears nothing until it is over.
+    const timer = window.setTimeout(
+      requestRuntimeRepair,
+      companionEverOnline.current ? LAUNCHD_RECOVERY_GRACE_MS : 0,
+    );
     return () => window.clearTimeout(timer);
   }, [clearRuntimeRepairTimeout, needsRuntimeRecovery, requestRuntimeRepair]);
 
@@ -3771,355 +4150,601 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshUsage,
   ]);
 
-  const renderSetupScreen = (showIntro: boolean) => (
-    <SetupScreen
-      key={setupResetVersion}
-      companionStatus={companionStatus}
-      deviceCandidates={startupDeviceCandidates}
-      deviceSearchState={startupDeviceSearchState}
-      deviceState={deviceState}
-      deviceTarget={deviceTarget}
-      lastError={lastError}
-      busyAction={busyAction}
-      hostedMode={hostedSetup}
-      macAppRelease={companionRelease}
-      previewStep={setupPreviewStep}
-      requiresMacAppMigration={requiresMacAppMigration}
-      selectingDeviceTarget={
-        busyAction === "select" ? selectingDeviceTarget : undefined
-      }
-      showIntro={showIntro}
-      setupComplete={setupComplete}
-      supportReportBusy={supportReportBusy}
-      device={device}
-      diagnostics={supportDiagnostics}
-      onCheckCompanion={checkCompanion}
-      onCheckUpdates={checkUpdates}
-      onDeviceTargetChange={handleDeviceTargetChange}
-      onSearchDevices={() => {
-        didRunSetupVerification.current = true;
-        void searchAndConnect();
-      }}
-      onSelectDevice={(candidate) => {
-        didRunSetupVerification.current = true;
-        void selectAndConnectDevice(candidate);
-      }}
-      onRepairConnection={(targetOverride) => {
-        didRunSetupVerification.current = true;
-        if (targetOverride) {
-          void connectManualTarget(targetOverride);
-        }
-      }}
-      onResetSetup={resetSetup}
-      onCreateSupportReport={loadSupportDiagnostics}
-    />
+  // Settings and the provider step show the display selection; setup also has
+  // to read it, because it cannot tell whether one exists — or whether this
+  // companion can keep one at all — without asking.
+  const providerDisplayWanted =
+    companionStatus === "online" &&
+    (activeShellTab === "settings" ||
+      providerSelectionSetup?.providerSelectionRequired === true ||
+      !(setupFinished || setupComplete));
+  const providerPreferencesPollingWanted = providerPreferencesNeedPolling(
+    providerDisplayWanted,
+    providerPreferences,
   );
+  // A display read that failed is asked again on the status cadence. Nothing
+  // else retries it: the startup effect below reads once, polling refreshes
+  // preferences only, and a customer held on the device step has no control
+  // that reads it. Left alone, one dropped request kept a customer who was
+  // coming back frame-gated for the whole launch. The read that succeeds, or
+  // the 404 of a companion that cannot store a display choice, ends it.
+  const providerDisplayRetryWanted =
+    providerDisplayWanted &&
+    providerDisplayError !== null &&
+    !setupIdentityIsKnown(true, providerDisplay, providerDisplayError);
+  useEffect(() => {
+    if (!providerDisplayRetryWanted) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshProviderDisplay({ quiet: true });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [providerDisplayRetryWanted, refreshProviderDisplay]);
 
-  if (runtimeSurface === "unknown") {
-    return (
-      <ControlCenterBootScreen
-        diagnostics={supportDiagnostics}
-        onCreateSupportReport={loadSupportDiagnostics}
-        supportReportBusy={supportReportBusy}
-      />
-    );
-  }
+  useEffect(() => {
+    if (!providerPreferencesPollingWanted) {
+      return;
+    }
+    return startProviderPreferencesPolling({
+      refresh: () => refreshProviderPreferences({ quiet: true }),
+    });
+  }, [providerPreferencesPollingWanted, refreshProviderPreferences]);
 
-  if (runtimeSurface === "hosted-setup") {
-    return (
-      <HostedSetupShell
-        companionStatus={companionStatus}
-        setupComplete={setupComplete}
-      >
-        {renderSetupScreen(true)}
-      </HostedSetupShell>
-    );
-  }
+  useEffect(() => {
+    if (!providerDisplayWanted) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void Promise.all([
+        refreshProviderPreferences({ quiet: true }),
+        refreshProviderDisplay({ quiet: true }),
+      ]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeShellTab,
+    companionStatus,
+    providerSelectionSetup?.providerSelectionRequired,
+    refreshProviderDisplay,
+    refreshProviderPreferences,
+  ]);
 
-  if (!initialCompanionCheckComplete) {
-    return (
-      <ControlCenterBootScreen
-        diagnostics={supportDiagnostics}
-        onCreateSupportReport={loadSupportDiagnostics}
-        supportReportBusy={supportReportBusy}
-      />
-    );
-  }
+  const setupDeviceSummary = deviceReady
+    ? `VibeTV ${device?.deviceId || ""} on ${device?.target || "an unknown address"}`.trim()
+    : deviceSearchState === "not-found"
+      ? "not found on this WiFi"
+      : "not connected yet";
 
-  if (!hasEnteredControlCenter && needsRuntimeRecovery && !providerRecoveryRequired) {
-    return (
-      <MacAppRecoveryScreen
-        checking={busyAction === "status"}
-        phase={runtimeRecoveryPhase}
-        onRestart={restartLocalControlCenterApp}
-        onRetry={requestRuntimeRepair}
-      />
-    );
-  }
+  // The log reads as an order of events, not as a set of statuses: everything
+  // above the newest line is dimmed, and the newest one carries the caret.
+  // Tying the dimming to whether each step had finished made three lines flip
+  // back and forth while the customer watched, for no information they could
+  // act on.
+  const setupWelcomeLines = [
+    { id: "service", text: "starting background service" },
+    { id: "usage", text: "reading provider usage on this Mac" },
+    { id: "wifi", text: "scanning your WiFi" },
+    { id: "device", text: "looking for your VibeTV" },
+  ].map((line, index, lines) => ({
+    ...line,
+    tone: index < lines.length - 1 ? ("done" as const) : undefined,
+  }));
 
-  if (
-    !hasEnteredControlCenter &&
-    !providerRecoveryRequired &&
-    (companionStatus !== "online" ||
-      (requiresMacAppMigration && !deviceReady) ||
-      Boolean(setupPreviewStep))
-  ) {
-    return renderSetupScreen(true);
-  }
+  // ---- Setup wizard -------------------------------------------------------
+  // Once the customer is inside, a device that is only reconnecting stays
+  // theirs. Handing the screen back to setup for it would drop them out of
+  // whatever they were doing over a missed poll.
+  // Deliberately not setupComplete: that needs a field an older companion
+  // never reports, so the guard would not exist on exactly the Macs that have
+  // one.
+  // A VibeTV whose only problem is that no provider is set up yet reports
+  // ready:false -- readiness needs a rendered usage frame, and there is no
+  // usage to render. Without the middle term the wizard parks a brand-new
+  // customer on the device step and never offers the provider step that is the
+  // only way to fix it. Narrowed to the case that step actually answers:
+  // letting a device through once the provider selection is already done would
+  // carry someone whose provider just died to the live step and tell them
+  // their VibeTV is running.
+  const providerSelectionRequired =
+    !providerSetupCompletedThisSession &&
+    providerSelectionSetup?.providerSelectionRequired === true;
+  // The Companion already owns the long-running scan. The provider setup
+  // summary can become ready before the separate preferences inventory has
+  // answered, so the inventory itself is the loading boundary. Waiting for
+  // both kept a connected customer on the completed firmware log while the
+  // scan was still running out of sight.
+  const providersLoading = setupProviderInventoryIsLoading(
+    providerSelectionRequired,
+    providerPreferences,
+    providerPreferencesError,
+  );
+  const deviceUsableForSetup = setupDeviceIsUsable({
+    deviceConnected,
+    connectionRecoveryRequired,
+    displayRemediationRequired:
+      providerDisplay?.configured === true && providerDisplay.valid === false,
+    hasActiveDevice,
+    hasEnteredControlCenter,
+    providerSelectionRequired,
+    providerSetupCompletedThisSession,
+    themeSetupRequired,
+    ready: deviceReady,
+  });
 
-  if (
-    (companionStatus === "online" || providerRecoveryRequired) &&
-    !requiresMacAppMigration &&
-    !firmwareUpdateInProgress &&
-    (providerRecoveryRequired ||
-      !hasActiveDevice ||
-      recoveryPickerOpen ||
-      connectionRecoveryRequired ||
-      (waitingForFirstUsage && !themeSetupRequired) ||
-      initialProviderCheckInProgress)
-  ) {
-    return (
-      <DeviceStartupScreen
-        busyAction={busyAction}
-        diagnostics={supportDiagnostics}
-        deviceCandidates={startupDeviceCandidates}
-        deviceSearchState={startupDeviceSearchState}
-        deviceTarget={deviceTarget}
-        lastError={lastError}
-        onDeviceTargetChange={handleDeviceTargetChange}
-        onManualTarget={(target) => {
-          didRunSetupVerification.current = true;
-          void connectManualTarget(target);
-        }}
-        onCreateSupportReport={loadSupportDiagnostics}
-        onRepairUsageService={retryUsageService}
-        onPair={() => {
-          const candidate = pendingPairingCandidate.current;
-          setLastError(null);
-          void repairConnection({
-            targetOverride: candidate?.target || deviceTarget,
-            expectedDeviceId: candidate?.deviceId,
-            forcePair: true,
-          });
-        }}
-        onSearch={() => {
-          if (deviceRecoveryPickerReason === "confirmed-loss") {
-            setDeviceRecoveryGate(
-              openManualRecoveryPicker(deviceRecoveryGateRef.current),
-            );
+  const setupStep = deriveSetupStep({
+    deviceUsable: deviceUsableForSetup,
+    displayConfigured: displaySetupComplete,
+    displaySelectionSupported: setupDisplaySelectionSupported(
+      providerDisplay,
+      providerDisplayError,
+    ),
+    initialCheckComplete: initialCompanionCheckComplete,
+    providerSelectionRequired,
+    // Everything before there is a VibeTV to choose belongs to the welcome
+    // step: the background service coming up, and the search itself.
+    //
+    // The service restarts several times on a fresh install -- it installs its
+    // own usage engine -- and a search running into one of those restarts comes
+    // back empty. Treating that as an answer is what put a customer on
+    // "0 VibeTVs found on your WiFi." with a dead Connect while the service was
+    // still starting, and let them press it. A service that is genuinely gone
+    // is not hidden by this: its recovery dialog is drawn over whatever step is
+    // on screen.
+    searchingForDevice:
+      startupDeviceCandidates.length === 0 &&
+      (companionStatus !== "online" ||
+        startupDeviceSearchState === "idle" ||
+        startupDeviceSearchState === "searching"),
+    themeSetupRequired:
+      themeSetupRequired ||
+      (setupThemeChoiceRequired &&
+        !(
+          setupThemeInstallRequested &&
+          themeInstallStatus?.phase === "complete" &&
+          Boolean(selectedThemeId) &&
+          themeInstallStatus.themeId === selectedThemeId &&
+          themeInstallStatus.result?.themeId === selectedThemeId &&
+          deviceCompletedThemeSetup(device)
+        )),
+  });
+  // Once setup has admitted the customer to the Control Center, it never owns
+  // the window again. Theme and screensaver installs can temporarily make the
+  // device unready; that is install progress, not a new customer setup.
+  const setupOwnsScreen =
+    !hasEnteredControlCenter && (setupStep !== "live" || !setupFinished);
+
+  const setupProviders = (providerPreferences || []).filter(isProviderItem);
+  // The display step may only offer providers that can actually show something.
+  // Filtering on "switched on" alone let a broken provider into the rotation
+  // and into the Manual list, where pinning to it produced a blank device.
+  const displayableProviders = setupProviders.filter(setupProviderCanDisplay);
+  const enabledProviderIds = setupProviders
+    .filter((item) => item.value)
+    .map((item) => item.providerId)
+    .filter((id): id is string => Boolean(id));
+  const setupPreviews = displayPreviewsFor(
+    usage,
+    displayableProviders.map((item) => ({
+      id: item.providerId,
+      label: item.label,
+    })),
+  );
+  // Step 05 keeps offering all four live themes: hiding one would make the
+  // device's limitation invisible. The Install is gated by the same rules the
+  // theme library uses, so setup cannot promise what the device would refuse.
+  const setupThemes = catalog.themes
+    .filter((theme) => (theme.usage || "live") === "live")
+    .map((theme) => ({
+      id: theme.themeId,
+      name: theme.title,
+      themeSpecPath: theme.themeSpecPath,
+      blockedReason:
+        buildThemeInstallBlocker({
+          // Inside the wizard the device is connected and paired, but `ready`
+          // can still be false while the first frame is pending. Refusing on
+          // that would deadlock the step.
+          allowUnreadyInstall: true,
+          device,
+          theme,
+          themeInstallBlockedReason: "",
+          themeInstallEnabled,
+        })?.reason ?? null,
+    }));
+  const setupThemeError: ApiError | null =
+    themeInstallStatus?.phase === "error"
+      ? themeInstallStatus.failure ?? {
+          code: "theme_install_failed",
+          message: "Theme install did not finish.",
+          nextAction:
+            themeInstallStatus.error ||
+            themeInstallStatus.message ||
+            "Keep VibeTV powered on and try again.",
+        }
+      : setupThemeCatalogError(catalog.issue, setupThemes.length);
+
+  const setupConnectSteps: SetupConnectSteps = {
+    checkFirmware: async (connected) => {
+      const update = await refreshFirmwareUpdate({
+        board: connected.board,
+        firmware: connected.firmware,
+      });
+      // A check that could not be made is not a check that found nothing. Both
+      // resolve rather than reject, and treating them as "up to date" told the
+      // customer their firmware was current while it was simply unknown.
+      if (!update || update.status === "check_failed") {
+        throw {
+          code: "firmware_check_failed",
+          message: "Could not check VibeTV's firmware.",
+          nextAction: "Check the internet connection, then try again.",
+        };
+      }
+      return hasFirmwareUpdate(update) && update?.latestFirmware
+        ? {
+            from: update.installedFirmware || connected.firmware || "",
+            to: update.latestFirmware,
           }
-          void searchAndConnect();
-        }}
-        onSelect={(candidate) => {
-          void selectAndConnectDevice(candidate);
-        }}
-        selectingDeviceTarget={
-          busyAction === "select" ? selectingDeviceTarget : undefined
-        }
-        onOpenCodexBar={openCodexBarApp}
-        providerRecovery={
-          providerRecoveryRequired || initialProviderCheckInProgress
-        }
-        providerSetup={providerSetup}
-        showCodexBarFallback={showCodexBarFallback}
-        supportReportBusy={supportReportBusy}
-      />
-    );
-  }
+        : null;
+    },
+    connect: async (candidate) => {
+      const error = await selectAndConnectDevice(candidate);
+      if (error) {
+        throw error;
+      }
+      // Read the device back rather than trusting this render's copy, which
+      // still describes whatever was connected before this one.
+      const connected = await refreshDevice({ quiet: true });
+      return { board: connected?.board, firmware: connected?.firmware };
+    },
+    installFirmware: async () => {
+      lastFirmwareErrorRef.current = null;
+      if (!(await installFirmwareUpdate())) {
+        throw (
+          lastFirmwareErrorRef.current ?? {
+            code: "firmware_update_failed",
+            message: "Firmware update did not finish.",
+            nextAction:
+              "Unplug VibeTV from power, plug it back in, then try again.",
+          }
+        );
+      }
+    },
+  };
 
-  if (themeSetupRequired) {
+  // setupLog is what the failing screen is showing; the wizard owns it and
+  // passes it in. Optional so the pre-hydration welcome paint, which has no
+  // wizard behind it yet, can still offer the same Help control.
+  const setupAiFixPrompt = (setupLog: string[] = []) =>
+    buildAiFixPrompt({
+      appBuild: companionInfo?.app?.build,
+      appVersion: companionInfo?.app?.version,
+      companionCommit: companionInfo?.runtime?.commit,
+      companionVersion: companionInfo?.version,
+      deviceSummary: setupDeviceSummary,
+      events,
+      lastError,
+      osVersion: supportDiagnostics?.environment?.os,
+      providers: setupProviders.map((item) => ({
+        id: item.providerId || item.id,
+        message: item.health?.message,
+        state: item.health?.state,
+      })),
+      screen: setupStep,
+      setupLog,
+    });
+
+  // The background service can die at any point, so its recovery is drawn
+  // over whatever is on screen rather than replacing it. Everything else is
+  // one screen at a time.
+  function renderScreen() {
+    // The first paint is the wizard's own welcome step, not a second loading
+    // screen that happens to look like it. The native window shows the same
+    // brand and the same running log until the WebView takes over, so the
+    // customer sees one screen from launch, not a handover between two.
+    if (runtimeSurface === "unknown") {
+      return (
+        <SetupWelcomeScreen
+          aiFixPrompt={setupAiFixPrompt}
+          lines={setupWelcomeLines}
+          onCreateSupportReport={loadSupportDiagnostics}
+        />
+      );
+    }
+
+    if (runtimeSurface === "hosted-setup") {
+      return (
+        <MacAppDownloadScreen
+          onCreateSupportReport={loadSupportDiagnostics}
+          release={companionRelease}
+        />
+      );
+    }
+
+    if (setupOwnsScreen) {
+      return (
+        <SetupWizard
+          aiFixPrompt={setupAiFixPrompt}
+          usageFailure={usageFailureHidden ? null : usageFailure}
+          onRepairUsageService={retryUsageService}
+          onDismissUsageFailure={() => setUsageFailureHidden(true)}
+          automaticPreviews={setupPreviews}
+          connectSteps={setupConnectSteps}
+          device={device}
+          deviceCandidates={startupDeviceCandidates}
+          deviceSearchState={startupDeviceSearchState}
+          displayFrame={displayFrame}
+          displayMode={providerDisplay?.mode ?? "automatic"}
+          displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
+          firmwareProgress={firmwareUpdateStatus?.progress}
+          displayProviders={displayableProviders.map((item) => ({
+            id: item.providerId,
+            label: item.label,
+          }))}
+          installingTheme={themeInstallStatus?.phase === "installing"}
+          themeError={setupThemeError}
+          themeErrorDismissible={themeInstallStatus?.phase === "error"}
+          onDismissThemeError={() => {
+            if (themeInstallStatus?.phase === "error") {
+              setThemeInstallStatus(null);
+            }
+          }}
+          onRetryTheme={() => {
+            if (themeInstallStatus?.phase === "error") {
+              void installTheme();
+              return;
+            }
+            window.location.reload();
+          }}
+          themeRetryLabel={
+            setupThemeError?.code === "theme_catalog_unavailable"
+              ? "Reload catalog"
+              : undefined
+          }
+          onFindManualTarget={findManualTarget}
+          onCreateSupportReport={loadSupportDiagnostics}
+          onFinished={finishSetup}
+          onDisplayContinue={(selection) =>
+            updateProviderDisplay(
+              selection.mode === "automatic"
+                ? { ...selection, providerIds: enabledProviderIds }
+                : selection,
+              selection.mode === "automatic"
+                ? enabledProviderIds[0] ?? ""
+                : selection.providerIds[0] ?? "",
+            )
+          }
+          onInstallTheme={() => {
+            setSetupThemeInstallRequested(true);
+            void installTheme();
+          }}
+          onProviderCheck={(provider) => void checkProvider(provider)}
+          onProviderToggle={(provider, enabled) =>
+            void updateProviderPreference(provider, enabled)
+          }
+          onProvidersContinue={completeProviderSetup}
+          pendingCheckIds={pendingProviderCheckIds}
+          pendingPreferenceIds={pendingPreferenceIds}
+          providersLoading={providersLoading}
+          onDismissProviderError={() => {
+            setProviderDisplayError(null);
+            setProviderPreferencesError(null);
+          }}
+          onRetryProviders={() => {
+            void refreshProviderPreferences();
+            void refreshProviderDisplay();
+          }}
+          searchError={
+            startupDeviceSearchState === "failed" && !needsRuntimeRecovery
+              ? lastError
+              : null
+          }
+          providerError={providerDisplayError || providerPreferencesError}
+          onSearchDevices={() => void searchAndConnect()}
+          onUpdateMacApp={checkForMacAppUpdate}
+          displaySavePending={pendingProviderDisplayId !== null}
+          onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
+          providers={setupProviders}
+          selectedThemeId={selectedThemeId}
+          step={setupStep}
+          themeInstallLogs={themeInstallStatus?.logs || []}
+          themes={setupThemes}
+          usage={usage}
+          welcomeLines={setupWelcomeLines}
+        />
+      );
+    }
+
     return (
-      <ThemeLibraryScreen
-        busyAction={busyAction}
-        catalogIssue={catalog.issue}
-        companionStatus={companionStatus}
+      <ControlCenterShell
+        activeTab={activeShellTab}
+        activeAppearanceSection={appearanceSection}
+        disabledTabs={disabledTabs}
         device={device}
-        firmwareUpdate={effectiveFirmwareUpdate}
-        firmwareUpdateStatus={firmwareUpdateStatus}
-        installStatus={themeInstallStatus}
-        lastInstall={lastInstall}
-        readinessError={lastError}
-        onInstallCustomTheme={installCustomTheme}
-        onInstallFirmwareUpdate={installFirmwareUpdate}
-        onInstallTheme={installTheme}
-        onCreateSupportReport={loadSupportDiagnostics}
-        onSelectTheme={setSelectedThemeId}
-        requestedThemeId={initialThemeId}
-        selectedTheme={selectedTheme}
-        selectedThemeId={selectedThemeId}
-        setupMode
-        storefrontConfigured={catalog.storefrontConfigured}
-        themeInstallEnabled={themeInstallEnabled}
-        themes={catalog.themes}
-      />
+        updateAvailable={anyUpdateAvailable}
+        onAppearanceSectionChange={setAppearanceSection}
+        onTabChange={(tab) => {
+          if (disabledTabs.includes(tab)) {
+            return;
+          }
+          setActiveTab(tab);
+        }}
+      >
+        {activeShellTab === "overview" ? (
+          <OverviewScreen
+            companionVersion={companionInfo?.version}
+            companionStatus={companionStatus}
+            device={device}
+            displayFrame={displayFrame}
+            firmwareUpdateStatus={firmwareUpdateStatus}
+            usage={usage}
+          />
+        ) : null}
+
+        {activeShellTab === "usage" ? (
+          <UsageScreen
+            busyAction={busyAction}
+            companionStatus={companionStatus}
+            onRefresh={() => refreshUsage()}
+            usage={usage}
+            usageError={usageError}
+          />
+        ) : null}
+
+        {activeShellTab === "settings" ? (
+          <SettingsScreen
+            automaticPreviews={setupPreviews}
+            brightness={brightness}
+            busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
+            device={device}
+            standby={standby}
+            onBrightnessChange={changeBrightness}
+            onChooseScreensaver={() => {
+              setAppearanceSection("screensavers");
+              setActiveTab("theme-library");
+            }}
+            onResetSetup={resetSetup}
+            onSaveBrightness={saveBrightness}
+            providerPicker={providerPickerProps}
+            onSaveStandby={saveStandby}
+            onStandbyBrightnessChange={changeStandbyBrightness}
+          />
+        ) : null}
+
+        {activeShellTab === "theme-library" ? (
+          <ThemeLibraryScreen
+            busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
+            companionStatus={companionStatus}
+            device={device}
+            installStatus={themeInstallStatus}
+            catalogIssue={catalog.issue}
+            lastInstall={lastInstall}
+            onInstallCustomTheme={installCustomTheme}
+            onInstallTheme={installTheme}
+            onSelectTheme={
+              appearanceSection === "screensavers"
+                ? setSelectedScreensaverId
+                : setSelectedThemeId
+            }
+            installEntry={
+              appearanceSection === "themes" && Boolean(initialThemeId)
+            }
+            requestedThemeId={
+              appearanceSection === "themes" ? initialThemeId : undefined
+            }
+            selectedTheme={
+              appearanceSection === "screensavers"
+                ? selectedScreensaver
+                : selectedTheme
+            }
+            selectedThemeId={
+              appearanceSection === "screensavers"
+                ? selectedScreensaverId
+                : selectedThemeId
+            }
+            standby={standby}
+            storefrontConfigured={catalog.storefrontConfigured}
+            themeInstallEnabled={themeInstallEnabled}
+            themes={catalog.themes}
+            usage={appearanceSection === "screensavers" ? "screensaver" : "live"}
+            onSaveStandby={saveStandby}
+          />
+        ) : null}
+
+        {activeShellTab === "updates" ? (
+          <UpdatesScreen
+            busyAction={busyAction}
+            companionRelease={companionRelease}
+            companionStatus={companionStatus}
+            companionVersion={companionInfo?.version}
+            companionInfo={companionInfo}
+            device={device}
+            firmwareUpdate={effectiveFirmwareUpdate}
+            onCheckUpdates={checkUpdates}
+            onCreateReport={() => {
+              setActiveTab("logs");
+              void loadSupportDiagnostics();
+            }}
+            onInstallUpdate={installFirmwareUpdate}
+            onRetryThemeUpdate={retryActiveThemeUpgrade}
+            requiresMacAppMigration={requiresMacAppMigration}
+            supportReportBusy={supportReportBusy}
+            themeUpdateAvailable={activeThemeUpdateAvailable}
+            updateStatus={firmwareUpdateStatus}
+          />
+        ) : null}
+
+        {activeShellTab === "logs" ? (
+          <LogsScreen
+            busyAction={busyAction}
+            device={device}
+            diagnostics={supportDiagnostics}
+            events={logs}
+            lastError={lastError}
+            onLoadDiagnostics={loadSupportDiagnostics}
+            onRefresh={checkCompanion}
+            onRunSetupAgain={resetSetup}
+            supportReportBusy={supportReportBusy}
+          />
+        ) : null}
+      </ControlCenterShell>
     );
   }
 
   return (
-    <ControlCenterShell
-      activeTab={activeShellTab}
-      activeAppearanceSection={appearanceSection}
-      disabledTabs={disabledTabs}
-      device={device}
-      updateAvailable={anyUpdateAvailable}
-      onAppearanceSectionChange={setAppearanceSection}
-      onTabChange={(tab) => {
-        if (disabledTabs.includes(tab)) {
-          return;
+    <>
+      {renderScreen()}
+      <SetupRecoveryDialogs
+        onHide={() => setRuntimeRecoveryHidden(true)}
+        onRestart={restartLocalControlCenterApp}
+        onRetry={requestRuntimeRepair}
+        phase={
+          needsRuntimeRecovery && !runtimeRecoveryHidden
+            ? runtimeRecoveryPhase
+            : null
         }
-        setActiveTab(tab);
-      }}
-    >
-      {activeShellTab === "overview" ? (
-        <OverviewScreen
-          companionVersion={companionInfo?.version}
-          companionStatus={companionStatus}
-          device={device}
-          displayFrame={displayFrame}
-          firmwareUpdateStatus={firmwareUpdateStatus}
-          usage={usage}
-        />
-      ) : null}
+        retrying={busyAction === "runtime-repair"}
+      />
+      {/*
+        Every one of these is centred, so a second one lands on top of the
+        first: two stacked cards, the lower one's buttons unreachable behind
+        the upper one. That is what a customer met after pressing Connect on a
+        fresh Mac -- the firmware check failed over "Finish AI setup on this
+        Mac", and neither could be answered.
 
-      {activeShellTab === "usage" ? (
-        <UsageScreen
-          busyAction={busyAction}
-          companionStatus={companionStatus}
-          onRefresh={() => refreshUsage()}
-          pendingPreferenceIds={pendingPreferenceIds}
-          preferences={providerPreferences}
-          preferencesError={providerPreferencesError}
-          usage={usage}
-          usageError={usageError}
-          onPreferenceChange={updateProviderPreference}
+        The runtime repair wins over this one: it is what took the Mac App down.
+        And the whole of setup wins over it too. Every failure inside the wizard
+        is already a dialog over the step that caused it, and the provider step
+        is where a usage problem is dealt with -- so this ambient surface has
+        nothing to add there and is still waiting once setup is done.
+      */}
+      {usageFailure &&
+      !usageFailureHidden &&
+      !needsRuntimeRecovery &&
+      !setupOwnsScreen ? (
+        <SetupUsageDialog
+          cause={usageFailure}
+          onCreateSupportReport={() => void loadSupportDiagnostics()}
+          onOpenChange={(open) => setUsageFailureHidden(!open)}
+          onRepair={retryUsageService}
+          open
         />
       ) : null}
-
-      {activeShellTab === "settings" ? (
-        <SettingsScreen
-          brightness={brightness}
-          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
-          device={device}
-          standby={standby}
-          onBrightnessChange={changeBrightness}
-          onChooseScreensaver={() => {
-            setAppearanceSection("screensavers");
-            setActiveTab("theme-library");
-          }}
-          onResetSetup={resetSetup}
-          onSaveBrightness={saveBrightness}
-          onSaveStandby={saveStandby}
-          onStandbyBrightnessChange={changeStandbyBrightness}
-        />
-      ) : null}
-
-      {activeShellTab === "theme-library" ? (
-        <ThemeLibraryScreen
-          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
-          companionStatus={companionStatus}
-          device={device}
-          installStatus={themeInstallStatus}
-          catalogIssue={catalog.issue}
-          lastInstall={lastInstall}
-          onInstallCustomTheme={installCustomTheme}
-          onInstallTheme={installTheme}
-          onSelectTheme={
-            appearanceSection === "screensavers"
-              ? setSelectedScreensaverId
-              : setSelectedThemeId
-          }
-          installEntry={
-            appearanceSection === "themes" && Boolean(initialThemeId)
-          }
-          requestedThemeId={
-            appearanceSection === "themes" ? initialThemeId : undefined
-          }
-          selectedTheme={
-            appearanceSection === "screensavers"
-              ? selectedScreensaver
-              : selectedTheme
-          }
-          selectedThemeId={
-            appearanceSection === "screensavers"
-              ? selectedScreensaverId
-              : selectedThemeId
-          }
-          standby={standby}
-          storefrontConfigured={catalog.storefrontConfigured}
-          themeInstallEnabled={themeInstallEnabled}
-          themes={catalog.themes}
-          usage={appearanceSection === "screensavers" ? "screensaver" : "live"}
-          onSaveStandby={saveStandby}
-        />
-      ) : null}
-
-      {activeShellTab === "updates" ? (
-        <UpdatesScreen
-          busyAction={busyAction}
-          companionRelease={companionRelease}
-          companionStatus={companionStatus}
-          companionVersion={companionInfo?.version}
-          companionInfo={companionInfo}
-          device={device}
-          firmwareUpdate={effectiveFirmwareUpdate}
-          onCheckUpdates={checkUpdates}
-          onCreateReport={() => {
-            setActiveTab("logs");
-            void loadSupportDiagnostics();
-          }}
-          onInstallUpdate={installFirmwareUpdate}
-          onRetryThemeUpdate={retryActiveThemeUpgrade}
-          requiresMacAppMigration={requiresMacAppMigration}
-          supportReportBusy={supportReportBusy}
-          themeUpdateAvailable={activeThemeUpdateAvailable}
-          updateStatus={firmwareUpdateStatus}
-        />
-      ) : null}
-
-      {activeShellTab === "logs" ? (
-        <LogsScreen
-          busyAction={busyAction}
-          device={device}
-          diagnostics={supportDiagnostics}
-          events={logs}
-          lastError={lastError}
-          onLoadDiagnostics={loadSupportDiagnostics}
-          onRefresh={checkCompanion}
-          onRunSetupAgain={resetSetup}
-          supportReportBusy={supportReportBusy}
-        />
-      ) : null}
-    </ControlCenterShell>
+    </>
   );
 }
 
-function ControlCenterBootScreen({
-  diagnostics,
-  onCreateSupportReport,
-  supportReportBusy,
-}: {
-  diagnostics?: SupportDiagnostics | null;
-  onCreateSupportReport: () => void;
-  supportReportBusy: boolean;
-}) {
-  return (
-    <SetupStatusScreen
-      busy
-      description="Checking the Mac App and your last connected VibeTV."
-      footer={
-        <SupportReportActions
-          align="center"
-          creating={supportReportBusy}
-          emphasis="secondary"
-          diagnostics={diagnostics}
-          onCreate={onCreateSupportReport}
-        />
-      }
-      statusLabel="Checking the Mac App and your last connected VibeTV."
-      statusVisible={false}
-      title="Starting Control Center"
-    />
-  );
+export function setupThemeCatalogError(
+  issue: string | undefined,
+  liveThemeCount: number,
+): ApiError | null {
+  if (liveThemeCount > 0) {
+    return null;
+  }
+  return {
+    code: "theme_catalog_unavailable",
+    message: "Themes unavailable",
+    nextAction: issue || "Reload the theme catalog, then try again.",
+  };
 }
 
 function getRuntimeSurfaceSnapshot(): RuntimeSurface {
@@ -4142,14 +4767,6 @@ function usageRefreshEvent(payload: UsageSnapshot): {
         detail: "VibeTV is waiting for a new usage snapshot.",
         tone: "attention",
       };
-    case "rate_limited":
-      return {
-        label: "Usage refresh is waiting",
-        detail: payload.refresh.blockedUntil
-          ? `Try again after ${formatRefreshEventTime(payload.refresh.blockedUntil)}.`
-          : "The provider is temporarily limiting refreshes.",
-        tone: "attention",
-      };
     case "unavailable":
       return {
         label: "Usage is still loading",
@@ -4163,14 +4780,6 @@ function usageRefreshEvent(payload: UsageSnapshot): {
         tone: payload.providers?.length ? "ready" : "attention",
       };
   }
-}
-
-function formatRefreshEventTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function subscribeRuntimeSurface(onStoreChange: () => void) {
@@ -4214,7 +4823,9 @@ async function pollThemeInstallJob({
   jobId: string;
   runCompanion: RunCompanion;
 }): Promise<ThemeInstallJob> {
-  for (let attempt = 0; attempt < 600; attempt += 1) {
+  // The server may spend the full five-minute budget waiting for the first
+  // fresh display frame after it has already installed the theme.
+  for (let attempt = 0; attempt < 900; attempt += 1) {
     await delay(500);
     const payload = await runCompanion<{ job: ThemeInstallJob }>(
       `/v1/themes/install/status?jobId=${encodeURIComponent(jobId)}`,
@@ -4298,6 +4909,7 @@ function themeInstallStatusFromJob(
     logs,
     result: job.result,
     error: job.error ? themeInstallErrorText(job.error) : undefined,
+    failure: job.error,
   };
 }
 

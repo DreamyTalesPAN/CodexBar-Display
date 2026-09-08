@@ -56,9 +56,10 @@ a glance: provider, limits, tokens, reset time, and status. It gives the usage
 signal a place outside your laptop screen, so you can see where you stand while
 you work.
 
-The Mac App sends the local usage signal to the device. The hosted setup page at
-[`app.vibetv.shop`](https://app.vibetv.shop) starts setup and installs the Mac
-App. After installation, the Mac App opens the local Control Center on this Mac
+The Mac App sends the local usage signal to the device. The page at
+[`app.vibetv.shop`](https://app.vibetv.shop) does exactly one thing: it offers
+the signed Mac App download. Everything after that happens in the app on your
+own Mac, which walks you through setup and then opens the local Control Center
 for themes, display settings, updates, and support.
 
 VibeTV is built on top of [CodexBar](https://github.com/steipete/CodexBar) for
@@ -107,7 +108,9 @@ The normal customer path does not require USB flashing. USB-C powers the device.
 4. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac and download the
    Mac App.
 5. Drag `VibeTV Control Center` into Applications and open it.
-6. The app opens the local Control Center, then connect VibeTV there.
+6. The app takes you through setup: choose your VibeTV, choose the AI providers
+   to show, choose the display mode, choose a theme. It hands over to Control
+   Center by itself when VibeTV is live.
 
 The customer setup guide is [docs/customer-setup.md](docs/customer-setup.md).
 
