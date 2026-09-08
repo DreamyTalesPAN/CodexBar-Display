@@ -2189,6 +2189,29 @@ void testStringBudgetCountsInstalledAliasesAndSpellings() {
   }
 }
 
+void testFeatureValidationUsesEffectiveAliases() {
+  const struct { const char* primitive; uint8_t stops; uint16_t color; } cases[] = {
+      {R"({"t":"p","w":10,"h":10,"colorStops":[],"cs":[{"c":"#FFFFFF"}]})", 0, 0},
+      {R"({"t":"p","w":10,"h":10,"colorStops":[{"gte":0,"c":"#FFFFFF"}],"cs":[{"gte":null,"c":"bad"}]})", 1, 0xFFFF},
+      {R"({"t":"sp","a":"/themes/u/x.cbi","providerAssets":{},"pa":{"Claude":" /themes/u/y.cbi"}})", 0, 0},
+      {R"({"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"#00FF00","c":"bad"}]})", 1, 0x07E0},
+      {R"({"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"","c":"#FFFFFF"}]})", 1, 0xFFFF},
+      {R"({"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":null,"c":"#FFFFFF"}]})", 1, 0xFFFF},
+      {R"({"t":"tx","b":"l","valign":"top","va":"BOTTOM"})", 0, 0},
+  };
+  for (const auto& entry : cases) {
+    std::string raw = R"({"v":1,"id":"selected-alias","rev":1,"p":[)";
+    raw += entry.primitive;
+    raw += "]}";
+    JsonDocument doc;
+    CompiledThemeSpec scene;
+    TEST_ASSERT_TRUE(CompileThemeSpec(raw.c_str(), doc, scene));
+    TEST_ASSERT_EQUAL_UINT8(entry.stops, scene.primitives[0].colorStopCount);
+    if (entry.stops) TEST_ASSERT_EQUAL_HEX16(entry.color, scene.primitives[0].colorStops[0].color);
+    ReleaseCompiledThemeSpec(scene);
+  }
+}
+
 void testProgressColorStopsSelectFillByPercent() {
   const char* spec = R"JSON({
     "v":1,
@@ -3445,6 +3468,7 @@ int main() {
   RUN_TEST(testEmptyLongFeatureContainersOverrideCompactAliases);
   RUN_TEST(testStringBudgetCountsInstalledBindingSpelling);
   RUN_TEST(testStringBudgetCountsInstalledAliasesAndSpellings);
+  RUN_TEST(testFeatureValidationUsesEffectiveAliases);
   RUN_TEST(testProgressColorStopsSelectFillByPercent);
   RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);

@@ -1245,3 +1245,34 @@ func TestCompiledStringBudgetUsesInstalledStrings(t *testing.T) {
 		})
 	}
 }
+
+func TestParseValidatesOnlyEffectiveFeatureAliases(t *testing.T) {
+	for _, tc := range []struct {
+		name, primitive string
+		valid           bool
+	}{
+		{"ignored missing threshold", `{"t":"p","w":10,"h":10,"colorStops":[],"cs":[{"c":"#FFFFFF"}]}`, true},
+		{"ignored null threshold", `{"t":"p","w":10,"h":10,"colorStops":[{"gte":0,"c":"#FFFFFF"}],"cs":[{"gte":null,"c":"bad"}]}`, true},
+		{"selected missing threshold", `{"t":"p","w":10,"h":10,"colorStops":null,"cs":[{"c":"#FFFFFF"}]}`, false},
+		{"ignored provider key", `{"t":"sp","a":"/themes/u/x.cbi","providerAssets":{},"pa":{"Claude":" /themes/u/y.cbi"}}`, true},
+		{"selected provider key", `{"t":"sp","a":"/themes/u/x.cbi","providerAssets":null,"pa":{"Claude":"/themes/u/y.cbi"}}`, false},
+		{"ignored stop color", `{"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"#FFFFFF","c":"bad"}]}`, true},
+		{"empty stop color uses compact", `{"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"","c":"#FFFFFF"}]}`, true},
+		{"null stop color", `{"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":null,"c":"#FFFFFF"}]}`, true},
+		{"ignored alignment", `{"t":"tx","b":"l","valign":"top","va":"BOTTOM"}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"v":1,"id":"selected-alias","rev":1,"p":[` + tc.primitive + `]}`)
+			spec, installed, err := Parse(raw)
+			if err == nil {
+				err = Validate(spec)
+			}
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v: %v", tc.valid, err)
+			}
+			if tc.valid && string(raw) != string(installed) {
+				t.Fatal("changed installed JSON")
+			}
+		})
+	}
+}

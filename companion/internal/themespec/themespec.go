@@ -113,6 +113,7 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 		Text      *string `json:"text"`
 		AssetPath *string `json:"assetPath"`
 		Data      *string `json:"data"`
+		Valign    *string `json:"valign"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
@@ -124,11 +125,22 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 		{decoded.Text, &p.Text, &p.ShortText},
 		{decoded.AssetPath, &p.AssetPath, &p.ShortAsset},
 		{decoded.Data, &p.Data, &p.ShortData},
+		{decoded.Valign, &p.Valign, &p.ShortValign},
 	} {
 		if field.value != nil {
 			*field.target = *field.value
 			*field.alias = ""
 		}
+	}
+	// Validators must not inspect containers that the wire format overrides.
+	if p.ColorStops != nil {
+		p.ShortColorStops = nil
+	}
+	if p.ProviderAssets != nil {
+		p.ShortProviderAssets = nil
+	}
+	if p.StateAssets != nil {
+		p.ShortStateAssets = nil
 	}
 	return nil
 }
@@ -841,10 +853,11 @@ func rejectNonCanonicalInstalledValues(spec Spec) error {
 			stops = primitive.ShortColorStops
 		}
 		for j, stop := range stops {
-			if err := rejectCanonicalColor(stop.Color, i, fmt.Sprintf("colorStops[%d].color", j)); err != nil {
-				return err
+			color := stop.Color
+			if color == "" {
+				color = stop.C
 			}
-			if err := rejectCanonicalColor(stop.C, i, fmt.Sprintf("colorStops[%d].c", j)); err != nil {
+			if err := rejectCanonicalColor(color, i, fmt.Sprintf("colorStops[%d].color", j)); err != nil {
 				return err
 			}
 		}
