@@ -25,7 +25,7 @@ try {
     p { color: #b59cc8; font-size: 11px; }
     </style></head><body><main><h1>Tiny Office</h1><section>${states.map(({ state, svg }) =>
       `<figure id="${state}">${svg}<figcaption>${state === "idle" ? "Idle" : "Coding"}</figcaption></figure>`
-    ).join("")}</section><p>240 x 240 render preview / example data / hardware test pending</p></main></body></html>`);
+    ).join("")}</section><p>240 x 240 render preview / example data</p></main></body></html>`);
   await page.evaluate(() => document.fonts.ready);
   for (const { state } of states) {
     await page.locator(`#${state} svg`).screenshot({ path: path.join(destination, `${state}-preview.png`) });

@@ -45,9 +45,9 @@ function encodeAnimation(width, height, fps, palette, frames) {
 
 // Area-average the reference once before palette reduction; never snap RGB
 // channels independently or dither. The reference is framed at 120x72, then
-// the top 4 and bottom 12 rows (ceiling/floor) are dropped so the scene is
-// 120x56 and the device can give the numbers a taller font. Drawn 2x.
-const FRAME_H = 72, TOP_CUT = 4, SCENE_H = 56;
+// the top 5 and bottom 13 rows (ceiling/floor) are dropped so the scene is
+// 120x54 and the device can give the numbers a taller font. Drawn 2x.
+const FRAME_H = 72, TOP_CUT = 5, SCENE_H = 54;
 async function compileScene(state) {
   const { data, info } = await sharp(path.join(root, `docs/assets/tiny-office/${state}.png`))
     .flatten({ background: "#101020" })
@@ -229,7 +229,7 @@ function x_in(x, rect) { return x >= rect.x && x < rect.x + rect.w; }
 
 const backdrop = Array(60 * 60).fill(0);
 // A full-canvas static background with restrained header/scene separators.
-for (const y of [4, 33]) for (let x = 0; x < 60; x++) backdrop[y * 60 + x] = 1;
+for (const y of [4, 32]) for (let x = 0; x < 60; x++) backdrop[y * 60 + x] = 1;
 const idle = await compileScene("idle");
 const coding = await compileScene("coding");
 const assets = [
@@ -250,7 +250,7 @@ assert(specBytes.length < 2048);
 assert(spec.p.length < 16);
 const manifest = {
   kind: "vibetv-theme-pack", schemaVersion: 1, id: "tiny-office", name: "Tiny Office",
-  version: "0.4.0", minFirmware: "1.0.40", usage: "live", requiredCapabilities: ["usage-slots-v1"],
+  version: "0.5.0", minFirmware: "1.0.40", usage: "live", requiredCapabilities: ["usage-slots-v1"],
   themeSpec: {
     path: `/themes/u/to-${spec.rev}-${hash(specBytes).slice(0, 8)}.json`, file: "theme.json",
     bytes: specBytes.length, sha256: hash(specBytes), contentType: "application/json",

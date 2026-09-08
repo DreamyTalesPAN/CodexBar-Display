@@ -51,15 +51,17 @@ Before changing a published version, bump the version in the compiler and
   from the scene pixels themselves, so the overlay is seamless and uses the
   same palette. Only this window repaints; the rest of the scene stays static.
 - Three static CBI1 files plus two CBA1 files, 26 colors maximum. Scene source
-  dimensions are 120x56, drawn at 240x112; the full-canvas background is 60x60,
+  dimensions are 120x54, drawn at 240x108; the full-canvas background is 60x60,
   drawn at 240x240. Each static asset is below 10,000 pixels.
-- Twelve primitives, 1,409 source ThemeSpec bytes, 8,147-byte v0.4.0 ZIP.
+- Every text primitive ends at or above row 240 at its unshrunk height; the
+  firmware clips vertically instead of shrinking, and the test asserts this.
+- Twelve primitives, 1,409 source ThemeSpec bytes, 8,012-byte v0.5.0 ZIP.
 
 ## History
 
-- v0.4.0 (rev 5): font 2 at size 2 with shrink for long slot names, scene
-  cropped to 112 px. First published revision.
-- v0.3.0 (rev 4), v0.2.0 (rev 3), v0.1.0 (rev 2): drafts, never published.
+- v0.5.0 (rev 6): reset value moved up so its 32 px stay inside the panel,
+  scene cropped to 108 px. First published revision.
+- v0.4.0 (rev 5) to v0.1.0 (rev 2): drafts, never published.
 
 ## Verification and visual preview
 
@@ -86,16 +88,17 @@ Local checks: source/ZIP validation, catalog/checksum/immutable-history checks,
 
 Bench device: esp8266-smalltv-st7789, firmware 1.0.41, installed with the
 user's explicit approval through the Companion (`POST /v1/themes/install`,
-slot `live`). The v0.2.0 and v0.3.0 drafts and the published v0.4.0 (rev 5,
-`/themes/u/to-5-286c9cc0.json`) were installed and observed over `/health`:
+slot `live`). The v0.2.0 to v0.4.0 drafts and the published v0.5.0 (rev 6,
+`/themes/u/to-6-6eed22ed.json`) were installed and observed over `/health`:
 
 - `renderOk: true`, `renderFailures: 0`, no reboot (`bootId` unchanged).
-- CBA animation running: `cbaCompletedFrames` advancing ~3.6/s at 54 ms per
+- CBA animation running: `cbaCompletedFrames` advancing ~3.7/s at 68 ms per
   frame, `cbaBufferBytes: 10240`, `cbaBufferAllocationFailures: 0`.
 - Heap stable at ~13.2 KB free / 10.0 KB max block across all samples, above
   the firmware's animation minimums (8 KB / 3 KB).
 - The user judged the real screen: values readable, colors strong enough,
-  animation as intended.
+  animation as intended. The v0.4.0 draft showed the reset value clipped at
+  the bottom edge on the device, which v0.5.0 fixes.
 
 Not yet done: a 10–20 minute soak and repeated theme switches
 (synthwave → tiny-office → synthwave). Any further hardware write needs a new
