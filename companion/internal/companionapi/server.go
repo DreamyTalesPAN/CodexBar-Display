@@ -1379,14 +1379,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			// status cannot distinguish a live usage screen from the firmware's
 			// "Theme missing" screen and incorrectly skips the existing theme
 			// chooser. The shared Sender serializes this probe with frame writes.
-			if hello.HasFeature(protocol.FeatureCableHealthV1) && s.cableStatusHealthAvailable() {
-				if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
-					if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
-						device.Connected = providerSetupStreamForTarget(device.Stream, device.Target) ||
-							displayStreamHealthyForTarget(device.Stream, device.Target)
-						device = withDeviceHealth(device, health)
+			if hello.HasFeature(protocol.FeatureCableHealthV1) {
+				s.firmwareUpdateStartMu.Lock()
+				if _, running := s.activeFirmwareUpdateJob(); !running && !s.themeInstallInFlight() {
+					if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
+						if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
+							device.Connected = providerSetupStreamForTarget(device.Stream, device.Target) ||
+								displayStreamHealthyForTarget(device.Stream, device.Target)
+							device = withDeviceHealth(device, health)
+						}
 					}
 				}
+				s.firmwareUpdateStartMu.Unlock()
 			}
 		}
 		// Cable readiness never depends on an HTTP endpoint or token probe. A
@@ -1730,15 +1734,6 @@ func (s *Server) themeInstallInFlight() bool {
 	s.installJobsMu.Lock()
 	defer s.installJobsMu.Unlock()
 	return s.themeInstallActive
-}
-
-func (s *Server) cableStatusHealthAvailable() bool {
-	if _, running := s.activeFirmwareUpdateJob(); running {
-		return false
-	}
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	return !s.themeInstallActive
 }
 
 // Callers hold firmwareUpdateStartMu so checking the accepted theme job and
@@ -4038,6 +4033,15 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	} else if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		s.firmwareUpdateStartMu.Lock()
+		defer s.firmwareUpdateStartMu.Unlock()
+		if _, running := s.activeFirmwareUpdateJob(); running {
+			writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+			return
+		}
+		if s.rejectActiveThemeInstall(w) {
+			return
+		}
 		port, hello, ok := s.requireCableControlDevice(w, cfg)
 		if !ok {
 			return

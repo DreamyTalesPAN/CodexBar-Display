@@ -4875,6 +4875,52 @@ func TestStatusUsesAuthoritativeCableStreamWithoutHTTPProbe(t *testing.T) {
 	}
 }
 
+func TestCableReadRoutesSerializeProbesWithFirmwareUpdateStart(t *testing.T) {
+	for _, endpoint := range []string{"/v1/status", "/v1/device"} {
+		for _, active := range []string{"idle", "firmware", "theme"} {
+			t.Run(endpoint+"/"+active, func(t *testing.T) {
+				cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+				server := newTestServer(t, cfg)
+				hello := cableHelloForTest(cfg.DeviceID)
+				hello.Features = []string{protocol.FeatureCableHealthV1}
+				server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+				calls := 0
+				checkProbe := func() {
+					calls++
+					if server.firmwareUpdateStartMu.TryLock() {
+						server.firmwareUpdateStartMu.Unlock()
+						t.Error("update can start while a Cable read owns the serial sender")
+					}
+				}
+				server.resolveCablePort = func(string, string) (string, error) { checkProbe(); return "/dev/mock", nil }
+				server.readCableHello = func(string) (protocol.DeviceHello, error) { checkProbe(); return hello, nil }
+				server.readCableHealth = func(string, string) (deviceHealth, error) { checkProbe(); return deviceHealth{OK: true}, nil }
+				if active == "firmware" {
+					server.createFirmwareUpdateJob(cfg)
+				}
+				if active == "theme" {
+					server.themeInstallActive = true
+				}
+				rec := httptest.NewRecorder()
+				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+				wantStatus := http.StatusOK
+				if active != "idle" && endpoint == "/v1/device" {
+					wantStatus = http.StatusConflict
+				}
+				if rec.Code != wantStatus {
+					t.Fatalf("status=%d want=%d body=%s", rec.Code, wantStatus, rec.Body.String())
+				}
+				if active == "idle" && calls == 0 {
+					t.Fatal("idle Cable device was not probed")
+				}
+				if active != "idle" && calls != 0 {
+					t.Fatalf("active maintenance reopened serial sender %d times", calls)
+				}
+			})
+		}
+	}
+}
+
 func TestStatusUsesCableHealthToExposeMissingTheme(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode: "cable",
