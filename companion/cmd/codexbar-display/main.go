@@ -15,12 +15,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -28,6 +28,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/openurl"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
@@ -48,7 +49,7 @@ var themePackInstallFetchLiveFrameFn = codexbar.FetchFirstFrame
 var themePackValidateLoadFn = themepack.LoadVerified
 var displayWorkerRestartDelay = 5 * time.Second
 var openControlCenterStartLaunchAgentFn = startLaunchAgent
-var openControlCenterOpenURLFn = openURLWithMacOpen
+var openControlCenterOpenURLFn = openURL
 var openControlCenterHTTPClient = &http.Client{}
 var doctorListPortsFn = usb.ListPorts
 var doctorResolvePortFn = usb.ResolvePort
@@ -64,7 +65,7 @@ var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilit
 var doctorCheckCompanionHealthFn = checkDoctorCompanionHealth
 var doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
 	status, err := service.New(label, "", false).Status(context.Background())
-	return []byte(status.Raw), err
+	return []byte(status.DiagnosticOutput()), err
 }
 
 var displayStreamSensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
@@ -203,6 +204,11 @@ func runDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
+	if opts.LastGoodMaxAge > 0 {
+		if err := os.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", opts.LastGoodMaxAge.String()); err != nil {
+			return err
+		}
+	}
 	writerLock, err := writerlock.Acquire()
 	if err != nil {
 		return err
@@ -289,15 +295,17 @@ func waitForLocalControlCenter(ctx context.Context, url string) error {
 	}
 }
 
-func openURLWithMacOpen(url string) error {
-	return exec.Command("open", url).Run()
+func openURL(url string) error {
+	name, args := openurl.Command(url)
+	return exec.Command(name, args...).Run()
 }
 
 type daemonCommandOptions struct {
-	Daemon       daemon.Options
-	APIAddr      string
-	APIDevOrigin string
-	APIFallback  bool
+	LastGoodMaxAge time.Duration
+	Daemon         daemon.Options
+	APIAddr        string
+	APIDevOrigin   string
+	APIFallback    bool
 }
 
 func parseDaemonOptions(args []string) (daemon.Options, error) {
@@ -316,8 +324,12 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	apiAddr := fs.String("api-addr", "", "optional local companion API bind address")
 	apiDevOrigin := fs.String("api-dev-origin", "http://localhost:3000", "additional allowed local dev origin for --api-addr")
 	apiFallback := fs.Bool("api-fallback", false, "fall back to a free loopback port when --api-addr is in use")
+	lastGoodMaxAge := fs.Duration("last-good-max-age", 0, "override last-good frame maximum age (otherwise use environment/default)")
 	if err := fs.Parse(args); err != nil {
 		return daemonCommandOptions{}, err
+	}
+	if *lastGoodMaxAge < 0 {
+		return daemonCommandOptions{}, errors.New("last-good-max-age must not be negative")
 	}
 
 	normalizedTransport := strings.TrimSpace(strings.ToLower(*transportName))
@@ -329,6 +341,7 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	}
 
 	return daemonCommandOptions{
+		LastGoodMaxAge: *lastGoodMaxAge,
 		Daemon: daemon.Options{
 			Port:      strings.TrimSpace(*port),
 			Transport: normalizedTransport,
@@ -394,7 +407,7 @@ func addressHostsVibeTVService(addr string) bool {
 
 func listenCompanionAPI(addr string, allowFallback bool) (net.Listener, error) {
 	listener, err := net.Listen("tcp", addr)
-	if err == nil || !allowFallback || !errors.Is(err, syscall.EADDRINUSE) {
+	if err == nil || !allowFallback || !isAddressInUse(err) {
 		return listener, err
 	}
 	if addressHostsVibeTVService(addr) {
@@ -502,9 +515,11 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		}
 	}
 
+	var workerRunning atomic.Bool
 	server, err := companionapi.New(companionapi.Options{
-		Addr:           actualAddr,
-		AllowedOrigins: []string{opts.APIDevOrigin},
+		DisplayStreamRunning: workerRunning.Load,
+		Addr:                 actualAddr,
+		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
 			wakeDisplayWorker()
 			return nil
@@ -537,6 +552,8 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		errc <- server.Serve(ctx, listener)
 	}()
 	workerRun := func(ctx context.Context, opts daemon.Options) error {
+		workerRunning.Store(true)
+		defer workerRunning.Store(false)
 		return daemon.RunWithLogger(ctx, opts, logf)
 	}
 	go superviseDisplayWorker(ctx, daemonOpts, workerRun, time.After, logf)
@@ -943,6 +960,21 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	if err != nil {
 		return doctorRuntimeConfig{}, err
 	}
+	if runtime.GOOS == "windows" {
+		label := "com.codexbar-display.daemon"
+		status, err := service.New(label, home, false).Status(context.Background())
+		if err != nil {
+			return doctorRuntimeConfig{}, err
+		}
+		if !status.Enabled || !service.Healthy(status.State) {
+			return doctorRuntimeConfig{}, fmt.Errorf("background task is %s (enabled=%t)", status.State, status.Enabled)
+		}
+		task, err := service.ReadTaskConfig(home, label)
+		if err != nil {
+			return doctorRuntimeConfig{}, err
+		}
+		return doctorTaskRuntimeConfig(home, label, task.Arguments)
+	}
 
 	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
 		if output, err := doctorLaunchAgentPrintFn(label); err == nil && doctorLaunchAgentStateHealthy(string(output)) {
@@ -998,6 +1030,31 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
 		port:        parseLaunchAgentArgument(plist, "--port"),
 	}, nil
+}
+
+func doctorTaskRuntimeConfig(home, label string, args []string) (doctorRuntimeConfig, error) {
+	config := doctorRuntimeConfig{configured: true, label: label, transport: "usb"}
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "--transport":
+			config.transport = args[i+1]
+		case "--target":
+			config.target = args[i+1]
+		case "--port":
+			config.port = args[i+1]
+		}
+	}
+	config.authReady = config.transport != "wifi"
+	if config.transport == "wifi" {
+		cfg, err := runtimeconfig.Load(home)
+		if err != nil {
+			return doctorRuntimeConfig{}, err
+		}
+		config.target = doctorWiFiTarget(cfg.DeviceTarget, config.target)
+		config.probeTarget = doctorWiFiProbeTarget(config.target, cfg, true)
+		config.authReady = deviceTokenFromCommandTarget(config.probeTarget) != ""
+	}
+	return config, nil
 }
 
 func readDoctorLegacyLaunchAgentPlist(home, launchctlOutput string, readFile func(string) ([]byte, error)) ([]byte, error) {
@@ -1335,13 +1392,13 @@ func runService(args []string) error {
 		if err := startLaunchAgent(home); err != nil {
 			return err
 		}
-		fmt.Println("launchagent: enabled and started")
+		fmt.Println("background service: enabled and started")
 		return nil
 	case "stop":
 		if err := stopLaunchAgent(true); err != nil {
 			return err
 		}
-		fmt.Println("launchagent: stopped and disabled")
+		fmt.Println("background service: stopped and disabled")
 		return nil
 	case "status":
 		status, err := queryLaunchAgentStatus()
@@ -1358,7 +1415,11 @@ func runService(args []string) error {
 		if status.PID != "" {
 			fmt.Printf("pid: %s\n", status.PID)
 		}
-		fmt.Printf("plist: %s\n", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel))
+		if runtime.GOOS == "windows" {
+			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, strings.TrimSuffix(launchAgentLabel, ".plist")))
+		} else {
+			fmt.Printf("plist: %s\n", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel))
+		}
 		return nil
 	default:
 		return fmt.Errorf("unknown service subcommand %q: expected start, stop, or status", args[0])

@@ -3,12 +3,14 @@ package health
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ const (
 )
 
 type deps struct {
+	goos           string
 	serviceManager service.Manager
 	stdout         io.Writer
 	uid            func() int
@@ -37,6 +40,9 @@ type deps struct {
 }
 
 func (d deps) withDefaults() deps {
+	if d.goos == "" {
+		d.goos = runtime.GOOS
+	}
 	if d.stdout == nil {
 		d.stdout = os.Stdout
 	}
@@ -46,11 +52,18 @@ func (d deps) withDefaults() deps {
 	if d.homeDir == nil {
 		d.homeDir = os.UserHomeDir
 	}
-	if d.runCommand == nil {
-		d.serviceManager = service.New(launchAgentLabel, "", false)
-		d.runCommand = runSystemCommand
-	} else if d.serviceManager == nil {
-		d.serviceManager = service.NewDarwin(launchAgentLabel, "", d.uid(), false, d.runCommand)
+	if d.serviceManager == nil {
+		if d.goos == "windows" {
+			if d.runCommand == nil {
+				d.runCommand = runSystemCommand
+			}
+			home, _ := d.homeDir()
+			d.serviceManager = service.NewWindows(launchAgentLabel, home, d.runCommand)
+		} else if d.runCommand == nil {
+			d.serviceManager = service.New(launchAgentLabel, "", false)
+		} else {
+			d.serviceManager = service.NewDarwin(launchAgentLabel, "", d.uid(), false, d.runCommand)
+		}
 	}
 	if d.resolvePort == nil {
 		d.resolvePort = usb.ResolvePort
@@ -80,8 +93,7 @@ func runWithDeps(ctx context.Context, d deps) error {
 	d = d.withDefaults()
 
 	status, launchctlErr := d.serviceManager.Status(ctx)
-	launchctlOut := status.Raw
-	state, pid := parseLaunchctlStatus(launchctlOut)
+	state, pid := status.State, status.PID
 	if state == "" {
 		state = "unknown"
 	}
@@ -99,12 +111,16 @@ func runWithDeps(ctx context.Context, d deps) error {
 	}
 
 	fmt.Fprintln(d.stdout, "codexbar-display health")
-	fmt.Fprintf(d.stdout, "launchagent: %s", state)
+	name := "launchagent"
+	if d.goos == "windows" {
+		name = "scheduled task"
+	}
+	fmt.Fprintf(d.stdout, "%s: %s", name, state)
 	if pid != "" {
 		fmt.Fprintf(d.stdout, " pid=%s", pid)
 	}
 	if launchctlErr != nil {
-		fmt.Fprintf(d.stdout, " (launchctl error: %v)", launchctlErr)
+		fmt.Fprintf(d.stdout, " (service error: %v)", launchctlErr)
 	}
 	fmt.Fprintln(d.stdout)
 
@@ -149,6 +165,9 @@ func runWithDeps(ctx context.Context, d deps) error {
 		fmt.Fprintf(d.stdout, "last error: %s %s\n", formatTimestamp(lastError.Timestamp), strings.TrimSpace(lastError.Line))
 	}
 
+	if d.goos == "windows" {
+		return launchctlErr
+	}
 	return nil
 }
 
@@ -175,6 +194,17 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 		return launchAgentConfig{}
 	}
 	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	if d.goos == "windows" {
+		data, err := d.readFile(service.TaskConfigPath(home, launchAgentLabel))
+		if err != nil {
+			return launchAgentConfig{}
+		}
+		var config service.TaskConfig
+		if json.Unmarshal(data, &config) != nil {
+			return launchAgentConfig{}
+		}
+		return parseServiceArguments(config.Arguments)
+	}
 	data, err := d.readFile(path)
 	if err != nil {
 		return launchAgentConfig{}
@@ -184,6 +214,10 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 
 func parseLaunchAgentConfig(data []byte) launchAgentConfig {
 	args := plistStringValues(data)
+	return parseServiceArguments(args)
+}
+
+func parseServiceArguments(args []string) launchAgentConfig {
 	config := launchAgentConfig{}
 	for i, arg := range args {
 		switch strings.TrimSpace(arg) {

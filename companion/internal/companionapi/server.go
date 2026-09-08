@@ -136,7 +136,7 @@ const (
 
 var printDisplayStreamService = func(ctx context.Context, label string) ([]byte, error) {
 	status, err := service.New(label, "", false).Status(ctx)
-	return []byte(status.Raw), err
+	return []byte(status.DiagnosticOutput()), err
 }
 
 var displayStreamLogKeys = []string{
@@ -183,6 +183,9 @@ type Options struct {
 	PauseDisplayStream   func(bool)
 	WakeDisplayStream    func()
 	RenderDisplayStream  func()
+	// Supplied only by the process supervising the actual worker. Running alone
+	// never establishes frame freshness or device readiness.
+	DisplayStreamRunning func() bool
 }
 
 type Server struct {
@@ -207,6 +210,7 @@ type Server struct {
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
 	renderDisplayStream    func()
+	displayStreamRunning   func() bool
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
 	updateHoldUntil        time.Time
@@ -943,12 +947,15 @@ func New(opts Options) (*Server, error) {
 		subnetTargets:         localSubnetTargets,
 		localNetworkAvailable: hostHasUsableNetwork,
 		defaultWiFiTarget:     setup.DefaultWiFiTarget,
-		streamStatus:          inspectDisplayStream,
+		streamStatus: func(ctx context.Context, target string) displayStreamInfo {
+			return inspectDisplayStreamAfterRunning(ctx, target, time.Time{}, opts.DisplayStreamRunning)
+		},
 		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
 		pauseDisplayStream:    opts.PauseDisplayStream,
 		wakeDisplayStream:     opts.WakeDisplayStream,
 		renderDisplayStream:   opts.RenderDisplayStream,
+		displayStreamRunning:  opts.DisplayStreamRunning,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
 		pairRetryGap:          defaultPairRetryGap,
@@ -7727,6 +7734,10 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 }
 
 func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	return inspectDisplayStreamAfterRunning(ctx, target, notBefore, nil)
+}
+
+func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
 	target = publicTarget(target)
 	stream := displayStreamInfo{Target: target}
 	if target == "" {
@@ -7734,12 +7745,17 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 		return stream
 	}
 
-	output, err := printDisplayStreamService(ctx, displayStreamLaunchAgentLabel())
-	state := parseDisplayStreamLaunchState(string(output))
-	stream.Running = displayStreamLaunchStateRunning(state)
-	if err != nil {
-		stream.Detail = "Display stream is not loaded."
-		return stream
+	if running != nil {
+		stream.Running = running()
+	} else {
+		output, err := printDisplayStreamService(ctx, displayStreamLaunchAgentLabel())
+		state := parseDisplayStreamLaunchState(string(output))
+		stream.Running = displayStreamLaunchStateRunning(state)
+		if err != nil {
+			stream.Running = false
+			stream.Detail = "Display stream is not loaded."
+			return stream
+		}
 	}
 	if !stream.Running {
 		stream.Detail = "Display stream is not running."
@@ -7796,7 +7812,10 @@ func (s *Server) waitForDisplayStreamMode(
 	waitTime time.Duration,
 ) displayStreamInfo {
 	return waitForDisplayStreamAfterProbe(
-		ctx, target, notBefore, stopOnPairingError, waitTime, inspectDisplayStreamAfter,
+		ctx, target, notBefore, stopOnPairingError, waitTime,
+		func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+			return inspectDisplayStreamAfterRunning(ctx, target, notBefore, s.displayStreamRunning)
+		},
 		func(stream displayStreamInfo) bool {
 			return providerSetupStreamForTarget(&stream, target) &&
 				providerSetupNeedsCustomerAction(s.providerSetupForStatus())

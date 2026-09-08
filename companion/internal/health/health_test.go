@@ -91,6 +91,7 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 	var output strings.Builder
 	resolvePortCalled := false
 	err := runWithDeps(context.Background(), deps{
+		goos:    "darwin",
 		stdout:  &output,
 		uid:     func() int { return 501 },
 		homeDir: func() (string, error) { return home, nil },

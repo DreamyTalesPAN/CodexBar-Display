@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -2326,7 +2327,10 @@ func wrapUpgradeLaunchAgentRecoveryError(existingErr error, home string) error {
 		return existingErr
 	}
 
-	const restartHint = "restart launch agent manually with `launchctl bootout/bootstrap/kickstart`"
+	restartHint := "restart background service with `codexbar-display service start`"
+	if runtime.GOOS != "windows" {
+		restartHint = "restart launch agent manually with `launchctl bootout/bootstrap/kickstart`"
+	}
 	hintWithDetails := fmt.Sprintf("%s (restart failure: %v)", restartHint, restartErr)
 	if existingErr == nil {
 		return &commandError{
@@ -2523,7 +2527,14 @@ func copyRegularFileAtomic(sourcePath, targetPath string, mode os.FileMode) erro
 func restartLaunchAgent(home string) error {
 	label := runtimepaths.DisplayStreamLaunchAgentLabel()
 	managed := label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	if !managed && !fileExists(service.PlistPath(home, label)) {
+	if runtime.GOOS == "windows" {
+		if _, err := os.Stat(service.TaskConfigPath(home, label)); errors.Is(err, os.ErrNotExist) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
+	if runtime.GOOS != "windows" && !managed && !fileExists(service.PlistPath(home, label)) {
 		return nil
 	}
 	manager := service.New(label, home, managed)
@@ -2535,6 +2546,12 @@ func restartLaunchAgent(home string) error {
 }
 
 func startLaunchAgent(home string) error {
+	if runtime.GOOS == "windows" {
+		if _, err := service.ReadTaskConfig(home, runtimepaths.DisplayStreamLaunchAgentLabel()); err != nil {
+			return fmt.Errorf("read installed task configuration (rerun setup): %w", err)
+		}
+		return restartLaunchAgent(home)
+	}
 	plist := service.PlistPath(home, strings.TrimSuffix(launchAgentLabel, ".plist"))
 	if !fileExists(plist) {
 		return fmt.Errorf("launchagent plist not found: %s", plist)
@@ -2553,10 +2570,10 @@ func queryLaunchAgentStatus() (launchAgentStatus, error) {
 	if err != nil {
 		trimmed := strings.TrimSpace(status.Raw)
 		lower := strings.ToLower(trimmed)
-		if !errors.Is(err, service.ErrUnsupported) && (strings.Contains(lower, "could not find service") || strings.Contains(lower, "not found") || trimmed == "") {
+		if runtime.GOOS != "windows" && !errors.Is(err, service.ErrUnsupported) && (strings.Contains(lower, "could not find service") || strings.Contains(lower, "not found") || trimmed == "") {
 			return status, nil
 		}
-		return status, fmt.Errorf("inspect launchagent: %w (%s)", err, trimmed)
+		return status, fmt.Errorf("inspect background service: %w (%s)", err, trimmed)
 	}
 	return status, nil
 }

@@ -18,7 +18,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -33,9 +32,6 @@ import (
 )
 
 func TestDisplayWriterLockAllowsOnlyOneDaemon(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows writer lock is explicitly out of scope for #415")
-	}
 	lockPath := filepath.Join(t.TempDir(), "display-writer.lock")
 	first, err := writerlock.AcquireAt(lockPath)
 	if err != nil {
@@ -95,9 +91,6 @@ func TestParseDaemonCommandOptionsAllowsAPIFallback(t *testing.T) {
 }
 
 func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix EADDRINUSE contract; Windows runtime lifecycle belongs to #416")
-	}
 	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"companion":"unrelated"}`)
@@ -122,9 +115,6 @@ func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T)
 }
 
 func TestListenCompanionAPIRejectsSecondVibeTVService(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix EADDRINUSE contract; Windows runtime lifecycle belongs to #416")
-	}
 	existing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/v1/status" {
 			http.NotFound(w, request)
@@ -144,7 +134,7 @@ func TestListenCompanionAPIRejectsSecondVibeTVService(t *testing.T) {
 		listener.Close()
 		t.Fatal("second VibeTV service received a fallback listener")
 	}
-	if !errors.Is(err, syscall.EADDRINUSE) {
+	if !isAddressInUse(err) {
 		t.Fatalf("second VibeTV service error=%v want address-in-use", err)
 	}
 }
