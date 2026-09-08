@@ -325,6 +325,7 @@ export function statusConfirmsSubmittedWiFiChoice(payload: {
   return Boolean(
     payload.connectionModeChoiceRequired === false &&
     payload.device?.active === true &&
+    payload.device.connected === true &&
     !deviceUsesCable(payload.device),
   );
 }
@@ -486,6 +487,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     status: "waiting_for_wifi" | "wifi_credentials_required";
     deviceId?: string;
   } | null>(null);
+  const applyConnectionStatus = useCallback((payload: {
+    connectionMode?: string;
+    connectionModeChoiceRequired?: boolean;
+    device?: DeviceInfo;
+  }) => {
+    setConnectionMode(payload.connectionMode || "");
+    setConnectionModeChoiceRequired(payload.connectionModeChoiceRequired === true);
+    if (statusConfirmsSubmittedWiFiChoice(payload)) {
+      setSettingsWiFiSetup((pending) =>
+        pending?.deviceId &&
+        pending.deviceId.trim().toLowerCase() ===
+          payload.device?.deviceId?.trim().toLowerCase()
+          ? null
+          : pending,
+      );
+    }
+  }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
   const finishSetup = useCallback(() => setSetupFinished(true), []);
   // The completion response clears providerSelectionRequired before the first
@@ -1167,10 +1185,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
-        setConnectionMode(payload.connectionMode || "");
-        setConnectionModeChoiceRequired(
-          payload.connectionModeChoiceRequired === true,
-        );
+        applyConnectionStatus(payload);
         setProviderSetup(payload.providerSetup || null);
         setProviderSelectionSetup(payload.setup || null);
         const pairingRejection = pairingRejectionForDevice(payload.device);
@@ -1299,6 +1314,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [
       addEvent,
+      applyConnectionStatus,
       applyPolledDeviceSnapshot,
       applyThemeInstallJob,
       companionStatus,
@@ -1333,10 +1349,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
-      setConnectionMode(payload.connectionMode || "");
-      setConnectionModeChoiceRequired(
-        payload.connectionModeChoiceRequired === true,
-      );
+      applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
       const pairingRejection = pairingRejectionForDevice(payload.device);
@@ -1377,6 +1390,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       statusPollInFlight.current = false;
     }
   }, [
+    applyConnectionStatus,
     applyPolledDeviceSnapshot,
     applyThemeInstallJob,
     markCompanionAccessBlocked,

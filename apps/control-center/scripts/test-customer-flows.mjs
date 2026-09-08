@@ -496,6 +496,7 @@ async function main() {
     await testStartupStateMachine(browser, appContext.appUrl);
     if (wifiRescanOnly) {
       await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
+      await testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appContext.appUrl);
       console.log("control-center WiFi rescan test passed");
       return;
     }
@@ -626,6 +627,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appContext.appUrl);
       await testLocalWifiVerificationReconcilesCompletedSelection(
         browser,
         appContext.appUrl,
@@ -687,6 +689,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appContext.appUrl);
     await testLocalWifiVerificationReconcilesCompletedSelection(
       browser,
       appContext.appUrl,
@@ -1600,6 +1603,52 @@ async function testLocalWifiVerificationReconcilesCompletedSelection(
     (await page.getByRole("dialog").count()) === 0,
     "A status-confirmed selection must not show a false connection error",
   );
+  await page.close();
+}
+
+async function testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const cable = {
+    ...companionDevice,
+    deviceId: "settings-device",
+    target: "cable://vibetv",
+    active: true,
+    capabilities: {
+      ...companionDevice.capabilities,
+      transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+    },
+  };
+  const wifi = {
+    ...cable,
+    target: "http://192.168.1.42",
+    capabilities: { ...cable.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] } },
+  };
+  let searches = 0;
+  let selections = 0;
+  const companion = await routeCompanionOnline(page, [], () => {}, {
+    device: cable,
+    connectionModeChoiceRequired: false,
+    onSearch: () => { searches += 1; return []; },
+    onSelect: () => { selections += 1; return wifi; },
+  });
+  await routeCompanionPaths(page, async (route) => {
+    if (companionPath(route) !== "/v1/setup/connection-mode") return route.fallback();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, status: "waiting_for_wifi", device: cable }) });
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "WiFi", exact: true }).click();
+  await page.getByRole("button", { name: "Switch to WiFi", exact: true }).click();
+  await waitForCondition(() => searches > 0, "Settings must search after requesting WiFi");
+  const waiting = page.getByRole("heading", { name: "Connect VibeTV to WiFi", exact: true });
+  await waiting.waitFor({ timeout: 10_000 });
+  companion.setDevice({ ...wifi, connected: false, ready: false });
+  await page.waitForResponse(async (response) => response.url().endsWith("/v1/status") && (await response.json()).device?.connected === false);
+  assert(await waiting.isVisible(), "Offline saved WiFi must not finish the Settings switch");
+  companion.setDevice(wifi);
+  await page.getByRole("group", { name: "Connection mode" }).waitFor({ timeout: 15_000 });
+  assert(await page.getByRole("button", { name: "WiFi", exact: true }).getAttribute("aria-pressed") === "true", "Confirmed WiFi must return to its selected Settings card");
+  assert(selections === 0, "Status confirmation must not select the device again");
   await page.close();
 }
 
@@ -10439,6 +10488,7 @@ async function routeCompanionOnline(
     standbyWriteFailureAt = 0,
     onSettingsResponse = () => {},
     statusDeviceSequence,
+    connectionModeChoiceRequired,
     firmwareStatusDeviceSequence,
     statusThemeInstallJob,
     statusFirmwareUpdateJob,
@@ -11305,6 +11355,7 @@ async function routeCompanionOnline(
           providerSetup: currentProviderSetup,
           setup: currentProviderSelectionSetup,
           device: responseDevice,
+          connectionModeChoiceRequired,
           ...(statusFirmwareUpdateJob
             ? { firmwareUpdate: statusFirmwareUpdateJob }
             : {}),

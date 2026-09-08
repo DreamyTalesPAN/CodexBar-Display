@@ -4026,3 +4026,18 @@ issue scope, or release permission never implies UI permission.
   connection, the saved-network response, and reconnection to the rediscovered
   WiFi identity. It fails before the delayed rescan is added.
 - Approved files: `setup-wizard.tsx`, `setup-wizard.test.tsx`, and this record.
+
+## 2026-09-08 — Return to Settings after confirmed WiFi
+
+- User approval: Finish the setup and Settings fixes, including PR #407 review
+  corrections, and push the result.
+- Approved customer-visible result: A later status confirmation of the same
+  connected WiFi device closes the Settings connection flow even when the
+  earlier discovery found nothing. An offline saved binding does not finish it.
+- Implementation: Both status polling paths share the connection-state update
+  and use the existing confirmation predicate, which now requires connectivity.
+- Validation: Browser regression starts in Cable Settings, returns no search
+  results, observes offline WiFi, and then returns to the selected WiFi Settings
+  card after a connected status without another device-selection write.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`,
+  `test-customer-flows.mjs`, and this record.

@@ -122,6 +122,10 @@ describe("connection mode choice status", () => {
   });
 
   it("finishes a submitted WiFi choice only after active WiFi confirmation", () => {
+    expect(statusConfirmsSubmittedWiFiChoice({
+      connectionModeChoiceRequired: false,
+      device: { ...base, connected: false },
+    })).toBe(false);
     expect(
       statusConfirmsSubmittedWiFiChoice({
         connectionModeChoiceRequired: false,
