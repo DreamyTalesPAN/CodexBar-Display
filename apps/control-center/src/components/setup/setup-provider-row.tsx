@@ -75,8 +75,10 @@ type SetupProviderRowProps = {
    * has not been satisfied, and repeating the sign-in work behind the check.
    */
   checking?: boolean;
-  /** Navigation to alternatives mentioned by the usage service. */
+  /** In-app action for the replacement named by the usage service. */
   alternativeActions?: ReactNode;
+  /** Customer-facing explanation for a terminal provider migration. */
+  unsupportedMessage?: string;
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
@@ -102,6 +104,7 @@ type SetupProviderRowProps = {
 
 export function SetupProviderRow({
   alternativeActions,
+  unsupportedMessage,
   checking = false,
   detail,
   enabled,
@@ -113,7 +116,7 @@ export function SetupProviderRow({
   saving = false,
 }: SetupProviderRowProps) {
   const variant = setupProviderRowVariant(health);
-  const unusable = variant === "no_usage" || variant === "outage" || variant === "unsupported";
+  const unusable = variant === "no_usage" || variant === "outage";
   const checkAgain = (
     <SetupProviderRowAction
       icon={RefreshCw}
@@ -144,39 +147,36 @@ export function SetupProviderRow({
             : "Check timed out";
   const guidance = reportedMessage || detail || fallbackMessage;
 
+  const hasNotice = variant !== "checking" && variant !== "toggle";
+  const notice = variant === "unsupported"
+    ? unsupportedMessage || fallbackMessage
+    : guidance;
+  const actions = variant === "unsupported" ? alternativeActions : (
+    <>
+      {copyReportedMessage}
+      {variant === "stale" ? null : checking ? (
+        <>
+          <span className="sr-only">Checking {label}…</span>
+          <Spinner />
+        </>
+      ) : checkAgain}
+    </>
+  );
+
   return (
     <Item
-      className="rounded-[var(--radius-card)] p-4"
+      className={cn(
+        "rounded-[var(--radius-card)] p-4",
+        hasNotice && "gap-3 border-0 bg-card px-4 pt-3 pb-4 ring-1 ring-foreground/10",
+      )}
       role="listitem"
       variant="outline"
     >
       <ItemContent>
         <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
       </ItemContent>
-      <ItemActions className={cn(variant === "unsupported" && "w-full flex-wrap justify-end")}>
-        {variant === "checking" ? (
-          <Spinner />
-        ) : variant === "toggle" ? null : (
-          <>
-            <span className={cn("text-sm text-muted-foreground", variant === "unsupported" && "basis-full text-left")}>{guidance}</span>
-            {copyReportedMessage}
-            {alternativeActions}
-            {variant === "stale" || variant === "unsupported" ? null : checking ? (
-              <>
-                <span className="sr-only">Checking {label}…</span>
-                <Spinner />
-              </>
-            ) : (
-              checkAgain
-            )}
-          </>
-        )}
-        {/*
-          Outside the branches on purpose: the health decides what help to
-          offer, never whether the customer may switch the provider off.
-          Turning one off is always valid and always theirs, and a provider
-          they cannot switch off is one they cannot keep off the display.
-        */}
+      <ItemActions>
+        {variant === "checking" ? <Spinner /> : null}
         <Switch
           aria-label={label}
           checked={enabled}
@@ -184,6 +184,14 @@ export function SetupProviderRow({
           onCheckedChange={onToggle}
         />
       </ItemActions>
+      {hasNotice ? (
+        <div data-slot="provider-notice" className="-mx-4 flex basis-[calc(100%+2rem)] items-center gap-3 border-t border-border px-4 pt-3 text-left">
+          <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{notice}</p>
+          {(variant === "unsupported" ? alternativeActions : variant !== "stale" || copyReportedMessage) ? (
+            <div className="flex shrink-0 items-center justify-end gap-2">{actions}</div>
+          ) : null}
+        </div>
+      ) : null}
     </Item>
   );
 }

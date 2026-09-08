@@ -4324,3 +4324,25 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul rejected the location permission and explicitly requested removing open VibeTV-Setup network discovery: “dann bau das so um ... ausschließlich code wegnehmen”. USB users finish setup by Cable and can switch to WiFi later in Settings; existing retry and manual-IP dialogs are sufficient.
 - Approved customer-visible result: The Mac App discovers USB devices and devices already reachable on the local network. A USB-only device connects directly; only two discovered paths to the same device show the existing Cable/WiFi chooser. Nearby setup access points are no longer counted and no location permission or scan-error popup is requested. Existing phone instructions, retry, manual IP and Settings WiFi setup remain. No new UI element. This supersedes the September 10 approval for native setup-SSID scanning.
 - Regression correction: Discovery of an existing LAN path exposed premature connection while the WiFi mode request was still pending. The existing waiting screen now distinguishes the pending selection internally and begins discovery/connection only after the request succeeds; rejected choices remain retryable. No new UI.
+## 2026-09-08 — Shared provider notices and Gemini migration (#425)
+
+- User approval: "ok passt so", after reviewing the desktop screenshots in this
+  task. The user explicitly applied Screen 07's notice treatment to every
+  provider, then requested action buttons in the same row as the notice text.
+- Approved customer-visible result: All provider notices use one shared card
+  layout in setup and Settings: provider name and toggle above a separator,
+  small explanatory text below it, with Copy, Retry or the available migration
+  action aligned to the right of that text. The Gemini consumer migration uses
+  the supplied Screen 07 copy and a `Turn on Antigravity` button that enables
+  Antigravity through VibeTV's existing settings flow. Once Antigravity is on,
+  the action disappears and the already-on explanation appears. Gemini keeps
+  its own toggle; no automatic switch-off or navigation to CodexBar is added.
+  Continue still requires real displayable usage from an enabled provider.
+- Reviewed evidence: desktop `global-provider-notices.png` and
+  `gemini-migration-desktop.png` from the real frontend with mocked provider
+  responses, captured in this task under `tmp/issue425/design-import/screenshots/`.
+  Desktop only; this is UI approval, not hardware or release approval.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the issue's
+  runtime/state mapping and contract notes, and this approval record.

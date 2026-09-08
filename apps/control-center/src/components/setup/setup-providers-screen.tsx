@@ -143,44 +143,41 @@ export function ProviderList({
       </div>
 
       <ItemGroup className="mt-3 gap-2">
-        {visible.map((provider) => (
-          <SetupProviderRow
-            alternativeActions={setupProviderAlternatives(provider, providers).map((alternative) => (
-              <Button
-                key={alternative.id}
-                onClick={() => {
-                  setQuery(alternative.label);
-                  setShown(PROVIDER_PAGE_SIZE);
-                }}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {`Show ${alternative.label}`}
-              </Button>
-            ))}
-            checking={pendingCheckIds.has(provider.providerId)}
-            enabled={provider.value}
-            health={
-              provider.value && provider.health.state === "healthy" &&
-              !setupProviderCanDisplay(provider, usage)
-                ? "checking"
-                : provider.health.state
-            }
-            key={provider.id}
-            label={provider.label}
-            onShowIssue={() => resetIssue(provider)}
-            onCheckAgain={() => {
-              resetIssue(provider);
-              onCheckAgain(provider);
-            }}
-            onToggle={(enabled) => {
-              resetIssue(provider);
-              onToggle(provider, enabled);
-            }}
-            saving={pendingPreferenceIds.has(provider.id)}
-          />
-        ))}
+        {visible.map((provider) => {
+          const alternative = setupProviderAlternative(provider, providers);
+          const unavailable = provider.providerId === "gemini"
+            ? "Gemini no longer reports usage for personal Google accounts."
+            : `${provider.label} no longer reports usage for this account.`;
+          return (
+            <SetupProviderRow
+              alternativeActions={alternative && !alternative.value ? (
+                <Button
+                  disabled={!alternative.writable || pendingPreferenceIds.has(alternative.id)}
+                  onClick={() => onToggle(alternative, true)}
+                  size="sm"
+                  type="button"
+                >
+                  {`Turn on ${alternative.label}`}
+                </Button>
+              ) : undefined}
+              unsupportedMessage={alternative
+                ? `${unavailable} ${alternative.value
+                  ? `${alternative.label} is already on and tracks these limits — you can turn ${provider.label} off.`
+                  : `${alternative.label} tracks the same limits and resets.`}`
+                : undefined}
+              checking={pendingCheckIds.has(provider.providerId)}
+              enabled={provider.value}
+              health={provider.value && provider.health.state === "healthy" && !setupProviderCanDisplay(provider, usage) ? "checking" : provider.health.state}
+              key={provider.id}
+              label={provider.label}
+              detail={provider.health.message}
+              onCheckAgain={() => onCheckAgain(provider)}
+              onToggle={(enabled) => onToggle(provider, enabled)}
+              reportedMessage={provider.health.reported}
+              saving={pendingPreferenceIds.has(provider.id)}
+            />
+          );
+        })}
         {matching.length === 0 ? (
           <Empty
             className={cn(
@@ -400,15 +397,15 @@ export function setupProviderMatchesQuery(
   );
 }
 
-/** Link only to inventory entries named by the upstream guidance; never infer accounts. */
-function setupProviderAlternatives(
+/** Resolve the upstream replacement from the existing inventory, without probing accounts. */
+function setupProviderAlternative(
   provider: ProviderItem,
   inventory: ProviderItem[],
-): ProviderItem[] {
-  if (provider.health.state !== "unsupported" || !provider.health.reported) return [];
+): ProviderItem | undefined {
+  if (provider.health.state !== "unsupported" || !provider.health.reported) return undefined;
   const words = (value: string) => ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
   const message = words(provider.health.reported);
-  return inventory.filter((candidate) =>
+  return inventory.find((candidate) =>
     candidate.id !== provider.id && message.includes(words(candidate.label)),
   );
 }
