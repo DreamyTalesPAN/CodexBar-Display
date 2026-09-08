@@ -3503,7 +3503,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	if freshWiFiChoice {
 		cablePort, err = s.resolveCablePort("", requestedDeviceID)
 		cableConnected = err == nil
-		if errcode.Of(err) == errcode.TransportMultipleDevices {
+		if err != nil && (requestedDeviceID != "" || errcode.Of(err) == errcode.TransportMultipleDevices) {
 			writeCableResolutionError(w, err)
 			return
 		}

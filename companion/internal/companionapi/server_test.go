@@ -8595,6 +8595,26 @@ func TestSetupConnectionModeStartsWiFiDiscoveryWithoutCable(t *testing.T) {
 
 }
 
+func TestSetupConnectionModeDoesNotDiscardExplicitMissingCableIdentity(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{DeviceID: "chosen-device", Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}}}, true
+	}
+	server.resolveCablePort = func(_, expected string) (string, error) {
+		if expected != "chosen-device" {
+			t.Fatalf("unexpected identity: %q", expected)
+		}
+		return "", errors.New("chosen Cable device unplugged")
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi","deviceId":"chosen-device"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "cable_device_not_found") {
+		t.Fatalf("explicit identity must not become unbound discovery: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSetupResetPrefersConnectedCableDeviceOverKnownWiFi(t *testing.T) {
 	const token = "pair-token"
 	var wifiProbes atomic.Int32
