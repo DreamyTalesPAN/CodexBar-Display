@@ -145,6 +145,20 @@ export function ProviderList({
       <ItemGroup className="mt-3 gap-2">
         {visible.map((provider) => (
           <SetupProviderRow
+            alternativeActions={setupProviderAlternatives(provider, providers).map((alternative) => (
+              <Button
+                key={alternative.id}
+                onClick={() => {
+                  setQuery(alternative.label);
+                  setShown(PROVIDER_PAGE_SIZE);
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {`Show ${alternative.label}`}
+              </Button>
+            ))}
             checking={pendingCheckIds.has(provider.providerId)}
             enabled={provider.value}
             health={
@@ -383,5 +397,18 @@ export function setupProviderMatchesQuery(
     provider.label.toLowerCase().includes(normalized) ||
     provider.health.message.toLowerCase().includes(normalized) ||
     provider.providerId.toLowerCase().includes(normalized)
+  );
+}
+
+/** Link only to inventory entries named by the upstream guidance; never infer accounts. */
+function setupProviderAlternatives(
+  provider: ProviderItem,
+  inventory: ProviderItem[],
+): ProviderItem[] {
+  if (provider.health.state !== "unsupported" || !provider.health.reported) return [];
+  const words = (value: string) => ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+  const message = words(provider.health.reported);
+  return inventory.filter((candidate) =>
+    candidate.id !== provider.id && message.includes(words(candidate.label)),
   );
 }

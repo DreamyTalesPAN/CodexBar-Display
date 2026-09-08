@@ -1,7 +1,8 @@
 "use client";
 
-import { TriangleAlert, RefreshCw } from "lucide-react";
+import { Copy, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -16,6 +17,7 @@ import type { PreferenceHealthState } from "../control-center-types";
 
 export type SetupProviderRowVariant =
   | "checking"
+  | "unsupported"
   | "no_usage"
   | "outage"
   | "permission"
@@ -53,6 +55,8 @@ export function setupProviderRowVariant(
       return "sign_in";
     case "permission_required":
       return "permission";
+    case "unsupported":
+      return "unsupported";
     case "no_usage_available":
       return "no_usage";
     case "service_outage":
@@ -71,10 +75,19 @@ type SetupProviderRowProps = {
    * has not been satisfied, and repeating the sign-in work behind the check.
    */
   checking?: boolean;
+  /** Navigation to alternatives mentioned by the usage service. */
+  alternativeActions?: ReactNode;
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
-  onShowIssue: () => void;
+  /** The generic detail attached to this health result. */
+  detail?: string;
+  /**
+   * What the usage service itself said about this provider, already redacted.
+   * It is the only per-provider guidance that exists, so it replaces our own
+   * wording wherever it says something the customer can act on.
+   */
+  reportedMessage?: string;
   onCheckAgain: () => void;
   onToggle: (enabled: boolean) => void;
   /**
@@ -88,17 +101,19 @@ type SetupProviderRowProps = {
 };
 
 export function SetupProviderRow({
+  alternativeActions,
   checking = false,
+  detail,
   enabled,
   health,
   label,
   onCheckAgain,
-  onShowIssue,
   onToggle,
+  reportedMessage,
   saving = false,
 }: SetupProviderRowProps) {
-  const variant = enabled ? setupProviderRowVariant(health) : "toggle";
-  const unusable = variant === "no_usage" || variant === "outage";
+  const variant = setupProviderRowVariant(health);
+  const unusable = variant === "no_usage" || variant === "outage" || variant === "unsupported";
   const checkAgain = (
     <SetupProviderRowAction
       icon={RefreshCw}
@@ -106,6 +121,28 @@ export function SetupProviderRow({
       onClick={onCheckAgain}
     />
   );
+  const copyReportedMessage = reportedMessage ? (
+    <SetupProviderRowAction
+      icon={Copy}
+      label={`Copy provider message for ${label}`}
+      onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
+    />
+  ) : null;
+  const fallbackMessage =
+    variant === "sign_in"
+      ? `Sign in to ${label}`
+      : variant === "permission"
+        ? "Allow access in macOS"
+        : variant === "unsupported"
+          ? "This provider is no longer supported for this account"
+        : variant === "no_usage"
+          ? "No usage data on this account"
+          : variant === "outage"
+            ? "Service outage — try again later"
+            : variant === "stale"
+              ? "Live usage is unavailable"
+            : "Check timed out";
+  const guidance = reportedMessage || detail || fallbackMessage;
 
   return (
     <Item
@@ -116,17 +153,15 @@ export function SetupProviderRow({
       <ItemContent>
         <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
       </ItemContent>
-      <ItemActions>
+      <ItemActions className={cn(variant === "unsupported" && "w-full flex-wrap justify-end")}>
         {variant === "checking" ? (
           <Spinner />
         ) : variant === "toggle" ? null : (
           <>
-            <SetupProviderRowAction
-              icon={TriangleAlert}
-              label={`Show provider message for ${label}`}
-              onClick={onShowIssue}
-            />
-            {variant === "stale" ? null : checking ? (
+            <span className={cn("text-sm text-muted-foreground", variant === "unsupported" && "basis-full text-left")}>{guidance}</span>
+            {copyReportedMessage}
+            {alternativeActions}
+            {variant === "stale" || variant === "unsupported" ? null : checking ? (
               <>
                 <span className="sr-only">Checking {label}…</span>
                 <Spinner />
@@ -151,32 +186,6 @@ export function SetupProviderRow({
       </ItemActions>
     </Item>
   );
-}
-
-/** Keep CodexBar's exact guidance in the shared popup, without provider rules. */
-export function setupProviderIssueMessage({
-  health, label, detail, reportedMessage,
-}: {
-  health: PreferenceHealthState;
-  label: string;
-  detail?: string;
-  reportedMessage?: string;
-}): string | null {
-  const variant = setupProviderRowVariant(health);
-  if (variant === "toggle" || variant === "checking") return null;
-  const fallbackMessage =
-    variant === "sign_in"
-      ? `Sign in to ${label}`
-      : variant === "permission"
-        ? "Allow access in macOS"
-        : variant === "no_usage"
-          ? "No usage data on this account"
-          : variant === "outage"
-            ? "Service outage — try again later"
-            : variant === "stale"
-              ? "Live usage is unavailable"
-            : "Check timed out";
-  return reportedMessage || detail || fallbackMessage;
 }
 
 function SetupProviderRowAction({

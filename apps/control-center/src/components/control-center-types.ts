@@ -52,6 +52,7 @@ export type ProviderReadinessStatus =
   | "ready"
   | "auth_required"
   | "permission_required"
+  | "unsupported"
   | "no_usage_available"
   | "timeout"
   | "config_error"

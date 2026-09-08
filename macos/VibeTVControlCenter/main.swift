@@ -49,11 +49,11 @@ private let runtimeValidationUnregisterArgument =
 private let runtimeValidationUnregisterEnvironmentKey =
     "VIBETV_RUNTIME_VALIDATION_UNREGISTER"
 private let codexBarBundleIdentifier = "com.steipete.codexbar"
-private let codexBarPinnedVersion = "0.46.0"
+private let codexBarPinnedVersion = "0.56.8"
 private let codexBarPinnedTeamIdentifier = "Y5PE65HELJ"
-private let codexBarArchiveName = "CodexBar-macos-universal-0.46.0.zip"
+private let codexBarArchiveName = "CodexBar-macos-universal-0.56.8.zip"
 private let codexBarArchiveSHA256 =
-    "8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"
+    "76541469ef4132c9e3f298d876665701ea472312a6d2cb6326ba49bfb6acad10"
 private let codexBarDisallowedSigningXattrs = [
     "com.apple.FinderInfo",
     "com.apple.ResourceFork",
