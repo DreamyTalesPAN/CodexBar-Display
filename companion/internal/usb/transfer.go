@@ -33,6 +33,39 @@ type transferReply struct {
 	Code   string `json:"code"`
 }
 
+// PrepareThemeInstall reclaims files left by earlier incomplete installs. The
+// device keeps the selected theme's files and owns the slot cleanup.
+func (s *Sender) PrepareThemeInstall(ctx context.Context, pathName, deviceID, token, slot string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(deviceID) == "" || strings.TrimSpace(token) == "" || (slot != "live" && slot != "screensaver") {
+		return errors.New("invalid Cable theme preparation")
+	}
+	if _, err := s.ensurePort(pathName); err != nil {
+		return err
+	}
+	activation := "theme"
+	if slot == "screensaver" {
+		activation = "screensaver"
+	}
+	request := struct {
+		Kind     string `json:"kind"`
+		Op       string `json:"op"`
+		DeviceID string `json:"deviceId"`
+		Token    string `json:"token"`
+		Sink     string `json:"sink"`
+		Activate string `json:"activate"`
+	}{"request", "transfer-start", deviceID, token, "prepare-theme", activation}
+	if err := s.sendTransferRequestLocked(pathName, request, "prepared", 0); err != nil {
+		s.closeCurrentLocked()
+		return err
+	}
+	return nil
+}
+
 func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string, sink TransferSink, destination, activation string, payload []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

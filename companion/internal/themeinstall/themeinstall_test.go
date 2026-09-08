@@ -107,6 +107,7 @@ func TestInstallUsesOneCableUploadPathAndActivatesOnlyTheStoredSpec(t *testing.T
 		Out:       io.Discard,
 		Cable: &CableInstallOptions{
 			Capabilities: FallbackThemeSpecCapabilities(),
+			Prepare:      func(context.Context, string) error { return nil },
 			Upload: func(_ context.Context, devicePath string, payload []byte, activation string) error {
 				uploads = append(uploads, upload{path: devicePath, activation: activation, bytes: len(payload)})
 				return nil
@@ -133,6 +134,52 @@ func TestInstallUsesOneCableUploadPathAndActivatesOnlyTheStoredSpec(t *testing.T
 		if got.activation != wantActivation {
 			t.Fatalf("upload %d activation=%q want=%q", index, got.activation, wantActivation)
 		}
+	}
+}
+
+func TestCableInstallPreparesEveryAttemptBeforeUploads(t *testing.T) {
+	packBytes := zipMinimalThemePack(t, writeMinimalThemePack(t))
+	for _, slot := range []string{themepack.UsageLive, themepack.UsageScreensaver} {
+		t.Run(slot, func(t *testing.T) {
+			// Each preparation represents firmware reclaiming the earlier attempt's
+			// orphaned files while preserving its current selection.
+			pack, err := themepack.LoadZipBytes(packBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			preparations, uploads := 0, 0
+			caps := FallbackThemeSpecCapabilities()
+			caps.SupportsStandby = true
+			stopped := errors.New("Cable disconnected")
+			cable := &CableInstallOptions{
+				Capabilities: caps,
+				Prepare: func(_ context.Context, gotSlot string) error {
+					if gotSlot != slot {
+						t.Fatalf("prepared slot %q, want %q", gotSlot, slot)
+					}
+					preparations++
+					return nil
+				},
+				Upload: func(context.Context, string, []byte, string) error {
+					if preparations == 0 {
+						t.Fatal("uploaded before reclaiming interrupted install")
+					}
+					uploads++
+					return stopped
+				},
+			}
+			for attempt := 1; attempt <= 2; attempt++ {
+				_, err := installCablePack(context.Background(), pack, slot, "test", cable, io.Discard)
+				if !errors.Is(err, stopped) || preparations != attempt || uploads != attempt {
+					t.Fatalf("attempt %d: preparations=%d uploads=%d error=%v", attempt, preparations, uploads, err)
+				}
+			}
+			cable.Prepare = func(context.Context, string) error { return stopped }
+			_, err = installCablePack(context.Background(), pack, slot, "test", cable, io.Discard)
+			if !errors.Is(err, stopped) || uploads != 2 {
+				t.Fatalf("failed preparation uploaded files: %d, %v", uploads, err)
+			}
+		})
 	}
 }
 

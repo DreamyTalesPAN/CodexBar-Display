@@ -47,6 +47,7 @@ type PairTokenStore func(target, token string) error
 
 type CableInstallOptions struct {
 	Capabilities protocol.DeviceCapabilities
+	Prepare      func(context.Context, string) error
 	Upload       func(context.Context, string, []byte, string) error
 }
 
@@ -421,7 +422,7 @@ func installCablePack(
 	cable *CableInstallOptions,
 	out io.Writer,
 ) (Result, error) {
-	if cable == nil || cable.Upload == nil {
+	if cable == nil || cable.Prepare == nil || cable.Upload == nil {
 		return Result{}, errors.New("cable theme transfer is unavailable")
 	}
 	if err := pack.ValidateAgainstCapabilities(cable.Capabilities); err != nil {
@@ -435,6 +436,11 @@ func installCablePack(
 		}
 	}
 
+	// Reclaim interrupted installs before uploading anything, including after a
+	// disconnect or restart that prevented cleanup at the original failure.
+	if err := cable.Prepare(ctx, slot); err != nil {
+		return Result{}, &InstallError{Op: "theme-pack/prepare", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
 	fmt.Fprintln(out, "Uploading theme files by Cable...")
 	for _, asset := range pack.Assets {
 		if err := cable.Upload(ctx, asset.Entry.Path, asset.Data, ""); err != nil {

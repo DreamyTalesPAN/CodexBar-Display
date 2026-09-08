@@ -9472,7 +9472,18 @@ func TestThemeInstallUsesCableTransferWithoutWiFiDeviceCalls(t *testing.T) {
 		activation string
 	}
 	var uploads []upload
+	prepared := false
+	server.prepareCableTheme = func(_ context.Context, port, deviceID, token, slot string) error {
+		if port != "/dev/mock" || deviceID != "cable-device" || token != "pair-token" || slot != "live" {
+			t.Fatal("unexpected Cable preparation")
+		}
+		prepared = true
+		return nil
+	}
 	server.transferCableAsset = func(_ context.Context, port, deviceID, token, devicePath, activation string, payload []byte) error {
+		if !prepared {
+			t.Fatal("uploaded before Cable preparation")
+		}
 		if port != "/dev/mock" || deviceID != "cable-device" || token != "pair-token" || len(payload) == 0 {
 			t.Fatalf("unexpected Cable upload port=%q id=%q token=%q bytes=%d", port, deviceID, token, len(payload))
 		}

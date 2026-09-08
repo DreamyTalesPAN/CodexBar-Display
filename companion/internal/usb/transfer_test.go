@@ -201,3 +201,34 @@ func TestSenderAbortsWhenContextIsCanceledAfterAcknowledgedChunk(t *testing.T) {
 		t.Fatalf("canceled transfer must write start, one chunk, abort; got %d writes", len(port.writePayloads))
 	}
 }
+
+func TestPrepareThemeInstallRequiresDeviceAcknowledgement(t *testing.T) {
+	for _, test := range []struct {
+		name, reply string
+		wantError   bool
+	}{
+		{"prepared", `{"kind":"transfer","status":"prepared","next":0}`, false},
+		{"rejected", `{"kind":"error","code":"transfer-rejected"}`, true},
+		{"wrong acknowledgement", `{"kind":"transfer","status":"complete","next":0}`, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			port := newMockSerialPort()
+			port.readQueue = [][]byte{[]byte(test.reply + "\n")}
+			sender := NewSenderWithConfig(SenderConfig{Opener: &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}, Sleep: func(time.Duration) {}, HelloWindow: 10 * time.Millisecond})
+			err := sender.PrepareThemeInstall(context.Background(), "/dev/mock", "device", "token", "live")
+			if (err != nil) != test.wantError {
+				t.Fatalf("prepare: %v", err)
+			}
+			if len(port.writePayloads) != 1 {
+				t.Fatalf("unexpected writes: %d", len(port.writePayloads))
+			}
+			var request map[string]string
+			if err := json.Unmarshal(port.writePayloads[0], &request); err != nil {
+				t.Fatal(err)
+			}
+			if request["op"] != "transfer-start" || request["sink"] != "prepare-theme" || request["deviceId"] != "device" || request["token"] != "token" || request["activate"] != "theme" {
+				t.Fatalf("unexpected request: %v", request)
+			}
+		})
+	}
+}

@@ -209,6 +209,7 @@ type Server struct {
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
 	scanCableWiFi          func(string, string) ([]protocol.WiFiNetwork, error)
+	prepareCableTheme      func(context.Context, string, string, string, string) error
 	transferCableAsset     func(context.Context, string, string, string, string, string, []byte) error
 	subnetTargets          func() []string
 	localNetworkAvailable  func() bool
@@ -971,6 +972,7 @@ func New(opts Options) (*Server, error) {
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
 		scanCableWiFi:          usb.ScanWiFi,
+		prepareCableTheme:      usb.PrepareThemeInstall,
 		transferCableAsset:     usb.TransferAsset,
 		subnetTargets:          localSubnetTargets,
 		localNetworkAvailable:  hostHasUsableNetwork,
@@ -5508,6 +5510,9 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	if cableMode {
 		cableInstall = &themeinstall.CableInstallOptions{
 			Capabilities: protocol.CapabilitiesFromHello(cableHello),
+			Prepare: func(ctx context.Context, slot string) error {
+				return s.prepareCableTheme(ctx, cablePort, cableHello.DeviceID, cfg.DeviceToken, slot)
+			},
 			Upload: func(ctx context.Context, devicePath string, payload []byte, activation string) error {
 				return s.transferCableAsset(ctx, cablePort, cableHello.DeviceID, cfg.DeviceToken, devicePath, activation, payload)
 			},

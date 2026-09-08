@@ -113,6 +113,10 @@ func ScanWiFi(port, deviceID string) ([]protocol.WiFiNetwork, error) {
 	return defaultSender.ScanWiFi(port, deviceID)
 }
 
+func PrepareThemeInstall(ctx context.Context, port, deviceID, token, slot string) error {
+	return defaultSender.PrepareThemeInstall(ctx, port, deviceID, token, slot)
+}
+
 func TransferAsset(ctx context.Context, port, deviceID, token, destination, activation string, payload []byte) error {
 	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkAsset, destination, activation, payload)
 }

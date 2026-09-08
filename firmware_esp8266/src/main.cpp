@@ -2716,7 +2716,6 @@ void handleAssetUpload() {
     assetUploadError = "";
     assetUploadPath = requestedAssetPath();
     assetUploadBytesSeen = 0;
-    Serial.printf("asset_upload_start path=%s filename=%s content_length=%zu\n", assetUploadPath.c_str(), upload.filename.c_str(), upload.contentLength);
 
     if (!requestHasValidAuth()) {
       setAssetUploadError("unauthorized");
@@ -2775,7 +2774,6 @@ void handleAssetUpload() {
         validateCompletedAssetUpload() &&
         promoteCompletedAssetUpload()) {
       assetUploadSucceeded = true;
-      Serial.printf("asset_upload_success path=%s bytes=%zu\n", assetUploadPath.c_str(), upload.totalSize);
     }
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     setAssetUploadError("upload aborted");
@@ -2858,7 +2856,6 @@ void handleAssetDelete() {
     webServer.send(500, "text/plain; charset=utf-8", "asset delete failed");
     return;
   }
-  Serial.printf("asset_deleted path=%s\n", path.c_str());
   addCorsHeaders();
   webServer.send(200, "application/json", "{\"ok\":true}");
 }
@@ -3124,8 +3121,8 @@ bool findObsoleteThemeSlotAsset(
 }
 
 // Cable owns the whole install while the serial port is locked, so the device
-// can safely sweep the selected slot immediately after activation. Finding one
-// file per pass lets the directory iterator go out of scope before removal.
+// sweeps the selected slot before an install and after activation. Finding
+// one file per pass releases the directory iterator before removal.
 void cleanupCableThemeSlot(
     const String& activeSpecPath,
     CableTransferActivation activation) {
@@ -3144,8 +3141,9 @@ void cleanupCableThemeSlot(
   String error;
   JsonDocument doc;
   codexbar_display::themespec::CompiledThemeSpec scene;
-  if (!readStoredThemeSpec(activeSpecPath, raw, error) ||
-      !codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene)) {
+  if (activeSpecPath.length() > 0 &&
+      (!readStoredThemeSpec(activeSpecPath, raw, error) ||
+       !codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene))) {
     codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
     return;
   }
@@ -3155,7 +3153,7 @@ void cleanupCableThemeSlot(
   const String slotDirectory = slotPrefix.substring(0, slotPrefix.length() - 1);
 
   if (activation == CableTransferActivation::kTheme &&
-      LittleFS.exists(kLegacyMiniGIFPath) &&
+      activeSpecPath.length() > 0 && LittleFS.exists(kLegacyMiniGIFPath) &&
       !codexbar_display::themespec::CompiledThemeSpecReferencesAsset(
           scene, kLegacyMiniGIFPath)) {
     LittleFS.remove(kLegacyMiniGIFPath);
@@ -3730,24 +3728,47 @@ bool startCableTransfer(JsonDocument& doc) {
   destination.trim();
 	if (serialRequestBusy() || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
       !deviceAuthConfigured() || strcmp(token, deviceAuthToken.c_str()) != 0 ||
-      expectedBytes == 0) {
+      (expectedBytes == 0 && strcmp(sink, "prepare-theme") != 0)) {
     emitSerialError("transfer-rejected");
     return true;
   }
 
-  CableTransferSink target = CableTransferSink::kNone;
   CableTransferActivation targetActivation = CableTransferActivation::kNone;
+  if (strcmp(activation, "theme") == 0) {
+    targetActivation = CableTransferActivation::kTheme;
+  } else if (strcmp(activation, "screensaver") == 0) {
+    targetActivation = CableTransferActivation::kScreensaver;
+  } else if (activation[0] != '\0') {
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+
+  if (strcmp(sink, "prepare-theme") == 0) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (targetActivation == CableTransferActivation::kNone) {
+      emitSerialError("transfer-rejected");
+      return true;
+    }
+    if (targetActivation == CableTransferActivation::kTheme) {
+      // An absent selection is a fresh device; an unreadable selection is not.
+      if (!readActiveThemeSpecPath(destination) && LittleFS.exists(kActiveThemeSpecPathFile)) {
+        emitSerialError("transfer-rejected");
+        return true;
+      }
+    } else {
+      destination = deviceSettings.standby.screensaverPath;
+    }
+    cleanupCableThemeSlot(destination, targetActivation);
+    emitCableTransferReply("prepared");
+#else
+    emitSerialError("transfer-rejected");
+#endif
+    return true;
+  }
+
+  CableTransferSink target = CableTransferSink::kNone;
   if (strcmp(sink, "asset") == 0 && isMutableThemeAssetPath(destination)) {
     target = CableTransferSink::kAsset;
-    if (activation[0] == '\0') {
-      targetActivation = CableTransferActivation::kNone;
-    } else if (strcmp(activation, "theme") == 0) {
-      targetActivation = CableTransferActivation::kTheme;
-    } else if (strcmp(activation, "screensaver") == 0) {
-      targetActivation = CableTransferActivation::kScreensaver;
-    } else {
-      target = CableTransferSink::kNone;
-    }
   } else if (strcmp(sink, "firmware") == 0 &&
              activation[0] == '\0' &&
              expectedBytes <= otaMaxSizeForCommand(U_FLASH)) {
