@@ -4,24 +4,37 @@ Themes decide how live VibeTV data appears on the device. The same provider
 usage can look compact, playful, retro, or highly information-dense depending
 on the active theme.
 
-<p align="center">
-  <img src="assets/vibetv-four-themes.png" alt="VibeTV with four included themes" width="560">
-</p>
-
 ## Included Themes
+
+The current catalog includes six live themes:
 
 | Theme | Preview | Notes |
 | --- | --- | --- |
-| Mini | <img src="assets/vibetv-theme-mini.png" alt="Mini theme" width="140"> | Compact theme focused on provider, session, weekly, tokens, and reset time. |
-| Claude Creature | <img src="assets/vibetv-theme-claude.png" alt="Claude Creature theme" width="140"> | Character-style usage display for Claude-heavy workflows. |
-| Clippy | <img src="assets/vibetv-theme-clippy.png" alt="Clippy theme" width="140"> | Animated assistant-style theme with live usage bindings. |
-| Synthwave | <img src="assets/vibetv-theme-synthwave.png" alt="Synthwave theme" width="140"> | High-contrast theme with a more visual display style. |
-| Tiny Office | <img src="assets/tiny-office/coding-preview.png" alt="Tiny Office theme" width="140"> | Pixel-art developer desk with an animated monitor; idle and coding scenes. See [tiny-office-theme.md](tiny-office-theme.md). |
+| Mini Classic | <img src="assets/vibetv-theme-mini.png" alt="Mini Classic product render" width="180"> | Compact provider, session, weekly, and reset display. |
+| Claude Creature | <img src="assets/vibetv-theme-claude.png" alt="Claude Creature product render" width="180"> | Character-style usage display. |
+| Clippy | <img src="assets/vibetv-theme-clippy.png" alt="Clippy product render" width="180"> | Animated assistant-style theme with live usage bindings. |
+| Synthwave | <img src="assets/vibetv-theme-synthwave.png" alt="Synthwave product render" width="180"> | Neon skyline and usage bars. |
+| Pixel Battery | <img src="assets/vibetv-theme-pixel-battery.png" alt="Pixel Battery screen preview" width="140"> | Segmented batteries show usage for two windows. |
+| Tiny Office | <img src="assets/vibetv-theme-tiny-office.png" alt="Tiny Office screen preview" width="140"> | Pixel-art developer desk with an animated monitor; idle and coding scenes. See [tiny-office-theme.md](tiny-office-theme.md). |
 
-The repository catalog also contains additional theme-pack work such as Cozy
-Meadow. The Mac App ships the matching repository catalog and theme packs in
-its local Control Center bundle. Shopify theme products are not part of this
-install path.
+## Included Screensavers
+
+Screensavers occupy a separate standby slot, so choosing one keeps your live
+theme selection. The current catalog includes:
+
+| Screensaver | Preview | Notes |
+| --- | --- | --- |
+| Night Clock | <img src="assets/vibetv-screensaver-night-clock.png" alt="Night Clock screensaver product render" width="180"> | Clock and upcoming provider resets. |
+| Reset Countdown | <img src="assets/vibetv-screensaver-reset-countdown.png" alt="Reset Countdown screensaver product render" width="180"> | Forest scene with a provider reset countdown. |
+| Token Fire | <img src="assets/vibetv-screensaver-token-fire.png" alt="Token Fire screensaver product render" width="180"> | Animated fireplace with token totals. |
+
+Product renders use illustrative example data. Pixel Battery and Tiny Office
+show screen previews rendered from the current theme packs. Available usage,
+reset, and token values depend on the provider and data freshness.
+See [image sources](assets/README.md) for render provenance.
+
+The Mac App ships the matching repository catalog and theme packs in its local
+Control Center bundle. Shopify theme products are not part of this install path.
 
 ## Customer Flow
 
