@@ -293,7 +293,7 @@ func specUsesLegacyUsageSlots(spec Spec) bool {
 
 func specUsesProviderAssets(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
-		if len(primitive.ProviderAssets) > 0 || len(primitive.ShortProviderAssets) > 0 {
+		if len(primitive.ProviderAssets) > 0 {
 			return true
 		}
 	}
@@ -302,7 +302,7 @@ func specUsesProviderAssets(spec Spec) bool {
 
 func specUsesColorStops(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
-		if len(primitive.ColorStops) > 0 || len(primitive.ShortColorStops) > 0 {
+		if len(primitive.ColorStops) > 0 {
 			return true
 		}
 	}

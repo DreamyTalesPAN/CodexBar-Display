@@ -1118,6 +1118,7 @@ inline bool AllocateCompiledThemeSpecStorage(
     return false;
   }
 
+  scene.ownsMemory = true;
   scene.primitives = new (std::nothrow) CompiledPrimitive[plan.primitiveCapacity];
   scene.stringPool = plan.stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[plan.stringPoolCapacity];
   scene.providerAssets = plan.providerAssetCapacity == 0
@@ -1130,7 +1131,6 @@ inline bool AllocateCompiledThemeSpecStorage(
     return false;
   }
 
-  scene.ownsMemory = true;
   scene.primitiveCapacity = plan.primitiveCapacity;
   scene.stringPoolCapacity = plan.stringPoolCapacity;
   scene.providerAssetCapacity = plan.providerAssetCapacity;

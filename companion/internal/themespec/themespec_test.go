@@ -1123,6 +1123,14 @@ func TestFeatureContainerAliasesMatchFirmware(t *testing.T) {
 				if got := len(spec.Primitives[1].ProviderAssets); got != tc.wantAssets {
 					t.Fatalf("assets = %d, want %d", got, tc.wantAssets)
 				}
+				caps := protocol.DeviceCapabilities{
+					Known: true, SupportsThemeSpecV1: true,
+					SupportsProviderAssetsV1: tc.wantAssets > 0,
+					SupportsColorStopsV1:     tc.wantStops > 0,
+				}
+				if err := ValidateAgainstCapabilities(spec, installed, caps); err != nil {
+					t.Fatalf("capability check used an overridden alias: %v", err)
+				}
 				spec = normalizeSpec(spec)
 			}
 		})
