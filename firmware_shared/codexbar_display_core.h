@@ -487,11 +487,11 @@ inline bool DecodeResetTrustRecord(
   return true;
 }
 
-inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next) {
+inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
   return previous.id != next.id ||
          previous.label != next.label ||
          previous.percent != next.percent ||
-         previous.resetSecs != next.resetSecs ||
+         (includeReset && previous.resetSecs != next.resetSecs) ||
          previous.available != next.available;
 }
 
@@ -569,6 +569,14 @@ inline bool ThemeSpecUsesActivity(const String& raw) {
   return ThemeSpecUsesBinding(raw, "activity", "act") ||
          raw.indexOf("stateAssets") >= 0 ||
          raw.indexOf("\"sa\"") >= 0;
+}
+
+inline bool ThemeSpecUsesProviderAssets(const String& raw) {
+  return ThemeSpecUsesBinding(raw, "providerAssets", "pa");
+}
+
+inline bool ThemeSpecUsesColorStops(const String& raw) {
+  return ThemeSpecUsesBinding(raw, "colorStops", "cs");
 }
 
 inline bool ThemeSpecUsesTokenFields(const String& raw) {
@@ -730,17 +738,6 @@ inline bool ThemeSpecUsesProviderSlotResetBinding(const String& raw, size_t slot
   return raw.indexOf(longName) >= 0 || raw.indexOf(compactName) >= 0;
 }
 
-inline bool ThemeSpecSlotChanged(
-    const UsageWindow& previous,
-    const UsageWindow& next,
-    bool usesReset) {
-  return previous.id != next.id ||
-         previous.label != next.label ||
-         previous.percent != next.percent ||
-         previous.available != next.available ||
-         (usesReset && previous.resetSecs != next.resetSecs);
-}
-
 inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
   return remainingSecs / 60 != lastRenderedMinuteBucket;
 }
@@ -761,7 +758,7 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   bool providerSlotsChanged = false;
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
     if (ThemeSpecUsesProviderSlotBinding(raw, i) &&
-        ThemeSpecSlotChanged(
+        UsageWindowChanged(
             previous.providerSlots[i],
             next.providerSlots[i],
             ThemeSpecUsesProviderSlotResetBinding(raw, i))) {
@@ -775,7 +772,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
                          ThemeSpecUsesBinding(raw, "weekly", "w") ||
                          ThemeSpecUsesBinding(raw, "reset", "r") ||
                          usesUsageWindows;
-  return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
+  return ((ThemeSpecUsesBinding(raw, "provider", "pr") || ThemeSpecUsesProviderAssets(raw)) &&
+          previous.provider != next.provider) ||
          (usesLabel &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
@@ -784,10 +782,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
          (usesUsageWindows && [&]() {
            for (size_t i = 0; i < kMaxUsageWindows; ++i) {
              if (ThemeSpecUsesUsageWindowBinding(raw, i) &&
-                 ThemeSpecSlotChanged(
-                     previous.usageWindows[i],
-                     next.usageWindows[i],
-                     ThemeSpecUsesUsageWindowResetBinding(raw, i))) {
+                 UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i],
+                                    ThemeSpecUsesUsageWindowResetBinding(raw, i))) {
                return true;
              }
            }
@@ -797,7 +793,7 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
            (previous.usageUnavailable != next.usageUnavailable ||
             previous.sessionUnavailable != next.sessionUnavailable ||
             previous.weeklyUnavailable != next.weeklyUnavailable)) ||
-         (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
+         ((ThemeSpecUsesBinding(raw, "usageMode", "u") || ThemeSpecUsesColorStops(raw)) &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
          (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
          FrameTokenStatsVisualChanged(previous, next, raw);
@@ -832,15 +828,16 @@ inline uint32_t ThemeSpecLiveChangedFields(
     fields |= themespec::kThemeSpecFieldReset;
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (ThemeSpecSlotChanged(
-            previous.usageWindows[i],
-            next.usageWindows[i],
-            ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i))) {
+    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
       fields |= ThemeSpecUsageWindowField(i);
+    }
+    if (previous.usageWindows[i].resetSecs != next.usageWindows[i].resetSecs &&
+        ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
+      fields |= themespec::kThemeSpecFieldUsageWindowReset;
     }
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
-    if (ThemeSpecSlotChanged(
+    if (UsageWindowChanged(
             previous.providerSlots[i],
             next.providerSlots[i],
             ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i))) {

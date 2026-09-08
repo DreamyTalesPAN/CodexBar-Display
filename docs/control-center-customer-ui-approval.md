@@ -4054,3 +4054,88 @@ issue scope, or release permission never implies UI permission.
 - User approval: Complete PR #407 corrections and push.
 - Approved customer-visible result: The approved saved-network and bounded WiFi recovery behavior is unchanged; the test candidate contains only its actual supported fields.
 - Validation: TypeScript checking and the setup regression suite.
+
+## 2026-09-08 — Pixel Battery takeover and editable remaining-color thresholds
+
+- User approval: In the owner's submitted review of PR #419 on 2026-09-07,
+  Paul explicitly requested a single segmented Pixel Battery theme, removal
+  of the separate solid-bar catalog entry without adding a variant switch,
+  and editable color thresholds with a clear distinction from the fallback
+  bar color. On 2026-09-08, after the remaining focus-loss and import-alias
+  defects were explained, he instructed us to take over and implement the
+  fixes: "ok dann leg los".
+- Approved customer-visible result: The catalog offers one segmented Pixel
+  Battery with provider logos and quota-based colors. Its existing Theme
+  Studio progress inspector exposes up to four remaining-percentage
+  thresholds and their colors, explains when the fallback color applies,
+  and can return to a solid fill. A threshold stays in the same editable row
+  and keeps keyboard focus while its number changes. Imported themes use
+  the same long-form feature-container precedence as the VibeTV, including
+  explicitly empty containers. The takeover preserves the theme's existing
+  layout and vertically centered provider label.
+- Evidence boundary: This records the owner's explicit requested results;
+  it is not a claim of hardware acceptance or approval to merge or release.
+
+### Follow-up — validate imported provider maps before export
+
+- User approval: Carries forward Paul's 2026-09-08 instruction to take over
+  PR #419 and fix its remaining defects ("ok dann leg los"). This is a
+  validation correction within that work; no separate design approval or
+  hardware acceptance is claimed.
+- Approved customer-visible result: Imported provider-logo maps attached to
+  non-sprite elements are rejected in Theme Studio using its existing
+  "providerAssets is only supported on sprites" validation message, before
+  export produces a pack that installation would reject. The existing message
+  and validation flow are reused; the correction extends the same check from
+  GIFs to every unsupported element type. Valid themes and the inspector's
+  controls keep their existing behavior.
+
+### Follow-up — keep incomplete theme update checks unresolved
+
+- User approval: Carries forward Paul's 2026-09-08 takeover and defect-fix
+  instruction ("ok dann leg los"). No separate design approval or hardware
+  acceptance is claimed.
+- Approved customer-visible result: When the catalog cannot identify the active
+  theme's requirements, missing provider-logo, threshold-color, or text-alignment
+  firmware support keeps the existing catalog-attention state visible. The app
+  does not report the theme update as complete before those requirements can be
+  checked. Existing wording and controls are reused.
+
+### Browser regression coverage for capability readback
+
+- User approval: The same 2026-09-08 takeover and defect-fix authorization
+  covers the accompanying browser regression tests.
+- Approved customer-visible result: The existing catalog-attention message
+  persists for each missing firmware capability; a complete capability
+  readback can show "Update complete". Browser fixtures now distinguish those
+  outcomes explicitly, without weakening the visible assertions.
+
+### 2026-09-08 — Pixel Battery bench refinements and immediate provider selection
+
+- User approval: Paul requested larger reset text and consistently large,
+  vertically centered percentages, reported battery-area redraw flicker and
+  delayed manual provider switching, then approved the installed result
+  ("ok passt so") and instructed us to push and fix relevant CI/review findings.
+- Approved customer-visible result: Pixel Battery revision 16 keeps percentage digits at size 2,
+  centers both rows against their batteries, places a smaller percent glyph
+  alongside, and enlarges the reset line. Countdown-only changes invalidate
+  reset text without repainting battery progress. Manual provider selection
+  wakes the existing display loop immediately using collector-owned snapshots;
+  explicit usage refresh still collects before waking the display.
+- Bench evidence: VibeTV 14799300 on firmware 99.1.835 rendered revision 16 with
+  zero reported render failures. The native Mac overview displayed the updated
+  layout. App 99.1.836 sent Codex and Claude frames after 0.225 s and 0.413 s
+  respectively in the API-to-device measurement; the user accepted this state.
+  The final settings-button walkthrough was not completed because provider
+  status checks temporarily hid its choices; no completed UI-click proof is
+  claimed for that final measurement.
+- Scope: The user explicitly requested local, unsigned candidate work and
+  deferred signing. Full signed cold/warm update rehearsals remain a separate
+  acceptance gate and are not claimed here. This records local validation and
+  approval to push the PR branch, not approval to merge, release, or sign.
+
+## 2026-09-08 — Integrate current main into PR #407
+
+- User approval: Complete the authorized setup/Settings corrections and push PR #407.
+- Result: Preserve the approved Cable/WiFi flow together with the #419 ThemeSpec capabilities and immediate provider selection now on main.
+- Validation: Keep both countdown regression suites and await the hidden-network control after the asynchronous WiFi scan. This changes test synchronization, not the approved flow.

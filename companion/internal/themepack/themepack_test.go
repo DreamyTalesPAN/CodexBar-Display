@@ -315,6 +315,36 @@ func TestLoadRejectsMissingStateAsset(t *testing.T) {
 	}
 }
 
+func TestLoadDirectoryThemePackWithProviderAssets(t *testing.T) {
+	spec := `{"v":1,"id":"provider-logo","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"a":"/themes/u/fallback.cbi","pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/fallback.cbi", file: "assets/fallback.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+		{path: "/themes/u/cursor.cbi", file: "assets/cursor.cbi", data: "CBI1\n1 1\n1\n#000000\na\n"},
+		{path: "/themes/u/claude.cbi", file: "assets/claude.cbi", data: "CBI1\n1 1\n1\n#111111\na\n"},
+	})
+
+	pack, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if got := pack.ThemeSpec.Primitives[0].ProviderAssets["claude"]; got != "/themes/u/claude.cbi" {
+		t.Fatalf("providerAssets were not loaded: %q", got)
+	}
+}
+
+func TestLoadRejectsMissingProviderAsset(t *testing.T) {
+	spec := `{"v":1,"id":"provider-logo","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"a":"/themes/u/fallback.cbi","pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/fallback.cbi", file: "assets/fallback.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+		{path: "/themes/u/cursor.cbi", file: "assets/cursor.cbi", data: "CBI1\n1 1\n1\n#000000\na\n"},
+	})
+
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "providerAssets[claude]") {
+		t.Fatalf("expected missing provider asset error, got %v", err)
+	}
+}
+
 func TestLoadRejectsMalformedSpriteAsset(t *testing.T) {
 	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":2,"h":1,"a":"/themes/u/bad.cbi"}]}`
 	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{

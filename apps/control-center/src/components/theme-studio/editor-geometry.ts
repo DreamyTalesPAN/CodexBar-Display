@@ -137,7 +137,8 @@ export function primitiveBounds(primitive: ThemeStudioPrimitive) {
   // oddly centered text) stays invisible in the editor.
   const visibleWidth =
     primitive.width || textPrimitiveNaturalWidth(primitive, fontSize);
-  const visibleHeight = textPrimitiveSelectionHeight(primitive, fontSize);
+  const visibleHeight =
+    primitive.height || textPrimitiveSelectionHeight(primitive, fontSize);
   return {
     height: Math.min(
       Math.max(1, DISPLAY_SIZE - primitive.y),

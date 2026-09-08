@@ -172,3 +172,13 @@ development ESP8266 build uses 46,832 bytes RAM, 476,023 bytes flash, and a
 been flashed. #302 remains open until direct-Mac and dock measurements cover
 maximum theme, screensaver, and firmware transfers, unplug/timeout recovery,
 and timing for the final production chunk size.
+
+## Combined Cable and ThemeSpec feature budget
+
+After integrating #419 into #407, the ESP8266 image includes both Cable transfer
+and the provider-assets/color-stops/text-valign renderer features. The combined
+build is approximately 484.3 KB, so CI and release-candidate image budgets are
+486,000 bytes. The existing 46% flash, 82% RAM and 350,000-byte compressed-image
+budgets remain unchanged, as do the receiver's runtime update-size checks. This
+source-feature budget adjustment is not hardware update acceptance; the
+combined image still requires the release rehearsal described above.

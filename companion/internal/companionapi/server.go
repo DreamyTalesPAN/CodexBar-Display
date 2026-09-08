@@ -183,6 +183,7 @@ type Options struct {
 	RefreshDisplayStream func(context.Context, string) error
 	PauseDisplayStream   func(bool)
 	WakeDisplayStream    func()
+	RenderDisplayStream  func()
 }
 
 type Server struct {
@@ -222,6 +223,7 @@ type Server struct {
 	refreshStream          func(context.Context, string) error
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
+	renderDisplayStream    func()
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
 	updateHoldUntil        time.Time
@@ -982,6 +984,7 @@ func New(opts Options) (*Server, error) {
 		refreshStream:          opts.RefreshDisplayStream,
 		pauseDisplayStream:     opts.PauseDisplayStream,
 		wakeDisplayStream:      opts.WakeDisplayStream,
+		renderDisplayStream:    opts.RenderDisplayStream,
 		pairAttempts:           defaultPairAttempts,
 		pairAttemptTimeout:     defaultPairAttemptTimeout,
 		pairRetryGap:           defaultPairRetryGap,

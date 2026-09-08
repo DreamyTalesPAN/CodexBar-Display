@@ -62,7 +62,8 @@ func TestProviderDisplayPatchPersistsValidatedFixedSelection(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = providerSettingsFixture
 	wakes := 0
-	server.wakeDisplayStream = func() { wakes++ }
+	server.renderDisplayStream = func() { wakes++ }
+	server.wakeDisplayStream = func() { t.Fatal("provider selection must not wait for a new collection") }
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPatch, "/v1/provider-display", bytes.NewBufferString(`{"mode":"fixed","providerIds":[" CLAUDE "]}`))

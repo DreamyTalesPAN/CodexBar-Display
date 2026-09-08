@@ -2,6 +2,7 @@ package themespec
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -270,6 +271,81 @@ func TestValidateAcceptsCompactStateAssets(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsCompactValign(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"p":[
+			{"t":"tx","x":68,"y":20,"w":156,"h":32,"b":"l","s":2,"va":"center"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact valign spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact valign spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].Valign; got != "middle" {
+		t.Fatalf("compact va=center should normalize to middle, got %q", got)
+	}
+	if got := spec.Primitives[0].Height; got != 32 {
+		t.Fatalf("compact h should normalize to height 32, got %d", got)
+	}
+}
+
+func TestParseAcceptsExplicitTopValign(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"va-top",
+		"rev":1,
+		"p":[
+			{"t":"tx","x":0,"y":0,"b":"l","va":"top"}
+		]
+	}`)
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse explicit top valign: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected va=top to validate, got %v", err)
+	}
+}
+
+func TestTopValignKeepsPrecedenceAcrossNormalization(t *testing.T) {
+	raw := []byte(`{"v":1,"id":"va-top","rev":1,"p":[{"t":"tx","b":"l","valign":"top","va":"bottom"}]}`)
+	spec, installed, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true}
+	for i := 0; i < 3; i++ {
+		if spec.Primitives[0].Valign != "top" {
+			t.Fatalf("top lost precedence: %q", spec.Primitives[0].Valign)
+		}
+		if err := ValidateAgainstCapabilities(spec, installed, caps); err != nil {
+			t.Fatalf("top alignment must work on old firmware: %v", err)
+		}
+		spec = normalizeSpec(spec)
+	}
+}
+
+func TestParseRejectsValignOnNonText(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"va-rect",
+		"rev":1,
+		"p":[
+			{"t":"r","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","va":"middle"}
+		]
+	}`)
+	if _, _, err := Parse(raw); err == nil {
+		t.Fatal("expected valign on a rect to fail Parse")
+	}
+}
+
 func TestValidateAcceptsCompactActivityBinding(t *testing.T) {
 	raw := []byte(`{
 		"v":1,
@@ -336,6 +412,297 @@ func TestValidateRejectsInvalidStateAssets(t *testing.T) {
 
 			if err := Validate(spec); err == nil {
 				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsProviderAssetsForSprite(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "provider-logo",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:   "sprite",
+				X:      0,
+				Y:      0,
+				Width:  24,
+				Height: 24,
+				ProviderAssets: map[string]string{
+					"cursor": "/themes/u/cursor.cbi",
+					"claude": "/themes/u/claude.cbi",
+				},
+				AssetPath: "/themes/u/fallback.cbi",
+			},
+		},
+	}
+
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected providerAssets spec to validate, got %v", err)
+	}
+}
+
+func TestValidateAcceptsCompactProviderAssets(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"provider-logo",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"pa":{"cursor":"/themes/u/cursor.cbi"},"a":"/themes/u/fallback.cbi"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact providerAssets spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact providerAssets spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].ProviderAssets["cursor"]; got != "/themes/u/cursor.cbi" {
+		t.Fatalf("compact providerAssets did not normalize, got %q", got)
+	}
+}
+
+func TestParseRejectsNonCanonicalProviderAssetKeys(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"provider-logo",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"pa":{"Claude":"/themes/u/claude.cbi"},"a":"/themes/u/fallback.cbi"}
+		]
+	}`)
+	if _, _, err := Parse(raw); err == nil {
+		t.Fatal("expected noncanonical providerAssets key to fail Parse")
+	}
+}
+
+func TestParseRejectsPaddedProviderAssetPaths(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"logo-map",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":8,"h":8,"a":"/themes/u/x.cbi","pa":{"codex":" /themes/u/x.cbi "}}
+		]
+	}`)
+	if _, _, err := Parse(raw); err == nil {
+		t.Fatal("expected padded providerAssets path to fail Parse")
+	}
+}
+
+func TestValidateRejectsTooManyProviderAssets(t *testing.T) {
+	providerAssets := make(map[string]string, MaxProviderAssets+1)
+	for i := 0; i < MaxProviderAssets+1; i++ {
+		providerAssets[fmt.Sprintf("p%d", i)] = fmt.Sprintf("/themes/u/p%d.cbi", i)
+	}
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "provider-logo",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:           "sprite",
+				X:              0,
+				Y:              0,
+				Width:          24,
+				Height:         24,
+				ProviderAssets: providerAssets,
+				AssetPath:      "/themes/u/fallback.cbi",
+			},
+		},
+	}
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "firmware limit") {
+		t.Fatalf("expected providerAssets aggregate limit error, got %v", err)
+	}
+}
+
+func TestValidateRejectsProviderAssetsStringPoolOverflow(t *testing.T) {
+	// 16 × (32-char key + NUL + 31-char path + NUL) = 1040, over the 1024-byte
+	// compiled string pool, even though the 16-entry cap is satisfied.
+	providerAssets := make(map[string]string, MaxProviderAssets)
+	key := strings.Repeat("a", 32)
+	path := "/themes/u/" + strings.Repeat("b", 17) + ".cbi"
+	if len(key) != 32 || len(path) != 31 {
+		t.Fatalf("fixture lengths: key=%d path=%d", len(key), len(path))
+	}
+	for i := 0; i < MaxProviderAssets; i++ {
+		providerAssets[fmt.Sprintf("%s%02d", key[:30], i)] = path
+	}
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "pool-overflow",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:           "sprite",
+				X:              0,
+				Y:              0,
+				Width:          8,
+				Height:         8,
+				ProviderAssets: providerAssets,
+			},
+		},
+	}
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "string pool") {
+		t.Fatalf("expected compiled string pool error, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
+	tests := []struct {
+		name           string
+		providerAssets map[string]string
+		primitiveType  string
+		assetPath      string
+	}{
+		{
+			name: "reserved idle key",
+			providerAssets: map[string]string{
+				"idle": "/themes/u/idle.cbi",
+			},
+		},
+		{
+			name: "reserved coding key",
+			providerAssets: map[string]string{
+				"coding": "/themes/u/coding.cbi",
+			},
+		},
+		{
+			name: "unsafe path",
+			providerAssets: map[string]string{
+				"codex": "/themes/../codex.cbi",
+			},
+		},
+		{
+			name:           "gif primitive",
+			providerAssets: map[string]string{"codex": "/themes/u/codex.gif"},
+			primitiveType:  "gif",
+			assetPath:      "/themes/u/fallback.gif",
+		},
+		{
+			name: "noncanonical key",
+			providerAssets: map[string]string{
+				"Claude": "/themes/u/claude.cbi",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			primitiveType := tt.primitiveType
+			if primitiveType == "" {
+				primitiveType = "sprite"
+			}
+			assetPath := tt.assetPath
+			if assetPath == "" {
+				assetPath = "/themes/u/fallback.cbi"
+			}
+			spec := Spec{
+				ThemeSpecVersion: 1,
+				ThemeID:          "provider-logo",
+				ThemeRev:         1,
+				Primitives: []Primitive{
+					{
+						Type:           primitiveType,
+						X:              0,
+						Y:              0,
+						Width:          24,
+						Height:         24,
+						ProviderAssets: tt.providerAssets,
+						AssetPath:      assetPath,
+					},
+				},
+			}
+
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsProgressColorStops(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"color-stops",
+		"rev":1,
+		"p":[
+			{"t":"p","x":0,"y":0,"w":40,"h":10,"b":"s","c":"#22C55E","cs":[
+				{"gte":75,"c":"#22C55E"},
+				{"gte":50,"c":"#EAB308"},
+				{"gte":25,"c":"#F59E0B"},
+				{"gte":0,"c":"#EF4444"}
+			]}
+		]
+	}`)
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected colorStops to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].ColorStops[0].Gte; got != 75 {
+		t.Fatalf("expected sorted highest gte first, got %d", got)
+	}
+}
+
+func TestValidateRejectsInvalidProgressColorStops(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "too many",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":80,"c":"#111111"},{"gte":60,"c":"#222222"},{"gte":40,"c":"#333333"},{"gte":20,"c":"#444444"},{"gte":0,"c":"#555555"}]}]}`,
+		},
+		{
+			name: "bad color",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":0,"c":"red"}]}]}`,
+		},
+		{
+			name: "gte out of range",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":101,"c":"#EF4444"}]}]}`,
+		},
+		{
+			name: "on rect",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"r","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":0,"c":"#EF4444"}]}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, _, err := Parse([]byte(tt.raw))
+			if err != nil {
+				return
+			}
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
+func TestParseRejectsMissingProgressColorStopThreshold(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "missing",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"c":"#EF4444"}]}]}`,
+		},
+		{
+			name: "null",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":null,"c":"#EF4444"}]}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := Parse([]byte(tt.raw)); err == nil || !strings.Contains(err.Error(), "gte is required") {
+				t.Fatalf("expected missing gte error, got %v", err)
 			}
 		})
 	}
@@ -657,5 +1024,255 @@ func TestValidateRejectsInvalidUsageSlotOwnership(t *testing.T) {
 	}
 	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "slot must be 1 or 2") {
 		t.Fatalf("expected invalid slot rejection, got %v", err)
+	}
+}
+
+func TestParseRejectsNonCanonicalValignAndColors(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "uppercase valign",
+			raw:  `{"v":1,"id":"raw-valign","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","va":"CENTER"}]}`,
+		},
+		{
+			name: "padded valign",
+			raw:  `{"v":1,"id":"raw-valign","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","valign":" middle"}]}`,
+		},
+		{
+			name: "padded color",
+			raw:  `{"v":1,"id":"raw-color","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","c":" #22C55E"}]}`,
+		},
+		{
+			name: "short color",
+			raw:  `{"v":1,"id":"raw-color","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l","c":"#22C"}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, raw, err := Parse([]byte(tt.raw)); err == nil {
+				t.Fatalf("expected Parse to reject noncanonical uploaded JSON, raw=%s", raw)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsNonCanonicalValignOnStruct(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "raw-valign",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "text", X: 0, Y: 0, Binding: "label", Valign: "CENTER"},
+		},
+	}
+	if err := Validate(spec); err == nil {
+		t.Fatal("expected Validate to reject valign that firmware will ignore")
+	}
+}
+
+func TestValidateAgainstCapabilitiesRequiresProviderAssetsColorStopsAndValign(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"gated-features",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":8,"h":8,"a":"/themes/u/fb.cbi","pa":{"codex":"/themes/u/xo.cbi"}},
+			{"t":"tx","x":0,"y":10,"w":80,"h":16,"b":"l","va":"middle"},
+			{"t":"p","x":0,"y":40,"w":40,"h":8,"b":"s","c":"#22C55E","cs":[{"gte":0,"c":"#EF4444"}]}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "provider-assets-v1") {
+		t.Fatalf("expected provider-assets-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsProviderAssetsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "color-stops-v1") {
+		t.Fatalf("expected color-stops-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsColorStopsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "text-valign-v1") {
+		t.Fatalf("expected text-valign-v1 rejection, got %v", err)
+	}
+	legacyCaps.SupportsTextValignV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err != nil {
+		t.Fatalf("expected capable device to accept spec: %v", err)
+	}
+}
+
+func TestFeatureContainerAliasesMatchFirmware(t *testing.T) {
+	for _, tc := range []struct {
+		name, stopField, assetField string
+		wantStops, wantAssets       int
+	}{
+		{"compact only", "", "", 1, 1},
+		{"null long", `"colorStops":null,`, `"providerAssets":null,`, 1, 1},
+		{"empty long", `"colorStops":[],`, `"providerAssets":{},`, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"v":1,"id":"alias-test","rev":1,"p":[
+				{"t":"p","w":40,"h":10,"c":"#FFFFFF",` + tc.stopField + `"cs":[{"gte":0,"c":"#FF0000"}]},
+				{"t":"sp","w":8,"h":8,"a":"/themes/u/base.cbi",` + tc.assetField + `"pa":{"codex":"/themes/u/codex.cbi"}}
+			]}`)
+			spec, installed, err := Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(installed) != string(raw) {
+				t.Fatal("raw install JSON changed")
+			}
+			for i := 0; i < 2; i++ {
+				if err := Validate(spec); err != nil {
+					t.Fatal(err)
+				}
+				if got := len(spec.Primitives[0].ColorStops); got != tc.wantStops {
+					t.Fatalf("stops = %d, want %d", got, tc.wantStops)
+				}
+				if got := len(spec.Primitives[1].ProviderAssets); got != tc.wantAssets {
+					t.Fatalf("assets = %d, want %d", got, tc.wantAssets)
+				}
+				caps := protocol.DeviceCapabilities{
+					Known: true, SupportsThemeSpecV1: true,
+					SupportsProviderAssetsV1: tc.wantAssets > 0,
+					SupportsColorStopsV1:     tc.wantStops > 0,
+				}
+				if err := ValidateAgainstCapabilities(spec, installed, caps); err != nil {
+					t.Fatalf("capability check used an overridden alias: %v", err)
+				}
+				spec = normalizeSpec(spec)
+			}
+		})
+	}
+}
+
+func TestCompiledStringBudgetUsesInstalledBindingSpelling(t *testing.T) {
+	padding := strings.Repeat("a", MaxCompiledThemeSpecStringBytes-len("us1p")-2)
+	for _, tc := range []struct {
+		name, binding string
+		wantBytes     int
+	}{
+		{"compact key", `"b":"us1p"`, 1024},
+		{"compact value in long key", `"binding":"us1p"`, 1024},
+		{"null long binding", `"binding":null,"b":"us1p"`, 1024},
+		{"long binding", `"binding":"usageSlot1Percent"`, 1037},
+		{"long binding overrides compact", `"binding":"usageSlot1Percent","b":"us1p"`, 1037},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"v":1,"id":"binding-budget","rev":1,"p":[` +
+				`{"t":"p","w":40,"h":10,` + tc.binding + `},` +
+				`{"t":"tx","v":"` + padding + `"}]}`)
+			spec, _, err := Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2; i++ {
+				if got := compiledThemeSpecStringBytes(spec); got != tc.wantBytes {
+					t.Fatalf("compiled bytes = %d, want %d", got, tc.wantBytes)
+				}
+				if err := Validate(spec); (err == nil) != (tc.wantBytes <= MaxCompiledThemeSpecStringBytes) {
+					t.Fatalf("Validate returned %v for %d bytes", err, tc.wantBytes)
+				}
+				spec = normalizeSpec(spec)
+			}
+		})
+	}
+}
+
+func TestEmptyLongBindingOverridesCompactBinding(t *testing.T) {
+	raw := []byte(`{"v":1,"id":"empty-binding","rev":1,"p":[` +
+		`{"t":"p","w":40,"h":10,"binding":"","b":"us1p"},` +
+		`{"t":"tx","v":"` + strings.Repeat("a", 1023) + `"}]}`)
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if spec.Primitives[0].Binding != "" {
+			t.Fatal("empty long binding must override the compact alias")
+		}
+		if got := compiledThemeSpecStringBytes(spec); got != 1024 {
+			t.Fatalf("compiled bytes = %d, want 1024", got)
+		}
+		if err := Validate(spec); err != nil {
+			t.Fatal(err)
+		}
+		spec = normalizeSpec(spec)
+	}
+}
+
+func TestCompiledStringBudgetUsesInstalledStrings(t *testing.T) {
+	for _, tc := range []struct {
+		name, primitive string
+		bytes           int
+	}{
+		{"empty text", `{"t":"tx","text":"","v":"ignored","b":"l"}`, 2},
+		{"null text", `{"t":"tx","text":null,"v":"ignored","b":"l"}`, 10},
+		{"long text", `{"t":"tx","text":"kept","v":"ignored","b":"l"}`, 7},
+		{"empty asset path", `{"t":"sp","assetPath":"","a":"/themes/u/y.cbi","sa":{"idle":"/themes/u/x.cbi"}}`, 16},
+		{"empty state map", `{"t":"sp","a":"/themes/u/x.cbi","stateAssets":{},"sa":{"idle":"/themes/u/y.cbi"}}`, 16},
+		{"empty bitmap data", `{"t":"px","w":1,"h":1,"data":"","d":"FF","p":["#FFFFFF"],"r":["a"]}`, 0},
+		{"asset spelling", `{"t":"sp","a":"/themes/u/x.cbi "}`, 17},
+		{"state asset spelling", `{"t":"sp","a":"/themes/u/x.cbi","sa":{"idle":"/themes/u/y.cbi "}}`, 33},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, extra := range []int{0, 1} {
+				padding := strings.Repeat("a", 1023-tc.bytes+extra)
+				raw := []byte(`{"v":1,"id":"string-budget","rev":1,"p":[` + tc.primitive + `,{"t":"tx","v":"` + padding + `"}]}`)
+				spec, _, err := Parse(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for i := 0; i < 3; i++ {
+					if got := compiledThemeSpecStringBytes(spec); got != 1024+extra {
+						t.Fatalf("compiled bytes = %d, want %d", got, 1024+extra)
+					}
+					if err := Validate(spec); (err == nil) != (extra == 0) {
+						t.Fatalf("Validate returned %v at %d bytes", err, 1024+extra)
+					}
+					spec = normalizeSpec(spec)
+				}
+			}
+		})
+	}
+}
+
+func TestParseValidatesOnlyEffectiveFeatureAliases(t *testing.T) {
+	for _, tc := range []struct {
+		name, primitive string
+		valid           bool
+	}{
+		{"ignored missing threshold", `{"t":"p","w":10,"h":10,"colorStops":[],"cs":[{"c":"#FFFFFF"}]}`, true},
+		{"ignored null threshold", `{"t":"p","w":10,"h":10,"colorStops":[{"gte":0,"c":"#FFFFFF"}],"cs":[{"gte":null,"c":"bad"}]}`, true},
+		{"selected missing threshold", `{"t":"p","w":10,"h":10,"colorStops":null,"cs":[{"c":"#FFFFFF"}]}`, false},
+		{"ignored provider key", `{"t":"sp","a":"/themes/u/x.cbi","providerAssets":{},"pa":{"Claude":" /themes/u/y.cbi"}}`, true},
+		{"selected provider key", `{"t":"sp","a":"/themes/u/x.cbi","providerAssets":null,"pa":{"Claude":"/themes/u/y.cbi"}}`, false},
+		{"ignored stop color", `{"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"#FFFFFF","c":"bad"}]}`, true},
+		{"empty stop color uses compact", `{"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"","c":"#FFFFFF"}]}`, true},
+		{"null stop color", `{"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":null,"c":"#FFFFFF"}]}`, true},
+		{"ignored alignment", `{"t":"tx","b":"l","valign":"top","va":"BOTTOM"}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"v":1,"id":"selected-alias","rev":1,"p":[` + tc.primitive + `]}`)
+			spec, installed, err := Parse(raw)
+			if err == nil {
+				err = Validate(spec)
+			}
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v: %v", tc.valid, err)
+			}
+			if tc.valid && string(raw) != string(installed) {
+				t.Fatal("changed installed JSON")
+			}
+		})
 	}
 }

@@ -6781,3 +6781,40 @@ func TestRunWithDepsStopsOwnedDashboardOnTransportChange(t *testing.T) {
 		t.Fatalf("owned serve survived worker exit: worker=%v dashboard=%v", err, dashboardCtx)
 	}
 }
+
+func TestDisplaySelectionWakeDoesNotWaitForCollectionOrInterval(t *testing.T) {
+	prepareFastTestEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	renderWake := make(chan struct{}, 1)
+	cycles := 0
+	done := make(chan error, 1)
+	go func() {
+		done <- runDaemonLoop(ctx, Options{
+			Interval:               time.Hour,
+			DisableStartupFastPoll: true,
+			Wake:                   make(chan struct{}), // Collection has not completed.
+			RenderWake:             renderWake,
+		}, runtimeDeps{
+			now:   time.Now,
+			after: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+			logf:  func(string, ...any) {},
+		}, func(context.Context) error {
+			cycles++
+			if cycles == 1 {
+				renderWake <- struct{}{}
+			} else {
+				cancel()
+			}
+			return nil
+		})
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) || cycles != 2 {
+			t.Fatalf("expected immediate second render, cycles=%d error=%v", cycles, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("provider selection waited for collection or the periodic interval")
+	}
+}

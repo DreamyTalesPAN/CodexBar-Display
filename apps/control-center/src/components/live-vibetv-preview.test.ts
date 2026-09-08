@@ -16,8 +16,10 @@ import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
+  themeTextAlignedY,
   themeTextFittedSize,
   themeTextLayout,
+  themeTextValignBoxHeight,
   themeTextWidth,
   themeSpecAriaLabel,
   themeRenderPackMatchesActiveRevision,
@@ -592,6 +594,16 @@ describe("firmware-compatible ThemeSpec text layout", () => {
       });
     },
   );
+
+  it("vertically centers shrunk glyphs in an explicit height box", () => {
+    expect(themeTextValignBoxHeight(32, 2, 2)).toBe(32);
+    expect(themeTextValignBoxHeight(0, 2, 2)).toBe(36);
+    expect(themeTextAlignedY(20, 32, 32, undefined)).toBe(20);
+    expect(themeTextAlignedY(20, 32, 32, "middle")).toBe(20);
+    expect(themeTextAlignedY(20, 32, 16, "middle")).toBe(28);
+    expect(themeTextAlignedY(20, 32, 16, "center")).toBe(28);
+    expect(themeTextAlignedY(20, 32, 16, "bottom")).toBe(36);
+  });
 
   it("uses a measured Unicode width and ignores an invalid hidden-SVG measurement", () => {
     expect(themeTextWidth("月次 Nutzung", 16, 79.5)).toBe(79.5);

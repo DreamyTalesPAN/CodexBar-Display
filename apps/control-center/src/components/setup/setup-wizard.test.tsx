@@ -586,7 +586,7 @@ describe("SetupWizard: direct connection", () => {
     }
     await screen.findByRole("heading", { name: "Connect VibeTV to WiFi" });
     fireEvent.click(
-      screen.getByRole("button", { name: "Enter hidden network" }),
+      await screen.findByRole("button", { name: "Enter hidden network" }),
     );
     fireEvent.change(screen.getByLabelText("WiFi network"), {
       target: { value: "Home" },
