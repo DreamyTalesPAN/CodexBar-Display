@@ -176,7 +176,7 @@ bool testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(const std::stri
       "Cable firmware transfer must flush its completion ACK before restarting immediately");
 }
 
-bool testCableThemeTransferCleansOnlyAfterActivation(const std::string& source) {
+bool testCableThemeTransferKeepsCleanupOutsideUploads(const std::string& source) {
   const std::size_t cleanupStart = source.find("bool findObsoleteThemeSlotAsset(");
   const std::size_t cleanupEnd = source.find("\nvoid handleThemeActive()", cleanupStart);
   const std::size_t finishStart = source.find("bool finishCableTransfer(");
@@ -202,9 +202,11 @@ bool testCableThemeTransferCleansOnlyAfterActivation(const std::string& source) 
           cleanup.find("CompileThemeSpec(raw.c_str(), doc, scene)") != std::string::npos &&
           cleanup.find("CompiledThemeSpecReferencesAsset(") != std::string::npos &&
           cleanup.find("standbyState.active || screensaverPreviewState.showing") != std::string::npos &&
-          cleanup.find("cableScreensaverCleanupPending = true") != std::string::npos &&
+          cleanup.find("bool deferUntilHidden = true") != std::string::npos &&
+          cleanup.find("cableScreensaverCleanupPending = deferUntilHidden") != std::string::npos &&
+          source.find("cleanupCableThemeSlot(destination, targetActivation, false)") != std::string::npos &&
           cleanup.find("LittleFS.remove(obsoletePath)") != std::string::npos,
-      "Cable theme cleanup must run after successful slot activation and before completion");
+      "Cable cleanup must preserve slot assets and defer only after activation, never during preparation");
 }
 
 bool testDeferredCableScreensaverCleanupRunsAfterRenderRelease(const std::string& source) {
@@ -485,7 +487,7 @@ int main(int argc, char** argv) {
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testSetupSizesSerialRxBufferForFrameContract(source) ||
       !testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(source) ||
-      !testCableThemeTransferCleansOnlyAfterActivation(source) ||
+      !testCableThemeTransferKeepsCleanupOutsideUploads(source) ||
       !testDeferredCableScreensaverCleanupRunsAfterRenderRelease(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
       !testSharedSerialHelloAdvertisesStandby(source) ||
