@@ -15,15 +15,16 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 )
 
 const (
-	launchAgentLabel    = "com.codexbar-display.daemon"
-	legacyOutLog        = "/tmp/codexbar-display-daemon.out.log"
-	legacyErrLog        = "/tmp/codexbar-display-daemon.err.log"
-	defaultOutLogName   = "daemon.out.log"
-	defaultErrLogName   = "daemon.err.log"
-	appSupportLogSubdir = "Library/Application Support/codexbar-display/logs"
+	launchAgentLabel  = "com.codexbar-display.daemon"
+	legacyOutLog      = "/tmp/codexbar-display-daemon.out.log"
+	legacyErrLog      = "/tmp/codexbar-display-daemon.err.log"
+	defaultOutLogName = "daemon.out.log"
+	defaultErrLogName = "daemon.err.log"
 )
 
 type deps struct {
@@ -35,6 +36,7 @@ type deps struct {
 	readCableCapabilities func() (protocol.DeviceCapabilities, error)
 	loadRuntimeConfig     func(string) (runtimeconfig.Config, error)
 	readFile              func(string) ([]byte, error)
+	serviceManager        service.Manager
 }
 
 func (d deps) withDefaults() deps {
@@ -51,7 +53,10 @@ func (d deps) withDefaults() deps {
 		d.homeDir = os.UserHomeDir
 	}
 	if d.runCommand == nil {
+		d.serviceManager = service.New(d.launchAgentLabel, "", false)
 		d.runCommand = runSystemCommand
+	} else if d.serviceManager == nil {
+		d.serviceManager = service.NewDarwin(d.launchAgentLabel, "", d.uid(), false, d.runCommand)
 	}
 	if d.readCableCapabilities == nil {
 		d.readCableCapabilities = func() (protocol.DeviceCapabilities, error) {
@@ -88,8 +93,8 @@ func Run(ctx context.Context, runtimeLabel string, readCableCapabilities func() 
 func runWithDeps(ctx context.Context, d deps) error {
 	d = d.withDefaults()
 
-	service := fmt.Sprintf("gui/%d/%s", d.uid(), d.launchAgentLabel)
-	launchctlOut, launchctlErr := d.runCommand(ctx, "launchctl", "print", service)
+	status, launchctlErr := d.serviceManager.Status(ctx)
+	launchctlOut := status.Raw
 	state, pid := parseLaunchctlStatus(launchctlOut)
 	if state == "" {
 		state = "unknown"
@@ -172,7 +177,7 @@ func daemonLogPath(d deps, name, fallback string) string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return fallback
 	}
-	return filepath.Join(home, appSupportLogSubdir, name)
+	return runtimepaths.Path(home, "logs", name)
 }
 
 func readLaunchAgentConfig(d deps) launchAgentConfig {

@@ -11,6 +11,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  companion-windows:
+    runs-on: windows-latest
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - run: git config --global core.autocrlf false
+        working-directory: ${{ runner.temp }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+  codexbar-release-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+      - name: Extract pinned macOS release
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          archive="$(./scripts/fetch-codexbar.sh)"
+          echo "CODEXBAR_CONTRACT_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          ditto -x -k "$archive" "$RUNNER_TEMP/codexbar-contract"
+          echo "CODEXBAR_CONTRACT_BIN=$RUNNER_TEMP/codexbar-contract/CodexBar.app/Contents/Helpers/CodexBarCLI" >> "$GITHUB_ENV"
+          echo "CODEXBAR_CONTRACT_VERSION=0.46.0" >> "$GITHUB_ENV"
+      - name: Extract hash-pinned Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/fetch-win-codexbar.ps1 -Destination "$env:RUNNER_TEMP/codexbar-contract"
+          'CODEXBAR_CONTRACT_KNOWN_GAPS=1' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Test recordings and the released CLI
+        working-directory: companion
+        run: go test ./internal/codexbar -run 'TestCLIFixtures|TestReleasedCLIContract|TestPreparePinnedCLIRelease' -v -count=1
+
   control-center-ui-review-gate:
     runs-on: ubuntu-latest
     steps:
@@ -89,12 +144,22 @@ jobs:
 
   macos-control-center-tests:
     runs-on: macos-latest
+    env:
+      CGO_ENABLED: '0'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Test macOS Control Center DMG prep
         run: ./scripts/test-macos-control-center-app-bundle.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+
+      - name: Test Companion on macOS
+        working-directory: companion
+        run: go test ./...
 
       - name: Test hosted VibeTV gate contracts on macOS
         run: ./scripts/test-vibetv-hosted-gates.sh
@@ -280,6 +345,8 @@ jobs:
     name: CODEX CI
     if: always()
     needs:
+      - companion-windows
+      - codexbar-release-contract
       - control-center-ui-review-gate
       - companion-tests
       - macos-control-center-tests

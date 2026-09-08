@@ -7,9 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
@@ -83,10 +87,10 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("expected dump and validation, got %v", calls)
 	}
-	if mode := fileMode(t, filepath.Dir(path)); mode.Perm() != 0o700 {
+	if mode := fileMode(t, filepath.Dir(path)); runtime.GOOS != "windows" && mode.Perm() != 0o700 {
 		t.Fatalf("expected config dir 0700, got %o", mode.Perm())
 	}
-	if mode := fileMode(t, path); mode.Perm() != 0o600 {
+	if mode := fileMode(t, path); runtime.GOOS != "windows" && mode.Perm() != 0o600 {
 		t.Fatalf("expected config file 0600, got %o", mode.Perm())
 	}
 }
@@ -155,20 +159,10 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 
 func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	t.Setenv("CODEXBAR_CONFIG", "")
-	script := filepath.Join(t.TempDir(), "print-config")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
-if [ "${1:-} ${2:-}" = "config dump" ]; then
-  printf '{"version":1,"providers":[{"id":"future-provider","enabled":true}]}'
-elif [ "${1:-} ${2:-}" = "config validate" ]; then
-  printf '[]'
-else
-  printf '%s' "$CODEXBAR_CONFIG"
-fi
-`), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	script := testBinary(t)
+	t.Setenv("CODEXBAR_TEST_PROCESS", "config")
 	t.Setenv("CODEXBAR_BIN", script)
 	out, err := runUsageCommand(context.Background(), 5*time.Second, script)
 	if err != nil {
@@ -209,7 +203,7 @@ func TestFindBinaryPrefersUserApplicationsAppOverPATH(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", "")
 	t.Setenv(appManagedCodexBarVersionEnvVar, "")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	pathDir := t.TempDir()
 	t.Setenv("PATH", pathDir)
 	pathCLI := filepath.Join(pathDir, "codexbar")
@@ -238,9 +232,9 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
 	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 
-	privateCLI := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	privateCLI := runtimepaths.Path(home, "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
 	foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
 	systemCLI := filepath.Join(t.TempDir(), "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
 	pathDir := t.TempDir()
@@ -279,7 +273,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "target app",
 			setup: func(t *testing.T, home string) {
-				targetApp := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app")
+				targetApp := runtimepaths.Path(home, "CodexBar", "0.46.0", "CodexBar.app")
 				realApp := filepath.Join(t.TempDir(), "CodexBar.app")
 				writeExecutable(t, filepath.Join(realApp, "Contents", "Helpers", "CodexBarCLI"))
 				if err := os.MkdirAll(filepath.Dir(targetApp), 0o700); err != nil {
@@ -293,7 +287,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "parent segment",
 			setup: func(t *testing.T, home string) {
-				targetParent := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar")
+				targetParent := runtimepaths.Path(home, "CodexBar")
 				realParent := filepath.Join(t.TempDir(), "CodexBar")
 				writeExecutable(t, filepath.Join(realParent, "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
 				if err := os.MkdirAll(filepath.Dir(targetParent), 0o700); err != nil {
@@ -307,12 +301,13 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "ancestor segment",
 			setup: func(t *testing.T, home string) {
-				realLibrary := filepath.Join(t.TempDir(), "Library")
-				writeExecutable(t, filepath.Join(realLibrary, "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
-				if err := os.MkdirAll(home, 0o700); err != nil {
+				config := filepath.Dir(runtimepaths.Root(home))
+				realConfig := filepath.Join(t.TempDir(), "config")
+				writeExecutable(t, filepath.Join(realConfig, "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(filepath.Dir(config), 0o700); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(realLibrary, filepath.Join(home, "Library")); err != nil {
+				if err := os.Symlink(realConfig, config); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -329,7 +324,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 			systemAppBinaryPaths = nil
 			t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
 			home := t.TempDir()
-			t.Setenv("HOME", home)
+			testenv.Home(t, home)
 			foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
 			writeExecutable(t, foreignCLI)
 			t.Setenv("CODEXBAR_BIN", foreignCLI)

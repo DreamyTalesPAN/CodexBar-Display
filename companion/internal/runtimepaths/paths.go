@@ -2,7 +2,6 @@ package runtimepaths
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -40,7 +39,7 @@ func DisplayWriterLock(home string) string {
 		return ""
 	}
 
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "run", "display-writer.lock")
+	return Path(home, "run", "display-writer.lock")
 }
 
 // DisplayStreamOutLog returns the shared display-worker log used by both the
@@ -63,7 +62,7 @@ func DisplayStreamOutLog(home string) string {
 		return ""
 	}
 
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
+	return Path(home, "logs", displayStreamOutLog)
 }
 
 // FirmwareUpdateLog returns the file that keeps the firmware updater's raw
@@ -86,7 +85,7 @@ func FirmwareUpdateLog(home string) string {
 		return ""
 	}
 
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", firmwareUpdateLog)
+	return Path(home, "logs", firmwareUpdateLog)
 }
 
 // DisplayStreamOutLogArchive is the single bounded archive retained when the

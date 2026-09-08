@@ -16,6 +16,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
@@ -2733,7 +2734,7 @@ func TestRunCycleWithDepsUsesMaxFrameBytesFromDeviceHello(t *testing.T) {
 
 func TestConfiguredThemeFallsBackToRuntimeConfig(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv(themeEnvVar, "")
 
 	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
@@ -2747,7 +2748,7 @@ func TestConfiguredThemeFallsBackToRuntimeConfig(t *testing.T) {
 
 func TestConfiguredThemeEnvOverridesRuntimeConfig(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv(themeEnvVar, "classic")
 
 	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
@@ -2761,7 +2762,7 @@ func TestConfiguredThemeEnvOverridesRuntimeConfig(t *testing.T) {
 
 func TestConfiguredThemeCLIOverridesEnvAndRuntimeConfig(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv(themeEnvVar, "classic")
 
 	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
@@ -2775,7 +2776,7 @@ func TestConfiguredThemeCLIOverridesEnvAndRuntimeConfig(t *testing.T) {
 
 func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 
 	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
 	if err := persistProviderSnapshots(map[string]providerSnapshot{
@@ -2860,7 +2861,7 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 
 func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 
 	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
 	collectedAt := now.Add(-providerSnapshotMaxAge()).Add(time.Second)
@@ -2918,7 +2919,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 
 func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 
 	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
 	if err := persistProviderSnapshots(map[string]providerSnapshot{
@@ -6331,7 +6332,7 @@ func prepareFastTestEnv(t *testing.T) {
 	t.Helper()
 
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv("CODEXBAR_DISPLAY_CHROMIUM_COOKIE_DB_PATHS", tmpHome+"/missing-cookies.db")
 }
 

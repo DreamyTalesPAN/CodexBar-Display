@@ -37,6 +37,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
@@ -136,8 +137,9 @@ const (
 	localNetworkDenialProbeMaxElapsed = 250 * time.Millisecond
 )
 
-var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
-	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
+var printDisplayStreamService = func(ctx context.Context, label string) ([]byte, error) {
+	status, err := service.New(label, "", false).Status(ctx)
+	return []byte(status.Raw), err
 }
 
 var displayStreamLogKeys = []string{
@@ -2239,7 +2241,7 @@ func (s *Server) lastGoodDisplayFramePath() string {
 	if home == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
+	return runtimepaths.Path(home, "last-good-frame.json")
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -5775,10 +5777,7 @@ func writeThemeRenderPackFile(destination string, payload []byte) error {
 
 func (s *Server) themeRenderPackPath(themeID string) string {
 	return filepath.Join(
-		s.home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(s.home),
 		themeRenderPackDir,
 		themeID+".json",
 	)
@@ -5790,10 +5789,7 @@ func (s *Server) themeRenderPackRevisionPath(themeID, specPath string) string {
 
 func (s *Server) themeRenderPackRevisionDir(themeID string) string {
 	return filepath.Join(
-		s.home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(s.home),
 		themeRenderPackDir,
 		themeID,
 	)
@@ -9272,8 +9268,7 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 		return stream
 	}
 
-	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), displayStreamLaunchAgentLabel())
-	output, err := printDisplayStreamService(ctx, service)
+	output, err := printDisplayStreamService(ctx, displayStreamLaunchAgentLabel())
 	state := parseDisplayStreamLaunchState(string(output))
 	stream.Running = displayStreamLaunchStateRunning(state)
 	if err != nil {
