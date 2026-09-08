@@ -894,6 +894,74 @@ func TestSetupWiFiNetworksReturnsCableScanResults(t *testing.T) {
 	}
 }
 
+func TestSetupWiFiRecoveryRequiresMatchingPendingDevice(t *testing.T) {
+	for _, path := range []string{"/v1/setup/wifi-networks", "/v1/setup/wifi"} {
+		for _, scenario := range []string{"pending", "foreign-device", "station", "committed-wifi", "choice-required", "unbound"} {
+			t.Run(path+"/"+scenario, func(t *testing.T) {
+				cfg := runtimeconfig.Config{DeviceID: "cable-a", CableAutoBindDisabled: true}
+				hello := cableHelloForTest("cable-a")
+				hello.Capabilities.Transport.Mode = "wifi"
+				hello.NetworkMode = "setup"
+				switch scenario {
+				case "foreign-device":
+					hello.DeviceID = "cable-b"
+				case "station":
+					hello.NetworkMode = "station"
+				case "committed-wifi":
+					cfg.ConnectionMode = "wifi"
+				case "choice-required":
+					cfg.ConnectionModeChoiceRequired = true
+				case "unbound":
+					cfg.DeviceID = ""
+				}
+				server := newTestServer(t, cfg)
+				server.resolveCablePort = func(_, expected string) (string, error) {
+					if expected != "cable-a" {
+						t.Fatalf("unexpected selected identity %q", expected)
+					}
+					return "/dev/mock-cable", nil
+				}
+				server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+				calls := 0
+				checkTarget := func(port, deviceID string) {
+					calls++
+					if port != "/dev/mock-cable" || deviceID != "cable-a" {
+						t.Fatalf("unexpected target port=%q device=%q", port, deviceID)
+					}
+				}
+				server.scanCableWiFi = func(port, deviceID string) ([]protocol.WiFiNetwork, error) {
+					checkTarget(port, deviceID)
+					return []protocol.WiFiNetwork{{SSID: "Home", Encrypted: true}}, nil
+				}
+				server.configureCableWiFi = func(port, deviceID, ssid, password string) error {
+					checkTarget(port, deviceID)
+					if ssid != "Home" || password != "new password" {
+						t.Fatal("replacement credentials were not forwarded exactly")
+					}
+					return nil
+				}
+				rec := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"ssid":"Home","password":"new password"}`))
+				req.Header.Set("Content-Type", "application/json")
+				server.Handler().ServeHTTP(rec, req)
+				wantStatus, wantCalls := http.StatusConflict, 0
+				if scenario == "pending" {
+					wantStatus, wantCalls = http.StatusOK, 1
+					if path == "/v1/setup/wifi" {
+						wantStatus = http.StatusAccepted
+					}
+				}
+				if rec.Code != wantStatus || calls != wantCalls {
+					t.Fatalf("status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+				}
+				if got, err := server.config(); err != nil || (scenario == "pending" && !got.WiFiTransitionPending()) {
+					t.Fatalf("recovery must retain pending state: config=%+v err=%v", got, err)
+				}
+			})
+		}
+	}
+}
+
 func TestDeviceSearchSettlesFreshResultsAcrossTwoScans(t *testing.T) {
 	first := newCountedSelectableDeviceServer(t, "vibetv-a", nil, nil)
 	defer first.Close()

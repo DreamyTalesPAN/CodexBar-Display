@@ -3898,7 +3898,7 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
+	if (runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" && !cfg.WiFiTransitionPending()) || strings.TrimSpace(cfg.DeviceID) == "" {
 		writeError(w, http.StatusConflict, "cable_setup_required", "VibeTV is not ready to receive WiFi details by Cable.", "Choose Cable first, then choose WiFi again.")
 		return
 	}
@@ -3975,7 +3975,7 @@ func (s *Server) handleSetupWiFiNetworks(w http.ResponseWriter, r *http.Request)
 		writeInternalError(w, err)
 		return
 	}
-	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
+	if (runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" && !cfg.WiFiTransitionPending()) || strings.TrimSpace(cfg.DeviceID) == "" {
 		writeError(w, http.StatusConflict, "cable_setup_required", "VibeTV is not connected by Cable.", "Connect VibeTV by Cable before scanning WiFi networks in the app.")
 		return
 	}
