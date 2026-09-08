@@ -18,7 +18,8 @@ important changes before they interrupt your work.
 
 ## Themes
 
-Six live themes are included. Choose a look in the Control Center Theme Library.
+VibeTV comes with 6 pre-built themes, but you can also
+[build your own](docs/theme-dev-guide.md).
 
 <table>
   <tr><th>Mini Classic</th><th>Claude Creature</th><th>Clippy</th></tr>
@@ -35,12 +36,7 @@ Six live themes are included. Choose a look in the Control Center Theme Library.
   </tr>
 </table>
 
-All previews are rendered from the current theme packs with example data.
-
 ## Screensavers
-
-Three screensavers are included for standby. Choose one separately from your
-live theme in the Control Center Screensavers tab.
 
 | Night Clock | Reset Countdown | Token Fire |
 | --- | --- | --- |
