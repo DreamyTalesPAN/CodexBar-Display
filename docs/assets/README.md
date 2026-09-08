@@ -28,5 +28,5 @@ captured at 3× resolution (720 × 720 PNG). They show static example states.
 
 | Preview | Render pack | ThemeSpec path | Spec hash |
 | --- | --- | --- | --- |
-| [pixel-battery](vibetv-theme-pixel-battery.png) | [render pack](../../../dist/theme-packs/render/pixel-battery.json) | `/themes/u/pba-16-f46829.json` | `6c0dcf25` |
-| [tiny-office](vibetv-theme-tiny-office.png) | [render pack](../../../dist/theme-packs/render/tiny-office.json) | `/themes/u/to-7-d7799cec.json` | `6b398ec9` |
+| [pixel-battery](vibetv-theme-pixel-battery.png) | [render pack](../../dist/theme-packs/render/pixel-battery.json) | `/themes/u/pba-16-f46829.json` | `6c0dcf25` |
+| [tiny-office](vibetv-theme-tiny-office.png) | [render pack](../../dist/theme-packs/render/tiny-office.json) | `/themes/u/to-7-d7799cec.json` | `6b398ec9` |
