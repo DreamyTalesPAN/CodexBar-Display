@@ -15,13 +15,6 @@ const pack = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/render/ti
 const rawSpec = readFileSync(path.join(root, "theme-packs/tiny-office/theme.json"), "utf8");
 const primitives = pack.spec?.primitives || pack.spec?.p || [];
 const clock = new Date("2026-09-07T12:00:00Z");
-// TFT_eSPI Font 4 (Font32rle) advance widths for ASCII 32..127; the firmware
-// measures font 4 text with exactly this table, and there is no smaller size.
-const FONT4_WIDTHS = [5,8,8,19,14,21,17,6,8,8,12,10,7,8,7,8,14,14,14,14,14,14,14,14,14,14,7,7,14,9,14,13,25,16,17,18,18,16,15,19,18,6,13,17,13,21,18,19,16,19,17,16,14,18,15,23,15,16,16,9,13,9,12,13,9,14,15,13,15,14,8,15,15,6,6,12,6,22,15,15,15,15,8,12,7,14,12,18,13,12,13,9,6,9,14,14];
-function textWidth(value: string, font: number, size: number) {
-  if (font === 4) return [...value].reduce((sum, ch) => sum + (FONT4_WIDTHS[ch.charCodeAt(0) - 32] ?? 14), 0) * size;
-  return themeFirmwareTextMetrics(value, font, size)?.width ?? Number.POSITIVE_INFINITY;
-}
 const slots = [
   { id: "session", label: "Session", percent: 76, resetSecs: 8078 },
   { id: "weekly", label: "Weekly", percent: 42, resetSecs: 86400 },
@@ -98,18 +91,25 @@ describe("Tiny Office theme pack", () => {
     expect(values).not.toContain("Reset Reset unavailable");
   });
 
-  it("keeps live text inside its lane at the large font without shrinking", () => {
-    // Font 4 has a single size, so every realistic value must fit at size 1:
-    // CodexBar's slot names, 100%, a week-long reset and the firmware notices.
-    for (const data of [frame(), frame("coding", [{ id: "w", label: "Fable only", percent: 100, resetSecs: 604800 }], "remaining", "Open VibeTV Mac App")]) {
+  it("keeps live text inside its lane, shrinking long values instead of clipping", () => {
+    // Lanes use font 2 at size 2 with fit shrink. The firmware cannot shrink
+    // below size 1 and clips to the lane, so the longest real values must fit
+    // at size 1: contracted CodexBar window names, 100%, a week-long reset,
+    // the renderer's unavailable text and the firmware update notices.
+    const spark = frame("coding", [{ id: "codex-spark-weekly", label: "Codex Spark Weekly", percent: 100, resetSecs: 604800 }], "remaining", "Open VibeTV Mac App");
+    const unavailable = frame("idle", [{ id: "s", label: "Session", percent: 0, resetSecs: 0 }]);
+    for (const data of [frame(), spark, unavailable]) {
       for (const p of primitives.filter((p) => p.t === "tx" || p.type === "text")) {
         if (!primitiveUsageSlotVisible(p, data)) continue;
         const width = p.w ?? p.width ?? 0;
         const font = p.f ?? p.font ?? 1;
         const size = themeTextFittedSize(text(p, data), font, p.s ?? p.fontSize ?? 1, width, true);
-        expect(textWidth(text(p, data), font, size), `${text(p, data)} in lane ${width}`).toBeLessThanOrEqual(width);
+        const measured = themeFirmwareTextMetrics(text(p, data), font, size)?.width;
+        expect(measured, `${text(p, data)} in lane ${width}`).toBeLessThanOrEqual(width);
       }
     }
+    expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, spark))).toContain("Codex Spark Weekly");
+    expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, unavailable))).toContain("Reset unavailable");
   });
 
   it("renders different idle/coding art through the production component", () => {

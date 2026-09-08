@@ -115,16 +115,16 @@
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.3.0",
-      "themeRev": 4,
-      "themeSpecPath": "/themes/u/to-4-546112af.json",
+      "version": "0.4.0",
+      "themeRev": 5,
+      "themeSpecPath": "/themes/u/to-5-286c9cc0.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.3.0.zip",
-      "sha256": "dcfacdf01ebc01e4b192523c7d57a7fb751efda1b6208fa5108f982a88b01137",
-      "bytes": 8355
+      "downloadAsset": "vibetv-theme-tiny-office-v0.4.0.zip",
+      "sha256": "6341eb6253f02f491a843f73cfa5aa4716d76b48226368a6db9ec3a39f2d9db2",
+      "bytes": 8147
     },
     {
       "id": "token-fire",

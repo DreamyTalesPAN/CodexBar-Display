@@ -36,9 +36,10 @@ Before changing a published version, bump the version in the compiler and
   update notices. The used/remaining mode is intentionally not displayed.
 - Two slot-bound lanes show the actual window names and percentages. Missing
   slots are hidden by the existing renderer; no synthetic windows are added.
-  Labels, percentages and the reset time use TFT_eSPI font 4 (26 px), which
-  has a single size; the test measures every realistic value against the real
-  font 4 glyph widths so nothing depends on shrinking.
+  Labels, percentages and the reset time use TFT_eSPI font 2 at size 2 (32 px)
+  with fit shrink, so long CodexBar window names such as `Codex Spark Weekly`
+  and `Reset unavailable` drop to size 1 instead of being clipped. The test
+  measures those exact values against the firmware font metrics.
 - The reset row uses slot 1's reset binding, without duplicating the renderer's
   unavailable message or inventing a reset time.
 - `stateAssets` swaps the whole office scene for `idle` versus `coding`,
@@ -50,15 +51,15 @@ Before changing a published version, bump the version in the compiler and
   from the scene pixels themselves, so the overlay is seamless and uses the
   same palette. Only this window repaints; the rest of the scene stays static.
 - Three static CBI1 files plus two CBA1 files, 26 colors maximum. Scene source
-  dimensions are 120x60, drawn at 240x120; the full-canvas background is 60x60,
+  dimensions are 120x56, drawn at 240x112; the full-canvas background is 60x60,
   drawn at 240x240. Each static asset is below 10,000 pixels.
-- Twelve primitives, 1,409 source ThemeSpec bytes, 8,355-byte v0.3.0 ZIP.
+- Twelve primitives, 1,409 source ThemeSpec bytes, 8,147-byte v0.4.0 ZIP.
 
 ## History
 
-- v0.3.0 (rev 4): font 4 for values, brighter/saturated scene, legible code
-  listing, scene cropped to 120 px. First published revision.
-- v0.2.0 (rev 3) and v0.1.0 (rev 2): drafts, never published or committed.
+- v0.4.0 (rev 5): font 2 at size 2 with shrink for long slot names, scene
+  cropped to 112 px. First published revision.
+- v0.3.0 (rev 4), v0.2.0 (rev 3), v0.1.0 (rev 2): drafts, never published.
 
 ## Verification and visual preview
 
@@ -85,13 +86,13 @@ Local checks: source/ZIP validation, catalog/checksum/immutable-history checks,
 
 Bench device: esp8266-smalltv-st7789, firmware 1.0.41, installed with the
 user's explicit approval through the Companion (`POST /v1/themes/install`,
-slot `live`). Both the v0.2.0 draft and the published v0.3.0 (rev 4,
-`/themes/u/to-4-546112af.json`) were installed and observed over `/health`:
+slot `live`). The v0.2.0 and v0.3.0 drafts and the published v0.4.0 (rev 5,
+`/themes/u/to-5-286c9cc0.json`) were installed and observed over `/health`:
 
 - `renderOk: true`, `renderFailures: 0`, no reboot (`bootId` unchanged).
-- CBA animation running: `cbaCompletedFrames` advancing ~3.6/s at 77 ms per
+- CBA animation running: `cbaCompletedFrames` advancing ~3.6/s at 54 ms per
   frame, `cbaBufferBytes: 10240`, `cbaBufferAllocationFailures: 0`.
-- Heap stable at ~13.2 KB free / 10.9 KB max block across all samples, above
+- Heap stable at ~13.2 KB free / 10.0 KB max block across all samples, above
   the firmware's animation minimums (8 KB / 3 KB).
 - The user judged the real screen: values readable, colors strong enough,
   animation as intended.

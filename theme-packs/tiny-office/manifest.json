@@ -3,17 +3,17 @@
   "schemaVersion": 1,
   "id": "tiny-office",
   "name": "Tiny Office",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "minFirmware": "1.0.40",
   "usage": "live",
   "requiredCapabilities": [
     "usage-slots-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/to-4-546112af.json",
+    "path": "/themes/u/to-5-286c9cc0.json",
     "file": "theme.json",
     "bytes": 1409,
-    "sha256": "546112afc530f8ba14cd2b1477c3fd19647351fc7afbac7f011ce7f273a92f3c",
+    "sha256": "286c9cc0526fe2985caedaa83e30895a64a18273f7f524913816c844dccc2e0c",
     "contentType": "application/json"
   },
   "assets": [
@@ -21,35 +21,35 @@
       "path": "/themes/u/to-bg.cbi",
       "file": "assets/to-bg.cbi",
       "bytes": 269,
-      "sha256": "b406d62c64703ff14388fc3cc7bfaea72b233ab6db4cb25574e9416645102b69",
+      "sha256": "ebfea36490bde8a209e7ab33b99bac732a7f029e652c9ceb0d2c0d5a4142d665",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-i.cbi",
       "file": "assets/to-i.cbi",
-      "bytes": 3880,
-      "sha256": "4921a924dcdea4ce3dd2bed8b5ecac6687dbe2f552ae7fd52a08b4896b2a113c",
+      "bytes": 3772,
+      "sha256": "3698084b5f0d1314e7966e9dc50a55cca015589ae688067f2d375a7ed9845a07",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-c.cbi",
       "file": "assets/to-c.cbi",
-      "bytes": 4271,
-      "sha256": "44c06be2883cb390fed7c2539f0c3990631c8cf7dc4c9f2848fd0d5a8bcd4062",
+      "bytes": 3936,
+      "sha256": "446b0100a17d0c5dabb3773a997e7810cfcba97981263c7e13dffa0d6f72b6a9",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-ia.cba",
       "file": "assets/to-ia.cba",
-      "bytes": 5882,
-      "sha256": "1b651249d9223f878a870f3ce84dfd0869049301687eeb2ba81aadf8d8f2d195",
+      "bytes": 6053,
+      "sha256": "44b67b21df912ba3c45822378332cc67cfebf5f20c019e07842bd6a5b6dcdbda",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-ca.cba",
       "file": "assets/to-ca.cba",
-      "bytes": 11067,
-      "sha256": "b8cd56021baa419eaa27f7c089b605ef2f00949d5a6075240eaa81e572815866",
+      "bytes": 11035,
+      "sha256": "9cdf0bba59617b536e84cf6054348db5e7661a43ea03045bdc13c403726bf461",
       "contentType": "text/plain"
     }
   ]
