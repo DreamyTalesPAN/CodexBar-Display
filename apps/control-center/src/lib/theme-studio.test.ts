@@ -95,6 +95,19 @@ describe("validateThemeSpec", () => {
     );
   });
 
+  it.each(["rect", "text", "progress", "gif", "pixels"] as const)(
+    "rejects provider maps on %s before exporting an uninstallable pack",
+    (type) => {
+      const spec = validSpec();
+      spec.primitives[0].type = type;
+      spec.primitives[0].providerAssets = { codex: "/themes/u/logo.cbi" };
+      expect(validateThemeSpec(spec).errors).toContain(
+        "Element 1: providerAssets is only supported on sprites.",
+      );
+      expect(() => buildThemePack(spec, "Invalid provider map", {})).toThrow();
+    },
+  );
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [

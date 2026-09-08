@@ -949,6 +949,12 @@ function validatePrimitive(
   ) {
     errors.push(`${prefix}: colorStops is only supported on progress.`);
   }
+  if (
+    Object.keys(primitive.providerAssets || {}).length > 0 &&
+    primitive.type !== "sprite"
+  ) {
+    errors.push(`${prefix}: providerAssets is only supported on sprites.`);
+  }
 
   if (primitive.type === "text") {
     if ((!primitive.text || primitive.text.trim() === "") && !primitive.binding) {
@@ -1027,12 +1033,6 @@ function validatePrimitive(
   }
 
   if (primitive.type === "gif" || primitive.type === "sprite") {
-    if (
-      primitive.type === "gif" &&
-      Object.keys(primitive.providerAssets || {}).length > 0
-    ) {
-      errors.push(`${prefix}: providerAssets is only supported on sprites.`);
-    }
     validateThemeAssetPaths(primitive, prefix, errors);
     const paths = primitiveAssetPaths(primitive);
     for (const assetPath of paths) {
