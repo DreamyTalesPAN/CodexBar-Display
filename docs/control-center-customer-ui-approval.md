@@ -4145,3 +4145,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Finish the authorized PR #407 corrections and push.
 - Approved customer-visible result: Retained Cable health during a mode transition does not close WiFi setup or stop discovery. Only a connected same-device snapshot with committed WiFi mode can finish it.
 - Validation: Unit and browser regressions include the server grace-period snapshot with connected=true but no committed mode.
+
+## 2026-09-08 — Keep status polling through Settings WiFi recovery
+
+- User approval: Complete the authorized PR #407 setup/Settings fixes and push.
+- Approved customer-visible result: An offline WiFi snapshot during an explicit Settings switch does not stop status polling. A later connected same-device WiFi status returns the user to Settings.
+- Validation: The browser regression reproduces retained Cable health, offline WiFi and connected WiFi; it failed before the polling condition was corrected.

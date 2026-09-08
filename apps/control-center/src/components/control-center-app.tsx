@@ -4271,7 +4271,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       companionStatus !== "online" ||
-      !controlCenterAvailable
+      (!controlCenterAvailable && !settingsWiFiSetup)
     ) {
       return;
     }
@@ -4300,6 +4300,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     controlCenterAvailable,
     hostedSetup,
     setupPreviewStep,
+    settingsWiFiSetup,
     syncLocalStatus,
   ]);
 
