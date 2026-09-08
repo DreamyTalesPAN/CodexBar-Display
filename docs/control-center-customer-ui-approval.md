@@ -4405,3 +4405,25 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
 - Approved customer-visible result: Preserve the required matching live preview before leaving the wizard while retaining main's completed firmware-update and attention handling. Fresh devices without an installed theme can continue setup after a verified firmware update; loss of an existing theme remains visible. Cable reads its baseline over USB and WiFi over HTTP, then both apply the same existing theme-verification rule. Attention never starts another automatic firmware upload.
 - Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.
+## 2026-09-08 — Shared provider notices and Gemini migration (#425)
+
+- User approval: "ok passt so", after reviewing the desktop screenshots in this
+  task. The user explicitly applied Screen 07's notice treatment to every
+  provider, then requested action buttons in the same row as the notice text.
+- Approved customer-visible result: All provider notices use one shared card
+  layout in setup and Settings: provider name and toggle above a separator,
+  small explanatory text below it, with Copy, Retry or the available migration
+  action aligned to the right of that text. The Gemini consumer migration uses
+  the supplied Screen 07 copy and a `Turn on Antigravity` button that enables
+  Antigravity through VibeTV's existing settings flow. Once Antigravity is on,
+  the action disappears and the already-on explanation appears. Gemini keeps
+  its own toggle; no automatic switch-off or navigation to CodexBar is added.
+  Continue still requires real displayable usage from an enabled provider.
+- Reviewed evidence: desktop `global-provider-notices.png` and
+  `gemini-migration-desktop.png` from the real frontend with mocked provider
+  responses, captured in this task under `tmp/issue425/design-import/screenshots/`.
+  Desktop only; this is UI approval, not hardware or release approval.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the issue's
+  runtime/state mapping and contract notes, and this approval record.

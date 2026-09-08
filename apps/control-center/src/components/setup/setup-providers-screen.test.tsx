@@ -468,17 +468,30 @@ describe("SetupProvidersScreen", () => {
    const gemini = provider({health: "unsupported", label: "Gemini", providerId: "gemini"});
    gemini.health.reported = "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.";
    const antigravity = provider({health: "disabled", label: "Antigravity", providerId: "antigravity", value: false});
-   it("reveals the mentioned inventory entry without changing either toggle", () => {
+   it("enables the replacement without hiding or disabling Gemini", () => {
      const onToggle = vi.fn();
      renderDom(<SetupProvidersScreen onCheckAgain={vi.fn()} onContinue={vi.fn()} onToggle={onToggle} pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} providers={[gemini, antigravity]} />);
      expect((screen.getByRole("button", {name: "Continue"}) as HTMLButtonElement).disabled).toBe(true);
-     fireEvent.click(screen.getByRole("button", {name: "Show Antigravity"}));
-     expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("Antigravity");
-     expect(screen.queryByRole("switch", {name: "Gemini"})).toBeNull();
-     expect(screen.getByRole("switch", {name: "Antigravity"}).getAttribute("aria-checked")).toBe("false");
+     expect(screen.getByText("Gemini no longer reports usage for personal Google accounts. Antigravity tracks the same limits and resets.")).toBeTruthy();
+     expect(screen.queryByText(gemini.health.reported!)).toBeNull();
+     fireEvent.click(screen.getByRole("button", {name: "Turn on Antigravity"}));
+     expect(onToggle).toHaveBeenCalledExactlyOnceWith(antigravity, true);
+     expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+     expect(screen.getByRole("switch", {name: "Gemini"}).getAttribute("aria-checked")).toBe("true");
+   });
+   it("shows the already-on state without a redundant action", () => {
+     const html = render({providers: [gemini, {...antigravity, value: true}]});
+     expect(html).toContain("Antigravity is already on and tracks these limits — you can turn Gemini off.");
+     expect(html).not.toContain("Turn on Antigravity");
+     expect(html).not.toContain("Show Antigravity");
+   });
+   it("does not enable again while the replacement setting is saving", () => {
+     const onToggle = vi.fn();
+     renderDom(<SetupProvidersScreen onCheckAgain={vi.fn()} onContinue={vi.fn()} onToggle={onToggle} pendingCheckIds={new Set()} pendingPreferenceIds={new Set([antigravity.id])} providers={[gemini, antigravity]} />);
+     const button = screen.getByRole("button", {name: "Turn on Antigravity"}) as HTMLButtonElement;
+     expect(button.disabled).toBe(true);
+     fireEvent.click(button);
      expect(onToggle).not.toHaveBeenCalled();
-     fireEvent.click(screen.getByRole("switch", {name: "Antigravity"}));
-     expect(onToggle).toHaveBeenCalledWith(antigravity, true);
    });
    it("opens Continue only once an enabled provider has usable data", () => {
      expect(render({providers:[gemini, antigravity]})).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Continue/);
@@ -487,6 +500,6 @@ describe("SetupProvidersScreen", () => {
      expect(setupProviderCanDisplay(gemini)).toBe(false);
    });
    it("does not invent an alternative absent from the inventory", () => {
-     expect(render({providers:[gemini]})).not.toContain("Show Antigravity");
+     expect(render({providers:[gemini]})).not.toContain("Turn on Antigravity");
    });
  });
