@@ -731,6 +731,43 @@ func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) 
 	}
 }
 
+func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.localNetworkAvailable = func() bool { return false }
+	calls := 0
+	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+		calls++
+		if server.firmwareUpdateStartMu.TryLock() {
+			server.firmwareUpdateStartMu.Unlock()
+			t.Error("firmware update can start while Cable discovery owns the sender")
+		}
+		return []usb.CableDevice{{Hello: cableHelloForTest("cable-a")}}, nil
+	}
+	job := server.createFirmwareUpdateJob(runtimeconfig.Config{ConnectionMode: "cable"})
+	search := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+		return rec
+	}
+	rec := search()
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "firmware_update_in_progress") || calls != 0 {
+		t.Fatalf("accepted firmware update must retain the serial port: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	}
+	server.updateFirmwareUpdateJob(job.ID, func(job *firmwareUpdateJob) { job.Phase = "complete" })
+	server.localNetworkAvailable = func() bool {
+		if !server.firmwareUpdateStartMu.TryLock() {
+			t.Error("WiFi discovery must not delay firmware update start")
+		} else {
+			server.firmwareUpdateStartMu.Unlock()
+		}
+		return false
+	}
+	rec = search()
+	if rec.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("Cable discovery must resume after update completion: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	}
+}
+
 func TestDeviceSearchKeepsCableWhenWiFiUnavailable(t *testing.T) {
 	for _, scenario := range []string{"offline", "denied", "no-wifi-device"} {
 		t.Run(scenario, func(t *testing.T) {

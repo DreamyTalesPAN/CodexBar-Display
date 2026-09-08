@@ -3191,7 +3191,14 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	var cableDevices []usb.CableDevice
 	var cableErr error
 	if explicitTarget == "" && s.discoverCableDevices != nil {
+		s.firmwareUpdateStartMu.Lock()
+		if _, running := s.activeFirmwareUpdateJob(); running {
+			s.firmwareUpdateStartMu.Unlock()
+			writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then search again.")
+			return
+		}
 		cableDevices, cableErr = s.discoverCableDevices()
+		s.firmwareUpdateStartMu.Unlock()
 	}
 	var devices []deviceSearchEntry
 	if len(cableDevices) > 0 {
