@@ -1136,3 +1136,35 @@ func TestFeatureContainerAliasesMatchFirmware(t *testing.T) {
 		})
 	}
 }
+
+func TestCompiledStringBudgetUsesInstalledBindingSpelling(t *testing.T) {
+	padding := strings.Repeat("a", MaxCompiledThemeSpecStringBytes-len("us1p")-2)
+	for _, tc := range []struct {
+		name, binding string
+		wantBytes     int
+	}{
+		{"compact key", `"b":"us1p"`, 1024},
+		{"compact value in long key", `"binding":"us1p"`, 1024},
+		{"long binding", `"binding":"usageSlot1Percent"`, 1037},
+		{"long binding overrides compact", `"binding":"usageSlot1Percent","b":"us1p"`, 1037},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"v":1,"id":"binding-budget","rev":1,"p":[` +
+				`{"t":"p","w":40,"h":10,` + tc.binding + `},` +
+				`{"t":"tx","v":"` + padding + `"}]}`)
+			spec, _, err := Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2; i++ {
+				if got := compiledThemeSpecStringBytes(spec); got != tc.wantBytes {
+					t.Fatalf("compiled bytes = %d, want %d", got, tc.wantBytes)
+				}
+				if err := Validate(spec); (err == nil) != (tc.wantBytes <= MaxCompiledThemeSpecStringBytes) {
+					t.Fatalf("Validate returned %v for %d bytes", err, tc.wantBytes)
+				}
+				spec = normalizeSpec(spec)
+			}
+		})
+	}
+}

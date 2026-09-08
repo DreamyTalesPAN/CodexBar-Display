@@ -78,6 +78,7 @@ type Primitive struct {
 	ShortText           string            `json:"v,omitempty"`
 	Binding             string            `json:"binding,omitempty"`
 	ShortBinding        string            `json:"b,omitempty"`
+	rawBinding          string            // Preserve the installed spelling for the firmware string budget.
 	FontSize            int               `json:"fontSize,omitempty"`
 	ShortSize           int               `json:"s,omitempty"`
 	Valign              string            `json:"valign,omitempty"`
@@ -442,6 +443,9 @@ func normalizePrimitive(p Primitive) Primitive {
 	}
 	if p.Binding == "" {
 		p.Binding = p.ShortBinding
+	}
+	if p.rawBinding == "" {
+		p.rawBinding = p.Binding
 	}
 	p.Binding = expandBinding(p.Binding)
 	if p.FontSize == 0 {
@@ -913,10 +917,10 @@ func compiledThemeSpecStringBytes(spec Spec) int {
 	for _, primitive := range spec.Primitives {
 		switch primitive.Type {
 		case "text":
-			addCompiledStringStorage(primitive.Binding, &stringBytes)
+			addCompiledStringStorage(primitive.rawBinding, &stringBytes)
 			addCompiledStringStorage(primitive.Text, &stringBytes)
 		case "progress":
-			addCompiledStringStorage(primitive.Binding, &stringBytes)
+			addCompiledStringStorage(primitive.rawBinding, &stringBytes)
 		case "gif", "sprite", "image":
 			addCompiledStringStorage(primitive.AssetPath, &stringBytes)
 			if primitive.StateAssets != nil {

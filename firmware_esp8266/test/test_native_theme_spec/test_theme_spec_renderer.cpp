@@ -2142,6 +2142,20 @@ void testEmptyLongFeatureContainersOverrideCompactAliases() {
   TEST_ASSERT_EQUAL_STRING("/themes/u/base.cbi", sink.commands.back().assetPath.c_str());
 }
 
+void testStringBudgetCountsInstalledBindingSpelling() {
+  std::string raw = R"({"v":1,"id":"binding-budget","rev":1,"p":[{"t":"p","w":40,"h":10,"b":"us1p"},{"t":"tx","v":")";
+  raw += std::string(1018, 'a');
+  raw += R"("}]})";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(raw.c_str(), doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1024, scene.stringPoolUsed);
+  ReleaseCompiledThemeSpec(scene);
+  raw.replace(raw.find("us1p"), 4, "usageSlot1Percent");
+  TEST_ASSERT_FALSE(CompileThemeSpec(raw.c_str(), doc, scene));
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testProgressColorStopsSelectFillByPercent() {
   const char* spec = R"JSON({
     "v":1,
@@ -3396,6 +3410,7 @@ int main() {
   RUN_TEST(testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider);
   RUN_TEST(testProviderAssetsCompileRejectsTooManyEntries);
   RUN_TEST(testEmptyLongFeatureContainersOverrideCompactAliases);
+  RUN_TEST(testStringBudgetCountsInstalledBindingSpelling);
   RUN_TEST(testProgressColorStopsSelectFillByPercent);
   RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);

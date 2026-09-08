@@ -262,6 +262,18 @@
               "type": "string",
               "pattern": "^(([1-9][0-9]*)?(\\.|[a-z]))+$"
             }
+          },
+          "providerAssets": {
+            "$ref": "#/$defs/providerAssets"
+          },
+          "pa": {
+            "$ref": "#/$defs/providerAssets"
+          },
+          "colorStops": {
+            "$ref": "#/$defs/colorStops"
+          },
+          "cs": {
+            "$ref": "#/$defs/colorStops"
           }
         },
         "additionalProperties": true,
@@ -541,6 +553,18 @@
               "type": "string",
               "pattern": "^(([1-9][0-9]*)?(\\.|[a-z]))+$"
             }
+          },
+          "providerAssets": {
+            "$ref": "#/$defs/providerAssets"
+          },
+          "pa": {
+            "$ref": "#/$defs/providerAssets"
+          },
+          "colorStops": {
+            "$ref": "#/$defs/colorStops"
+          },
+          "cs": {
+            "$ref": "#/$defs/colorStops"
           }
         },
         "additionalProperties": true,
@@ -667,5 +691,75 @@
         }
       ]
     }
-  ]
+  ],
+  "$defs": {
+    "providerAssets": {
+      "description": "Provider-specific sprite/image paths. At most 16 entries across the complete theme; the application validates that aggregate limit.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+        "not": {
+          "enum": [
+            "idle",
+            "coding"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 31,
+        "pattern": "^/themes/",
+        "not": {
+          "pattern": "\\.\\.|\\\\|//|\\s$|/$"
+        }
+      }
+    },
+    "colorStops": {
+      "description": "Progress colors at remaining-percentage thresholds. The application also requires distinct gte values.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "gte": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "c": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          }
+        },
+        "required": [
+          "gte"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "color"
+            ]
+          },
+          {
+            "required": [
+              "c"
+            ]
+          }
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
 }
