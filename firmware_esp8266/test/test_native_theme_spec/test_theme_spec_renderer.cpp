@@ -2154,6 +2154,12 @@ void testStringBudgetCountsInstalledBindingSpelling() {
   raw.replace(raw.find("us1p"), 4, "usageSlot1Percent");
   TEST_ASSERT_FALSE(CompileThemeSpec(raw.c_str(), doc, scene));
   ReleaseCompiledThemeSpec(scene);
+  raw = R"({"v":1,"id":"empty-binding","rev":1,"p":[{"t":"p","w":40,"h":10,"binding":"","b":"us1p"},{"t":"tx","v":")";
+  raw += std::string(1023, 'a');
+  raw += R"("}]})";
+  TEST_ASSERT_TRUE(CompileThemeSpec(raw.c_str(), doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1024, scene.stringPoolUsed);
+  ReleaseCompiledThemeSpec(scene);
 }
 
 void testProgressColorStopsSelectFillByPercent() {

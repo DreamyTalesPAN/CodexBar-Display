@@ -1145,6 +1145,7 @@ func TestCompiledStringBudgetUsesInstalledBindingSpelling(t *testing.T) {
 	}{
 		{"compact key", `"b":"us1p"`, 1024},
 		{"compact value in long key", `"binding":"us1p"`, 1024},
+		{"null long binding", `"binding":null,"b":"us1p"`, 1024},
 		{"long binding", `"binding":"usageSlot1Percent"`, 1037},
 		{"long binding overrides compact", `"binding":"usageSlot1Percent","b":"us1p"`, 1037},
 	} {
@@ -1166,5 +1167,27 @@ func TestCompiledStringBudgetUsesInstalledBindingSpelling(t *testing.T) {
 				spec = normalizeSpec(spec)
 			}
 		})
+	}
+}
+
+func TestEmptyLongBindingOverridesCompactBinding(t *testing.T) {
+	raw := []byte(`{"v":1,"id":"empty-binding","rev":1,"p":[` +
+		`{"t":"p","w":40,"h":10,"binding":"","b":"us1p"},` +
+		`{"t":"tx","v":"` + strings.Repeat("a", 1023) + `"}]}`)
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if spec.Primitives[0].Binding != "" {
+			t.Fatal("empty long binding must override the compact alias")
+		}
+		if got := compiledThemeSpecStringBytes(spec); got != 1024 {
+			t.Fatalf("compiled bytes = %d, want 1024", got)
+		}
+		if err := Validate(spec); err != nil {
+			t.Fatal(err)
+		}
+		spec = normalizeSpec(spec)
 	}
 }

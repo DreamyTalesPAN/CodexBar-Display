@@ -78,7 +78,7 @@ type Primitive struct {
 	ShortText           string            `json:"v,omitempty"`
 	Binding             string            `json:"binding,omitempty"`
 	ShortBinding        string            `json:"b,omitempty"`
-	rawBinding          string            // Preserve the installed spelling for the firmware string budget.
+	rawBinding          *string           // Preserve the installed spelling, including an explicit empty value.
 	FontSize            int               `json:"fontSize,omitempty"`
 	ShortSize           int               `json:"s,omitempty"`
 	Valign              string            `json:"valign,omitempty"`
@@ -103,6 +103,23 @@ type Primitive struct {
 	ShortData           string            `json:"d,omitempty"`
 	Palette             []string          `json:"p,omitempty"`
 	Rows                []string          `json:"r,omitempty"`
+}
+
+func (p *Primitive) UnmarshalJSON(data []byte) error {
+	type primitiveJSON Primitive
+	var decoded struct {
+		primitiveJSON
+		Binding *string `json:"binding"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*p = Primitive(decoded.primitiveJSON)
+	if decoded.Binding != nil {
+		p.Binding = *decoded.Binding
+		p.rawBinding = decoded.Binding
+	}
+	return nil
 }
 
 type Spec struct {
@@ -441,13 +458,14 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.Text == "" {
 		p.Text = p.ShortText
 	}
-	if p.Binding == "" {
-		p.Binding = p.ShortBinding
+	if p.rawBinding == nil {
+		binding := p.Binding
+		if binding == "" {
+			binding = p.ShortBinding
+		}
+		p.rawBinding = &binding
 	}
-	if p.rawBinding == "" {
-		p.rawBinding = p.Binding
-	}
-	p.Binding = expandBinding(p.Binding)
+	p.Binding = expandBinding(*p.rawBinding)
 	if p.FontSize == 0 {
 		p.FontSize = p.ShortSize
 	}
@@ -915,12 +933,16 @@ func addCompiledStringStorage(value string, stringBytes *int) {
 func compiledThemeSpecStringBytes(spec Spec) int {
 	stringBytes := 0
 	for _, primitive := range spec.Primitives {
+		binding := primitive.Binding
+		if primitive.rawBinding != nil {
+			binding = *primitive.rawBinding
+		}
 		switch primitive.Type {
 		case "text":
-			addCompiledStringStorage(primitive.rawBinding, &stringBytes)
+			addCompiledStringStorage(binding, &stringBytes)
 			addCompiledStringStorage(primitive.Text, &stringBytes)
 		case "progress":
-			addCompiledStringStorage(primitive.rawBinding, &stringBytes)
+			addCompiledStringStorage(binding, &stringBytes)
 		case "gif", "sprite", "image":
 			addCompiledStringStorage(primitive.AssetPath, &stringBytes)
 			if primitive.StateAssets != nil {
