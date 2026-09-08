@@ -329,6 +329,57 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 	}
 }
 
+func TestBackgroundProviderRefreshPreservesNotice(t *testing.T) {
+	for _, health := range []codexbar.ProviderHealthState{
+		codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
+		codexbar.ProviderHealthUnsupported, codexbar.ProviderHealthNoUsage,
+		codexbar.ProviderHealthUnavailable, codexbar.ProviderHealthChecking,
+	} {
+		t.Run(string(health), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			started := make(chan struct{})
+			release := make(chan struct{})
+			t.Cleanup(func() { close(release) })
+			server.providerPreferences.cached = []codexbar.ProviderSetting{{
+				ID: "gemini", Label: "Gemini", Enabled: true,
+				Health: health, Service: codexbar.ProviderServiceUnknown,
+				Reported: "Sign in to this provider, then check again.",
+			}}
+			server.providerPreferences.at = time.Now().Add(-2 * providerPreferenceCache)
+			server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{
+					ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthChecking,
+				}}, nil
+			}
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				close(started)
+				<-release
+				return nil, errors.New("background collection failed")
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+			for i := 0; i < 2; i++ {
+				recorder := httptest.NewRecorder()
+				server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+				var response preferencesResponse
+				if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				if len(response.Items) != 1 || response.Items[0].Health.State != string(health) {
+					t.Fatalf("background refresh replaced completed result: %#v", response.Items)
+				}
+				if health != codexbar.ProviderHealthChecking && response.Items[0].Health.Reported == "" {
+					t.Fatal("background refresh erased the provider guidance")
+				}
+			}
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("background collection did not start")
+			}
+		})
+	}
+}
+
 func TestExactProviderCheckInvalidatesOlderBackgroundHealth(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	healthStarted := make(chan struct{})

@@ -56,6 +56,9 @@ change Gemini's setting or search/filter the list. Once Antigravity is enabled,
 the card shows the already-on explanation and removes the enable action.
 The copy makes no claim that the providers expose equivalent limits or resets;
 CodexBar does not export that guarantee.
+Background inventory refresh keeps a completed health result and its guidance
+visible while collection runs. Only initial/activation checks and an explicit
+customer retry show a pending state; polling does not blank provider notices.
 Continue still requires an enabled provider with displayable data. No Google
 API requests, credential inspection, alternate usage path or silent migration
 were added.

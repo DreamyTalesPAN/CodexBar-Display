@@ -4359,3 +4359,13 @@ issue scope, or release permission never implies UI permission.
 - Validation: 52 focused tests, the desktop migration browser check, ESLint,
   customer-copy guard and diff checks passed before this approval. No additional
   local UI preview or build is requested.
+
+## 2026-09-08 — Keep completed provider notices during background collection
+
+- User approval: After testing the local DMG, the user requested that a known
+  provider notice must not return to the loading state while idle; the loading
+  indication should follow an explicit click on the refresh action.
+- Approved customer-visible result: Background inventory refresh preserves the
+  completed provider health and guidance while collection runs. Initial and
+  newly enabled providers still show checking, and an explicit row retry still
+  shows its existing pending indicator. No layout, copy or action is added.
