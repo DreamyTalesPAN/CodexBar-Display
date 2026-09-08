@@ -513,27 +513,14 @@ func TestUsageBarsShowUsedFromEnv(t *testing.T) {
 	}
 }
 
-func TestCheckMinimumVersionReadsAppInfoPlistWhenCLIHasNoVersion(t *testing.T) {
-	origRunVersion := runVersionCommandFn
-	origReadFile := readFileFn
-	t.Cleanup(func() {
-		runVersionCommandFn = origRunVersion
-		readFileFn = origReadFile
-	})
-
+func TestCheckMinimumVersionRequiresCLIVersion(t *testing.T) {
+	orig := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = orig })
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte("CodexBar\n"), nil
 	}
-	readFileFn = func(string) ([]byte, error) {
-		return []byte(`<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>CFBundleShortVersionString</key><string>0.23</string>
-</dict></plist>`), nil
-	}
-
-	err := CheckMinimumVersion(context.Background(), "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI")
-	if err != nil {
-		t.Fatalf("expected compatible version, got %v", err)
+	if err := CheckMinimumVersion(context.Background(), "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"); err == nil {
+		t.Fatal("missing CLI version must fail closed")
 	}
 }
 

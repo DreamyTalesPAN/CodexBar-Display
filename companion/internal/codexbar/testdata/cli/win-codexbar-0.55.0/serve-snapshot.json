@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-09-02T13:57:46.583343Z",
+  "host": "redacted-host",
+  "providers": [
+    {
+      "cost": {
+        "last30DaysUSD": 2905.6040734000017,
+        "todayUSD": 307.1919572
+      },
+      "credits": null,
+      "display": {
+        "accentColor": "#6E6E6E",
+        "priority": "normal",
+        "sortKey": 0
+      },
+      "enabled": true,
+      "error": null,
+      "id": "codex",
+      "identity": {
+        "accountEmail": null,
+        "plan": "ChatGPT Free"
+      },
+      "name": "Codex",
+      "source": "oauth",
+      "status": null,
+      "updatedAt": "2026-09-02T13:57:29.159572Z",
+      "windows": [
+        {
+          "kind": "session",
+          "label": "Session",
+          "remainingPercent": 100.0,
+          "resetAt": "2026-10-02T13:57:29Z",
+          "usedPercent": 0.0
+        }
+      ]
+    },
+    {
+      "cost": {
+        "last30DaysUSD": 5070.433354350068,
+        "todayUSD": 75.28979340000004
+      },
+      "credits": null,
+      "display": {
+        "accentColor": "#6E6E6E",
+        "priority": "normal",
+        "sortKey": 10
+      },
+      "enabled": true,
+      "error": {
+        "code": 1,
+        "kind": "provider",
+        "message": "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Reading Claude Code's credentials is off. Enable \"Allow reading Claude Code's credentials\" in Settings \u2192 Providers \u2192 Claude to use OAuth, or rely on Auto/CLI usage.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits."
+      },
+      "id": "claude",
+      "identity": null,
+      "name": "Claude",
+      "source": "unknown",
+      "status": null,
+      "updatedAt": "2026-09-02T13:57:46.583343Z",
+      "windows": []
+    }
+  ],
+  "schemaVersion": 1,
+  "staleAfterSeconds": 180
+}

@@ -25,6 +25,8 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
@@ -270,7 +272,7 @@ func TestDisplayStreamLogUsesSharedApplicationSupportPathAndAppends(t *testing.T
 	if err != nil {
 		t.Fatalf("create first display stream logger: %v", err)
 	}
-	wantPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", "daemon.out.log")
+	wantPath := runtimepaths.Path(home, "logs", "daemon.out.log")
 	if path != wantPath {
 		t.Fatalf("expected display stream log %q, got %q", wantPath, path)
 	}
@@ -529,7 +531,7 @@ func TestDisplayStreamLoggerRepeatsRuntimeMarkerWithinTailWindow(t *testing.T) {
 
 func TestRunOpenControlCenterStartsServiceAndOpensLocalURL(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 
 	var requestedPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -581,7 +583,7 @@ func TestRunOpenControlCenterStartsServiceAndOpensLocalURL(t *testing.T) {
 
 func TestRunOpenControlCenterFailsWhenLocalControlCenterUnavailable(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
@@ -732,7 +734,7 @@ func TestResolveThemeSpecTransportNamePreservesPortOnlyUSBFlow(t *testing.T) {
 }
 
 func TestThemeApplySupportsWiFiTransport(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t, t.TempDir())
 	specPath := writeTestThemeSpec(t)
 	var gotFrame struct {
 		V         int             `json:"v"`
@@ -781,7 +783,7 @@ func TestThemeApplySupportsWiFiTransport(t *testing.T) {
 
 func TestThemeApplyUsesSavedTokenForMatchingWiFiTarget(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	specPath := writeTestThemeSpec(t)
 	const token = "saved-pair-token"
 	var helloAuth string
@@ -843,7 +845,7 @@ func TestThemeApplyUsesSavedTokenForMatchingWiFiTarget(t *testing.T) {
 
 func TestResolveThemeSpecWiFiTargetDoesNotSendTokenToDifferentDevice(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{
 		DeviceTarget: "http://192.0.2.10",
 		DeviceToken:  "secret-token",

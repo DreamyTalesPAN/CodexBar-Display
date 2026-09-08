@@ -1,5 +1,5 @@
 import Cocoa
-import CryptoKit
+
 import Darwin
 import Foundation
 import ServiceManagement
@@ -50,14 +50,9 @@ private let runtimeValidationUnregisterEnvironmentKey =
     "VIBETV_RUNTIME_VALIDATION_UNREGISTER"
 private let codexBarBundleIdentifier = "com.steipete.codexbar"
 private let codexBarPinnedVersion = "0.46.0"
-private let codexBarPinnedTeamIdentifier = "Y5PE65HELJ"
+
 private let codexBarArchiveName = "CodexBar-macos-universal-0.46.0.zip"
-private let codexBarArchiveSHA256 =
-    "8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"
-private let codexBarDisallowedSigningXattrs = [
-    "com.apple.FinderInfo",
-    "com.apple.ResourceFork",
-]
+
 private let legacyLaunchAgents = [
     ("com.codexbar-display.daemon", "com.codexbar-display.daemon.plist"),
     ("com.codexbar-display.companion-api", "com.codexbar-display.companion-api.plist"),
@@ -364,55 +359,7 @@ func appManagedCodexBarCLIURL(
     .appendingPathComponent("CodexBarCLI")
 }
 
-func pathIsDescendant(_ candidateURL: URL, of rootURL: URL) -> Bool {
-    let rootPath = rootURL.standardizedFileURL.path
-    let candidatePath = candidateURL.standardizedFileURL.path
-    return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
-}
 
-func pathContainsSymlink(
-    _ candidateURL: URL,
-    under rootURL: URL,
-    fileManager: FileManager = .default
-) -> Bool {
-    let root = rootURL.standardizedFileURL
-    let candidate = candidateURL.standardizedFileURL
-    guard pathIsDescendant(candidate, of: root) else {
-        return true
-    }
-    let relativePath = String(candidate.path.dropFirst(root.path.count))
-        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    guard !relativePath.isEmpty else {
-        return false
-    }
-
-    var current = root
-    for component in relativePath.split(separator: "/") {
-        current.appendPathComponent(String(component))
-        if (try? fileManager.destinationOfSymbolicLink(atPath: current.path)) != nil {
-            return true
-        }
-    }
-    return false
-}
-
-func privateCodexBarTargetIsSafe(
-    applicationSupportURL: URL,
-    homeURL: URL,
-    targetAppURL: URL,
-    fileManager: FileManager = .default
-) -> Bool {
-    guard pathIsDescendant(applicationSupportURL, of: homeURL),
-          pathIsDescendant(targetAppURL, of: applicationSupportURL),
-          (try? fileManager.destinationOfSymbolicLink(atPath: homeURL.standardizedFileURL.path)) == nil,
-          !pathContainsSymlink(applicationSupportURL, under: homeURL, fileManager: fileManager),
-          !pathContainsSymlink(targetAppURL, under: applicationSupportURL, fileManager: fileManager) else {
-        return false
-    }
-    let canonicalRoot = applicationSupportURL.standardizedFileURL.resolvingSymlinksInPath()
-    let canonicalTarget = targetAppURL.standardizedFileURL.resolvingSymlinksInPath()
-    return pathIsDescendant(canonicalTarget, of: canonicalRoot)
-}
 
 struct CodexBarCommandResult {
     let exitCode: Int32
@@ -447,21 +394,7 @@ func runCodexBarCommand(
     )
 }
 
-private func sha256Hex(of fileURL: URL) -> String? {
-    guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
-        return nil
-    }
-    defer { try? handle.close() }
-    var digest = SHA256()
-    do {
-        while let data = try handle.read(upToCount: 1024 * 1024), !data.isEmpty {
-            digest.update(data: data)
-        }
-    } catch {
-        return nil
-    }
-    return digest.finalize().map { String(format: "%02x", $0) }.joined()
-}
+
 
 @MainActor
 private func runRuntimeValidationUnregister() async -> Int32 {
@@ -2856,202 +2789,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         )
     }
 
-    private func codexBarCLIURL(in appURL: URL) -> URL? {
-        let cliURL = appURL
+    private func runPinnedCodexBar(_ arguments: [String]) -> URL? {
+        let companionURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers", isDirectory: true)
-            .appendingPathComponent("CodexBarCLI")
-        return FileManager.default.isExecutableFile(atPath: cliURL.path)
-            ? cliURL
-            : nil
-    }
-
-    private func validatedCodexBarApp(at appURL: URL) -> URL? {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: appURL.path),
-              let bundle = Bundle(url: appURL),
-              bundle.bundleIdentifier == codexBarBundleIdentifier,
-              let version = bundle.object(
-                  forInfoDictionaryKey: "CFBundleShortVersionString"
-              ) as? String,
-              version == codexBarPinnedVersion,
-              codexBarCLIURL(in: appURL) != nil else {
+            .appendingPathComponent("codexbar-display")
+        guard let result = runCodexBarCommand(
+            executableURL: companionURL,
+            arguments: arguments
+        ), result.exitCode == 0 else {
+            NSLog("VibeTV Control Center could not verify its pinned CodexBar through the Companion")
             return nil
         }
-
-        guard let signature = runCodexBarCommand(
-            executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
-            arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]
-        ), signature.exitCode == 0 else {
-            NSLog("VibeTV Control Center rejected CodexBar with an invalid signature: \(appURL.path)")
-            return nil
-        }
-        guard let details = runCodexBarCommand(
-            executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
-            arguments: ["--display", "--verbose=4", appURL.path]
-        ), details.exitCode == 0,
-              details.output
-                .split(separator: "\n")
-                .contains("TeamIdentifier=\(codexBarPinnedTeamIdentifier)") else {
-            NSLog("VibeTV Control Center rejected CodexBar from an unexpected signing team: \(appURL.path)")
-            return nil
-        }
-        guard let assessment = runCodexBarCommand(
-            executableURL: URL(fileURLWithPath: "/usr/sbin/spctl"),
-            arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]
-        ), assessment.exitCode == 0 else {
-            NSLog("VibeTV Control Center rejected CodexBar because Gatekeeper did not accept it: \(appURL.path)")
-            return nil
-        }
-        return appURL
+        let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : URL(fileURLWithPath: path)
     }
 
     private func validatedPinnedCodexBarCLI(at appURL: URL) -> URL? {
-        guard validatedCodexBarApp(at: appURL) != nil else {
-            return nil
-        }
-        return codexBarCLIURL(in: appURL)
-    }
-
-    private func normalizeStagedCodexBarSigningXattrs(at appURL: URL) -> Bool {
-        let fileManager = FileManager.default
-        var urls = [appURL]
-        if let enumerator = fileManager.enumerator(
-            at: appURL,
-            includingPropertiesForKeys: nil,
-            options: [],
-            errorHandler: { url, error in
-                NSLog("VibeTV Control Center could not inspect CodexBar xattrs at \(url.path): \(error)")
-                return false
-            }
-        ) {
-            for case let url as URL in enumerator {
-                urls.append(url)
-            }
-        }
-
-        for url in urls {
-            for attr in codexBarDisallowedSigningXattrs {
-                let removed = attr.withCString { removexattr(url.path, $0, XATTR_NOFOLLOW) }
-                if removed != 0 && errno != ENOATTR {
-                    NSLog("VibeTV Control Center could not remove \(attr) from staged CodexBar path \(url.path): errno=\(errno)")
-                    return false
-                }
-            }
-        }
-        return true
-    }
-
-    private func bundledCodexBarArchiveURL() -> URL? {
-        let fileManager = FileManager.default
-        let resourcesURL = Bundle.main.resourceURL?
-            .appendingPathComponent("CodexBar", isDirectory: true)
-        guard let archiveURL = resourcesURL?.appendingPathComponent(codexBarArchiveName),
-              fileManager.fileExists(atPath: archiveURL.path),
-              sha256Hex(of: archiveURL) == codexBarArchiveSHA256 else {
-            NSLog("VibeTV Control Center bundled CodexBar archive is missing or failed its checksum")
-            return nil
-        }
-        return archiveURL
+        runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])
     }
 
     private func prepareBundledCodexBarCLI() -> URL? {
-        let fileManager = FileManager.default
-        let appSupportURL = applicationSupportURL()
-        let targetAppURL = appManagedCodexBarAppURL(applicationSupportURL: appSupportURL)
-        guard privateCodexBarTargetIsSafe(
-            applicationSupportURL: appSupportURL,
-            homeURL: fileManager.homeDirectoryForCurrentUser,
-            targetAppURL: targetAppURL,
-            fileManager: fileManager
-        ) else {
-            NSLog("VibeTV Control Center rejected an unsafe private CodexBar path: \(targetAppURL.path)")
-            return nil
-        }
-
+        guard let resourcesURL = Bundle.main.resourceURL else { return nil }
+        let targetAppURL = appManagedCodexBarAppURL(applicationSupportURL: applicationSupportURL())
+        var arguments = [
+            "prepare-codexbar", "--archive",
+            resourcesURL.appendingPathComponent("CodexBar", isDirectory: true)
+                .appendingPathComponent(codexBarArchiveName).path,
+        ]
         if NSRunningApplication.runningApplications(
             withBundleIdentifier: codexBarBundleIdentifier
         ).contains(where: {
             $0.bundleURL?.standardizedFileURL == targetAppURL.standardizedFileURL
-        }), let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL) {
-            return cliURL
+        }) {
+            arguments.append("--reuse-running")
         }
-
-        guard let archiveURL = bundledCodexBarArchiveURL() else {
-            return nil
-        }
-
-        let versionDirectoryURL = targetAppURL.deletingLastPathComponent()
-        let codexBarDirectoryURL = versionDirectoryURL.deletingLastPathComponent()
-        let stagingURL = codexBarDirectoryURL.appendingPathComponent(
-            ".extract-\(codexBarPinnedVersion)-\(UUID().uuidString)",
-            isDirectory: true
-        )
-        defer { try? fileManager.removeItem(at: stagingURL) }
-        do {
-            try fileManager.createDirectory(
-                at: codexBarDirectoryURL,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-            try fileManager.createDirectory(
-                at: stagingURL,
-                withIntermediateDirectories: false,
-                attributes: [.posixPermissions: 0o700]
-            )
-        } catch {
-            NSLog("VibeTV Control Center could not create private CodexBar staging directory: \(error)")
-            return nil
-        }
-
-        guard let extraction = runCodexBarCommand(
-            executableURL: URL(fileURLWithPath: "/usr/bin/ditto"),
-            arguments: ["-x", "-k", archiveURL.path, stagingURL.path]
-        ), extraction.exitCode == 0 else {
-            NSLog("VibeTV Control Center could not extract bundled CodexBar")
-            return nil
-        }
-        let stagedAppURL = stagingURL
-            .appendingPathComponent("CodexBar.app", isDirectory: true)
-        guard normalizeStagedCodexBarSigningXattrs(at: stagedAppURL) else {
-            NSLog("VibeTV Control Center could not normalize the extracted CodexBar app")
-            return nil
-        }
-        guard validatedPinnedCodexBarCLI(at: stagedAppURL) != nil else {
-            NSLog("VibeTV Control Center rejected the extracted CodexBar app")
-            return nil
-        }
-
-        guard privateCodexBarTargetIsSafe(
-            applicationSupportURL: appSupportURL,
-            homeURL: fileManager.homeDirectoryForCurrentUser,
-            targetAppURL: targetAppURL,
-            fileManager: fileManager
-        ) else {
-            NSLog("VibeTV Control Center rejected an unsafe private CodexBar path before publish: \(targetAppURL.path)")
-            return nil
-        }
-
-        do {
-            if fileManager.fileExists(atPath: targetAppURL.path) {
-                _ = try fileManager.replaceItemAt(
-                    targetAppURL,
-                    withItemAt: stagedAppURL,
-                    backupItemName: nil,
-                    options: [.usingNewMetadataOnly]
-                )
-            } else {
-                try fileManager.createDirectory(
-                    at: versionDirectoryURL,
-                    withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700]
-                )
-                try fileManager.moveItem(at: stagedAppURL, to: targetAppURL)
-            }
-        } catch {
-            NSLog("VibeTV Control Center could not publish private CodexBar atomically: \(error)")
-            return nil
-        }
-        return validatedPinnedCodexBarCLI(at: targetAppURL)
+        return runPinnedCodexBar(arguments)
     }
 
     private func bootstrapCodexBar() -> Bool {

@@ -579,7 +579,6 @@ if '"--interval",\n                "5s"' in preview_runtime_source:
 
 required_source = [
     "import ServiceManagement",
-    "import CryptoKit",
     "import Sparkle",
     "SPUStandardUpdaterController(",
     "SPUUpdaterDelegate",
@@ -744,22 +743,21 @@ required_source = [
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
     'codexBarPinnedVersion = "0.46.0"',
-    'codexBarPinnedTeamIdentifier = "Y5PE65HELJ"',
+
     'CodexBar-macos-universal-0.46.0.zip',
     'bootstrapCodexBar()',
-    'arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]',
-    'arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]',
-    'arguments: ["-x", "-k", archiveURL.path, stagingURL.path]',
-    'codexBarDisallowedSigningXattrs = [',
-    'removexattr(url.path, $0, XATTR_NOFOLLOW)',
-    'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)',
-    'privateCodexBarTargetIsSafe(',
+
+
+
+
+
+
+
     'appManagedCodexBarAppURL(',
     'applicationSupportURL: applicationSupportURL()',
-    'replaceItemAt(',
-    'withItemAt: stagedAppURL',
+
+
     '"VIBETV_CODEXBAR_PINNED_VERSION": codexBarPinnedVersion',
-    '[.posixPermissions: 0o700]',
     '"VibeTV couldn’t start"',
     "runtimePortConflictDetail()",
     "parseLsofListenerProcesses(",
@@ -938,27 +936,14 @@ prepare_payload_start = source.find("private func prepareBundledCodexBarCLI()")
 prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_payload_start)
 prepare_payload = source[prepare_payload_start:prepare_payload_end]
 if (
-    'appManagedCodexBarAppURL(' not in prepare_payload
-    or 'let appSupportURL = applicationSupportURL()' not in prepare_payload
-    or 'guard privateCodexBarTargetIsSafe(' not in prepare_payload
-    or 'if let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' in prepare_payload
+    '"prepare-codexbar", "--archive"' not in prepare_payload
+    or 'arguments.append("--reuse-running")' not in prepare_payload
     or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
-    or 'let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
-    or 'return cliURL' not in prepare_payload
-    or 'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)' not in prepare_payload
-    or 'validatedPinnedCodexBarCLI(at: stagedAppURL)' not in prepare_payload
-    or 'return validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
-    or 'replaceItemAt(' not in prepare_payload
-    or prepare_payload.find('normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)')
-        > prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
-    or prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
-        > prepare_payload.find('replaceItemAt(')
-    or prepare_payload.find('replaceItemAt(')
-        > prepare_payload.find('return validatedPinnedCodexBarCLI(at: targetAppURL)')
+    or 'return runPinnedCodexBar(arguments)' not in prepare_payload
+    or 'runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
 ):
-    raise SystemExit(
-        "native CodexBar payload may reuse only its running verified app; otherwise it must stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
-    )
+    raise SystemExit("native shell must delegate pinned staging/validation and preserve the running-app exception")
+
 repair_start = source.find("private func beginCodexBarRepair(hasJavaScriptOwner: Bool)")
 repair_end = source.find("@objc private func openSupportLog()", repair_start)
 repair_method = source[repair_start:repair_end]
