@@ -78,20 +78,28 @@ Preview numbers are explicitly example data, not a live device reading.
 
 ![Tiny Office idle and coding preview](assets/tiny-office/preview.png)
 
-Local checks on September 7, 2026: source/ZIP validation, catalog/checksum/
-immutable-history checks, 59 targeted tests, and the local Control Center
-production build passed. No hardware write was performed.
+Local checks: source/ZIP validation, catalog/checksum/immutable-history checks,
+59 targeted tests, and the local Control Center production build passed.
 
-## Hardware acceptance is still required
+## Hardware acceptance
 
-This is an installable development pack, not a hardware-accepted launch theme.
-Follow `AGENTS.md`, `docs/theme-dev-guide.md` and `docs/theme-packs.md`.
-The connected device must be freshly identified and its exact install test
-explicitly approved before uploading or activating anything. Do not flash
-firmware or run cold/warm customer rehearsals as an implicit theme smoke test.
-After approval, test the theme for 10–20 minutes, repeated theme switches,
-idle/coding and quota updates, and inspect real screen readability, heap,
-compiled scene status, partial renders and stable renderFailures.
+Bench device: esp8266-smalltv-st7789, firmware 1.0.41, installed with the
+user's explicit approval through the Companion (`POST /v1/themes/install`,
+slot `live`). Both the v0.2.0 draft and the published v0.3.0 (rev 4,
+`/themes/u/to-4-546112af.json`) were installed and observed over `/health`:
+
+- `renderOk: true`, `renderFailures: 0`, no reboot (`bootId` unchanged).
+- CBA animation running: `cbaCompletedFrames` advancing ~3.6/s at 77 ms per
+  frame, `cbaBufferBytes: 10240`, `cbaBufferAllocationFailures: 0`.
+- Heap stable at ~13.2 KB free / 10.9 KB max block across all samples, above
+  the firmware's animation minimums (8 KB / 3 KB).
+- The user judged the real screen: values readable, colors strong enough,
+  animation as intended.
+
+Not yet done: a 10–20 minute soak and repeated theme switches
+(synthwave → tiny-office → synthwave). Any further hardware write needs a new
+explicit approval for that exact test; do not flash firmware or run cold/warm
+customer rehearsals as an implicit theme smoke test.
 
 ## Artwork provenance
 
