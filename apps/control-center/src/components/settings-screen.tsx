@@ -1,11 +1,20 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
-import type { ReactNode } from "react";
+import { AlertTriangle, CircleArrowRight, Wifi } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { ItemSeparator } from "@/components/ui/item";
+import { Item, ItemSeparator } from "@/components/ui/item";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { selectedItemClass } from "./setup/setup-selectable-card";
 import {
   Select,
   SelectContent,
@@ -73,6 +82,7 @@ export function SettingsScreen({
   onSaveStandby,
   onStandbyBrightnessChange,
 }: SettingsScreenProps) {
+  const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
   const minBrightness =
@@ -131,6 +141,73 @@ export function SettingsScreen({
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
+      <SettingsSection title="Connection">
+        <div
+          aria-label="Connection mode"
+          aria-busy={busyAction === "connection-mode"}
+          className="grid grid-cols-2 gap-4"
+          role="group"
+        >
+          {([
+            { mode: "cable", label: "USB-C", description: "Works without network access. Recommended.", Icon: CircleArrowRight, supported: cableSupported },
+            { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", Icon: Wifi, supported: wifiSupported },
+          ] as const).map(({ mode, label, description, Icon, supported }) => (
+            <Item
+              asChild
+              className={`${selectedItemClass(connectionMode === mode)} max-w-[224px] flex-col items-start gap-2 bg-card p-4 last:justify-self-end disabled:cursor-not-allowed disabled:opacity-50`}
+              key={mode}
+              variant="outline"
+            >
+              <button
+                aria-label={label}
+                aria-pressed={connectionMode === mode}
+                disabled={connectionModeDisabled || !supported}
+                onClick={() => {
+                  if (mode !== connectionMode) setRequestedMode(mode);
+                }}
+                type="button"
+              >
+                <Icon aria-hidden className="size-[18px]" />
+                <span className="text-sm font-semibold">{label}</span>
+                <span className="text-xs leading-normal text-muted-foreground">{description}</span>
+              </button>
+            </Item>
+          ))}
+        </div>
+        {requestedMode !== null ? <Dialog
+          open
+          onOpenChange={(open) => { if (!open) setRequestedMode(null); }}
+        >
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
+              <DialogDescription>
+                {requestedMode === "cable"
+                  ? "VibeTV connects to this Mac over the cable and turns WiFi off. Your saved network, themes, providers and brightness stay saved."
+                  : "VibeTV connects to your saved WiFi network. If network details are needed, WiFi setup opens. Themes, providers and brightness stay saved."}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button onClick={() => setRequestedMode(null)} type="button" variant="outline">
+                {requestedMode === "cable" ? "Keep WiFi" : "Keep USB-C"}
+              </Button>
+              <Button
+                disabled={connectionModeDisabled}
+                onClick={() => {
+                  if (requestedMode && requestedMode !== connectionMode) onConnectionModeChange(requestedMode);
+                  setRequestedMode(null);
+                }}
+                type="button"
+              >
+                {requestedMode === "cable" ? "Switch to USB-C" : "Switch to WiFi"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog> : null}
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
       <SettingsSection title="Display">
         <BrightnessControl
           disabled={
@@ -278,43 +355,6 @@ export function SettingsScreen({
           </SettingsSection>
         </>
       ) : null}
-
-      <ItemSeparator className="my-0" />
-
-      <SettingsSection
-        description="Choose how this Mac connects to VibeTV."
-        title="Connection"
-      >
-        <Field data-disabled={connectionModeDisabled} orientation="horizontal">
-          <FieldLabel htmlFor="vibetv-connection-mode">
-            Connection mode
-          </FieldLabel>
-          <Select
-            disabled={connectionModeDisabled}
-            onValueChange={(value) => {
-              if (value === "cable" || value === "wifi") {
-                onConnectionModeChange(value);
-              }
-            }}
-            value={connectionMode}
-          >
-            <SelectTrigger
-              aria-label="Connection mode"
-              id="vibetv-connection-mode"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem disabled={!cableSupported} value="cable">
-                Cable
-              </SelectItem>
-              <SelectItem disabled={!wifiSupported} value="wifi">
-                WiFi
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-      </SettingsSection>
 
       <ItemSeparator className="my-0" />
 

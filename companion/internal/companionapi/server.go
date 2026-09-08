@@ -3186,8 +3186,20 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	explicitTarget := strings.TrimSpace(req.Target)
-	devices, err := s.searchDevices(r.Context(), cfg, explicitTarget)
-	if err != nil {
+	var cableDevices []usb.CableDevice
+	var cableErr error
+	if explicitTarget == "" && s.discoverCableDevices != nil {
+		cableDevices, cableErr = s.discoverCableDevices()
+	}
+	var devices []deviceSearchEntry
+	if len(cableDevices) > 0 {
+		// Cable already answers. Include one WiFi sweep without waiting for a
+		// WiFi-only recovery window or letting network errors hide Cable.
+		devices, err = s.searchDevicesOnce(r.Context(), cfg, "")
+	} else {
+		devices, err = s.searchDevices(r.Context(), cfg, explicitTarget)
+	}
+	if err != nil && len(cableDevices) == 0 {
 		var invalidTarget *invalidTargetError
 		if errors.As(err, &invalidTarget) {
 			writeInvalidDeviceTarget(w)
@@ -3216,8 +3228,7 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if explicitTarget == "" && s.discoverCableDevices != nil {
-		cableDevices, cableErr := s.discoverCableDevices()
+	if explicitTarget == "" {
 		if cableErr != nil && errcode.Of(cableErr) == errcode.TransportForeignDevice && len(devices) == 0 {
 			writeCableResolutionError(w, cableErr)
 			return
@@ -3780,15 +3791,8 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	if s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}
-	stream := s.streamStatus(r.Context(), cableDeviceTarget)
-	device := s.withConfiguredConnectionState(cfg, deviceInfo{
-		Target:       cableDeviceTarget,
-		DeviceID:     strings.TrimSpace(hello.DeviceID),
-		Paired:       !pairingRequired || cableToken != "",
-		Active:       true,
-		Capabilities: cableCapabilityBlock(supportedTransports),
-		Stream:       streamPointer(stream),
-	}, providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false)
+	device := s.cableDeviceInfo(r.Context(), cfg, hello)
+	device.Paired = !pairingRequired || cableToken != ""
 	writeJSON(w, http.StatusOK, struct {
 		OK             bool       `json:"ok"`
 		ConnectionMode string     `json:"connectionMode"`
@@ -4019,6 +4023,25 @@ func (s *Server) authenticatedKnownWiFiDevice(
 
 func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if cfg, err := s.config(); err != nil {
+		writeInternalError(w, err)
+		return
+	} else if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		port, hello, ok := s.requireCableControlDevice(w, cfg)
+		if !ok {
+			return
+		}
+		device := s.cableDeviceInfo(r.Context(), cfg, hello)
+		if hello.HasFeature(protocol.FeatureCableHealthV1) {
+			if health, err := s.readCableHealth(port, cfg.DeviceID); err == nil {
+				device = withDeviceHealth(device, health)
+			} else {
+				device = withDeviceHealthProbeError(device, err)
+			}
+		}
+		writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 		return
 	}
 	cfg, hello, ok := s.requireDevice(w, r)

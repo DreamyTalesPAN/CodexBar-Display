@@ -36,6 +36,8 @@ type Options struct {
 	Wake                   <-chan struct{}
 	PauseDeviceWrites      func() bool
 	BeginDeviceWrite       func() func()
+	// Dashboard belongs to the app runtime, across display transport restarts.
+	Dashboard codexbar.DashboardServe
 }
 
 const (
@@ -346,8 +348,13 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
-	if !opts.Once && deps.startDashboard != nil {
-		deps.dashboard = deps.startDashboard(ctx, deps.logf)
+	if opts.Dashboard != nil {
+		deps.dashboard = opts.Dashboard
+	} else if !opts.Once && deps.startDashboard != nil {
+		// Standalone workers own their serve; the app runtime supplies one above.
+		dashboardCtx, cancelDashboard := context.WithCancel(ctx)
+		defer cancelDashboard()
+		deps.dashboard = deps.startDashboard(dashboardCtx, deps.logf)
 		if deps.dashboard != nil {
 			info := deps.dashboard.Info()
 			deps.logf("codexbar-dashboard event=supervisor-started refreshInterval=%s\n", info.RefreshInterval)
@@ -742,6 +749,9 @@ func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 }
 
 func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
+	if connectionModeChanged(deps) {
+		return "", protocol.DeviceCapabilities{}, 0, ErrConnectionModeChanged
+	}
 	requestedPort = effectiveCycleTarget(requestedPort, state, deps)
 	if deps.transportName == "wifi" && isLegacyMDNSTarget(requestedPort) {
 		legacyErr := errors.New("legacy mDNS target requires IP migration")
@@ -846,6 +856,7 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 		cfg.DeviceID = deviceID
 		cfg.DeviceTransports = supportedTransports
 		if freshSetup {
+			cfg.SetProviderSelectionSetupComplete(false)
 			cfg.ConnectionModeChoiceRequired = true
 			cfg.CableAutoBindDisabled = true
 		}
@@ -1710,9 +1721,6 @@ func nextClockTransition(now time.Time) *protocol.ClockSchedule {
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
 	deps = deps.withDefaults()
-	if connectionModeChanged(deps) {
-		return ErrConnectionModeChanged
-	}
 	state = ensureCycleState(state, deps)
 	invalidateLastGoodOutsideProviderDisplay(state, deps)
 

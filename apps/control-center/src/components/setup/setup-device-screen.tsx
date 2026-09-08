@@ -46,6 +46,7 @@ type SetupDeviceScreenProps = {
   onBack?: () => void;
   onChooseTransport: (transport: SetupTransport) => void;
   onConfigureWiFi: (ssid: string, password: string) => Promise<void>;
+  onEditWiFi?: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onEnterAddressManually: () => void;
   onSearchAgain: () => void;
@@ -76,6 +77,7 @@ export function SetupDeviceScreen({
   onBack,
   onChooseTransport,
   onConfigureWiFi,
+  onEditWiFi,
   onCreateSupportReport,
   onEnterAddressManually,
   onSearchAgain,
@@ -104,6 +106,9 @@ export function SetupDeviceScreen({
   const showWiFiForm =
     wifiSetupPhase === "credentials" || (waitingForWiFi && wifiCredentialsSent);
   const wifiBusy = connecting || wifiSubmitting || waitingForWiFi;
+  const passwordRequired = manualWiFiName ||
+    wifiNetworks.find((network) => network.ssid === wifiName)?.encrypted !== false;
+  const passwordMissing = passwordRequired && !wifiPassword;
 
   async function submitWiFi(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -111,6 +116,10 @@ export function SetupDeviceScreen({
     const ssid = wifiName.trim();
     if (!ssid) {
       setWifiError("Enter your WiFi name.");
+      return;
+    }
+    if (passwordMissing) {
+      setWifiError("Enter your WiFi password.");
       return;
     }
     setWifiError("");
@@ -320,6 +329,7 @@ export function SetupDeviceScreen({
                 id="setup-wifi-password"
                 maxLength={64}
                 onChange={(event) => setWifiPassword(event.target.value)}
+                required={passwordRequired}
                 type="password"
                 value={wifiPassword}
               />
@@ -330,12 +340,17 @@ export function SetupDeviceScreen({
               </p>
             ) : null}
             <Button
-              disabled={wifiScanning || wifiBusy || !wifiName.trim()}
+              disabled={wifiScanning || wifiBusy || !wifiName.trim() || passwordMissing}
               type="submit"
             >
               {wifiBusy ? <Spinner data-icon="inline-start" /> : null}
               {wifiBusy ? "Connecting to WiFi…" : "Connect to WiFi"}
             </Button>
+            {waitingForWiFi && onEditWiFi ? (
+              <Button type="button" variant="link" onClick={onEditWiFi}>
+                Edit WiFi details
+              </Button>
+            ) : null}
           </FieldGroup>
         </form>
       ) : null}

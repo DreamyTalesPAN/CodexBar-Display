@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -283,7 +284,7 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode provider inventory: %v", err)
 	}
-	if len(response.Items) != 1 || response.Items[0].Label != "Future Provider" || response.Items[0].Health.State != "checking" {
+	if len(response.Items) != 1 || response.Items[0].Label != "Future Provider" || response.Items[0].Health.State != "healthy" {
 		t.Fatalf("dynamic inventory was not returned immediately: %#v", response)
 	}
 	select {
@@ -1653,5 +1654,54 @@ func TestSecretPreferenceDescriptorNeverReturnsSecretValue(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), `"secretState":"configured"`) || !strings.Contains(recorder.Body.String(), `"value":null`) {
 		t.Fatalf("secret descriptor should expose state only: %s", recorder.Body.String())
+	}
+}
+
+func TestProviderBackgroundRefreshPreservesReadyUntilItsResult(t *testing.T) {
+	for _, fails := range []bool{false, true} {
+		t.Run(fmt.Sprint("failure=", fails), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			now := time.Now().UTC()
+			server.now = func() time.Time { return now }
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+			server.providerPreferences.cached = []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy}}
+			server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthChecking}}, nil
+			}
+			release := make(chan struct{})
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				<-release
+				if fails {
+					return nil, errors.New("health read failed")
+				}
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired}}, nil
+			}
+			list := httptest.NewRecorder()
+			server.Handler().ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			complete := httptest.NewRecorder()
+			server.Handler().ServeHTTP(complete, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+			close(release)
+			if complete.Code != http.StatusOK {
+				t.Fatalf("pending refresh contradicted ready provider: %s", complete.Body.String())
+			}
+			deadline := time.Now().Add(time.Second)
+			for {
+				server.providerPreferences.mu.Lock()
+				running := server.providerPreferences.healthRefresh
+				server.providerPreferences.mu.Unlock()
+				if !running {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("health refresh did not finish")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			complete = httptest.NewRecorder()
+			server.Handler().ServeHTTP(complete, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+			if complete.Code != http.StatusConflict {
+				t.Fatalf("completed failure kept provider ready: %s", complete.Body.String())
+			}
+		})
 	}
 }

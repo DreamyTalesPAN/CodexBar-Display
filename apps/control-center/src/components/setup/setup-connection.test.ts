@@ -24,6 +24,15 @@ describe("setup connection skip matrix", () => {
     });
   });
 
+  it.each([undefined, "wifi" as const])("requires a choice before replacing a known Cable device with another WiFi device (%s)", (preferredTransport) => {
+    expect(decideSetupConnection({
+      candidates: [wifi("2")], choiceRequired: true, activeDeviceId: "1", preferredTransport,
+    }).kind).toBe("list");
+    expect(decideSetupConnection({
+      candidates: [wifi("1")], choiceRequired: true, activeDeviceId: "1", preferredTransport,
+    }).kind).toBe("direct");
+  });
+
   it("shows the mode choice only for one Cable and at least one WiFi device", () => {
     expect(
       decideSetupConnection({

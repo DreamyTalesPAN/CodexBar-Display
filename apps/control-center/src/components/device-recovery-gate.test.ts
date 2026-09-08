@@ -9,6 +9,21 @@ import {
 } from "./device-recovery-gate";
 
 describe("device recovery gate", () => {
+  it("remembers the bound device from an initial disconnected status", () => {
+    const initial = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+      device: { connected: false, deviceId: "5804508", target: "cable://vibetv" },
+      countFailure: false,
+    });
+    expect(initial.state.preferredDeviceId).toBe("5804508");
+    expect(initial.state.failedNormalChecks).toBe(0);
+    expect(initial.acceptDevice).toBe(false);
+    const foreign = applyDeviceRecoveryStatus(initial.state, {
+      device: { connected: true, deviceId: "5804416", target: "http://192.168.178.105" },
+    });
+    expect(foreign.acceptDevice).toBe(false);
+    expect(foreign.state.preferredDeviceId).toBe("5804508");
+  });
+
   it("keeps the preferred VibeTV through the first two normal failures", () => {
     let state = selectRecoveryDevice(createDeviceRecoveryGateState(), {
       deviceId: "stable-a",

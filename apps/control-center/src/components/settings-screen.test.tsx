@@ -224,10 +224,10 @@ describe("SettingsScreen standby controls", () => {
     );
 
     expect(order).toEqual([
+      "Connection",
       "Display",
       "Display mode",
       "Screensaver",
-      "Connection",
       "Setup",
       "AI providers",
     ]);
@@ -274,15 +274,13 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toMatch(/<output[^>]*style="left:/);
   });
 
-  it("uses the existing Settings select pattern for connection mode", () => {
+  it("puts the design's connection cards first and marks the active mode", () => {
     const html = render(standbyDevice);
-
-    expect(html).toContain(">Connection</h2>");
-    expect(html).toContain("Choose how this Mac connects to VibeTV.");
-    expect(html).toContain('for="vibetv-connection-mode"');
-    expect(html).toContain('aria-label="Connection mode"');
-    expect(html).toContain('data-slot="select-trigger"');
-    expect(html).not.toContain("Change connection");
+    expect(html.indexOf(">Connection</h2>")).toBeLessThan(html.indexOf(">Display</h2>"));
+    expect(html).toContain('aria-label="USB-C" aria-pressed="true"');
+    expect(html).toContain('aria-label="WiFi" aria-pressed="false"');
+    expect(html).toContain("Works without network access. Recommended.");
+    expect(html).toContain("VibeTV can sit anywhere on your desk.");
   });
 
   it("keeps Cable recovery available for an active offline WiFi binding", () => {
@@ -305,7 +303,7 @@ describe("SettingsScreen standby controls", () => {
       "wifi",
     );
     const connectionModeTrigger = html.match(
-      /<button[^>]*aria-label="Connection mode"[^>]*>/,
+      /<button[^>]*aria-label="USB-C"[^>]*>/,
     )?.[0];
 
     expect(connectionModeTrigger).toBeDefined();

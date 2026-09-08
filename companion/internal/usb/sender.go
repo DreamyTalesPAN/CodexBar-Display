@@ -136,9 +136,10 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	if err != nil {
 		return protocol.DeviceHello{}, err
 	}
-	if opened {
-		s.captureHelloAfterOpenLocked()
-	} else if !s.helloSeen {
+	// A pending transport switch can roll back on the device without closing
+	// USB. Re-read that handshake instead of keeping the intermediate mode.
+	if opened || !s.helloSeen || (s.hello.Capabilities.Transport.TransitionPending &&
+		s.hello.Capabilities.Transport.TransitionTo == "wifi") {
 		s.captureHelloAfterOpenLocked()
 	}
 
@@ -511,7 +512,10 @@ func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
 	if err := readConnectionModeSwitchFromPort(s.port, s.helloWindow, deviceID, "wifi"); err != nil {
 		return fmt.Errorf("configure WiFi on %s: %w", path, err)
 	}
-	s.closeCurrentLocked()
+	// The firmware owns its reboot. Reopening this USB-UART pulses reset and
+	// can interrupt the first WiFi join; only invalidate the old handshake.
+	s.helloSeen = false
+	s.capsCollected = false
 	return nil
 }
 

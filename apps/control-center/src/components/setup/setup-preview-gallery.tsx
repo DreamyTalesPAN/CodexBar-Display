@@ -142,20 +142,17 @@ const AUTOMATIC_PREVIEWS = [
   {
     providerLabel: "Codex",
     resetLabel: "RESET IN 3H",
-    sessionPercent: 42,
-    weeklyPercent: 26,
+    windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
   },
   {
     providerLabel: "Cursor",
     resetLabel: "RESET IN 11H",
-    sessionPercent: 18,
-    weeklyPercent: 63,
+    windows: [{ label: "Session", percent: 18 }, { label: "Weekly", percent: 63 }],
   },
   {
     providerLabel: "Claude",
     resetLabel: "RESET IN 5H",
-    sessionPercent: 71,
-    weeklyPercent: 44,
+    windows: [{ label: "Session", percent: 71 }, { label: "Weekly", percent: 44 }],
   },
 ];
 
@@ -547,8 +544,7 @@ export function SetupPreviewGallery() {
             manualPreview={{
               providerLabel: displayProvider === "claude" ? "Claude" : "Codex",
               resetLabel: "RESET IN 5H",
-              sessionPercent: 45,
-              weeklyPercent: 26,
+              windows: [{ label: "Session", percent: 45 }, { label: "Weekly", percent: 26 }],
             }}
             mode={displayMode}
             onBack={() => goTo("03")}

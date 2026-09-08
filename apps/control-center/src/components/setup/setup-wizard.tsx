@@ -53,6 +53,8 @@ import {
 } from "./setup-connection";
 
 export type SetupWizardProps = {
+  initialWiFiSetup?: SetupConnectionModeResult | null;
+  onConnectionComplete?: () => void;
   aiFixPrompt: (setupLog: string[]) => string;
   /**
    * The usage service itself is broken. Shown only where the step has no
@@ -67,6 +69,7 @@ export type SetupWizardProps = {
   connectSteps: SetupConnectSteps;
   connectionMode: string;
   connectionModeChoiceRequired: boolean;
+  activeDeviceId?: string;
   device: DeviceInfo | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
@@ -158,6 +161,7 @@ export function SetupWizard(props: SetupWizardProps) {
     deviceCandidates,
     deviceSearchState,
     onCreateSupportReport,
+    onConnectionComplete,
     onScanWiFiNetworks,
     onSearchDevices,
     onSelectConnectionMode,
@@ -167,13 +171,17 @@ export function SetupWizard(props: SetupWizardProps) {
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [preferredTransport, setPreferredTransport] =
-    useState<SetupTransport | "choose" | null>(null);
+    useState<SetupTransport | "choose" | null>(props.initialWiFiSetup ? "wifi" : null);
   const [wifiSetup, setWiFiSetup] = useState<{
     phase: "credentials" | "waiting";
     deviceId?: string;
     viaCable: boolean;
     credentialsSent?: boolean;
-  } | null>(null);
+  } | null>(props.initialWiFiSetup ? {
+    phase: props.initialWiFiSetup.status === "wifi_credentials_required" ? "credentials" : "waiting",
+    deviceId: props.initialWiFiSetup.deviceId,
+    viaCable: true,
+  } : null);
   const [wifiNetworks, setWiFiNetworks] = useState<WiFiNetwork[]>([]);
   const [wifiScanning, setWiFiScanning] = useState(false);
   const [wifiScanError, setWiFiScanError] = useState<string | null>(null);
@@ -198,12 +206,16 @@ export function SetupWizard(props: SetupWizardProps) {
   } | null>(null);
   // The counterpart to goBack. Without it the override outlives the visit it
   // was made for. The device step moves forward when its connect sequence ends.
-  const goForward = useCallback(() => setWentBackTo(null), []);
+  const goForward = useCallback(() => {
+    setWentBackTo(null);
+    onConnectionComplete?.();
+  }, [onConnectionComplete]);
   const connect = useSetupConnect(
     connectSteps,
     props.firmwareProgress,
     goForward,
   );
+  const { reset: resetConnect } = connect;
   const connectionDecision = useMemo(
     () =>
       decideSetupConnection({
@@ -211,6 +223,7 @@ export function SetupWizard(props: SetupWizardProps) {
         choiceRequired:
           preferredTransport === "choose" || props.connectionModeChoiceRequired,
         savedMode: props.connectionMode,
+        activeDeviceId: props.activeDeviceId || props.device?.deviceId,
         preferredTransport: preferredTransport === "choose" ? null : preferredTransport,
       }),
     [
@@ -218,6 +231,8 @@ export function SetupWizard(props: SetupWizardProps) {
       preferredTransport,
       props.connectionMode,
       props.connectionModeChoiceRequired,
+      props.activeDeviceId,
+      props.device?.deviceId,
     ],
   );
   const visibleCandidates = connectionDecision.candidates;
@@ -349,8 +364,15 @@ export function SetupWizard(props: SetupWizardProps) {
     }
   }, [onScanWiFiNetworks]);
 
+  useEffect(() => {
+    if (props.initialWiFiSetup?.status !== "wifi_credentials_required") return;
+    const scan = window.setTimeout(() => void scanWiFiNetworks(), 0);
+    return () => window.clearTimeout(scan);
+  }, [props.initialWiFiSetup, scanWiFiNetworks]);
+
   const chooseTransport = useCallback(
     async (transport: SetupTransport) => {
+      resetConnect();
       setPreferredTransport(transport);
       setSelectedTarget(null);
       if (transport === "cable") {
@@ -396,6 +418,7 @@ export function SetupWizard(props: SetupWizardProps) {
       }
     },
     [
+      resetConnect,
       deviceCandidates,
       onSearchDevices,
       onSelectConnectionMode,
@@ -601,6 +624,9 @@ export function SetupWizard(props: SetupWizardProps) {
               : undefined
           }
           onChooseTransport={(transport) => void chooseTransport(transport)}
+          onEditWiFi={() => setWiFiSetup((current) =>
+            current ? { ...current, phase: "credentials" } : current,
+          )}
           onConfigureWiFi={async (ssid, password) => {
             try {
               const deviceId = await props.onConfigureWiFi(ssid, password);

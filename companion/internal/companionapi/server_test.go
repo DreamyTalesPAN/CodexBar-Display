@@ -731,6 +731,49 @@ func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) 
 	}
 }
 
+func TestDeviceSearchKeepsCableWhenWiFiUnavailable(t *testing.T) {
+	for _, scenario := range []string{"offline", "denied", "no-wifi-device"} {
+		t.Run(scenario, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a"})
+			server.defaultWiFiTarget = func() string { return "" }
+			server.subnetTargets = func() []string { return []string{"http://192.0.2.10"} }
+			cableChecked := false
+			server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+				cableChecked = true
+				return []usb.CableDevice{{Hello: cableHelloForTest("cable-a")}}, nil
+			}
+			server.localNetworkAvailable = func() bool { return scenario != "offline" }
+			probes := 0
+			server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+				if !cableChecked {
+					t.Error("WiFi probe started before Cable discovery")
+				}
+				probes++
+				if scenario == "denied" {
+					return nil, syscall.EACCES
+				}
+				return nil, syscall.ECONNREFUSED
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)).WithContext(ctx))
+			if rec.Code != http.StatusOK || ctx.Err() != nil || probes > 1 {
+				t.Fatalf("Cable search waited for or failed on WiFi: status=%d context=%v probes=%d body=%s", rec.Code, ctx.Err(), probes, rec.Body.String())
+			}
+			var response struct {
+				Devices []deviceSearchEntry `json:"devices"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Devices) != 1 || response.Devices[0].DeviceID != "cable-a" || response.Devices[0].Transport != "cable" {
+				t.Fatalf("Cable candidate missing: %+v", response)
+			}
+		})
+	}
+}
+
 func cableHelloForTest(deviceID string) protocol.DeviceHello {
 	return protocol.DeviceHello{
 		Kind:     "hello",
@@ -742,6 +785,47 @@ func cableHelloForTest(deviceID string) protocol.DeviceHello {
 			Mode:      "cable",
 			Supported: []string{"usb", "wifi"},
 		}},
+	}
+}
+
+func TestDeviceReadsCableIdentityBeforeFirstFrameWithoutWiFi(t *testing.T) {
+	wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("Cable device read must not probe a remembered WiFi target")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer wifi.Close()
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable", DeviceID: "5804508", DeviceTarget: wifi.URL,
+	})
+	server.resolveCablePort = func(_, expected string) (string, error) {
+		if expected != "5804508" {
+			t.Fatalf("wrong device: %s", expected)
+		}
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		hello := cableHelloForTest("5804508")
+		hello.Features = []string{protocol.FeatureCableHealthV1}
+		return hello, nil
+	}
+	server.readCableHealth = func(_, deviceID string) (deviceHealth, error) {
+		if deviceID != "5804508" {
+			t.Fatalf("wrong health identity: %s", deviceID)
+		}
+		health := deviceHealth{OK: true}
+		health.Display.ActiveTheme = "theme-missing"
+		return health, nil
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/device", nil))
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || !got.OK || got.Device.DeviceID != "5804508" ||
+		got.Device.Target != cableDeviceTarget || got.Device.Firmware != "1.0.56" ||
+		got.Device.Board != "esp8266-smalltv-st7789" || got.Device.ActiveTheme != "theme-missing" || got.Device.Ready {
+		t.Fatalf("fresh Cable identity not available for setup: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -8153,6 +8237,8 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 		return protocol.DeviceHello{
 			Kind:     "hello",
 			DeviceID: "new-cable-vibetv",
+			Board:    "esp8266-smalltv-st7789",
+			Firmware: "1.0.41",
 			Capabilities: protocol.CapabilityBlock{
 				Auth:      &protocol.AuthCapabilities{Paired: false},
 				Transport: protocol.TransportCapabilities{Active: "usb", Supported: []string{"usb"}},
@@ -8203,6 +8289,9 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 	}
 	if !got.Device.Active || !got.Device.Paired || !got.Device.Ready || got.Device.Target != cableDeviceTarget {
 		t.Fatalf("Cable selection response is not ready: %+v", got.Device)
+	}
+	if got.Device.Board != "esp8266-smalltv-st7789" || got.Device.Firmware != "1.0.41" {
+		t.Fatalf("Cable selection lost the verified firmware identity: %+v", got.Device)
 	}
 }
 

@@ -531,6 +531,9 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.Wake = wake
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused
 	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
+	if !daemonOpts.Once {
+		daemonOpts.Dashboard = codexbar.StartDashboardServe(ctx, logf)
+	}
 
 	errc := make(chan error, 1)
 	go func() {

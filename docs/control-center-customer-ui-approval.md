@@ -3959,3 +3959,43 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `setup-device-screen.tsx`, `setup-device-card.tsx`,
   `setup-device-dialogs.tsx`, `setup-wizard.tsx`, their tests,
   `setup-preview-gallery.tsx`, `test-customer-flows.mjs`, and this record.
+
+## 2026-09-08 — Settings connection cards and hardware rehearsal fixes
+
+- User approval: Implement the Settings design accessed through Claude Design
+  MCP, test Cable and WiFi on the connected VibeTV, fix empty-password submission
+  and native paste, and finish the requested fresh-start rehearsal. The user
+  subsequently requested the tested changes be pushed to PR #407.
+- Approved customer-visible result: Settings shows the reference's USB-C and
+  WiFi cards with the currently confirmed mode selected. Switching uses a
+  confirmation dialog and opens WiFi setup when credentials are needed; a
+  completed switch returns to Settings. Theme, providers and brightness survive
+  transport changes. Secured and manually entered networks require a nonempty
+  password. Native Edit shortcuts support paste, and submitted WiFi details can
+  be edited while waiting. Setup and Settings previews use the usage-window
+  labels returned by CodexBar and refresh when the app becomes visible.
+- Device identity remains known when the initial status is disconnected. Setup
+  requires an explicit selection before replacing it with another discovered
+  device. Firmware verification uses the selected device's verified handshake.
+  Cable discovery runs before network probing and remains available when WiFi
+  is off or denied; a detected Cable device needs only one WiFi sweep. The setup
+  picker uses the recovery gate's bound identity without treating a disconnected
+  snapshot as a connected session. Transport worker replacement keeps the shared
+  CodexBar service and does not
+  overwrite valid usage with the canceled worker's error.
+- Observed validation: The same local production build of the tested source
+  (`1b0a176-final-0eb5ce1a45-dirty`, app and firmware `99.0.1027`) completed fresh
+  WiFi and separate fresh Cable setup on VibeTV `5804508`, including Mini Classic
+  installation and the visible native Overview. Settings WiFi -> USB-C -> WiFi
+  reused saved credentials and retained the theme and 20% brightness. Brightness
+  20 -> 21 -> 20 was confirmed from device settings. Both runs ended with a healthy
+  stream and successful firmware render status. The final Cable run followed
+  another complete Mac cleanup and full device erase/verified firmware restore.
+  The source passed 543 UI unit tests. These are local hardware results, not a
+  signed Sparkle upgrade rehearsal or a completed review of the pushed SHA.
+- Approved files: `settings-screen.tsx`, `settings-connection.test.tsx`,
+  `control-center-app.tsx`, `device-recovery-gate.ts`, `usage-surface-polling.ts`,
+  `setup-connection.ts`, `setup-wizard.tsx`, `setup-device-screen.tsx`,
+  `setup-display-mode-screen.tsx`, `setup-display-previews.ts`,
+  `setup-preview-gallery.tsx`, their tests, the native Edit menu, the Companion
+  device/provider/collector/USB fixes and their regression tests, and this record.

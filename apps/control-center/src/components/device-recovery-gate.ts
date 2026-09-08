@@ -102,7 +102,7 @@ export function applyDeviceRecoveryStatus(
       acceptDevice: false,
       closePicker: false,
       openPicker: false,
-      state,
+      state: { ...state, preferredDeviceId },
     };
   }
 

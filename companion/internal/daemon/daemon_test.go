@@ -142,6 +142,9 @@ func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
 	if !cfg.CableAutoBindDisabled {
 		t.Fatal("fresh Cable auto-binding must block writes until the connection choice")
 	}
+	if cfg.ProviderSelectionSetupIsComplete() || cfg.ProviderDisplayPredatesSetup() {
+		t.Fatal("fresh Cable binding must not skip provider and display setup")
+	}
 	if len(cfg.DeviceTransports) != 2 || cfg.DeviceTransports[1] != "wifi" {
 		t.Fatalf("fresh Cable capabilities were not persisted: %+v", cfg.DeviceTransports)
 	}
@@ -320,6 +323,23 @@ func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
 	})
 	if !errors.Is(err, ErrConnectionModeChanged) {
 		t.Fatalf("expected current Cable cycle to stop for WiFi mode, got %v", err)
+	}
+}
+
+func TestConnectionModeChangeStopsCollectorCycleBeforeResolvingOldTransport(t *testing.T) {
+	err := runCycleFromCollector(context.Background(), "", nil, nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ConnectionMode: "wifi"}, nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			t.Fatal("must leave the old Cable worker before trying to resolve it")
+			return "", nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected collector cycle to switch to WiFi, got %v", err)
 	}
 }
 
@@ -4464,6 +4484,33 @@ func TestProviderCollectorUsesInventoryWithoutTreatingFetchFailureAsDisable(t *t
 	}
 }
 
+func TestProviderCollectorCancellationPreservesSharedUsage(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 8, 7, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 23, 100, 7200)}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	collector.fetchProviders = func(ctx context.Context) ([]codexbar.ParsedFrame, error) {
+		cancel() // The old display worker is stopped during a transport switch.
+		return nil, ctx.Err()
+	}
+	collector.collectOnce(ctx)
+	usage, ok := LoadPersistedUsage(now)
+	if !ok || len(usage.Providers) != 1 || usage.Providers[0].Stale || usage.Providers[0].Retained {
+		t.Fatalf("worker cancellation corrupted the shared last successful reading: %#v", usage)
+	}
+}
+
 func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -6672,5 +6719,65 @@ func TestFirstCollectionDoesNotSettleOnTransportError(t *testing.T) {
 	}
 	if !first.warming || !first.started || first.fetchErr == nil {
 		t.Fatalf("the failed attempt keeps warming with its error retained: %+v", first)
+	}
+}
+
+func TestRunWithDepsReusesRuntimeDashboardAcrossTransports(t *testing.T) {
+	prepareFastTestEnv(t)
+	shared := staticDashboardServe{info: testDashboardServeInfo(1001)}
+	for _, mode := range []string{"usb", "wifi"} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		observed := make(chan codexbar.DashboardServeInfo, 1)
+		err := runWithDeps(ctx, Options{
+			Transport: mode, Dashboard: shared,
+			PauseDeviceWrites: func() bool { return true },
+		}, runtimeDeps{
+			transportName: mode,
+			logf:          func(string, ...any) {},
+			startDashboard: func(context.Context, func(string, ...any)) codexbar.DashboardServe {
+				t.Error("transport worker started a second CodexBar serve")
+				return shared
+			},
+			fetchDashboard: func(_ context.Context, info codexbar.DashboardServeInfo, _ time.Time) ([]codexbar.ParsedFrame, error) {
+				observed <- info
+				cancel()
+				return nil, context.Canceled
+			},
+			fetchInventory:  func(context.Context) ([]codexbar.ProviderSetting, error) { return nil, context.Canceled },
+			fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) { return nil, false },
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("%s did not collect from the shared serve: %v", mode, err)
+		}
+		select {
+		case info := <-observed:
+			if info != shared.info {
+				t.Fatalf("%s changed the source: %#v", mode, info)
+			}
+		default:
+			t.Fatalf("%s did not use the runtime dashboard", mode)
+		}
+	}
+}
+
+func TestRunWithDepsStopsOwnedDashboardOnTransportChange(t *testing.T) {
+	prepareFastTestEnv(t)
+	var dashboardCtx context.Context
+	err := runWithDeps(context.Background(), Options{Transport: "usb"}, runtimeDeps{
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		startDashboard: func(ctx context.Context, _ func(string, ...any)) codexbar.DashboardServe {
+			dashboardCtx = ctx
+			return staticDashboardServe{info: testDashboardServeInfo(1001)}
+		},
+		loadConfig: func(string) (runtimeconfig.Config, error) { return runtimeconfig.Config{ConnectionMode: "wifi"}, nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			t.Fatal("old transport must stop before collection")
+			return nil, nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) || dashboardCtx == nil || !errors.Is(dashboardCtx.Err(), context.Canceled) {
+		t.Fatalf("owned serve survived worker exit: worker=%v dashboard=%v", err, dashboardCtx)
 	}
 }

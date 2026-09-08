@@ -705,3 +705,51 @@ func TestSetupResetDropsTheDisplaySelectionItWillAskForAgain(t *testing.T) {
 		t.Fatalf("unexpected selection after reset: %+v", response.Selection)
 	}
 }
+
+func TestProviderSetupCompletionWhileBackgroundHealthIsChecking(t *testing.T) {
+	for _, evidence := range []string{"fresh-usage", "fresh-check", "expired-check", "none"} {
+		t.Run(evidence, func(t *testing.T) {
+			now := time.Now().UTC()
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.now = func() time.Time { return now }
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthChecking}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				if evidence == "fresh-usage" {
+					return freshProviderUsage("codex", "Codex", now), true
+				}
+				return daemon.PersistedUsage{}, false
+			}
+			if evidence == "fresh-check" || evidence == "expired-check" {
+				if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+					t.Fatal(err)
+				}
+				checkedAt := now
+				if evidence == "expired-check" {
+					checkedAt = now.Add(-providerReadinessFreshness - time.Second)
+				}
+				server.recordExactProviderSetup("codex", 0, exactSetupFixture(checkedAt, "codex", codexbar.ProviderReady))
+				server.providerPreferences.cached = nil
+			}
+			wantStatus, wantHealth := http.StatusConflict, "checking"
+			if evidence == "fresh-usage" || evidence == "fresh-check" {
+				wantStatus, wantHealth = http.StatusOK, "healthy"
+			}
+			list := httptest.NewRecorder()
+			server.Handler().ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var preferences preferencesResponse
+			if err := json.Unmarshal(list.Body.Bytes(), &preferences); err != nil {
+				t.Fatal(err)
+			}
+			if len(preferences.Items) != 1 || preferences.Items[0].Health.State != wantHealth {
+				t.Fatalf("wrong readiness during background refresh: %s", list.Body.String())
+			}
+			complete := httptest.NewRecorder()
+			server.Handler().ServeHTTP(complete, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+			if complete.Code != wantStatus {
+				t.Fatalf("completion status=%d want=%d: %s", complete.Code, wantStatus, complete.Body.String())
+			}
+		})
+	}
+}

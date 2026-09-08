@@ -56,13 +56,47 @@ func TestParseDeviceHelloLineJSON(t *testing.T) {
 	}
 }
 
-func TestParseDeviceHelloLineLegacyReady(t *testing.T) {
-	hello, ok := parseDeviceHelloLine("codexbar_display_ready_display")
-	if !ok {
-		t.Fatalf("expected legacy ready to parse as hello")
+func TestDeviceHelloDoesNotCacheLegacyReadyAsIdentity(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte("codexbar_display_ready_display\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: time.Millisecond,
+	})
+	defer sender.Close()
+	if _, err := sender.DeviceHello("/dev/mock"); err == nil {
+		t.Fatal("boot readiness without identity must not complete discovery")
 	}
-	if hello.ProtocolVersion != 0 {
-		t.Fatalf("unexpected protocol version %d", hello.ProtocolVersion)
+	port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"5804508"}` + "\n")}
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.DeviceID != "5804508" {
+		t.Fatalf("expected fresh identity after boot readiness, got %+v, %v", hello, err)
+	}
+	if len(port.writePayloads) != 2 {
+		t.Fatal("expected another hello request after boot readiness")
+	}
+}
+
+func TestDeviceHelloObservesWiFiRollbackWithoutReopeningPort(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"5804508","capabilities":{"transport":{"active":"usb","mode":"wifi","transitionPending":true,"transitionTo":"wifi"}}}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: time.Millisecond,
+	})
+	defer sender.Close()
+	if _, err := sender.DeviceHello("/dev/mock"); err != nil {
+		t.Fatal(err)
+	}
+	port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"5804508","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")}
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.Capabilities.Transport.Mode != "cable" {
+		t.Fatalf("expected Cable after device rollback, got %+v, %v", hello, err)
+	}
+	if port.closeCalls != 0 {
+		t.Fatal("refreshing hello must not reopen/reset the device")
 	}
 }
 
@@ -504,6 +538,7 @@ func TestSenderConfiguresWiFiWithoutLoggingOrReusingTheSecret(t *testing.T) {
 		Sleep:       func(time.Duration) {},
 		HelloWindow: 10 * time.Millisecond,
 	})
+	defer sender.Close()
 
 	if err := sender.ConfigureWiFi("/dev/mock", "14799300", "Home WiFi", "secret pass"); err != nil {
 		t.Fatalf("configure WiFi: %v", err)
@@ -512,8 +547,16 @@ func TestSenderConfiguresWiFiWithoutLoggingOrReusingTheSecret(t *testing.T) {
 	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
 		t.Fatalf("unexpected WiFi configuration request %#v", port.writePayloads)
 	}
-	if port.closeCalls != 1 {
-		t.Fatal("acknowledged WiFi switch must release the rebooting device port")
+	if port.closeCalls != 0 {
+		t.Fatal("WiFi provisioning must not reopen and reset the joining device")
+	}
+	port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"14799300","networkMode":"station","capabilities":{"transport":{"active":"usb","mode":"wifi"}}}` + "\n")}
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.NetworkMode != "station" {
+		t.Fatalf("expected a fresh handshake after provisioning, got %+v, %v", hello, err)
+	}
+	if len(port.writePayloads) != 2 || string(port.writePayloads[1]) != string(helloRequestLine) {
+		t.Fatal("rediscovery must request hello without resending WiFi credentials")
 	}
 }
 

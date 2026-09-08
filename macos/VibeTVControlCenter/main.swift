@@ -2194,6 +2194,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        for (title, action, key) in [
+            ("Cut", #selector(NSText.cut(_:)), "x"),
+            ("Copy", #selector(NSText.copy(_:)), "c"),
+            ("Paste", #selector(NSText.paste(_:)), "v"),
+            ("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ] {
+            editMenu.addItem(NSMenuItem(title: title, action: action, keyEquivalent: key))
+        }
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
         NSApp.mainMenu = mainMenu
     }
 

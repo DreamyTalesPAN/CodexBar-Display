@@ -22,6 +22,7 @@ export function decideSetupConnection(options: {
   candidates: DeviceCandidate[];
   choiceRequired: boolean;
   savedMode?: string;
+  activeDeviceId?: string;
   preferredTransport?: SetupTransport | null;
 }): SetupConnectionDecision {
   // Old Companions do not label the transport. Keep their established list
@@ -36,6 +37,12 @@ export function decideSetupConnection(options: {
       candidates: options.candidates,
     };
   }
+  const singleCandidateKind = (candidate: DeviceCandidate) =>
+    options.activeDeviceId &&
+    candidate.deviceId?.toLowerCase() !== options.activeDeviceId.toLowerCase()
+      ? "list" as const
+      : "direct" as const;
+
   const cable = options.candidates.filter(
     (candidate) => candidate.transport === "cable",
   );
@@ -53,7 +60,7 @@ export function decideSetupConnection(options: {
         matches.length > 1
           ? "list"
           : matches.length === 1
-            ? "direct"
+            ? singleCandidateKind(matches[0])
             : "not-found",
       transport: preferred,
       candidates: matches,
@@ -73,7 +80,7 @@ export function decideSetupConnection(options: {
   }
   if (cable.length === 1) {
     return {
-      kind: "direct",
+      kind: singleCandidateKind(cable[0]),
       transport: "cable",
       candidates: cable,
       alternative: "wifi",
@@ -81,7 +88,7 @@ export function decideSetupConnection(options: {
   }
   if (wifi.length === 1) {
     return {
-      kind: "direct",
+      kind: singleCandidateKind(wifi[0]),
       transport: "wifi",
       candidates: wifi,
       alternative: "cable",

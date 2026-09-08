@@ -462,6 +462,23 @@ function shownStep(): string {
 }
 
 describe("SetupWizard: direct connection", () => {
+  it("requires selection when only another WiFi device is found while the bound cable device reconnects", async () => {
+    const connect = vi.fn();
+    render(<SetupWizard {...baseProps({
+      step: "device",
+      connectionMode: "cable",
+      connectionModeChoiceRequired: true,
+      activeDeviceId: "5804508",
+      device: null,
+      deviceCandidates: [{ target: "http://192.168.178.105", deviceId: "5804416", transport: "wifi" }],
+      deviceSearchState: "multiple",
+      connectSteps: { checkFirmware: vi.fn(), connect, installFirmware: vi.fn() },
+    })} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(connect).not.toHaveBeenCalled();
+    expect(screen.queryByText("Connecting to VibeTV")).toBeNull();
+  });
+
   it("retries the same single device after a fresh search", async () => {
     const candidate: DeviceCandidate = {
       target: "http://192.168.1.42",
@@ -508,7 +525,7 @@ describe("SetupWizard: direct connection", () => {
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
   });
 
-  it("connects the configured Cable device when it appears on WiFi", async () => {
+  it.each(["choice", "failed-cable", "settings"] as const)("connects the same VibeTV over WiFi from %s", async (entry) => {
     const cable: DeviceCandidate = {
       target: "cable://vibetv",
       deviceId: "configured-device",
@@ -533,11 +550,15 @@ describe("SetupWizard: direct connection", () => {
       .mockResolvedValue("configured-device");
     const props = baseProps({
       step: "device",
-      connectionModeChoiceRequired: true,
-      deviceCandidates: [cable, otherWiFi],
+      connectionMode: "cable",
+      connectionModeChoiceRequired: entry === "choice",
+      initialWiFiSetup: entry === "settings" ? { status: "wifi_credentials_required", deviceId: cable.deviceId } : null,
+      deviceCandidates: entry === "choice" ? [cable, otherWiFi] : [cable],
       deviceSearchState: "multiple",
       connectSteps: {
-        checkFirmware: vi.fn().mockResolvedValue(null),
+        checkFirmware: entry === "failed-cable"
+          ? vi.fn().mockRejectedValueOnce({ message: "Firmware unavailable" }).mockResolvedValue(null)
+          : vi.fn().mockResolvedValue(null),
         connect,
         installFirmware: vi.fn(),
       },
@@ -550,11 +571,19 @@ describe("SetupWizard: direct connection", () => {
     });
     const { rerender } = render(<SetupWizard {...props} />);
 
-    fireEvent.click(
-      screen.getByRole("radio", { name: "WiFi" }),
-    );
-    expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    if (entry === "choice") {
+      fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+      expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    } else if (entry === "failed-cable") {
+      await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+      await screen.findByRole("button", { name: "Use WiFi instead" });
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
+    } else {
+      await waitFor(() => expect(props.onScanWiFiNetworks).toHaveBeenCalledOnce());
+      expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+    }
     await screen.findByRole("heading", { name: "Connect VibeTV to WiFi" });
     fireEvent.click(
       screen.getByRole("button", { name: "Enter hidden network" }),
@@ -563,8 +592,14 @@ describe("SetupWizard: direct connection", () => {
       target: { value: "Home" },
     });
     expect(screen.queryByText("WiFi details sent over cable")).toBeNull();
+    expect((screen.getByRole("button", { name: "Connect to WiFi" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.submit(screen.getByLabelText("WiFi network").closest("form")!);
+    expect(onConfigureWiFi).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("WiFi password"), {
+      target: { value: "test-password" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
-    await waitFor(() => expect(onConfigureWiFi).toHaveBeenCalledWith("Home", ""));
+    await waitFor(() => expect(onConfigureWiFi).toHaveBeenCalledWith("Home", "test-password"));
     const network = screen.getByLabelText("WiFi network") as HTMLInputElement;
     expect(network.value).toBe("Home");
     expect(network.disabled).toBe(true);
@@ -572,6 +607,13 @@ describe("SetupWizard: direct connection", () => {
     expect(waiting.disabled).toBe(true);
     fireEvent.submit(network.closest("form")!);
     expect(onConfigureWiFi).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Edit WiFi details" }));
+    expect((screen.getByLabelText("WiFi network") as HTMLInputElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("WiFi password"), {
+      target: { value: "corrected-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    await waitFor(() => expect(onConfigureWiFi).toHaveBeenLastCalledWith("Home", "corrected-password"));
 
     rerender(
       <SetupWizard

@@ -335,10 +335,6 @@ func parseDeviceHelloLine(line string) (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{}, false
 	}
 
-	if hello, ok := parseLegacyReadyLine(line); ok {
-		return hello, true
-	}
-
 	if !strings.HasPrefix(line, "{") || !strings.HasSuffix(line, "}") {
 		return protocol.DeviceHello{}, false
 	}
@@ -352,15 +348,4 @@ func parseDeviceHelloLine(line string) (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{}, false
 	}
 	return hello, true
-}
-
-func parseLegacyReadyLine(line string) (protocol.DeviceHello, bool) {
-	switch strings.TrimSpace(line) {
-	case "codexbar_display_ready_display", "codexbar_display_ready_probe", "codexbar_display_ready":
-		return protocol.DeviceHello{
-			Kind: "hello",
-		}, true
-	default:
-		return protocol.DeviceHello{}, false
-	}
 }
