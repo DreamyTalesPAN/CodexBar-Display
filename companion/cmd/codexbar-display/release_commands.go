@@ -2582,13 +2582,15 @@ func startLaunchAgent(home string) error {
 }
 
 func stopLaunchAgent(disable bool) error {
-	return service.New(strings.TrimSuffix(launchAgentLabel, ".plist"), "", false).Stop(context.Background(), disable)
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	return service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Stop(context.Background(), disable)
 }
 
 type launchAgentStatus = service.Status
 
 func queryLaunchAgentStatus() (launchAgentStatus, error) {
-	status, err := service.New(strings.TrimSuffix(launchAgentLabel, ".plist"), "", false).Status(context.Background())
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	status, err := service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Status(context.Background())
 	if err != nil {
 		trimmed := strings.TrimSpace(status.Raw)
 		lower := strings.ToLower(trimmed)
