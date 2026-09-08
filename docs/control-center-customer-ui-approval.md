@@ -3781,3 +3781,24 @@ issue scope, or release permission never implies UI permission.
   beginnings `missing` and `permission` remain readable.**
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
+
+## 2026-09-08 — Pixel Battery takeover and editable remaining-color thresholds
+
+- User approval: In the owner's submitted review of PR #419 on 2026-09-07,
+  Paul explicitly requested a single segmented Pixel Battery theme, removal
+  of the separate solid-bar catalog entry without adding a variant switch,
+  and editable color thresholds with a clear distinction from the fallback
+  bar color. On 2026-09-08, after the remaining focus-loss and import-alias
+  defects were explained, he instructed us to take over and implement the
+  fixes: "ok dann leg los".
+- Approved customer-visible result: The catalog offers one segmented Pixel
+  Battery with provider logos and quota-based colors. Its existing Theme
+  Studio progress inspector exposes up to four remaining-percentage
+  thresholds and their colors, explains when the fallback color applies,
+  and can return to a solid fill. A threshold stays in the same editable row
+  and keeps keyboard focus while its number changes. Imported themes use
+  the same long-form feature-container precedence as the VibeTV, including
+  explicitly empty containers. The takeover preserves the theme's existing
+  layout and vertically centered provider label.
+- Evidence boundary: This records the owner's explicit requested results;
+  it is not a claim of hardware acceptance or approval to merge or release.

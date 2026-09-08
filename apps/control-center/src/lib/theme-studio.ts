@@ -1904,7 +1904,7 @@ function providerAssetsValue(value: unknown): Record<string, string> | undefined
       result[provider.trim().toLowerCase()] = assetPath;
     }
   }
-  return Object.keys(result).length > 0 ? result : undefined;
+  return result;
 }
 
 function colorStopsValue(
@@ -1926,9 +1926,6 @@ function colorStopsValue(
       continue;
     }
     result.push({ gte, color });
-  }
-  if (result.length === 0) {
-    return undefined;
   }
   return result.sort((a, b) => b.gte - a.gte);
 }

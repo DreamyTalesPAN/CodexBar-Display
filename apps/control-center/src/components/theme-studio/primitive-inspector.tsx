@@ -359,14 +359,14 @@ function ProgressColorStopsEditor({
   stops: Array<{ gte: number; color: string }>;
 }) {
   const hasStops = stops.length > 0;
-  const sortedStops = [...stops].sort((a, b) => b.gte - a.gte);
+  // Keep editing order stable; the renderer sorts thresholds when selecting a color.
 
   const handleStopChange = (
     index: number,
     field: "gte" | "color",
     value: number | string,
   ) => {
-    const next = sortedStops.map((stop, stopIndex) =>
+    const next = stops.map((stop, stopIndex) =>
       stopIndex === index
         ? { ...stop, [field]: value }
         : stop,
@@ -375,16 +375,16 @@ function ProgressColorStopsEditor({
   };
 
   const handleRemoveStop = (index: number) => {
-    onStopsChange(sortedStops.filter((_, stopIndex) => stopIndex !== index));
+    onStopsChange(stops.filter((_, stopIndex) => stopIndex !== index));
   };
 
   const handleAddStop = () => {
-    if (sortedStops.length >= 4) {
+    if (stops.length >= 4) {
       return;
     }
     onStopsChange([
-      ...sortedStops,
-      { color, gte: nextUnusedGte(sortedStops) },
+      ...stops,
+      { color, gte: nextUnusedGte(stops) },
     ]);
   };
 
@@ -406,10 +406,10 @@ function ProgressColorStopsEditor({
           </p>
         )}
         {hasStops
-          ? sortedStops.map((stop, index) => (
+          ? stops.map((stop, index) => (
               <div
                 className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] items-end gap-2"
-                key={`${stop.gte}-${index}`}
+                key={index}
               >
                 <NumberField
                   label={index === 0 ? "At remaining ≥" : "≥"}
@@ -438,7 +438,7 @@ function ProgressColorStopsEditor({
         <div className="flex flex-wrap gap-2">
           {hasStops ? (
             <>
-              {sortedStops.length < 4 ? (
+              {stops.length < 4 ? (
                 <Button
                   onClick={handleAddStop}
                   size="sm"

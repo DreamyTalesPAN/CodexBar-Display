@@ -469,10 +469,11 @@ func normalizePrimitive(p Primitive) Primitive {
 	if len(p.StateAssets) == 0 && len(p.ShortStateAssets) > 0 {
 		p.StateAssets = p.ShortStateAssets
 	}
-	if len(p.ProviderAssets) == 0 && len(p.ShortProviderAssets) > 0 {
+	// An explicit empty long-form container overrides its compact alias on firmware.
+	if p.ProviderAssets == nil {
 		p.ProviderAssets = p.ShortProviderAssets
 	}
-	if len(p.ColorStops) == 0 && len(p.ShortColorStops) > 0 {
+	if p.ColorStops == nil {
 		p.ColorStops = p.ShortColorStops
 	}
 	p.ColorStops = normalizeColorStops(p.ColorStops)
@@ -495,7 +496,7 @@ func normalizeValign(value string) string {
 
 func normalizeColorStops(stops []ColorStop) []ColorStop {
 	if len(stops) == 0 {
-		return nil
+		return stops
 	}
 	normalized := make([]ColorStop, 0, len(stops))
 	for _, stop := range stops {
@@ -518,7 +519,7 @@ func normalizeColorStops(stops []ColorStop) []ColorStop {
 
 func normalizeProviderAssets(providerAssets map[string]string) map[string]string {
 	if len(providerAssets) == 0 {
-		return nil
+		return providerAssets
 	}
 	normalized := make(map[string]string, len(providerAssets))
 	for provider, assetPath := range providerAssets {
@@ -800,7 +801,7 @@ func rejectNonCanonicalInstalledValues(spec Spec) error {
 			}
 		}
 		stops := primitive.ColorStops
-		if len(stops) == 0 {
+		if stops == nil {
 			stops = primitive.ShortColorStops
 		}
 		for j, stop := range stops {

@@ -1091,3 +1091,40 @@ func TestValidateAgainstCapabilitiesRequiresProviderAssetsColorStopsAndValign(t 
 		t.Fatalf("expected capable device to accept spec: %v", err)
 	}
 }
+
+func TestFeatureContainerAliasesMatchFirmware(t *testing.T) {
+	for _, tc := range []struct {
+		name, stopField, assetField string
+		wantStops, wantAssets       int
+	}{
+		{"compact only", "", "", 1, 1},
+		{"null long", `"colorStops":null,`, `"providerAssets":null,`, 1, 1},
+		{"empty long", `"colorStops":[],`, `"providerAssets":{},`, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"v":1,"id":"alias-test","rev":1,"p":[
+				{"t":"p","w":40,"h":10,"c":"#FFFFFF",` + tc.stopField + `"cs":[{"gte":0,"c":"#FF0000"}]},
+				{"t":"sp","w":8,"h":8,"a":"/themes/u/base.cbi",` + tc.assetField + `"pa":{"codex":"/themes/u/codex.cbi"}}
+			]}`)
+			spec, installed, err := Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(installed) != string(raw) {
+				t.Fatal("raw install JSON changed")
+			}
+			for i := 0; i < 2; i++ {
+				if err := Validate(spec); err != nil {
+					t.Fatal(err)
+				}
+				if got := len(spec.Primitives[0].ColorStops); got != tc.wantStops {
+					t.Fatalf("stops = %d, want %d", got, tc.wantStops)
+				}
+				if got := len(spec.Primitives[1].ProviderAssets); got != tc.wantAssets {
+					t.Fatalf("assets = %d, want %d", got, tc.wantAssets)
+				}
+				spec = normalizeSpec(spec)
+			}
+		})
+	}
+}

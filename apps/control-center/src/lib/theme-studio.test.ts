@@ -528,3 +528,24 @@ describe("buildThemePack capability declaration", () => {
     expect(pack.manifest.minFirmware).toBe("1.0.42");
   });
 });
+
+describe("feature container aliases match the device", () => {
+  it.each([
+    ["absent", undefined, undefined, 1, 1],
+    ["null", null, null, 1, 1],
+    ["empty", [], {}, 0, 0],
+  ])("preserves %s long-form containers", (_name, colorStops, providerAssets, stopCount, assetCount) => {
+    const imported = importThemeSpec({
+      v: 1, id: "alias-test", rev: 1,
+      p: [
+        { t: "p", w: 40, h: 10, c: "#FFFFFF", colorStops, cs: [{ gte: 0, c: "#FF0000" }] },
+        { t: "sp", w: 8, h: 8, a: "/themes/u/base.cbi", providerAssets, pa: { codex: "/themes/u/codex.cbi" } },
+      ],
+    });
+    expect(imported.primitives[0].colorStops?.length || 0).toBe(stopCount);
+    expect(Object.keys(imported.primitives[1].providerAssets || {})).toHaveLength(assetCount);
+    const exported = JSON.parse(deviceThemeSpecJson(imported));
+    expect(exported.p[0].cs?.length || 0).toBe(stopCount);
+    expect(Object.keys(exported.p[1].pa || {})).toHaveLength(assetCount);
+  });
+});

@@ -2123,6 +2123,25 @@ void testProviderAssetsCompileRejectsTooManyEntries() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testEmptyLongFeatureContainersOverrideCompactAliases() {
+  const char* spec = R"JSON({
+    "v":1,"id":"alias-test","rev":1,"p":[
+      {"t":"p","w":40,"h":10,"b":"s","c":"#FFFFFF",
+       "colorStops":[],"cs":[{"gte":0,"c":"#FF0000"}]},
+      {"t":"sp","w":8,"h":8,"a":"/themes/u/base.cbi",
+       "providerAssets":{},"pa":{"codex":"/themes/u/codex.cbi"}}
+    ]
+  })JSON";
+  FrameData frame = testFrame();
+  frame.provider = "codex";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  const RecordedCommand* progress = FirstProgressCommand(sink);
+  TEST_ASSERT_NOT_NULL(progress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#FFFFFF", 0), progress->color);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/base.cbi", sink.commands.back().assetPath.c_str());
+}
+
 void testProgressColorStopsSelectFillByPercent() {
   const char* spec = R"JSON({
     "v":1,
@@ -3376,6 +3395,7 @@ int main() {
   RUN_TEST(testProviderAssetsProviderChangeUsesPartialRender);
   RUN_TEST(testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider);
   RUN_TEST(testProviderAssetsCompileRejectsTooManyEntries);
+  RUN_TEST(testEmptyLongFeatureContainersOverrideCompactAliases);
   RUN_TEST(testProgressColorStopsSelectFillByPercent);
   RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);
