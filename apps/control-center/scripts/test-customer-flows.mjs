@@ -734,7 +734,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalWifiVerificationWithoutFrameWaitsForUsage(
+    await testLocalWifiVerificationWithoutFrameOpensProviders(
       browser,
       appContext.appUrl,
     );
@@ -1389,8 +1389,8 @@ function firmwareConnectFixture() {
       known: false,
       active: false,
     },
-    // Not ready and with no display frame on purpose: that keeps the wizard on
-    // the device step, which is the only place the connect log is drawn.
+    // A connected device can still be waiting for its first usage frame.
+    // Firmware installation owns the device step until it finishes.
     connected: {
       ...companionDevice,
       deviceId: "customer-device",
@@ -1465,10 +1465,16 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
     },
   );
 
+  let finishUpdate;
+  const updateMayFinish = new Promise((resolve) => { finishUpdate = resolve; });
+  await page.route("**/v1/updates/install/status", async (route) => {
+    await updateMayFinish;
+    await route.fallback();
+  });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await connectDiscoveredVibeTV(page, { deviceId: "customer-device" });
   await setupConnectLog(page)
-    .getByText("> update complete")
+    .getByText(/^> updating firmware/)
     .waitFor({ timeout: 20_000 });
   const lines = await setupConnectLogLines(page);
   const expected = [
@@ -1477,7 +1483,6 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
     "> checking firmware version",
     "> firmware update available · 1.0.32 → 1.0.33",
     "> updating firmware — keep VibeTV powered on",
-    "> update complete",
   ];
   assert(
     JSON.stringify(lines) === JSON.stringify(expected),
@@ -1504,16 +1509,21 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
     "A VibeTV that is connected must never be counted as none found",
   );
 
-  // The updated VibeTV comes back ready, and setup carries on from there.
+  assert((await setupScreen(page, SETUP_PROVIDERS_SCREEN).count()) === 0,
+    "Provider selection must wait until firmware installation finishes");
+  finishUpdate();
+  const providers = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+  await providers.waitFor({ timeout: 20_000 });
+
+  // Fresh usage arriving after the update must not skip the provider choice.
   displayReady = true;
   companionRoute.setDevice({
     ...connected,
     firmware: "1.0.33",
     ready: true,
   });
-  await page
-    .getByRole("navigation", { name: "Control Center" })
-    .waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(6_000);
+  assert(await providers.isVisible(), "Firmware completion must keep provider selection open until Continue");
   await page.close();
 }
 
@@ -1795,7 +1805,7 @@ async function testConnectedUnreadyDeviceKeepsSettingsAvailable(
   await page.close();
 }
 
-async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
+async function testLocalWifiVerificationWithoutFrameOpensProviders(
   browser,
   appUrl,
 ) {
@@ -1820,9 +1830,7 @@ async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await connectDiscoveredVibeTV(page);
-  await setupConnectLog(page)
-    .getByText("> connected · VibeTV fixture-device-1")
-    .waitFor({ timeout: 10_000 });
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 10_000 });
   await page.waitForTimeout(1_500);
   assert(
     (await setupNotFoundDialog(page).count()) === 0,
@@ -1838,9 +1846,10 @@ async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
     `A reachable VibeTV without a display frame must not retry automatically, got ${selectRequests.length} attempts`,
   );
   assert(
-    (await page.getByRole("heading", { name: SETUP_DEVICE_SCREEN }).count()) ===
-      1,
-    "A delayed first usage frame must stay inside the setup wizard",
+    (await page
+      .getByRole("heading", { name: SETUP_PROVIDERS_SCREEN })
+      .count()) === 1,
+    "A delayed first usage frame must allow provider selection inside setup",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
