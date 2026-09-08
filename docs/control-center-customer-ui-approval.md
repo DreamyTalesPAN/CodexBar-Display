@@ -4393,3 +4393,12 @@ issue scope, or release permission never implies UI permission.
   readiness checks and waits for Continue; a later background device update
   cannot skip the choice. A real device loss and unfinished or failed firmware
   work still keep the connection/recovery step.
+
+## 2026-09-08 — Reconnect regression coverage
+
+- User approval: The same request to fix being stuck after Connect and reach
+  the provider list authorizes the connection-flow correction above.
+- Approved customer-visible result: Successful connection and completed firmware
+  work open providers before continuing to a missing theme; live usage arriving
+  later does not skip that choice. Browser expectations now exercise this same
+  approved result, including firmware-in-progress and failure gates.

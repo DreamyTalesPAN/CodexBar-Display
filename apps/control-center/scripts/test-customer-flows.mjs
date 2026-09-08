@@ -1904,12 +1904,12 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
     });
   });
 
-  // Connecting hands the VibeTV over while its theme is still missing, so the
-  // wizard walks straight from the device step into the theme step. The
-  // observer above is what proves Overview never appeared in between -- the
-  // device step's own log cannot be read as a checkpoint any more, because the
-  // step is gone by the time the connect sequence finishes.
+  // Connect opens provider selection before the missing theme is chosen.
+  // The observer proves Overview never appears during either transition.
   await connectDiscoveredVibeTV(page);
+  const providers = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+  await providers.waitFor({ timeout: 20_000 });
+  await providers.getByRole("button", { name: "Continue" }).click();
   await page
     .getByRole("heading", { name: SETUP_THEME_SCREEN })
     .waitFor({ timeout: 20_000 });
