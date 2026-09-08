@@ -8428,90 +8428,54 @@ func TestSetupConnectionModeSelectsCableWithoutPairingForBoardWithoutAuth(t *tes
 	}
 }
 
-func TestSetupConnectionModeRepairsDeviceReportedUnpairedCableToken(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{
-		ConnectionMode: "cable",
-		DeviceID:       "factory-reset-vibetv",
-		DeviceToken:    "stale-cable-token",
-	})
-	server.resolveCablePort = func(string, string) (string, error) {
-		return "/dev/cu.usbserial-vibetv", nil
-	}
-	server.readCableHello = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{
-			Kind:     "hello",
-			DeviceID: "factory-reset-vibetv",
-			Capabilities: protocol.CapabilityBlock{
-				Auth:      &protocol.AuthCapabilities{Paired: false},
-				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
-			},
-		}, nil
-	}
-	pairCalls := 0
-	server.pairCableDevice = func(port, deviceID string) (string, error) {
-		pairCalls++
-		return "replacement-cable-token", nil
-	}
-	server.streamStatus = func(context.Context, string) displayStreamInfo {
-		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
-	req.Header.Set("Content-Type", "application/json")
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	cfg, err := server.config()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pairCalls != 1 || cfg.DeviceToken != "replacement-cable-token" {
-		t.Fatalf("device-reported reset was not repaired: calls=%d config=%+v", pairCalls, cfg)
-	}
-}
-
-func TestSetupConnectionModeReusesDeviceReportedPairedCableToken(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{
-		ConnectionMode: "cable",
-		DeviceID:       "paired-cable-vibetv",
-		DeviceToken:    "existing-cable-token",
-	})
-	server.resolveCablePort = func(string, string) (string, error) {
-		return "/dev/cu.usbserial-vibetv", nil
-	}
-	server.readCableHello = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{
-			Kind:     "hello",
-			DeviceID: "paired-cable-vibetv",
-			Capabilities: protocol.CapabilityBlock{
-				Auth:      &protocol.AuthCapabilities{Paired: true},
-				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
-			},
-		}, nil
-	}
-	server.pairCableDevice = func(string, string) (string, error) {
-		t.Fatal("paired Cable selection must reuse its known token")
-		return "", nil
-	}
-	server.streamStatus = func(context.Context, string) displayStreamInfo {
-		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
-	req.Header.Set("Content-Type", "application/json")
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	cfg, err := server.config()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DeviceToken != "existing-cable-token" {
-		t.Fatalf("paired Cable token changed: %+v", cfg)
+func TestSetupConnectionModeRefreshesCableTokenRegardlessOfPairedFlag(t *testing.T) {
+	for _, paired := range []bool{false, true} {
+		for _, scenario := range []string{"cable", "wifi", "wifi-saved"} {
+			t.Run(fmt.Sprintf("paired=%t/mode=%s", paired, scenario), func(t *testing.T) {
+				mode := scenario
+				knownTarget := ""
+				wantStatus := http.StatusOK
+				if scenario == "wifi-saved" {
+					mode, knownTarget, wantStatus = "wifi", "http://192.0.2.10", http.StatusAccepted
+				}
+				server := newTestServer(t, runtimeconfig.Config{
+					ConnectionMode: "cable", DeviceID: "reset-vibetv", DeviceToken: "stale-cable-token",
+					KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: "reset-vibetv", Target: knownTarget, DeviceToken: "stale-known-token"}},
+				})
+				server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+				server.readCableHello = func(string) (protocol.DeviceHello, error) {
+					return protocol.DeviceHello{
+						Kind: "hello", DeviceID: "reset-vibetv",
+						Capabilities: protocol.CapabilityBlock{
+							Auth:      &protocol.AuthCapabilities{Paired: paired},
+							Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+						},
+					}, nil
+				}
+				server.setCableConnectionMode = func(string, string, string) error { return nil }
+				pairCalls := 0
+				server.pairCableDevice = func(port, deviceID string) (string, error) {
+					pairCalls++
+					if port != "/dev/mock" || deviceID != "reset-vibetv" {
+						t.Fatalf("wrong Cable pairing identity: %s %s", port, deviceID)
+					}
+					return "current-device-token", nil
+				}
+				rec := httptest.NewRecorder()
+				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(fmt.Sprintf(`{"mode":%q}`, mode))))
+				if rec.Code != wantStatus {
+					t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+				}
+				cfg, err := server.config()
+				if err != nil {
+					t.Fatal(err)
+				}
+				known, ok := cfg.KnownDevice("reset-vibetv")
+				if pairCalls != 1 || cfg.DeviceToken != "current-device-token" || !ok || known.DeviceToken != "current-device-token" || known.Target != knownTarget {
+					t.Fatalf("current Cable token not persisted: paired=%t calls=%d", paired, pairCalls)
+				}
+			})
+		}
 	}
 }
 

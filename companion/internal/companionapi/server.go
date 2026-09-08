@@ -3690,8 +3690,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		cableToken = strings.TrimSpace(knownDevice.DeviceToken)
 	}
 	pairingRequired := hello.Capabilities.Auth != nil
-	deviceReportsUnpaired := pairingRequired && !hello.Capabilities.Auth.Paired
-	if mode == "cable" && pairingRequired && (cableToken == "" || deviceReportsUnpaired) {
+	if pairingRequired {
 		cableToken, err = s.pairCableDevice(port, hello.DeviceID)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "cable_pairing_failed", "VibeTV could not pair through Cable.", "Keep VibeTV connected by Cable, then try again.")
@@ -3739,15 +3738,19 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 	if mode == "wifi" {
 		if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+			target := ""
+			if known {
+				target = knownDevice.Target
+			} else if strings.EqualFold(current.DeviceID, hello.DeviceID) {
+				target = current.DeviceTarget
+			}
+			current.SetActiveDevice(runtimeconfig.KnownDevice{
+				DeviceID: hello.DeviceID, Target: target, DeviceToken: cableToken,
+			})
 			current.ConnectionMode = ""
-			current.DeviceID = strings.TrimSpace(hello.DeviceID)
 			current.CableAutoBindDisabled = true
 			current.ConnectionModeChoiceRequired = false
 			current.DeviceTransports = supportedTransports
-			if known {
-				current.DeviceTarget = knownDevice.Target
-				current.DeviceToken = knownDevice.DeviceToken
-			}
 		}); err != nil {
 			writeInternalError(w, err)
 			return
