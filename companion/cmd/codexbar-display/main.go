@@ -1158,6 +1158,7 @@ func printDoctorRuntimeDefaults() {
 func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error {
 	printDoctorRuntimeDefaults()
 	port, err := doctorResolvePortFn(config.port)
+	closeDefaultSenderFn()
 	if err != nil {
 		fmt.Printf("  serial resolve: failed (%v)\n", err)
 		return fmt.Errorf("runtime serial resolve failed: %w", err)
@@ -1195,6 +1196,7 @@ func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error
 	}
 
 	hello, err := doctorReadDeviceHelloFn(port)
+	closeDefaultSenderFn()
 	if err != nil {
 		fmt.Printf("  device hello: warning (%v)\n", err)
 		fmt.Println("  warning: capability handshake unavailable; runtime will use optimistic theme send fallback")

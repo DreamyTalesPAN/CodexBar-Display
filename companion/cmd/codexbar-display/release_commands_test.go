@@ -2549,8 +2549,8 @@ func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 	if !flashed {
 		t.Fatal("expected flash function to be called")
 	}
-	if closeCalls != 2 {
-		t.Fatalf("expected sender close after pre/post hello reads, got %d", closeCalls)
+	if closeCalls != 3 {
+		t.Fatalf("expected sender close after discovery and pre/post hello reads, got %d", closeCalls)
 	}
 	if saveCalls != 2 {
 		t.Fatalf("expected release state save twice, got %d", saveCalls)

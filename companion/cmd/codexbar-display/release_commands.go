@@ -306,14 +306,6 @@ func runUpgrade(args []string) (retErr error) {
 	}
 	selectedEnv = resolvedEnv
 
-	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
-	if err != nil {
-		return &commandError{
-			Op:   "resolve-port",
-			Code: errcode.UpgradeResolvePort,
-			Err:  err,
-		}
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return &commandError{
@@ -324,6 +316,14 @@ func runUpgrade(args []string) (retErr error) {
 	}
 	cleanupUpgradeLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
 	defer cleanupUpgradeLaunchAgent()
+
+	// Auto-discovery needs exclusive ownership, then the busy check and
+	// firmware uploader need that handle released again.
+	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
+	closeDefaultSenderFn()
+	if err != nil {
+		return &commandError{Op: "resolve-port", Code: errcode.UpgradeResolvePort, Err: err}
+	}
 
 	if err := ensureSerialPortNotBusyFn(resolvedPort); err != nil {
 		return &commandError{
