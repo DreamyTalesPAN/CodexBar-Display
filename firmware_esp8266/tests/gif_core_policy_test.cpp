@@ -504,7 +504,7 @@ bool testAutomaticScanReschedulesInterruptedWifiRecovery(const char* mainPath) {
       "an automatic scan that interrupts WiFi recovery must reschedule it immediately");
 }
 
-bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
+bool testAutomaticWifiFallbackPreservesSavedCredentials(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t setupStart = mainSource.find("void setup()");
   const std::size_t setupEnd = mainSource.find("void loop()", setupStart);
@@ -516,21 +516,18 @@ bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
   }
   const std::string setup = mainSource.substr(setupStart, setupEnd - setupStart);
   const std::string maintain = mainSource.substr(maintainStart, maintainEnd - maintainStart);
-  const std::size_t transition = setup.find("else if (connectionTransitionPending)");
-  const std::string transitionSetup =
-      transition == std::string::npos ? "" : setup.substr(transition);
   return expect(
       setup.find("startSetupAccessPoint()") != std::string::npos &&
           maintain.find("startSetupAccessPoint()") != std::string::npos &&
-          transitionSetup.find("clearWifiCredentials();") != std::string::npos &&
-          transitionSetup.find("clearSdkWifiCredentials();") != std::string::npos &&
-          transitionSetup.find("savedWifiCredentialsAvailable = false;") != std::string::npos &&
-          transitionSetup.find("startSetupAccessPoint();") != std::string::npos &&
-          transitionSetup.find("wifi_association_failed") == std::string::npos &&
+          setup.find("clearWifiCredentials();") == std::string::npos &&
+          setup.find("clearSdkWifiCredentials();") == std::string::npos &&
+          maintain.find("clearWifiCredentials();") == std::string::npos &&
+          maintain.find("clearSdkWifiCredentials();") == std::string::npos &&
+          setup.find("connectionTransitionStartedAtMs = millis();") != std::string::npos &&
           setup.find("SetConnectionError(") == std::string::npos &&
           maintain.find("SetConnectionError(") == std::string::npos &&
           maintain.find("WiFi.SSID()") == std::string::npos,
-      "failed WiFi association must clear stale credentials and reopen setup without prefilling the failed SSID");
+      "failed WiFi association must preserve saved credentials for retry or Cable rollback");
 }
 
 bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* mainPath) {
@@ -1092,7 +1089,7 @@ int main(int argc, char** argv) {
   if (!testAutomaticScanReschedulesInterruptedWifiRecovery(argv[3])) {
     return 1;
   }
-  if (!testAutomaticWifiFallbackNeverCarriesTheFailedSsid(argv[3])) {
+  if (!testAutomaticWifiFallbackPreservesSavedCredentials(argv[3])) {
     return 1;
   }
   if (!testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(argv[3])) {

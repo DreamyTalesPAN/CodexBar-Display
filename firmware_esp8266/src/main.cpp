@@ -4328,15 +4328,10 @@ void setup() {
     // lwIP keeps the system clock corrected without any retry code here.
     configTime(0, 0, "pool.ntp.org");
     startHttpServer();
-  } else if (connectionTransitionPending) {
-    if (hasSavedWifi) {
-      clearWifiCredentials();
-      clearSdkWifiCredentials();
-      savedWifiCredentialsAvailable = false;
-    }
-    connectionTransitionStartedAtMs = millis();
-    startSetupAccessPoint();
   } else {
+    if (connectionTransitionPending) {
+      connectionTransitionStartedAtMs = millis();
+    }
     startSetupAccessPoint();
   }
 }
