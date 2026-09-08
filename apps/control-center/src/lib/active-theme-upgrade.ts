@@ -63,13 +63,19 @@ export function resolveActiveThemeUpgrade(
     device.capabilities?.theme?.supportsColorStopsV1 !== true;
   const needsTextValign =
     device.capabilities?.theme?.supportsTextValignV1 !== true;
+  const hasCapabilityGap =
+    needsUsageSlots ||
+    needsUsageWindows ||
+    needsProviderAssets ||
+    needsColorStops ||
+    needsTextValign;
   const theme = resolveActiveLiveTheme(themes, device);
   if (!theme) {
     return {
       needed: false,
       needsFirmwareCapability: false,
       needsThemeSpec: false,
-      unresolved: needsUsageSlots || needsUsageWindows,
+      unresolved: hasCapabilityGap,
     };
   }
   const expectedPath = theme.themeSpecPath?.trim();
@@ -83,7 +89,7 @@ export function resolveActiveThemeUpgrade(
       needsFirmwareCapability: false,
       needsThemeSpec: pathIsOutdated,
       theme,
-      unresolved: needsUsageSlots || needsUsageWindows,
+      unresolved: hasCapabilityGap,
     };
   }
   const needsRequiredCapability =

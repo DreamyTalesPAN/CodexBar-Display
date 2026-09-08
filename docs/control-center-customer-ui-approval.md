@@ -3816,3 +3816,14 @@ issue scope, or release permission never implies UI permission.
   and validation flow are reused; the correction extends the same check from
   GIFs to every unsupported element type. Valid themes and the inspector's
   controls keep their existing behavior.
+
+### Follow-up — keep incomplete theme update checks unresolved
+
+- User approval: Carries forward Paul's 2026-09-08 takeover and defect-fix
+  instruction ("ok dann leg los"). No separate design approval or hardware
+  acceptance is claimed.
+- Approved customer-visible result: When the catalog cannot identify the active
+  theme's requirements, missing provider-logo, threshold-color, or text-alignment
+  firmware support keeps the existing catalog-attention state visible. The app
+  does not report the theme update as complete before those requirements can be
+  checked. Existing wording and controls are reused.
