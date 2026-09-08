@@ -577,8 +577,7 @@ describe("SetupWizard: direct connection", () => {
       fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     } else if (entry === "failed-cable") {
       await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
-      await screen.findByRole("button", { name: "Use WiFi instead" });
-      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Close" }));
       fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
     } else {
       await waitFor(() => expect(props.onScanWiFiNetworks).toHaveBeenCalledOnce());
@@ -702,7 +701,7 @@ describe("SetupWizard: saved WiFi recovery", () => {
     });
     const { rerender } = render(<SetupWizard {...props} />);
     await screen.findByRole("button", { name: "Use WiFi instead" });
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
     await waitFor(() => expect(props.onSelectConnectionMode).toHaveBeenCalledWith("wifi", cable.deviceId));
     await waitFor(() => expect(onSearchDevices).toHaveBeenCalledOnce(), { timeout: 2_500 });

@@ -4151,3 +4151,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Complete the authorized PR #407 setup/Settings fixes and push.
 - Approved customer-visible result: An offline WiFi snapshot during an explicit Settings switch does not stop status polling. A later connected same-device WiFi status returns the user to Settings.
 - Validation: The browser regression reproduces retained Cable health, offline WiFi and connected WiFi; it failed before the polling condition was corrected.
+
+## 2026-09-08 — Await the failed Cable dialog in recovery tests
+
+- User approval: Complete the authorized PR #407 CI/review corrections and push.
+- Approved customer-visible result: The approved saved-WiFi recovery flow is unchanged. Its tests await the actual asynchronous failure dialog before closing it and choosing WiFi.
+- Validation: Full UI unit suite; assertions still require reconnection to the same saved device. Tiny Office geometry tests use the existing zero default for optional y coordinates so standalone TypeScript validation also passes.

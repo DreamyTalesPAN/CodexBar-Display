@@ -1042,7 +1042,7 @@ func prepareCableFirmwareUpdateTest(t *testing.T) (string, string, *string) {
 	t.Helper()
 	pinNoOtherRuntimeWriter(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	previousResolve := resolveCableFirmwarePortFn
 	previousRead := readCableFirmwareHelloFn
 	previousTransfer := transferCableFirmwareFn

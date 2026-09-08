@@ -7,6 +7,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 func BenchmarkRunCycleWithDeps(b *testing.B) {
@@ -56,6 +57,6 @@ func BenchmarkMarshalFrameWithinLimit(b *testing.B) {
 func prepareFastTestEnvForBench(tb testing.TB) {
 	tb.Helper()
 	tmpHome := tb.TempDir()
-	tb.Setenv("HOME", tmpHome)
+	testenv.Home(tb, tmpHome)
 	tb.Setenv("CODEXBAR_DISPLAY_CHROMIUM_COOKIE_DB_PATHS", tmpHome+"/missing-cookies.db")
 }

@@ -61,7 +61,7 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 
 func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable"}); err != nil {
 		t.Fatalf("save runtime config: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
 
 func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
 		DeviceToken:  "pair-token",
@@ -87,7 +87,7 @@ func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
 
 func TestConfiguredConnectionModeKeepsPendingWiFiTransitionOnCableWorker(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{
 		DeviceTarget:          "http://192.168.178.72",
 		DeviceToken:           "pair-token",
