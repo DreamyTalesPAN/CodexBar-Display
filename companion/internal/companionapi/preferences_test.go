@@ -1705,3 +1705,28 @@ func TestProviderBackgroundRefreshPreservesReadyUntilItsResult(t *testing.T) {
 		})
 	}
 }
+
+func TestUnsupportedProviderKeepsGuidanceWithoutInventingReadiness(t *testing.T) {
+	now := time.Date(2026, 9, 8, 10, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	const message = "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh."
+	settings := []codexbar.ProviderSetting{{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthUnsupported, Reported: message}}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("gemini", "Gemini", now.Add(-time.Minute))
+		usage.Providers[0].Retained = true
+		return usage, true
+	}
+	items := server.providerDescriptors(settings)
+	if len(items) != 1 || items[0].Health.State != "unsupported" || items[0].Health.Reported != message {
+		t.Fatalf("unsupported provider lost its state or guidance: %+v", items)
+	}
+	if providerReadinessNextAction(codexbar.ProviderUnsupported) != "Follow the provider message and choose another provider." {
+		t.Fatal("unsupported provider got retry or repair guidance")
+	}
+	settings[0].Enabled = false
+	items = server.providerDescriptors(settings)
+	if items[0].Health.State != "disabled" || items[0].Health.Reported != "" {
+		t.Fatalf("disabled provider retained guidance: %+v", items)
+	}
+}

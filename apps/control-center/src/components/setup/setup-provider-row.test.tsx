@@ -82,3 +82,11 @@ describe("provider popup guidance", () => {
     expect(setupProviderIssueMessage({ health, label: "Codex" })).toBeNull();
   });
 });
+
+ it("shows a terminal upstream explanation without a sign-in or retry action", () => {
+   const html = render({health: "unsupported", reportedMessage: "Google no longer supports Gemini CLI OAuth. Enable Antigravity.", label: "Gemini"});
+   expect(html).toContain("Google no longer supports Gemini CLI OAuth. Enable Antigravity.");
+   expect(html).toContain('aria-label="Copy provider message for Gemini"');
+   expect(html).not.toContain('aria-label="Check Gemini again"');
+   expect(html).toContain('role="switch"');
+ });

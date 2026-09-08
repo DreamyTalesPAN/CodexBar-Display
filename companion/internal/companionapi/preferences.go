@@ -232,6 +232,8 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 		return codexbar.ProviderHealthAuthRequired
 	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
 		return codexbar.ProviderHealthSetupRequired
+	case codexbar.ProviderUnsupported:
+		return codexbar.ProviderHealthUnsupported
 	case codexbar.ProviderNoUsageAvailable:
 		return codexbar.ProviderHealthNoUsage
 	default:
@@ -655,7 +657,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "disabled"
 			message = "Provider is off."
 			reported = ""
-		} else if _, retained := retainedSuccess[setting.ID]; retained {
+		} else if _, retained := retainedSuccess[setting.ID]; retained && setting.Health != codexbar.ProviderHealthUnsupported {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 			if reported != "" {
@@ -724,7 +726,7 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 	}
 	switch setting.Health {
 	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
-		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnsupported, codexbar.ProviderHealthUnavailable:
 		return false
 	default:
 		return true
@@ -747,6 +749,8 @@ func providerReadinessHealthState(status string) string {
 		return "auth_required"
 	case codexbar.ProviderPermissionRequired:
 		return "permission_required"
+	case codexbar.ProviderUnsupported:
+		return "unsupported"
 	case codexbar.ProviderNoUsageAvailable:
 		return "no_usage_available"
 	case codexbar.ProviderTimeout:
@@ -770,6 +774,8 @@ func providerReadinessMessage(status string) string {
 		return "This provider needs an active sign-in."
 	case codexbar.ProviderPermissionRequired:
 		return "macOS blocked access required by this provider."
+	case codexbar.ProviderUnsupported:
+		return "This provider is no longer supported for this account."
 	case codexbar.ProviderNoUsageAvailable:
 		return "This account does not expose usage data."
 	case codexbar.ProviderTimeout:
@@ -791,6 +797,8 @@ func providerReadinessNextAction(status string) string {
 		return "Open provider setup, sign in again, then check this provider."
 	case codexbar.ProviderPermissionRequired:
 		return "Allow the required macOS access, then check this provider."
+	case codexbar.ProviderUnsupported:
+		return "Follow the provider message and choose another provider."
 	case codexbar.ProviderNoUsageAvailable:
 		return "Use this provider once or connect an account with usage, then check again."
 	case codexbar.ProviderTimeout:
@@ -822,6 +830,8 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Sign in again for this provider."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
+	case codexbar.ProviderHealthUnsupported:
+		return "This provider is no longer supported for this account."
 	case codexbar.ProviderHealthNoUsage:
 		return "This account does not expose usage data."
 	case codexbar.ProviderHealthUnavailable:

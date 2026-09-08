@@ -781,3 +781,52 @@ func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
 		t.Fatalf("a ready answer must not pay for an inventory call, got %d", inventoryCalls)
 	}
 }
+
+// v0.56.8 maps consumerTierDeprecated and parseFailed to the same code 3.
+// The shutdown response is interpreted upstream; VibeTV only transports its message.
+func TestUpstreamProviderGuidanceClassification(t *testing.T) {
+	const migration = "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh."
+	cases := []struct {
+		name, message, readiness string
+		health                   ProviderHealthState
+	}{
+		{"consumer migration", migration, ProviderUnsupported, ProviderHealthUnsupported},
+		{"provider neutral", "This client is no longer supported. Sign in to the replacement provider.", ProviderUnsupported, ProviderHealthUnsupported},
+		{"unrelated 403", "Gemini API error: HTTP 403", ProviderEngineError, ProviderHealthUnavailable},
+		{"licensed account 403", "Gemini API error: You do not have a valid license of this product. Please contact your administrator to request a license. (#3501)", ProviderEngineError, ProviderHealthUnavailable},
+		{"parse error same numeric code", "Could not parse Gemini usage: invalid response", ProviderEngineError, ProviderHealthUnavailable},
+		{"existing sign in", "Not logged in to Gemini. Run 'gemini' in Terminal to authenticate.", ProviderAuthRequired, ProviderHealthAuthRequired},
+		{"auth type unsupported is not shutdown", "Gemini API key auth not supported. Use Google account (OAuth) instead.", ProviderAuthRequired, ProviderHealthAuthRequired},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal([]any{map[string]any{"provider": "gemini", "error": map[string]any{"code": 3, "kind": "provider", "message": tc.message}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			readiness := providerReadinessFromOutput(raw, errors.New("exit status 3"), nil)
+			health := parseProviderHealth(raw)["gemini"]
+			if len(readiness) != 1 || readiness[0].Status != tc.readiness || health.health != tc.health {
+				t.Fatalf("readiness=%+v health=%+v", readiness, health)
+			}
+			if readiness[0].Reported != tc.message || health.reported != tc.message {
+				t.Fatal("upstream guidance was lost")
+			}
+		})
+	}
+}
+
+func TestAntigravityWeeklyUsageAlongsideUnsupportedGemini(t *testing.T) {
+	raw := []byte(`[
+ {"provider":"gemini","source":"oauth","error":{"code":3,"kind":"provider","message":"Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run agy, then refresh."}},
+ {"provider":"antigravity","source":"oauth","usage":{"primary":{"usedPercent":12,"windowMinutes":10080,"resetsAt":"2026-09-15T10:00:00Z"},"identity":{"providerID":"antigravity","loginMethod":"Antigravity Starter Quota"},"updatedAt":"2026-09-08T10:00:00Z"}}
+ ]`)
+	readiness := providerReadinessFromOutput(raw, errors.New("exit status 3"), nil)
+	if len(readiness) != 2 || readiness[0].ID != "antigravity" || readiness[0].Status != ProviderReady || readiness[1].Status != ProviderUnsupported {
+		t.Fatalf("unexpected readiness: %+v", readiness)
+	}
+	health := parseProviderHealth(raw)
+	if health["antigravity"].health != ProviderHealthHealthy || health["gemini"].health != ProviderHealthUnsupported {
+		t.Fatalf("unexpected health: %+v", health)
+	}
+}

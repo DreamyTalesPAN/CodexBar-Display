@@ -475,6 +475,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testProviderMigrationHandoff(browser, appContext.appUrl);
       console.log("control-center provider settings test passed");
       return;
     }
@@ -918,6 +919,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testProviderMigrationHandoff(browser, appContext.appUrl);
     await testProviderOnboardingUsesSharedHealthyDescriptor(
       browser,
       appContext.appUrl,
@@ -12763,3 +12765,43 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+async function testProviderMigrationHandoff(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const writes = [];
+  const message = "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.";
+  const gemini = {
+    ...providerPreferenceFixture("gemini", "Gemini"),
+    health: {state: "unsupported", service: "unknown", message: "This provider is no longer supported for this account.", reported: message},
+  };
+  const antigravity = disabledProviderPreferenceFixture("antigravity", "Antigravity");
+  await routeCompanionOnline(page, [], () => {}, {
+    providerSelectionSetup: {providerSelectionRequired: true, providerSelectionComplete: false},
+    providerDisplay: {mode: "automatic", providerIds: [], configured: false, valid: false},
+    preferencesResponse: {ok: true, items: [gemini, antigravity]},
+    onRequest: (path, method, body) => {if (method !== "GET") writes.push({path, method, body});},
+  });
+  await page.goto(appUrl, {waitUntil: "domcontentloaded"});
+  const panel = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+  await panel.getByText(message, {exact: true}).waitFor({timeout: 10_000});
+  assert(await panel.getByRole("button", {name: "Continue"}).isDisabled(), "unsupported access alone must not complete setup");
+  assert(await panel.getByRole("button", {name: "Check Gemini again"}).count() === 0, "terminal access must not offer Retry");
+  if (migrationScreenshotDir) {
+    await mkdir(migrationScreenshotDir, {recursive: true});
+    await page.screenshot({path: join(migrationScreenshotDir, "gemini-migration-desktop.png"), fullPage: true});
+  }
+  const before = writes.length;
+  await panel.getByRole("button", {name: "Show Antigravity"}).click();
+  assert(!(await panel.getByRole("switch", {name: "Antigravity"}).isChecked()), "showing an alternative must not enable it");
+  assert(writes.length === before, "navigation must not write provider settings");
+  await panel.getByRole("switch", {name: "Antigravity"}).click();
+  await waitForCondition(() => writes.some((request) => request.path.includes("antigravity") && request.method === "PATCH"), "the explicit toggle did not use the provider settings endpoint");
+  await waitForCondition(async () => !(await panel.getByRole("button", {name: "Continue"}).isDisabled()), "healthy Antigravity must unblock setup alongside unsupported Gemini");
+  await panel.getByRole("searchbox", {name: "Search providers"}).fill("");
+  assert(await panel.getByRole("switch", {name: "Gemini"}).isChecked(), "enabling the alternative must not silently disable Gemini");
+  if (migrationScreenshotDir) {
+    await page.screenshot({path: join(migrationScreenshotDir, "gemini-migration-antigravity-ready.png"), fullPage: true});
+  }
+
+  await page.close();
+}

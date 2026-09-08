@@ -463,3 +463,30 @@ describe("SetupProvidersScreen", () => {
     }
   });
 });
+
+ describe("upstream provider migration", () => {
+   const gemini = provider({health: "unsupported", label: "Gemini", providerId: "gemini"});
+   gemini.health.reported = "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.";
+   const antigravity = provider({health: "disabled", label: "Antigravity", providerId: "antigravity", value: false});
+   it("reveals the mentioned inventory entry without changing either toggle", () => {
+     const onToggle = vi.fn();
+     renderDom(<SetupProvidersScreen onCheckAgain={vi.fn()} onContinue={vi.fn()} onToggle={onToggle} pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} providers={[gemini, antigravity]} />);
+     expect((screen.getByRole("button", {name: "Continue"}) as HTMLButtonElement).disabled).toBe(true);
+     fireEvent.click(screen.getByRole("button", {name: "Show Antigravity"}));
+     expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("Antigravity");
+     expect(screen.queryByRole("switch", {name: "Gemini"})).toBeNull();
+     expect(screen.getByRole("switch", {name: "Antigravity"}).getAttribute("aria-checked")).toBe("false");
+     expect(onToggle).not.toHaveBeenCalled();
+     fireEvent.click(screen.getByRole("switch", {name: "Antigravity"}));
+     expect(onToggle).toHaveBeenCalledWith(antigravity, true);
+   });
+   it("opens Continue only once an enabled provider has usable data", () => {
+     expect(render({providers:[gemini, antigravity]})).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Continue/);
+     const healthy = {...antigravity, value: true, health: {...antigravity.health, state: "healthy"}};
+     expect(render({providers:[gemini, healthy]})).not.toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Continue/);
+     expect(setupProviderCanDisplay(gemini)).toBe(false);
+   });
+   it("does not invent an alternative absent from the inventory", () => {
+     expect(render({providers:[gemini]})).not.toContain("Show Antigravity");
+   });
+ });
