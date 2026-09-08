@@ -627,6 +627,55 @@ describe("SetupWizard: direct connection", () => {
   });
 });
 
+describe("SetupWizard: bounded WiFi discovery", () => {
+  it("retries empty and failed scans until the same device appears", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", deviceSearchState: "not-found",
+      initialWiFiSetup: { status: "waiting_for_wifi", deviceId: "fresh-device" },
+      connectSteps: { connect: vi.fn().mockResolvedValue({}), checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    // Status renders and new callback identities must not postpone discovery.
+    for (let i = 0; i < 3; i++) {
+      rerender(<SetupWizard {...props} onSearchDevices={() => props.onSearchDevices()} />);
+      await act(() => vi.advanceTimersByTimeAsync(500));
+    }
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(1);
+    rerender(<SetupWizard {...props} deviceSearchState="searching" />);
+    rerender(<SetupWizard {...props} searchError={{ code: "network_unavailable", message: "WiFi unavailable", nextAction: "Reconnect WiFi." }} />);
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(2);
+    const other: DeviceCandidate = { target: "http://192.168.1.10", deviceId: "other", transport: "wifi" };
+    rerender(<SetupWizard {...props} deviceCandidates={[other]} deviceSearchState="multiple" />);
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(3);
+    expect(props.connectSteps.connect).not.toHaveBeenCalled();
+    const same: DeviceCandidate = { ...other, deviceId: "fresh-device" };
+    rerender(<SetupWizard {...props} deviceCandidates={[same]} deviceSearchState="multiple" />);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(props.connectSteps.connect).toHaveBeenCalledWith(same);
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(3);
+  });
+
+  it("releases waiting after the deadline and stops automatic searches", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", deviceSearchState: "not-found",
+      initialWiFiSetup: { status: "waiting_for_wifi", deviceId: "fresh-device" },
+    });
+    render(<SetupWizard {...props} />);
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(screen.getByRole("heading", { name: "Connect VibeTV to WiFi" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Connecting to WiFi…" })).toBeNull();
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches);
+  });
+});
+
 describe("SetupWizard: saved WiFi recovery", () => {
   it("rescans and reconnects the same device after reusing its saved network", async () => {
     const cable: DeviceCandidate = {

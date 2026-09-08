@@ -2,6 +2,7 @@ package usb
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -75,6 +76,61 @@ func TestDeviceHelloDoesNotCacheLegacyReadyAsIdentity(t *testing.T) {
 	}
 	if len(port.writePayloads) != 2 {
 		t.Fatal("expected another hello request after boot readiness")
+	}
+}
+
+func TestDeviceHelloRevalidatesStableIdentityOnSamePath(t *testing.T) {
+	port := newMockSerialPort()
+	opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: time.Millisecond})
+	defer sender.Close()
+	for _, id := range []string{"old-device", "replacement-device"} {
+		port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"` + id + `","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")}
+		hello, err := sender.DeviceHello("/dev/mock")
+		if err != nil || hello.DeviceID != id {
+			t.Fatalf("same-path replacement returned stale identity: hello=%+v err=%v", hello, err)
+		}
+	}
+	if port.closeCalls != 0 {
+		t.Fatal("responsive port must remain open")
+	}
+	if _, err := sender.DeviceHello("/dev/mock"); err == nil {
+		t.Fatal("unresponsive handle returned cached identity")
+	}
+	if _, seen := sender.CurrentHello(); seen || port.closeCalls != 1 {
+		t.Fatal("stale identity and handle must be discarded")
+	}
+	replacement := newMockSerialPort()
+	replacement.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"new-port-device"}` + "\n")}
+	opener.portsByPath["/dev/mock"] = replacement
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.DeviceID != "new-port-device" {
+		t.Fatalf("next scan did not reopen current device: hello=%+v err=%v", hello, err)
+	}
+}
+
+func TestResolverRejectsReplacementForPreviousIdentity(t *testing.T) {
+	for _, control := range []bool{false, true} {
+		t.Run(fmt.Sprint(control), func(t *testing.T) {
+			port := newMockSerialPort()
+			sender := NewSenderWithConfig(SenderConfig{Opener: &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}, Sleep: func(time.Duration) {}, HelloWindow: time.Millisecond})
+			defer sender.Close()
+			hello := func(id string) []byte {
+				return []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"` + id + `","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")
+			}
+			port.readQueue = [][]byte{hello("previous")}
+			if _, err := sender.DeviceHello("/dev/mock"); err != nil {
+				t.Fatal(err)
+			}
+			port.readQueue = [][]byte{hello("replacement")}
+			resolve := sender.ResolvePort
+			if control {
+				resolve = sender.ResolveControlPort
+			}
+			if _, err := resolve("", "previous"); errcode.Of(err) != errcode.TransportNoMatchingDevice {
+				t.Fatalf("replacement selected for previous identity: %v", err)
+			}
+		})
 	}
 }
 
@@ -348,7 +404,7 @@ func TestResolverConfirmsPendingCableTransitionAfterIdentityMatch(t *testing.T) 
 		`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"cable","transitionPending":true,"transitionFrom":"wifi","transitionTo":"cable"}}}` + "\n",
 	)
 	confirmationLine := []byte(`{"kind":"connection-mode","status":"confirmed","deviceId":"14799300","mode":"cable"}` + "\n")
-	port.readQueue = [][]byte{helloLine[:100], helloLine[100:], confirmationLine}
+	port.readQueue = [][]byte{helloLine[:100], helloLine[100:], helloLine, confirmationLine}
 	sender := NewSenderWithConfig(SenderConfig{
 		Opener: &mockOpener{portsByPath: map[string]SerialPort{path: port}},
 		Sleep:  func(time.Duration) {},
@@ -362,11 +418,11 @@ func TestResolverConfirmsPendingCableTransitionAfterIdentityMatch(t *testing.T) 
 	if resolved != path {
 		t.Fatalf("resolved %q, expected %q", resolved, path)
 	}
-	if len(port.writePayloads) != 2 {
-		t.Fatalf("expected hello plus confirmation requests, got %#v", port.writePayloads)
+	if len(port.writePayloads) != 3 {
+		t.Fatalf("expected discovery, selected-port hello and confirmation requests, got %#v", port.writePayloads)
 	}
 	want := "{\"kind\":\"request\",\"op\":\"confirm-connection-mode\",\"deviceId\":\"14799300\"}\n"
-	if got := string(port.writePayloads[1]); got != want {
+	if got := string(port.writePayloads[2]); got != want {
 		t.Fatalf("unexpected confirmation request %q", got)
 	}
 }
@@ -382,7 +438,7 @@ func TestSenderReusesResolvedCablePortWithoutReopeningOtherDevices(t *testing.T)
 	targetHello := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")
 	otherHello := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"other-device","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")
 	target := newMockSerialPort()
-	target.readQueue = [][]byte{targetHello, targetHello}
+	target.readQueue = [][]byte{targetHello, targetHello, targetHello}
 	other := newMockSerialPort()
 	other.readQueue = [][]byte{otherHello}
 	opener := &mockOpener{portsByPath: map[string]SerialPort{
@@ -426,6 +482,7 @@ func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testin
 	port.readQueue = [][]byte{
 		helloLine[:100],
 		helloLine[100:],
+		helloLine,
 		[]byte(`{"kind":"error","code":"connection-mode-confirmation-rejected","message":"failed to persist connection mode confirmation"}` + "\n"),
 	}
 	sender := NewSenderWithConfig(SenderConfig{

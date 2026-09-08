@@ -132,18 +132,15 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	opened, err := s.ensurePort(path)
-	if err != nil {
+	if _, err := s.ensurePort(path); err != nil {
 		return protocol.DeviceHello{}, err
 	}
-	// A pending transport switch can roll back on the device without closing
-	// USB. Re-read that handshake instead of keeping the intermediate mode.
-	if opened || !s.helloSeen || (s.hello.Capabilities.Transport.TransitionPending &&
-		s.hello.Capabilities.Transport.TransitionTo == "wifi") {
-		s.captureHelloAfterOpenLocked()
-	}
+	// A USB path can be reused by another device, and transport state can
+	// change without reopening the port. Only a fresh hello proves identity.
+	s.captureHelloAfterOpenLocked()
 
 	if !s.helloSeen {
+		s.closeCurrentLocked()
 		return protocol.DeviceHello{}, wrapTransportError(
 			errcode.ProtocolDeviceHelloUnavailable,
 			"read-hello",
@@ -248,6 +245,10 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	if _, matches := s.currentMatchingPort(path, expectedDeviceID, false); !matches {
+		return "", wrapTransportError(errcode.TransportNoMatchingDevice, "resolve-vibetv", path,
+			"Connect the expected VibeTV by Cable and retry.", errors.New("cable identity changed during resolution"))
+	}
 	if hello.Capabilities.Transport.TransitionPending &&
 		hello.Capabilities.Transport.TransitionTo == "cable" {
 		if err := s.ConfirmConnectionMode(path, hello.DeviceID); err != nil {
@@ -259,7 +260,7 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 
 func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, error) {
 	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
-		return path, nil
+		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, s.DeviceHello, true)
 	}
 	return resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type {
   ApiError,
   DeviceCandidate,
@@ -413,7 +413,6 @@ export function SetupWizard(props: SetupWizardProps) {
           deviceId: result.deviceId,
           viaCable: Boolean(cable),
         });
-        window.setTimeout(onSearchDevices, 1500);
       } else {
         setWiFiSetup(null);
       }
@@ -427,6 +426,27 @@ export function SetupWizard(props: SetupWizardProps) {
     ],
   );
 
+  const searchWhileWaitingForWiFi = useEffectEvent(() => {
+    if (step === "device" && !searchingForDevices && connect.state.phase === "idle") {
+      onSearchDevices();
+    }
+  });
+
+  useEffect(() => {
+    if (wifiSetup?.phase !== "waiting") return;
+    const retry = window.setInterval(() => searchWhileWaitingForWiFi(), 1500);
+    const deadline = window.setTimeout(() => {
+      setWiFiSetup((current) => current?.viaCable
+        ? { ...current, phase: "credentials" }
+        : null);
+      setWiFiScanError("VibeTV did not reconnect. Check the WiFi details and try again.");
+    }, 60_000);
+    return () => {
+      window.clearInterval(retry);
+      window.clearTimeout(deadline);
+    };
+  }, [wifiSetup?.phase]);
+
   useEffect(() => {
     if (
       step !== "device" ||
@@ -439,20 +459,20 @@ export function SetupWizard(props: SetupWizardProps) {
     const wifiCandidates = deviceCandidates.filter(
       (candidate) => candidate.transport !== "cable",
     );
-    if (!wifiSetup.deviceId) {
-      if (wifiCandidates.length === 0) {
-        return;
-      }
-      const release = window.setTimeout(() => {
-        setWiFiSetup(null);
-      }, 0);
-      return () => window.clearTimeout(release);
-    }
     const candidate = wifiCandidates.find(
       (entry) =>
         entry.deviceId?.trim().toLowerCase() ===
         wifiSetup.deviceId?.trim().toLowerCase(),
     );
+    if (wifiSetup.deviceId ? !candidate : wifiCandidates.length === 0) {
+      return;
+    }
+    if (!wifiSetup.deviceId) {
+      const release = window.setTimeout(() => {
+        setWiFiSetup(null);
+      }, 0);
+      return () => window.clearTimeout(release);
+    }
     if (!candidate) {
       return;
     }
@@ -629,6 +649,7 @@ export function SetupWizard(props: SetupWizardProps) {
             current ? { ...current, phase: "credentials" } : current,
           )}
           onConfigureWiFi={async (ssid, password) => {
+            setWiFiScanError(null);
             try {
               const deviceId = await props.onConfigureWiFi(ssid, password);
               setWiFiSetup({
@@ -637,7 +658,6 @@ export function SetupWizard(props: SetupWizardProps) {
                 viaCable: true,
                 credentialsSent: true,
               });
-              window.setTimeout(onSearchDevices, 1500);
             } catch {
               // The app owns and displays the normalized API error.
             }

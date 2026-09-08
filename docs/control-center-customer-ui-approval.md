@@ -4041,3 +4041,10 @@ issue scope, or release permission never implies UI permission.
   card after a connected status without another device-selection write.
 - Approved files: `control-center-app.tsx`, `control-center-app.test.ts`,
   `test-customer-flows.mjs`, and this record.
+
+## 2026-09-08 — Bound WiFi transition recovery
+
+- User approval: Finish the authorized setup rehearsal and PR #407 review fixes, then push the result; no repeated approval requests in this chat.
+- Approved customer-visible result: Pending WiFi setup keeps searching after an empty or temporarily failed scan. After 60 seconds it returns to editable WiFi details with a short explanation and the existing Back control, instead of waiting indefinitely. Only the same device can complete an identified transition.
+- Validation: Regressions cover failed scans, unrelated devices, status rerenders, eventual same-device connection, deadline recovery and cancellation of automatic searches.
+- Approved files: `setup-wizard.tsx`, `setup-wizard.test.tsx`, and this record.
