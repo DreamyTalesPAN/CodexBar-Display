@@ -4,6 +4,12 @@ VibeTV is a physical desk display for AI builders. It keeps usage, limits,
 tokens, reset times, and workflow status visible on your desk so you can see
 important changes before they interrupt your work.
 
+<p align="center">
+  <a href="https://vibetv.shop/products/vibe-tv">
+    <img src="docs/assets/vibetv-hero.jpg" alt="White VibeTV desk display showing Codex usage on a light background" width="640">
+  </a>
+</p>
+
 **Start here:** [Buy the hardware](https://vibetv.shop/products/vibe-tv) ·
 [Open Control Center](https://app.vibetv.shop) ·
 [Setup guide](docs/customer-setup.md) ·

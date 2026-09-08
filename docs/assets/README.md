@@ -1,4 +1,4 @@
-# Theme preview sources
+# README image sources
 
 Updated for issue #431 on 2026-09-08. All six live themes and three screensavers
 use the same normal Control Center preview, without product mockups.
@@ -19,3 +19,9 @@ These are static example states, not live device readings.
 | [Synthwave](vibetv-theme-synthwave.png) | [render pack](../../dist/theme-packs/render/synthwave.json) | `/themes/u/synthwa-5-0f760a.json` | `0f760a70` |
 | [Tiny Office](vibetv-theme-tiny-office.png) | [render pack](../../dist/theme-packs/render/tiny-office.json) | `/themes/u/to-7-d7799cec.json` | `6b398ec9` |
 | [Token Fire](vibetv-screensaver-token-fire.png) | [render pack](../../dist/theme-packs/render/token-fire.json) | `/themes/s/tf-5-9aeed240.json` | `f589d51e` |
+
+## Hero image
+
+[vibetv-hero.jpg](vibetv-hero.jpg) uses the product image supplied by the user on
+2026-09-08. Exported from the 1448 × 1086 PNG at 1280 × 960, JPEG quality 85,
+for a 640-pixel display width. No crop or content changes.
