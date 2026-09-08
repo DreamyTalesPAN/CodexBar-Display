@@ -112,6 +112,21 @@
       "bytes": 1585
     },
     {
+      "id": "tiny-office",
+      "title": "Tiny Office",
+      "usage": "live",
+      "version": "0.3.0",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/to-4-546112af.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-tiny-office-v0.3.0.zip",
+      "sha256": "dcfacdf01ebc01e4b192523c7d57a7fb751efda1b6208fa5108f982a88b01137",
+      "bytes": 8355
+    },
+    {
       "id": "token-fire",
       "title": "Token Fire",
       "usage": "screensaver",
