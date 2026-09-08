@@ -264,7 +264,8 @@ func isExecutable(path string) bool {
 	if info.IsDir() {
 		return false
 	}
-	return runtime.GOOS == "windows" && strings.EqualFold(filepath.Ext(path), ".exe") || info.Mode()&0o111 != 0
+	// Windows has no POSIX execute bits; the process launcher checks the format.
+	return runtime.GOOS == "windows" || info.Mode()&0o111 != 0
 }
 
 func firstSymlinkInPathUnder(root, path string) (string, error) {
@@ -2374,8 +2375,8 @@ func withHome(home, value string) string {
 	switch {
 	case v == "~":
 		return home
-	case strings.HasPrefix(v, "~/"):
-		return filepath.Join(home, strings.TrimPrefix(v, "~/"))
+	case strings.HasPrefix(filepath.ToSlash(v), "~/"):
+		return filepath.Join(home, v[2:])
 	default:
 		return v
 	}

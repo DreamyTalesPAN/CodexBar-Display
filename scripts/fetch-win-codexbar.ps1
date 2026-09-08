@@ -1,4 +1,4 @@
-# Extract the released, signed installer. Never run/install it or build upstream.
+# Extract the hash-pinned upstream installer. Never run/install it or build upstream.
 param([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference = 'Stop'
 $version = '0.55.0'
@@ -7,7 +7,9 @@ New-Item -ItemType Directory -Force $Destination | Out-Null
 $installer = Join-Path $Destination "CodexBar-$version-Setup.exe"
 Invoke-WebRequest "https://github.com/nesszer/Win-CodexBar/releases/download/v$version/CodexBar-$version-Setup.exe" -OutFile $installer
 if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha256) { throw 'Win-CodexBar installer checksum mismatch' }
-if ((Get-AuthenticodeSignature $installer).Status -ne 'Valid') { throw 'Win-CodexBar installer signature is not valid' }
+# This exact upstream release is unsigned; authenticity here is the release
+# asset SHA-256 above, not an invented Authenticode guarantee.
+Write-Host "Pinned installer Authenticode status: $((Get-AuthenticodeSignature $installer).Status)"
 
 # Inno 6.7 archive support. Pinned extractor, used only on the disposable CI host.
 $extractorZip = Join-Path $Destination 'innounp.zip'
@@ -19,6 +21,6 @@ $payload = Join-Path $Destination 'payload'
 & (Join-Path $extractorDir 'innounp.exe') -x -y "-d$payload" $installer '*codexbar-cli.exe'
 if ($LASTEXITCODE -ne 0) { throw "Installer extraction failed: $LASTEXITCODE" }
 $cli = @(Get-ChildItem $payload -Recurse -Filter codexbar-cli.exe)
-if ($cli.Count -ne 1) { throw 'Expected exactly one console CLI in the signed installer' }
+if ($cli.Count -ne 1) { throw 'Expected exactly one console CLI in the pinned installer' }
 "CODEXBAR_CONTRACT_BIN=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 "CODEXBAR_CONTRACT_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

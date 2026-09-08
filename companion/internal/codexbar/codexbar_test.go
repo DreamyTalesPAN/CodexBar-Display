@@ -1119,7 +1119,7 @@ func TestFetchAllProvidersDoesNotFallBackToCodexCLIOnAggregateCommandFailure(t *
 		runUsageCommandFn = originalRunUsageCommand
 	}()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 	var cliFallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
@@ -1152,7 +1152,7 @@ func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
 		runCostCommandFn = originalRunCostCommand
 	}()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
 		if strings.Contains(argLine, "usage --json") {
@@ -1180,7 +1180,7 @@ func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() { runUsageCommandFn = originalRunUsageCommand }()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 	var fallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
@@ -1215,7 +1215,7 @@ func TestFetchAllProvidersReturnsRuntimeErrorForOfficialGlobalCLIError(t *testin
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() { runUsageCommandFn = originalRunUsageCommand }()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 	var fallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
@@ -1246,7 +1246,7 @@ func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
 		runUsageCommandFn = originalRunUsageCommand
 	}()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 	var aggregateCalls int
 	var cliFallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
@@ -1282,7 +1282,7 @@ func TestFetchAllProvidersReturnsErrorWhenAggregateFails(t *testing.T) {
 		runUsageCommandFn = originalRunUsageCommand
 	}()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 	var cliFallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
@@ -1318,7 +1318,7 @@ func TestFetchProviderScopedUsageDetailedReturnsSanitizedProviderError(t *testin
 		]`), errors.New("exit status 1")
 	}
 
-	parsed, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, "/bin/sh", "cursor", 8, "")
+	parsed, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, testBinary(t), "cursor", 8, "")
 	if err != nil {
 		t.Fatalf("expected provider-scoped error result, got %v", err)
 	}
@@ -1339,7 +1339,7 @@ func TestFetchProviderScopedUsageDetailedRejectsDifferentReadyProvider(t *testin
 		]`), nil
 	}
 
-	_, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, "/bin/sh", "antigravity", 8, "auto")
+	_, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, testBinary(t), "antigravity", 8, "auto")
 	if err == nil || FetchErrorKindOf(err) != FetchErrorNoProviders {
 		t.Fatalf("different provider must not satisfy exact readiness: %v", err)
 	}
@@ -1432,7 +1432,7 @@ func TestFetchProviderUsesProviderScopedUsageForCodex(t *testing.T) {
 		runUsageCommandFn = originalRunUsageCommand
 	}()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 	var cliFallbackCalls int
 
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
@@ -1472,7 +1472,7 @@ func TestFetchProviderUsesProviderScopedUsage(t *testing.T) {
 		runCostCommandFn = originalRunCostCommand
 	}()
 
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
@@ -1524,7 +1524,7 @@ func TestClassifyParseError(t *testing.T) {
 func stubSupportedCodexBarVersion(t *testing.T) {
 	t.Helper()
 	setExistingConfig(t)
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	t.Setenv("CODEXBAR_BIN", testBinary(t))
 
 	originalRunVersionCommand := runVersionCommandFn
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {

@@ -2,8 +2,6 @@ package codexbar
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -131,18 +129,8 @@ func TestFetchProviderTokenStatsRequestsCompleteCostScan(t *testing.T) {
 }
 
 func TestFetchProviderTokenStatsAllowsSlowCostScan(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "codexbar")
-	script := `#!/bin/sh
-if [ "$1" = "cost" ] && [ "$2" = "--json" ]; then
-  sleep 2.1
-  printf '%s\n' '[{"provider":"codex","source":"local","updatedAt":"2026-07-28T09:00:00Z","sessionTokens":120,"last30DaysTokens":240,"totals":{"totalTokens":240}}]'
-  exit 0
-fi
-exit 64
-`
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake codexbar: %v", err)
-	}
+	bin := testBinary(t)
+	t.Setenv("CODEXBAR_TEST_PROCESS", "cost")
 
 	start := time.Now()
 	stats, ok := fetchProviderTokenStats(context.Background(), bin)
@@ -165,8 +153,9 @@ func TestFetchProviderTokenStatsReportAcceptsEmptyProviderResult(t *testing.T) {
 	if !report.OK || report.Reason != "no_providers" || len(stats) != 0 {
 		t.Fatalf("expected successful empty token result, report=%+v stats=%#v", report, stats)
 	}
-	if report.CostDuration <= 0 || report.ParseDuration <= 0 {
-		t.Fatalf("expected cost and parse durations, got %+v", report)
+	// A fast in-memory result can take less than the host clock resolution.
+	if report.CostDuration < 0 || report.ParseDuration < 0 {
+		t.Fatalf("negative cost or parse duration: %+v", report)
 	}
 }
 

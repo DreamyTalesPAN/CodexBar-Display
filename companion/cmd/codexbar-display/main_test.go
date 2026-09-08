@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,6 +33,9 @@ import (
 )
 
 func TestDisplayWriterLockAllowsOnlyOneDaemon(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows writer lock is explicitly out of scope for #415")
+	}
 	lockPath := filepath.Join(t.TempDir(), "display-writer.lock")
 	first, err := writerlock.AcquireAt(lockPath)
 	if err != nil {
@@ -91,6 +95,9 @@ func TestParseDaemonCommandOptionsAllowsAPIFallback(t *testing.T) {
 }
 
 func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix EADDRINUSE contract; Windows runtime lifecycle belongs to #416")
+	}
 	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"companion":"unrelated"}`)
@@ -115,6 +122,9 @@ func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T)
 }
 
 func TestListenCompanionAPIRejectsSecondVibeTVService(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix EADDRINUSE contract; Windows runtime lifecycle belongs to #416")
+	}
 	existing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/v1/status" {
 			http.NotFound(w, request)
@@ -160,14 +170,14 @@ func TestRuntimeEndpointWriteIsPrivateAndAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat endpoint: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("endpoint mode=%#o want 0600", info.Mode().Perm())
 	}
 	dirInfo, err := os.Stat(filepath.Dir(path))
 	if err != nil {
 		t.Fatalf("stat endpoint dir: %v", err)
 	}
-	if dirInfo.Mode().Perm() != 0o700 {
+	if runtime.GOOS != "windows" && dirInfo.Mode().Perm() != 0o700 {
 		t.Fatalf("endpoint dir mode=%#o want 0700", dirInfo.Mode().Perm())
 	}
 
@@ -293,7 +303,7 @@ func TestDisplayStreamLogUsesSharedApplicationSupportPathAndAppends(t *testing.T
 	if err != nil {
 		t.Fatalf("stat display stream log: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
 		t.Fatalf("expected private display stream log mode 0600, got %04o", got)
 	}
 	raw, err := os.ReadFile(path)

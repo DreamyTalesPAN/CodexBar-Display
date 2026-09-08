@@ -28,11 +28,21 @@ GUI app is already running, preserving its existing reuse exception.
   availability needs a visible bench comparison. Win-CodexBar 0.55.0 cannot yet
   run the unchanged production serve command.
 
-CI extracts the pinned Windows CLI from the signed installer (no upstream source
+CI extracts the pinned Windows CLI from the SHA-256-verified upstream installer
+(this release is unsigned; no upstream source
 build, patch, installer execution, or tray launch). Both released binaries run
 contract checks alongside #357's recordings. Known gaps are explicit assertions:
 when an upstream release closes them, CI requires revisiting the blockers.
 Green contract tests do not waive those blockers or prove authenticated usage.
+
+Windows CI still does not implement or claim POSIX runtime contracts: the
+exclusive writer-lock test and two Unix `EADDRINUSE` lifecycle tests are skipped
+there (#416); POSIX mode-bit assertions remain enforced on Unix only. The virtual
+device command is built and serves raw OTA on Windows, but its POSIX graceful
+signal shutdown subtest is skipped. Shell CLI test programs are replaced with a
+Go helper process. Multipart test fixtures select their transport explicitly;
+Windows socket-error-based raw-OTA fallback remains unimplemented. Theme assets
+are checked out byte-for-byte (no CRLF conversion), preserving signed digests.
 
 ## Marcus's cold/warm handoff — do not run automatically
 

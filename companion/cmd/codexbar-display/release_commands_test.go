@@ -701,7 +701,20 @@ func TestDownloadReleaseFirmwareUsesLatestManifestWhenTargetVersionEmpty(t *test
 	}
 }
 
+// These fixtures expose the multipart endpoint, not a raw-OTA listener. Select
+// that transport explicitly instead of relying on a Unix connection-refused
+// error from an unrelated fixed port to choose it.
+func useMultipartUpload(t *testing.T) {
+	t.Helper()
+	previous := uploadFirmwareOTAFn
+	t.Cleanup(func() { uploadFirmwareOTAFn = previous })
+	uploadFirmwareOTAFn = func(ctx context.Context, base, image, token, _ string) error {
+		return uploadFirmwareOTAMultipart(ctx, base, image, token)
+	}
+}
+
 func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
+	useMultipartUpload(t)
 	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
@@ -1326,6 +1339,7 @@ func TestFetchDeviceHelloRetryStopsOnAuthError(t *testing.T) {
 }
 
 func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
+	useMultipartUpload(t)
 	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {

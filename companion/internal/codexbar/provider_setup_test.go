@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -86,10 +87,10 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("expected dump and validation, got %v", calls)
 	}
-	if mode := fileMode(t, filepath.Dir(path)); mode.Perm() != 0o700 {
+	if mode := fileMode(t, filepath.Dir(path)); runtime.GOOS != "windows" && mode.Perm() != 0o700 {
 		t.Fatalf("expected config dir 0700, got %o", mode.Perm())
 	}
-	if mode := fileMode(t, path); mode.Perm() != 0o600 {
+	if mode := fileMode(t, path); runtime.GOOS != "windows" && mode.Perm() != 0o600 {
 		t.Fatalf("expected config file 0600, got %o", mode.Perm())
 	}
 }
@@ -160,18 +161,8 @@ func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	home := t.TempDir()
 	testenv.Home(t, home)
 	t.Setenv("CODEXBAR_CONFIG", "")
-	script := filepath.Join(t.TempDir(), "print-config")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
-if [ "${1:-} ${2:-}" = "config dump" ]; then
-  printf '{"version":1,"providers":[{"id":"future-provider","enabled":true}]}'
-elif [ "${1:-} ${2:-}" = "config validate" ]; then
-  printf '[]'
-else
-  printf '%s' "$CODEXBAR_CONFIG"
-fi
-`), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	script := testBinary(t)
+	t.Setenv("CODEXBAR_TEST_PROCESS", "config")
 	t.Setenv("CODEXBAR_BIN", script)
 	out, err := runUsageCommand(context.Background(), 5*time.Second, script)
 	if err != nil {
@@ -310,12 +301,13 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "ancestor segment",
 			setup: func(t *testing.T, home string) {
-				realLibrary := filepath.Join(t.TempDir(), "Library")
-				writeExecutable(t, filepath.Join(realLibrary, "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
-				if err := os.MkdirAll(home, 0o700); err != nil {
+				config := filepath.Dir(runtimepaths.Root(home))
+				realConfig := filepath.Join(t.TempDir(), "config")
+				writeExecutable(t, filepath.Join(realConfig, "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(filepath.Dir(config), 0o700); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(realLibrary, filepath.Join(home, "Library")); err != nil {
+				if err := os.Symlink(realConfig, config); err != nil {
 					t.Fatal(err)
 				}
 			},

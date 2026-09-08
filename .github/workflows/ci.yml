@@ -21,6 +21,8 @@ jobs:
       run:
         working-directory: companion
     steps:
+      - run: git config --global core.autocrlf false
+        working-directory: ${{ runner.temp }}
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -39,6 +41,8 @@ jobs:
     env:
       CGO_ENABLED: '0'
     steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -52,7 +56,7 @@ jobs:
           ditto -x -k "$archive" "$RUNNER_TEMP/codexbar-contract"
           echo "CODEXBAR_CONTRACT_BIN=$RUNNER_TEMP/codexbar-contract/CodexBar.app/Contents/Helpers/CodexBarCLI" >> "$GITHUB_ENV"
           echo "CODEXBAR_CONTRACT_VERSION=0.46.0" >> "$GITHUB_ENV"
-      - name: Extract pinned signed Windows installer
+      - name: Extract hash-pinned Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
