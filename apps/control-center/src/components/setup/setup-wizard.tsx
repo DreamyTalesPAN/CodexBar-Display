@@ -413,6 +413,7 @@ export function SetupWizard(props: SetupWizardProps) {
           deviceId: result.deviceId,
           viaCable: Boolean(cable),
         });
+        window.setTimeout(onSearchDevices, 1500);
       } else {
         setWiFiSetup(null);
       }

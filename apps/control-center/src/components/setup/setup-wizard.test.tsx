@@ -627,6 +627,43 @@ describe("SetupWizard: direct connection", () => {
   });
 });
 
+describe("SetupWizard: saved WiFi recovery", () => {
+  it("rescans and reconnects the same device after reusing its saved network", async () => {
+    const cable: DeviceCandidate = {
+      deviceId: "saved-device",
+      target: "cable://vibetv",
+      transport: "cable",
+      capabilities: { transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] } },
+    };
+    const wifi: DeviceCandidate = { ...cable, target: "http://192.168.1.42", transport: "wifi" };
+    const connect = vi.fn().mockResolvedValue({ board: "esp8266_smalltv_st7789", firmware: "1.0.40" });
+    const onSearchDevices = vi.fn();
+    const props = baseProps({
+      step: "device",
+      connectionMode: "cable",
+      connectionModeChoiceRequired: false,
+      deviceCandidates: [cable],
+      deviceSearchState: "multiple",
+      onSearchDevices,
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi", deviceId: cable.deviceId }),
+      connectSteps: {
+        connect,
+        checkFirmware: vi.fn().mockRejectedValueOnce({ message: "Firmware unavailable" }).mockResolvedValue(null),
+        installFirmware: vi.fn(),
+      },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await screen.findByRole("button", { name: "Use WiFi instead" });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
+    await waitFor(() => expect(props.onSelectConnectionMode).toHaveBeenCalledWith("wifi", cable.deviceId));
+    await waitFor(() => expect(onSearchDevices).toHaveBeenCalledOnce(), { timeout: 2_500 });
+    expect(props.onConfigureWiFi).not.toHaveBeenCalled();
+    rerender(<SetupWizard {...props} deviceCandidates={[wifi]} />);
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(wifi));
+  });
+});
+
 describe("SetupWizard: going back", () => {
   it("returns from WiFi credentials to the choice even after the Mac saved Cable mode", async () => {
     const connect = vi.fn();

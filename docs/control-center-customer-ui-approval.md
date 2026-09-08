@@ -4014,3 +4014,15 @@ issue scope, or release permission never implies UI permission.
   poll. This scenario is also included in the focused theme-missing suite.
 - Approved files: `control-center-app.tsx`, `test-customer-flows.mjs`, and this
   record.
+
+## 2026-09-08 — Resume setup with saved WiFi details
+
+- User approval: Finish the setup fixes and push PR #407, including final
+  review corrections.
+- Approved customer-visible result: Choosing WiFi after a Cable connection
+  failure resumes discovery when the device reuses its saved network. Setup
+  reconnects the same device without asking for the password again.
+- Validation: Regression reproduces Cable-only discovery, a failed Cable
+  connection, the saved-network response, and reconnection to the rediscovered
+  WiFi identity. It fails before the delayed rescan is added.
+- Approved files: `setup-wizard.tsx`, `setup-wizard.test.tsx`, and this record.
