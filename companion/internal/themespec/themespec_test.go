@@ -1209,3 +1209,39 @@ func TestEmptyLongBindingOverridesCompactBinding(t *testing.T) {
 		spec = normalizeSpec(spec)
 	}
 }
+
+func TestCompiledStringBudgetUsesInstalledStrings(t *testing.T) {
+	for _, tc := range []struct {
+		name, primitive string
+		bytes           int
+	}{
+		{"empty text", `{"t":"tx","text":"","v":"ignored","b":"l"}`, 2},
+		{"null text", `{"t":"tx","text":null,"v":"ignored","b":"l"}`, 10},
+		{"long text", `{"t":"tx","text":"kept","v":"ignored","b":"l"}`, 7},
+		{"empty asset path", `{"t":"sp","assetPath":"","a":"/themes/u/y.cbi","sa":{"idle":"/themes/u/x.cbi"}}`, 16},
+		{"empty state map", `{"t":"sp","a":"/themes/u/x.cbi","stateAssets":{},"sa":{"idle":"/themes/u/y.cbi"}}`, 16},
+		{"empty bitmap data", `{"t":"px","w":1,"h":1,"data":"","d":"FF","p":["#FFFFFF"],"r":["a"]}`, 0},
+		{"asset spelling", `{"t":"sp","a":"/themes/u/x.cbi "}`, 17},
+		{"state asset spelling", `{"t":"sp","a":"/themes/u/x.cbi","sa":{"idle":"/themes/u/y.cbi "}}`, 33},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, extra := range []int{0, 1} {
+				padding := strings.Repeat("a", 1023-tc.bytes+extra)
+				raw := []byte(`{"v":1,"id":"string-budget","rev":1,"p":[` + tc.primitive + `,{"t":"tx","v":"` + padding + `"}]}`)
+				spec, _, err := Parse(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for i := 0; i < 3; i++ {
+					if got := compiledThemeSpecStringBytes(spec); got != 1024+extra {
+						t.Fatalf("compiled bytes = %d, want %d", got, 1024+extra)
+					}
+					if err := Validate(spec); (err == nil) != (extra == 0) {
+						t.Fatalf("Validate returned %v at %d bytes", err, 1024+extra)
+					}
+					spec = normalizeSpec(spec)
+				}
+			}
+		})
+	}
+}

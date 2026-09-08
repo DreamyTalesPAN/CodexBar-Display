@@ -2162,6 +2162,33 @@ void testStringBudgetCountsInstalledBindingSpelling() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testStringBudgetCountsInstalledAliasesAndSpellings() {
+  const struct { const char* primitive; size_t bytes; } cases[] = {
+      {R"({"t":"tx","text":"","v":"ignored","b":"l"})", 2},
+      {R"({"t":"tx","text":null,"v":"ignored","b":"l"})", 10},
+      {R"({"t":"tx","text":"kept","v":"ignored","b":"l"})", 7},
+      {R"({"t":"sp","assetPath":"","a":"/themes/u/y.cbi","sa":{"idle":"/themes/u/x.cbi"}})", 16},
+      {R"({"t":"sp","a":"/themes/u/x.cbi","stateAssets":{},"sa":{"idle":"/themes/u/y.cbi"}})", 16},
+      {R"({"t":"px","w":1,"h":1,"data":"","d":"FF","p":["#FFFFFF"],"r":["a"]})", 0},
+      {R"({"t":"sp","a":"/themes/u/x.cbi "})", 17},
+      {R"({"t":"sp","a":"/themes/u/x.cbi","sa":{"idle":"/themes/u/y.cbi "}})", 33},
+  };
+  for (const auto& entry : cases) {
+    for (size_t extra = 0; extra <= 1; ++extra) {
+      std::string raw = R"({"v":1,"id":"string-budget","rev":1,"p":[)";
+      raw += entry.primitive;
+      raw += R"(,{"t":"tx","v":")";
+      raw += std::string(1023 - entry.bytes + extra, 'a');
+      raw += R"("}]})";
+      JsonDocument doc;
+      CompiledThemeSpec scene;
+      TEST_ASSERT_EQUAL(extra == 0, CompileThemeSpec(raw.c_str(), doc, scene));
+      if (extra == 0) TEST_ASSERT_EQUAL_UINT32(1024, scene.stringPoolUsed);
+      ReleaseCompiledThemeSpec(scene);
+    }
+  }
+}
+
 void testProgressColorStopsSelectFillByPercent() {
   const char* spec = R"JSON({
     "v":1,
@@ -3417,6 +3444,7 @@ int main() {
   RUN_TEST(testProviderAssetsCompileRejectsTooManyEntries);
   RUN_TEST(testEmptyLongFeatureContainersOverrideCompactAliases);
   RUN_TEST(testStringBudgetCountsInstalledBindingSpelling);
+  RUN_TEST(testStringBudgetCountsInstalledAliasesAndSpellings);
   RUN_TEST(testProgressColorStopsSelectFillByPercent);
   RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);

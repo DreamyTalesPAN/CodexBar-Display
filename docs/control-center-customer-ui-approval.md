@@ -3827,3 +3827,12 @@ issue scope, or release permission never implies UI permission.
   firmware support keeps the existing catalog-attention state visible. The app
   does not report the theme update as complete before those requirements can be
   checked. Existing wording and controls are reused.
+
+### Browser regression coverage for capability readback
+
+- User approval: The same 2026-09-08 takeover and defect-fix authorization
+  covers the accompanying browser regression tests.
+- Approved customer-visible result: The existing catalog-attention message
+  persists for each missing firmware capability; a complete capability
+  readback can show "Update complete". Browser fixtures now distinguish those
+  outcomes explicitly, without weakening the visible assertions.

@@ -78,7 +78,7 @@ type Primitive struct {
 	ShortText           string            `json:"v,omitempty"`
 	Binding             string            `json:"binding,omitempty"`
 	ShortBinding        string            `json:"b,omitempty"`
-	rawBinding          *string           // Preserve the installed spelling, including an explicit empty value.
+	wireStringBytes     *int              // Budget for the unchanged wire spec, before normalization.
 	FontSize            int               `json:"fontSize,omitempty"`
 	ShortSize           int               `json:"s,omitempty"`
 	Valign              string            `json:"valign,omitempty"`
@@ -109,15 +109,26 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 	type primitiveJSON Primitive
 	var decoded struct {
 		primitiveJSON
-		Binding *string `json:"binding"`
+		Binding   *string `json:"binding"`
+		Text      *string `json:"text"`
+		AssetPath *string `json:"assetPath"`
+		Data      *string `json:"data"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
 	*p = Primitive(decoded.primitiveJSON)
-	if decoded.Binding != nil {
-		p.Binding = *decoded.Binding
-		p.rawBinding = decoded.Binding
+	// An explicit empty long string still overrides its compact alias.
+	for _, field := range []struct{ value, target, alias *string }{
+		{decoded.Binding, &p.Binding, &p.ShortBinding},
+		{decoded.Text, &p.Text, &p.ShortText},
+		{decoded.AssetPath, &p.AssetPath, &p.ShortAsset},
+		{decoded.Data, &p.Data, &p.ShortData},
+	} {
+		if field.value != nil {
+			*field.target = *field.value
+			*field.alias = ""
+		}
 	}
 	return nil
 }
@@ -458,14 +469,9 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.Text == "" {
 		p.Text = p.ShortText
 	}
-	if p.rawBinding == nil {
-		binding := p.Binding
-		if binding == "" {
-			binding = p.ShortBinding
-		}
-		p.rawBinding = &binding
+	if p.Binding == "" {
+		p.Binding = p.ShortBinding
 	}
-	p.Binding = expandBinding(*p.rawBinding)
 	if p.FontSize == 0 {
 		p.FontSize = p.ShortSize
 	}
@@ -488,7 +494,7 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.AssetPath == "" {
 		p.AssetPath = p.ShortAsset
 	}
-	if len(p.StateAssets) == 0 && len(p.ShortStateAssets) > 0 {
+	if p.StateAssets == nil {
 		p.StateAssets = p.ShortStateAssets
 	}
 	// An explicit empty long-form container overrides its compact alias on firmware.
@@ -502,6 +508,12 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.Data == "" {
 		p.Data = p.ShortData
 	}
+	if p.wireStringBytes == nil {
+		// Aliases are resolved, but strings have not been expanded or trimmed.
+		count := compiledThemeSpecStringBytes(Spec{Primitives: []Primitive{p}})
+		p.wireStringBytes = &count
+	}
+	p.Binding = expandBinding(p.Binding)
 	return p
 }
 
@@ -554,7 +566,7 @@ func normalizeProviderAssets(providerAssets map[string]string) map[string]string
 
 func normalizeStateAssets(stateAssets map[string]string) map[string]string {
 	if len(stateAssets) == 0 {
-		return nil
+		return stateAssets
 	}
 	normalized := make(map[string]string, len(stateAssets))
 	for state, assetPath := range stateAssets {
@@ -935,16 +947,16 @@ func addCompiledStringStorage(value string, stringBytes *int) {
 func compiledThemeSpecStringBytes(spec Spec) int {
 	stringBytes := 0
 	for _, primitive := range spec.Primitives {
-		binding := primitive.Binding
-		if primitive.rawBinding != nil {
-			binding = *primitive.rawBinding
+		if primitive.wireStringBytes != nil {
+			stringBytes += *primitive.wireStringBytes
+			continue
 		}
-		switch primitive.Type {
+		switch primitiveTypeName(primitive) {
 		case "text":
-			addCompiledStringStorage(binding, &stringBytes)
+			addCompiledStringStorage(primitive.Binding, &stringBytes)
 			addCompiledStringStorage(primitive.Text, &stringBytes)
 		case "progress":
-			addCompiledStringStorage(binding, &stringBytes)
+			addCompiledStringStorage(primitive.Binding, &stringBytes)
 		case "gif", "sprite", "image":
 			addCompiledStringStorage(primitive.AssetPath, &stringBytes)
 			if primitive.StateAssets != nil {
