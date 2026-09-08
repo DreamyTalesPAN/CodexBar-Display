@@ -314,6 +314,24 @@ func TestParseAcceptsExplicitTopValign(t *testing.T) {
 	}
 }
 
+func TestTopValignKeepsPrecedenceAcrossNormalization(t *testing.T) {
+	raw := []byte(`{"v":1,"id":"va-top","rev":1,"p":[{"t":"tx","b":"l","valign":"top","va":"bottom"}]}`)
+	spec, installed, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true}
+	for i := 0; i < 3; i++ {
+		if spec.Primitives[0].Valign != "top" {
+			t.Fatalf("top lost precedence: %q", spec.Primitives[0].Valign)
+		}
+		if err := ValidateAgainstCapabilities(spec, installed, caps); err != nil {
+			t.Fatalf("top alignment must work on old firmware: %v", err)
+		}
+		spec = normalizeSpec(spec)
+	}
+}
+
 func TestParseRejectsValignOnNonText(t *testing.T) {
 	raw := []byte(`{
 		"v":1,

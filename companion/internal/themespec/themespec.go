@@ -507,6 +507,8 @@ func normalizePrimitive(p Primitive) Primitive {
 
 func normalizeValign(value string) string {
 	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "top":
+		return "top"
 	case "middle", "center":
 		return "middle"
 	case "bottom":
