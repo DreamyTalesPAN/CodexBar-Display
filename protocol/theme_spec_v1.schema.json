@@ -160,6 +160,40 @@
               "shrink"
             ]
           },
+          "align": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ]
+          },
+          "al": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ]
+          },
+          "valign": {
+            "type": "string",
+            "enum": [
+              "top",
+              "middle",
+              "center",
+              "bottom"
+            ]
+          },
+          "va": {
+            "type": "string",
+            "enum": [
+              "top",
+              "middle",
+              "center",
+              "bottom"
+            ]
+          },
           "color": {
             "type": "string",
             "pattern": "^#[A-Fa-f0-9]{6}$"
@@ -228,6 +262,18 @@
               "type": "string",
               "pattern": "^(([1-9][0-9]*)?(\\.|[a-z]))+$"
             }
+          },
+          "providerAssets": {
+            "$ref": "#/$defs/providerAssets"
+          },
+          "pa": {
+            "$ref": "#/$defs/providerAssets"
+          },
+          "colorStops": {
+            "$ref": "#/$defs/colorStops"
+          },
+          "cs": {
+            "$ref": "#/$defs/colorStops"
           }
         },
         "additionalProperties": true,
@@ -288,6 +334,191 @@
                     "p",
                     "r"
                   ]
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "not": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "sprite",
+                          "image"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "t": {
+                        "enum": [
+                          "sp",
+                          "img"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "t"
+                    ],
+                    "not": {
+                      "required": [
+                        "type"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "providerAssets": {
+                      "const": {}
+                    }
+                  },
+                  "required": [
+                    "providerAssets"
+                  ]
+                },
+                {
+                  "properties": {
+                    "providerAssets": {
+                      "enum": [
+                        null,
+                        {}
+                      ]
+                    },
+                    "pa": {
+                      "enum": [
+                        null,
+                        {}
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "not": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "progress"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "t": {
+                        "enum": [
+                          "p"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "t"
+                    ],
+                    "not": {
+                      "required": [
+                        "type"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "colorStops": {
+                      "const": []
+                    }
+                  },
+                  "required": [
+                    "colorStops"
+                  ]
+                },
+                {
+                  "properties": {
+                    "colorStops": {
+                      "enum": [
+                        null,
+                        []
+                      ]
+                    },
+                    "cs": {
+                      "enum": [
+                        null,
+                        []
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "required": [
+                    "valign"
+                  ]
+                },
+                {
+                  "required": [
+                    "va"
+                  ]
+                }
+              ]
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "text"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                {
+                  "properties": {
+                    "t": {
+                      "enum": [
+                        "tx"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "t"
+                  ],
+                  "not": {
+                    "required": [
+                      "type"
+                    ]
+                  }
                 }
               ]
             }
@@ -299,245 +530,7 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "text",
-              "rect",
-              "progress",
-              "gif",
-              "sprite",
-              "image",
-              "pixels"
-            ]
-          },
-          "t": {
-            "type": "string",
-            "enum": [
-              "tx",
-              "r",
-              "p",
-              "g",
-              "sp",
-              "img",
-              "px"
-            ]
-          },
-          "x": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "y": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "width": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "w": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "height": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "h": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "slot": {
-            "type": "integer",
-            "enum": [1, 2]
-          },
-          "sl": {
-            "type": "integer",
-            "enum": [1, 2]
-          },
-          "usageIndex": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "ui": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "text": {
-            "type": "string"
-          },
-          "v": {
-            "type": "string"
-          },
-          "binding": {
-            "type": "string"
-          },
-          "b": {
-            "type": "string"
-          },
-          "fontSize": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "s": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "font": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "f": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "fit": {
-            "type": "string",
-            "enum": [
-              "shrink"
-            ]
-          },
-          "ft": {
-            "type": "string",
-            "enum": [
-              "shrink"
-            ]
-          },
-          "color": {
-            "type": "string",
-            "pattern": "^#[A-Fa-f0-9]{6}$"
-          },
-          "c": {
-            "type": "string",
-            "pattern": "^#[A-Fa-f0-9]{6}$"
-          },
-          "bgColor": {
-            "type": "string",
-            "pattern": "^#[A-Fa-f0-9]{6}$"
-          },
-          "bg": {
-            "type": "string",
-            "pattern": "^#[A-Fa-f0-9]{6}$"
-          },
-          "borderColor": {
-            "type": "string",
-            "pattern": "^#[A-Fa-f0-9]{6}$"
-          },
-          "bc": {
-            "type": "string",
-            "pattern": "^#[A-Fa-f0-9]{6}$"
-          },
-          "borderRadius": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 120
-          },
-          "br": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 120
-          },
-          "assetPath": {
-            "type": "string",
-            "maxLength": 31,
-            "pattern": "^/themes/[^\\\\.].*"
-          },
-          "a": {
-            "type": "string",
-            "maxLength": 31,
-            "pattern": "^/themes/[^\\\\.].*"
-          },
-          "data": {
-            "type": "string",
-            "pattern": "^[A-Fa-f0-9]+$"
-          },
-          "d": {
-            "type": "string",
-            "pattern": "^[A-Fa-f0-9]+$"
-          },
-          "p": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 26,
-            "items": {
-              "type": "string",
-              "pattern": "^#[A-Fa-f0-9]{6}$"
-            }
-          },
-          "r": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string",
-              "pattern": "^(([1-9][0-9]*)?(\\.|[a-z]))+$"
-            }
-          }
-        },
-        "additionalProperties": true,
-        "allOf": [
-          {
-            "anyOf": [
-              {
-                "required": [
-                  "type"
-                ]
-              },
-              {
-                "required": [
-                  "t"
-                ]
-              }
-            ]
-          },
-          {
-            "if": {
-              "anyOf": [
-                {
-                  "properties": {
-                    "type": {
-                      "const": "pixels"
-                    }
-                  },
-                  "required": [
-                    "type"
-                  ]
-                },
-                {
-                  "properties": {
-                    "t": {
-                      "const": "px"
-                    }
-                  },
-                  "required": [
-                    "t"
-                  ]
-                }
-              ]
-            },
-            "then": {
-              "anyOf": [
-                {
-                  "required": [
-                    "data"
-                  ]
-                },
-                {
-                  "required": [
-                    "d"
-                  ]
-                },
-                {
-                  "required": [
-                    "p",
-                    "r"
-                  ]
-                }
-              ]
-            }
-          }
-        ]
+        "$ref": "#/properties/primitives/items"
       }
     }
   },
@@ -599,5 +592,75 @@
         }
       ]
     }
-  ]
+  ],
+  "$defs": {
+    "providerAssets": {
+      "description": "Provider-specific sprite/image paths. At most 16 entries across the complete theme; the application validates that aggregate limit.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+        "not": {
+          "enum": [
+            "idle",
+            "coding"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 31,
+        "pattern": "^/themes/",
+        "not": {
+          "pattern": "\\.\\.|\\\\|//|\\s$|/$"
+        }
+      }
+    },
+    "colorStops": {
+      "description": "Progress colors at remaining-percentage thresholds. The application also requires distinct gte values.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "gte": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "c": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          }
+        },
+        "required": [
+          "gte"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "color"
+            ]
+          },
+          {
+            "required": [
+              "c"
+            ]
+          }
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
 }

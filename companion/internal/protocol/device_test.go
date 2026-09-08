@@ -242,3 +242,41 @@ func TestCapabilitiesFromHelloAdvertisesUsageSlots(t *testing.T) {
 		t.Fatalf("legacy ThemeSpec support must not imply usage slots: %+v", legacy)
 	}
 }
+
+func TestCapabilitiesFromHelloAdvertisesProviderAssetsColorStopsAndValign(t *testing.T) {
+	caps := CapabilitiesFromHello(DeviceHello{
+		Kind: "hello",
+		Features: []string{
+			FeatureTheme,
+			FeatureThemeSpecV1,
+			FeatureProviderAssetsV1,
+			FeatureColorStopsV1,
+			FeatureTextValignV1,
+		},
+	})
+	if !caps.Known || !caps.SupportsProviderAssetsV1 || !caps.SupportsColorStopsV1 || !caps.SupportsTextValignV1 {
+		t.Fatalf("expected new ThemeSpec capabilities from features, got %+v", caps)
+	}
+
+	fromBlock := CapabilitiesFromHello(DeviceHello{
+		Kind: "hello",
+		Capabilities: CapabilityBlock{
+			Theme: ThemeCapabilities{
+				SupportsProviderAssetsV1: true,
+				SupportsColorStopsV1:     true,
+				SupportsTextValignV1:     true,
+			},
+		},
+	})
+	if !fromBlock.SupportsProviderAssetsV1 || !fromBlock.SupportsColorStopsV1 || !fromBlock.SupportsTextValignV1 {
+		t.Fatalf("expected new ThemeSpec capabilities from theme block, got %+v", fromBlock)
+	}
+
+	legacy := CapabilitiesFromHello(DeviceHello{
+		Kind:     "hello",
+		Features: []string{FeatureTheme, FeatureThemeSpecV1, FeatureProviderSlotsV1},
+	})
+	if legacy.SupportsProviderAssetsV1 || legacy.SupportsColorStopsV1 || legacy.SupportsTextValignV1 {
+		t.Fatalf("provider-slots-v1 must not imply the new ThemeSpec capabilities: %+v", legacy)
+	}
+}

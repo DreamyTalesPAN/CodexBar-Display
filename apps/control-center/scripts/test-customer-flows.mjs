@@ -437,7 +437,7 @@ async function main() {
       return;
     }
     if (themeSetupFirmwareOnly) {
-      await testPostFlashMissingUsageWindowsKeepsThemeAttention(
+      await testPostFlashMissingCapabilitiesKeepThemeAttention(
         browser,
         appContext.appUrl,
       );
@@ -562,7 +562,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testPostFlashMissingUsageWindowsKeepsThemeAttention(
+      await testPostFlashMissingCapabilitiesKeepThemeAttention(
         browser,
         appContext.appUrl,
       );
@@ -778,7 +778,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testPostFlashMissingUsageWindowsKeepsThemeAttention(
+    await testPostFlashMissingCapabilitiesKeepThemeAttention(
       browser,
       appContext.appUrl,
     );
@@ -4386,16 +4386,33 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
 // connect sequence, which testConnectInstallsFirmwareUpdate and
 // testConnectFirmwareUpdateFailureOffersRetry cover instead.
 
-async function testPostFlashMissingUsageWindowsKeepsThemeAttention(
+async function testPostFlashMissingCapabilitiesKeepThemeAttention(browser, appUrl) {
+  for (const missingCapability of [
+    "supportsUsageWindowsV1",
+    "supportsProviderAssetsV1",
+    "supportsColorStopsV1",
+    "supportsTextValignV1",
+  ]) {
+    await testPostFlashMissingCapabilityKeepsThemeAttention(
+      browser,
+      appUrl,
+      missingCapability,
+    );
+  }
+}
+
+async function testPostFlashMissingCapabilityKeepsThemeAttention(
   browser,
   appUrl,
+  missingCapability,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const firmwareUpdateRequests = [];
   const oldFirmwareDevice = {
     ...synthwaveDevice,
-    activeTheme: "usage-windows",
+    activeTheme:
+      missingCapability === "supportsUsageWindowsV1" ? "usage-windows" : "legacy-theme",
     firmware: "1.0.32",
     display: {
       themeSpec: {
@@ -4421,7 +4438,11 @@ async function testPostFlashMissingUsageWindowsKeepsThemeAttention(
       theme: {
         ...oldFirmwareDevice.capabilities.theme,
         supportsUsageSlotsV1: true,
-        supportsUsageWindowsV1: false,
+        supportsUsageWindowsV1: true,
+        supportsProviderAssetsV1: true,
+        supportsColorStopsV1: true,
+        supportsTextValignV1: true,
+        [missingCapability]: false,
       },
     },
   };
@@ -4460,12 +4481,12 @@ async function testPostFlashMissingUsageWindowsKeepsThemeAttention(
   await page.waitForTimeout(250);
   assert(
     firmwareUpdateRequests.length === 1,
-    `Missing usage windows capability should start firmware once, got ${firmwareUpdateRequests.length}`,
+    `Missing ${missingCapability} should start firmware once, got ${firmwareUpdateRequests.length}`,
   );
   assertNoInstallRequests(installRequests);
   assert(
     (await page.getByText("Update complete", { exact: true }).count()) === 0,
-    "Missing post-flash usage windows capability must not report a complete update",
+    `Missing post-flash ${missingCapability} must not report a complete update`,
   );
   await page.close();
 }
@@ -4499,6 +4520,9 @@ async function testFirmwareUpdateRechecksThemeCatalogAfterCapabilityUpgrade(
         ...oldFirmwareDevice.capabilities.theme,
         supportsUsageSlotsV1: true,
         supportsUsageWindowsV1: true,
+        supportsProviderAssetsV1: true,
+        supportsColorStopsV1: true,
+        supportsTextValignV1: true,
       },
     },
   };

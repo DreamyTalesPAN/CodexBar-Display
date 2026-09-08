@@ -184,6 +184,49 @@ describe("validateThemeAgainstCapabilities", () => {
     );
   });
 
+  it("blocks provider assets, color stops, and valign without their capabilities", () => {
+    const spec = baseSpec();
+    spec.primitives.push(
+      {
+        type: "sprite",
+        x: 0,
+        y: 0,
+        width: 8,
+        height: 8,
+        assetPath: "/themes/u/fb.cbi",
+        providerAssets: { codex: "/themes/u/xo.cbi" },
+      },
+      {
+        type: "text",
+        x: 4,
+        y: 12,
+        text: "{label}",
+        valign: "middle",
+      },
+      {
+        type: "progress",
+        x: 4,
+        y: 40,
+        width: 40,
+        height: 8,
+        color: "#22C55E",
+        colorStops: [{ color: "#EF4444", gte: 0 }],
+      },
+    );
+
+    const result = validateThemeAgainstCapabilities(spec, {}, {
+      ...baseCapabilities,
+      supportsProviderAssetsV1: false,
+      supportsColorStopsV1: false,
+      supportsTextValignV1: false,
+    });
+    expect(
+      result.errors.filter((error) =>
+        error.includes("needs a firmware update"),
+      ),
+    ).toHaveLength(3);
+  });
+
   it("blocks compact slot templates when the device lacks usage slot support", () => {
     const spec = baseSpec();
     spec.primitives.push({

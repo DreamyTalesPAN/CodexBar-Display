@@ -2,6 +2,9 @@ import {
   deviceThemeSpecJson,
   normalizeThemeSpec,
   themeStudioSpecUsesProviderSlots,
+  themeStudioSpecUsesProviderAssets,
+  themeStudioSpecUsesColorStops,
+  themeStudioSpecUsesTextValign,
   themeStudioSpecUsesUsageWindows,
   themeStudioSpecUsesUsageSlots,
   type ThemeStudioAsset,
@@ -14,6 +17,9 @@ export type ThemeStudioDeviceCapabilities = {
   supportsUsageSlotsV1?: boolean;
   supportsUsageWindowsV1?: boolean;
   supportsProviderSlotsV1?: boolean;
+  supportsProviderAssetsV1?: boolean;
+  supportsColorStopsV1?: boolean;
+  supportsTextValignV1?: boolean;
   maxUsageWindows?: number;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;
@@ -87,6 +93,30 @@ export function validateThemeAgainstCapabilities(
   if (
     themeStudioSpecUsesProviderSlots(normalized) &&
     caps.supportsProviderSlotsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
+  }
+  if (
+    themeStudioSpecUsesProviderAssets(normalized) &&
+    caps.supportsProviderAssetsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
+  }
+  if (
+    themeStudioSpecUsesColorStops(normalized) &&
+    caps.supportsColorStopsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
+  }
+  if (
+    themeStudioSpecUsesTextValign(normalized) &&
+    caps.supportsTextValignV1 !== true
   ) {
     errors.push(
       "This VibeTV needs a firmware update before it can use this theme.",
@@ -296,6 +326,11 @@ function referencedGifAssetPaths(spec: ThemeStudioSpec): string[] {
       paths.add(primitive.assetPath);
     }
     for (const assetPath of Object.values(primitive.stateAssets || {})) {
+      if (assetPath) {
+        paths.add(assetPath);
+      }
+    }
+    for (const assetPath of Object.values(primitive.providerAssets || {})) {
       if (assetPath) {
         paths.add(assetPath);
       }
