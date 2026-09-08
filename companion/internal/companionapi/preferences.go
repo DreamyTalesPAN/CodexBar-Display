@@ -465,27 +465,20 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	s.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
 	s.providerPreferences.at = now
 	s.cacheProviderInventory(settings)
-	if inventoryOnly && s.startProviderHealthRefreshLocked() {
-		// A background refresh is not a new health result. Keep the previous
-		// answer until it finishes; the provider screen keeps polling meanwhile.
-		for i := range s.providerPreferences.cached {
-			if !s.providerPreferences.cached[i].Enabled || s.providerPreferences.cached[i].Health != "" {
-				continue
-			}
-			s.providerPreferences.cached[i].Health = codexbar.ProviderHealthChecking
-			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
-			s.providerPreferences.cached[i].Reported = ""
-		}
-		settings = append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
+	if inventoryOnly {
+		// Background collection must not erase a completed result. Cold or
+		// newly enabled providers already carry checking; explicit retries
+		// have their own pending state in the customer UI.
+		s.startProviderHealthRefreshLocked()
 	}
 	return append([]codexbar.ProviderSetting(nil), settings...), nil
 }
 
-func (s *Server) startProviderHealthRefreshLocked() bool {
+func (s *Server) startProviderHealthRefreshLocked() {
 	if s.providerPreferences.healthRefresh ||
 		s.providerPreferences.load == nil ||
 		s.providerPreferences.loadInventory == nil {
-		return false
+		return
 	}
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
@@ -524,7 +517,6 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		}
 		s.providerPreferences.at = s.currentTime().UTC()
 	}()
-	return true
 }
 
 func (s *Server) providerInventoryForUsage(ctx context.Context) []codexbar.ProviderSetting {
