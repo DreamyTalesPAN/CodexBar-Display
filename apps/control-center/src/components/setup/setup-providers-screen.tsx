@@ -162,8 +162,8 @@ export function ProviderList({
               ) : undefined}
               unsupportedMessage={alternative
                 ? `${unavailable} ${alternative.value
-                  ? `${alternative.label} is already on and tracks these limits — you can turn ${provider.label} off.`
-                  : `${alternative.label} tracks the same limits and resets.`}`
+                  ? `${alternative.label} is already on — you can turn ${provider.label} off.`
+                  : `You can turn on ${alternative.label} instead.`}`
                 : undefined}
               checking={pendingCheckIds.has(provider.providerId)}
               enabled={provider.value}

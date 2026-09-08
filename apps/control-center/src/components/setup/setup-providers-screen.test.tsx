@@ -472,7 +472,7 @@ describe("SetupProvidersScreen", () => {
      const onToggle = vi.fn();
      renderDom(<SetupProvidersScreen onCheckAgain={vi.fn()} onContinue={vi.fn()} onToggle={onToggle} pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} providers={[gemini, antigravity]} />);
      expect((screen.getByRole("button", {name: "Continue"}) as HTMLButtonElement).disabled).toBe(true);
-     expect(screen.getByText("Gemini no longer reports usage for personal Google accounts. Antigravity tracks the same limits and resets.")).toBeTruthy();
+     expect(screen.getByText("Gemini no longer reports usage for personal Google accounts. You can turn on Antigravity instead.")).toBeTruthy();
      expect(screen.queryByText(gemini.health.reported!)).toBeNull();
      fireEvent.click(screen.getByRole("button", {name: "Turn on Antigravity"}));
      expect(onToggle).toHaveBeenCalledExactlyOnceWith(antigravity, true);
@@ -481,7 +481,7 @@ describe("SetupProvidersScreen", () => {
    });
    it("shows the already-on state without a redundant action", () => {
      const html = render({providers: [gemini, {...antigravity, value: true}]});
-     expect(html).toContain("Antigravity is already on and tracks these limits — you can turn Gemini off.");
+     expect(html).toContain("Antigravity is already on — you can turn Gemini off.");
      expect(html).not.toContain("Turn on Antigravity");
      expect(html).not.toContain("Show Antigravity");
    });

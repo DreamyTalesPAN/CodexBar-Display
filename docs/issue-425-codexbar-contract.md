@@ -54,6 +54,8 @@ provider inventory and be named in the upstream guidance. The explicit `Turn on
 Antigravity` button uses the same settings callback as its toggle. It does not
 change Gemini's setting or search/filter the list. Once Antigravity is enabled,
 the card shows the already-on explanation and removes the enable action.
+The copy makes no claim that the providers expose equivalent limits or resets;
+CodexBar does not export that guarantee.
 Continue still requires an enabled provider with displayable data. No Google
 API requests, credential inspection, alternate usage path or silent migration
 were added.

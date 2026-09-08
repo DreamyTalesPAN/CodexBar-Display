@@ -4346,3 +4346,16 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their
   tests, `apps/control-center/scripts/test-customer-flows.mjs`, the issue's
   runtime/state mapping and contract notes, and this approval record.
+
+## 2026-09-08 — Remove unsupported quota equivalence claim (#425)
+
+- User approval: "Das passt mir so. Jetzt push das", after reviewing the
+  corrected Gemini screenshot and explanation in this task.
+- Approved customer-visible result: Keep the approved shared provider notice
+  layout and actions. Replace the unsupported claim about equivalent limits
+  and resets with `You can turn on Antigravity instead.` When enabled, say
+  `Antigravity is already on — you can turn Gemini off.` Apply the same neutral
+  wording to any replacement named by upstream guidance.
+- Validation: 52 focused tests, the desktop migration browser check, ESLint,
+  customer-copy guard and diff checks passed before this approval. No additional
+  local UI preview or build is requested.

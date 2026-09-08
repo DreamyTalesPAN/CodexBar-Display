@@ -12783,7 +12783,7 @@ async function testProviderMigrationHandoff(browser, appUrl) {
   });
   await page.goto(appUrl, {waitUntil: "domcontentloaded"});
   const panel = setupScreen(page, SETUP_PROVIDERS_SCREEN);
-  await panel.getByText("Gemini no longer reports usage for personal Google accounts. Antigravity tracks the same limits and resets.", {exact: true}).waitFor({timeout: 10_000});
+  await panel.getByText("Gemini no longer reports usage for personal Google accounts. You can turn on Antigravity instead.", {exact: true}).waitFor({timeout: 10_000});
   assert(await panel.getByRole("button", {name: "Continue"}).isDisabled(), "unsupported access alone must not complete setup");
   assert(await panel.getByRole("button", {name: "Check Gemini again"}).count() === 0, "terminal access must not offer Retry");
   if (migrationScreenshotDir) {
@@ -12795,7 +12795,7 @@ async function testProviderMigrationHandoff(browser, appUrl) {
   await waitForCondition(() => writes.some((request) => request.path.includes("antigravity") && request.method === "PATCH"), "the explicit toggle did not use the provider settings endpoint");
   await waitForCondition(async () => !(await panel.getByRole("button", {name: "Continue"}).isDisabled()), "healthy Antigravity must unblock setup alongside unsupported Gemini");
   assert(await panel.getByRole("button", {name: "Turn on Antigravity"}).count() === 0, "already enabled replacement must not offer another enable action");
-  await panel.getByText("Gemini no longer reports usage for personal Google accounts. Antigravity is already on and tracks these limits — you can turn Gemini off.").waitFor();
+  await panel.getByText("Gemini no longer reports usage for personal Google accounts. Antigravity is already on — you can turn Gemini off.").waitFor();
   assert(await panel.getByRole("switch", {name: "Gemini"}).isChecked(), "enabling the alternative must not silently disable Gemini");
   if (migrationScreenshotDir) {
     await page.screenshot({path: join(migrationScreenshotDir, "gemini-migration-antigravity-ready.png"), fullPage: true});
