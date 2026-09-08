@@ -4048,3 +4048,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Pending WiFi setup keeps searching after an empty or temporarily failed scan. After 60 seconds it returns to editable WiFi details with a short explanation and the existing Back control, instead of waiting indefinitely. Only the same device can complete an identified transition.
 - Validation: Regressions cover failed scans, unrelated devices, status rerenders, eventual same-device connection, deadline recovery and cancellation of automatic searches.
 - Approved files: `setup-wizard.tsx`, `setup-wizard.test.tsx`, and this record.
+
+## 2026-09-08 — Correct saved-network regression fixture
+
+- User approval: Complete PR #407 corrections and push.
+- Approved customer-visible result: The approved saved-network and bounded WiFi recovery behavior is unchanged; the test candidate contains only its actual supported fields.
+- Validation: TypeScript checking and the setup regression suite.

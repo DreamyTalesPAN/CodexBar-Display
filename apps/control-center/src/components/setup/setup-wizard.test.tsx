@@ -682,7 +682,6 @@ describe("SetupWizard: saved WiFi recovery", () => {
       deviceId: "saved-device",
       target: "cable://vibetv",
       transport: "cable",
-      capabilities: { transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] } },
     };
     const wifi: DeviceCandidate = { ...cable, target: "http://192.168.1.42", transport: "wifi" };
     const connect = vi.fn().mockResolvedValue({ board: "esp8266_smalltv_st7789", firmware: "1.0.40" });
