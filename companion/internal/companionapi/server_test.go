@@ -10341,6 +10341,30 @@ func TestFirmwareUpdateRejectsUnsupportedCableTransferBeforePairing(t *testing.T
 	}
 }
 
+func TestFirmwareUpdateInstallReturnsAcceptedJobWithoutCableIO(t *testing.T) {
+	for _, workerActive := range []bool{false, true} {
+		t.Run(fmt.Sprint(workerActive), func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "updating-device", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			job := server.createFirmwareUpdateJob(cfg)
+			server.firmwareUpdateActive.Store(workerActive)
+			server.resolveCablePort = func(string, string) (string, error) {
+				t.Error("accepted update must not reopen the parent serial sender")
+				return "", errors.New("serial port belongs to updater")
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+			var got firmwareUpdateJobResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != http.StatusAccepted || got.Job.ID != job.ID || server.nextUpdateJob != 1 {
+				t.Fatalf("repeat request must return accepted job: status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestFirmwareUpdateInstallRefusesWhileThemeInstallIsActive(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	if refusal := server.tryStartThemeInstall(); refusal != "" {

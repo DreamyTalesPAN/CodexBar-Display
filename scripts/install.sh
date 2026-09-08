@@ -53,14 +53,14 @@ What it does:
   - detects macOS architecture
   - downloads the matching codexbar-display release binary from GitHub Releases
   - verifies the SHA-256 checksum from the release checksum file
-  - runs `codexbar-display setup --yes --skip-flash --transport wifi [setup args...]`
+  - runs `codexbar-display setup --yes --skip-flash` with the saved transport or explicit setup arguments
   - makes `codexbar-display` available in Terminal
   - optionally runs `codexbar-display upgrade` to flash release firmware when --flash-firmware is passed
   - warms up CodexBar on fresh installs so providers are usable
   - leaves VibeTV in theme-missing state until a theme is installed in the Mac App
   - optionally installs an explicit theme when --theme-pack is passed
   - enables the local Control Center Mac App service inside the background Mac App
-  - uses WiFi for normal customer setup; USB-C only powers VibeTV
+  - preserves the configured connection mode; new installs default to WiFi
   - runs a health check after setup
 
 Examples:
@@ -174,7 +174,7 @@ build_firmware_upgrade_args() {
 
 setup_transport_from_args() {
   local args=("$@")
-  local i arg next
+  local i arg next configured_mode
 
   i=0
   while [[ "$i" -lt "${#args[@]}" ]]; do
@@ -195,7 +195,11 @@ setup_transport_from_args() {
     i=$((i + 1))
   done
 
-  printf '%s\n' "wifi"
+  configured_mode="$(plutil -extract connectionMode raw -o - "${INSTALL_ROOT}/config.json" 2>/dev/null || true)"
+  case "$configured_mode" in
+    cable) printf '%s\n' "usb" ;;
+    *) printf '%s\n' "wifi" ;;
+  esac
 }
 
 install_requested_theme_pack() {
@@ -583,11 +587,11 @@ main() {
   log "vibetv: verifying checksum..."
   verify_checksum
 
-  log "vibetv: starting setup..."
-  log "vibetv: normal setup uses WiFi; USB-C only powers VibeTV and no USB serial port is expected."
-  log "vibetv: setup discovers the device IP automatically and verifies its device ID."
+  local setup_transport
+  setup_transport="$(setup_transport_from_args "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}")"
+  log "vibetv: starting setup with transport ${setup_transport}..."
   prepare_control_center_service
-  "$DOWNLOAD_BIN" setup --yes --skip-flash --transport wifi "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
+  "$DOWNLOAD_BIN" setup --yes --skip-flash --transport "$setup_transport" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
 
   if [[ ! -x "$INSTALL_PATH" ]]; then
     die "setup finished but expected installed binary is missing: ${INSTALL_PATH}"
@@ -606,7 +610,7 @@ main() {
     "$INSTALL_PATH" upgrade "${FIRMWARE_UPGRADE_ARGS[@]}"
   fi
 
-  install_requested_theme_pack "$(setup_transport_from_args "${SETUP_ARGS[@]}")"
+  install_requested_theme_pack "$setup_transport"
 
   log "vibetv: installed binary at ${INSTALL_PATH}"
   log "vibetv: running health check..."

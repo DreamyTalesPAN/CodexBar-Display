@@ -136,6 +136,16 @@ BIN
 esac
 EOF
 
+  cat > "${fake_bin}/plutil" <<'EOF'
+#!/usr/bin/env bash
+case "$(cat "${@: -1}")" in
+  *'"connectionMode":"cable"'*) printf 'cable\n' ;;
+  *'"connectionMode":"wifi"'*) printf 'wifi\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "${fake_bin}/plutil"
+
   cat > "${fake_bin}/shasum" <<'EOF'
 #!/usr/bin/env bash
 printf 'deadbeef  %s\n' "${@: -1}"
@@ -352,6 +362,22 @@ EOF
   assert_not_contains "$(cat "${root}/ln.log")" "ln called"
 }
 
+run_reinstall_preserves_connection_mode() {
+  local mode root output expected
+  for mode in cable wifi; do
+    root="${TMP_WORK_DIR}/reinstall-${mode}"
+    write_fake_commands "${root}/fake-bin"
+    mkdir -p "${root}/home" "${root}/global-bin"
+    write_existing_install "${root}/home"
+    printf '{"connectionMode":"%s"}\n' "$mode" > "${root}/home/Library/Application Support/codexbar-display/config.json"
+    output="$(run_installer "$root" --version 9.9.9)" || die "reinstall failed for ${mode}: ${output}"
+    expected="$mode"
+    [[ "$mode" != "cable" ]] || expected="usb"
+    assert_contains "$(cat "${root}/codexbar-display.log")" "release binary called: setup --yes --skip-flash --transport ${expected}"
+  done
+}
+
+run_reinstall_preserves_connection_mode
 run_install_sh_enables_control_center_in_daemon
 run_fresh_install_starts_without_theme_pack
 run_explicit_theme_pack_is_still_installed

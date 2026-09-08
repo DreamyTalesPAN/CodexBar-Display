@@ -5254,6 +5254,10 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
+	if active, ok := s.activeFirmwareUpdateJob(); ok {
+		writeJSON(w, http.StatusAccepted, firmwareUpdateJobResponse{OK: true, Job: active})
+		return
+	}
 	if s.updateHoldActive() {
 		writeError(
 			w,
@@ -5344,10 +5348,6 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 			"Could not read VibeTV update info.",
 			"Keep VibeTV powered on, then retry.",
 		)
-		return
-	}
-	if active, ok := s.activeFirmwareUpdateJob(); ok {
-		writeJSON(w, http.StatusAccepted, firmwareUpdateJobResponse{OK: true, Job: active})
 		return
 	}
 	job := s.createFirmwareUpdateJob(cfg)
