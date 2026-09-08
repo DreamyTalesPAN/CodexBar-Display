@@ -117,6 +117,27 @@ false`. Heap went 13.2 KB (tiny-office) → 24.0 KB (synthwave, CBA buffer
 released) → 13.2 KB (tiny-office again), so switching away frees the
 animation buffer and switching back re-allocates it without failures.
 
+Customer rehearsals (AGENTS.md), merge-gate candidate 9999.0.88 built from
+PR #420 head d8ca2c1e (run 34205405866), bench Mac + VibeTV 5863327:
+
+- Cold start (`scripts/vibetv-rehearse-cold-start.sh --pr 420`): Mac purged,
+  candidate Mac App installed, firmware 1.0.41 → 9999.0.88 flashed. Setup
+  wizard paired the device, the Overview reached a live preview showing Tiny
+  Office without flapping, the Themes list shows Tiny Office as "Installed",
+  and the Updates tab reported Mac App 9999.0.88 / firmware 9999.0.88 with no
+  update offered.
+- Warm start (`scripts/vibetv-rehearse-warm-start.sh --pr 420`): device back
+  on public firmware 1.0.41, public Mac App v1.0.56 installed, candidate
+  published on loopback. The wizard blocked the firmware step with "Update the
+  Mac App first", Sparkle offered 9999.0.88, "Install Update" → "Install and
+  Relaunch" replaced the app, the wizard then updated the firmware
+  1.0.41 → 9999.0.88, and after provider selection the Overview showed the
+  live Tiny Office preview; Updates tab: Mac App 9999.0.88, firmware
+  9999.0.88, "Update complete".
+- `/health` after both flashes: `activeTheme: tiny-office`,
+  `/themes/u/to-6-6eed22ed.json` still active, `renderOk: true`,
+  `renderFailures: 0`, CBA frames advancing, 0 allocation failures.
+
 Any further hardware write needs a new explicit approval for that exact test.
 
 ## Artwork provenance
