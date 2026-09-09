@@ -2178,7 +2178,7 @@ func runRollback(args []string) error {
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
-		target := filepath.Join(targetDir, "codexbar-display")
+		target := filepath.Join(targetDir, setup.CompanionBinaryName(runtime.GOOS))
 		if err := copyRegularFileAtomic(source, target, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
@@ -2426,7 +2426,7 @@ func saveReleaseState(home string, state releaseState) error {
 
 func snapshotInstalledCompanionBinary(home string) (string, string, error) {
 	supportDir := runtimepaths.Root(home)
-	installed := filepath.Join(supportDir, "bin", "codexbar-display")
+	installed := filepath.Join(supportDir, "bin", setup.CompanionBinaryName(runtime.GOOS))
 	if !fileExists(installed) {
 		return "", "", nil
 	}
@@ -2438,7 +2438,7 @@ func snapshotInstalledCompanionBinary(home string) (string, string, error) {
 		return "", "", err
 	}
 
-	snapshotPath := filepath.Join(snapshotDir, "codexbar-display")
+	snapshotPath := filepath.Join(snapshotDir, setup.CompanionBinaryName(runtime.GOOS))
 	if err := copyRegularFileAtomic(installed, snapshotPath, 0o755); err != nil {
 		return "", "", err
 	}

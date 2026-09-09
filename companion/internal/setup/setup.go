@@ -459,7 +459,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 	}
 
 	if opts.DryRun {
-		installPath := runtimepaths.Path(home, "bin", setupBinaryName(d.goos))
+		installPath := runtimepaths.Path(home, "bin", CompanionBinaryName(d.goos))
 		plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 		if d.goos == "windows" {
 			plistPath = service.TaskConfigPath(home, launchAgentLabel)
@@ -816,7 +816,8 @@ func containsString(all []string, target string) bool {
 	return false
 }
 
-func setupBinaryName(goos string) string {
+// CompanionBinaryName is shared by installation, snapshot and rollback paths.
+func CompanionBinaryName(goos string) string {
 	if goos == "windows" {
 		return "codexbar-display.exe"
 	}
@@ -829,7 +830,7 @@ func installBinaryForPlatform(sourcePath, home, goos string) (string, error) {
 		return "", err
 	}
 
-	targetPath := filepath.Join(targetDir, setupBinaryName(goos))
+	targetPath := filepath.Join(targetDir, CompanionBinaryName(goos))
 	if source, err := os.Stat(sourcePath); err == nil {
 		if target, err := os.Stat(targetPath); err == nil && os.SameFile(source, target) {
 			return targetPath, nil
