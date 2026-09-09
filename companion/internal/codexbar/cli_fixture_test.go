@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	dashboardusage "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar/dashboard"
@@ -73,16 +74,10 @@ func TestCLIFixtures(t *testing.T) {
 			}
 
 			t.Run("config-providers", func(t *testing.T) {
-				// #415 chooses the structured inventory contract. The spike's text
-				// recording remains a known release blocker, never fabricated inventory.
-				if !json.Valid(read("config-providers.json")) {
-					if filepath.Base(dir) != "win-codexbar-0.55.0" {
-						t.Fatal("structured provider inventory is invalid")
-					}
-					if _, err := parseProviderSettings(read("config-providers.json")); err == nil {
-						t.Fatal("text inventory must fail closed")
-					}
-					return
+				// Win-CodexBar has no JSON inventory yet (#415); its text form is
+				// parsed by the same function. The Mac recordings stay structured.
+				if !json.Valid(read("config-providers.json")) && !strings.HasPrefix(filepath.Base(dir), "win-codexbar-") {
+					t.Fatal("structured provider inventory is invalid")
 				}
 				settings, err := parseProviderSettings(read("config-providers.json"))
 				if err != nil {

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 )
 
 func latestKimiCookieActivityAt(home string) (time.Time, bool) {

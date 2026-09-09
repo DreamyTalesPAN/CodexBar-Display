@@ -9,13 +9,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"

@@ -42,8 +42,8 @@ Companion for everything it needs.
 - Installer: NSIS, x64, per-user. `nsis/hooks.nsh` stops the task before
   files are replaced and removes task, task configuration and the Run value on
   uninstall. The Companion's Windows sidecars are `codexbar-display.exe` (Go,
-  built in CI) and `codexbar-cli.exe` (extracted unmodified from the pinned
-  Win-CodexBar installer by `scripts/fetch-win-codexbar.ps1`; licence in
+  built in CI) and `codexbar-cli.exe` (the unmodified pinned Win-CodexBar
+  console CLI downloaded by `scripts/fetch-win-codexbar.ps1`; licence in
   `windows/THIRD_PARTY`). The Companion finds the CLI next to its own exe;
   `CODEXBAR_BIN` is not set.
 

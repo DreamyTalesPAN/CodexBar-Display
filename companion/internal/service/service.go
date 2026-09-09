@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 )
 
 var ErrUnsupported = errors.New("background service is not supported on this platform")

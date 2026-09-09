@@ -18,12 +18,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"

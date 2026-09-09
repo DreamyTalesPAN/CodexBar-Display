@@ -347,7 +347,8 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
       {"provider":"claude","error":{"message":"No Claude session key found in browser cookies."}},
       {"provider":"cursor","error":{"message":"Keychain access denied."}},
       {"provider":"gemini","usage":{}},
-      {"provider":"copilot","error":{"message":"No available fetch strategy."}}
+      {"provider":"copilot","error":{"message":"No available fetch strategy."}},
+      {"provider":"kimi","error":"Kimi usage failed from all configured sources. OAuth: Reading credentials is off; CLI: not installed"}
     ]`)
 	got := providerReadinessFromOutput(raw, errors.New("exit status 1"), nil)
 	statuses := make(map[string]string)
@@ -360,7 +361,7 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	want := map[string]string{
 		"codex": ProviderReady, "claude": ProviderAuthRequired,
 		"cursor": ProviderPermissionRequired, "gemini": ProviderNoUsageAvailable,
-		"copilot": ProviderNotConfigured,
+		"copilot": ProviderNotConfigured, "kimi": ProviderAuthRequired,
 	}
 	for provider, status := range want {
 		if statuses[provider] != status {

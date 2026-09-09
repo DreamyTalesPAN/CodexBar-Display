@@ -6,12 +6,71 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"runtime"
 	"strings"
+	"time"
 )
 
 const minProviderSettingsVersion = "0.27.0"
 
 var runProviderCommandFn = runUsageCommand
+
+// providerInventoryArgs is the CLI command for the provider inventory.
+// Win-CodexBar 0.56.8 has no JSON inventory (#415), so Windows reads the
+// text form that parseProviderSettings also understands.
+func providerInventoryArgs() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"config", "providers"}
+	}
+	return []string{"config", "providers", "--json"}
+}
+
+// runUsageAllEnabled asks for usage of every switched-on provider. The Mac
+// CLI does that with a plain "usage --json". Win-CodexBar 0.56.8 defaults to
+// Claude only and its "--provider all" walks all 69 providers, which does not
+// finish inside the probe timeout (#415). Windows therefore reads the
+// inventory and asks each switched-on provider one by one, then joins the
+// answers into the same JSON array the Mac CLI returns.
+func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, extra ...string) ([]byte, error) {
+	if runtime.GOOS != "windows" {
+		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
+	}
+	raw, err := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
+	if err != nil {
+		return nil, fmt.Errorf("read provider inventory: %w", err)
+	}
+	inventory, err := parseProviderSettings(raw)
+	if err != nil {
+		return nil, fmt.Errorf("read provider inventory: %w", err)
+	}
+	joined := make([]json.RawMessage, 0, len(inventory))
+	var lastErr error
+	for i := range inventory {
+		if !inventory[i].Enabled {
+			continue
+		}
+		args := append([]string{"usage", "--json", "--provider", inventory[i].ID}, extra...)
+		out, runErr := runUsageCommandFn(ctx, timeout, bin, args...)
+		if runErr != nil {
+			lastErr = runErr
+		}
+		var root any
+		if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
+			continue
+		}
+		for _, item := range extractProviderList(root) {
+			encoded, encodeErr := json.Marshal(item)
+			if encodeErr == nil {
+				joined = append(joined, encoded)
+			}
+		}
+	}
+	if len(joined) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return json.Marshal(joined)
+}
 
 type ProviderHealthState string
 
@@ -125,7 +184,7 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 	}
 
 	timeout := commandTimeout()
-	raw, err := runProviderCommandFn(ctx, timeout, bin, "config", "providers", "--json")
+	raw, err := runProviderCommandFn(ctx, timeout, bin, providerInventoryArgs()...)
 	if err != nil {
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
@@ -192,7 +251,8 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 		DefaultEnabled bool   `json:"defaultEnabled"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &inventory); err != nil {
-		return nil, fmt.Errorf("parse provider inventory: %w", err)
+		// Win-CodexBar (0.56.8) has no JSON inventory yet; see #415.
+		return parseProviderSettingsText(raw)
 	}
 	settings := make([]ProviderSetting, 0, len(inventory))
 	seen := make(map[string]struct{}, len(inventory))
@@ -224,6 +284,42 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 	}
 	if len(settings) == 0 {
 		return nil, errors.New("provider inventory is empty")
+	}
+	return settings, nil
+}
+
+// providerInventoryTextLine matches the text inventory format shared by the
+// Mac and Windows CLIs: "codex: enabled default (Codex)".
+var providerInventoryTextLine = regexp.MustCompile(`^([a-z0-9._-]+):\s+(enabled|disabled)(\s+default)?\s+\((.*)\)\s*$`)
+
+func parseProviderSettingsText(raw []byte) ([]ProviderSetting, error) {
+	settings := make([]ProviderSetting, 0, 8)
+	seen := make(map[string]struct{}, 8)
+	for _, line := range strings.Split(string(raw), "\n") {
+		match := providerInventoryTextLine.FindStringSubmatch(strings.TrimSpace(line))
+		if match == nil {
+			continue
+		}
+		id := match[1]
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		label := strings.TrimSpace(match[4])
+		if label == "" {
+			label = humanLabel(id)
+		}
+		settings = append(settings, ProviderSetting{
+			ID:             id,
+			Label:          label,
+			Enabled:        match[2] == "enabled",
+			DefaultEnabled: match[3] != "",
+			Health:         ProviderHealthChecking,
+			Service:        ProviderServiceUnknown,
+		})
+	}
+	if len(settings) == 0 {
+		return nil, errors.New("parse provider inventory: neither JSON nor text inventory")
 	}
 	return settings, nil
 }

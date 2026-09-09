@@ -9,8 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -18,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
@@ -327,7 +327,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	// before the customer saw a screen, then providers arriving and toggling
 	// themselves on under their hands. Which providers are on is CodexBar's
 	// own setting and the customer's choice, not something to seed from a probe.
-	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+	out, err := runUsageAllEnabled(ctx, timeout, bin, "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
 
 	if err != nil {
