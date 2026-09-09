@@ -42,15 +42,12 @@ VibeTV comes with 6 pre-built themes, but you can also
 | --- | --- | --- |
 | <img src="docs/assets/vibetv-screensaver-night-clock.png" alt="Night Clock screensaver preview showing the time and next resets" width="180"> | <img src="docs/assets/vibetv-screensaver-reset-countdown.png" alt="Reset Countdown screensaver preview with a forest and reset timer" width="180"> | <img src="docs/assets/vibetv-screensaver-token-fire.png" alt="Token Fire screensaver preview with a fireplace and token totals" width="180"> |
 
-Screensaver previews use example data. Available values depend on the provider
-and data freshness.
-
 See [docs/themes.md](docs/themes.md) for included themes, screensavers, and custom
 theme development.
 
 ## Providers
 
-VibeTV can show provider usage surfaced by CodexBar. Common examples include:
+VibeTV can show provider usage surfaced by [CodexBar](https://github.com/steipete/CodexBar). Common examples include:
 
 - Codex
 - Claude / Claude Code
