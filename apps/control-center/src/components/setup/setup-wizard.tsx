@@ -262,9 +262,11 @@ export function SetupWizard(props: SetupWizardProps) {
   // reset ("idle") releases the step.
   const connectSettled =
     connect.state.phase === "idle" || connect.state.phase === "done";
-  const derived = connectSettled
-    ? resolveSetupStep(derivedStep, wentBackTo)
-    : "device";
+  // A completed connection waits for the next saved setup snapshot on its log.
+  const derived =
+    connectSettled && !(connect.state.phase === "done" && derivedStep === "welcome")
+      ? resolveSetupStep(derivedStep, wentBackTo)
+      : "device";
   // The display choice is written optimistically so it does not flicker, and
   // the derived step reads that optimism as done -- which would put the
   // customer on the theme step, picking or even installing, on the strength of
@@ -283,6 +285,10 @@ export function SetupWizard(props: SetupWizardProps) {
   const goBack = back
     ? () => {
         navigations.current += 1;
+        if (back === "device") {
+          resetConnect();
+          directAttempt.current = "";
+        }
         setWentBackTo(back);
       }
     : undefined;
@@ -319,7 +325,8 @@ export function SetupWizard(props: SetupWizardProps) {
   // result to report. Claiming a count there told the customer none were found
   // while the scan that would find them had not answered, or not even run.
   const searchingForDevices =
-    deviceSearchState === "idle" || deviceSearchState === "searching";
+    deviceSearchState === "searching" ||
+    (deviceSearchState === "idle" && deviceCandidates.length === 0);
   useEffect(() => {
     if (searchingForDevices) {
       directAttempt.current = "";
@@ -618,10 +625,20 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   if (step === "device") {
-    const connecting = connectInFlight;
+    const connecting =
+      connectInFlight ||
+      connect.state.phase === "done" ||
+      (!wifiSetup && !searchingForDevices &&
+        connectionDecision.kind === "direct" && connect.state.phase === "idle");
     return (
       <>
-        <SetupDeviceScreen
+        {!wifiSetup && connect.state.phase === "idle" && connectionDecision.kind === "not-found" ? (
+          <SetupWelcomeScreen
+            {...help}
+            lines={props.welcomeLines}
+            onEnterAddressManually={openAddressDialog}
+          />
+        ) : <SetupDeviceScreen
           {...help}
           alternativeTransport={
             legacyCandidateFlow ? undefined : connectionDecision.alternative
@@ -673,7 +690,7 @@ export function SetupWizard(props: SetupWizardProps) {
           wifiSetupPhase={wifiSetup?.phase}
           wifiWaitingViaCable={wifiSetup?.viaCable}
           wifiCredentialsSent={wifiSetup?.credentialsSent}
-        />
+        />}
         {addressDialog}
         <SetupDeviceNotFoundDialog
           onEnterAddressManually={openAddressDialog}

@@ -125,44 +125,9 @@ export function setupIdentityIsKnown(
   );
 }
 
-/**
- * Whether this Mac has been through setup before, on evidence that survives a
- * restart.
- *
- * Entering the Control Center is otherwise proved by the first renderable frame,
- * which is right for someone who has just walked through the wizard and wrong
- * for someone coming back: a VibeTV that is connected but not yet drawing has
- * not sent one, and the wizard took the window back from a customer whose setup
- * the companion had recorded as finished -- onto "looking for your VibeTV", in
- * front of a VibeTV that was connected the whole time.
- *
- * The provider choice and the display choice are both persisted by the
- * companion, so they answer offline. The theme is not, and
- * `deviceCompletedThemeSetup` is false precisely when the VibeTV is
- * unreachable -- keying on it would do nothing in the case this exists for.
- * `themeSetupRequired` is the safe direction: it is false when there is no
- * device to ask, and true whenever a reachable one still needs its theme, which
- * keeps that step.
- *
- * `providerSetupCompletedThisSession` is what holds a first setup: it is set
- * the moment Continue on the provider step succeeds, so from there to the
- * closing step this stays false and the frame requirement is untouched.
- *
- * `hasActiveDevice` and `connectionRecoveryRequired` are the two that are about
- * the VibeTV rather than the choices, and they draw the same line
- * `setupDeviceIsUsable` draws for a customer who is already inside. Without the
- * first, a Mac that has never paired anything -- or is choosing between two it
- * has just found -- would be carried past the device step by a provider choice
- * that was made for a VibeTV it does not have. Without the second, a VibeTV
- * that has lost its pairing would be carried past the one screen with the
- * Connect button on it. Both are read from the device the recovery gate has
- * accepted, and that gate does not accept a disconnected snapshot at startup:
- * a known VibeTV that is switched off when the app starts therefore still
- * opens on the device step, where the recovery picker and the automatic
- * reconnect live.
- */
+/** Saved setup and pairing decide startup; reachability and usage do not. */
 export function setupWasCompletedBefore(input: {
-  hasActiveDevice: boolean;
+  hasPairedDevice: boolean;
   connectionRecoveryRequired: boolean;
   providerSelectionComplete: boolean;
   displayConfigured: boolean;
@@ -170,7 +135,7 @@ export function setupWasCompletedBefore(input: {
   themeSetupRequired: boolean;
 }): boolean {
   return (
-    input.hasActiveDevice &&
+    input.hasPairedDevice &&
     !input.connectionRecoveryRequired &&
     input.providerSelectionComplete &&
     input.displayConfigured &&

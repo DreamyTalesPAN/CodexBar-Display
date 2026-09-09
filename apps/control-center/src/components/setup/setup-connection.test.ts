@@ -14,6 +14,11 @@ const wifi = (id: string): DeviceCandidate => ({
 });
 
 describe("setup connection skip matrix", () => {
+  it.each([undefined, ""])("does not invent WiFi before the saved mode answers (%s)", (savedMode) => {
+    expect(decideSetupConnection({ candidates: [cable("1")], choiceRequired: false, savedMode }))
+      .toMatchObject({ kind: "direct", transport: "cable" });
+  });
+
   it("connects one Cable device directly when WiFi found none", () => {
     expect(
       decideSetupConnection({ candidates: [cable("1")], choiceRequired: true }),

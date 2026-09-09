@@ -24,6 +24,23 @@ describe("device recovery gate", () => {
     expect(foreign.state.preferredDeviceId).toBe("5804508");
   });
 
+  it("accepts saved offline identity without inventing a connection", () => {
+    const device = { active: true, connected: false, deviceId: "saved", target: "cable://vibetv" };
+    const initial = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+      device, countFailure: false,
+    });
+    expect(initial.acceptDevice).toBe(true);
+    expect(initial.state.failedNormalChecks).toBe(0);
+    const miss = applyDeviceRecoveryStatus(initial.state, { device });
+    expect(miss.acceptDevice).toBe(true);
+    expect(miss.state.failedNormalChecks).toBe(1);
+    expect(miss.closePicker).toBe(false);
+    const foreign = applyDeviceRecoveryStatus(initial.state, {
+      device: { ...device, deviceId: "other" },
+    });
+    expect(foreign.acceptDevice).toBe(false);
+  });
+
   it("keeps the preferred VibeTV through the first two normal failures", () => {
     let state = selectRecoveryDevice(createDeviceRecoveryGateState(), {
       deviceId: "stable-a",

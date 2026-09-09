@@ -15,6 +15,7 @@ namespace esp8266 {
 namespace {
 
 constexpr uint16_t kBacklightPwmRange = 1023;
+constexpr uint16_t kBrandNeon = 0xCFE0;  // Brandbook #CCFF00 in RGB565.
 
 uint8_t clampBrightnessPercent(uint8_t percent) {
   if (percent < 1) {
@@ -212,7 +213,7 @@ void RendererESP8266::DrawStatus(
   }
 
   display::SetTextSize(titleSize);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setTextColor(kBrandNeon, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(title.c_str(), titleSize), y);
   tft.print(title);
 

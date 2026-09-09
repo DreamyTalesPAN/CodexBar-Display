@@ -471,14 +471,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     "repairing" | "failed" | null
   >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
+  // Decide once from the Companion's saved setup and device identity. Null
+  // means those reads have not answered; false means this launch owns setup.
   const [enteredControlCenterThisSession, setEnteredControlCenterThisSession] =
-    useState(false);
-  // Null until the app knows the Mac's state; then it is the answer to "is this
-  // session a customer coming back, or one being set up", settled once. See
-  // where it is written for why both directions have to stay put.
-  const [sessionSkipsSetup, setSessionSkipsSetup] = useState<boolean | null>(
-    null,
-  );
+    useState<boolean | null>(null);
   // The closing step is shown for a moment before the app takes over, but only
   // to someone who actually walked through setup.
   // Flipped by the wizard once its closing step has been seen. A VibeTV that
@@ -699,7 +695,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDeviceCandidates([]);
           setDeviceSearchState("idle");
         }
-        return true;
+        if (next.connected !== false) {
+          return true;
+        }
       }
 
       if (transition.state.preferredDeviceId) {
@@ -709,10 +707,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // provider_setup_required snapshot started a second native repair
         // instead of showing the approved Try again -- the exact case
         // markDeviceLost was split out to avoid.
-        if (deviceRecoveryConfirmedLoss(transition)) {
-          markDeviceLost();
-        } else {
-          setDevice((current) => markDeviceDisconnected(current));
+        if (!transition.acceptDevice) {
+          if (deviceRecoveryConfirmedLoss(transition)) {
+            markDeviceLost();
+          } else {
+            setDevice((current) => markDeviceDisconnected(current));
+          }
         }
         if (transition.openPicker) {
           setDeviceSearchState("searching");
@@ -1485,8 +1485,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setConnectionModeChoiceRequired(false);
         if (payload.device && status === "selected") {
           acceptDeviceSnapshot(payload.device);
-          setDeviceCandidates([]);
-          setDeviceSearchState("idle");
         }
         return {
           status,
@@ -1924,8 +1922,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
       setEnteredControlCenterThisSession(false);
-      // Run setup again asks the question over.
-      setSessionSkipsSetup(null);
       if (payload.device) {
         setDevice(payload.device.connected ? payload.device : null);
       }
@@ -2401,7 +2397,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       connectionRecoveryRequired ||
       !initialCompanionCheckComplete ||
       companionStatus !== "online" ||
-      deviceIsCustomerConnected(device) ||
+      (deviceIsActive(device) && device?.paired === true) ||
       busyAction ||
       deviceSearchState !== "idle" ||
       didRunAutomaticDeviceSearch.current
@@ -3975,14 +3971,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
   const setupIdentityKnown = setupIdentityIsKnown(
-    initialCompanionCheckComplete,
+    initialCompanionCheckComplete &&
+      companionStatus === "online" &&
+      providerSelectionSetup !== null,
     providerDisplay,
     providerDisplayError,
   );
   const setupLooksComplete =
     setupIdentityKnown &&
     setupWasCompletedBefore({
-      hasActiveDevice,
+      hasPairedDevice: hasActiveDevice && device?.paired === true,
       connectionRecoveryRequired,
       providerSelectionComplete:
         providerSelectionSetup?.providerSelectionComplete === true,
@@ -3990,26 +3988,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       providerSetupCompletedThisSession,
       themeSetupRequired,
     });
-  // Whether this session belongs to a customer coming back or to one being set
-  // up is settled the first time the app knows the Mac's state, and never
-  // revisited. Both directions have to hold.
-  //
-  // Deciding it true later would hand the window back to setup around someone
-  // working in the app: switching off the provider on display is one click in
-  // Settings, and a reconnecting VibeTV can report its theme missing again.
-  //
-  // Deciding it false later is the mirror: a Mac whose provider and display
-  // choices are already recorded but whose VibeTV is gone or switched off
-  // starts on the device step, and pairing or reconnecting one there must not
-  // turn the session into a returning one and take the connect log off the
-  // screen mid firmware install.
-  //
-  // The deciding render reads the fresh value, so nothing flashes.
-  if (sessionSkipsSetup === null && setupIdentityKnown) {
-    setSessionSkipsSetup(setupLooksComplete);
+  if (enteredControlCenterThisSession === null && setupIdentityKnown) {
+    setEnteredControlCenterThisSession(setupLooksComplete);
   }
   const hasEnteredControlCenter =
-    enteredControlCenterThisSession || (sessionSkipsSetup ?? setupLooksComplete);
+    enteredControlCenterThisSession ?? setupLooksComplete;
   const macAppUpdatePromptedFor = useRef("");
   useEffect(() => {
     if (
@@ -4045,7 +4028,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
-      : connectionRecoveryRequired && device?.target
+      : (connectionRecoveryRequired ||
+          (enteredControlCenterThisSession === false && deviceIsCustomerConnected(device))) && device?.target
         ? [
             {
               target: device.target,
@@ -4053,17 +4037,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               board: device.board,
               firmware: device.firmware,
               networkMode: "station",
+              transport: connectionRecoveryRequired
+                ? undefined
+                : deviceUsesCable(device) ? "cable" : "wifi",
               known: true,
               active: true,
             } satisfies DeviceCandidate,
           ]
         : [];
-  const waitingForFirstUsage =
-    hasActiveDevice &&
-    device?.connected === true &&
-    device.paired !== false &&
-    !connectionRecoveryRequired &&
-    !hasEnteredControlCenter;
   // A repair takes the Mac App down on purpose, so the incident holds while one
   // runs. But an incident whose Mac App never comes back is a Mac App outage:
   // holding it forever hid the recovery screen behind "AI usage could not start"
@@ -4155,9 +4136,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     themeInstallInProgress,
   ]);
 
-  const startupDeviceSearchState: DeviceSearchState = waitingForFirstUsage
-    ? "waiting"
-    : connectionRecoveryRequired && startupDeviceCandidates.length > 0
+  const startupDeviceSearchState: DeviceSearchState =
+    connectionRecoveryRequired && startupDeviceCandidates.length > 0
       ? "multiple"
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;

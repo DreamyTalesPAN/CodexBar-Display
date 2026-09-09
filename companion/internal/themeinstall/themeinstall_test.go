@@ -108,6 +108,7 @@ func TestInstallUsesOneCableUploadPathAndActivatesOnlyTheStoredSpec(t *testing.T
 		Cable: &CableInstallOptions{
 			Capabilities: FallbackThemeSpecCapabilities(),
 			Prepare:      func(context.Context, string) error { return nil },
+			SendLine:     func([]byte) error { return nil },
 			Upload: func(_ context.Context, devicePath string, payload []byte, activation string) error {
 				uploads = append(uploads, upload{path: devicePath, activation: activation, bytes: len(payload)})
 				return nil
@@ -147,12 +148,23 @@ func TestCableInstallPreparesEveryAttemptBeforeUploads(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			preparations, uploads := 0, 0
+			preparations, uploads, screens := 0, 0, 0
 			caps := FallbackThemeSpecCapabilities()
 			caps.SupportsStandby = true
 			stopped := errors.New("Cable disconnected")
 			cable := &CableInstallOptions{
 				Capabilities: caps,
+				SendLine: func(line []byte) error {
+					var frame protocol.Frame
+					if err := json.Unmarshal(line, &frame); err != nil {
+						t.Fatal(err)
+					}
+					if !bytes.Equal(frame.ThemeSpec, installingThemeSpec) {
+						t.Fatalf("Cable must reuse existing screen: %s", frame.ThemeSpec)
+					}
+					screens++
+					return nil
+				},
 				Prepare: func(_ context.Context, gotSlot string) error {
 					if gotSlot != slot {
 						t.Fatalf("prepared slot %q, want %q", gotSlot, slot)
@@ -161,7 +173,7 @@ func TestCableInstallPreparesEveryAttemptBeforeUploads(t *testing.T) {
 					return nil
 				},
 				Upload: func(context.Context, string, []byte, string) error {
-					if preparations == 0 {
+					if preparations == 0 || screens != preparations {
 						t.Fatal("uploaded before reclaiming interrupted install")
 					}
 					uploads++
@@ -292,8 +304,8 @@ func TestInstallScreensaverRestoresLiveThemeAndClearsSelectionBeforeStaging(t *t
 	}); err != nil {
 		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
 	}
-	if len(device.ops) < 3 || device.ops[0] != "restore /themes/u/claude.json" ||
-		device.ops[1] != "clear" || !strings.HasPrefix(device.ops[2], "upload ") {
+	if len(device.ops) < 4 || device.ops[0] != "restore /themes/u/claude.json" ||
+		device.ops[1] != "clear" || device.ops[2] != "install-screen" || !strings.HasPrefix(device.ops[3], "upload ") {
 		t.Fatalf("the live theme must be restored and the selection cleared before files are written, got: %v", device.ops)
 	}
 	if device.screensaverPath != screensaverSpecPath {
@@ -325,16 +337,14 @@ func TestInstallScreensaverClearsAwakeSelectionBeforeStaging(t *testing.T) {
 	// A pack install is a multi-file operation: standby must never be able to
 	// activate a half-replaced pack, so the selection is cleared before the
 	// first file is written and only re-recorded after complete staging.
-	if len(device.ops) < 2 || device.ops[0] != "clear" || !strings.HasPrefix(device.ops[1], "upload ") {
+	if len(device.ops) < 3 || device.ops[0] != "clear" || device.ops[1] != "install-screen" || !strings.HasPrefix(device.ops[2], "upload ") {
 		t.Fatalf("the screensaver selection must be cleared before files are written, got: %v", device.ops)
 	}
 	if device.screensaverPath != screensaverSpecPath {
 		t.Fatalf("screensaver slot=%q, want the new selection after staging, got %q", device.screensaverPath, screensaverSpecPath)
 	}
-	for _, op := range device.ops {
-		if strings.HasPrefix(op, "restore ") {
-			t.Fatalf("an awake device must not restore its already showing live theme, got: %v", device.ops)
-		}
+	if !strings.Contains(strings.Join(device.ops, ","), "install-screen,upload "+screensaverSpecPath+",restore /themes/u/claude.json,live-frame,select ") {
+		t.Fatalf("install screen must be restored before screensaver selection: %v", device.ops)
 	}
 }
 
@@ -1526,6 +1536,20 @@ func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaver
 	device := &screensaverDevice{assets: make(map[string]int)}
 	device.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/frame":
+			var frame protocol.Frame
+			if err := json.NewDecoder(r.Body).Decode(&frame); err != nil {
+				t.Fatal(err)
+			}
+			if len(frame.ThemeSpec) > 0 {
+				if !bytes.Equal(frame.ThemeSpec, installingThemeSpec) {
+					t.Fatalf("unexpected install screen: %s", frame.ThemeSpec)
+				}
+				device.ops = append(device.ops, "install-screen")
+			} else {
+				device.ops = append(device.ops, "live-frame")
+			}
+			w.WriteHeader(http.StatusOK)
 		case "/hello":
 			writeThemeHelloWithStandby(t, w, supportsStandby)
 		case "/health":

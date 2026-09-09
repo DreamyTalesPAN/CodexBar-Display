@@ -473,6 +473,26 @@ async function main() {
       console.log("control-center provider settings test passed");
       return;
     }
+    if (process.argv.includes("--setup-entry")) {
+      for (const test of [
+        testConfiguredOfflineDeviceOpensOverviewWithoutWrites,
+        testConnectedNotReadyDeviceKeepsControlCenterOpen,
+        testTransientDisplayReadStillOpensOverview,
+        testSavedPairingStartupRecoversWithoutWizard,
+        testCableBackUsesConnectedDeviceWithoutNewSearch,
+        testFreshCableHasNoEmptyPicker,
+        testRejectedPairingTokenUsesTypedRecovery,
+        testFirstSetupStillWaitsForARenderedPreview,
+        testStartupStateMachine,
+        testConnectInstallsFirmwareUpdate,
+        testConnectFirmwareUpdateFailureOffersRetry,
+        testRunningDeviceOutageKeepsControlCenterOpen,
+      ]) {
+        await test(browser, appContext.appUrl);
+        console.log(`${test.name} passed`);
+      }
+      return;
+    }
     if (startupTimeoutOnly) {
       await testFirstUsageServiceFailureOffersRecovery(
         browser,
@@ -583,7 +603,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
+      await testConfiguredOfflineDeviceOpensOverviewWithoutWrites(
         browser,
         appContext.appUrl,
       );
@@ -801,7 +821,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
+    await testConfiguredOfflineDeviceOpensOverviewWithoutWrites(
       browser,
       appContext.appUrl,
     );
@@ -809,6 +829,9 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testSavedPairingStartupRecoversWithoutWizard(browser, appContext.appUrl);
+    await testCableBackUsesConnectedDeviceWithoutNewSearch(browser, appContext.appUrl);
+    await testFreshCableHasNoEmptyPicker(browser, appContext.appUrl);
     await testFirstSetupStillWaitsForARenderedPreview(
       browser,
       appContext.appUrl,
@@ -2146,7 +2169,8 @@ async function testDeniedLocalNetworkShowsRecovery(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  await page.getByRole("dialog", { name: "We couldn't search for your VibeTV" }).waitFor();
+  assert(await page.locator('main[aria-label="Welcome"]').count() === 1, "Search failure must stay over Welcome");
   await page.waitForTimeout(1_500);
   assert(
     (await setupNotFoundDialog(page).count()) === 0,
@@ -4874,7 +4898,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
   await page.close();
 }
 
-async function testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
+async function testConfiguredOfflineDeviceOpensOverviewWithoutWrites(
   browser,
   appUrl,
 ) {
@@ -4895,23 +4919,12 @@ async function testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
-  await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "A known VibeTV that is already offline at startup must open recovery",
-  );
-  assert(
-    repairRequests.length === 0,
-    "The browser must let the Companion own bounded automatic recovery",
-  );
-  await setupNotFoundDialog(page)
-    .getByRole("button", { name: "Scan again" })
-    .waitFor();
-  await setupNotFoundDialog(page)
-    .getByRole("button", { name: "Enter IP manually" })
-    .waitFor();
+  await page.getByRole("navigation", { name: "Control Center" }).waitFor({ timeout: 20_000 });
+  await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
+  assert((await page.getByRole("heading", { name: SETUP_DEVICE_SCREEN }).count()) === 0,
+    "A saved offline pairing must open Overview, not first setup");
+  assert(repairRequests.length === 0,
+    "A saved offline pairing must not issue a repair write");
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -4985,6 +4998,91 @@ async function testTransientDisplayReadStillOpensOverview(browser, appUrl) {
     .getByRole("navigation", { name: "Control Center" })
     .waitFor({ timeout: 30_000 });
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testFreshCableHasNoEmptyPicker(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  await page.addInitScript(() => {
+    window.setupHeadings = [];
+    new MutationObserver(() => {
+      const heading = document.querySelector("main h1")?.textContent;
+      if (heading && window.setupHeadings.at(-1) !== heading) window.setupHeadings.push(heading);
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  });
+  const device = { ...themeMissingDevice, target: "cable://vibetv", capabilities: {
+    ...companionDevice.capabilities,
+    transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+  }};
+  const companion = await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    connectionModeChoiceRequired: false,
+    searchDevices: [{ target: device.target, deviceId: device.deviceId, transport: "cable", networkMode: "off" }],
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
+  });
+  await page.route("**/v1/setup/connection-mode", async (route) => {
+    companion.setDevice(device);
+    await route.fulfill({ json: { ok: true, status: "selected", device } });
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("heading", { name: "Connecting to VibeTV", exact: true }).waitFor();
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  const headings = await page.evaluate(() => window.setupHeadings);
+  assert(!headings.includes("Choose your VibeTV"), `Single Cable must never flash an empty picker: ${JSON.stringify(headings)}`);
+  await page.close();
+}
+
+async function testCableBackUsesConnectedDeviceWithoutNewSearch(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const device = { ...themeMissingDevice, target: "cable://vibetv", capabilities: {
+    ...companionDevice.capabilities,
+    transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+  }};
+  let connects = 0;
+  await routeCompanionOnline(page, [], () => {}, {
+    device, connectionModeChoiceRequired: false,
+    searchDevices: [],
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
+  });
+  await page.route("**/v1/setup/connection-mode", async (route) => {
+    connects++;
+    await route.fulfill({ json: { ok: true, status: "selected", device } });
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await waitForCondition(() => connects === 1, "Back must reuse the verified Cable device");
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert((await page.getByText("VibeTV is being connected automatically.").count()) === 0,
+    "Back must never show the undesigned automatic-connection fallback");
+  await page.close();
+}
+
+// Reproduce the native startup: status first fails, then reports the saved
+// pairing offline, and finally connected. None of those is a fresh setup.
+async function testSavedPairingStartupRecoversWithoutWizard(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const requests = [];
+  let statusReads = 0;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: reconnectingDevice,
+    statusFailuresAfter: (count) => count === 1,
+    statusDeviceSequence: [reconnectingDevice, reconnectingDevice, companionDevice],
+    displayFrameResponse: { ok: false },
+    onRequest: (path, method) => {
+      if (path === "/v1/status") statusReads++;
+      if (method === "POST" && path.startsWith("/v1/device/")) requests.push(path);
+    },
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("navigation", { name: "Control Center" }).waitFor({ timeout: 30_000 });
+  await waitForCondition(() => statusReads >= 3, "Startup must observe the connected snapshot");
+  await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
+  assert((await page.getByRole("main", { name: "Welcome" }).count()) === 0,
+    "A late saved pairing must not latch the launch into the wizard");
+  assert(requests.length === 0, `A saved pairing must not start device setup: ${requests}`);
   await page.close();
 }
 

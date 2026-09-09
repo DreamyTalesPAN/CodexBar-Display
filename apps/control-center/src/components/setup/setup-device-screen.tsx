@@ -173,7 +173,7 @@ export function SetupDeviceScreen({
                     : "Looking for VibeTVs on your WiFi."
                   : showCandidates
                     ? foundLabel(candidates.length, transport)
-                    : "VibeTV is being connected automatically."}
+                    : null}
         </SetupWizardSubtitle>
       )}
 

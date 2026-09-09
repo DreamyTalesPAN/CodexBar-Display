@@ -4163,3 +4163,41 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul authorized completing the setup/Settings fixes without further questions and pushing PR #407.
 - Approved customer-visible result: If sending WiFi details fails, the existing form error line shows the failure and recovery instruction. Entered details remain available and Connect to WiFi can be retried; successful submission clears the error and shows the existing waiting state.
 - Validation: Wizard regressions reject the submission, verify visible message/instruction and retained inputs, then successfully retry. No new control or screen.
+
+## 2026-09-09 — Reuse the existing device installation screen
+
+- User request: Cable theme installs and screensaver installs must show the existing WiFi installation screen with its progress bar; remove the separate plain-text status screen.
+- Result: Both transports and both slots send the unchanged `installingThemeSpec`. Firmware renders that same spec and holds it between files; activation, failed uploads, or the bounded idle timeout restore the selected theme. WiFi screensaver installs restore the live theme before selecting the screensaver preview.
+- Validation: Theme installer and Companion API suites pass. Cable tests compare the exact screen payload, including its progress primitive, before uploads in both slots; WiFi screensaver tests require installation and restoration before selection. Frame-render policy tests and firmware size budgets pass (484816 bytes).
+- Local rehearsal: Mac App and firmware 9999.0.99 on device 5804508, USB /dev/cu.usbserial-11240. Device rendering telemetry confirms the existing install ThemeSpec and restoration after idle timeout for both slots. Native Mac UI completes Mini Classic, Tiny Office, and Token Fire installs. Final state: Tiny Office, brightness 75%, screensaver disabled. This run does not claim a physical-screen photograph or a WiFi hardware rehearsal.
+- Candidate: Local arm64 DMG, no Developer ID signing or notarization. These are local changes on top of PR head 02a306c, not a release.
+
+## 2026-09-09 — Brand neon for the VibeTV device title
+
+- User request: Globally use the brandbook neon yellow for the VIBETV wordmark on the device instead of blue.
+- Source: `vibetv-shopify-app/docs/vibetv-brandbook.md`, primary brand color `#CCFF00`.
+- Result: The shared status renderer uses that color (RGB565 `0xCFE0`) for the title, covering boot, Cable/WiFi status, reset, update, error and missing-theme screens.
+- Scope: Firmware-only color change; the existing install screen and Mac App are unchanged.
+- Validation: Build and existing firmware size budgets pass; firmware 9999.0.100 flashed with verified hash on device 5804508. Boot health records the Cable setup screen.
+
+## 2026-09-09 — Use saved pairing for startup
+
+- User approved the central startup fix after comparing the wizard with Claude Design. Returning customers open Overview while their saved VibeTV reconnects; missing/rejected pairing and first setup remain in the wizard.
+- Accept the Companion's configured offline device snapshot without marking it reachable or resetting recovery failure counts. Keep foreign-device rejection intact.
+- Consolidate the two session entry flags into one. Wait for a successful saved-setup read and the display selection before deciding; the final live preview still owns completion of a fresh setup. Preserve the selected Cable candidate during connection and firmware checking.
+- Validation: 108 focused unit tests; ten browser scenarios covering offline/connected startup, late status/display reads, rejected pairing, first setup, discovery, firmware update/failure, and a running-device outage. TypeScript passes.
+- Native local candidate 9999.0.101 (02a306c-dirty), VibeTV 5804508 via Cable: Overview was visible while disconnected/not ready, then stayed open when Connected/Live arrived. Run setup again completed provider selection and display mode back to Overview with the existing tiny-office theme. No new firmware flash; device remains 9999.0.100. This is local unsigned validation, not a signed cold/warm release rehearsal. Pairing rejection and a genuinely fresh Mac were covered by fixtures, not reproduced physically in this round.
+
+
+## 2026-09-09 — Remove the undesigned empty setup picker
+
+- User reported an empty `Choose your VibeTV` screen before providers and explicitly requested the fix. Claude Design's single-Cable route remains Welcome, connecting log with firmware check, providers, display mode, theme, live preview; errors use existing dialogs.
+- A fresh successful Cable health response now proves connection independently of the first usage frame. Readiness still requires the existing rendered-frame gate; stale hello data cannot keep a disconnected device online after the bounded loss grace.
+- Reuse the currently connected setup device when returning from providers and reset the existing connect sequence on Back. Remove the usage-wait override of discovery state. An unknown saved mode no longer silently means WiFi.
+- Render the existing Welcome screen when there is no connection or selection to show. Preserve the completed connecting log until the next setup snapshot can advance. Remove the misleading automatic-connection fallback sentence; no new screen or timer.
+- Candidate 9999.0.102 failed the native rehearsal: the user saw an empty picker and the completed log briefly returned to the chooser. It is superseded by 9999.0.103.
+- Validation: Companion API suite passes, including fresh health without a frame followed by real connection loss; 127 focused component tests, TypeScript and twelve focused browser scenarios pass. Five new assertions failed before the transition correction. The Cable browser regression observes heading mutations throughout first connection and Back, rejecting even a transient empty picker.
+- Native candidate 9999.0.103 (02a306c-dirty), built locally without Developer ID signing/notarization and installed from its matching DMG. Both native executable and helper match the mounted DMG byte for byte. Mac VibeTV/CodexBar state was cleaned, including `.codexbar` and CLI cookies/cache. Device 5804508 (MAC d8:bf:c0:58:91:dc, USB /dev/cu.usbserial-11240) was fully erased and reflashed with unchanged firmware 9999.0.100; prelaunch readback confirmed unpaired and theme-missing.
+- Native visible proof: Welcome -> Connecting to VibeTV with firmware log -> providers. Back repeated the connect log, held its completed state, and returned to providers without the observed chooser flash. Provider selection, Automatic display mode, Tiny Office installation, live preview and Overview completed through the native UI. Final device readback: paired=true, connected=true, ready=true, healthy Cable stream, active theme `/themes/u/to-7-d7799cec.json`, hash `6b398ec9`, renderOk=true. This is Cable cold-start proof, not a physical-screen photograph, WiFi rehearsal or signed update rehearsal.
+- DMG: `VibeTV-Control-Center-PR407-cold-fix-9999.0.103.dmg`, SHA-256 `5585e751b8e3497d784fe94c969818bcd30f09d73df2616ddebd5d86d0ebfc05`. Evidence is retained locally under `/tmp/CODEX-pr407-cold-20260909/cold-fix-103-*`.
+- After a final Mac/device purge for an independent customer test, Paul confirmed "ok passt jetzt" and explicitly approved pushing this tested state to PR #407. Review remains deferred until the end of the requested work.

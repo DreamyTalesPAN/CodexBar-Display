@@ -48,6 +48,7 @@ type PairTokenStore func(target, token string) error
 type CableInstallOptions struct {
 	Capabilities protocol.DeviceCapabilities
 	Prepare      func(context.Context, string) error
+	SendLine     func([]byte) error
 	Upload       func(context.Context, string, []byte, string) error
 }
 
@@ -256,51 +257,46 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		}
 	}
 
-	// The install screen and its restore belong to the live slot. A screensaver
-	// install must leave the running theme on screen untouched.
-	if live {
-		previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
-		if previousThemePathErr != nil && opts.Verbose {
-			fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
+	if !live {
+		if err := clearScreensaverBeforeUpload(wifi, &resolvedTarget, opts.PairTokenStore, out); err != nil {
+			return Result{}, &InstallError{Op: "theme-pack/screensaver-slot", Code: errcode.UpgradeFlashFirmware, Err: err}
 		}
-		installScreenShown := false
-		defer func() {
-			if retErr == nil || !installScreenShown {
-				return
-			}
-			restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
-		}()
-		if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
-			if authRequired(err) {
-				pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
-				if pairErr != nil {
-					return Result{}, &InstallError{
-						Op:   "theme-pack/pair",
-						Code: errcode.UpgradeFlashFirmware,
-						Err:  pairErr,
-						Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-					}
+	}
+	// Both slots temporarily show the same installation screen.
+	previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
+	if previousThemePathErr != nil && opts.Verbose {
+		fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
+	}
+	installScreenShown := false
+	defer func() {
+		if (retErr == nil && live) || !installScreenShown {
+			return
+		}
+		restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+	}()
+	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
+		if authRequired(err) {
+			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
+			if pairErr != nil {
+				return Result{}, &InstallError{
+					Op:   "theme-pack/pair",
+					Code: errcode.UpgradeFlashFirmware,
+					Err:  pairErr,
+					Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
 				}
-				resolvedTarget = pairedTarget
-				err = sendInstallingThemeFrame(wifi, resolvedTarget, caps)
 			}
-			if err != nil {
-				fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
-			} else {
-				installScreenShown = true
-				fmt.Fprintln(out, "Install screen: showing on VibeTV")
-			}
+			resolvedTarget = pairedTarget
+			err = sendInstallingThemeFrame(wifi, resolvedTarget, caps)
+		}
+		if err != nil {
+			fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
 		} else {
 			installScreenShown = true
 			fmt.Fprintln(out, "Install screen: showing on VibeTV")
 		}
-	} else if err := clearScreensaverBeforeUpload(wifi, &resolvedTarget, opts.PairTokenStore, out); err != nil {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/screensaver-slot",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "keep VibeTV powered and on the same WiFi, then retry the screensaver install",
-		}
+	} else {
+		installScreenShown = true
+		fmt.Fprintln(out, "Install screen: showing on VibeTV")
 	}
 
 	retryNoted := false
@@ -379,6 +375,10 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	} else {
 		// Selecting the screensaver only records a reference on the device, so
 		// there is nothing rendered to verify and nothing to retry against.
+		if installScreenShown {
+			restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+			installScreenShown = false
+		}
 		fmt.Fprintln(out, "Selecting screensaver...")
 		if err := activateScreensaverWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, opts.PairTokenStore); err != nil {
 			return Result{}, &InstallError{
@@ -422,7 +422,7 @@ func installCablePack(
 	cable *CableInstallOptions,
 	out io.Writer,
 ) (Result, error) {
-	if cable == nil || cable.Prepare == nil || cable.Upload == nil {
+	if cable == nil || cable.Prepare == nil || cable.Upload == nil || cable.SendLine == nil {
 		return Result{}, errors.New("cable theme transfer is unavailable")
 	}
 	if err := pack.ValidateAgainstCapabilities(cable.Capabilities); err != nil {
@@ -440,6 +440,9 @@ func installCablePack(
 	// disconnect or restart that prevented cleanup at the original failure.
 	if err := cable.Prepare(ctx, slot); err != nil {
 		return Result{}, &InstallError{Op: "theme-pack/prepare", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	if err := sendInstallingThemeFrameLine(cable.SendLine, cable.Capabilities); err != nil {
+		return Result{}, &InstallError{Op: "theme-pack/install-screen", Code: errcode.UpgradeFlashFirmware, Err: err}
 	}
 	fmt.Fprintln(out, "Uploading theme files by Cable...")
 	for _, asset := range pack.Assets {
@@ -564,6 +567,10 @@ func themeInstallCapabilities(
 }
 
 func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities) error {
+	return sendInstallingThemeFrameLine(func(line []byte) error { return wifi.SendLine(target, line) }, caps)
+}
+
+func sendInstallingThemeFrameLine(send func([]byte) error, caps protocol.DeviceCapabilities) error {
 	if !caps.SupportsThemeSpecV1 {
 		return errors.New("device does not support theme-spec-v1")
 	}
@@ -587,7 +594,7 @@ func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, 
 	if len(bytes.TrimSpace(line)) > maxFrameBytes {
 		return fmt.Errorf("install screen frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
 	}
-	if err := wifi.SendLine(target, line); err != nil {
+	if err := send(line); err != nil {
 		return fmt.Errorf("send install screen frame: %w", err)
 	}
 	return nil

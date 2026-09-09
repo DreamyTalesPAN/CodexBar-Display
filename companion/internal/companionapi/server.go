@@ -210,6 +210,7 @@ type Server struct {
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
 	scanCableWiFi          func(string, string) ([]protocol.WiFiNetwork, error)
+	sendCableLine          func(string, []byte) error
 	prepareCableTheme      func(context.Context, string, string, string, string) error
 	transferCableAsset     func(context.Context, string, string, string, string, string, []byte) error
 	subnetTargets          func() []string
@@ -974,6 +975,7 @@ func New(opts Options) (*Server, error) {
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
 		scanCableWiFi:          usb.ScanWiFi,
+		sendCableLine:          usb.SendLine,
 		prepareCableTheme:      usb.PrepareThemeInstall,
 		transferCableAsset:     usb.TransferAsset,
 		subnetTargets:          localSubnetTargets,
@@ -1387,8 +1389,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				if _, running := s.activeFirmwareUpdateJob(); !running && !s.themeInstallInFlight() {
 					if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
 						if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
-							device.Connected = providerSetupStreamForTarget(device.Stream, device.Target) ||
-								displayStreamHealthyForTarget(device.Stream, device.Target)
+							// The device just answered. Usage may not exist yet on a fresh Mac.
+							reachable = true
+							device.Connected = true
 							device = withDeviceHealth(device, health)
 						}
 					}
@@ -1396,9 +1399,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				s.firmwareUpdateStartMu.Unlock()
 			}
 		}
-		// Cable readiness never depends on an HTTP endpoint or token probe. A
-		// current exact-transport stream result is the authoritative evidence.
-		reachable = providerSetupStreamForTarget(device.Stream, device.Target)
+		// Keep connection proof separate from display readiness.
+		reachable = reachable || providerSetupStreamForTarget(device.Stream, device.Target)
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)
@@ -1632,7 +1634,7 @@ func (s *Server) withConfiguredConnectionState(
 	// live probe in streamConnected, not device.Connected: the anti-flap grace
 	// window above keeps an unreachable device Connected, and that one really
 	// is reconnecting.
-	if streamConnected {
+	if streamConnected || (reachable && device.Paired) {
 		if device.Display != nil && device.Display.ThemeSpec != nil && !device.Display.ThemeSpec.Active {
 			device.ConnectionState = deviceConnectionSetup
 			return device
@@ -5476,8 +5478,8 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
-	// Only a live theme install changes what is on screen, so only it has a
-	// render to baseline and verify against afterwards.
+	// Only the live slot replaces the selected usage theme and needs a new
+	// usage render to baseline and verify afterwards.
 	live := req.Slot != themepack.UsageScreensaver
 	var baseline deviceHealth
 	var cablePort string
@@ -5527,6 +5529,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	if cableMode {
 		cableInstall = &themeinstall.CableInstallOptions{
 			Capabilities: protocol.CapabilitiesFromHello(cableHello),
+			SendLine:     func(line []byte) error { return s.sendCableLine(cablePort, line) },
 			Prepare: func(ctx context.Context, slot string) error {
 				return s.prepareCableTheme(ctx, cablePort, cableHello.DeviceID, cfg.DeviceToken, slot)
 			},
@@ -5577,8 +5580,8 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		}
 	}
 	if !live {
-		// The live theme rendered throughout, so there is no new image to wait
-		// for and no verification to run.
+		// Screensaver selection owns its brief preview. Resume usage without
+		// verifying it as a replacement for the selected live theme.
 		resumeStream()
 		return result, nil
 	}

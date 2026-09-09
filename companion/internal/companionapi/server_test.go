@@ -5059,6 +5059,45 @@ func TestStatusUsesCableHealthToExposeMissingTheme(t *testing.T) {
 	}
 }
 
+func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = []string{protocol.FeatureCableHealthV1}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Display.ActiveTheme = "theme-missing"
+		renderOK := true
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		return health, nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Connected || got.Device.Ready || got.Device.ConnectionState != deviceConnectionSetup {
+		t.Fatalf("live health must prove connection, not first-frame readiness: %+v", got.Device)
+	}
+	// A cached hello is not live proof. Once the bounded existing grace expires,
+	// a failed health read must report the device offline again.
+	server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{}, errors.New("unplugged") }
+	server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Connected {
+		t.Fatal("cached identity must not keep an unplugged device connected")
+	}
+}
+
 func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -9630,7 +9669,14 @@ func TestThemeInstallUsesCableTransferWithoutWiFiDeviceCalls(t *testing.T) {
 		activation string
 	}
 	var uploads []upload
-	prepared := false
+	prepared, screenShown := false, false
+	server.sendCableLine = func(port string, line []byte) error {
+		if port != "/dev/mock" || !prepared || !bytes.Contains(line, []byte(`"id":"installing"`)) || !bytes.Contains(line, []byte(`"t":"p"`)) {
+			t.Fatalf("missing existing install screen: %s", line)
+		}
+		screenShown = true
+		return nil
+	}
 	server.prepareCableTheme = func(_ context.Context, port, deviceID, token, slot string) error {
 		if port != "/dev/mock" || deviceID != "cable-device" || token != "pair-token" || slot != "live" {
 			t.Fatal("unexpected Cable preparation")
@@ -9639,7 +9685,7 @@ func TestThemeInstallUsesCableTransferWithoutWiFiDeviceCalls(t *testing.T) {
 		return nil
 	}
 	server.transferCableAsset = func(_ context.Context, port, deviceID, token, devicePath, activation string, payload []byte) error {
-		if !prepared {
+		if !prepared || !screenShown {
 			t.Fatal("uploaded before Cable preparation")
 		}
 		if port != "/dev/mock" || deviceID != "cable-device" || token != "pair-token" || len(payload) == 0 {

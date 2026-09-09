@@ -462,6 +462,49 @@ function shownStep(): string {
 }
 
 describe("SetupWizard: direct connection", () => {
+  it("keeps the completed connection screen until the provider state arrives", async () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: "cable://vibetv", deviceId: "cable-a", transport: "cable" }],
+      connectSteps: { connect: vi.fn().mockResolvedValue({ firmware: "1.0.40" }), checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await waitFor(() => expect(screen.getByText("> firmware is up to date")).toBeTruthy());
+    expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Choose your VibeTV" })).toBeNull();
+    rerender(<SetupWizard {...props} step="welcome" deviceCandidates={[]} deviceSearchState="searching" />);
+    expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+    expect(screen.getByText("> firmware is up to date")).toBeTruthy();
+  });
+
+  it.each(["waiting", "not-found"] as const)("keeps Welcome behind an empty device result (%s)", (deviceSearchState) => {
+    render(<SetupWizard {...baseProps({
+      step: "device", deviceSearchState, deviceCandidates: [],
+      connectionMode: "", connectionModeChoiceRequired: false,
+    })} />);
+    expect(document.querySelector('main[aria-label="Welcome"]')).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Choose your VibeTV" })).toBeNull();
+  });
+
+  it("runs the approved connect flow again after Back from providers", async () => {
+    const connect = vi.fn().mockResolvedValue({ firmware: "1.0.40" });
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: "cable://vibetv", deviceId: "cable-a", transport: "cable" }],
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText("> firmware is up to date")).toBeTruthy());
+    rerender(<SetupWizard {...props} step="providers" />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(shownStep()).toBe("Choose AI providers"));
+    expect(screen.queryByText("VibeTV is being connected automatically.")).toBeNull();
+  });
+
   it("requires selection when only another WiFi device is found while the bound cable device reconnects", async () => {
     const connect = vi.fn();
     render(<SetupWizard {...baseProps({
@@ -952,11 +995,11 @@ describe("SetupWizard: going back", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Choose your VibeTV");
+    expect(shownStep()).toBe("Welcome");
 
     await act(async () => settle(true));
 
-    expect(shownStep()).toBe("Choose your VibeTV");
+    expect(shownStep()).toBe("Welcome");
   });
 
   // The display choice is written optimistically, and the derived step reads
@@ -1295,7 +1338,7 @@ describe("SetupWizard: a VibeTV that a rescan no longer finds", () => {
     ).toBe(false);
   });
 
-  it("leaves Connect closed when a rescan finds nothing at all", () => {
+  it("returns to Welcome when a rescan finds nothing at all", () => {
     const props = baseProps({
       step: "device",
       deviceSearchState: "multiple",
@@ -1306,9 +1349,8 @@ describe("SetupWizard: a VibeTV that a rescan no longer finds", () => {
 
     rerender(<SetupWizard {...props} deviceCandidates={[]} />);
 
-    expect(
-      screen.getByRole("button", { name: "Connect" }).hasAttribute("disabled"),
-    ).toBe(true);
+    expect(shownStep()).toBe("Welcome");
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
   });
 });
 
@@ -1340,9 +1382,7 @@ describe("SetupWizard: a scan that could not be made", () => {
     ).toContain("System Settings");
   });
 
-  // Every dialog can be dismissed, and dismissing the only rescan control left
-  // the step with nothing but the address field. The step carries its own.
-  it("keeps a way to scan again on the step itself", () => {
+  it("offers another scan in the designed dialog over Welcome", () => {
     const onSearchDevices = vi.fn();
     render(
       <SetupWizard
@@ -1354,11 +1394,8 @@ describe("SetupWizard: a scan that could not be made", () => {
       />,
     );
 
-    fireEvent.keyDown(document.activeElement ?? document.body, {
-      key: "Escape",
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Search again" }));
-
+    expect(shownStep()).toBe("Welcome");
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
     expect(onSearchDevices).toHaveBeenCalled();
   });
 

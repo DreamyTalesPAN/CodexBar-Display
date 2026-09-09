@@ -49,7 +49,9 @@ export function decideSetupConnection(options: {
   const wifi = options.candidates.filter(
     (candidate) => candidate.transport !== "cable",
   );
-  const saved = options.savedMode === "cable" ? "cable" : "wifi";
+  const saved = options.savedMode === "cable" || options.savedMode === "wifi"
+    ? options.savedMode
+    : null;
   const preferred =
     options.preferredTransport || (!options.choiceRequired ? saved : null);
 

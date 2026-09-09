@@ -215,6 +215,8 @@ char renderedClockDate[deviceclock::kDateTextSize] = {};
 bool httpServerStarted = false;
 bool setupMode = false;
 bool waitStatusRendered = false;
+bool themeInstallStatusVisible = false;
+unsigned long themeInstallStatusActivityMs = 0;
 String lastConnectedSetupIp;
 bool otaUploadSucceeded = false;
 bool otaUploadInProgress = false;
@@ -1117,7 +1119,33 @@ void drawWifiResetStatus(const String& line2) {
   recordRenderFull("status", micros() - renderStartUs);
 }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+void loadActiveStoredThemeSpecCache();
+#endif
+
+void finishThemeInstallStatus(bool restore = true) {
+  if (!themeInstallStatusVisible) {
+    return;
+  }
+  themeInstallStatusVisible = false;
+  waitStatusRendered = false;
+  runtimeCtx.screenDirty = true;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (restore) {
+    loadActiveStoredThemeSpecCache();
+    if (codexbar_display::app::CurrentFrame(runtimeCtx).themeSpecId == "installing") {
+      // A first install has no stored theme to return to.
+      runtimeCtx.runtime.hasFrame = false;
+      runtimeCtx.runtime.cachedThemeId = "";
+      runtimeCtx.runtime.cachedThemeRev = 0;
+      runtimeCtx.runtime.cachedThemeSpecRaw = "";
+    }
+  }
+#endif
+}
+
 void drawUpdateStatus(const String& line2) {
+  finishThemeInstallStatus();
   const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV UPDATE", "Update running", line2);
   recordRenderFull("update_status", micros() - renderStartUs);
@@ -1285,6 +1313,7 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     return;
   }
 
+  finishThemeInstallStatus(false);
   const bool redrawAfterStatus = waitStatusRendered || frameStaleStatusRendered;
   waitStatusRendered = false;
   frameStaleStatusRendered = false;
@@ -1373,6 +1402,18 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     pendingHttpRender = true;
   } else if (!deferRender) {
     renderAcceptedFrame(event);
+  }
+  if (currentFrame.hasThemeSpec && currentFrame.themeSpecId == "installing") {
+    // Reuse the Companion's existing ThemeSpec, including its progress bar.
+    // Hold it between files so standby cannot replace the install screen.
+    pendingHttpRender = false;
+    const unsigned long renderStartUs = micros();
+    renderer.DrawUsage(runtimeCtx);
+    recordRenderFull("theme_install", micros() - renderStartUs);
+    runtimeCtx.screenDirty = false;
+    themeInstallStatusVisible = true;
+    themeInstallStatusActivityMs = millis();
+    waitStatusRendered = true;
   }
   Serial.printf("frame_received transport=%s\n", transport);
 }
@@ -2512,6 +2553,9 @@ bool applyDeviceSettingsPatch(const DeviceSettingsPatch& patch, String& error) {
     error = "save failed";
     return false;
   }
+  if (patch.hasScreensaverPath && patch.screensaverPath.length() > 0) {
+    finishThemeInstallStatus();
+  }
   return true;
 }
 
@@ -2608,6 +2652,12 @@ void finishAssetUploadRequest() {
     assetUploadFile.close();
   }
   assetUploadInProgress = false;
+  // Keep the notice between a pack's files. A new frame/selection ends it;
+  // abandoned uploads use the same bounded idle window as Cable transfers.
+  themeInstallStatusActivityMs = millis();
+  if (!assetUploadSucceeded || assetUploadError.length() > 0) {
+    finishThemeInstallStatus();
+  }
 }
 
 bool assetPathLooksGif(const String& path);
@@ -2696,6 +2746,7 @@ void enterAssetUploadSafeMode() {
   firmwareUpdateNoticeDirty = false;
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
+  themeInstallStatusActivityMs = millis();
   close_all_fs();
   WiFiUDP::stopAll();
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
@@ -3960,6 +4011,7 @@ bool finishCableTransfer(JsonDocument& doc) {
       committed = setStandbyScreensaverPath(next.standby, assetUploadPath, error) &&
                   persistDeviceSettings(next);
       if (committed) {
+        finishThemeInstallStatus();
         screensaver_preview::NoteSelection(screensaverPreviewState);
       }
     }
@@ -4384,7 +4436,11 @@ void loop() {
     maintainFirmwareUpdateNotice();
   }
 
-  if (otaUploadInProgress || assetUploadInProgress) {
+  if (themeInstallStatusVisible && !assetUploadInProgress &&
+      millis() - themeInstallStatusActivityMs >= kCableTransferTimeoutMs) {
+    finishThemeInstallStatus();
+  }
+  if (otaUploadInProgress || assetUploadInProgress || themeInstallStatusVisible) {
     delay(1);
     return;
   }

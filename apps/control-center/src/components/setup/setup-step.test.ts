@@ -383,7 +383,7 @@ describe("setupStepForProviderRefusal", () => {
 // the wizard took the window back from a customer whose setup was long finished.
 describe("setupWasCompletedBefore", () => {
   const returning = {
-    hasActiveDevice: true,
+    hasPairedDevice: true,
     connectionRecoveryRequired: false,
     providerSelectionComplete: true,
     displayConfigured: true,
@@ -427,7 +427,7 @@ describe("setupWasCompletedBefore", () => {
     // anyone past picking one -- including a customer choosing between two that
     // the startup search has just found.
     expect(
-      setupWasCompletedBefore({ ...returning, hasActiveDevice: false }),
+      setupWasCompletedBefore({ ...returning, hasPairedDevice: false }),
     ).toBe(false);
   });
 
