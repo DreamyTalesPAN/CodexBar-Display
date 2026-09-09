@@ -3865,3 +3865,10 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested iterative VM QA and direct fixes: "Ja gut, dann kannst du ja jetzt selber iterativ testen, also QA machen und dann auch direkt fixen. Ja, leg mal los."
 - Approved customer-visible result: Fix the reported indefinitely loading token history. A completed scan without complete local history shows "Token history is unavailable" with the existing Refresh action, while available quota windows remain visible. Do not replace missing history with zero consumption. This records the implementation scope; final visual acceptance is still pending.
+
+### 2026-09-09 — Final Windows token-history visual acceptance
+
+- User approval: Marcus answered "ja" when asked whether the linked final Usage screenshot (`outputs/qa-9e4f4ab/usage-2.png` in the Windows QA workspace) was acceptable. The screenshot was captured from installed build `9e4f4ab6a85147aa119a1875b6d4eee1c20e2c0d` in the Windows VM.
+- Approved customer-visible result: The Usage screen displays "Token history is unavailable" and "Complete local token history is not available for every selected provider. Available usage limits are shown below." with the existing Refresh button. Available provider quota cards remain visible; incomplete token history is not represented as a complete zero or combined total. This supersedes the pending visual acceptance above.
+- Approved files: `apps/control-center/src/components/usage-screen.tsx` and `apps/control-center/src/components/usage-screen.test.tsx` at the reviewed build.
+- Scope: Approval of this visible result only; it does not approve unrelated Session-limit semantics, provider defaults, a push, merge, release, or hardware changes.

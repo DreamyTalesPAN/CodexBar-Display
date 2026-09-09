@@ -93,6 +93,18 @@ coverage, null daily token counts, or an unsupported provider remain unavailable
 not zero. A completed scan without history shows a retryable notice while
 leaving quota windows visible. Known zero history remains a valid zero result.
 
+The same CLI marks an absent Codex session as `is_informational: true`, with
+`used_percent: 0`, `window_minutes: 300`, and `No active 5h session`. The shared
+parser excludes explicitly informational windows from quotas (both snake_case
+and camelCase contracts). Real zero-percent windows remain valid; a real weekly
+window stays available without a synthetic Session row.
+
+Clean-settings VM verification on 2026-09-09 confirms that CLI 0.56.8 itself
+enables Codex and Claude by default, without checking their setup. Running
+`config disable claude` persists across a new CLI process. VibeTV does not
+silently replace these upstream defaults or disable providers based on transient
+health failures. Changing the first-run selection policy is a separate decision.
+
 ## Open
 
 - Authenticode: `bundle.windows.signCommand` is unset until the certificate

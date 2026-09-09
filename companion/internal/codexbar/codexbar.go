@@ -1183,9 +1183,6 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 }
 
 func parseUsageWindowMap(windowMap map[string]any, id string, label string) (UsageWindow, bool) {
-	if usageKnown, ok := anyToBool(windowMap["usageKnown"]); ok && !usageKnown {
-		return UsageWindow{}, false
-	}
 	used, known := knownUsagePercentAtPaths(windowMap, "usedPercent", "used_percent", "percent", "usagePercent")
 	if !known {
 		return UsageWindow{}, false
@@ -2781,14 +2778,31 @@ func firstRFC3339AtPaths(m map[string]any, paths ...string) time.Time {
 	return parsed.UTC()
 }
 
+func usageWindowUnavailable(m map[string]any) bool {
+	if usageKnown, exists := anyToBool(m["usageKnown"]); exists && !usageKnown {
+		return true
+	}
+	// CodexBar also uses rate-window objects for informational notices (for
+	// example an absent session). Their numeric value is not a quota.
+	for _, key := range []string{"isInformational", "is_informational"} {
+		if informational, _ := anyToBool(m[key]); informational {
+			return true
+		}
+	}
+	return false
+}
+
 func knownUsagePercentAtPaths(m map[string]any, paths ...string) (int, bool) {
+	if usageWindowUnavailable(m) {
+		return 0, false
+	}
 	for _, path := range paths {
 		value, ok := getPath(m, path)
 		if !ok {
 			continue
 		}
 		if window, ok := value.(map[string]any); ok {
-			if usageKnown, exists := anyToBool(window["usageKnown"]); exists && !usageKnown {
+			if usageWindowUnavailable(window) {
 				return 0, false
 			}
 			for _, key := range []string{"usedPercent", "used_percent", "percent", "usagePercent"} {
