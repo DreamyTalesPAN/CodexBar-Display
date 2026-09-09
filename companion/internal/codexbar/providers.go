@@ -16,7 +16,7 @@ const minProviderSettingsVersion = "0.27.0"
 
 var runProviderCommandFn = runUsageCommand
 
-// providerProbePerProvider is true where the CLI cannot answer one usage call
+// providerProbePerProvider is true where the CLI is Win-CodexBar 0.56.8: no usage call
 // for every switched-on provider (Win-CodexBar 0.56.8, see runUsageAllEnabled).
 // A variable so the Windows path is testable on the Mac.
 var providerProbePerProvider = runtime.GOOS == "windows"
@@ -262,11 +262,23 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	if enabled {
 		action = "enable"
 	}
-	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, "config", action, "--provider", providerID)
+	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, providerToggleArgs(action, providerID)...)
 	if err != nil {
 		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	return nil
+}
+
+// providerToggleArgs is the CLI command that switches one provider on or off.
+// The Mac CLI takes the provider as "--provider <id>"; Win-CodexBar 0.56.8
+// takes it as a positional argument and rejects the flag (#437). The ID has
+// been validated against the live inventory, so it can never be mistaken for
+// an option.
+func providerToggleArgs(action, providerID string) []string {
+	if providerProbePerProvider {
+		return []string{"config", action, providerID}
+	}
+	return []string{"config", action, "--provider", providerID}
 }
 
 func checkProviderSettingsVersion(ctx context.Context, bin string) error {

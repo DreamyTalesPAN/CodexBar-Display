@@ -163,6 +163,33 @@ func TestFetchProviderSettingsProbesEachEnabledProviderOnWindows(t *testing.T) {
 	}
 }
 
+// Win-CodexBar 0.56.8 rejects "config disable --provider claude"; the provider
+// is a positional argument there.
+func TestSetProviderEnabledUsesPositionalProviderOnWindows(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.56.8")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var calls [][]string
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		if args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
+		}
+		return []byte(""), nil
+	}
+
+	if err := SetProviderEnabled(context.Background(), "claude", false); err != nil {
+		t.Fatalf("disable provider: %v", err)
+	}
+	want := []string{"config", "disable", "claude"}
+	if !reflect.DeepEqual(calls[len(calls)-1], want) {
+		t.Fatalf("unexpected write args: got %v want %v", calls[len(calls)-1], want)
+	}
+}
+
 func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 	withProviderCommandTestBinary(t, "0.26.9")
 	_, err := FetchProviderSettings(context.Background())
