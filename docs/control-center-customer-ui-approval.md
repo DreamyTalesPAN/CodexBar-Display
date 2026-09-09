@@ -3860,3 +3860,8 @@ issue scope, or release permission never implies UI permission.
   deferred signing. Full signed cold/warm update rehearsals remain a separate
   acceptance gate and are not claimed here. This records local validation and
   approval to push the PR branch, not approval to merge, release, or sign.
+
+## 2026-09-09 — Windows token-history unavailable state
+
+- User approval: Marcus requested iterative VM QA and direct fixes: "Ja gut, dann kannst du ja jetzt selber iterativ testen, also QA machen und dann auch direkt fixen. Ja, leg mal los."
+- Approved customer-visible result: Fix the reported indefinitely loading token history. A completed scan without complete local history shows "Token history is unavailable" with the existing Refresh action, while available quota windows remain visible. Do not replace missing history with zero consumption. This records the implementation scope; final visual acceptance is still pending.

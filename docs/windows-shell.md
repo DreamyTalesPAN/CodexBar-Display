@@ -79,6 +79,20 @@ first, as for the Mac App), then in `windows/src-tauri`:
 `PATH=/opt/homebrew/opt/llvm/bin:$PATH TAURI_SIGNING_PRIVATE_KEY=... cargo tauri
 build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`.
 
+Do not stop at `npm run build:local`: that updates `out-local`, not the Go
+embed directory. Copy the complete fresh export into `controlcenter_static`
+before rebuilding the sidecar, as the Windows CI job does. A stale embed tree
+caused `PREVIEW UNAVAILABLE` in the 2026-09-09 VM rehearsal although the exact
+Tiny Office revision existed in the export. Verify the installed app serves
+`/theme-packs/render/tiny-office/to-6-6eed22ed.json?specHash=4f824ce2` and renders it.
+
+Win-CodexBar 0.56.8's local cost command is `cost --json --days 30 --provider all`;
+it rejects the Mac `--refresh` option and defaults to Claude if the provider is
+omitted. Its `spendContract.daily` format is adapted centrally. Unestablished
+coverage, null daily token counts, or an unsupported provider remain unavailable,
+not zero. A completed scan without history shows a retryable notice while
+leaving quota windows visible. Known zero history remains a valid zero result.
+
 ## Open
 
 - Authenticode: `bundle.windows.signCommand` is unset until the certificate

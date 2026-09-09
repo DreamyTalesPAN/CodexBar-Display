@@ -71,6 +71,8 @@ export function UsageScreen({
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   // The Mac App owns this decision; the browser does not re-derive freshness.
   const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
+  const tokenHistoryUnavailable =
+    tokenUsageReady && hasProviders && !usageProvidersHaveTokenResult(providers);
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   const usageLoading =
@@ -121,6 +123,31 @@ export function UsageScreen({
 
         {usageLoading ? (
           <UsageEmptyState companionStatus={companionStatus} loading />
+        ) : tokenHistoryUnavailable ? (
+          <Alert className="mb-6 bg-muted">
+            <Info />
+            <AlertTitle>Token history is unavailable</AlertTitle>
+            <AlertDescription className="grid justify-items-start gap-3">
+              <span>
+                No complete local token history was reported on this computer.
+                Available usage limits are shown below.
+              </span>
+              {onRefresh ? (
+                <Button
+                  aria-label="Refresh token usage"
+                  aria-busy={refreshing}
+                  disabled={refreshing}
+                  onClick={onRefresh}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+                  {refreshing ? "Refreshing" : "Refresh"}
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
         ) : tokenUsageReady && hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}

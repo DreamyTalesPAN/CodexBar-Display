@@ -682,6 +682,11 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		seen[key] = struct{}{}
 
 		snapshot, exists := c.providers[key]
+		if !exists && stats.Unavailable {
+			// Cost's "all" can report unsupported providers that are not
+			// configured. A missing history must not create a usage provider.
+			continue
+		}
 		if !exists {
 			snapshot = providerSnapshot{
 				Provider: key,
@@ -703,7 +708,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		frame.SessionTokens = stats.SessionTokens
 		frame.WeekTokens = stats.WeekTokens
 		frame.TotalTokens = stats.TotalTokens
-		frame.TokenTotalsKnown = true
+		frame.TokenTotalsKnown = !stats.Unavailable
 		meta := snapshot.Meta
 		meta.Cost = stats.Cost
 
