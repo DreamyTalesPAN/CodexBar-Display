@@ -98,6 +98,9 @@ The same CLI marks an absent Codex session as `is_informational: true`, with
 parser excludes explicitly informational windows from quotas (both snake_case
 and camelCase contracts). Real zero-percent windows remain valid; a real weekly
 window stays available without a synthetic Session row.
+The running collector uses the dashboard snapshot joined with `/usage` metadata;
+that normalizer must also retain and filter the informational flags. Fixing only
+the direct CLI parser does not correct the installed app's dashboard-fed usage.
 
 Clean-settings VM verification on 2026-09-09 confirms that CLI 0.56.8 itself
 enables Codex and Claude by default, without checking their setup. Running
