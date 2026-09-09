@@ -3329,7 +3329,7 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	}
 
 	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
-	wantService := "shop.vibetv.control-center.runtime"
+	wantService := fmt.Sprintf("gui/%d/shop.vibetv.control-center.runtime", os.Getuid())
 	if gotService != wantService {
 		t.Fatalf("expected launchctl service %q, got %q", wantService, gotService)
 	}
@@ -3693,14 +3693,23 @@ func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
 	target := "http://192.0.2.10"
 	stream := displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
 
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status:    "setup_required",
+			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
+		}
+	}
 	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("a cold provider cache must not settle the wait")
 	}
-	server.providerSetupCache = codexbar.ProviderSetup{
-		Status:    "setup_required",
-		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
+	// Wait for the real cache owner instead of racing the cold-cache refresh.
+	deadline := time.Now().Add(time.Second)
+	for server.providerSetupRefresh.Load() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
 	}
-	server.providerSetupCachedAt = time.Now()
+	if server.providerSetupRefresh.Load() {
+		t.Fatal("provider setup refresh did not finish")
+	}
 	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("an unconfigured provider must settle the wait")
 	}

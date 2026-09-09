@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 )
@@ -20,7 +19,7 @@ func TestCommandServesDedicatedRawOTAAndStopsOnSignal(t *testing.T) {
 	rawAddr := freeLoopbackAddress(t)
 	firmware := []byte("virtual candidate firmware")
 	sum := sha256.Sum256(firmware)
-	binary := filepath.Join(t.TempDir(), "virtual-vibetv.exe")
+	binary := filepath.Join(t.TempDir(), "virtual-vibetv")
 	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Dir = "."
 	if output, err := build.CombinedOutput(); err != nil {
@@ -73,21 +72,16 @@ func TestCommandServesDedicatedRawOTAAndStopsOnSignal(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("raw OTA status = %s", response.Status)
 	}
-	t.Run("POSIX-graceful-shutdown", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("os.Process.Signal(Interrupt) is not implemented on Windows")
-		}
-		if err := command.Process.Signal(os.Interrupt); err != nil {
-			t.Fatalf("signal virtual VibeTV: %v", err)
-		}
-		if err := command.Wait(); err != nil {
-			t.Fatalf("graceful virtual VibeTV shutdown: %v", err)
-		}
-		finished = true
-		if !bytes.Contains(stdout.Bytes(), []byte(`"updateUploads":1`)) {
-			t.Fatalf("shutdown snapshot has no OTA evidence: %s", stdout.String())
-		}
-	})
+	if err := command.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("signal virtual VibeTV: %v", err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("graceful virtual VibeTV shutdown: %v", err)
+	}
+	finished = true
+	if !bytes.Contains(stdout.Bytes(), []byte(`"updateUploads":1`)) {
+		t.Fatalf("shutdown snapshot has no OTA evidence: %s", stdout.String())
+	}
 }
 
 func freeLoopbackAddress(t *testing.T) string {

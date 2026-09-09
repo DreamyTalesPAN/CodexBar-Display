@@ -20,7 +20,6 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -2107,7 +2106,7 @@ func lastGoodSnapshotPath() string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
-	return runtimepaths.Path(home, "last-good-frame.json")
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
 }
 
 func collectorInterval(renderInterval time.Duration) time.Duration {
@@ -2319,7 +2318,7 @@ func providerSnapshotsPath() string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
-	return runtimepaths.Path(home, "provider-snapshots.json")
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "provider-snapshots.json")
 }
 
 func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt time.Time) error {

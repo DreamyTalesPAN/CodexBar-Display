@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
@@ -112,7 +111,7 @@ func ClearThemeValue(raw string) bool {
 }
 
 func ConfigPath(home string) string {
-	return runtimepaths.Path(home, configFileName)
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", configFileName)
 }
 
 // WithConfigLock serializes in-process read-modify-write transactions for one
@@ -130,7 +129,7 @@ func WithConfigLock(home string, run func() error) error {
 }
 
 func deviceSelectionJournalPath(home string) string {
-	return runtimepaths.Path(home, deviceSelectionJournalFileName)
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", deviceSelectionJournalFileName)
 }
 
 func Load(home string) (Config, error) {
@@ -170,9 +169,6 @@ func RestrictPermissions(home string) error {
 		return errors.New("home directory is empty")
 	}
 	configPath := ConfigPath(home)
-	if configPath == "" {
-		return errors.New("user config directory is unavailable")
-	}
 	configDir := filepath.Dir(configPath)
 	return processPermissionMigrations.ensure(home, configPath, configDir)
 }

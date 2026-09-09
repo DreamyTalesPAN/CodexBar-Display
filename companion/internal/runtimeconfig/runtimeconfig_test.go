@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -231,7 +230,7 @@ func assertPermissions(t *testing.T, path string, want os.FileMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != want {
+	if got := info.Mode().Perm(); got != want {
 		t.Fatalf("unexpected permissions for %s: got=%#o want=%#o", path, got, want)
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/virtualvibetv"
 )
@@ -23,7 +22,7 @@ func TestRunInstallUpdateUsesMultipartOTAAndDoesNotFlashAlreadyCurrentDevice(t *
 	t.Cleanup(func() {
 		releaseHTTPClient, firmwareHTTPVerifyPollInterval = previousClient, previousPoll
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	firmwareHTTPVerifyPollInterval = time.Millisecond
 
 	image := []byte("virtual multipart OTA candidate")
@@ -66,7 +65,7 @@ func TestRunInstallUpdateAcceptsDroppedMultipartOTAResponseWithoutSecondFlash(t 
 	t.Cleanup(func() {
 		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareInterruptedVerifyTimeout = previousClient, previousPoll, previousTimeout
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	firmwareHTTPVerifyPollInterval, firmwareInterruptedVerifyTimeout = time.Millisecond, 100*time.Millisecond
 
 	image := []byte("accepted multipart OTA then disconnected")
