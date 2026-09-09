@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
@@ -2497,7 +2499,7 @@ func detectBinaryVersion(binPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binPath, "version", "--short")
+	cmd := childproc.Hide(exec.CommandContext(ctx, binPath, "version", "--short"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "unknown"
@@ -2582,13 +2584,15 @@ func startLaunchAgent(home string) error {
 }
 
 func stopLaunchAgent(disable bool) error {
-	return service.New(strings.TrimSuffix(launchAgentLabel, ".plist"), "", false).Stop(context.Background(), disable)
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	return service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Stop(context.Background(), disable)
 }
 
 type launchAgentStatus = service.Status
 
 func queryLaunchAgentStatus() (launchAgentStatus, error) {
-	status, err := service.New(strings.TrimSuffix(launchAgentLabel, ".plist"), "", false).Status(context.Background())
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	status, err := service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Status(context.Background())
 	if err != nil {
 		trimmed := strings.TrimSpace(status.Raw)
 		lower := strings.ToLower(trimmed)

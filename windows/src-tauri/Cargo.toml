@@ -1,0 +1,28 @@
+[package]
+name = "vibetv-control-center"
+version = "0.0.0"
+edition = "2024"
+description = "VibeTV Control Center"
+
+[[bin]]
+name = "VibeTVControlCenter"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+ureq = { version = "3", default-features = false }
+url = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_System_Threading"] }
+
+[build-dependencies]
+tauri-build = "2"
+
+[profile.release]
+strip = true

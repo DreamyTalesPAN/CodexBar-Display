@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VibeTV Control Center</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #0b0b10; color: #f4f4f8; font: 16px/1.5 system-ui, "Segoe UI", sans-serif; }
+  main { min-height: 100%; display: grid; place-items: center; text-align: center; padding: 32px; box-sizing: border-box; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+  p { margin: 0; color: #b6b6c4; max-width: 44em; }
+  #error { display: none; }
+  #error p { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <div id="starting"><h1>Starting the VibeTV Companion…</h1><p>This takes a few seconds after installation.</p></div>
+  <div id="error"><h1>VibeTV Control Center could not start its Companion.</h1><p id="detail"></p></div>
+</main>
+<script>
+  window.addEventListener("vibetv:shell-status", function (event) {
+    var detail = (event.detail && event.detail.error) || "";
+    document.getElementById("starting").style.display = detail ? "none" : "";
+    document.getElementById("error").style.display = detail ? "" : "none";
+    document.getElementById("detail").textContent = detail;
+  });
+</script>
+</body>
+</html>
+

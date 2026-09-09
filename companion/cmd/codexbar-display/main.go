@@ -153,11 +153,11 @@ func main() {
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
 	fmt.Println("  codexbar-display api [--addr 127.0.0.1:47832] [--dev-origin http://localhost:3000]")
-	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini] [--api-addr 127.0.0.1:47832]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini] [--api-addr 127.0.0.1:47832] [--native-shell --app-version x.y.z --app-build n --runtime-label <label>]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display open-control-center [--addr 127.0.0.1:47832] [--path /control-center] [--no-open]")
-	fmt.Println("  codexbar-display service <start|stop|status>")
+	fmt.Println("  codexbar-display service <start|stop|status|install|uninstall> [--label <label>] [daemon args for install...]")
 	fmt.Println("  codexbar-display version [--short] [--json]")
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--repo owner/name] [--skip-version-guard]")
 	fmt.Println("  codexbar-display install-update [--target http://<device-ip>] [--manifest-url url] [--confirm-live-update] [--force] [--verbose]")
@@ -206,6 +206,26 @@ func runDaemon(args []string) error {
 	}
 	if opts.LastGoodMaxAge > 0 {
 		if err := os.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", opts.LastGoodMaxAge.String()); err != nil {
+			return err
+		}
+	}
+	// A native shell (Windows) registers the daemon as a Scheduled Task, which
+	// cannot carry environment variables the way a LaunchAgent plist does, so
+	// the shell passes the same settings as flags.
+	for key, value := range map[string]string{
+		"VIBETV_MAC_APP_VERSION":                      opts.AppVersion,
+		"VIBETV_MAC_APP_BUILD":                        opts.AppBuild,
+		runtimepaths.DisplayStreamLaunchAgentLabelEnv: opts.RuntimeLabel,
+	} {
+		if value == "" {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	if opts.NativeShell {
+		if err := os.Setenv("VIBETV_DISABLE_MAC_APP_SELF_UPDATE", "1"); err != nil {
 			return err
 		}
 	}
@@ -309,6 +329,10 @@ type daemonCommandOptions struct {
 	APIAddr        string
 	APIDevOrigin   string
 	APIFallback    bool
+	AppVersion     string
+	AppBuild       string
+	NativeShell    bool
+	RuntimeLabel   string
 }
 
 func parseDaemonOptions(args []string) (daemon.Options, error) {
@@ -328,6 +352,10 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	apiDevOrigin := fs.String("api-dev-origin", "http://localhost:3000", "additional allowed local dev origin for --api-addr")
 	apiFallback := fs.Bool("api-fallback", false, "fall back to a free loopback port when --api-addr is in use")
 	lastGoodMaxAge := fs.Duration("last-good-max-age", 0, "override last-good frame maximum age (otherwise use environment/default)")
+	appVersion := fs.String("app-version", "", "native shell version reported as the Control Center app version")
+	appBuild := fs.String("app-build", "", "native shell build number reported as the Control Center app build")
+	nativeShell := fs.Bool("native-shell", false, "serve the Control Center only to the native shell (disables the browser UI and the in-runtime self update)")
+	runtimeLabel := fs.String("runtime-label", "", "service label that owns this runtime (otherwise use environment/default)")
 	if err := fs.Parse(args); err != nil {
 		return daemonCommandOptions{}, err
 	}
@@ -356,6 +384,10 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 		APIAddr:      strings.TrimSpace(*apiAddr),
 		APIDevOrigin: strings.TrimSpace(*apiDevOrigin),
 		APIFallback:  *apiFallback,
+		AppVersion:   strings.TrimSpace(*appVersion),
+		AppBuild:     strings.TrimSpace(*appBuild),
+		NativeShell:  *nativeShell,
+		RuntimeLabel: strings.TrimSpace(*runtimeLabel),
 	}, nil
 }
 
@@ -1395,15 +1427,55 @@ func runSetup(args []string) error {
 
 func runService(args []string) error {
 	if len(args) == 0 {
-		return errors.New("missing service subcommand: expected start, stop, or status")
+		return errors.New("missing service subcommand: expected start, stop, status, install, or uninstall")
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory: %w", err)
 	}
+	// The Windows shell installs its runtime under its own label and has no
+	// environment to hand over; --label names the task for every subcommand.
+	if len(args) >= 3 && args[1] == "--label" {
+		if err := os.Setenv(runtimepaths.DisplayStreamLaunchAgentLabelEnv, strings.TrimSpace(args[2])); err != nil {
+			return err
+		}
+		args = append(args[:1], args[3:]...)
+	}
 
 	switch strings.TrimSpace(strings.ToLower(args[0])) {
+	case "install":
+		if runtime.GOOS != "windows" {
+			return errors.New("service install is only supported on Windows; run setup instead")
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if _, err := parseDaemonCommandOptions(args[1:]); err != nil {
+			return err
+		}
+		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		if _, err := service.WriteTaskConfig(home, label, service.TaskConfig{Executable: executable, Arguments: append([]string{"daemon"}, args[1:]...)}); err != nil {
+			return err
+		}
+		if err := restartLaunchAgent(home); err != nil {
+			return err
+		}
+		fmt.Println("background service: installed and started")
+		return nil
+	case "uninstall":
+		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		if err := service.New(label, home, label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Uninstall(context.Background()); err != nil {
+			return err
+		}
+		if runtime.GOOS == "windows" {
+			if err := os.Remove(service.TaskConfigPath(home, label)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		fmt.Println("background service: uninstalled")
+		return nil
 	case "start":
 		if err := startLaunchAgent(home); err != nil {
 			return err
@@ -1432,13 +1504,13 @@ func runService(args []string) error {
 			fmt.Printf("pid: %s\n", status.PID)
 		}
 		if runtime.GOOS == "windows" {
-			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, strings.TrimSuffix(launchAgentLabel, ".plist")))
+			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, runtimepaths.DisplayStreamLaunchAgentLabel()))
 		} else {
 			fmt.Printf("plist: %s\n", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel))
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown service subcommand %q: expected start, stop, or status", args[0])
+		return fmt.Errorf("unknown service subcommand %q: expected start, stop, status, install, or uninstall", args[0])
 	}
 }
 

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -183,7 +185,7 @@ func runWithDeps(ctx context.Context, d deps) error {
 }
 
 func runSystemCommand(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, name, args...))
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }

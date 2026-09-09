@@ -112,6 +112,57 @@ func TestFetchProviderInventoryDoesNotRunHealthProbe(t *testing.T) {
 	}
 }
 
+// Win-CodexBar 0.56.8 answers "usage --json --status" for Claude only, so a
+// signed-in Codex would stay "checking" forever and block the provider step.
+// The Windows probe must ask each switched-on provider one by one.
+func TestFetchProviderSettingsProbesEachEnabledProviderOnWindows(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.56.8")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var calls [][]string
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		switch {
+		case reflect.DeepEqual(args, []string{"config", "providers", "--json"}):
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":true},
+				{"provider":"cursor","displayName":"Cursor","enabled":false}
+			]`), nil
+		case reflect.DeepEqual(args, []string{"usage", "--json", "--provider", "codex", "--status", "--web-timeout", "8"}):
+			return []byte(`[{"provider":"codex","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
+		case reflect.DeepEqual(args, []string{"usage", "--json", "--provider", "claude", "--status", "--web-timeout", "8"}):
+			return []byte(`[{"provider":"claude","error":{"message":"Provider not installed: Claude CLI not found"}}]`), errors.New("exit 1")
+		}
+		t.Fatalf("unexpected call %v", args)
+		return nil, nil
+	}
+
+	settings, err := FetchProviderSettings(context.Background())
+	if err != nil {
+		t.Fatalf("fetch settings: %v", err)
+	}
+	byID := map[string]ProviderSetting{}
+	for _, setting := range settings {
+		byID[setting.ID] = setting
+	}
+	if byID["codex"].Health != ProviderHealthHealthy {
+		t.Fatalf("codex must be healthy after its own probe, got %#v", byID["codex"])
+	}
+	if byID["claude"].Health != ProviderHealthSetupRequired {
+		t.Fatalf("claude must report setup_required, got %#v", byID["claude"])
+	}
+	if byID["cursor"].Health != ProviderHealthChecking {
+		t.Fatalf("a switched-off provider must not be probed, got %#v", byID["cursor"])
+	}
+	if len(calls) != 3 {
+		t.Fatalf("expected inventory + one probe per enabled provider, got %v", calls)
+	}
+}
+
 func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 	withProviderCommandTestBinary(t, "0.26.9")
 	_, err := FetchProviderSettings(context.Background())

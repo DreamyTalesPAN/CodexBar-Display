@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
@@ -72,6 +74,12 @@ const ()
 // into a private path outside ~/.config. VibeTV never owns the provider
 // inventory or its defaults.
 func EnsureConfig(home string) (string, error) {
+	if runtime.GOOS == "windows" {
+		// Win-CodexBar 0.56.8 ignores CODEXBAR_CONFIG and has no
+		// "config validate --format json"; it only reads
+		// %APPDATA%\CodexBar\settings.json (#415). Use its own location.
+		return ensureWindowsConfigDir()
+	}
 	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
 		return ensureConfigFile(explicit)
 	}
@@ -92,6 +100,28 @@ func EnsureConfig(home string) (string, error) {
 		}
 	}
 	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
+}
+
+// ensureWindowsConfigDir returns Win-CodexBar's settings path after checking
+// that its directory is writable. The file itself is created by the CLI.
+func ensureWindowsConfigDir() (string, error) {
+	appData := strings.TrimSpace(os.Getenv("APPDATA"))
+	if appData == "" {
+		return "", errors.New("APPDATA is not set")
+	}
+	dir := filepath.Join(appData, "CodexBar")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create CodexBar config directory: %w", err)
+	}
+	path := filepath.Join(dir, "settings.json")
+	probe, err := os.CreateTemp(dir, ".vibetv-write-check-*")
+	if err != nil {
+		return path, fmt.Errorf("CodexBar config directory is not writable: %w", err)
+	}
+	probePath := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(probePath)
+	return path, nil
 }
 
 func ensureConfigFile(path string) (string, error) {
@@ -196,7 +226,7 @@ func runConfigBootstrapCommand(
 	configPath string,
 	args ...string,
 ) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, bin, args...))
 	cmd.Env = environmentWithConfig(configPath)
 	return cmd.Output()
 }
@@ -315,14 +345,15 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()
-	args := []string{"usage", "--json", "--web-timeout", "8"}
 	var exactSetting *ProviderSetting
+	var out []byte
+	var commandErr error
 	if exactProvider != "" {
 		if !validProviderID(exactProvider) {
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		inventoryRaw, inventoryErr := runUsageCommandFn(probeCtx, 5*time.Second, bin, "config", "providers", "--json")
+		inventoryRaw, inventoryErr := runUsageCommandFn(probeCtx, 5*time.Second, bin, providerInventoryArgs()...)
 		inventory, parseErr := parseProviderSettings(inventoryRaw)
 		if inventoryErr != nil || parseErr != nil {
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderConfigError)}
@@ -338,14 +369,15 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		args = []string{
+		out, commandErr = runUsageCommandFn(probeCtx, 18*time.Second, bin,
 			"usage", "--json",
 			"--provider", exactProvider,
 			"--source", "auto",
 			"--web-timeout", "8",
-		}
+		)
+	} else {
+		out, commandErr = runUsageAllEnabled(probeCtx, 18*time.Second, bin, "--web-timeout", "8")
 	}
-	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, args...)
 	if exactProvider == "" {
 		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
 		result.Providers = providersWithSwitchState(probeCtx, bin, result.Providers)
@@ -409,7 +441,7 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 			return providers
 		}
 	}
-	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, "config", "providers", "--json")
+	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
 		return providers
@@ -548,9 +580,13 @@ func classifyProviderError(detail string) string {
 		return ProviderTimeout
 	case strings.Contains(lower, "permission"), strings.Contains(lower, "not permitted"), strings.Contains(lower, "access denied"), strings.Contains(lower, "keychain") && (strings.Contains(lower, "denied") || strings.Contains(lower, "locked") || strings.Contains(lower, "not allowed")):
 		return ProviderPermissionRequired
+	// Sign-in wording wins over the generic "config" match: Win-CodexBar
+	// reports "failed from all configured sources ... OAuth ... credentials".
+	case strings.Contains(lower, "login"), strings.Contains(lower, "log in"), strings.Contains(lower, "logged in"), strings.Contains(lower, "sign in"), strings.Contains(lower, "session"), strings.Contains(lower, "cookie"), strings.Contains(lower, "credential"), strings.Contains(lower, "authentication"), strings.Contains(lower, "unauthorized"), strings.Contains(lower, "oauth"), strings.Contains(lower, "api key"), strings.Contains(lower, "token found"):
+		return ProviderAuthRequired
 	case strings.Contains(lower, ".config"), strings.Contains(lower, "config"), strings.Contains(lower, "read-only file system"), strings.Contains(lower, "save"):
 		return ProviderConfigError
-	case strings.Contains(lower, "login"), strings.Contains(lower, "log in"), strings.Contains(lower, "logged in"), strings.Contains(lower, "sign in"), strings.Contains(lower, "session"), strings.Contains(lower, "cookie"), strings.Contains(lower, "credential"), strings.Contains(lower, "authentication"), strings.Contains(lower, "unauthorized"), strings.Contains(lower, "oauth"), strings.Contains(lower, "api key"), strings.Contains(lower, "token found"), strings.Contains(lower, "keychain"):
+	case strings.Contains(lower, "keychain"):
 		return ProviderAuthRequired
 	case strings.Contains(lower, "free tier"), strings.Contains(lower, "free plan"), strings.Contains(lower, "subscription required"), strings.Contains(lower, "account does not expose usage"), strings.Contains(lower, "usage") && (strings.Contains(lower, "unavailable") || strings.Contains(lower, "not available") || strings.Contains(lower, "unsupported")):
 		return ProviderNoUsageAvailable

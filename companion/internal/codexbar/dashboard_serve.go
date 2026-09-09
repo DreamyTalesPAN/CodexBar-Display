@@ -10,10 +10,13 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 )
 
 const (
@@ -207,10 +210,13 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		"--host", DashboardServeHost,
 		"--port", strconv.Itoa(port),
 		"--refresh-interval", strconv.Itoa(durationSecondsCeil(s.refreshInterval)),
-		"--request-timeout", "0",
 	)
+	if runtime.GOOS != "windows" {
+		// Win-CodexBar 0.56.8 rejects the flag and exits; see #415.
+		args = append(args, "--request-timeout", "0")
+	}
 
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, bin, args...))
 	cmd.Env = dashboardServeEnvironment(configPathFromContext(ctx), s.token, s.testEnv)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard

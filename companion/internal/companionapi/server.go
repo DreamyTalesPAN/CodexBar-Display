@@ -7407,6 +7407,12 @@ func currentCompanionAppInfo(installationMode string) companionAppInfo {
 	build := strings.TrimSpace(os.Getenv(macAppBuildEnv))
 	appPath := companionAppBundlePath()
 	installed := strings.HasPrefix(filepath.Clean(appPath), filepath.Clean("/Applications")+string(os.PathSeparator))
+	if runtime.GOOS == "windows" {
+		// The Windows shell installs the companion next to its own exe; the
+		// shell runs the updater itself, so "installed" means the shell is
+		// present, not any particular directory.
+		installed = appPath != ""
+	}
 	return companionAppInfo{
 		Version:                 version,
 		Build:                   build,
@@ -7439,6 +7445,9 @@ func companionAppBundlePath() string {
 	if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
 		executable = resolved
 	}
+	if runtime.GOOS == "windows" {
+		return windowsShellAppPath(filepath.Dir(executable))
+	}
 	helpersDir := filepath.Dir(executable)
 	if filepath.Base(helpersDir) != "Helpers" {
 		return ""
@@ -7452,6 +7461,15 @@ func companionAppBundlePath() string {
 		return ""
 	}
 	return filepath.Clean(appDir)
+}
+
+const windowsShellExecutable = "VibeTVControlCenter.exe"
+
+func windowsShellAppPath(dir string) string {
+	if info, err := os.Stat(filepath.Join(dir, windowsShellExecutable)); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return filepath.Clean(dir)
 }
 
 func minInt(a, b int) int {
