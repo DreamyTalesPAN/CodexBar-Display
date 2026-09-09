@@ -16,6 +16,11 @@ const minProviderSettingsVersion = "0.27.0"
 
 var runProviderCommandFn = runUsageCommand
 
+// providerProbePerProvider is true where the CLI cannot answer one usage call
+// for every switched-on provider (Win-CodexBar 0.56.8, see runUsageAllEnabled).
+// A variable so the Windows path is testable on the Mac.
+var providerProbePerProvider = runtime.GOOS == "windows"
+
 // providerInventoryArgs is the CLI command for the provider inventory.
 // Win-CodexBar 0.56.8 has no JSON inventory (#415), so Windows reads the
 // text form that parseProviderSettings also understands.
@@ -147,7 +152,7 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 	}
 
 	timeout := commandTimeout()
-	healthRaw, healthErr := runProviderCommandFn(ctx, timeout, bin, "usage", "--json", "--status", "--web-timeout", "8")
+	healthRaw, healthErr := runProviderHealthProbe(ctx, timeout, bin, settings)
 	health := parseProviderHealth(healthRaw)
 	for i := range settings {
 		if !settings[i].Enabled {
@@ -162,6 +167,46 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 		}
 	}
 	return settings, nil
+}
+
+// runProviderHealthProbe reads best-effort health for the switched-on
+// providers. The Mac CLI answers a plain "usage --json --status" for all of
+// them. Win-CodexBar 0.56.8 answers that call for Claude only and leaves the
+// other switched-on providers out entirely, so they would stay "checking"
+// forever and block the provider step (#437). Windows therefore probes each
+// switched-on provider one by one, exactly like runUsageAllEnabled, and joins
+// the answers into the array the Mac CLI returns.
+func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin string, settings []ProviderSetting) ([]byte, error) {
+	statusArgs := []string{"--status", "--web-timeout", "8"}
+	if !providerProbePerProvider {
+		return runProviderCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, statusArgs...)...)
+	}
+	joined := make([]json.RawMessage, 0, len(settings))
+	var lastErr error
+	for i := range settings {
+		if !settings[i].Enabled {
+			continue
+		}
+		args := append([]string{"usage", "--json", "--provider", settings[i].ID}, statusArgs...)
+		out, runErr := runProviderCommandFn(ctx, timeout, bin, args...)
+		if runErr != nil {
+			lastErr = runErr
+		}
+		var root any
+		if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
+			continue
+		}
+		for _, item := range extractProviderList(root) {
+			encoded, encodeErr := json.Marshal(item)
+			if encodeErr == nil {
+				joined = append(joined, encoded)
+			}
+		}
+	}
+	if len(joined) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return json.Marshal(joined)
 }
 
 // FetchProviderInventory returns CodexBar's authoritative dynamic provider
