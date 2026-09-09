@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -11,14 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
 
 var knownBinaryPaths = []string{
@@ -42,6 +41,7 @@ var (
 var runUsageCommandFn = runUsageCommand
 var runCostCommandFn = runUsageCommand
 var runVersionCommandFn = runUsageCommand
+var readFileFn = os.ReadFile
 var executablePathFn = os.Executable
 
 const (
@@ -133,7 +133,6 @@ func FindBinary() (string, error) {
 		for _, p := range []string{
 			filepath.Join(base, "CodexBarCLI"),
 			filepath.Join(base, "codexbar"),
-			filepath.Join(base, "codexbar-cli.exe"),
 			filepath.Join(base, "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"),
 		} {
 			if isExecutable(p) {
@@ -157,9 +156,6 @@ func FindBinary() (string, error) {
 	}
 
 	if p, err := exec.LookPath("codexbar"); err == nil && p != "" {
-		return p, nil
-	}
-	if p, err := exec.LookPath("codexbar-cli.exe"); err == nil && p != "" {
 		return p, nil
 	}
 
@@ -196,7 +192,10 @@ func findAppManagedPayload(version string) (string, string, error) {
 		return "", "", errors.New("home directory for app-managed CodexBar is empty")
 	}
 	app := filepath.Join(
-		runtimepaths.Root(home),
+		home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
 		"CodexBar",
 		version,
 		"CodexBar.app",
@@ -264,8 +263,7 @@ func isExecutable(path string) bool {
 	if info.IsDir() {
 		return false
 	}
-	// Windows has no POSIX execute bits; the process launcher checks the format.
-	return runtime.GOOS == "windows" || info.Mode()&0o111 != 0
+	return info.Mode()&0o111 != 0
 }
 
 func firstSymlinkInPathUnder(root, path string) (string, error) {
@@ -409,9 +407,6 @@ func commandTimeout() time.Duration {
 func UsageBarsShowUsed() bool {
 	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
 		return showUsed
-	}
-	if runtime.GOOS != "darwin" {
-		return true
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
@@ -606,7 +601,31 @@ func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 		}
 	}
 
-	return looseVersion{}, fmt.Errorf("could not determine CodexBar version from %s --version", bin)
+	infoPath, ok := appInfoPlistPath(bin)
+	if !ok {
+		if resolved, err := filepath.EvalSymlinks(bin); err == nil {
+			infoPath, ok = appInfoPlistPath(resolved)
+		}
+	}
+	if !ok {
+		return looseVersion{}, fmt.Errorf("could not determine CodexBar version from %s", bin)
+	}
+	raw, err := readFileFn(infoPath)
+	if err != nil {
+		return looseVersion{}, fmt.Errorf("read CodexBar Info.plist: %w", err)
+	}
+	rawVersion, err := plistStringValue(raw, "CFBundleShortVersionString")
+	if err != nil || strings.TrimSpace(rawVersion) == "" {
+		rawVersion, err = plistStringValue(raw, "CFBundleVersion")
+	}
+	if err != nil {
+		return looseVersion{}, fmt.Errorf("read CodexBar version from Info.plist: %w", err)
+	}
+	version, err := parseLooseVersion(rawVersion)
+	if err != nil {
+		return looseVersion{}, fmt.Errorf("parse CodexBar version %q: %w", rawVersion, err)
+	}
+	return version, nil
 }
 
 func extractLooseVersion(raw string) (looseVersion, bool) {
@@ -643,6 +662,57 @@ func parseLooseVersion(raw string) (looseVersion, error) {
 		}
 	}
 	return looseVersion{major: major, minor: minor, patch: patch}, nil
+}
+
+func appInfoPlistPath(bin string) (string, bool) {
+	clean := filepath.Clean(strings.TrimSpace(bin))
+	marker := ".app" + string(os.PathSeparator) + "Contents"
+	idx := strings.Index(clean, marker)
+	if idx == -1 {
+		return "", false
+	}
+	appRoot := clean[:idx+len(".app")]
+	if appRoot == "" {
+		return "", false
+	}
+	return filepath.Join(appRoot, "Contents", "Info.plist"), true
+}
+
+func plistStringValue(raw []byte, key string) (string, error) {
+	decoder := xml.NewDecoder(bytes.NewReader(raw))
+	var lastKey string
+	for {
+		tok, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		start, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch start.Name.Local {
+		case "key":
+			var value string
+			if err := decoder.DecodeElement(&value, &start); err != nil {
+				return "", err
+			}
+			lastKey = strings.TrimSpace(value)
+		case "string":
+			var value string
+			if err := decoder.DecodeElement(&value, &start); err != nil {
+				return "", err
+			}
+			if lastKey == key {
+				return strings.TrimSpace(value), nil
+			}
+			lastKey = ""
+		}
+	}
+	return "", fmt.Errorf("key %q not found", key)
 }
 
 func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
@@ -1211,7 +1281,7 @@ func resetSecondsFromWindowMap(windowMap map[string]any) (int64, bool) {
 		}
 		return int64(n), true
 	}
-	resetAt := firstStringAtPaths(windowMap, "resetsAt", "resetAt", "resets_at")
+	resetAt := firstStringAtPaths(windowMap, "resetsAt", "resetAt")
 	if resetAt == "" {
 		return 0, false
 	}
@@ -2375,8 +2445,8 @@ func withHome(home, value string) string {
 	switch {
 	case v == "~":
 		return home
-	case strings.HasPrefix(filepath.ToSlash(v), "~/"):
-		return filepath.Join(home, v[2:])
+	case strings.HasPrefix(v, "~/"):
+		return filepath.Join(home, strings.TrimPrefix(v, "~/"))
 	default:
 		return v
 	}

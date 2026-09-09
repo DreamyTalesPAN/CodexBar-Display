@@ -26,12 +26,7 @@ INSTALL_BUDGET_S=20
 RELOAD_BUDGET_S=15
 
 export HOME="$WORK/home"
-export XDG_CONFIG_HOME="$WORK/home/.config"
-TEST_RUNTIME_ROOT="$XDG_CONFIG_HOME/codexbar-display"
-if [[ "$(uname -s)" == Darwin ]]; then
-  TEST_RUNTIME_ROOT="$HOME/Library/Application Support/codexbar-display"
-fi
-mkdir -p "$TEST_RUNTIME_ROOT"
+mkdir -p "$HOME/Library/Application Support/codexbar-display"
 
 cleanup() {
   [[ -n "${RUNTIME_PID:-}" ]] && kill "$RUNTIME_PID" 2>/dev/null || true
@@ -102,7 +97,7 @@ printf '#!/usr/bin/env bash\necho "\tstate = running"\n' > "$WORK/bin/launchctl"
 chmod +x "$WORK/bin/launchctl"
 export PATH="$WORK/bin:$PATH"
 
-cat > "$TEST_RUNTIME_ROOT/config.json" <<CFG
+cat > "$HOME/Library/Application Support/codexbar-display/config.json" <<CFG
 {
   "deviceTarget": "http://${DEV_ADDR}",
   "deviceToken": "virtual-pair-token",

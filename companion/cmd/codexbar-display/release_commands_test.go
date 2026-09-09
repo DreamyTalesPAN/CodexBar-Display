@@ -25,7 +25,6 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
@@ -297,7 +296,7 @@ func TestRefreshLastKnownGoodFirmwareUpdatesPrepopulatedState(t *testing.T) {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatalf("mkdir home: %v", err)
 	}
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 
 	oldWD, err := os.Getwd()
 	if err != nil {
@@ -361,7 +360,7 @@ func TestRefreshLastKnownGoodFirmwareKeepsStateWhenNoValidBackupFound(t *testing
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatalf("mkdir home: %v", err)
 	}
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 
 	oldWD, err := os.Getwd()
 	if err != nil {
@@ -701,26 +700,13 @@ func TestDownloadReleaseFirmwareUsesLatestManifestWhenTargetVersionEmpty(t *test
 	}
 }
 
-// These fixtures expose the multipart endpoint, not a raw-OTA listener. Select
-// that transport explicitly instead of relying on a Unix connection-refused
-// error from an unrelated fixed port to choose it.
-func useMultipartUpload(t *testing.T) {
-	t.Helper()
-	previous := uploadFirmwareOTAFn
-	t.Cleanup(func() { uploadFirmwareOTAFn = previous })
-	uploadFirmwareOTAFn = func(ctx context.Context, base, image, token, _ string) error {
-		return uploadFirmwareOTAMultipart(ctx, base, image, token)
-	}
-}
-
 func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
-	useMultipartUpload(t)
 	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	imageBody := "firmware image"
 	imageSHA := sha256String(imageBody)
@@ -834,7 +820,7 @@ func TestRunInstallUpdateDoesNotFallBackFromExplicitTarget(t *testing.T) {
 	})
 
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 
 	savedTargetCalls := 0
 	savedTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -874,7 +860,7 @@ func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
 		releaseHTTPClient = previousHTTPClient
 		uploadFirmwareOTAFn = previousUpload
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	uploads := 0
 	uploadFirmwareOTAFn = func(context.Context, string, string, string, string) error {
@@ -930,7 +916,7 @@ func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
 	firmwareUpdateRediscoveryAfter = time.Millisecond
 
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 
 	imageBody := "firmware image"
 	imageSHA := sha256String(imageBody)
@@ -1339,14 +1325,13 @@ func TestFetchDeviceHelloRetryStopsOnAuthError(t *testing.T) {
 }
 
 func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
-	useMultipartUpload(t)
 	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
 	})
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
 		t.Fatalf("save runtime config: %v", err)
 	}
@@ -1574,7 +1559,7 @@ func TestRunInstallUpdateRepairsStaleDeviceTokenBeforeOTA(t *testing.T) {
 	})
 
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{
 		DeviceTarget: "http://192.0.2.50",
 		DeviceID:     "device-old",
@@ -1673,7 +1658,7 @@ func TestRunInstallUpdateStopsBeforeOTAOnNonAuthPreflightError(t *testing.T) {
 	})
 
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.0.2.60",
 		DeviceID:     "device-old",
@@ -1763,7 +1748,7 @@ func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
 	})
 
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
 		t.Fatalf("save runtime config: %v", err)
 	}
@@ -1848,7 +1833,7 @@ func TestRunInstallUpdateCanSkipLaunchAgentPauseForLocalAPI(t *testing.T) {
 	})
 
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
 		t.Fatalf("save runtime config: %v", err)
 	}
@@ -1958,7 +1943,7 @@ func TestRunInstallUpdateAbortsBeforeAnyDeviceRequestWhenAnotherRuntimeIsAlive(t
 		releaseHTTPClient = previousHTTPClient
 		firmwareUpdateRuntimeHealthOrigin = previousOrigin
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	runtimeHealthCalls := 0
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2009,7 +1994,7 @@ func TestRunInstallUpdateIgnoresNonWriterRuntimeHealthResponder(t *testing.T) {
 		releaseHTTPClient = previousHTTPClient
 		firmwareUpdateRuntimeHealthOrigin = previousOrigin
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	nonWriter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/runtime-health" {
@@ -2048,7 +2033,7 @@ func TestRunInstallUpdateTreatsLegacyRuntimeHealthAsWriter(t *testing.T) {
 		releaseHTTPClient = previousHTTPClient
 		firmwareUpdateRuntimeHealthOrigin = previousOrigin
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -2087,7 +2072,7 @@ func TestRunInstallUpdateAbortsWhenRuntimeAnswersOnPublishedFallbackEndpoint(t *
 		firmwareUpdateRuntimeHealthOrigin = previousOrigin
 	})
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 
 	// Nothing answers the default origin: grab a loopback port and close it.
 	closedListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -2151,7 +2136,7 @@ func TestRunInstallUpdateProceedsWithWriterFlagDespiteAliveRuntime(t *testing.T)
 		releaseHTTPClient = previousHTTPClient
 		firmwareUpdateRuntimeHealthOrigin = previousOrigin
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -2192,7 +2177,7 @@ func TestRunInstallUpdateProceedsWhenParentPausedEnvIsSet(t *testing.T) {
 		releaseHTTPClient = previousHTTPClient
 		firmwareUpdateRuntimeHealthOrigin = previousOrigin
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("VIBETV_UPDATE_PARENT_PAUSED", "1")
 
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -2232,7 +2217,7 @@ func TestRunInstallUpdateProceedsWhenRuntimeHealthEndpointIsDead(t *testing.T) {
 		releaseHTTPClient = previousHTTPClient
 		firmwareUpdateRuntimeHealthOrigin = previousOrigin
 	})
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	deadRuntime := httptest.NewServer(http.NotFoundHandler())
 	deadOrigin := deadRuntime.URL
@@ -2335,7 +2320,7 @@ func TestRunInstallUpdateRestoresStoredThemeAfterAbortedUpload(t *testing.T) {
 	})
 	withFastInterruptedVerify(t)
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
 		t.Fatalf("save runtime config: %v", err)
 	}
@@ -2397,7 +2382,7 @@ func TestRunInstallUpdateDoesNotTouchActiveThemeAfterAbortedUpload(t *testing.T)
 	})
 	withFastInterruptedVerify(t)
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
 		t.Fatalf("save runtime config: %v", err)
 	}
@@ -2476,7 +2461,7 @@ func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 	})
 
 	home := t.TempDir()
-	testenv.Home(t, home)
+	t.Setenv("HOME", home)
 	imageBody := "firmware image"
 	imageSHA := sha256String(imageBody)
 	manifestBody := `{
@@ -2660,7 +2645,7 @@ func TestRunRollbackFirmwareOnlyRestartsLaunchAgent(t *testing.T) {
 		rollbackRestartLaunchAgentFn = previousRestart
 	})
 
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	restoreCalls := 0
 	restartCalls := 0
@@ -2713,7 +2698,7 @@ func TestRunRollbackReturnsLaunchAgentErrorCodeWhenRestartFails(t *testing.T) {
 		rollbackRestartLaunchAgentFn = previousRestart
 	})
 
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	resolveSerialPortFn = func(port string) (string, error) {
 		return strings.TrimSpace(port), nil
@@ -2749,7 +2734,7 @@ func TestRunUpgradePreflightPortBusyReturnsUpgradePortBusyCode(t *testing.T) {
 		upgradeRestartLaunchAgentFn = previousRestart
 	})
 
-	testenv.Home(t, t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	resolveSerialPortFn = func(port string) (string, error) {
 		return strings.TrimSpace(port), nil

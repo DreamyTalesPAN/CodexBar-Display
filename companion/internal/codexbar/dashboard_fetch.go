@@ -32,7 +32,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	if err != nil {
 		return nil, err
 	}
-	usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+"?provider=all", strings.TrimSpace(info.Token))
+	usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath, "")
 	if err != nil {
 		return nil, err
 	}
