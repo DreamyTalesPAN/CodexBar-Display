@@ -434,7 +434,11 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 	defer cancel()
 
 	cmd := childproc.Hide(exec.CommandContext(cmdCtx, bin, args...))
-	cmd.Env = commandEnvironment(configPathFromContext(parent))
+	env, err := commandEnvironment(configPathFromContext(parent))
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil && cmdCtx.Err() != nil {
 		return out, cmdCtx.Err()

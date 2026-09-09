@@ -3872,3 +3872,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The Usage screen displays "Token history is unavailable" and "Complete local token history is not available for every selected provider. Available usage limits are shown below." with the existing Refresh button. Available provider quota cards remain visible; incomplete token history is not represented as a complete zero or combined total. This supersedes the pending visual acceptance above.
 - Approved files: `apps/control-center/src/components/usage-screen.tsx` and `apps/control-center/src/components/usage-screen.test.tsx` at the reviewed build.
 - Scope: Approval of this visible result only; it does not approve unrelated Session-limit semantics, provider defaults, a push, merge, release, or hardware changes.
+
+## 2026-09-09 — Windows first-run provider selection is opt-in
+
+- User approval: Marcus answered "leg los" to the proposal that fresh Windows installations start with all providers off and the customer enables their provider, while existing settings remain unchanged.
+- Approved customer-visible result: No provider is preselected when Windows has no CodexBar settings yet. Customers enable their providers using the existing controls. Previously saved selections are preserved; unavailable credentials do not silently change a selection.
+- Scope: Windows configuration bootstrap and its regression coverage, using the existing UI. No provider-specific detection, authentication changes, macOS default changes, push, merge, release, or hardware changes are approved by this entry.

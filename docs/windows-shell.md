@@ -104,9 +104,14 @@ the direct CLI parser does not correct the installed app's dashboard-fed usage.
 
 Clean-settings VM verification on 2026-09-09 confirms that CLI 0.56.8 itself
 enables Codex and Claude by default, without checking their setup. Running
-`config disable claude` persists across a new CLI process. VibeTV does not
-silently replace these upstream defaults or disable providers based on transient
-health failures. Changing the first-run selection policy is a separate decision.
+`config disable claude` persists across a new CLI process. Marcus approved an
+opt-in Windows first-run selection on 2026-09-09: before starting the CLI,
+VibeTV atomically creates a missing `settings.json` with only
+`{"enabled_providers":[]}`. The pinned CLI supplies all omitted setting defaults.
+Existing files remain byte-for-byte unchanged, including an explicitly empty
+selection. Initialization errors stop CLI startup instead of falling back to
+the upstream enabled defaults. No health-based provider selection is added;
+macOS bootstrap behavior is unchanged.
 
 ## Open
 

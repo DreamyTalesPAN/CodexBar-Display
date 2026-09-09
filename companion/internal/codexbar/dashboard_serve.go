@@ -217,7 +217,12 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 	}
 
 	cmd := childproc.Hide(exec.CommandContext(ctx, bin, args...))
-	cmd.Env = dashboardServeEnvironment(configPathFromContext(ctx), s.token, s.testEnv)
+	env, err := dashboardServeEnvironment(configPathFromContext(ctx), s.token, s.testEnv)
+	if err != nil {
+		s.setStopped("", err)
+		return err
+	}
+	cmd.Env = env
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 
@@ -368,8 +373,11 @@ func (s *DashboardServeSupervisor) setHealth(healthy bool, err error) {
 	}
 }
 
-func dashboardServeEnvironment(configPath, token string, extra []string) []string {
-	env := commandEnvironment(configPath)
+func dashboardServeEnvironment(configPath, token string, extra []string) ([]string, error) {
+	env, err := commandEnvironment(configPath)
+	if err != nil {
+		return nil, err
+	}
 	filtered := make([]string, 0, len(env)+len(extra)+1)
 	for _, entry := range env {
 		if strings.HasPrefix(entry, dashboardServeTokenEnv+"=") {
@@ -383,7 +391,7 @@ func dashboardServeEnvironment(configPath, token string, extra []string) []strin
 		}
 		filtered = append(filtered, entry)
 	}
-	return append(filtered, dashboardServeTokenEnv+"="+token)
+	return append(filtered, dashboardServeTokenEnv+"="+token), nil
 }
 
 func allocateDashboardServePort() (int, error) {

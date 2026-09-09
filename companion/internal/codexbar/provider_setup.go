@@ -70,9 +70,9 @@ var configBootstrapMu sync.Mutex
 const ()
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
-// none exists, CodexBar itself renders and validates its current default config
-// into a private path outside ~/.config. VibeTV never owns the provider
-// inventory or its defaults.
+// none exists on macOS, CodexBar renders and validates its default config.
+// Windows first-run selection is explicitly opt-in; all other settings and the
+// provider inventory remain owned by CodexBar.
 func EnsureConfig(home string) (string, error) {
 	if runtime.GOOS == "windows" {
 		// Win-CodexBar 0.56.8 ignores CODEXBAR_CONFIG and has no
@@ -102,8 +102,10 @@ func EnsureConfig(home string) (string, error) {
 	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
 }
 
-// ensureWindowsConfigDir returns Win-CodexBar's settings path after checking
-// that its directory is writable. The file itself is created by the CLI.
+// ensureWindowsConfigDir preserves existing settings verbatim. Only a missing
+// file receives an empty provider selection; Win-CodexBar 0.56.8 fills omitted
+// settings with its own defaults. Publish the complete seed without replacing
+// a config another process may have created during startup.
 func ensureWindowsConfigDir() (string, error) {
 	appData := strings.TrimSpace(os.Getenv("APPDATA"))
 	if appData == "" {
@@ -119,8 +121,17 @@ func ensureWindowsConfigDir() (string, error) {
 		return path, fmt.Errorf("CodexBar config directory is not writable: %w", err)
 	}
 	probePath := probe.Name()
-	_ = probe.Close()
-	_ = os.Remove(probePath)
+	defer os.Remove(probePath)
+	if _, err := probe.WriteString("{\"enabled_providers\":[]}\n"); err != nil {
+		_ = probe.Close()
+		return path, fmt.Errorf("stage CodexBar provider selection: %w", err)
+	}
+	if err := probe.Close(); err != nil {
+		return path, fmt.Errorf("close CodexBar provider selection: %w", err)
+	}
+	if err := os.Link(probePath, path); err != nil && !errors.Is(err, os.ErrExist) {
+		return path, fmt.Errorf("initialize CodexBar provider selection: %w", err)
+	}
 	return path, nil
 }
 
@@ -254,16 +265,21 @@ func writableConfig(path string) error {
 	return nil
 }
 
-func commandEnvironment(configPath string) []string {
+func commandEnvironment(configPath string) ([]string, error) {
 	path := strings.TrimSpace(configPath)
-	if path == "" {
+	if path == "" || runtime.GOOS == "windows" {
 		var err error
 		path, err = EnsureConfig("")
 		if err != nil || path == "" {
-			return environmentWithConfig("")
+			// Windows ignores CODEXBAR_CONFIG. Never launch it with implicit
+			// enabled providers when first-run initialization failed.
+			if runtime.GOOS == "windows" && err != nil {
+				return nil, err
+			}
+			return environmentWithConfig(""), nil
 		}
 	}
-	return environmentWithConfig(path)
+	return environmentWithConfig(path), nil
 }
 
 func environmentWithConfig(configPath string) []string {
