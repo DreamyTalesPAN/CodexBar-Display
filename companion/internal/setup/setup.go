@@ -482,6 +482,13 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 		return nil
 	}
 
+	// The nested upgrade restores its service on return. Quiesce it again
+	// before replacing the Windows executable or registering new arguments.
+	if d.goos == "windows" && transportName == "usb" && !opts.SkipFlash {
+		if err := d.serviceForHome(home).Stop(ctx, true); err != nil {
+			return &StepError{Step: "stop-service", Err: err, Hint: "stop the VibeTV task before replacing the installed executable"}
+		}
+	}
 	fmt.Fprintln(d.stdout, "Installing companion binary ...")
 	installPath, err := installBinaryForPlatform(execPath, home, d.goos)
 	if err != nil {

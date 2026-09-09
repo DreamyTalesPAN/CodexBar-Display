@@ -28,6 +28,44 @@ type recoveryManager struct {
 	stopErr, startErr error
 }
 
+type nestedUpgradeManager struct {
+	recoveryManager
+	flashed        bool
+	stopAfterFlash error
+}
+
+func (m *nestedUpgradeManager) Stop(ctx context.Context, disable bool) error {
+	if m.flashed {
+		return m.stopAfterFlash
+	}
+	return m.recoveryManager.Stop(ctx, disable)
+}
+
+func TestWindowsSetupStopsNestedUpgradeBeforeBinaryInstall(t *testing.T) {
+	want := errors.New("stop sentinel before binary replacement")
+	manager := &nestedUpgradeManager{recoveryManager: recoveryManager{enabled: true}, stopAfterFlash: want}
+	err := runWithDeps(context.Background(), Options{Transport: "usb", Port: "COM12"}, deps{
+		goos: "windows", stdout: io.Discard,
+		homeDir:         func() (string, error) { return t.TempDir(), nil },
+		findCodexbar:    func() (string, error) { return "fixture", nil },
+		lookPath:        func(name string) (string, error) { return name, nil },
+		executablePath:  func() (string, error) { return "missing-companion.exe", nil },
+		resolvePort:     func(port string) (string, error) { return port, nil },
+		readDeviceHello: func(string) (protocol.DeviceHello, error) { return protocol.DeviceHello{}, errors.New("no hello") },
+		serviceForHome:  func(string) service.Manager { return manager },
+		runCommand: func(_ context.Context, _ string, _ string, args ...string) (string, error) {
+			if len(args) > 0 && args[0] == "upgrade" {
+				manager.flashed = true
+				return "", nil
+			}
+			return "", errors.New("unexpected command")
+		},
+	})
+	if !manager.flashed || !errors.Is(err, want) || manager.starts != 1 {
+		t.Fatalf("flashed=%t restarted=%d err=%v", manager.flashed, manager.starts, err)
+	}
+}
+
 func (m *recoveryManager) Status(context.Context) (service.Status, error) {
 	return service.Status{Enabled: m.enabled}, nil
 }
