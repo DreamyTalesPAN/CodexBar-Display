@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,11 +26,16 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 func TestDisplayWriterLockAllowsOnlyOneDaemon(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows writer lock is explicitly out of scope for #415")
+	}
 	lockPath := filepath.Join(t.TempDir(), "display-writer.lock")
 	first, err := writerlock.AcquireAt(lockPath)
 	if err != nil {
@@ -89,6 +95,9 @@ func TestParseDaemonCommandOptionsAllowsAPIFallback(t *testing.T) {
 }
 
 func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix EADDRINUSE contract; Windows runtime lifecycle belongs to #416")
+	}
 	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"companion":"unrelated"}`)
@@ -113,6 +122,9 @@ func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T)
 }
 
 func TestListenCompanionAPIRejectsSecondVibeTVService(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix EADDRINUSE contract; Windows runtime lifecycle belongs to #416")
+	}
 	existing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/v1/status" {
 			http.NotFound(w, request)
@@ -158,14 +170,14 @@ func TestRuntimeEndpointWriteIsPrivateAndAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat endpoint: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("endpoint mode=%#o want 0600", info.Mode().Perm())
 	}
 	dirInfo, err := os.Stat(filepath.Dir(path))
 	if err != nil {
 		t.Fatalf("stat endpoint dir: %v", err)
 	}
-	if dirInfo.Mode().Perm() != 0o700 {
+	if runtime.GOOS != "windows" && dirInfo.Mode().Perm() != 0o700 {
 		t.Fatalf("endpoint dir mode=%#o want 0700", dirInfo.Mode().Perm())
 	}
 
@@ -270,7 +282,7 @@ func TestDisplayStreamLogUsesSharedApplicationSupportPathAndAppends(t *testing.T
 	if err != nil {
 		t.Fatalf("create first display stream logger: %v", err)
 	}
-	wantPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", "daemon.out.log")
+	wantPath := runtimepaths.Path(home, "logs", "daemon.out.log")
 	if path != wantPath {
 		t.Fatalf("expected display stream log %q, got %q", wantPath, path)
 	}
@@ -291,7 +303,7 @@ func TestDisplayStreamLogUsesSharedApplicationSupportPathAndAppends(t *testing.T
 	if err != nil {
 		t.Fatalf("stat display stream log: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
 		t.Fatalf("expected private display stream log mode 0600, got %04o", got)
 	}
 	raw, err := os.ReadFile(path)
@@ -529,7 +541,7 @@ func TestDisplayStreamLoggerRepeatsRuntimeMarkerWithinTailWindow(t *testing.T) {
 
 func TestRunOpenControlCenterStartsServiceAndOpensLocalURL(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 
 	var requestedPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -581,7 +593,7 @@ func TestRunOpenControlCenterStartsServiceAndOpensLocalURL(t *testing.T) {
 
 func TestRunOpenControlCenterFailsWhenLocalControlCenterUnavailable(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
@@ -732,7 +744,7 @@ func TestResolveThemeSpecTransportNamePreservesPortOnlyUSBFlow(t *testing.T) {
 }
 
 func TestThemeApplySupportsWiFiTransport(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.Home(t, t.TempDir())
 	specPath := writeTestThemeSpec(t)
 	var gotFrame struct {
 		V         int             `json:"v"`
@@ -781,7 +793,7 @@ func TestThemeApplySupportsWiFiTransport(t *testing.T) {
 
 func TestThemeApplyUsesSavedTokenForMatchingWiFiTarget(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	specPath := writeTestThemeSpec(t)
 	const token = "saved-pair-token"
 	var helloAuth string
@@ -843,7 +855,7 @@ func TestThemeApplyUsesSavedTokenForMatchingWiFiTarget(t *testing.T) {
 
 func TestResolveThemeSpecWiFiTargetDoesNotSendTokenToDifferentDevice(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{
 		DeviceTarget: "http://192.0.2.10",
 		DeviceToken:  "secret-token",

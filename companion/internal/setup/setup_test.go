@@ -12,6 +12,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
@@ -124,7 +125,7 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		t.Fatalf("expected launchctl bootstrap call, got %#v", calls)
 	}
 
-	installedBinary := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
+	installedBinary := runtimepaths.Path(home, "bin", "codexbar-display")
 	installedData, readErr := os.ReadFile(installedBinary)
 	if readErr != nil {
 		t.Fatalf("read installed binary: %v", readErr)
@@ -1043,7 +1044,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 	if !strings.Contains(msg, "flash-firmware") {
 		t.Fatalf("expected flash-firmware step error, got %q", msg)
 	}
-	if !strings.Contains(msg, "launchctl bootout") {
+	if !strings.Contains(msg, "codexbar-display service stop") {
 		t.Fatalf("expected launchctl recovery hint, got %q", msg)
 	}
 	if !strings.Contains(msg, "/dev/cu.usbmodem101") {
@@ -1494,7 +1495,7 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 	if len(calls) > 0 {
 		t.Fatalf("expected no side-effect commands in validate-only mode, got %#v", calls)
 	}
-	installPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
+	installPath := runtimepaths.Path(home, "bin", "codexbar-display")
 	if _, err := os.Stat(installPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected no installed binary in validate-only mode, err=%v", err)
 	}
