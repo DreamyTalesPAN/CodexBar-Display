@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -2548,8 +2549,8 @@ func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 	if !flashed {
 		t.Fatal("expected flash function to be called")
 	}
-	if closeCalls != 2 {
-		t.Fatalf("expected sender close after pre/post hello reads, got %d", closeCalls)
+	if closeCalls != 3 {
+		t.Fatalf("expected sender close after discovery and pre/post hello reads, got %d", closeCalls)
 	}
 	if saveCalls != 2 {
 		t.Fatalf("expected release state save twice, got %d", saveCalls)
@@ -2615,7 +2616,11 @@ func TestWrapUpgradeLaunchAgentRecoveryErrorReturnsRecoveryErrorOnRestartFailure
 	if errcode.Of(err) != errcode.UpgradeLaunchAgent {
 		t.Fatalf("expected launch agent recovery code, got %s", errcode.Of(err))
 	}
-	if recovery := errcode.Recovery(err); !strings.Contains(recovery, "launchctl") {
+	wantHint := "launchctl"
+	if runtime.GOOS == "windows" {
+		wantHint = "codexbar-display service start"
+	}
+	if recovery := errcode.Recovery(err); !strings.Contains(recovery, wantHint) {
 		t.Fatalf("expected recovery hint to mention launchctl, got %q", recovery)
 	}
 }
@@ -2643,7 +2648,11 @@ func TestWrapUpgradeLaunchAgentRecoveryErrorAppendsHint(t *testing.T) {
 	if !strings.Contains(recovery, "retry flash") {
 		t.Fatalf("expected original hint in recovery, got %q", recovery)
 	}
-	if !strings.Contains(recovery, "restart launch agent manually") {
+	wantHint := "restart launch agent manually"
+	if runtime.GOOS == "windows" {
+		wantHint = "restart background service"
+	}
+	if !strings.Contains(recovery, wantHint) {
 		t.Fatalf("expected launch agent hint in recovery, got %q", recovery)
 	}
 }

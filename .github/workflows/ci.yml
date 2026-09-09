@@ -31,6 +31,11 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+      - name: Test cold/warm start honesty (virtual VibeTV, Windows)
+        env:
+          VIBETV_COLDWARM_E2E: '1'
+        run: go test ./integration/coldwarm -run '^TestColdWarm$' -v -count=1 -timeout=10m
+
   codexbar-release-contract:
     strategy:
       fail-fast: false
@@ -160,6 +165,9 @@ jobs:
       - name: Test Companion on macOS
         working-directory: companion
         run: go test ./...
+
+      - name: Test cold/warm start honesty (virtual VibeTV, macOS)
+        run: ./scripts/test-companion-coldwarm-e2e.sh
 
       - name: Test hosted VibeTV gate contracts on macOS
         run: ./scripts/test-vibetv-hosted-gates.sh

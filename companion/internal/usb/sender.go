@@ -104,7 +104,10 @@ func (s *Sender) ReadCapabilities(path string) (protocol.DeviceCapabilities, err
 func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.deviceHelloLocked(path)
+}
 
+func (s *Sender) deviceHelloLocked(path string) (protocol.DeviceHello, error) {
 	opened, err := s.ensurePort(path)
 	if err != nil {
 		return protocol.DeviceHello{}, err

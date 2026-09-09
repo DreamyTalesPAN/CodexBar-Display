@@ -1,14 +1,15 @@
-// Package service owns the per-user background-service lifecycle. Windows is
-// intentionally unsupported here; its implementation belongs to issue #416.
+// Package service owns the per-user background-service lifecycle.
 package service
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 var ErrUnsupported = errors.New("background service is not supported on this platform")
@@ -18,6 +19,22 @@ type Status struct {
 	State   string
 	PID     string
 	Raw     string
+}
+
+// DiagnosticOutput bridges legacy text consumers to the shared state. Preserve
+// launchd's path metadata for doctor without interpreting native Windows JSON.
+func (s Status) DiagnosticOutput() string {
+	var lines []string
+	for _, line := range strings.Split(s.Raw, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "path = ") {
+			lines = append(lines, line)
+		}
+	}
+	lines = append(lines, "state = "+s.State)
+	if s.PID != "" {
+		lines = append(lines, fmt.Sprintf("pid = %s", s.PID))
+	}
+	return strings.Join(lines, "\n")
 }
 
 type Manager interface {
@@ -30,16 +47,17 @@ type Manager interface {
 
 type Runner func(context.Context, string, ...string) (string, error)
 
-// New returns today's launchd adapter. Non-Windows hosts retain the existing
+// New returns the host adapter. Non-Windows hosts retain the existing
 // command-runner behavior (Linux simulations supply a launchctl stub).
 func New(label, home string, managed bool) Manager {
-	if runtime.GOOS == "windows" {
-		return unsupported{}
-	}
-	return NewDarwin(label, home, os.Getuid(), managed, func(ctx context.Context, name string, args ...string) (string, error) {
+	run := func(ctx context.Context, name string, args ...string) (string, error) {
 		out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 		return string(out), err
-	})
+	}
+	if runtime.GOOS == "windows" {
+		return NewWindows(label, home, run)
+	}
+	return NewDarwin(label, home, os.Getuid(), managed, run)
 }
 
 func PlistPath(home, label string) string {

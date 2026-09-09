@@ -9,8 +9,8 @@ The explicit-home argument is retained for existing setup/test isolation.
 `internal/service` owns all Companion launchctl invocations. Bundled runtimes
 remain registered by SMAppService: Stop suspends their writer and Start resumes
 it (kickstart on resume failure). Legacy agents keep their bootout/enable/
-bootstrap-retry/kickstart sequence. The Windows manager fails explicitly with
-`ErrUnsupported`; #416 supplies its implementation. Linux's existing simulated
+bootstrap-retry/kickstart sequence. Windows uses a per-user Scheduled Task
+through the same Manager interface (see `windows-companion.md`). Linux's existing simulated
 launchctl behavior is retained, not expanded into Linux service support.
 
 Swift calls `prepare-codexbar --archive …` and `validate-codexbar --app …`.
@@ -35,9 +35,9 @@ contract checks alongside #357's recordings. Known gaps are explicit assertions:
 when an upstream release closes them, CI requires revisiting the blockers.
 Green contract tests do not waive those blockers or prove authenticated usage.
 
-Windows CI still does not implement or claim POSIX runtime contracts: the
-exclusive writer-lock test and two Unix `EADDRINUSE` lifecycle tests are skipped
-there (#416); POSIX mode-bit assertions remain enforced on Unix only. The virtual
+Windows uses `LockFileEx` for the exclusive writer lock and recognizes Winsock
+address-in-use errors; the shared lifecycle tests run on Windows too. POSIX
+mode-bit assertions remain enforced on Unix only. The virtual
 device command is built and serves raw OTA on Windows, but its POSIX graceful
 signal shutdown subtest is skipped. Shell CLI test programs are replaced with a
 Go helper process. Multipart test fixtures select their transport explicitly;
