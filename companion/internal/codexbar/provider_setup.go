@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -196,7 +198,7 @@ func runConfigBootstrapCommand(
 	configPath string,
 	args ...string,
 ) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, bin, args...))
 	cmd.Env = environmentWithConfig(configPath)
 	return cmd.Output()
 }

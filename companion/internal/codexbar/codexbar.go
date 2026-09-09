@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -431,7 +433,7 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 	cmdCtx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, bin, args...)
+	cmd := childproc.Hide(exec.CommandContext(cmdCtx, bin, args...))
 	cmd.Env = commandEnvironment(configPathFromContext(parent))
 	out, err := cmd.Output()
 	if err != nil && cmdCtx.Err() != nil {

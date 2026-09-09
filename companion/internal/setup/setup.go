@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1059,7 +1061,7 @@ func tailLines(text string, maxLines int) string {
 }
 
 func runSystemCommand(ctx context.Context, dir string, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, name, args...))
 	cmd.Dir = dir
 
 	var out bytes.Buffer

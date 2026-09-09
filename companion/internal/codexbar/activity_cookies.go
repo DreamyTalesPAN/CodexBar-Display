@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -150,7 +152,7 @@ func chromiumCookieActivityQuery(spec chromiumCookieActivityQuerySpec) string {
 }
 
 func chromiumCookieDBActivityAt(path, query, sqliteBin string) (time.Time, bool) {
-	cmd := exec.Command(sqliteBin, "-readonly", path, query)
+	cmd := childproc.Hide(exec.Command(sqliteBin, "-readonly", path, query))
 	out, err := cmd.Output()
 	if err != nil {
 		return time.Time{}, false

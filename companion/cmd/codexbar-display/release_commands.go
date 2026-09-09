@@ -18,6 +18,8 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -2497,7 +2499,7 @@ func detectBinaryVersion(binPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binPath, "version", "--short")
+	cmd := childproc.Hide(exec.CommandContext(ctx, binPath, "version", "--short"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "unknown"

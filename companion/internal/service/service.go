@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -51,7 +53,7 @@ type Runner func(context.Context, string, ...string) (string, error)
 // command-runner behavior (Linux simulations supply a launchctl stub).
 func New(label, home string, managed bool) Manager {
 	run := func(ctx context.Context, name string, args ...string) (string, error) {
-		out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+		out, err := childproc.Hide(exec.CommandContext(ctx, name, args...)).CombinedOutput()
 		return string(out), err
 	}
 	if runtime.GOOS == "windows" {

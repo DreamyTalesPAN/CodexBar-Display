@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,7 +212,7 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		"--request-timeout", "0",
 	)
 
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, bin, args...))
 	cmd.Env = dashboardServeEnvironment(configPathFromContext(ctx), s.token, s.testEnv)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
