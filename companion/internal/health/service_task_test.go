@@ -31,3 +31,31 @@ func TestWindowsHealthPropagatesSchedulerFailure(t *testing.T) {
 		t.Fatalf("swallowed error: %v", err)
 	}
 }
+
+func TestWindowsUSBHealthDoesNotProbeRunningOwner(t *testing.T) {
+	for _, port := range []string{"COM12", ""} {
+		t.Run(port, func(t *testing.T) {
+			var out strings.Builder
+			err := runWithDeps(context.Background(), deps{goos: "windows", stdout: &out,
+				homeDir:    func() (string, error) { return t.TempDir(), nil },
+				runCommand: func(context.Context, string, ...string) (string, error) { return `{"Enabled":true,"State":4}`, nil },
+				readFile: func(path string) ([]byte, error) {
+					if strings.HasSuffix(path, ".json") {
+						return []byte(`{"Arguments":["daemon","--transport","usb","--port","` + port + `"]}`), nil
+					}
+					return nil, errors.New("no log")
+				},
+				resolvePort: func(string) (string, error) { t.Fatal("health reopened task-owned port"); return "", nil },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if port != "" && !strings.Contains(out.String(), "configured port: COM12") {
+				t.Fatal(out.String())
+			}
+			if port == "" && !strings.Contains(out.String(), "automatic") {
+				t.Fatal(out.String())
+			}
+		})
+	}
+}

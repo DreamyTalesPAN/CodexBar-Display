@@ -946,6 +946,7 @@ func runDoctor() error {
 }
 
 type doctorRuntimeConfig struct {
+	usbOwner    service.Manager
 	configured  bool
 	label       string
 	transport   string
@@ -962,7 +963,8 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	}
 	if runtime.GOOS == "windows" {
 		label := "com.codexbar-display.daemon"
-		status, err := service.New(label, home, false).Status(context.Background())
+		manager := service.New(label, home, false)
+		status, err := manager.Status(context.Background())
 		if err != nil {
 			return doctorRuntimeConfig{}, err
 		}
@@ -973,7 +975,11 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		if err != nil {
 			return doctorRuntimeConfig{}, err
 		}
-		return doctorTaskRuntimeConfig(home, label, task.Arguments)
+		config, err := doctorTaskRuntimeConfig(home, label, task.Arguments)
+		if err == nil && config.transport == "usb" {
+			config.usbOwner = manager
+		}
+		return config, err
 	}
 
 	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
@@ -1155,7 +1161,22 @@ func printDoctorRuntimeDefaults() {
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
 }
 
-func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error {
+func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) (resultErr error) {
+	if config.usbOwner != nil {
+		defer func() {
+			closeDefaultSenderFn()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := config.usbOwner.Start(ctx); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("restart USB background task after doctor: %w", err))
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := config.usbOwner.Stop(ctx, false); err != nil {
+			return fmt.Errorf("stop USB background task for doctor: %w", err)
+		}
+	}
 	printDoctorRuntimeDefaults()
 	port, err := doctorResolvePortFn(config.port)
 	closeDefaultSenderFn()

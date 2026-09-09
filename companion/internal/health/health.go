@@ -132,12 +132,23 @@ func runWithDeps(ctx context.Context, d deps) error {
 			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
 		}
 	} else {
-		detectedPort, portErr := d.resolvePort("")
 		fmt.Fprintln(d.stdout, "transport: usb")
-		if portErr != nil {
-			fmt.Fprintf(d.stdout, "detected port: unavailable (%v)\n", portErr)
+		if d.goos == "windows" && launchctlErr == nil && service.Healthy(status.State) {
+			// The scheduled task owns an exclusive serial handle. Configuration
+			// and historical log output are not proof of a live device probe.
+			if config.Port != "" {
+				fmt.Fprintf(d.stdout, "configured port: %s (owned by scheduled task; not probed)\n", config.Port)
+			} else {
+				fmt.Fprintln(d.stdout, "port selection: automatic (owned by scheduled task; not probed)")
+			}
 		} else {
-			fmt.Fprintf(d.stdout, "detected port: %s\n", detectedPort)
+			detectedPort, portErr := d.resolvePort("")
+			usb.CloseDefaultSender()
+			if portErr != nil {
+				fmt.Fprintf(d.stdout, "detected port: unavailable (%v)\n", portErr)
+			} else {
+				fmt.Fprintf(d.stdout, "detected port: %s\n", detectedPort)
+			}
 		}
 	}
 
