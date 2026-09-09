@@ -72,7 +72,7 @@ export function UsageScreen({
   // The Mac App owns this decision; the browser does not re-derive freshness.
   const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
   const tokenHistoryUnavailable =
-    tokenUsageReady && hasProviders && !usageProvidersHaveTokenResult(providers);
+    tokenUsageReady && hasProviders && providers.some((provider) => provider.cost == null);
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   const usageLoading =
@@ -129,7 +129,7 @@ export function UsageScreen({
             <AlertTitle>Token history is unavailable</AlertTitle>
             <AlertDescription className="grid justify-items-start gap-3">
               <span>
-                No complete local token history was reported on this computer.
+                Complete local token history is not available for every selected provider.
                 Available usage limits are shown below.
               </span>
               {onRefresh ? (
