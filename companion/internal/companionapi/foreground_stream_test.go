@@ -2,6 +2,7 @@ package companionapi
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,48 @@ import (
 	"testing"
 	"time"
 )
+
+func TestForegroundStreamRequiresCurrentSessionFrameWithLegacyLabel(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "") // The Windows task uses the legacy default.
+	server, err := New(Options{Home: t.TempDir(), DisplayStreamRunning: func() bool { return true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := "http://192.0.2.10"
+	now := time.Now().UTC()
+	marker := func(at time.Time) string {
+		return fmt.Sprintf("%s runtime event=stream-start label=%q\n", at.Format(time.RFC3339Nano), displayStreamLaunchAgentLabel())
+	}
+	frame := func(at time.Time) string {
+		return at.Format(time.RFC3339Nano) + " sent frame -> " + target + " transport=wifi source=oauth fresh=true provider=codex label=VibeTV session=73 weekly=58 reset=2733s\n"
+	}
+	oldFrame := frame(now.Add(-time.Second))
+	for _, tc := range []struct {
+		name    string
+		log     string
+		healthy bool
+	}{
+		{"missing marker", oldFrame, false},
+		{"previous session frame", marker(now.Add(-2*time.Second)) + oldFrame + marker(now), false},
+		{"current session frame", marker(now.Add(-2*time.Second)) + oldFrame + marker(now) + frame(now.Add(time.Millisecond)), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(logPath, []byte(tc.log), 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, stream := range []displayStreamInfo{
+				server.streamStatus(context.Background(), target),
+				server.waitForDisplayStreamMode(context.Background(), target, time.Time{}, false, 0),
+			} {
+				if !stream.Running || stream.Healthy != tc.healthy || (!tc.healthy && stream.LastSentAt != "") {
+					t.Fatalf("current session proof mismatch: %+v", stream)
+				}
+			}
+		})
+	}
+}
 
 func TestForegroundStreamUsesWorkerLifecycleAndFrameProof(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")

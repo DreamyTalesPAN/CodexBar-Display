@@ -7764,6 +7764,11 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 
 	logPath := displayStreamOutLogPath()
 	boundary, boundaryOK := displayStreamLogBoundary(logPath)
+	if running != nil {
+		// The in-process worker always writes a session marker, including with
+		// the legacy label. Frames from a previous daemon are not liveness proof.
+		boundary, boundaryOK = latestDisplayStreamStartMarker(logPath, displayStreamLaunchAgentLabel())
+	}
 	if !boundaryOK {
 		stream.Detail = "Display stream is starting."
 		return stream
