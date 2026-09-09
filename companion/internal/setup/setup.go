@@ -830,8 +830,10 @@ func installBinaryForPlatform(sourcePath, home, goos string) (string, error) {
 	}
 
 	targetPath := filepath.Join(targetDir, setupBinaryName(goos))
-	if source, err := filepath.Abs(sourcePath); err == nil && source == targetPath {
-		return targetPath, nil
+	if source, err := os.Stat(sourcePath); err == nil {
+		if target, err := os.Stat(targetPath); err == nil && os.SameFile(source, target) {
+			return targetPath, nil
+		}
 	}
 	if err := copyFileAtomic(sourcePath, targetPath, 0o755); err != nil {
 		return "", err

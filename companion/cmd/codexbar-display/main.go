@@ -214,6 +214,9 @@ func runDaemon(args []string) error {
 		return err
 	}
 	defer writerLock.Release()
+	if err := protectDaemonProcessTree(); err != nil {
+		return err
+	}
 	if opts.APIAddr == "" {
 		return daemon.Run(context.Background(), opts.Daemon)
 	}

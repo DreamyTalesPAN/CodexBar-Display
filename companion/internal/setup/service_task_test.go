@@ -67,3 +67,33 @@ func TestWindowsPreflightAndMissingCodexbarNeverUseMacTools(t *testing.T) {
 		t.Fatal("attempted Mac install", commands)
 	}
 }
+
+func TestWindowsInstallRecognizesSameFileAlias(t *testing.T) {
+	home := t.TempDir()
+	source := filepath.Join(home, "source.exe")
+	if err := os.WriteFile(source, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target, err := installBinaryForPlatform(source, home, "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(home, "alias.exe")
+	if err := os.Link(target, alias); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installBinaryForPlatform(alias, home, "windows"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("replaced the installed file despite identical source file identity")
+	}
+}
