@@ -3,6 +3,8 @@ package usb
 import (
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -41,6 +43,13 @@ func ResolvePort(explicit string) (string, error) {
 	// A live handle is authoritative until a write fails or it is closed.
 	if s.port != nil && (samePort(explicit, s.path) || (explicit == "" && isVibeTVHello(s.hello))) {
 		return s.path, nil
+	}
+	// Explicit Unix paths may be stable symlinks omitted by enumeration.
+	// COM identifiers still require enumeration rather than filesystem checks.
+	if explicit != "" && runtime.GOOS != "windows" {
+		if _, err := os.Stat(explicit); err == nil {
+			return explicit, nil
+		}
 	}
 	ports, err := ListPorts()
 	if err != nil {

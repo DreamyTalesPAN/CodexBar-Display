@@ -262,7 +262,7 @@ func Run(ctx context.Context, opts Options) error {
 	return runWithDeps(ctx, opts, deps{})
 }
 
-func runWithDeps(ctx context.Context, opts Options, d deps) error {
+func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 	d = d.withDefaults()
 
 	fmt.Fprintln(d.stdout, "codexbar-display setup")
@@ -324,7 +324,24 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 			if err != nil {
 				return &StepError{Step: "resolve-home", Err: err}
 			}
-			if err := d.serviceForHome(serviceHome).Stop(ctx, true); err != nil {
+			manager := d.serviceForHome(serviceHome)
+			previous, err := manager.Status(ctx)
+			if err != nil {
+				return &StepError{Step: "service-status", Err: err}
+			}
+			defer func() {
+				if resultErr == nil || !previous.Enabled {
+					return
+				}
+				usb.CloseDefaultSender()
+				// Recovery must still work when setup was cancelled.
+				recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+				defer cancel()
+				if err := manager.Start(recoveryCtx); err != nil {
+					resultErr = errors.Join(resultErr, fmt.Errorf("restore previous background service: %w", err))
+				}
+			}()
+			if err := manager.Stop(ctx, true); err != nil {
 				return &StepError{Step: "stop-service", Err: err, Hint: "stop the VibeTV task before replacing the installed executable"}
 			}
 		} else {

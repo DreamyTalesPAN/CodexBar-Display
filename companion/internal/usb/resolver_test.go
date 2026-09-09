@@ -2,6 +2,9 @@ package usb
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -77,6 +80,22 @@ func TestSelectPortRejectsUnidentifiedAndAmbiguousDevices(t *testing.T) {
 }
 
 type discoverFunc func() ([]string, error)
+
+func TestExplicitUnixPathBypassesDiscovery(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix device path")
+	}
+	old := defaultDiscoverer
+	t.Cleanup(func() { defaultDiscoverer = old })
+	defaultDiscoverer = discoverFunc(func() ([]string, error) { return nil, errors.New("discovery unavailable") })
+	path := filepath.Join(t.TempDir(), "serial-link")
+	if err := os.Symlink("/dev/null", path); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ResolvePort(path); err != nil || got != path {
+		t.Fatalf("path=%q err=%v", got, err)
+	}
+}
 
 func (f discoverFunc) Discover() ([]string, error) { return f() }
 
