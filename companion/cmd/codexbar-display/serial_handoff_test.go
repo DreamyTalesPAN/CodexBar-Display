@@ -112,6 +112,26 @@ func TestDoctorReleasesDiscoveryBeforeProbeAndHelloOnReturn(t *testing.T) {
 	}
 }
 
+func TestDoctorTrustsValidatedResolverWithOtherSerialDevices(t *testing.T) {
+	for _, pinned := range []string{"", "com17", "/dev/vibetv-link"} {
+		t.Run(pinned, func(t *testing.T) {
+			resolve, probe, hello, closeSender := doctorResolvePortFn, doctorProbePortFn, doctorReadDeviceHelloFn, closeDefaultSenderFn
+			t.Cleanup(func() {
+				doctorResolvePortFn, doctorProbePortFn, doctorReadDeviceHelloFn, closeDefaultSenderFn = resolve, probe, hello, closeSender
+			})
+			doctorResolvePortFn = func(string) (string, error) { return "COM17", nil }
+			doctorProbePortFn = func(string) error { return nil }
+			doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{}, errors.New("no capabilities")
+			}
+			closeDefaultSenderFn = func() {}
+			if err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{port: pinned}, []string{"COM17", "COM99"}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestRestoreReleasesDiscoveryBeforeReturning(t *testing.T) {
 	for _, failed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "script-error", true: "discovery-error"}[failed], func(t *testing.T) {

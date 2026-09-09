@@ -1161,7 +1161,7 @@ func printDoctorRuntimeDefaults() {
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
 }
 
-func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) (resultErr error) {
+func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, _ []string) (resultErr error) {
 	if config.usbOwner != nil {
 		defer func() {
 			closeDefaultSenderFn()
@@ -1198,22 +1198,12 @@ func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) (resu
 	}
 
 	pinnedPort := config.port
+	// ResolvePort already checked explicit availability or unique VibeTV hello
+	// identity. Raw enumeration includes unrelated devices and can omit aliases.
 	if pinnedPort == "" {
 		fmt.Println("  launchagent port affinity: auto-detect")
-		if len(ports) > 1 {
-			return fmt.Errorf(
-				"runtime port affinity check failed: %d serial ports detected while LaunchAgent is unpinned; rerun setup with --pin-port",
-				len(ports),
-			)
-		}
 	} else {
 		fmt.Printf("  launchagent port affinity: pinned (%s)\n", pinnedPort)
-		if len(ports) > 0 && !containsPort(ports, pinnedPort) {
-			return fmt.Errorf(
-				"runtime port affinity check failed: pinned LaunchAgent port %q is not currently available",
-				pinnedPort,
-			)
-		}
 	}
 
 	hello, err := doctorReadDeviceHelloFn(port)
