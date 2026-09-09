@@ -317,6 +317,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 		return err
 	}
 	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
+	registrationAttempted := false
 
 	if !opts.ValidateOnly && !opts.DryRun {
 		if d.goos == "windows" {
@@ -330,14 +331,23 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 				return &StepError{Step: "service-status", Err: err}
 			}
 			defer func() {
-				if resultErr == nil || !previous.Enabled {
+				if resultErr == nil || (!previous.Enabled && !registrationAttempted) {
 					return
 				}
 				usb.CloseDefaultSender()
 				// Recovery must still work when setup was cancelled.
 				recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 				defer cancel()
-				if err := manager.Start(recoveryCtx); err != nil {
+				var err error
+				switch {
+				case previous.Enabled:
+					err = manager.Start(recoveryCtx)
+				case previous.State == "not-loaded":
+					err = manager.Uninstall(recoveryCtx)
+				default:
+					err = manager.Stop(recoveryCtx, true)
+				}
+				if err != nil {
 					resultErr = errors.Join(resultErr, fmt.Errorf("restore previous background service: %w", err))
 				}
 			}()
@@ -546,6 +556,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 	}
 
 	fmt.Fprintln(d.stdout, "Starting background service ...")
+	registrationAttempted = true
 	if err := reloadLaunchAgent(ctx, d, plistPath); err != nil {
 		return err
 	}

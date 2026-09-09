@@ -4,11 +4,95 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 )
+
+type registrationFailureManager struct {
+	service.Manager
+	state                            string
+	enabled                          bool
+	installs, stops, removals        int
+	installErr, startErr, cleanupErr error
+}
+
+func (m *registrationFailureManager) Status(context.Context) (service.Status, error) {
+	return service.Status{State: m.state, Enabled: m.enabled}, nil
+}
+func (m *registrationFailureManager) Install(context.Context) error {
+	m.installs++
+	m.enabled = true
+	m.state = "stopped"
+	return m.installErr
+}
+func (m *registrationFailureManager) Start(context.Context) error { return m.startErr }
+func (m *registrationFailureManager) Stop(ctx context.Context, disable bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.stops++
+	m.enabled = !disable
+	if m.installs > 0 {
+		return m.cleanupErr
+	}
+	return nil
+}
+func (m *registrationFailureManager) Uninstall(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.removals++
+	m.state = "not-loaded"
+	m.enabled = false
+	return m.cleanupErr
+}
+
+func TestWindowsFailedRegistrationRestoresDisabledOrAbsentTask(t *testing.T) {
+	for _, state := range []string{"disabled", "not-loaded"} {
+		for _, phase := range []string{"install", "start", "verify", "cleanup"} {
+			t.Run(state+"/"+phase, func(t *testing.T) {
+				home := t.TempDir()
+				source := filepath.Join(home, "source.exe")
+				if err := os.WriteFile(source, []byte("fixture"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				manager := &registrationFailureManager{state: state}
+				failure := errors.New("registration failure")
+				if phase == "install" {
+					manager.installErr = failure
+				} else if phase != "verify" {
+					manager.startErr = failure
+				}
+				if phase == "cleanup" {
+					manager.cleanupErr = errors.New("cleanup failure")
+				}
+				err := runWithDeps(context.Background(), Options{Transport: "usb", Port: "COM12", SkipFlash: true}, deps{
+					goos: "windows", stdout: io.Discard, homeDir: func() (string, error) { return home, nil },
+					executablePath: func() (string, error) { return source, nil }, findCodexbar: func() (string, error) { return "fixture", nil },
+					lookPath: func(name string) (string, error) { return name, nil }, resolvePort: func(port string) (string, error) { return port, nil },
+					probePort: func(string) error { return nil }, readDeviceHello: func(string) (protocol.DeviceHello, error) { return protocol.DeviceHello{}, errors.New("no hello") },
+					serviceForHome: func(string) service.Manager { return manager },
+				})
+				if err == nil || manager.installs != 1 || manager.enabled {
+					t.Fatalf("manager=%+v err=%v", manager, err)
+				}
+				if state == "not-loaded" && manager.removals != 1 {
+					t.Fatalf("new task retained: %+v", manager)
+				}
+				if state == "disabled" && (manager.stops != 2 || manager.removals != 0) {
+					t.Fatalf("disabled task not preserved: %+v", manager)
+				}
+				if manager.cleanupErr != nil && !errors.Is(err, manager.cleanupErr) {
+					t.Fatalf("lost cleanup error: %v", err)
+				}
+			})
+		}
+	}
+}
 
 type orderingManager struct {
 	service.Manager

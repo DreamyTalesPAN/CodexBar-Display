@@ -54,11 +54,17 @@ const (
 )
 
 var (
-	errFirmwareUploadRestartRequired                   = errors.New("VibeTV must restart before another firmware upload")
-	errFirmwareUploadMayHaveWritten                    = errors.New("firmware upload may have written data")
-	upgradeStopLaunchAgentFn                           = stopLaunchAgentBestEffort
-	upgradeRestartLaunchAgentFn                        = restartLaunchAgent
-	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
+	errFirmwareUploadRestartRequired = errors.New("VibeTV must restart before another firmware upload")
+	errFirmwareUploadMayHaveWritten  = errors.New("firmware upload may have written data")
+	upgradeStopLaunchAgentFn         = stopLaunchAgentBestEffort
+	upgradeRestartLaunchAgentFn      = restartLaunchAgent
+	rollbackRestartLaunchAgentFn     = restartLaunchAgent
+	rollbackStopTaskFn               = func(home string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		return service.New(label, home, false).Stop(ctx, true)
+	}
 	resolveSerialPortFn                                = usb.ResolvePort
 	readDeviceHelloFn                                  = usb.ReadDeviceHello
 	closeDefaultSenderFn                               = usb.CloseDefaultSender
@@ -2125,7 +2131,7 @@ func flashReleaseFirmwareImage(ctx context.Context, port string, artifact releas
 	return nil
 }
 
-func runRollback(args []string) error {
+func runRollback(args []string) (resultErr error) {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port for firmware rollback (auto-detect when empty)")
 	image := fs.String("image", "", "firmware image path (default from last-known-good state)")
@@ -2152,6 +2158,7 @@ func runRollback(args []string) error {
 	if err != nil {
 		return &commandError{Op: "load-release-state", Code: errcode.RollbackStateLoad, Err: err}
 	}
+	recoverTask := false
 
 	if !*skipCompanion {
 		source := strings.TrimSpace(state.LastKnownGood.CompanionBinary)
@@ -2179,6 +2186,20 @@ func runRollback(args []string) error {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
 		target := filepath.Join(targetDir, setup.CompanionBinaryName(runtime.GOOS))
+		if runtime.GOOS == "windows" {
+			// Stop can partially succeed before failing, so arm recovery first.
+			recoverTask = true
+			defer func() {
+				if resultErr != nil && recoverTask {
+					if err := rollbackRestartLaunchAgentFn(home); err != nil {
+						resultErr = errors.Join(resultErr, &commandError{Op: "restart-background-service", Code: errcode.RollbackLaunchAgent, Err: err})
+					}
+				}
+			}()
+			if err := rollbackStopTaskFn(home); err != nil {
+				return &commandError{Op: "stop-background-service", Code: errcode.RollbackLaunchAgent, Err: err}
+			}
+		}
 		if err := copyRegularFileAtomic(source, target, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
@@ -2224,6 +2245,7 @@ func runRollback(args []string) error {
 	}
 
 	if !*skipCompanion || !*skipFirmware {
+		recoverTask = false // The explicit restart below owns success/failure now.
 		if err := rollbackRestartLaunchAgentFn(home); err != nil {
 			return &commandError{Op: "restart-launchagent", Code: errcode.RollbackLaunchAgent, Err: err}
 		}

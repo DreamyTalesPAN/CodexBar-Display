@@ -49,12 +49,25 @@ func TestRollbackRestoresInstalledPlatformExecutable(t *testing.T) {
 	if err := os.WriteFile(snapshot, []byte("known-good fixture"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	previousLoad, previousRestart := loadReleaseStateFn, rollbackRestartLaunchAgentFn
-	t.Cleanup(func() { loadReleaseStateFn = previousLoad; rollbackRestartLaunchAgentFn = previousRestart })
+	previousLoad, previousRestart, previousStop := loadReleaseStateFn, rollbackRestartLaunchAgentFn, rollbackStopTaskFn
+	t.Cleanup(func() {
+		loadReleaseStateFn = previousLoad
+		rollbackRestartLaunchAgentFn = previousRestart
+		rollbackStopTaskFn = previousStop
+	})
 	loadReleaseStateFn = func(string) (releaseState, error) {
 		return releaseState{LastKnownGood: lastKnownGoodState{CompanionBinary: snapshot}}, nil
 	}
 	restarts := 0
+	stops := 0
+	rollbackStopTaskFn = func(string) error {
+		data, err := os.ReadFile(installed)
+		if err != nil || string(data) != "installed fixture" {
+			t.Fatalf("stop happened after replacement: %q %v", data, err)
+		}
+		stops++
+		return nil
+	}
 	rollbackRestartLaunchAgentFn = func(string) error { restarts++; return nil }
 	if err := runRollback([]string{"--skip-firmware"}); err != nil {
 		t.Fatal(err)
@@ -64,6 +77,9 @@ func TestRollbackRestoresInstalledPlatformExecutable(t *testing.T) {
 		t.Fatalf("restored data=%q err=%v restarts=%d", data, err, restarts)
 	}
 	if runtime.GOOS == "windows" {
+		if stops != 1 {
+			t.Fatalf("Windows rollback did not stop task: %d", stops)
+		}
 		if _, err := os.Stat(filepath.Join(filepath.Dir(installed), "codexbar-display")); !os.IsNotExist(err) {
 			t.Fatalf("unexpected extensionless sidecar: %v", err)
 		}
