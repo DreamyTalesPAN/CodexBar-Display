@@ -69,3 +69,27 @@ func TestDoctorReleasesDiscoveryBeforeProbeAndHelloOnReturn(t *testing.T) {
 		t.Fatal("doctor left its hello handle open")
 	}
 }
+
+func TestRestoreReleasesDiscoveryBeforeReturning(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "script-error", true: "discovery-error"}[failed], func(t *testing.T) {
+			resolve, closeSender := resolveSerialPortFn, closeDefaultSenderFn
+			t.Cleanup(func() { resolveSerialPortFn, closeDefaultSenderFn = resolve, closeSender })
+			held := false
+			resolveSerialPortFn = func(string) (string, error) {
+				held = true
+				if failed {
+					return "", errors.New("discovery failed")
+				}
+				return "COM17", nil
+			}
+			closeDefaultSenderFn = func() { held = false }
+			if err := runRestoreKnownGood([]string{"--script-path", t.TempDir() + "/missing-restore-script"}); err == nil {
+				t.Fatal("expected preflight error before any hardware write")
+			}
+			if held {
+				t.Fatal("restore retained discovery handle across handoff/return")
+			}
+		})
+	}
+}

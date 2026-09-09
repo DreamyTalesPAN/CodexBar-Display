@@ -1963,7 +1963,9 @@ func runRestoreKnownGood(args []string) error {
 		return fmt.Errorf("invalid --baud: %d", *baud)
 	}
 
-	resolvedPort, err := usb.ResolvePort(strings.TrimSpace(*port))
+	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
+	// Discovery retains the sender; the restore subprocess needs exclusive access.
+	closeDefaultSenderFn()
 	if err != nil {
 		return fmt.Errorf("resolve serial port: %w", err)
 	}
