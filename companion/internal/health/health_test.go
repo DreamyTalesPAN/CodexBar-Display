@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
 
 func TestParseLaunchctlStatus(t *testing.T) {
@@ -67,8 +65,8 @@ func TestParseLaunchAgentConfig(t *testing.T) {
 func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 	home := t.TempDir()
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-	outLogPath := runtimepaths.Path(home, "logs", defaultOutLogName)
-	errLogPath := runtimepaths.Path(home, "logs", defaultErrLogName)
+	outLogPath := filepath.Join(home, appSupportLogSubdir, defaultOutLogName)
+	errLogPath := filepath.Join(home, appSupportLogSubdir, defaultErrLogName)
 	outLog := strings.Join([]string{
 		`2026-05-03T15:19:35Z cycle error: code=runtime/serial-write op=send-line err=post frame timeout`,
 		`2026-05-03T15:29:49Z sent frame -> http://192.168.178.66 transport=wifi source=codexbar provider=codex label=Vibe TV`,

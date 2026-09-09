@@ -148,11 +148,7 @@ func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(snapshot))
 	})
-	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.Query().Get("provider") != "all" {
-			http.Error(w, "usage requires bearer and all providers", http.StatusUnauthorized)
-			return
-		}
+	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 		  {

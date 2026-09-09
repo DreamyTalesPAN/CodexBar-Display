@@ -3,8 +3,6 @@ package runtimepaths
 import (
 	"path/filepath"
 	"testing"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 func TestDisplayStreamOutLogUsesApplicationSupport(t *testing.T) {
@@ -12,7 +10,7 @@ func TestDisplayStreamOutLogUsesApplicationSupport(t *testing.T) {
 	home := t.TempDir()
 
 	got := DisplayStreamOutLog(home)
-	want := filepath.Join(Root(home), "logs", "daemon.out.log")
+	want := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", "daemon.out.log")
 	if got != want {
 		t.Fatalf("expected display stream log %q, got %q", want, got)
 	}
@@ -29,7 +27,7 @@ func TestDisplayStreamOutLogKeepsLegacyEnvironmentOverride(t *testing.T) {
 
 func TestDisplayStreamOutLogDoesNotFallBackToTmpWithoutHome(t *testing.T) {
 	t.Setenv(DisplayStreamOutLogEnv, "")
-	testenv.Home(t, "")
+	t.Setenv("HOME", "")
 
 	if got := DisplayStreamOutLog(""); got != "" {
 		t.Fatalf("expected no path without a home directory, got %q", got)

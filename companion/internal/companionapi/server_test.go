@@ -2875,7 +2875,7 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	}
 
 	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
-	wantService := "shop.vibetv.control-center.runtime"
+	wantService := fmt.Sprintf("gui/%d/shop.vibetv.control-center.runtime", os.Getuid())
 	if gotService != wantService {
 		t.Fatalf("expected launchctl service %q, got %q", wantService, gotService)
 	}
