@@ -472,6 +472,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	logf := logger.logf
 
 	wake := make(chan struct{}, 1)
+	renderWake := make(chan struct{}, 1)
 	deviceWrites := &deviceWriteCoordinator{}
 	wakeDisplayWorker := func() {
 		select {
@@ -510,6 +511,12 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		},
 		PauseDisplayStream: deviceWrites.setPaused,
 		WakeDisplayStream:  wakeDisplayWorker,
+		RenderDisplayStream: func() {
+			select {
+			case renderWake <- struct{}{}:
+			default:
+			}
+		},
 	})
 	if err != nil {
 		listener.Close()
@@ -521,6 +528,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	daemonOpts := opts.Daemon
 	daemonOpts.Wake = wake
+	daemonOpts.RenderWake = renderWake
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused
 	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
 

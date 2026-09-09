@@ -701,8 +701,8 @@ bool testRendererUsesResumableCbaAnimation(
   }
   if (!expect(
           renderer.find("kThemeSpecAnimatedResumeTickMs") != std::string::npos &&
-              renderer.find("changedFields & themespec::kThemeSpecFieldActivity") != std::string::npos,
-          "unfinished CBA work must resume quickly and activity switches must restart it")) {
+              renderer.find("(themespec::kThemeSpecFieldActivity | themespec::kThemeSpecFieldProvider)") != std::string::npos,
+          "unfinished CBA work must resume quickly and activity/provider switches must restart it")) {
     return false;
   }
 

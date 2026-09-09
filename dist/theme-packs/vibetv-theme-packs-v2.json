@@ -64,6 +64,24 @@
       "bytes": 807
     },
     {
+      "id": "pixel-battery",
+      "title": "Pixel Battery",
+      "usage": "live",
+      "version": "1.16.0",
+      "themeRev": 16,
+      "themeSpecPath": "/themes/u/pba-16-f46829.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "provider-assets-v1",
+        "color-stops-v1",
+        "text-valign-v1"
+      ],
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.16.0.zip",
+      "sha256": "9316ceeddd0617afad7be02352f755dc4afc551d93de917e874d7152df16324c",
+      "bytes": 2855
+    },
+    {
       "id": "reset-countdown",
       "title": "Reset Countdown",
       "usage": "screensaver",
@@ -92,6 +110,22 @@
       "downloadAsset": "vibetv-theme-synthwave-v1.1.3.zip",
       "sha256": "70c4382b601043f6c25f26415bae0d4308cbb1478cfc8dab7ac1a1349aee5df2",
       "bytes": 1585
+    },
+    {
+      "id": "tiny-office",
+      "title": "Tiny Office",
+      "usage": "live",
+      "version": "0.6.0",
+      "themeRev": 7,
+      "themeSpecPath": "/themes/u/to-7-d7799cec.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "text-valign-v1"
+      ],
+      "downloadAsset": "vibetv-theme-tiny-office-v0.6.0.zip",
+      "sha256": "b548609e4c19886d877119bf5630cc5067fa2bdc3123ab7c5d9a5bd593417d4a",
+      "bytes": 8071
     },
     {
       "id": "token-fire",

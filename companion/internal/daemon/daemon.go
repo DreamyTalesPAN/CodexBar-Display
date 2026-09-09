@@ -35,8 +35,10 @@ type Options struct {
 	Theme                  string
 	DisableStartupFastPoll bool
 	Wake                   <-chan struct{}
-	PauseDeviceWrites      func() bool
-	BeginDeviceWrite       func() func()
+	// RenderWake reselects from existing collector snapshots without a provider fetch.
+	RenderWake        <-chan struct{}
+	PauseDeviceWrites func() bool
+	BeginDeviceWrite  func() func()
 }
 
 const (
@@ -487,6 +489,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-opts.Wake:
+			case <-opts.RenderWake:
 			case <-deps.after(opts.Interval):
 			}
 			continue
@@ -553,6 +556,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-opts.Wake:
+		case <-opts.RenderWake:
 		case <-deps.after(waitFor):
 		}
 	}

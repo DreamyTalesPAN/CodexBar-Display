@@ -110,8 +110,8 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 		writeInternalError(w, err)
 		return
 	}
-	if s.wakeDisplayStream != nil {
-		s.wakeDisplayStream()
+	if s.renderDisplayStream != nil {
+		s.renderDisplayStream()
 	}
 	writeJSON(w, http.StatusOK, providerDisplayResponse{OK: true, Selection: selection})
 }
