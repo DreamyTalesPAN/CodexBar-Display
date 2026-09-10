@@ -80,6 +80,7 @@ export function SetupDialog({
         )}
       />
       <DialogContent
+        className="data-open:animate-none data-closed:animate-none"
         onInteractOutside={(event) => event.preventDefault()}
         showCloseButton={showCloseButton}
       >

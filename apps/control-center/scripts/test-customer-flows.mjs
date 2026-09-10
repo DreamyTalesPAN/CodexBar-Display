@@ -449,6 +449,7 @@ async function main() {
       return;
     }
     if (providerSettingsOnly) {
+      await testSettingsStayCustomerOnly(browser, appContext.appUrl);
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
       await testProviderWriteWinsOverOlderPreferenceRead(
         browser,
@@ -6090,6 +6091,9 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     (await screensaverSwitch.getAttribute("aria-checked")) === "true",
     "a failed screensaver write must restore the previous visible value",
   );
+  const settingsError = page.getByRole("dialog");
+  await settingsError.getByRole("button", { name: "OK", exact: true }).click();
+  await settingsError.waitFor({ state: "detached", timeout: 5_000 });
 
   companion.setStandby({
     enabled: false,
@@ -6099,7 +6103,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   });
   await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
-  await showAfter.waitFor({ state: "detached", timeout: 10_000 });
+  await waitForCondition(() => showAfter.isDisabled(), "A reconciled screensaver-off state must disable its saved timeout control");
   assert(
     (await screensaverSwitch.getAttribute("aria-checked")) === "false",
     "a later settings read must reconcile the screensaver after a failed write",

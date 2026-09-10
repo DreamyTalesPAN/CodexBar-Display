@@ -4255,6 +4255,12 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-10 — Keep Cable available after a denied optional WiFi scan
 
-- User authorization: Paul requested completing the full test matrix, fixing discovered issues along the way, and presenting errors through the existing setup popups.
-- Customer-visible result: A native setup-SSID scan failure retains the Cable devices already found by the Companion. The existing search error popup explains the denied scan; after dismissal, setup continues with the same discovered Cable identity. No new copy or control.
+- User approval: Paul explicitly requested fixing discovered matrix issues along the way and "error states sind ab jetzt immer pop ups ... schau dir den setup wizard an". This correction applies that instruction to the existing native-scan failure.
+- Approved customer-visible result: A native setup-SSID scan failure retains the Cable devices already found by the Companion. The existing search error popup explains the denied scan; after dismissal, setup continues with the same discovered Cable identity. No new copy or control.
 - Validation: the setup-entry browser regression covers a denied native scan, visible popup before any selection, dismissal, and exactly one selection of the expected Cable device. Existing WiFi-only denial still shows an error, and discovered LAN devices do not require a native SSID scan.
+
+## 2026-09-10 — Reliable setup-style error display on the Mac
+
+- User approval: Paul requested "error states sind ab jetzt immer pop ups" using the setup wizard as the reference. This follow-up fixes that requested popup being invisible during the real Mac test.
+- Approved customer-visible result: The shared setup dialog appears immediately, without its enter/exit keyframe animation. Layout, blur, message, recovery text and controls remain the existing setup design. App 118 sometimes showed only the scrim; app 119 visibly passed two consecutive missing-USB failures, dismissal by OK and by Close, while the same WiFi device kept streaming with unchanged settings and boot ID.
+- Test maintenance: failed Settings actions are acknowledged before the browser test navigates away. The retained timeout control is disabled when screensaver is off, matching the existing screen contract, rather than incorrectly expected to disappear.
