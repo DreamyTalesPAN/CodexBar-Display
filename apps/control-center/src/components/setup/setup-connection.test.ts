@@ -14,16 +14,22 @@ const wifi = (id: string): DeviceCandidate => ({
 });
 
 describe("setup connection skip matrix", () => {
+  it("counts an open setup network as the second connection option", () => {
+    expect(decideSetupConnection({ candidates: [cable("1")], setupWiFiCount: 1, choiceRequired: true }).kind).toBe("mode");
+  });
+  it("keeps the saved Cable path even when an open setup network is found", () => {
+    expect(decideSetupConnection({ candidates: [cable("1")], setupWiFiCount: 1, savedMode: "cable", choiceRequired: false })).toMatchObject({ kind: "direct", transport: "cable" });
+  });
   it.each([undefined, ""])("asks for the connection when no mode has been saved (%s)", (savedMode) => {
-    expect(decideSetupConnection({ candidates: [cable("1")], choiceRequired: false, savedMode }))
+    expect(decideSetupConnection({ candidates: [cable("1")], setupWiFiCount: 1, choiceRequired: false, savedMode }))
       .toMatchObject({ kind: "mode" });
   });
 
-  it("offers Cable and WiFi when only Cable is discovered", () => {
+  it("uses Cable directly when neither a WLAN device nor setup network was found", () => {
     expect(
       decideSetupConnection({ candidates: [cable("1")], choiceRequired: true }),
     ).toMatchObject({
-      kind: "mode",
+      kind: "direct", transport: "cable",
     });
   });
 

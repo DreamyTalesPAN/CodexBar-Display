@@ -4235,3 +4235,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul corrected the first-power screen: the entry on new firmware is always "Download Mac App"; when the Mac App finds no VibeTV over USB, it must guide WiFi setup.
 - Approved customer-visible result: Fresh VibeTV shows "VIBE TV", "Download Mac App", and "app.vibetv.shop". Its setup access point starts in the background. After discovery finds neither USB nor an already configured WiFi device, the Mac App directly opens "Connect to WiFi" with phone setup instructions. Search errors retain their recovery message. Existing USB discoveries retain the Cable/WiFi selector, and existing WiFi devices remain connectable.
+
+
+## 2026-09-10 — Count open setup networks as WiFi discoveries
+
+- User approval: Paul explicitly requested that both an existing VibeTV on the local network and an open VibeTV-Setup network count as "1 VibeTV found", without "Setup required" or "Set up over Cable".
+- Approved customer-visible result: The existing startup search also scans for open VibeTV-Setup networks through the native Mac App. Both kinds of WiFi discovery share the same found-count label. Cable/WiFi selection appears when both paths were found. An open setup network without USB leads to the WiFi instructions. No internet check is involved. macOS Location Services permission is requested solely for the network scan; denied scans remain errors, not zero discoveries.

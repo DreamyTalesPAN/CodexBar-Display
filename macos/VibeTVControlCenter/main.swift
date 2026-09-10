@@ -1,5 +1,7 @@
 import Cocoa
 import CryptoKit
+import CoreLocation
+import CoreWLAN
 import Darwin
 import Foundation
 import ServiceManagement
@@ -1389,11 +1391,88 @@ private final class ShadcnSpinnerView: NSView {
     }
 }
 
+// Only the open setup SSID is returned to the local UI. Other network names and
+// location coordinates never leave CoreWLAN/Core Location.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class SetupWiFiScanner: NSObject, @preconcurrency CLLocationManagerDelegate {
+    private let location = CLLocationManager()
+    private var replies: [@MainActor @Sendable (Any?, String?) -> Void] = []
+    private var scanning = false
+    private var generation = 0
+    private var deadline: DispatchWorkItem?
+
+    override init() {
+        super.init()
+        location.delegate = self
+    }
+
+    func scan(reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
+        replies.append(reply)
+        guard replies.count == 1 else { return }
+        generation += 1
+        let deadline = DispatchWorkItem { [weak self] in
+            self?.finish(count: nil, error: "Allow Location Services for VibeTV Control Center, then search again.")
+        }
+        self.deadline = deadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: deadline)
+        if location.authorizationStatus == .notDetermined {
+            location.requestWhenInUseAuthorization()
+        } else {
+            scanWhenAuthorized()
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus != .notDetermined { scanWhenAuthorized() }
+    }
+
+    private func scanWhenAuthorized() {
+        guard !replies.isEmpty, !scanning else { return }
+        guard location.authorizationStatus == .authorizedAlways else {
+            finish(count: nil, error: "Allow VibeTV Control Center in System Settings > Privacy & Security > Location Services to find VibeTV-Setup, then search again.")
+            return
+        }
+        scanning = true
+        let scanGeneration = generation
+        Task {
+            let result: Result<Int, Error> = await Task.detached {
+                Result {
+                    guard let interface = CWWiFiClient.shared().interface(), interface.powerOn() else {
+                        throw NSError(domain: "VibeTVSetupWiFi", code: 1,
+                                      userInfo: [NSLocalizedDescriptionKey: "Turn on WiFi on this Mac, then search again."])
+                    }
+                    let networks = try interface.scanForNetworks(withSSID: Data("VibeTV-Setup".utf8))
+                    guard networks.allSatisfy({ $0.ssid != nil }) else {
+                        throw NSError(domain: "VibeTVSetupWiFi", code: 2,
+                                      userInfo: [NSLocalizedDescriptionKey: "macOS did not allow reading WiFi network names. Check Location Services, then search again."])
+                    }
+                    return networks.filter { $0.ssid == "VibeTV-Setup" && $0.supportsSecurity(.none) }.count
+                }
+            }.value
+            guard generation == scanGeneration, !replies.isEmpty else { return }
+            switch result {
+            case .success(let count): finish(count: count, error: nil)
+            case .failure(let error): finish(count: nil, error: error.localizedDescription)
+            }
+        }
+    }
+
+    private func finish(count: Int?, error: String?) {
+        deadline?.cancel()
+        deadline = nil
+        scanning = false
+        let callbacks = replies
+        replies.removeAll()
+        for reply in callbacks { reply(count.map { ["count": $0] }, error) }
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandlerWithReply {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var activeNavigation: WKNavigation?
+    private let setupWiFiScanner = SetupWiFiScanner()
     private let runtimeService = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     private var urlRouter = ControlCenterURLRouter()
     private var reloadAttempts = 0
@@ -2335,9 +2414,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NSApp.terminate(nil)
     }
 
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage,
+        replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
+    ) {
+        let origin = message.frameInfo.securityOrigin
+        guard message.name == "vibetvSetupWiFi", message.frameInfo.isMainFrame,
+              message.webView === webView,
+              origin.protocol == activeRuntimeOrigin.scheme,
+              origin.host == activeRuntimeOrigin.host,
+              origin.port == (activeRuntimeOrigin.port ?? defaultRuntimePort),
+              message.body as? String == "scan" else {
+            replyHandler(nil, "WiFi discovery is available only in the local Mac App.")
+            return
+        }
+        setupWiFiScanner.scan(reply: replyHandler)
+    }
+
     private func createWindow() {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController.addScriptMessageHandler(
+            self, contentWorld: .page, name: "vibetvSetupWiFi"
+        )
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.customUserAgent = nativeControlCenterUserAgent(

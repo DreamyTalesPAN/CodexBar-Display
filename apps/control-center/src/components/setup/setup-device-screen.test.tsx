@@ -34,6 +34,18 @@ function render(props: Partial<Parameters<typeof SetupDeviceScreen>[0]> = {}) {
 }
 
 describe("SetupDeviceScreen", () => {
+  it("labels a station device and an open setup network identically", () => {
+    const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "5804508", transport: "cable" };
+    for (const props of [
+      { candidates: [cable], setupWiFiCount: 1 },
+      { candidates: [cable, { ...known, transport: "wifi" as const }], setupWiFiCount: 0 },
+    ]) {
+      const html = render({ ...props, showModeChoice: true, showCandidates: false });
+      expect(html.match(/1 VibeTV found/g)).toHaveLength(2);
+      expect(html).not.toContain("Set up over Cable");
+      expect(html).not.toContain("Setup required");
+    }
+  });
   it("names the device, its address and its firmware without an API word", () => {
     const html = render();
 

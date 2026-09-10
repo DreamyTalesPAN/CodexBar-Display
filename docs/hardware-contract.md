@@ -6,7 +6,7 @@ exclusive VibeTV connection modes.
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- Fresh hardware starts in WiFi setup with USB control available. The display shows only the Mac App download address. The Mac App opens phone WiFi instructions if discovery finds no device. A new Cable discovery always offers the connection selector, even without a WiFi discovery.
+- Fresh hardware starts in WiFi setup with USB control available. The display shows only the Mac App download address. The Mac App opens phone WiFi instructions if discovery finds no device. The connection selector appears when Cable and WiFi discovery both succeed. Open VibeTV-Setup networks count as WiFi discoveries alongside devices already on the local network.
 - WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
 - The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
 - Updated legacy devices preserve WiFi credentials and pairing, use `wifi`, and support switching to Cable. Previously stored `legacy-wifi-only` is migrated to `wifi`.
@@ -401,6 +401,11 @@ unexplained transport error instead of an authentication failure.
 - The device setup screen first offers `Download Mac App` at `app.vibetv.shop`.
   The access point stays available in the background. After an empty discovery,
   the Mac App tells customers to join `VibeTV-Setup` and open `192.168.4.1`.
+- The native startup scan counts nearby open `VibeTV-Setup` networks using
+  CoreWLAN, alongside local-network device discovery. Both use the same
+  "VibeTV found" label. No internet connection is required. macOS location
+  authorization is used only to read network names; denied or failed scans
+  remain errors rather than zero discoveries.
   Downloading/opening the Mac App does not depend on first joining home WiFi.
 - The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
   and keeps manual SSID entry available for hidden networks.

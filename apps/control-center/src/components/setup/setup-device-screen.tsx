@@ -37,6 +37,7 @@ import {
 
 type SetupDeviceScreenProps = {
   candidates: DeviceCandidate[];
+  setupWiFiCount?: number;
   alternativeTransport?: SetupTransport;
   connecting?: boolean;
   /** Names the work in flight, so the button reports it instead of "Connecting" throughout. */
@@ -70,6 +71,7 @@ type SetupDeviceScreenProps = {
 export function SetupDeviceScreen({
   alternativeTransport,
   candidates,
+  setupWiFiCount = 0,
   connecting = false,
   connectPhase,
   logLines,
@@ -197,7 +199,7 @@ export function SetupDeviceScreen({
                 mode === "cable"
                   ? candidate.transport === "cable"
                   : candidate.transport !== "cable",
-              ).length;
+              ).length + (mode === "wifi" ? setupWiFiCount : 0);
               return (
                 <ToggleGroupItem
                   aria-label={mode === "cable" ? "Cable" : "WiFi"}
@@ -225,9 +227,7 @@ export function SetupDeviceScreen({
                           : "bg-muted-foreground",
                       )}
                     />
-                    {mode === "wifi" && count === 0 && candidates.some((candidate) => candidate.transport === "cable")
-                      ? "Set up over Cable"
-                      : `${count} ${count === 1 ? "VibeTV" : "VibeTVs"} found`}
+                    {`${count} ${count === 1 ? "VibeTV" : "VibeTVs"} found`}
                   </span>
                 </ToggleGroupItem>
               );

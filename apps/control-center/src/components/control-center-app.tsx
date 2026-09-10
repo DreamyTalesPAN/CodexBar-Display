@@ -1,5 +1,6 @@
 "use client";
 
+import { scanSetupWiFiNetworks as scanNativeSetupWiFi } from "./setup/setup-wifi-discovery";
 import { canConnectSetupCandidate } from "./setup/setup-connection";
 import {
   useCallback,
@@ -377,6 +378,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceCandidates, setDeviceCandidates] = useState<DeviceCandidate[]>(
     [],
   );
+  const [setupWiFiCount, setSetupWiFiCount] = useState(0);
   const [deviceSearchState, setDeviceSearchState] =
     useState<DeviceSearchState>("idle");
   const [connectionMode, setConnectionMode] = useState("");
@@ -1411,20 +1413,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setBusyAction("search");
     pendingPairingCandidate.current = null;
     setDeviceCandidates([]);
+    setSetupWiFiCount(0);
     setDeviceSearchState("searching");
     setLastError(null);
     try {
-      const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
-        "/v1/device/search",
-        { method: "POST" },
-        { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
-      );
+      const [search] = await Promise.allSettled([
+        runCompanion<{ devices?: DeviceCandidate[] }>(
+          "/v1/device/search",
+          { method: "POST" },
+          { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
+        ),
+      ]);
       if (!searchIsCurrent()) {
         return;
       }
-      const candidates = (payload.devices || []).filter(
+      const candidates = (search.status === "fulfilled" ? search.value.devices || [] : []).filter(
         canConnectSetupCandidate,
       );
+      // A reachable WiFi device already answers the availability question.
+      // Only ask macOS for nearby setup networks when that path found none.
+      const setupCount = candidates.some((candidate) => candidate.transport !== "cable")
+        ? 0 : await scanNativeSetupWiFi();
+      if (!searchIsCurrent()) return;
+      setSetupWiFiCount(setupCount);
+      if (search.status === "rejected") {
+        const failure = normalizeCaughtError(search.reason, "VibeTV search could not finish.");
+        if (setupCount === 0 || !["network_unavailable", "local_network_access_denied", "device_not_found"].includes(failure.code || "")) {
+          throw search.reason;
+        }
+      }
       if (candidates.length > 0) {
         setDeviceCandidates(candidates);
         setDeviceSearchState("multiple");
@@ -4659,6 +4676,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           activeDeviceId={deviceRecoveryGateRef.current.preferredDeviceId}
           device={device}
           deviceCandidates={startupDeviceCandidates}
+          setupWiFiCount={setupWiFiCount}
           deviceSearchState={startupDeviceSearchState}
           displayFrame={displayFrame}
           displayMode={providerDisplay?.mode ?? "automatic"}

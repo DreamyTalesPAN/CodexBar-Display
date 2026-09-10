@@ -184,6 +184,10 @@ write_info_plist() {
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Find nearby VibeTV-Setup WiFi networks. VibeTV does not read your location coordinates.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>Find nearby VibeTV-Setup WiFi networks. VibeTV does not read your location coordinates.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>VibeTV Control Center uses the local network to connect to your VibeTV display.</string>
     <key>NSPrincipalClass</key>

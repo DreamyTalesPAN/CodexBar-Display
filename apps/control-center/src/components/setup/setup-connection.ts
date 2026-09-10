@@ -27,6 +27,7 @@ export function candidateKey(candidate: DeviceCandidate): string {
 
 export function decideSetupConnection(options: {
   candidates: DeviceCandidate[];
+  setupWiFiCount?: number;
   choiceRequired: boolean;
   savedMode?: string;
   activeDeviceId?: string;
@@ -84,10 +85,11 @@ export function decideSetupConnection(options: {
       alternative: "wifi",
     };
   }
-  // Cable is also the provisioning link for WiFi, even before that device
-  // has joined a network. Discovery must not make the customer's choice.
+  // Offer both paths only when WiFi discovery found a device or its open setup AP.
   if (cable.length === 1) {
-    return { kind: "mode", candidates: options.candidates };
+    return wifi.length > 0 || (options.setupWiFiCount || 0) > 0
+      ? { kind: "mode", candidates: options.candidates }
+      : { kind: singleCandidateKind(cable[0]), transport: "cable", candidates: cable };
   }
   if (wifi.length === 1) {
     return {
