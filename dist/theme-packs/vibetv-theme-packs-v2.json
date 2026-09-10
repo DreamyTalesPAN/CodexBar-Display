@@ -67,9 +67,9 @@
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.17.0",
-      "themeRev": 17,
-      "themeSpecPath": "/themes/u/pba-17-f1c35a.json",
+      "version": "1.19.0",
+      "themeRev": 19,
+      "themeSpecPath": "/themes/u/pba-19-3d34d4.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -77,9 +77,9 @@
         "color-stops-v1",
         "text-valign-v1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.0.zip",
-      "sha256": "7ea40d8df79b3eba67fe220b9063cce76a42080e386143c06b9064ac89ff4662",
-      "bytes": 2819
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.19.0.zip",
+      "sha256": "380df3154478253e8a1acd41b1017666deb6f8fe34ad9bbbbfe99386a0c8410a",
+      "bytes": 2817
     },
     {
       "id": "reset-countdown",

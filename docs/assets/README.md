@@ -14,7 +14,7 @@ These are static example states, not live device readings.
 | [Clippy](vibetv-theme-clippy.png) | [render pack](../../dist/theme-packs/render/clippy.json) | `/themes/u/clippy-5-4f3746.json` | `4f37467f` |
 | [Mini Classic](vibetv-theme-mini-classic.png) | [render pack](../../dist/theme-packs/render/mini-classic.json) | `/themes/u/mini-cl-6-024b0e.json` | `024b0e34` |
 | [Night Clock](vibetv-screensaver-night-clock.png) | [render pack](../../dist/theme-packs/render/night-clock.json) | `/themes/s/nc-3-e18e4217.json` | `7c0481b8` |
-| [Pixel Battery](vibetv-theme-pixel-battery.png) | [render pack](../../dist/theme-packs/render/pixel-battery.json) | `/themes/u/pba-17-f1c35a.json` | `1dcdf16c` |
+| [Pixel Battery](vibetv-theme-pixel-battery.png) | [render pack](../../dist/theme-packs/render/pixel-battery.json) | `/themes/u/pba-19-3d34d4.json` | `de7f9930` |
 | [Reset Countdown](vibetv-screensaver-reset-countdown.png) | [render pack](../../dist/theme-packs/render/reset-countdown.json) | `/themes/s/rcf-6-03e818f0.json` | `6db1710c` |
 | [Synthwave](vibetv-theme-synthwave.png) | [render pack](../../dist/theme-packs/render/synthwave.json) | `/themes/u/synthwa-5-0f760a.json` | `0f760a70` |
 | [Tiny Office](vibetv-theme-tiny-office.png) | [render pack](../../dist/theme-packs/render/tiny-office.json) | `/themes/u/to-7-d7799cec.json` | `6b398ec9` |
