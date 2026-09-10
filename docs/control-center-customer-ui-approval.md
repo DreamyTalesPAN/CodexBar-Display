@@ -4264,3 +4264,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul requested "error states sind ab jetzt immer pop ups" using the setup wizard as the reference. This follow-up fixes that requested popup being invisible during the real Mac test.
 - Approved customer-visible result: The shared setup dialog appears immediately, without its enter/exit keyframe animation. Layout, blur, message, recovery text and controls remain the existing setup design. App 118 sometimes showed only the scrim; app 119 visibly passed two consecutive missing-USB failures, dismissal by OK and by Close, while the same WiFi device kept streaming with unchanged settings and boot ID.
 - Test maintenance: failed Settings actions are acknowledged before the browser test navigates away. The retained timeout control is disabled when screensaver is off, matching the existing screen contract, rather than incorrectly expected to disappear.
+
+## 2026-09-10 — Firmware update errors use the shared popup
+
+- User approval: Paul instructed "error states sind ab jetzt immer pop ups" with the setup wizard as the reference, and requested fixing failures while completing the hardware matrix.
+- Approved customer-visible result: Updates uses the same setup dialog for failed firmware jobs, preserving the existing error text, retry policy and report action. A failed update no longer shows an inline red banner or a completed progress bar. Dismissal survives repeated status polls for the same job; a new failed attempt opens its own popup.
+- Evidence: App 119 installed from the local DMG rejected an intentionally wrong SHA-256 during artifact validation, before upload. Firmware 115, boot ID, saved settings and animation remained unchanged. The original inline error text overlapped its buttons, prompting this popup correction.
+- Native validation: local DMG 120, device 14799300 / firmware 115, repeated invalid-hash rejection before upload. The shared Update failed popup rendered correctly and closed; unchanged boot ID/settings and increasing animation frames verified. Eleven DOM tests, focused firmware browser cases, TypeScript, lint and customer-copy checks pass.

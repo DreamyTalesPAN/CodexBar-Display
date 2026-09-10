@@ -437,6 +437,7 @@ async function main() {
       return;
     }
     if (themeSetupFirmwareOnly) {
+      await testFirmwarePowerCycleErrorDoesNotOfferSecondFlash(browser, appContext.appUrl);
       await testPostFlashMissingCapabilitiesKeepThemeAttention(
         browser,
         appContext.appUrl,
@@ -8622,6 +8623,7 @@ async function testFirmwarePowerCycleErrorDoesNotOfferSecondFlash(
   await page.getByText("Update failed", { exact: true }).waitFor({
     timeout: 10_000,
   });
+  await page.getByRole("dialog", { name: "Update failed", exact: true }).waitFor();
   await page
     .getByText("Disconnect VibeTV from power", { exact: false })
     .waitFor({
