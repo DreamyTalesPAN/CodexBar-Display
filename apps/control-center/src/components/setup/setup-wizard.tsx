@@ -19,6 +19,7 @@ import {
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
+  SetupWiFiPhoneDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupStepFailedDialog } from "./setup-provider-dialogs";
@@ -708,20 +709,27 @@ export function SetupWizard(props: SetupWizardProps) {
           wifiCredentialsSent={wifiSetup?.credentialsSent}
         />}
         {addressDialog}
-        <SetupDeviceNotFoundDialog
-          onEnterAddressManually={openAddressDialog}
-          onOpenChange={(open) => setNotFoundDismissed(!open)}
-          onScanAgain={searchAgain}
-          onUseCable={() => {
-            setNotFoundDismissed(true);
-            void chooseTransport("cable");
-          }}
-          onSetUpWiFi={() => {
-            setNotFoundDismissed(true);
-            void chooseTransport("wifi");
-          }}
-          open={searchFailed && !wifiSetup}
-        />
+        {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
+          <SetupWiFiPhoneDialog
+            onEnterAddressManually={openAddressDialog}
+            onScanAgain={searchAgain}
+          />
+        ) : (
+          <SetupDeviceNotFoundDialog
+            onEnterAddressManually={openAddressDialog}
+            onOpenChange={(open) => setNotFoundDismissed(!open)}
+            onScanAgain={searchAgain}
+            onUseCable={() => {
+              setNotFoundDismissed(true);
+              void chooseTransport("cable");
+            }}
+            onSetUpWiFi={() => {
+              setNotFoundDismissed(true);
+              void chooseTransport("wifi");
+            }}
+            open={searchFailed && !wifiSetup}
+          />
+        )}
         {/*
           A scan that could not be made at all. Without this the step showed a
           count of zero and kept the reason -- a refused Local Network

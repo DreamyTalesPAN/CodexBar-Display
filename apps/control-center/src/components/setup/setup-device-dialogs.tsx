@@ -206,12 +206,13 @@ export function SetupWiFiPhoneDialog({
       </Button>
       <SetupDialog
         description="Set it up with your phone — VibeTV opens its own network for that."
-        icon={CircleAlert}
+        icon={Wifi}
+        tone="neutral"
         onOpenChange={setOpen}
         open={open}
         primaryAction={{
           busy: scanning,
-          label: "Scan WiFi again",
+          label: "Scan again",
           onSelect: onScanAgain,
         }}
         secondaryAction={{
@@ -221,7 +222,7 @@ export function SetupWiFiPhoneDialog({
             onEnterAddressManually();
           },
         }}
-        title="No VibeTV on your WiFi yet"
+        title="Connect to WiFi"
       >
         <ol className="flex flex-col gap-4 text-left text-sm leading-relaxed">
           {[

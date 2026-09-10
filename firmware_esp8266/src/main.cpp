@@ -4208,7 +4208,7 @@ void startSetupAccessPoint() {
   Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
   startHttpServer();
   const unsigned long renderStartUs = micros();
-  renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
+  renderer.DrawSetupInstructions(runtimeCtx);
   recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
 }

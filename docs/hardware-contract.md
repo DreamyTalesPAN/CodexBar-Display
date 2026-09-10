@@ -6,7 +6,7 @@ exclusive VibeTV connection modes.
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- Fresh hardware starts in WiFi setup with USB control available. The display shows the Mac App download address and the phone WiFi setup instructions. A new Cable discovery always offers the connection selector, even without a WiFi discovery.
+- Fresh hardware starts in WiFi setup with USB control available. The display shows only the Mac App download address. The Mac App opens phone WiFi instructions if discovery finds no device. A new Cable discovery always offers the connection selector, even without a WiFi discovery.
 - WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
 - The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
 - Updated legacy devices preserve WiFi credentials and pairing, use `wifi`, and support switching to Cable. Previously stored `legacy-wifi-only` is migrated to `wifi`.
@@ -399,7 +399,8 @@ unexplained transport error instead of an authentication failure.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
 - Setup UI is served at `http://192.168.4.1` through the setup access point and captive DNS.
 - The device setup screen first offers `Download Mac App` at `app.vibetv.shop`.
-  It also tells power-only customers to join `VibeTV-Setup` and open `192.168.4.1`.
+  The access point stays available in the background. After an empty discovery,
+  the Mac App tells customers to join `VibeTV-Setup` and open `192.168.4.1`.
   Downloading/opening the Mac App does not depend on first joining home WiFi.
 - The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
   and keeps manual SSID entry available for hidden networks.

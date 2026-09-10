@@ -481,6 +481,9 @@ async function main() {
         testSavedPairingStartupRecoversWithoutWizard,
         testCableBackUsesConnectedDeviceWithoutNewSearch,
         testFreshCableHasNoEmptyPicker,
+        testMissingVibeTVOffersRetry,
+        testLocalWifiSetupRescansAfterNoResults,
+        testDeniedLocalNetworkShowsRecovery,
         testFreshCableCanProvisionWiFi,
         testRejectedPairingTokenUsesTypedRecovery,
         testFirstSetupStillWaitsForARenderedPreview,
@@ -2086,46 +2089,15 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const dialog = setupNotFoundDialog(page);
   await dialog.waitFor({ timeout: 10_000 });
-  await dialog
-    .getByText(
-      "Pick the way that fits your desk, then scan again.",
-      { exact: true },
-    )
-    .waitFor();
-  await dialog.getByRole("button", { name: /Use the cable/ }).waitFor();
-  await dialog.getByRole("button", { name: /Set up WiFi with your phone/ }).waitFor();
+  await dialog.getByRole("heading", { name: "Connect to WiFi", exact: true }).waitFor();
+  await dialog.getByText("192.168.4.1", { exact: true }).waitFor();
+  assert(await dialog.locator("ol li").count() === 4, "Empty discovery must open the phone WiFi steps directly");
+  assert(await dialog.getByRole("button", { name: /Use the cable/ }).count() === 0, "Fresh setup must not require a second transport choice before WiFi instructions");
   const scanAgain = dialog.getByRole("button", { name: "Scan again" });
   const manualEntry = dialog.getByRole("button", { name: "Enter IP manually" });
-  await scanAgain.waitFor({ timeout: 10_000 });
-  await manualEntry.waitFor({ timeout: 10_000 });
-  const notFoundInformationOrderIsCorrect = await page.evaluate(() => {
-    const dialogElement = document.querySelector('[role="dialog"]');
-    const firstSetupStep = [
-      ...(dialogElement?.querySelectorAll("button") || []),
-    ][0];
-    const scanButton = [
-      ...(dialogElement?.querySelectorAll("button") || []),
-    ].find((element) => element.textContent?.trim() === "Scan again");
-    const manualButton = [
-      ...(dialogElement?.querySelectorAll("button") || []),
-    ].find((element) => element.textContent?.trim() === "Enter IP manually");
-    const precedes = (first, second) =>
-      Boolean(
-        first &&
-        second &&
-        first.compareDocumentPosition(second) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      );
-
-    return (
-      precedes(firstSetupStep, manualButton) &&
-      precedes(manualButton, scanButton)
-    );
-  });
-  assert(
-    notFoundInformationOrderIsCorrect,
-    "The no-result dialog must show connection setup, then manual entry, then rescan",
-  );
+  await scanAgain.waitFor();
+  await manualEntry.waitFor();
+  await captureMigrationScreenshot(page, "12-fresh-no-usb-wifi-instructions.png");
   assert(
     (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
       0,
@@ -12517,7 +12489,7 @@ function setupAddressDialog(page) {
 }
 
 function setupNotFoundDialog(page) {
-  return page.getByRole("dialog", { name: "We couldn't find your VibeTV" });
+  return page.getByRole("dialog", { name: /^(We couldn't find your VibeTV|Connect to WiFi)$/ });
 }
 
 async function waitForSetupDeviceStep(page, timeout = 10_000) {

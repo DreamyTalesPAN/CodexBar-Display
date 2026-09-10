@@ -238,39 +238,9 @@ void RendererESP8266::DrawStatus(
 #endif
 }
 
-void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address) {
-#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  display::AttachContext(ctx);
-
-  TFT_eSPI& tft = display::Tft();
-  display::DisplayTransaction transaction;
-  display::PrimitiveFillScreen(TFT_BLACK);
-  tft.setTextWrap(false);
-  tft.setTextFont(1);
-
-  // The UART bridge cannot distinguish a Mac from a power adapter. Give both
-  // customers a usable first step before any Companion handshake.
-  const char* lines[] = {
-      "Download Mac App", "app.vibetv.shop", "Or join WiFi:",
-      ssid.c_str(), "Then open:", address.c_str()};
-  const uint16_t colors[] = {
-      TFT_WHITE, TFT_CYAN, TFT_WHITE, TFT_CYAN, TFT_WHITE, TFT_LIGHTGREY};
-  int y = (tft.height() - (6 * display::TextPixelHeight(2) + 56)) / 2;
-  for (size_t i = 0; i < 6; ++i) {
-    display::SetTextSize(2);
-    tft.setTextColor(colors[i], TFT_BLACK);
-    tft.setCursor(display::CenteredTextX(lines[i], 2), y);
-    tft.print(lines[i]);
-    y += display::TextPixelHeight(2) + (i == 1 ? 24 : 8);
-  }
-
-  ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
-  ctx.screenDirty = false;
-#else
-  (void)ctx;
-  Serial.printf("probe_setup ssid=%s address=%s\n", ssid.c_str(), address.c_str());
-#endif
+void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx) {
+  // The Mac App owns setup guidance; the access point remains available behind it.
+  DrawStatus(ctx, "VIBE TV", "Download Mac App", "app.vibetv.shop");
 }
 
 void RendererESP8266::DrawConnectedSetupInstructions(

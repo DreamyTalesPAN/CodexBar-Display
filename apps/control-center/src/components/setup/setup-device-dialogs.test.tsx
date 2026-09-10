@@ -46,14 +46,14 @@ describe("Setup WiFi recovery", () => {
       />,
     );
     expect(
-      screen.getByRole("dialog", { name: "No VibeTV on your WiFi yet" }),
+      screen.getByRole("dialog", { name: "Connect to WiFi" }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Set up WiFi with your phone" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Scan WiFi again" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
     expect(onScanAgain).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Enter IP manually" }));
     expect(onEnterAddressManually).toHaveBeenCalledTimes(1);
