@@ -6115,6 +6115,54 @@ func TestRunDaemonLoopRetriesAfterCycleTimeout(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopWaitsForWiFiBeforeProbingDevice(t *testing.T) {
+	for _, nextMode := range []string{"wifi", "cable"} {
+		t.Run(nextMode, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			cfg := runtimeconfig.Config{DeviceID: "switching-device", CableAutoBindDisabled: true}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			waits, cycles := 0, 0
+			deps := runtimeDeps{
+				transportName: "usb", homeDir: func() (string, error) { return t.TempDir(), nil },
+				loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+				now:        time.Now, logf: func(string, ...any) {},
+				after: func(time.Duration) <-chan time.Time {
+					waits++
+					if waits > 1 {
+						return nil
+					}
+					cfg.ConnectionMode = nextMode
+					cfg.CableAutoBindDisabled = false
+					resumed := make(chan time.Time, 1)
+					resumed <- time.Now()
+					return resumed
+				},
+			}
+			err := runDaemonLoop(ctx, Options{Interval: time.Second}, deps, func(context.Context) error {
+				cycles++
+				if cfg.WiFiTransitionPending() {
+					t.Error("old USB worker probed while WiFi was joining")
+				}
+				if connectionModeChanged(deps) {
+					return ErrConnectionModeChanged
+				}
+				cancel()
+				return nil
+			})
+			if nextMode == "wifi" && !errors.Is(err, ErrConnectionModeChanged) {
+				t.Fatalf("WiFi commit must replace USB worker: %v", err)
+			}
+			if nextMode == "cable" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("Cable cancellation must resume worker: %v", err)
+			}
+			if waits < 1 || cycles != 1 {
+				t.Fatalf("waits=%d cycles=%d; want a pause before the one resumed cycle", waits, cycles)
+			}
+		})
+	}
+}
+
 func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	prepareFastTestEnv(t)
 

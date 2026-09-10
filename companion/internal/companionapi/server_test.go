@@ -962,6 +962,79 @@ func TestSetupWiFiRecoveryRequiresMatchingPendingDevice(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchSkipsUSBDuringWiFiTransition(t *testing.T) {
+	device := newCountedSelectableDeviceServer(t, "switching-device", nil, nil)
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID: "switching-device", DeviceTarget: device.URL, CableAutoBindDisabled: true,
+	})
+	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+		t.Error("automatic discovery opened USB while WiFi was joining")
+		return nil, nil
+	}
+	server.subnetTargets = func() []string { return nil }
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"deviceId":"switching-device"`) {
+		t.Fatalf("pending device must still be discovered over WiFi: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPendingWiFiSearchReturnsSelectedDeviceBeforeUnrelatedProbes(t *testing.T) {
+	for _, savedTarget := range []string{"", "http://selected.test"} {
+		t.Run("saved="+savedTarget, func(t *testing.T) {
+			cfg := runtimeconfig.Config{DeviceID: "selected", DeviceTarget: savedTarget, CableAutoBindDisabled: true,
+				KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: "other", Target: "http://other.test"}}}
+			server := newTestServer(t, cfg)
+			server.probeCacheTime = 0
+			server.defaultWiFiTarget = func() string { return "" }
+			server.subnetTargets = func() []string { return []string{"http://slow.test", "http://other.test", "http://selected.test"} }
+			slowStarted, otherAnswered, slowCancelled := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			server.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				switch req.URL.Host {
+				case "slow.test":
+					close(slowStarted)
+					<-req.Context().Done()
+					close(slowCancelled)
+					return nil, req.Context().Err()
+				case "other.test":
+					close(otherAnswered)
+				case "selected.test":
+					<-slowStarted
+					<-otherAnswered
+				}
+				id := strings.TrimSuffix(req.URL.Host, ".test")
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"kind":"hello","protocolVersion":2,"deviceId":%q,"networkMode":"station"}`, id)))}, nil
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan []deviceSearchEntry, 1)
+			go func() {
+				devices, err := server.searchDevicesOnce(ctx, cfg, "")
+				if err != nil {
+					t.Error(err)
+				}
+				done <- devices
+			}()
+			select {
+			case devices := <-done:
+				if len(devices) != 1 || devices[0].DeviceID != "selected" {
+					t.Fatalf("must return only the selected transition device: %+v", devices)
+				}
+			case <-time.After(500 * time.Millisecond):
+				cancel()
+				<-done
+				t.Fatal("selected device answered, but search still waited for unrelated probes")
+			}
+			select {
+			case <-slowCancelled:
+			case <-time.After(time.Second):
+				t.Fatal("unrelated probes were not cancelled")
+			}
+		})
+	}
+}
+
 func TestDeviceSearchSettlesFreshResultsAcrossTwoScans(t *testing.T) {
 	first := newCountedSelectableDeviceServer(t, "vibetv-a", nil, nil)
 	defer first.Close()
@@ -5059,6 +5132,33 @@ func TestStatusUsesCableHealthToExposeMissingTheme(t *testing.T) {
 	}
 }
 
+func TestCablePairingRequiresTokenWhenDeviceSupportsAuth(t *testing.T) {
+	for _, token := range []string{"", "pair-token"} {
+		t.Run("token="+token, func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: token}
+			server := newTestServer(t, cfg)
+			hello := cableHelloForTest("cable-a")
+			hello.Features = []string{protocol.FeatureCableHealthV1}
+			hello.Capabilities.Auth = &protocol.AuthCapabilities{Paired: false}
+			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+			server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{OK: true}, nil }
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			var got statusResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if !got.Device.Connected || got.Device.Paired != (token != "") {
+				t.Fatalf("live Cable identity is not pairing proof: %+v", got.Device)
+			}
+			if device := server.cableDeviceInfo(context.Background(), cfg, hello); device.Paired != (token != "") {
+				t.Fatalf("Cable action reports incorrect pairing: %+v", device)
+			}
+		})
+	}
+}
+
 func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
 	hello := cableHelloForTest("cable-a")
@@ -6142,6 +6242,7 @@ func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode: "cable",
 		DeviceID:       "vibetv-cable",
+		DeviceToken:    "pair-token",
 	})
 	wifiDiscoveryCalls := 0
 	server.subnetTargets = func() []string {

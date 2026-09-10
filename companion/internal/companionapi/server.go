@@ -1359,7 +1359,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Target:          publicTarget(statusTarget),
 		DeviceID:        strings.TrimSpace(cfg.DeviceID),
 		Connected:       false,
-		Paired:          strings.TrimSpace(cfg.DeviceToken) != "" || (cableMode && strings.TrimSpace(cfg.DeviceID) != ""),
+		Paired:          strings.TrimSpace(cfg.DeviceToken) != "",
 		Active:          strings.TrimSpace(cfg.DeviceID) != "",
 		ConnectionState: deviceConnectionSetup,
 		Stream:          streamPointer(stream),
@@ -1376,7 +1376,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
 		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) {
-			observed := deviceFromHello(cableDeviceTarget, "", hello)
+			observed := deviceFromHello(cableDeviceTarget, cfg.DeviceToken, hello)
+			device.Paired = observed.Paired || hello.Capabilities.Auth == nil
 			device.Board = observed.Board
 			device.Firmware = observed.Firmware
 			device.Capabilities = observed.Capabilities
@@ -2322,7 +2323,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Target:    publicTarget(diagnosticsTarget),
 		DeviceID:  strings.TrimSpace(cfg.DeviceID),
 		Connected: false,
-		Paired:    strings.TrimSpace(cfg.DeviceToken) != "" || (cableMode && strings.TrimSpace(cfg.DeviceID) != ""),
+		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
 		Active:    strings.TrimSpace(cfg.DeviceID) != "",
 		Stream:    streamPointer(s.streamStatus(r.Context(), diagnosticsTarget)),
 	}
@@ -3190,7 +3191,7 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	explicitTarget := strings.TrimSpace(req.Target)
 	var cableDevices []usb.CableDevice
 	var cableErr error
-	if explicitTarget == "" && s.discoverCableDevices != nil {
+	if explicitTarget == "" && !cfg.WiFiTransitionPending() && s.discoverCableDevices != nil {
 		s.firmwareUpdateStartMu.Lock()
 		if _, running := s.activeFirmwareUpdateJob(); running {
 			s.firmwareUpdateStartMu.Unlock()
@@ -4724,7 +4725,7 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 		Board:        hello.Board,
 		Firmware:     hello.Firmware,
 		Active:       true,
-		Paired:       true,
+		Paired:       strings.TrimSpace(cfg.DeviceToken) != "" || hello.Capabilities.Auth == nil,
 		Capabilities: &hello.Capabilities,
 	}, stream), providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false)
 }
@@ -7709,6 +7710,8 @@ func distinctDeviceSearchCount(devices []deviceSearchEntry) int {
 }
 
 func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	candidates := []string{}
 	if explicitTarget != "" {
 		target, err := normalizeExplicitDeviceTarget(explicitTarget)
@@ -7823,6 +7826,11 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			NetworkMode: hello.NetworkMode,
 			Known:       deviceIdentityIsKnown(cfg, hello),
 			Active:      deviceIdentityMatches(cfg, hello),
+		}
+		// A transport switch already has an explicit device choice. Do not wait
+		// for unrelated addresses once that exact device answers over WiFi.
+		if cfg.WiFiTransitionPending() && deviceIDMatchesExpected(hello, cfg.DeviceID) {
+			return []deviceSearchEntry{entry}, nil
 		}
 		if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 			byIdentity[key] = entry

@@ -489,7 +489,14 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	deviceWritesPaused := false
 
 	for {
-		if opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites() {
+		// Joining WiFi must leave USB alone, including discovery: reopening the
+		// serial port can reset the board before it finishes joining.
+		waitingForWiFi := false
+		if deps.transportName == "usb" {
+			cfg, ok := loadRuntimeConfig(deps)
+			waitingForWiFi = ok && cfg.WiFiTransitionPending()
+		}
+		if waitingForWiFi || (opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites()) {
 			if !deviceWritesPaused {
 				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
 				deviceWritesPaused = true
