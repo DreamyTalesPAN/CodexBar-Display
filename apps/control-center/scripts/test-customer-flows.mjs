@@ -3511,6 +3511,10 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   );
 
   await clickNavigation(page, "Settings");
+  const pairingError = page.getByRole("dialog");
+  await pairingError.waitFor({ timeout: 10_000 });
+  await pairingError.getByRole("button", { name: "OK", exact: true }).click();
+  await pairingError.waitFor({ state: "detached", timeout: 5_000 });
   await page.getByRole("button", { name: "Run setup again" }).click();
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
@@ -6628,9 +6632,13 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   await page
     .getByText("Display selection could not be saved.")
     .waitFor({ timeout: 10_000 });
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
   await gemini.click();
   await waitForCondition(
-    () => displayWrites.length >= 3,
+    () => {
+      const providerIds = JSON.parse(displayWrites.at(-1) || "{}").providerIds;
+      return displayWrites.length >= 3 && providerIds?.includes("gemini");
+    },
     "the failed Automatic pool save was not retried",
     15_000,
   );

@@ -84,7 +84,7 @@ export function SetupDialog({
         showCloseButton={showCloseButton}
       >
         <DialogHeader className="gap-1.5">
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 pr-6">
             {Icon ? (
               <Icon
                 className={cn(
