@@ -4271,3 +4271,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Updates uses the same setup dialog for failed firmware jobs, preserving the existing error text, retry policy and report action. A failed update no longer shows an inline red banner or a completed progress bar. Dismissal survives repeated status polls for the same job; a new failed attempt opens its own popup.
 - Evidence: App 119 installed from the local DMG rejected an intentionally wrong SHA-256 during artifact validation, before upload. Firmware 115, boot ID, saved settings and animation remained unchanged. The original inline error text overlapped its buttons, prompting this popup correction.
 - Native validation: local DMG 120, device 14799300 / firmware 115, repeated invalid-hash rejection before upload. The shared Update failed popup rendered correctly and closed; unchanged boot ID/settings and increasing animation frames verified. Eleven DOM tests, focused firmware browser cases, TypeScript, lint and customer-copy checks pass.
+
+
+## 2026-09-10 — Enforce animation-free popup dismissal
+
+- User approval: Paul requested "error states sind ab jetzt immer pop ups" using the setup wizard as the reference, and fixing matrix issues along the way.
+- Approved customer-visible result: The shared popup remains immediately visible and closes immediately. An inline animation override enforces the already-approved absence of enter/exit keyframes despite inherited stylesheet ordering; layout, text and controls stay the same.
+- Validation: A browser regression checks computed animation names for both open and closed states against the actual production stylesheet.

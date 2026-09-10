@@ -1664,6 +1664,16 @@ async function testSettingsErrorPopupSurvivesHealthyPoll(browser, appUrl) {
   await page.getByRole("button", { name: "Switch to USB-C", exact: true }).click();
   const error = page.getByRole("dialog", { name: "Cable VibeTV did not answer.", exact: true });
   await error.waitFor({ timeout: 10_000 });
+  const animations = await error.evaluate((dialog) => ["open", "closed"].map((state) => {
+    const probe = dialog.cloneNode(false);
+    probe.setAttribute("data-state", state);
+    document.body.appendChild(probe);
+    const animation = getComputedStyle(probe).animationName;
+    probe.remove();
+    return animation;
+  }));
+  assert(animations.every((animation) => animation === "none"),
+    `The production stylesheet must not animate either popup state: ${animations}`);
   for (let count = 0; count < 2; count += 1) {
     await page.waitForResponse((response) => response.url().endsWith("/v1/status") && response.ok());
   }
