@@ -3902,13 +3902,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             label: previewRuntimeLaunchAgentLabel
         )
         _ = launchctlExitStatus(["bootout", service])
-        guard !legacyServiceIsLoaded(
-            label: previewRuntimeLaunchAgentLabel
-        ) else {
-            NSLog("VibeTV Control Center could not stop its local preview runtime")
-            return false
+        // bootout can return while the old service is still exiting. Wait for
+        // launchd to remove it before registering the replacement.
+        let deadline = Date().addingTimeInterval(runtimeUnregistrationQuiesceTimeout)
+        while legacyServiceIsLoaded(label: previewRuntimeLaunchAgentLabel) {
+            guard Date() < deadline else {
+                NSLog("VibeTV Control Center could not stop its local preview runtime")
+                return false
+            }
+            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
         }
-        try? await Task<Never, Never>.sleep(for: .milliseconds(250))
         return true
     }
 
