@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PreferenceHealthState } from "../control-center-types";
+import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
   PROVIDER_LOADING_LOG_INTERVAL_MS,
@@ -65,6 +65,14 @@ const copilot = provider({
   value: false,
 });
 
+const usage: UsageSnapshot = {
+  providers: ["claude", "codex"].map((id) => ({
+    id, label: id, session: 0, weekly: 0, resetSecs: 0, usageMode: "used",
+    sessionUnavailable: true, weeklyUnavailable: true,
+    windows: [{ id: "weekly", label: "Weekly", usedPercent: 0 }],
+  })),
+};
+
 function render(
   props: Partial<Parameters<typeof SetupProvidersScreen>[0]> = {},
 ) {
@@ -75,6 +83,7 @@ function render(
       onToggle={vi.fn()}
       pendingCheckIds={new Set<string>()}
       pendingPreferenceIds={new Set<string>()}
+      usage={usage}
       providers={[claude, copilot]}
       {...props}
     />,
@@ -101,6 +110,7 @@ describe("SetupProvidersScreen", () => {
   it("adds another still-checking line every twenty seconds", () => {
     vi.useFakeTimers();
     const props = {
+      usage,
       loading: true,
       onCheckAgain: vi.fn(),
       onContinue: vi.fn(),
@@ -152,6 +162,35 @@ describe("SetupProvidersScreen", () => {
     expect(html).toMatch(
       /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
     );
+  });
+
+  it.each([
+    null,
+    { providers: [] },
+    { providers: [{ ...usage.providers[0], usageUnavailable: true }] },
+    { providers: [{ ...usage.providers[0], stale: true }] },
+    { providers: [{ ...usage.providers[0], windows: [], totalTokens: 100 }] },
+    { providers: [{ ...usage.providers[1] }] },
+  ] as (UsageSnapshot | null)[])("waits for displayable usage from the enabled provider: %j", (reading) => {
+    const html = render({ providers: [claude], usage: reading });
+    expect(html).toContain('data-slot="spinner"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*aria-label="Claude Code"/);
+  });
+
+  it("removes the spinner when a 0% reading arrives without resets or token history", () => {
+    const props = {
+      onCheckAgain: vi.fn(), onContinue: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>(),
+      providers: [claude, { ...copilot, value: true }],
+    };
+    const { rerender, container } = renderDom(<SetupProvidersScreen {...props} usage={null} />);
+    expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(true);
+    expect(container.querySelector('[data-slot="spinner"]')).not.toBeNull();
+    rerender(<SetupProvidersScreen {...props} usage={usage} />);
+    expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(false);
+    expect(container.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Check GitHub Copilot again" })).toBeTruthy();
   });
 
   it("continues once an enabled provider is ready", () => {
@@ -343,10 +382,11 @@ describe("SetupProvidersScreen", () => {
   // A provider that cannot produce a reading must not reach the display step:
   // pinning VibeTV to it would leave the screen permanently blank.
   it("only lets providers that can show something onto the display step", () => {
-    expect(setupProviderCanDisplay(claude)).toBe(true);
+    expect(setupProviderCanDisplay(claude, usage)).toBe(true);
     expect(
       setupProviderCanDisplay(
         provider({ health: "stale", label: "Codex", providerId: "codex" }),
+        usage,
       ),
     ).toBe(true);
     expect(
@@ -357,6 +397,7 @@ describe("SetupProvidersScreen", () => {
           providerId: "codex",
           value: false,
         }),
+        usage,
       ),
     ).toBe(false);
     for (const health of [
@@ -371,6 +412,7 @@ describe("SetupProvidersScreen", () => {
       expect(
         setupProviderCanDisplay(
           provider({ health, label: "Codex", providerId: "codex" }),
+          usage,
         ),
       ).toBe(false);
     }

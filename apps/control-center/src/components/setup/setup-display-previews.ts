@@ -15,7 +15,7 @@ export function displayPreviewFor(
   if (!provider) {
     return null;
   }
-  const unavailable = provider.usageUnavailable === true;
+  const unavailable = provider.stale === true || provider.usageUnavailable === true;
   return {
     providerLabel: provider.label,
     resetLabel: unavailable ? null : formatReset(provider.windows?.[0]?.resetSecs ?? provider.resetSecs),

@@ -41,6 +41,7 @@ function provider(): ProviderItem {
     effectiveValue: true,
     health: { message: "", service: "operational", state: "healthy" },
     id: "codexbar.providers.codex.enabled",
+    providerId: "codex",
     label: "Codex",
     owner: "codexbar",
     value: true,
@@ -95,7 +96,9 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     step: "display",
     themeInstallLogs: [],
     themes: [],
-    usage: null,
+    usage: { providers: ["codex", "claude"].map((id) => ({
+      id, label: id, session: 0, weekly: 0, resetSecs: 0, usageMode: "used",
+    })) },
     welcomeLines: [],
     ...overrides,
   };

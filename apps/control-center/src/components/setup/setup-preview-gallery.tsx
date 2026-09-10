@@ -511,6 +511,7 @@ export function SetupPreviewGallery() {
             onToggle={noop}
             pendingCheckIds={NO_PENDING_CHECKS}
             pendingPreferenceIds={NO_PENDING_CHECKS}
+            usage={null}
             providers={PROVIDERS}
           />
         );
@@ -523,6 +524,7 @@ export function SetupPreviewGallery() {
               onToggle={noop}
               pendingCheckIds={NO_PENDING_CHECKS}
               pendingPreferenceIds={NO_PENDING_CHECKS}
+              usage={null}
               providers={PROVIDERS.slice(0, 3)}
             />
             <SetupUsageDialog

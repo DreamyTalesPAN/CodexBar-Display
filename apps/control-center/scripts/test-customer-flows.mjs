@@ -6619,6 +6619,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const requests = [];
   let providerRetries = 0;
+  const delayedUsage = { ok: true, providers: [] };
   let providerHealthReadyAt = Number.POSITIVE_INFINITY;
   const claudePreference = {
     ...providerPreferenceFixture("claude", "Claude"),
@@ -6669,6 +6670,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
         providerId === "claude" ? "auth_required" : "ready",
       );
     },
+    usageResponse: delayedUsage,
     preferencesResponse: checkingPreferences,
     onPreferencesResponse: () =>
       Date.now() >= providerHealthReadyAt
@@ -6698,10 +6700,31 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
         (request) =>
           request.path === "/v1/preferences" &&
           request.at >= providerHealthReadyAt,
-      ) && !(await providersContinue.isDisabled()),
-    "the read-only provider-health poll did not open Continue after the cached descriptor became healthy",
+      ),
+    "the read-only provider-health poll did not observe the healthy descriptor",
     15_000,
   );
+
+  assert(await providersContinue.isDisabled(),
+    "healthy status without usage must not unlock Continue");
+  const codexRow = providersScreen.getByRole("listitem").filter({
+    has: page.getByRole("switch", { name: "Codex" }),
+  });
+  assert(await codexRow.locator('[data-slot="spinner"]').count() === 1,
+    "Codex must keep its spinner until usage arrives");
+  assert(await codexRow.getByRole("switch", { name: "Codex" }).isEnabled(),
+    "a provider waiting for usage must remain switchable");
+  assert(requests.every((request) => request.path !== "/v1/setup/providers/complete"),
+    "missing usage must not send setup completion");
+  delayedUsage.providers.push({
+    id: "codex", label: "Codex", usageMode: "used",
+    session: 0, weekly: 0, sessionUnavailable: true, weeklyUnavailable: true,
+    windows: [{ id: "weekly", label: "Weekly", usedPercent: 0 }],
+  });
+  await waitForEnabled(page, providersContinue,
+    "the existing polling must unlock Continue on a real 0% reading");
+  assert(await codexRow.locator('[data-slot="spinner"]').count() === 0,
+    "Codex must stop spinning once its usage can be displayed");
 
   await providersScreen
     .getByText(
@@ -6795,6 +6818,10 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
   await displayScreen.waitFor({ timeout: 15_000 });
   await displayScreen.getByRole("button", { name: /Manual/ }).waitFor();
+  assert(await displayScreen.getByText("Usage unavailable", { exact: true }).count() === 0,
+    "the display preview must use the same available usage that admitted setup");
+  assert(await displayScreen.getByText("0%", { exact: true }).count() > 0,
+    "the real zero must be visible in the display preview");
   // Picking a mode is a draft until Continue: choosing Manual and coming back
   // to Automatic must leave exactly one write, made from the live inventory.
   await displayScreen.getByRole("button", { name: /Manual/ }).click();

@@ -5,6 +5,9 @@ import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
 
 const providerPicker: ProviderPickerProps = {
+  usage: { providers: ["codex", "claude", "cursor"].map((id) => ({
+    id, label: id, session: 0, weekly: 0, resetSecs: 0, usageMode: "used",
+  })) },
   display: null,
   items: [],
   pendingCheckIds: new Set(),

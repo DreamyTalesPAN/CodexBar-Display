@@ -3029,6 +3029,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           normalizeCaughtError(error, "Usage needs attention."),
         );
         if (normalized.code === "usage_unavailable") {
+          setUsage(null);
           setUsageError(null);
           return;
         }
@@ -4150,6 +4151,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     hasEnteredControlCenter,
   );
   const providerPickerProps = {
+    usage,
     display: providerDisplay,
     displayError: providerDisplayError,
     displayPendingProviderId: pendingProviderDisplayId,
@@ -4345,9 +4347,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     return startProviderPreferencesPolling({
-      refresh: () => refreshProviderPreferences({ quiet: true }),
+      refresh: async () => {
+        await Promise.all([
+          refreshProviderPreferences({ quiet: true }),
+          refreshUsage({ quiet: true }),
+        ]);
+      },
     });
-  }, [providerPreferencesPollingWanted, refreshProviderPreferences]);
+  }, [providerPreferencesPollingWanted, refreshProviderPreferences, refreshUsage]);
 
   useEffect(() => {
     if (!providerDisplayWanted) {
@@ -4477,7 +4484,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
   // and into the Manual list, where pinning to it produced a blank device.
-  const displayableProviders = setupProviders.filter(setupProviderCanDisplay);
+  const displayableProviders = setupProviders.filter((provider) =>
+    setupProviderCanDisplay(provider, usage),
+  );
   const enabledProviderIds = setupProviders
     .filter((item) => item.value)
     .map((item) => item.providerId)

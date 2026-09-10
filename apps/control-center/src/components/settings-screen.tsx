@@ -122,7 +122,9 @@ export function SettingsScreen({
   // that can actually produce a reading. Offering every switched-on provider,
   // as the design board's wording does, lets a customer pin VibeTV to a
   // provider that shows nothing.
-  const displayable = providers.filter(setupProviderCanDisplay);
+  const displayable = providers.filter((provider) =>
+    setupProviderCanDisplay(provider, providerPicker.usage),
+  );
   const enabledProviderIds = providers
     .filter((item) => item.value)
     .map((item) => item.providerId);
@@ -398,6 +400,7 @@ export function SettingsScreen({
           onToggle={(provider, enabled) =>
             void providerPicker.onPreferenceChange(provider, enabled)
           }
+          usage={providerPicker.usage}
           pendingCheckIds={providerPicker.pendingCheckIds}
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}

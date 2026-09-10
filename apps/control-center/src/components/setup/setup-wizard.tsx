@@ -823,6 +823,7 @@ export function SetupWizard(props: SetupWizardProps) {
           pendingPreferenceIds={props.pendingPreferenceIds}
           loading={props.providersLoading}
           providers={props.providers}
+          usage={props.usage}
         />
         <SetupStepFailedDialog
           error={props.providerError}

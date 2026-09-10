@@ -31,6 +31,7 @@ function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProp
     onSaveStandby: vi.fn(),
     onStandbyBrightnessChange: vi.fn(),
     providerPicker: {
+      usage: null,
       display: null,
       items: [], pendingCheckIds: new Set(), pendingPreferenceIds: new Set(),
       onCheck: vi.fn(), onDisplayChange: vi.fn(), onPreferenceChange: vi.fn(),
