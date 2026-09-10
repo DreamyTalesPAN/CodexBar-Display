@@ -740,7 +740,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testOfflineActiveDeviceOpensReadOnlyPicker(
+    await testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(
       browser,
       appContext.appUrl,
     );
@@ -2509,8 +2509,8 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
   await createSetupSupportReport(page);
   await page.getByText(/^Report saved/).waitFor({ timeout: 15_000 });
   await page.keyboard.press("Escape");
-  // The empty scan has answered by now, which is what hands over to the picker.
-  await waitForSetupDeviceStep(page);
+  // An empty scan keeps Welcome and offers recovery in the existing dialog.
+  await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
 
   await connectManualVibeTVAddress(page, "172.30.12.34");
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
@@ -2544,7 +2544,7 @@ async function testManualVibeTVTargetValidationErrors(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
   await connectManualVibeTVAddress(page, "172.30.12.999");
   const dialog = setupAddressDialog(page);
   await dialog
@@ -2588,7 +2588,7 @@ async function testManualVibeTVTargetRejectsUnreachableAddress(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
   await connectManualVibeTVAddress(page, "172.30.12.99");
   // The failure belongs to the address the customer typed, so it stays in that
   // dialog with the address still in the field. It used to close the dialog and
@@ -2649,7 +2649,7 @@ async function testManualVibeTVTargetRejectsIdentityChange(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
   await connectManualVibeTVAddress(page, "172.30.12.34");
   await waitForCondition(
     () => selectRequests.length === 1,
@@ -2748,7 +2748,7 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
   await page.close();
 }
 
-async function testOfflineActiveDeviceOpensReadOnlyPicker(browser, appUrl) {
+async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const deviceWriteRequests = [];
@@ -2782,6 +2782,11 @@ async function testOfflineActiveDeviceOpensReadOnlyPicker(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
+  assert(deviceWriteRequests.length === 0,
+    "A saved offline pairing must open Overview without adopting another VibeTV");
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Run setup again" }).click();
   await waitForSetupDeviceStep(page);
   await page.getByRole("radio", { name: "VibeTV device-82" }).waitFor({
     timeout: 10_000,
@@ -3710,9 +3715,13 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
+  await setupScreen(page, SETUP_WELCOME_SCREEN).waitFor({ timeout: 10_000 });
   const notFound = setupNotFoundDialog(page);
   await notFound.waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("heading", { name: SETUP_DEVICE_SCREEN }).count()) === 0,
+    "An empty discovery must keep Welcome behind the recovery dialog, not show an empty device picker",
+  );
   assert(
     (await page.getByRole("heading", { name: "Download Mac App" }).count()) ===
       0 &&

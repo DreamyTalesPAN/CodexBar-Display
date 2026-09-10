@@ -4191,7 +4191,8 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-09 — Remove the undesigned empty setup picker
 
-- User reported an empty `Choose your VibeTV` screen before providers and explicitly requested the fix. Claude Design's single-Cable route remains Welcome, connecting log with firmware check, providers, display mode, theme, live preview; errors use existing dialogs.
+- User approval: Paul reported an empty `Choose your VibeTV` screen before providers and explicitly requested the fix, then accepted the tested result with "ok passt jetzt. push erstmal den aktuellen stand." in task `01a07b46-26d4-7830-bc84-20a5c6d7eb85`.
+- Approved customer-visible result: Claude Design's single-Cable route remains Welcome, connecting log with firmware check, providers, display mode, theme, live preview; errors use existing dialogs. Empty discovery keeps Welcome behind the recovery dialog instead of showing an empty device picker. The browser regression follows this approved state without changing the UI.
 - A fresh successful Cable health response now proves connection independently of the first usage frame. Readiness still requires the existing rendered-frame gate; stale hello data cannot keep a disconnected device online after the bounded loss grace.
 - Reuse the currently connected setup device when returning from providers and reset the existing connect sequence on Back. Remove the usage-wait override of discovery state. An unknown saved mode no longer silently means WiFi.
 - Render the existing Welcome screen when there is no connection or selection to show. Preserve the completed connecting log until the next setup snapshot can advance. Remove the misleading automatic-connection fallback sentence; no new screen or timer.

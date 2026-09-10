@@ -925,8 +925,8 @@ bool testFirmwareLoadsOnlyExplicitActiveTheme(const char* mainPath) {
     return false;
   }
 
-  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache()");
-  const std::size_t loadEnd = mainSource.find("#endif", loadStart);
+  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache() {");
+  const std::size_t loadEnd = mainSource.find("\n}", loadStart);
   if (!expect(
           loadStart != std::string::npos && loadEnd != std::string::npos,
           "active ThemeSpec cache loader must remain discoverable")) {
