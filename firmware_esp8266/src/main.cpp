@@ -566,6 +566,10 @@ bool beginConnectionTransition(
 }
 
 bool confirmConnectionTransition(const String& expectedDeviceID, String& status) {
+  if (rebootPending) {
+    status = "restart pending";
+    return false;
+  }
   if (expectedDeviceID != deviceID) {
     status = "deviceId does not match";
     return false;
@@ -1879,6 +1883,10 @@ void addCorsHeaders() {
 
 void handleHello() {
   addCorsHeaders();
+  if (rebootPending) {
+    webServer.send(503, "text/plain", "restart pending");
+    return;
+  }
   if (requestAuthToken().length() > 0 && !requireWriteAuth()) {
     return;
   }
@@ -2050,7 +2058,11 @@ bool handleSerialControlLine(const String& line) {
     return handleCableTransferRequest(doc, op);
   }
   if (strcmp(op, "hello") == 0) {
-    codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
+    // Saved settings already contain the next mode. Only the next boot can
+    // advertise that mode as ready for pairing and transition confirmation.
+    if (!rebootPending) {
+      codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
+    }
   } else if (strcmp(op, "status") == 0) {
     emitSerialStatus();
   } else if (strcmp(op, "health") == 0) {

@@ -96,6 +96,10 @@ window. Saving credentials reboots into the normal 60-second association and
 identity-confirmation window. A failed WiFi association or expired setup or
 confirmation window restores the previous mode and reboots once.
 
+Until a scheduled restart completes, firmware withholds serial hello, returns
+HTTP 503 for `/hello`, and rejects confirmation. Persisted target settings must
+not be advertised as an already running transport before that restart.
+
 The Mac App customer path uses the narrower serial `configure-wifi` request:
 it validates and stores the entered SSID/key through the same credential owner,
 then begins the existing Cable-to-WiFi transaction. The secret is never echoed
@@ -253,8 +257,10 @@ still needs the direct-Mac and dock measurement gate above.
 
 The full Cable hello on the branch firmware is 1,161 bytes including newline.
 After opening the CH340 behind the D6000 dock, the first requested hello took
-1,103 ms; four later requests took 111-162 ms. The Companion therefore keeps a
-2,048-byte hello buffer and a bounded two-second identity window. The older
+1,103 ms; four later requests took 111-162 ms. A WiFi-mode boot measured
+6.9 seconds on device 14799300, and a request sent before startup was lost.
+The Companion keeps a 2,048-byte hello buffer and re-sends the read-only
+identity request on the same port within a ten-second total window. The older
 1,024-byte/300-ms reader both truncated the real capability line and expired
 before the first response, so it could not resolve the supplier hardware.
 

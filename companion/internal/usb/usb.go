@@ -17,11 +17,9 @@ const (
 	closeTimeout         = 200 * time.Millisecond
 	reopenSettleDuration = 50 * time.Millisecond
 	writeTimeout         = 2 * time.Second
-	// Opening the supplier CH340 can restart the ESP8266. Behind the D6000 dock
-	// the first full 1161-byte hello then arrived after 1103 ms, while later
-	// requests took 111-162 ms. Identity resolution is a one-shot operation, so
-	// keep enough bounded room for that real first response.
-	helloReadWindow      = 2 * time.Second
+	// A WiFi-mode supplier device measured 6.9 seconds to boot after opening
+	// USB. Bound the entire repeated hello exchange, without reopening it.
+	helloReadWindow      = 10 * time.Second
 	wifiScanReadWindow   = 12 * time.Second
 	helloReadStepTimeout = 80 * time.Millisecond
 	helloReadBufferBytes = 2048

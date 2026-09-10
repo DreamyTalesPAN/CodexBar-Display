@@ -198,38 +198,31 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 }
 
 func (s *Sender) captureHelloAfterOpenLocked() {
-	// Identity is a normal control request. Never reset the ESP8266 just to
-	// learn which device owns a serial port.
 	_ = s.port.ResetInputBuffer()
 	s.sleep(s.settleDuration)
-	if err := writeWithTimeout(s.port, helloRequestLine, s.writeTimeout); err != nil {
-		s.hello = protocol.DeviceHello{}
-		s.helloSeen = false
-		s.capabilities = protocol.UnknownDeviceCapabilities()
-		s.capsCollected = true
-		return
+	// Opening a supplier USB adapter can reset a WiFi-mode device. Re-send
+	// hello on the same port while it boots; an early request can be lost.
+	deadline := time.Now().Add(s.helloWindow)
+	var hello protocol.DeviceHello
+	seen := false
+	for time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		if err := writeWithTimeout(s.port, helloRequestLine, min(s.writeTimeout, remaining)); err != nil {
+			break
+		}
+		hello, seen = readHelloFromPort(s.port, min(time.Second, time.Until(deadline)))
+		if seen {
+			break
+		}
 	}
-	s.captureHelloLocked()
-	_ = s.port.ResetInputBuffer()
-}
-
-func (s *Sender) captureHelloLocked() {
-	if s.port == nil {
-		return
+	s.hello = hello.Normalize()
+	s.helloSeen = seen
+	s.capabilities = protocol.UnknownDeviceCapabilities()
+	if seen {
+		s.capabilities = protocol.CapabilitiesFromHello(s.hello)
 	}
-	hello, seen := readHelloFromPort(s.port, s.helloWindow)
-	if !seen {
-		s.hello = protocol.DeviceHello{}
-		s.helloSeen = false
-		s.capabilities = protocol.UnknownDeviceCapabilities()
-		s.capsCollected = true
-		return
-	}
-	hello = hello.Normalize()
-	s.hello = hello
-	s.helloSeen = true
-	s.capabilities = protocol.CapabilitiesFromHello(hello)
 	s.capsCollected = true
+	_ = s.port.ResetInputBuffer()
 }
 
 func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) {

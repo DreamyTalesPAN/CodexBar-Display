@@ -808,3 +808,24 @@ func (m *mockSerialPort) SetReadTimeout(time.Duration) error { return nil }
 func (m *mockSerialPort) ResetInputBuffer() error            { return nil }
 func (m *mockSerialPort) SetDTR(bool) error                  { return nil }
 func (m *mockSerialPort) SetRTS(bool) error                  { return nil }
+
+func TestDeviceHelloRetriesLostBootRequestWithoutReopening(t *testing.T) {
+	port := newMockSerialPort()
+	port.readHook = func(_ int) {
+		port.mu.Lock()
+		defer port.mu.Unlock()
+		if port.writeCalls >= 2 && len(port.readQueue) == 0 {
+			port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"wifi"}}}` + "\n")}
+		}
+	}
+	opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: 1500 * time.Millisecond})
+	defer sender.Close()
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.DeviceID != "14799300" {
+		t.Fatalf("boot request retry failed: %+v, %v", hello, err)
+	}
+	if opener.openCount("/dev/mock") != 1 || port.closeCalls != 0 || port.writeCalls != 2 {
+		t.Fatalf("expected two hello requests on one open port: opens=%d closes=%d writes=%d", opener.openCount("/dev/mock"), port.closeCalls, port.writeCalls)
+	}
+}

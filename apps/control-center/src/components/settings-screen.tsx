@@ -38,6 +38,7 @@ import {
   deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  type ApiError,
   type DeviceInfo,
   type StandbySettings,
 } from "./control-center-types";
@@ -54,6 +55,7 @@ export type SettingsScreenProps = {
   device: DeviceInfo | null;
   brightness: number | null;
   busyAction: string | null;
+  actionError?: ApiError | null;
   connectionMode: "cable" | "wifi";
   standby: StandbySettings | null;
   onBrightnessChange: (value: number) => void;
@@ -71,6 +73,7 @@ export function SettingsScreen({
   device,
   brightness,
   busyAction,
+  actionError,
   connectionMode,
   standby,
   onBrightnessChange,
@@ -143,6 +146,13 @@ export function SettingsScreen({
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
+      {actionError ? (
+        <Alert className="mb-4" variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>{actionError.message}</AlertTitle>
+          <AlertDescription>{actionError.nextAction}</AlertDescription>
+        </Alert>
+      ) : null}
       <SettingsSection title="Connection">
         <div
           aria-label="Connection mode"

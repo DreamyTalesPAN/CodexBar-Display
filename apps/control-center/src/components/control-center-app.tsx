@@ -4801,6 +4801,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
+            actionError={lastError}
             automaticPreviews={setupPreviews}
             brightness={brightness}
             busyAction={

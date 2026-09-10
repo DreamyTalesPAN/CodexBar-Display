@@ -69,6 +69,17 @@ describe("Settings connection cards", () => {
     expect(screen.getByRole("button", { name: next }).getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("shows a failed connection action while keeping the saved mode and retry available", () => {
+    const view = render(<SettingsScreen {...props({ connectionMode: "wifi", actionError: {
+      code: "cable_identity_unavailable", message: "Cable VibeTV did not answer.", nextAction: "Reconnect the data cable and try again.",
+    } })} />);
+    expect(screen.getByRole("alert").textContent).toContain("Reconnect the data cable and try again.");
+    expect(screen.getByRole("button", { name: "WiFi" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByRole("button", { name: "USB-C" }) as HTMLButtonElement).disabled).toBe(false);
+    view.rerender(<SettingsScreen {...props({ connectionMode: "wifi" })} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("blocks unsupported transports and confirmation during a firmware update", () => {
     const settings = props({ device: {
       active: true, connected: true, ready: true, paired: true,
