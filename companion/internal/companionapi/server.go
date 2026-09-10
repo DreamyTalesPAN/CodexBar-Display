@@ -1393,7 +1393,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 							// The device just answered. Usage may not exist yet on a fresh Mac.
 							reachable = true
 							device.Connected = true
-							device = withDeviceHealth(device, health)
+							device = s.withVerifiedDeviceHealth(device, health, cableDeviceTarget, cfg.DeviceToken, false)
 						}
 					}
 				}
@@ -4035,7 +4035,7 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 		device := s.cableDeviceInfo(r.Context(), cfg, hello)
 		if hello.HasFeature(protocol.FeatureCableHealthV1) {
 			if health, err := s.readCableHealth(port, cfg.DeviceID); err == nil {
-				device = withDeviceHealth(device, health)
+				device = s.withVerifiedDeviceHealth(device, health, cableDeviceTarget, cfg.DeviceToken, false)
 			} else {
 				device = withDeviceHealthProbeError(device, err)
 			}

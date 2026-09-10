@@ -5138,6 +5138,61 @@ func TestStatusUsesCableHealthToExposeMissingTheme(t *testing.T) {
 	}
 }
 
+func TestCableReadinessUsesVerifiedLiveSurface(t *testing.T) {
+	for _, endpoint := range []string{"/v1/status", "/v1/device"} {
+		for _, tc := range []struct {
+			name          string
+			kind          string
+			renderOK      bool
+			streamHealthy bool
+			wantReady     bool
+		}{
+			{"usage", "theme_spec_usage", true, true, true},
+			{"countdown repaint", "reset", true, true, true},
+			{"failed render", "reset", false, true, false},
+			{"failed stream", "reset", true, false, false},
+			{"setup screen", "connected_setup", true, true, false},
+		} {
+			t.Run(endpoint+"/"+tc.name, func(t *testing.T) {
+				server := newTestServer(t, runtimeconfig.Config{
+					ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token",
+				})
+				hello := cableHelloForTest("cable-a")
+				hello.Features = []string{protocol.FeatureCableHealthV1}
+				server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+				server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+				server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+				server.streamStatus = func(context.Context, string) displayStreamInfo {
+					return displayStreamInfo{Running: true, Healthy: tc.streamHealthy,
+						Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+				}
+				server.readCableHealth = func(string, string) (deviceHealth, error) {
+					full, partial := uint64(3), uint64(5)
+					health := deviceHealth{OK: true}
+					health.Display.ThemeSpec.Active = true
+					health.Display.ThemeSpec.Path = "/themes/u/clippy.json"
+					health.Display.ThemeSpec.RenderOK = &tc.renderOK
+					health.Render.FullCount, health.Render.PartialCount = &full, &partial
+					health.Render.LastKind = tc.kind
+					return health, nil
+				}
+				rec := httptest.NewRecorder()
+				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+				}
+				var got deviceActionResponse
+				if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				if got.Device.Ready != tc.wantReady {
+					t.Fatalf("ready=%v want %v for %s: %+v", got.Device.Ready, tc.wantReady, tc.kind, got.Device)
+				}
+			})
+		}
+	}
+}
+
 func TestCablePairingRequiresTokenWhenDeviceSupportsAuth(t *testing.T) {
 	for _, token := range []string{"", "pair-token"} {
 		t.Run("token="+token, func(t *testing.T) {
