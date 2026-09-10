@@ -151,7 +151,7 @@ export function SettingsScreen({
           role="group"
         >
           {([
-            { mode: "cable", label: "USB-C", description: "Works without network access. Recommended.", Icon: CircleArrowRight, supported: cableSupported },
+            { mode: "cable", label: "USB-C", description: "Requires a data cable connected to this Mac.", Icon: CircleArrowRight, supported: cableSupported },
             { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", Icon: Wifi, supported: wifiSupported },
           ] as const).map(({ mode, label, description, Icon, supported }) => (
             <Item
@@ -185,7 +185,7 @@ export function SettingsScreen({
               <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
               <DialogDescription>
                 {requestedMode === "cable"
-                  ? "VibeTV connects to this Mac over the cable and turns WiFi off. Your saved network, themes, providers and brightness stay saved."
+                  ? "Connect VibeTV to this Mac with a data cable. WiFi stays on until the app confirms the cable connection. Your saved network, themes, providers and brightness stay saved."
                   : "VibeTV connects to your saved WiFi network. If network details are needed, WiFi setup opens. Themes, providers and brightness stay saved."}
               </DialogDescription>
             </DialogHeader>

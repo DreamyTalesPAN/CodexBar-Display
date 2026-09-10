@@ -3610,35 +3610,11 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			}
 			cableHelloReady = true
 		} else {
-			if errcode.Of(err) == errcode.TransportMultipleDevices {
-				writeCableResolutionError(w, err)
-				return
-			}
-			wifiHello, helloErr := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
-			if helloErr != nil || !strings.EqualFold(strings.TrimSpace(wifiHello.DeviceID), expectedDeviceID) {
-				writeError(w, http.StatusConflict, "wifi_device_not_found", "The selected WiFi VibeTV is not available.", "Connect this VibeTV with a data Cable, then try again.")
-				return
-			}
-			if !supportsTransport(wifiHello, "usb") {
-				writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support Cable mode.", "Keep this VibeTV connected through WiFi.")
-				return
-			}
-			var response struct {
-				OK bool `json:"ok"`
-			}
-			if err := s.doJSON(r.Context(), http.MethodPost, cfg.DeviceTarget, "/api/connection-mode", cfg.DeviceToken, struct {
-				DeviceID string `json:"deviceId"`
-				Mode     string `json:"mode"`
-			}{DeviceID: cfg.DeviceID, Mode: "cable"}, &response); err != nil {
-				writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV powered on and retry.")
-				return
-			}
-			port, hello, err = s.waitForCableMode(r.Context(), expectedDeviceID)
-			if err != nil {
-				writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not finish changing its connection.", "Keep VibeTV connected by Cable, then try again.")
-				return
-			}
-			cableHelloReady = true
+			// Firmware capabilities describe its protocol, not whether this
+			// physical board has a working USB data path. Keep WiFi running
+			// until this exact device has actually answered over the cable.
+			writeCableResolutionError(w, err)
+			return
 		}
 	}
 	if !cableHelloReady {

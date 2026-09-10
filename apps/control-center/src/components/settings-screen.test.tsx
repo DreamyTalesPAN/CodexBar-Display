@@ -282,7 +282,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html.indexOf(">Connection</h2>")).toBeLessThan(html.indexOf(">Display</h2>"));
     expect(html).toContain('aria-label="USB-C" aria-pressed="true"');
     expect(html).toContain('aria-label="WiFi" aria-pressed="false"');
-    expect(html).toContain("Works without network access. Recommended.");
+    expect(html).toContain("Requires a data cable connected to this Mac.");
     expect(html).toContain("VibeTV can sit anywhere on your desk.");
   });
 

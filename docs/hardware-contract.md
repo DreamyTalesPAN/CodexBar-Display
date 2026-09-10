@@ -99,8 +99,9 @@ confirmation window restores the previous mode and reboots once.
 The Mac App customer path uses the narrower serial `configure-wifi` request:
 it validates and stores the entered SSID/key through the same credential owner,
 then begins the existing Cable-to-WiFi transaction. The secret is never echoed
-or logged. WiFi-to-Cable starts on the active authenticated HTTP path, then the
-Companion resolves and confirms the same `deviceId` over Cable. Brightness and
+or logged. WiFi-to-Cable requires the same `deviceId` to answer over USB before the
+Companion requests any mode change. Firmware capability flags alone do not
+prove a physical USB data path. No USB identity means WiFi stays unchanged. Brightness and
 standby use one serial `settings` request in Cable mode and the existing HTTP
 settings endpoint in WiFi mode; both finish in the same firmware validation,
 persistence, apply, and complete readback owner.

@@ -4224,3 +4224,8 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul approved "Download Mac App from app.vibetv.shop" on first power with WiFi setup available in the background, then the Cable/WiFi selector when the Mac App discovers the device: "ok dann bau das so".
 - Approved customer-visible result: A single newly discovered Cable device offers both connection choices. WiFi can be provisioned over that cable without an existing WiFi discovery; the chooser says "Set up over Cable". Saved choices survive later starts. Fresh firmware shows the Mac App address plus phone WiFi instructions; it does not infer a connected Mac from power. After updating, older devices retain their settings and may switch in both directions.
 - Legacy boundary: firmware 1.0.41/1.0.42 accepts serial display frames but lacks the new serial identity, pairing, and firmware-transfer protocol. Its existing first-update route remains WiFi. A separate first-update bootloader path is not implemented or claimed by this change.
+
+## 2026-09-10 — Preserve WiFi-only production hardware
+
+- User approval: Paul clarified that devices with identical old firmware exist both with and without working Cable data; WiFi-only devices must remain connected over WiFi.
+- Approved customer-visible result: Settings asks for a data cable before switching. The app verifies the selected device over USB before turning WiFi off; without that identity, the existing WiFi connection and saved settings remain untouched. Firmware version or advertised USB protocol support alone never establishes physical Cable availability.

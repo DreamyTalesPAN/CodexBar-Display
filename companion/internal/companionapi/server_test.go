@@ -8323,83 +8323,39 @@ func TestSetupConnectionModeRejectsWiFiForCableOnlyBoard(t *testing.T) {
 	}
 }
 
-func TestSetupConnectionModeSwitchesFromWiFiThroughTheActiveHTTPPath(t *testing.T) {
-	const token = "pair-token"
-	var switchCalls int
+func TestSetupConnectionModeKeepsWiFiWhenNoCableIdentityAnswers(t *testing.T) {
+	var deviceRequests int
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			if r.Header.Get("X-VibeTV-Token") != token {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			_, _ = io.WriteString(w, `{"kind":"hello","deviceId":"wifi-to-cable","board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`)
-		case "/api/connection-mode":
-			switchCalls++
-			if r.Method != http.MethodPost || r.Header.Get("X-VibeTV-Token") != token {
-				t.Fatalf("unexpected WiFi switch request method=%s token=%q", r.Method, r.Header.Get("X-VibeTV-Token"))
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"ok":true}`)
-		default:
-			http.NotFound(w, r)
-		}
+		deviceRequests++
+		_, _ = io.WriteString(w, `{"kind":"hello","deviceId":"wifi-only","board":"esp8266-smalltv-st7789","firmware":"1.0.42","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`)
 	}))
 	defer device.Close()
-
-	server := newTestServer(t, runtimeconfig.Config{
-		ConnectionMode: "wifi",
-		DeviceID:       "wifi-to-cable",
-		DeviceTarget:   device.URL,
-		DeviceToken:    token,
-	})
-	resolveCalls := 0
+	initial := runtimeconfig.Config{
+		ConnectionMode: "wifi", DeviceID: "wifi-only",
+		DeviceTarget: device.URL, DeviceToken: "keep-token",
+	}
+	server := newTestServer(t, initial)
 	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
-		resolveCalls++
-		if explicit != "" || expectedDeviceID != "wifi-to-cable" {
-			t.Fatalf("unexpected Cable confirmation resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		if explicit != "" || expectedDeviceID != initial.DeviceID {
+			t.Fatalf("wrong Cable identity requested: %q %q", explicit, expectedDeviceID)
 		}
-		if resolveCalls == 1 {
-			return "", errors.New("Cable has not restarted yet")
-		}
-		return "/dev/cu.usbserial-transition", nil
+		return "", usb.ErrDeviceHelloUnavailable
 	}
-	server.readCableHello = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{
-			Kind:     "hello",
-			Board:    "esp8266-smalltv-st7789",
-			DeviceID: "wifi-to-cable",
-			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
-				Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
-				TransitionPending: true, TransitionFrom: "wifi", TransitionTo: "cable",
-			}},
-		}, nil
-	}
-	confirmCalls := 0
-	server.confirmCableMode = func(port, deviceID string) error {
-		confirmCalls++
-		if port != "/dev/cu.usbserial-transition" || deviceID != "wifi-to-cable" {
-			t.Fatalf("unexpected Cable confirmation port=%q device=%q", port, deviceID)
-		}
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("must not switch an unverified device")
 		return nil
 	}
-
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
-	req.Header.Set("Content-Type", "application/json")
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if switchCalls != 1 || confirmCalls != 1 {
-		t.Fatalf("expected one WiFi switch and one Cable confirmation, got switch=%d confirm=%d", switchCalls, confirmCalls)
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`)))
+	if rec.Code == http.StatusOK || deviceRequests != 0 {
+		t.Fatalf("unverified Cable must not disable WiFi: status=%d requests=%d body=%s", rec.Code, deviceRequests, rec.Body.String())
 	}
 	cfg, err := server.config()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "wifi-to-cable" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token {
-		t.Fatalf("Cable mode did not preserve the authenticated WiFi profile: %+v", cfg)
+	if cfg.ConnectionMode != initial.ConnectionMode || cfg.DeviceTarget != initial.DeviceTarget || cfg.DeviceID != initial.DeviceID || cfg.DeviceToken != initial.DeviceToken {
+		t.Fatalf("WiFi configuration changed: %+v", cfg)
 	}
 }
 
