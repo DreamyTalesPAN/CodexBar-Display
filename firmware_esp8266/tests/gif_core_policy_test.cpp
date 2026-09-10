@@ -716,10 +716,18 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
   }
   const uint32_t clippyBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(74, 74);
   if (!expect(
-          ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(24000, 12000, clippyBytes) &&
-              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(23000, 12000, clippyBytes) &&
+          ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(19144, 12000, clippyBytes) &&
+              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(19143, 12000, clippyBytes) &&
               !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(30000, 10000, clippyBytes),
           "CBA allocation must preserve heap reserve and require one contiguous block")) {
+    return false;
+  }
+  const uint32_t claudeBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(77, 77);
+  if (!expect(
+          ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(20432, 16424, claudeBytes) &&
+              ThemeSpecRuntimePolicy::CanAnimate(20432 - claudeBytes, 16424 - claudeBytes) &&
+              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(20049, 16424, claudeBytes),
+          "measured WiFi heap must fit Claude while retaining the animation minimum")) {
     return false;
   }
   return expect(
