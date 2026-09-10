@@ -21,6 +21,7 @@ import {
   SetupDeviceNotFoundDialog,
   SetupWiFiPhoneDialog,
 } from "./setup-device-dialogs";
+import { SetupDialog } from "./setup-dialog";
 import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupStepFailedDialog } from "./setup-provider-dialogs";
 import {
@@ -187,7 +188,7 @@ export function SetupWizard(props: SetupWizardProps) {
   } : null);
   const [wifiNetworks, setWiFiNetworks] = useState<WiFiNetwork[]>([]);
   const [wifiScanning, setWiFiScanning] = useState(false);
-  const [wifiScanError, setWiFiScanError] = useState<string | null>(null);
+  const [wifiError, setWiFiError] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
   // The completion this step asked for is still on its way. Held here rather
@@ -331,7 +332,7 @@ export function SetupWizard(props: SetupWizardProps) {
   const searchFailed =
     connectionDecision.kind === "not-found" &&
     deviceSearchState === "not-found" &&
-    !notFoundDismissed;
+    !notFoundDismissed && !wifiError;
   // "idle" is before the first scan was started, so like "searching" it has no
   // result to report. Claiming a count there told the customer none were found
   // while the scan that would find them had not answered, or not even run.
@@ -374,13 +375,13 @@ export function SetupWizard(props: SetupWizardProps) {
 
   const scanWiFiNetworks = useCallback(async () => {
     setWiFiScanning(true);
-    setWiFiScanError(null);
+    setWiFiError(null);
     try {
       setWiFiNetworks(await onScanWiFiNetworks());
     } catch (error) {
       const failure = error as ApiError;
       setWiFiNetworks([]);
-      setWiFiScanError(
+      setWiFiError(
         failure?.nextAction || "Scan again or enter the WiFi name manually.",
       );
     } finally {
@@ -397,6 +398,7 @@ export function SetupWizard(props: SetupWizardProps) {
   const chooseTransport = useCallback(
     async (transport: SetupTransport) => {
       resetConnect();
+      setWiFiError(null);
       setPreferredTransport(transport);
       setSelectedTarget(null);
       if (transport === "cable") {
@@ -419,9 +421,15 @@ export function SetupWizard(props: SetupWizardProps) {
       let result: SetupConnectionModeResult;
       try {
         result = await onSelectConnectionMode("wifi", cable?.deviceId);
-      } catch {
+      } catch (error) {
+        const failure = error as ApiError;
+        setWiFiError(
+          [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
+            "VibeTV could not switch to WiFi. Check the connection and try again.",
+        );
         setWiFiSetup(null);
         setPreferredTransport(null);
+        setNotFoundDismissed(false);
         return;
       }
       if (result.status === "wifi_credentials_required") {
@@ -465,7 +473,8 @@ export function SetupWizard(props: SetupWizardProps) {
       setWiFiSetup((current) => current?.viaCable
         ? { ...current, phase: "credentials" }
         : null);
-      setWiFiScanError("VibeTV did not reconnect. Check the WiFi details and try again.");
+      setNotFoundDismissed(false);
+      setWiFiError("VibeTV did not reconnect. Check the WiFi details and try again.");
     }, 60_000);
     return () => {
       window.clearInterval(retry);
@@ -688,7 +697,7 @@ export function SetupWizard(props: SetupWizardProps) {
             current ? { ...current, phase: "credentials" } : current,
           )}
           onConfigureWiFi={async (ssid, password) => {
-            setWiFiScanError(null);
+            setWiFiError(null);
             const deviceId = await props.onConfigureWiFi(ssid, password);
             setWiFiSetup({
               phase: "waiting",
@@ -707,13 +716,22 @@ export function SetupWizard(props: SetupWizardProps) {
           showCandidates={showCandidateList && !wifiSetup}
           transport={connectionDecision.transport}
           wifiNetworks={wifiNetworks}
-          wifiScanError={wifiScanError}
+          onWiFiError={setWiFiError}
           wifiScanning={wifiScanning}
           wifiSetupPhase={wifiSetup?.phase}
           wifiWaitingViaCable={wifiSetup?.viaCable}
           wifiCredentialsSent={wifiSetup?.credentialsSent}
         />}
         {addressDialog}
+        {wifiError ? (
+          <SetupDialog
+            title="WiFi setup failed"
+            description={wifiError}
+            open
+            onOpenChange={(open) => !open && setWiFiError(null)}
+            primaryAction={{ label: "OK", onSelect: () => setWiFiError(null) }}
+          />
+        ) : null}
         {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
           <SetupWiFiPhoneDialog
             foundCount={props.setupWiFiCount}
@@ -756,7 +774,7 @@ export function SetupWizard(props: SetupWizardProps) {
           }}
           onOpenChange={(open) => setSearchErrorDismissed(!open)}
           onSearchAgain={searchAgain}
-          open={Boolean(props.searchError) && !searchErrorDismissed}
+          open={Boolean(props.searchError) && !searchErrorDismissed && !wifiError}
           title="We couldn't search for your VibeTV"
         />
         <SetupConnectFailedDialog
@@ -808,6 +826,7 @@ export function SetupWizard(props: SetupWizardProps) {
           too, so its dialog wins the same way.
         */}
         {connect.failure ||
+        wifiError ||
         searchFailed ||
         (props.searchError && !searchErrorDismissed) ||
         addressDialogOpen

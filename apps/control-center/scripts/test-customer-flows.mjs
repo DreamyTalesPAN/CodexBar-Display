@@ -5150,6 +5150,8 @@ async function testFreshCableCanProvisionWiFi(browser, appUrl) {
     const deviceId = "14799300";
     let selected;
     let submitted;
+    let modeAttempts = 0;
+    let wifiAttempts = 0;
     await routeCompanionOnline(page, [], () => {}, {
       device: { connected: false, paired: false },
       connectionModeChoiceRequired: true,
@@ -5160,12 +5162,24 @@ async function testFreshCableCanProvisionWiFi(browser, appUrl) {
     });
     await page.route("**/v1/setup/connection-mode", async (route) => {
       selected = route.request().postDataJSON();
+      if (++modeAttempts === 1) {
+        await route.fulfill({ status: 409, json: { ok: false, error: {
+          code: "cable_missing", message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry.",
+        } } });
+        return;
+      }
       await route.fulfill({ json: { ok: true, status: "wifi_credentials_required", device: { deviceId } } });
     });
     await page.route("**/v1/setup/wifi-networks", async (route) => {
       await route.fulfill({ json: { ok: true, networks: [{ ssid: "Test WiFi", rssi: -40, encrypted: true }] } });
     });
     await page.route("**/v1/setup/wifi", async (route) => {
+      if (++wifiAttempts === 1) {
+        await route.fulfill({ status: 409, json: { ok: false, error: {
+          code: "wifi_setup_failed", message: "VibeTV could not save these WiFi details.", nextAction: "Check the Cable and try again.",
+        } } });
+        return;
+      }
       submitted = route.request().postDataJSON();
       await route.fulfill({ json: { ok: true, device: { deviceId } } });
     });
@@ -5176,10 +5190,23 @@ async function testFreshCableCanProvisionWiFi(browser, appUrl) {
     }
     await page.getByRole("radio", { name: "WiFi", exact: true }).click();
     await page.getByRole("button", { name: "Connect", exact: true }).click();
+    const modeError = page.getByRole("dialog", { name: "WiFi setup failed", exact: true });
+    await modeError.waitFor();
+    assert((await modeError.innerText()).includes("Reconnect the Cable and retry."), "A rejected WiFi choice must explain recovery");
+    await captureMigrationScreenshot(page, multiple ? "11-wifi-choice-error.png" : "10-wifi-choice-error.png");
+    await modeError.getByRole("button", { name: "OK", exact: true }).click();
+    await page.getByRole("radio", { name: "WiFi", exact: true }).click();
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("combobox", { name: "WiFi network", exact: true }).click();
     await page.getByRole("option", { name: /Test WiFi/ }).click();
     await page.getByLabel("WiFi password", { exact: true }).fill("test-password-only");
     await captureMigrationScreenshot(page, multiple ? "11-selected-device-wifi.png" : "10-fresh-wifi-over-cable.png");
+    await page.getByRole("button", { name: "Connect to WiFi", exact: true }).click();
+    const wifiError = page.getByRole("dialog", { name: "WiFi setup failed", exact: true });
+    await wifiError.waitFor();
+    assert((await wifiError.innerText()).includes("Check the Cable and try again."), "A rejected WiFi submission must explain recovery");
+    await wifiError.getByRole("button", { name: "OK", exact: true }).click();
+    assert(await page.getByLabel("WiFi password", { exact: true }).inputValue() === "test-password-only", "Dismissal must preserve the WiFi password");
     await page.getByRole("button", { name: "Connect to WiFi", exact: true }).click();
     await waitForCondition(() => Boolean(submitted), "WiFi credentials must be sent over Cable");
     assert(selected.mode === "wifi" && selected.deviceId === deviceId, "WiFi setup must keep the selected Cable identity");

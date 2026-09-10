@@ -588,9 +588,10 @@ describe("SetupWizard: direct connection", () => {
     fireEvent.change(screen.getByLabelText("WiFi network"), { target: { value: "Home" } });
     fireEvent.change(screen.getByLabelText("WiFi password"), { target: { value: "test-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
-    const alert = await screen.findByRole("alert");
+    const alert = await screen.findByRole("dialog", { name: "WiFi setup failed" });
     expect(alert.textContent).toContain(failure.message);
     expect(alert.textContent).toContain(failure.nextAction);
+    fireEvent.click(within(alert).getByRole("button", { name: "OK" }));
     expect((screen.getByLabelText("WiFi network") as HTMLInputElement).value).toBe("Home");
     expect((screen.getByLabelText("WiFi password") as HTMLInputElement).value).toBe("test-password");
     const retry = screen.getByRole("button", { name: "Connect to WiFi" }) as HTMLButtonElement;
@@ -700,6 +701,59 @@ describe("SetupWizard: direct connection", () => {
     );
 
     await waitFor(() => expect(connect).toHaveBeenCalledWith(transitioned));
+  });
+});
+
+describe("SetupWizard: WiFi recovery dialogs", () => {
+  it.each(["choice", "not-found"])("shows a rejected WiFi selection from %s and allows retry", async (entry) => {
+    const failure = { code: "cable_missing", message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry." };
+    const onSelectConnectionMode = vi.fn().mockRejectedValue(failure);
+    render(<SetupWizard {...baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: entry === "choice", setupWiFiCount: entry === "choice" ? 1 : 0,
+      deviceSearchState: entry === "choice" ? "multiple" : "not-found",
+      deviceCandidates: entry === "choice" ? [{ target: "cable://vibetv", deviceId: "same", transport: "cable" }] : [],
+      onSelectConnectionMode,
+    })} />);
+    function chooseWiFi() {
+      if (entry === "choice") {
+        fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+        fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+      } else {
+        fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ }));
+      }
+    }
+    chooseWiFi();
+    const dialog = await screen.findByRole("dialog", { name: "WiFi setup failed" });
+    expect(dialog.textContent).toContain(failure.message);
+    expect(dialog.textContent).toContain(failure.nextAction);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole("button", { name: "OK" }));
+    chooseWiFi();
+    await screen.findByRole("dialog", { name: "WiFi setup failed" });
+    expect(onSelectConnectionMode).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the Cable-free deadline and restores recovery after dismissal", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+    });
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ })); });
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    const dialog = screen.getByRole("dialog", { name: "WiFi setup failed" });
+    expect(dialog.textContent).toContain("VibeTV did not reconnect.");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches);
+    fireEvent.click(within(dialog).getByRole("button", { name: "OK" }));
+    const recovery = screen.getByRole("dialog", { name: "We couldn't find your VibeTV" });
+    expect(within(recovery).getByRole("button", { name: /Use the cable/ })).toBeTruthy();
+    fireEvent.click(within(recovery).getByRole("button", { name: "Scan again" }));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 1);
   });
 });
 

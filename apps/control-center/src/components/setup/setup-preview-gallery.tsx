@@ -300,6 +300,7 @@ export function SetupPreviewGallery() {
   function deviceScreen(lines?: SetupLogLine[]) {
     return (
       <SetupDeviceScreen
+        onWiFiError={() => {}}
         aiFixPrompt={aiFixPrompt}
         onCreateSupportReport={createSupportReport}
         candidates={

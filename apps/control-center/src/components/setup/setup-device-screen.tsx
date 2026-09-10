@@ -61,7 +61,7 @@ type SetupDeviceScreenProps = {
   selectedTarget: string | null;
   transport?: SetupTransport;
   wifiNetworks?: WiFiNetwork[];
-  wifiScanError?: string | null;
+  onWiFiError: (message: string | null) => void;
   wifiScanning?: boolean;
   wifiSetupPhase?: "credentials" | "waiting";
   wifiWaitingViaCable?: boolean;
@@ -92,7 +92,7 @@ export function SetupDeviceScreen({
   selectedTarget,
   transport,
   wifiNetworks = [],
-  wifiScanError,
+  onWiFiError,
   wifiScanning = false,
   wifiSetupPhase,
   wifiWaitingViaCable = false,
@@ -101,7 +101,6 @@ export function SetupDeviceScreen({
   const [wifiName, setWifiName] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
   const [manualWiFiName, setManualWiFiName] = useState(false);
-  const [wifiError, setWifiError] = useState("");
   const [wifiSubmitting, setWiFiSubmitting] = useState(false);
   const [connectionChoice, setConnectionChoice] =
     useState<SetupTransport>("cable");
@@ -118,20 +117,20 @@ export function SetupDeviceScreen({
     if (wifiBusy || wifiScanning) return;
     const ssid = wifiName.trim();
     if (!ssid) {
-      setWifiError("Enter your WiFi name.");
+      onWiFiError("Enter your WiFi name.");
       return;
     }
     if (passwordMissing) {
-      setWifiError("Enter your WiFi password.");
+      onWiFiError("Enter your WiFi password.");
       return;
     }
-    setWifiError("");
+    onWiFiError(null);
     setWiFiSubmitting(true);
     try {
       await onConfigureWiFi(ssid, wifiPassword);
     } catch (error) {
       const failure = error as ApiError;
-      setWifiError(
+      onWiFiError(
         [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
           "VibeTV could not save these WiFi details. Check the Cable and try again.",
       );
@@ -257,7 +256,7 @@ export function SetupDeviceScreen({
                   maxLength={32}
                   onChange={(event) => {
                     setWifiName(event.target.value);
-                    setWifiError("");
+                    onWiFiError(null);
                   }}
                   placeholder="WiFi name"
                   value={wifiName}
@@ -267,7 +266,7 @@ export function SetupDeviceScreen({
                   disabled={wifiScanning || wifiBusy}
                   onValueChange={(value) => {
                     setWifiName(value);
-                    setWifiError("");
+                    onWiFiError(null);
                   }}
                   value={wifiName}
                 >
@@ -343,11 +342,6 @@ export function SetupDeviceScreen({
                 value={wifiPassword}
               />
             </Field>
-            {wifiError || wifiScanError ? (
-              <p className="text-sm text-destructive" role="alert">
-                {wifiError || wifiScanError}
-              </p>
-            ) : null}
             <Button
               disabled={wifiScanning || wifiBusy || !wifiName.trim() || passwordMissing}
               type="submit"

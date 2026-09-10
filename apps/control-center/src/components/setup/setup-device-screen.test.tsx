@@ -23,6 +23,7 @@ function render(props: Partial<Parameters<typeof SetupDeviceScreen>[0]> = {}) {
       onConnect={vi.fn()}
       onChooseTransport={vi.fn()}
       onConfigureWiFi={vi.fn()}
+      onWiFiError={vi.fn()}
       onEnterAddressManually={vi.fn()}
       onSearchAgain={vi.fn()}
       onScanWiFiNetworks={vi.fn()}
