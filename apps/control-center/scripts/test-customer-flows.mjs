@@ -481,6 +481,7 @@ async function main() {
         testSavedPairingStartupRecoversWithoutWizard,
         testCableBackUsesConnectedDeviceWithoutNewSearch,
         testFreshCableHasNoEmptyPicker,
+        testFreshCableCanProvisionWiFi,
         testRejectedPairingTokenUsesTypedRecovery,
         testFirstSetupStillWaitsForARenderedPreview,
         testStartupStateMachine,
@@ -832,6 +833,7 @@ async function main() {
     await testSavedPairingStartupRecoversWithoutWizard(browser, appContext.appUrl);
     await testCableBackUsesConnectedDeviceWithoutNewSearch(browser, appContext.appUrl);
     await testFreshCableHasNoEmptyPicker(browser, appContext.appUrl);
+    await testFreshCableCanProvisionWiFi(browser, appContext.appUrl);
     await testFirstSetupStillWaitsForARenderedPreview(
       browser,
       appContext.appUrl,
@@ -5026,7 +5028,7 @@ async function testFreshCableHasNoEmptyPicker(browser, appUrl) {
   const companion = await routeCompanionOnline(page, [], () => {}, {
     device: { connected: false, paired: false },
     connectionModeChoiceRequired: false,
-    searchDevices: [{ target: device.target, deviceId: device.deviceId, transport: "cable", networkMode: "off" }],
+    searchDevices: [{ target: device.target, deviceId: device.deviceId, transport: "cable", networkMode: "setup" }],
     providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
   });
   await page.route("**/v1/setup/connection-mode", async (route) => {
@@ -5034,6 +5036,10 @@ async function testFreshCableHasNoEmptyPicker(browser, appUrl) {
     await route.fulfill({ json: { ok: true, status: "selected", device } });
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("radiogroup", { name: "Connection method" }).waitFor();
+  await page.getByText("Set up over Cable", { exact: true }).waitFor();
+  await captureMigrationScreenshot(page, "09-fresh-connection-choice.png");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
   await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("heading", { name: "Connecting to VibeTV", exact: true }).waitFor();
@@ -5041,6 +5047,54 @@ async function testFreshCableHasNoEmptyPicker(browser, appUrl) {
   const headings = await page.evaluate(() => window.setupHeadings);
   assert(!headings.includes("Choose your VibeTV"), `Single Cable must never flash an empty picker: ${JSON.stringify(headings)}`);
   await page.close();
+}
+
+async function testFreshCableCanProvisionWiFi(browser, appUrl) {
+  for (const multiple of [false, true]) {
+    const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+    const deviceId = "14799300";
+    let selected;
+    let submitted;
+    await routeCompanionOnline(page, [], () => {}, {
+      device: { connected: false, paired: false },
+      connectionModeChoiceRequired: true,
+      searchDevices: [
+        ...(multiple ? [{ target: "cable://vibetv", deviceId: "another-device", transport: "cable", networkMode: "setup" }] : []),
+        { target: "cable://vibetv", deviceId, transport: "cable", networkMode: "setup" },
+      ],
+    });
+    await page.route("**/v1/setup/connection-mode", async (route) => {
+      selected = route.request().postDataJSON();
+      await route.fulfill({ json: { ok: true, status: "wifi_credentials_required", device: { deviceId } } });
+    });
+    await page.route("**/v1/setup/wifi-networks", async (route) => {
+      await route.fulfill({ json: { ok: true, networks: [{ ssid: "Test WiFi", rssi: -40, encrypted: true }] } });
+    });
+    await page.route("**/v1/setup/wifi", async (route) => {
+      submitted = route.request().postDataJSON();
+      await route.fulfill({ json: { ok: true, device: { deviceId } } });
+    });
+    await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+    if (multiple) {
+      await page.getByRole("radio", { name: new RegExp(`VibeTV ${deviceId}`) }).click();
+      await page.getByRole("button", { name: "Connect", exact: true }).click();
+    }
+    await page.getByRole("radio", { name: "WiFi", exact: true }).click();
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByRole("combobox", { name: "WiFi network", exact: true }).click();
+    await page.getByRole("option", { name: /Test WiFi/ }).click();
+    await page.getByLabel("WiFi password", { exact: true }).fill("test-password-only");
+    await captureMigrationScreenshot(page, multiple ? "11-selected-device-wifi.png" : "10-fresh-wifi-over-cable.png");
+    await page.getByRole("button", { name: "Connect to WiFi", exact: true }).click();
+    await waitForCondition(() => Boolean(submitted), "WiFi credentials must be sent over Cable");
+    assert(selected.mode === "wifi" && selected.deviceId === deviceId, "WiFi setup must keep the selected Cable identity");
+    assert(submitted.ssid === "Test WiFi" && submitted.password === "test-password-only", "WiFi setup must submit the chosen network");
+    const waiting = page.getByRole("button", { name: "Connecting to WiFi…", exact: true });
+    await waiting.waitFor();
+    assert(await waiting.isDisabled(), "Submitting WiFi must wait for the actual connection");
+    assert(!(await setupScreen(page, SETUP_PROVIDERS_SCREEN).isVisible()), "Sending credentials must not pretend WiFi is already connected");
+    await page.close();
+  }
 }
 
 async function testCableBackUsesConnectedDeviceWithoutNewSearch(browser, appUrl) {

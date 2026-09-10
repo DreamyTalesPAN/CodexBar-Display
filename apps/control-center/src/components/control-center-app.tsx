@@ -1,5 +1,6 @@
 "use client";
 
+import { canConnectSetupCandidate } from "./setup/setup-connection";
 import {
   useCallback,
   useEffect,
@@ -1422,7 +1423,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return;
       }
       const candidates = (payload.devices || []).filter(
-        (candidate) => candidate.target && candidate.networkMode !== "setup",
+        canConnectSetupCandidate,
       );
       if (candidates.length > 0) {
         setDeviceCandidates(candidates);
@@ -2452,7 +2453,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           pendingPairingCandidate.current?.target || deviceTarget,
         );
         const candidates = (payload.devices || []).filter(
-          (candidate) => candidate.target && candidate.networkMode !== "setup",
+          canConnectSetupCandidate,
         );
         const candidate =
           candidates.find(

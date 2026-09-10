@@ -6,10 +6,10 @@ exclusive VibeTV connection modes.
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- New cutover hardware defaults to Cable (`transport.active=usb`, `transport.mode=cable`).
+- Fresh hardware starts in WiFi setup with USB control available. The display shows the Mac App download address and the phone WiFi setup instructions. A new Cable discovery always offers the connection selector, even without a WiFi discovery.
 - WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
 - The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
-- Updated legacy devices persist `legacy-wifi-only` and advertise only WiFi.
+- Updated legacy devices preserve WiFi credentials and pairing, use `wifi`, and support switching to Cable. Previously stored `legacy-wifi-only` is migrated to `wifi`.
 
 ## Firmware Environment -> Board Identity
 
@@ -105,7 +105,7 @@ standby use one serial `settings` request in Cable mode and the existing HTTP
 settings endpoint in WiFi mode; both finish in the same firmware validation,
 persistence, apply, and complete readback owner.
 An incomplete power-loss write is discarded on boot when `/cm` does not match
-the mode in `/s`. `legacy-wifi-only` can never start a Cable transition.
+the mode in `/s`. Older `legacy-wifi-only` settings are migrated to switchable WiFi at boot.
 
 Hello advertises `transitionPending`, `transitionFrom`, and `transitionTo`
 inside `capabilities.transport` while confirmation is required. The Companion
@@ -215,10 +215,13 @@ GIF/CBA animations move on the panel and the dock-path test before it can close.
 The connection-mode byte is appended to the existing `/s` record. Shorter
 records remain readable.
 
-- No stored mode plus any preserved settings record, VibeTV WiFi credentials,
-  or pairing token becomes `legacy-wifi-only` once.
-- No stored mode and no legacy state becomes `cable` once.
-- A stored mode is never reinterpreted by later firmware.
+- No stored mode becomes `wifi`; without saved credentials this opens `VibeTV-Setup`.
+- Stored `legacy-wifi-only` becomes `wifi`, preserving the existing network.
+- Stored `cable` and `wifi` selections survive restarts unchanged.
+- Cable selection shuts down WiFi and the AP. WiFi can be configured over the
+  data cable before moving the device to a power adapter.
+- The CH340 bridge does not identify a Mac versus a power adapter. Startup
+  copy must not claim a live Cable connection without a Companion handshake.
 - WiFi credentials, pairing, brightness, standby, themes, and assets are not
   deleted by this migration.
 - The exact cutover firmware version remains unassigned until the immutable
@@ -394,8 +397,9 @@ unexplained transport error instead of an authentication failure.
 - Devices ship with firmware installed.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
 - Setup UI is served at `http://192.168.4.1` through the setup access point and captive DNS.
-- The device setup screen tells the customer to join the open `VibeTV-Setup`
-  access point manually and open `192.168.4.1`.
+- The device setup screen first offers `Download Mac App` at `app.vibetv.shop`.
+  It also tells power-only customers to join `VibeTV-Setup` and open `192.168.4.1`.
+  Downloading/opening the Mac App does not depend on first joining home WiFi.
 - The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
   and keeps manual SSID entry available for hidden networks.
 - `Troubleshooting: vibetv.shop/pages/setup` links to the public support page

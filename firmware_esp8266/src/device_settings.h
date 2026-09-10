@@ -41,12 +41,13 @@ inline ConnectionMode DecodeConnectionMode(int value) {
 }
 
 inline ConnectionMode ResolveInitialConnectionMode(
-    ConnectionMode stored,
-    bool hasLegacyState) {
-  if (stored != ConnectionMode::kUnspecified) {
+    ConnectionMode stored) {
+  if (stored == ConnectionMode::kCable || stored == ConnectionMode::kWifi) {
     return stored;
   }
-  return hasLegacyState ? ConnectionMode::kLegacyWifiOnly : ConnectionMode::kCable;
+  // First boot keeps phone setup available; old WiFi installations gain the
+  // same Cable switching support while preserving their credentials.
+  return ConnectionMode::kWifi;
 }
 
 inline bool ShouldImportLegacySdkWifi(

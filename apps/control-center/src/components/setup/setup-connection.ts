@@ -14,6 +14,13 @@ export type SetupConnectionModeResult = {
   deviceId?: string;
 };
 
+export function canConnectSetupCandidate(candidate: DeviceCandidate): boolean {
+  // The setup AP is not a home-WiFi connection, but USB remains available
+  // for choosing Cable or provisioning that device's WiFi credentials.
+  return Boolean(candidate.target &&
+    (candidate.transport === "cable" || candidate.networkMode !== "setup"));
+}
+
 export function candidateKey(candidate: DeviceCandidate): string {
   return `${candidate.transport || "wifi"}:${candidate.deviceId || candidate.target}`;
 }
@@ -77,16 +84,10 @@ export function decideSetupConnection(options: {
       alternative: "wifi",
     };
   }
-  if (cable.length === 1 && wifi.length > 0) {
-    return { kind: "mode", candidates: options.candidates };
-  }
+  // Cable is also the provisioning link for WiFi, even before that device
+  // has joined a network. Discovery must not make the customer's choice.
   if (cable.length === 1) {
-    return {
-      kind: singleCandidateKind(cable[0]),
-      transport: "cable",
-      candidates: cable,
-      alternative: "wifi",
-    };
+    return { kind: "mode", candidates: options.candidates };
   }
   if (wifi.length === 1) {
     return {

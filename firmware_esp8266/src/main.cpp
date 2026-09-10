@@ -260,7 +260,6 @@ FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateNoticeDirty = false;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
-bool deviceSettingsRecordAvailable = false;
 device_settings::ConnectionTransition connectionTransition;
 bool connectionTransitionPending = false;
 unsigned long connectionTransitionStartedAtMs = 0;
@@ -544,9 +543,7 @@ bool beginConnectionTransition(
     return false;
   }
   if (!device_settings::CanBeginConnectionTransition(previous, target)) {
-    error = previous == device_settings::ConnectionMode::kLegacyWifiOnly
-                ? "Cable is not supported on this migrated device"
-                : "invalid connection mode transition";
+    error = "invalid connection mode transition";
     return false;
   }
 
@@ -620,12 +617,12 @@ void maintainConnectionTransition() {
   }
 }
 
-bool resolveInitialConnectionMode(bool hasLegacyState) {
+bool resolveInitialConnectionMode() {
   using codexbar_display::esp8266::device_settings::ConnectionMode;
   using codexbar_display::esp8266::device_settings::ResolveInitialConnectionMode;
 
   const ConnectionMode resolved =
-      ResolveInitialConnectionMode(deviceSettings.connectionMode, hasLegacyState);
+      ResolveInitialConnectionMode(deviceSettings.connectionMode);
   if (resolved == deviceSettings.connectionMode) {
     return true;
   }
@@ -637,9 +634,8 @@ bool resolveInitialConnectionMode(bool hasLegacyState) {
     return false;
   }
   Serial.printf(
-      "connection_mode_migrated mode=%s legacy_state=%d\n",
-      codexbar_display::esp8266::device_settings::ConnectionModeName(resolved),
-      hasLegacyState ? 1 : 0);
+      "connection_mode_migrated mode=%s\n",
+      codexbar_display::esp8266::device_settings::ConnectionModeName(resolved));
   return true;
 }
 
@@ -4343,7 +4339,7 @@ void setup() {
   bootID += "-";
   bootID += String(ESP.getCycleCount(), HEX);
   renderer.Setup(runtimeCtx);
-  deviceSettingsRecordAvailable = loadDeviceSettings();
+  (void)loadDeviceSettings();
   loadDeviceAuthToken();
   bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
   bool wifiConnected = false;
@@ -4355,10 +4351,7 @@ void setup() {
     }
   }
   savedWifiCredentialsAvailable = hasSavedWifi;
-  const bool hasLegacyState =
-      deviceSettingsRecordAvailable || hasSavedWifi || wifiConnected ||
-      deviceAuthConfigured();
-  (void)resolveInitialConnectionMode(hasLegacyState);
+  (void)resolveInitialConnectionMode();
   (void)loadConnectionTransition();
   restoreResetTrustAfterRestart();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -4386,7 +4379,7 @@ void setup() {
     WiFi.disconnect(false);
     WiFi.mode(WIFI_OFF);
     const unsigned long renderStartUs = micros();
-    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Cable connected", "Open VibeTV App");
+    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Open Mac App", kCustomerAppHost);
     recordRenderFull("cable_setup", micros() - renderStartUs);
     waitStatusRendered = true;
     return;

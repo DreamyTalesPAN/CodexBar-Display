@@ -225,7 +225,9 @@ export function SetupDeviceScreen({
                           : "bg-muted-foreground",
                       )}
                     />
-                    {count} {count === 1 ? "VibeTV" : "VibeTVs"} found
+                    {mode === "wifi" && count === 0 && candidates.some((candidate) => candidate.transport === "cable")
+                      ? "Set up over Cable"
+                      : `${count} ${count === 1 ? "VibeTV" : "VibeTVs"} found`}
                   </span>
                 </ToggleGroupItem>
               );

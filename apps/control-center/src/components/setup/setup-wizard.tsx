@@ -170,6 +170,7 @@ export function SetupWizard(props: SetupWizardProps) {
 
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [connectionDeviceId, setConnectionDeviceId] = useState<string | null>(null);
   const [preferredTransport, setPreferredTransport] =
     useState<SetupTransport | "choose" | null>(props.initialWiFiSetup ? "wifi" : null);
   const [wifiSetup, setWiFiSetup] = useState<{
@@ -216,10 +217,16 @@ export function SetupWizard(props: SetupWizardProps) {
     goForward,
   );
   const { reset: resetConnect } = connect;
+  const connectionCandidates = useMemo(
+    () => connectionDeviceId
+      ? deviceCandidates.filter((candidate) => candidate.deviceId?.toLowerCase() === connectionDeviceId.toLowerCase())
+      : deviceCandidates,
+    [connectionDeviceId, deviceCandidates],
+  );
   const connectionDecision = useMemo(
     () =>
       decideSetupConnection({
-        candidates: deviceCandidates,
+        candidates: connectionCandidates,
         choiceRequired:
           preferredTransport === "choose" || props.connectionModeChoiceRequired,
         savedMode: props.connectionMode,
@@ -227,7 +234,7 @@ export function SetupWizard(props: SetupWizardProps) {
         preferredTransport: preferredTransport === "choose" ? null : preferredTransport,
       }),
     [
-      deviceCandidates,
+      connectionCandidates,
       preferredTransport,
       props.connectionMode,
       props.connectionModeChoiceRequired,
@@ -346,6 +353,12 @@ export function SetupWizard(props: SetupWizardProps) {
       (entry) => candidateKey(entry) === preselected,
     );
     if (candidate) {
+      if (candidate.transport === "cable" && candidate.deviceId &&
+          (preferredTransport === "choose" || (!preferredTransport &&
+            (props.connectionModeChoiceRequired || !props.connectionMode)))) {
+        setConnectionDeviceId(candidate.deviceId);
+        return;
+      }
       void connect.run(candidate);
       return;
     }
@@ -353,7 +366,7 @@ export function SetupWizard(props: SetupWizardProps) {
     // again against the VibeTV it ran against, which is the one the customer
     // is half way through setting up.
     connect.retry();
-  }, [connect, preselected, visibleCandidates]);
+  }, [connect, preselected, preferredTransport, props.connectionMode, props.connectionModeChoiceRequired, visibleCandidates]);
 
   const scanWiFiNetworks = useCallback(async () => {
     setWiFiScanning(true);
@@ -391,9 +404,9 @@ export function SetupWizard(props: SetupWizardProps) {
         }
         return;
       }
-      const cable = deviceCandidates.find(
-        (candidate) => candidate.transport === "cable",
-      );
+      const cable = connectionCandidates.find(
+        (candidate) => candidate.transport === "cable" && candidateKey(candidate) === preselected,
+      ) || connectionCandidates.find((candidate) => candidate.transport === "cable");
       setWiFiSetup({
         phase: "waiting",
         deviceId: cable?.deviceId,
@@ -426,7 +439,9 @@ export function SetupWizard(props: SetupWizardProps) {
     },
     [
       resetConnect,
+      connectionCandidates,
       deviceCandidates,
+      preselected,
       onSearchDevices,
       onSelectConnectionMode,
       scanWiFiNetworks,
@@ -655,6 +670,7 @@ export function SetupWizard(props: SetupWizardProps) {
             wifiSetup?.phase !== "waiting"
               ? () => {
                   setPreferredTransport("choose");
+                  setConnectionDeviceId(null);
                   setWiFiSetup(null);
                   setSelectedTarget(null);
                   searchAgain();

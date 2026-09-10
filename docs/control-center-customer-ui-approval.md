@@ -4218,3 +4218,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: The approved provider-usage gate above remains unchanged: one enabled provider with actual usage, including 0%, is sufficient.
 - Approved customer-visible result: Repairing the usage service only unlocks Continue after the recovered provider supplies displayable usage. The browser fixture now delivers that reading after successful recovery instead of returning an empty usage list forever. Both recovery and delayed-zero browser scenarios pass; no product code changes in this follow-up.
+
+## 2026-09-10 — App-first setup with WiFi available
+
+- User approval: Paul approved "Download Mac App from app.vibetv.shop" on first power with WiFi setup available in the background, then the Cable/WiFi selector when the Mac App discovers the device: "ok dann bau das so".
+- Approved customer-visible result: A single newly discovered Cable device offers both connection choices. WiFi can be provisioned over that cable without an existing WiFi discovery; the chooser says "Set up over Cable". Saved choices survive later starts. Fresh firmware shows the Mac App address plus phone WiFi instructions; it does not infer a connected Mac from power. After updating, older devices retain their settings and may switch in both directions.
+- Legacy boundary: firmware 1.0.41/1.0.42 accepts serial display frames but lacks the new serial identity, pairing, and firmware-transfer protocol. Its existing first-update route remains WiFi. A separate first-update bootloader path is not implemented or claimed by this change.

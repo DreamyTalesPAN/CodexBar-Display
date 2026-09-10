@@ -699,9 +699,12 @@ func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) 
 		DeviceTarget:   wifi.URL,
 	})
 	server.subnetTargets = func() []string { return []string{wifi.URL} }
+	freshHello := cableHelloForTest("cable-a")
+	freshHello.NetworkMode = "setup"
+	freshHello.Capabilities.Transport.Mode = "wifi"
 	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
 		return []usb.CableDevice{
-			{Port: "/dev/cu.usbserial-a", Hello: cableHelloForTest("cable-a")},
+			{Port: "/dev/cu.usbserial-a", Hello: freshHello},
 			{Port: "/dev/cu.usbserial-b", Hello: cableHelloForTest("cable-b")},
 		}, nil
 	}
@@ -721,6 +724,9 @@ func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) 
 	for _, device := range got.Devices {
 		if device.Transport == "cable" {
 			cableIDs = append(cableIDs, device.DeviceID)
+			if device.DeviceID == "cable-a" && device.NetworkMode != "setup" {
+				t.Fatalf("fresh Cable candidate lost its WiFi setup state: %+v", device)
+			}
 			if device.Target != cableDeviceTarget {
 				t.Fatalf("Cable target leaked a port: %+v", device)
 			}

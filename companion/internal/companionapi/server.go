@@ -3246,12 +3246,13 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()
 			devices = append(devices, deviceSearchEntry{
-				Target:    cableDeviceTarget,
-				Transport: "cable",
-				DeviceID:  hello.DeviceID,
-				Board:     hello.Board,
-				Firmware:  hello.Firmware,
-				Known:     deviceIdentityIsKnown(cfg, hello),
+				Target:      cableDeviceTarget,
+				Transport:   "cable",
+				NetworkMode: hello.NetworkMode,
+				DeviceID:    hello.DeviceID,
+				Board:       hello.Board,
+				Firmware:    hello.Firmware,
+				Known:       deviceIdentityIsKnown(cfg, hello),
 				Active: runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" &&
 					deviceIdentityMatches(cfg, hello),
 			})

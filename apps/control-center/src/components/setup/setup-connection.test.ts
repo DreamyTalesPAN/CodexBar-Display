@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceCandidate } from "../control-center-types";
-import { decideSetupConnection } from "./setup-connection";
+import { canConnectSetupCandidate, decideSetupConnection } from "./setup-connection";
 
 const cable = (id: string): DeviceCandidate => ({
   target: "cable://vibetv",
@@ -14,18 +14,16 @@ const wifi = (id: string): DeviceCandidate => ({
 });
 
 describe("setup connection skip matrix", () => {
-  it.each([undefined, ""])("does not invent WiFi before the saved mode answers (%s)", (savedMode) => {
+  it.each([undefined, ""])("asks for the connection when no mode has been saved (%s)", (savedMode) => {
     expect(decideSetupConnection({ candidates: [cable("1")], choiceRequired: false, savedMode }))
-      .toMatchObject({ kind: "direct", transport: "cable" });
+      .toMatchObject({ kind: "mode" });
   });
 
-  it("connects one Cable device directly when WiFi found none", () => {
+  it("offers Cable and WiFi when only Cable is discovered", () => {
     expect(
       decideSetupConnection({ candidates: [cable("1")], choiceRequired: true }),
     ).toMatchObject({
-      kind: "direct",
-      transport: "cable",
-      alternative: "wifi",
+      kind: "mode",
     });
   });
 
@@ -38,7 +36,7 @@ describe("setup connection skip matrix", () => {
     }).kind).toBe("direct");
   });
 
-  it("shows the mode choice only for one Cable and at least one WiFi device", () => {
+  it("shows the mode choice when both transports are discovered", () => {
     expect(
       decideSetupConnection({
         candidates: [cable("1"), wifi("2")],
@@ -95,5 +93,14 @@ describe("setup connection skip matrix", () => {
         savedMode: "wifi",
       }),
     ).toMatchObject({ kind: "direct", transport: "wifi" });
+  });
+});
+
+describe("setup discovery availability", () => {
+  it("keeps a Cable device selectable while its WiFi AP is active", () => {
+    expect(canConnectSetupCandidate({ ...cable("1"), networkMode: "setup" })).toBe(true);
+    expect(canConnectSetupCandidate({ ...wifi("1"), networkMode: "setup" })).toBe(false);
+    expect(canConnectSetupCandidate({ ...wifi("1"), networkMode: "station" })).toBe(true);
+    expect(canConnectSetupCandidate({ ...cable("1"), target: "" })).toBe(false);
   });
 });
