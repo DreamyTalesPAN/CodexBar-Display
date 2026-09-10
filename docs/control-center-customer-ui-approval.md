@@ -4252,3 +4252,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Reserve space beside long dialog titles for the existing close button, so the error text does not touch it. No new control or copy.
 - Native evidence: App 117 with device 14799300 / firmware 115, WiFi active. An exclusive USB-port test caused the real Settings action to fail; its popup remained visible across multiple healthy status polls and live Codex data returned behind it. The original WiFi choice and 20% brightness remained selected.
 - Dialog dismissal: the shared error component now unmounts when dismissed instead of clearing its text during an exit animation. App 118 verifies the complete popup visually, title spacing, and removal of the dialog after OK. Intermittent window captures alone are not treated as evidence of a WebKit rendering defect.
+
+## 2026-09-10 — Keep Cable available after a denied optional WiFi scan
+
+- User authorization: Paul requested completing the full test matrix, fixing discovered issues along the way, and presenting errors through the existing setup popups.
+- Customer-visible result: A native setup-SSID scan failure retains the Cable devices already found by the Companion. The existing search error popup explains the denied scan; after dismissal, setup continues with the same discovered Cable identity. No new copy or control.
+- Validation: the setup-entry browser regression covers a denied native scan, visible popup before any selection, dismissal, and exactly one selection of the expected Cable device. Existing WiFi-only denial still shows an error, and discovered LAN devices do not require a native SSID scan.

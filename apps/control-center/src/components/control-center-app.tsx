@@ -1430,6 +1430,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const candidates = (search.status === "fulfilled" ? search.value.devices || [] : []).filter(
         canConnectSetupCandidate,
       );
+      // A failed optional SSID scan must not discard devices already found.
+      setDeviceCandidates(candidates);
       // A reachable WiFi device already answers the availability question.
       // Only ask macOS for nearby setup networks when that path found none.
       const setupCount = candidates.some((candidate) => candidate.transport !== "cable")
@@ -1443,7 +1445,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
       }
       if (candidates.length > 0) {
-        setDeviceCandidates(candidates);
         setDeviceSearchState("multiple");
         return;
       }

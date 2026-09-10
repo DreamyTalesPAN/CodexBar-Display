@@ -522,6 +522,7 @@ export function SetupWizard(props: SetupWizardProps) {
     if (
       step !== "device" ||
       searchingForDevices ||
+      (props.searchError && !searchErrorDismissed) ||
       wifiSetup ||
       connectionDecision.kind !== "direct" ||
       connect.state.phase !== "idle"
@@ -539,7 +540,7 @@ export function SetupWizard(props: SetupWizardProps) {
     directAttempt.current = key;
     setSelectedTarget(key);
     void connect.run(candidate);
-  }, [connect, connectionDecision, searchingForDevices, step, wifiSetup]);
+  }, [connect, connectionDecision, props.searchError, searchErrorDismissed, searchingForDevices, step, wifiSetup]);
 
   // The connect log lives in the wizard, the prompt builder one level up, so
   // "Ask AI to fix" used to copy an app event log that setup barely writes to

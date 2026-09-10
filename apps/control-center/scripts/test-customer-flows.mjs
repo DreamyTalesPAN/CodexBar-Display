@@ -481,6 +481,7 @@ async function main() {
         testSavedPairingStartupRecoversWithoutWizard,
         testCableBackUsesConnectedDeviceWithoutNewSearch,
         testFreshCableHasNoEmptyPicker,
+        testCableSurvivesDeniedSetupScan,
         testMissingVibeTVOffersRetry,
         testSetupNetworkWithoutLAN,
         testSetupNetworkScanDenied,
@@ -841,6 +842,7 @@ async function main() {
     await testSavedPairingStartupRecoversWithoutWizard(browser, appContext.appUrl);
     await testCableBackUsesConnectedDeviceWithoutNewSearch(browser, appContext.appUrl);
     await testFreshCableHasNoEmptyPicker(browser, appContext.appUrl);
+    await testCableSurvivesDeniedSetupScan(browser, appContext.appUrl);
     await testFreshCableCanProvisionWiFi(browser, appContext.appUrl);
     await testFirstSetupStillWaitsForARenderedPreview(
       browser,
@@ -5068,11 +5070,18 @@ async function testTransientDisplayReadStillOpensOverview(browser, appUrl) {
   await page.close();
 }
 
-async function testFreshCableHasNoEmptyPicker(browser, appUrl) {
+async function testCableSurvivesDeniedSetupScan(browser, appUrl) {
+  await testFreshCableHasNoEmptyPicker(browser, appUrl, { scanDenied: true });
+}
+
+async function testFreshCableHasNoEmptyPicker(browser, appUrl, { scanDenied = false } = {}) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
-    await page.addInitScript(() => {
-      window.webkit = { messageHandlers: { vibetvSetupWiFi: { postMessage: async () => ({ count: 1 }) } } };
-    });
+  await page.addInitScript((denied) => {
+    window.webkit = { messageHandlers: { vibetvSetupWiFi: { postMessage: async () => {
+      if (denied) throw new Error("Allow Location Services to find VibeTV-Setup.");
+      return { count: 1 };
+    } } } };
+  }, scanDenied);
   await page.addInitScript(() => {
     window.setupHeadings = [];
     new MutationObserver(() => {
@@ -5090,17 +5099,28 @@ async function testFreshCableHasNoEmptyPicker(browser, appUrl) {
     searchDevices: [{ target: device.target, deviceId: device.deviceId, transport: "cable", networkMode: "setup" }],
     providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
   });
+  const selections = [];
   await page.route("**/v1/setup/connection-mode", async (route) => {
+    selections.push(route.request().postDataJSON());
     companion.setDevice(device);
     await route.fulfill({ json: { ok: true, status: "selected", device } });
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("radiogroup", { name: "Connection method" }).waitFor();
-  await page.getByRole("radio", { name: "Cable", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
-  await page.getByRole("radio", { name: "WiFi", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
-  await captureMigrationScreenshot(page, "09-fresh-connection-choice.png");
-  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  if (scanDenied) {
+    const error = page.getByRole("dialog", { name: "We couldn't search for your VibeTV", exact: true });
+    await error.getByText("Allow Location Services to find VibeTV-Setup.", { exact: false }).waitFor();
+    assert(selections.length === 0, "The scan error must remain available before continuing Cable setup");
+    await error.getByRole("button", { name: "Close", exact: true }).click();
+  } else {
+    await page.getByRole("radiogroup", { name: "Connection method" }).waitFor();
+    await page.getByRole("radio", { name: "Cable", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
+    await page.getByRole("radio", { name: "WiFi", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
+    await captureMigrationScreenshot(page, "09-fresh-connection-choice.png");
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+  }
   await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert(selections.length === 1 && selections[0].mode === "cable" && selections[0].deviceId === device.deviceId,
+    "Cable setup must retain and select exactly the discovered device");
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("heading", { name: "Connecting to VibeTV", exact: true }).waitFor();
   await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
