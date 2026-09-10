@@ -4202,3 +4202,8 @@ issue scope, or release permission never implies UI permission.
 - Native visible proof: Welcome -> Connecting to VibeTV with firmware log -> providers. Back repeated the connect log, held its completed state, and returned to providers without the observed chooser flash. Provider selection, Automatic display mode, Tiny Office installation, live preview and Overview completed through the native UI. Final device readback: paired=true, connected=true, ready=true, healthy Cable stream, active theme `/themes/u/to-7-d7799cec.json`, hash `6b398ec9`, renderOk=true. This is Cable cold-start proof, not a physical-screen photograph, WiFi rehearsal or signed update rehearsal.
 - DMG: `VibeTV-Control-Center-PR407-cold-fix-9999.0.103.dmg`, SHA-256 `5585e751b8e3497d784fe94c969818bcd30f09d73df2616ddebd5d86d0ebfc05`. Evidence is retained locally under `/tmp/CODEX-pr407-cold-20260909/cold-fix-103-*`.
 - After a final Mac/device purge for an independent customer test, Paul confirmed "ok passt jetzt" and explicitly approved pushing this tested state to PR #407. Review remains deferred until the end of the requested work.
+
+## 2026-09-10 — Align remaining setup recovery regression
+
+- User approval: Paul requested green CI for PR #407 before the next independent cold/warm candidate test. The visible result remains the accepted 2026-09-09 result recorded above.
+- Approved customer-visible result: Losing the device before first setup completes returns to the existing Welcome screen while no device can be selected. The theme chooser and Control Center navigation remain hidden. Only the stale browser assertion changes; product behavior is unchanged.

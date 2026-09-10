@@ -4689,8 +4689,8 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
   });
 
   // Before Overview has ever opened, losing the VibeTV is still setup. The
-  // wizard must go back to the device step instead of leaking into the app.
-  await waitForSetupDeviceStep(page, 20_000);
+  // With no connected device or selection, the wizard returns to Welcome.
+  await setupScreen(page, SETUP_WELCOME_SCREEN).waitFor({ timeout: 20_000 });
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
