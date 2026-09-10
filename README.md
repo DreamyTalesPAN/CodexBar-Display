@@ -104,29 +104,30 @@ backend. Support reports are only created when you ask for them.
 ```text
 CodexBar on the Mac
   -> VibeTV Mac App on 127.0.0.1:47832
-  -> local Control Center in the browser
-  -> VibeTV on the local WiFi
+  -> Control Center in the Mac App
+  -> VibeTV over Cable or local WiFi
 ```
 
 1. CodexBar reads provider usage, quotas, tokens, and reset windows.
 2. The VibeTV Mac App (`codexbar-display`) reads that data locally.
-3. The local Control Center talks to the Mac App through the browser.
-4. The Mac App sends display frames to VibeTV over local WiFi.
+3. Control Center talks to the local background service inside the Mac App.
+4. The Mac App sends display frames to VibeTV over Cable or local WiFi.
 5. VibeTV renders the selected theme on the 240x240 screen.
 
-The normal customer path does not require USB flashing. USB-C powers the device.
+Normal setup does not require USB flashing. A working USB data connection also
+supports Cable operation on current firmware; power-only devices use WiFi.
 
 ## Setup
 
 1. Buy the hardware from [vibetv.shop](https://vibetv.shop/products/vibe-tv).
 2. Power VibeTV with USB-C.
-3. Join the `VibeTV-Setup` WiFi hotspot and connect VibeTV to your home WiFi.
-4. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac and download the
+3. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac and download the
    Mac App.
-5. Drag `VibeTV Control Center` into Applications and open it.
-6. The app takes you through setup: choose your VibeTV, choose the AI providers
-   to show, choose the display mode, choose a theme. It hands over to Control
-   Center by itself when VibeTV is live.
+4. Drag `VibeTV Control Center` into Applications and open it.
+5. Follow the app to connect over Cable or WiFi. If both are found, choose
+   the connection you want; if WiFi setup is needed, follow its instructions.
+6. Choose the AI providers, display mode, and theme. Setup opens Overview
+   automatically once VibeTV is live.
 
 The customer setup guide is [docs/customer-setup.md](docs/customer-setup.md).
 
