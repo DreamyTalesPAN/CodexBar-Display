@@ -27,6 +27,7 @@ function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProp
     onChooseScreensaver: vi.fn(),
     onConnectionModeChange: vi.fn(),
     onResetSetup: vi.fn(),
+    onDismissError: vi.fn(),
     onSaveBrightness: vi.fn(),
     onSaveStandby: vi.fn(),
     onStandbyBrightnessChange: vi.fn(),
@@ -69,15 +70,60 @@ describe("Settings connection cards", () => {
     expect(screen.getByRole("button", { name: next }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("shows a failed connection action while keeping the saved mode and retry available", () => {
-    const view = render(<SettingsScreen {...props({ connectionMode: "wifi", actionError: {
-      code: "cable_identity_unavailable", message: "Cable VibeTV did not answer.", nextAction: "Reconnect the data cable and try again.",
-    } })} />);
-    expect(screen.getByRole("alert").textContent).toContain("Reconnect the data cable and try again.");
-    expect(screen.getByRole("button", { name: "WiFi" }).getAttribute("aria-pressed")).toBe("true");
-    expect((screen.getByRole("button", { name: "USB-C" }) as HTMLButtonElement).disabled).toBe(false);
-    view.rerender(<SettingsScreen {...props({ connectionMode: "wifi" })} />);
+  it("shows a dismissible setup-style error popup and preserves the connection for retry", () => {
+    const settings = props({
+      connectionMode: "wifi",
+      actionError: {
+        code: "cable_identity_unavailable",
+        message: "Cable VibeTV did not answer.",
+        nextAction: "Reconnect the data cable and try again.",
+      },
+    });
+    const view = render(<SettingsScreen {...settings} />);
+    expect(
+      screen.getByRole("dialog", { name: "Cable VibeTV did not answer." })
+        .textContent,
+    ).toContain("Reconnect the data cable and try again.");
     expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    expect(settings.onDismissError).toHaveBeenCalledOnce();
+    view.rerender(<SettingsScreen {...settings} actionError={null} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "WiFi" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "USB-C" }));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to USB-C" }));
+    expect(settings.onConnectionModeChange).toHaveBeenCalledExactlyOnceWith(
+      "cable",
+    );
+  });
+
+  it("shows provider failures in the same popup without stacking dialogs", () => {
+    const settings = props();
+    settings.providerPicker.preferencesError = {
+      code: "provider_save_failed",
+      message: "Provider could not be saved.",
+      nextAction: "Try again.",
+    };
+    const view = render(<SettingsScreen {...settings} />);
+    expect(
+      screen.getByRole("dialog", { name: "Provider could not be saved." }),
+    ).toBeTruthy();
+    view.rerender(
+      <SettingsScreen
+        {...settings}
+        actionError={{
+          code: "settings_failed",
+          message: "VibeTV did not answer.",
+          nextAction: "Check the connection.",
+        }}
+      />,
+    );
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(
+      screen.getByRole("dialog", { name: "VibeTV did not answer." }),
+    ).toBeTruthy();
   });
 
   it("blocks unsupported transports and confirmation during a firmware update", () => {

@@ -76,6 +76,7 @@ function render(
       onBrightnessChange={vi.fn()}
       onChooseScreensaver={vi.fn()}
       onConnectionModeChange={vi.fn()}
+      onDismissError={vi.fn()}
       onResetSetup={vi.fn()}
       onSaveBrightness={vi.fn()}
       onSaveStandby={vi.fn()}
@@ -325,6 +326,7 @@ describe("SettingsScreen standby controls", () => {
         onBrightnessChange={vi.fn()}
         onChooseScreensaver={vi.fn()}
         onConnectionModeChange={vi.fn()}
+        onDismissError={vi.fn()}
         onResetSetup={vi.fn()}
         onSaveBrightness={vi.fn()}
         onSaveStandby={vi.fn()}

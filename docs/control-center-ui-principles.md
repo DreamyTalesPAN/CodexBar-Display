@@ -8,6 +8,7 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 - **One primary action per state:** each screen state should have one obvious next action. Secondary actions must be rare and visually quieter.
 - **Task-first information architecture:** navigation follows the customer setup journey, not the internal system architecture.
 - **Cognitive load reduction:** remove explanatory paragraphs, duplicate status text, and implementation details unless they directly unblock the next action.
+- **Error dialogs:** New or changed error states use the existing setup-style pop-up over the current screen, never an inline error banner. Reuse `SetupStepFailedDialog` and avoid stacking dialogs. This applies after setup as well.
 - **Error prevention over error explanation:** disable or hide actions that would fail instead of explaining why they failed after the click.
 - **Plain-language labels:** use customer words: Mac App, VibeTV, Install, Connect, Update. Avoid internal words such as bridge, asset, package signing, protocol, transport, daemon, write gate, API, Companion, or agent.
 - **Automation-first workflows:** buttons should do the background work in sequence. Customers should not choose between technical substeps such as discover, pair, check bridge, check installer, or find device.

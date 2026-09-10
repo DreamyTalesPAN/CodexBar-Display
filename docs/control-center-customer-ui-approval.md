@@ -4241,3 +4241,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul explicitly requested that both an existing VibeTV on the local network and an open VibeTV-Setup network count as "1 VibeTV found", without "Setup required" or "Set up over Cable".
 - Approved customer-visible result: The existing startup search also scans for open VibeTV-Setup networks through the native Mac App. Both kinds of WiFi discovery share the same found-count label. Cable/WiFi selection appears when both paths were found. An open setup network without USB leads to the WiFi instructions. No internet check is involved. macOS Location Services permission is requested solely for the network scan; denied scans remain errors, not zero discoveries.
+
+## 2026-09-10 — Settings errors use the setup popup
+
+- User approval: During the PR #407 physical matrix continuation, Paul approved showing the failed USB action, but explicitly rejected an inline banner: "ja, aber nicht so wie jetzt, sondern in nem pop up. error states sind ab jetzt immer pop ups. schau dir den setup wizard an, die siehste wie ich meine".
+- Approved customer-visible result: Settings action and provider failures use the same `SetupStepFailedDialog` as the setup wizard. A single popup shows the existing error and recovery text; OK dismisses it. The saved connection and underlying controls remain available for retry. No new banner or parallel error-dialog component.
+- Validation: 36 focused component tests cover dialog dismissal, preserved WiFi selection, USB retry, provider failures and one-dialog priority. The browser regression proves that healthy status polling cannot dismiss a failed USB action; the full customer smoke suite passed before the poll correction, and focused WiFi/status cases passed after it. Customer-copy and TypeScript checks pass. Native preview verification follows separately.

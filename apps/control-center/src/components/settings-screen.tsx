@@ -1,8 +1,7 @@
 "use client";
 
-import { AlertTriangle, CircleArrowRight, Wifi } from "lucide-react";
+import { CircleArrowRight, Wifi } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Item, ItemSeparator } from "@/components/ui/item";
@@ -14,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import { selectedItemClass } from "./setup/setup-selectable-card";
 import {
   Select,
@@ -56,6 +56,7 @@ export type SettingsScreenProps = {
   brightness: number | null;
   busyAction: string | null;
   actionError?: ApiError | null;
+  onDismissError: () => void;
   connectionMode: "cable" | "wifi";
   standby: StandbySettings | null;
   onBrightnessChange: (value: number) => void;
@@ -74,6 +75,7 @@ export function SettingsScreen({
   brightness,
   busyAction,
   actionError,
+  onDismissError,
   connectionMode,
   standby,
   onBrightnessChange,
@@ -146,13 +148,10 @@ export function SettingsScreen({
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
-      {actionError ? (
-        <Alert className="mb-4" variant="destructive">
-          <AlertTriangle />
-          <AlertTitle>{actionError.message}</AlertTitle>
-          <AlertDescription>{actionError.nextAction}</AlertDescription>
-        </Alert>
-      ) : null}
+      <SetupStepFailedDialog
+        error={actionError ?? providerError ?? null}
+        onOpenChange={(open) => !open && onDismissError()}
+      />
       <SettingsSection title="Connection">
         <div
           aria-label="Connection mode"
@@ -394,17 +393,6 @@ export function SettingsScreen({
       <ItemSeparator className="my-0" />
 
       <SettingsSection title="AI providers">
-        {/*
-          The only place a failed provider or display write is reported once the
-          customer is past the wizard.
-        */}
-        {providerError ? (
-          <Alert className="mb-4" variant="destructive">
-            <AlertTriangle />
-            <AlertTitle>{providerError.message}</AlertTitle>
-            <AlertDescription>{providerError.nextAction}</AlertDescription>
-          </Alert>
-        ) : null}
         <ProviderList
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
           onToggle={(provider, enabled) =>

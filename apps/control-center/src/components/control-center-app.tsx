@@ -591,7 +591,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const mergeDevice = useCallback((next: DeviceInfo) => {
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
-      setLastError(null);
+      setLastError((current) => isConnectionRecoveryError(current) ? null : current);
     }
     if (deviceNeedsThemeSetup(next)) {
       setSetupThemeChoiceRequired(true);
@@ -1197,7 +1197,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (pairingRejection) {
           setLastError(pairingRejection);
         } else if (!quiet || deviceIsReady(payload.device)) {
-          setLastError(null);
+          setLastError((current) => isConnectionRecoveryError(current) ? null : current);
         }
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
@@ -1361,7 +1361,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (pairingRejection) {
         setLastError(pairingRejection);
       } else if (deviceIsReady(payload.device)) {
-        setLastError(null);
+        setLastError((current) => isConnectionRecoveryError(current) ? null : current);
       }
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
@@ -4802,6 +4802,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "settings" ? (
           <SettingsScreen
             actionError={lastError}
+            onDismissError={() => {
+              setLastError(null);
+              setProviderDisplayError(null);
+              setProviderPreferencesError(null);
+            }}
             automaticPreviews={setupPreviews}
             brightness={brightness}
             busyAction={

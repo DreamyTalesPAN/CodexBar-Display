@@ -523,6 +523,7 @@ async function main() {
     if (wifiRescanOnly) {
       await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
       await testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appContext.appUrl);
+      await testSettingsErrorPopupSurvivesHealthyPoll(browser, appContext.appUrl);
       console.log("control-center WiFi rescan test passed");
       return;
     }
@@ -654,6 +655,7 @@ async function main() {
         appContext.appUrl,
       );
       await testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appContext.appUrl);
+      await testSettingsErrorPopupSurvivesHealthyPoll(browser, appContext.appUrl);
       await testLocalWifiVerificationReconcilesCompletedSelection(
         browser,
         appContext.appUrl,
@@ -716,6 +718,7 @@ async function main() {
       appContext.appUrl,
     );
     await testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appContext.appUrl);
+    await testSettingsErrorPopupSurvivesHealthyPoll(browser, appContext.appUrl);
     await testLocalWifiVerificationReconcilesCompletedSelection(
       browser,
       appContext.appUrl,
@@ -1633,6 +1636,42 @@ async function testLocalWifiVerificationReconcilesCompletedSelection(
     (await page.getByRole("dialog").count()) === 0,
     "A status-confirmed selection must not show a false connection error",
   );
+  await page.close();
+}
+
+async function testSettingsErrorPopupSurvivesHealthyPoll(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const wifi = {
+    ...companionDevice, active: true,
+    capabilities: { ...companionDevice.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] } },
+  };
+  await routeCompanionOnline(page, [], () => {}, { device: wifi, connectionModeChoiceRequired: false });
+  let attempts = 0;
+  await routeCompanionPaths(page, async (route) => {
+    if (companionPath(route) !== "/v1/setup/connection-mode") return route.fallback();
+    attempts += 1;
+    await route.fulfill({ status: 409, json: { ok: false, error: {
+      code: "cable_device_not_found", message: "Cable VibeTV did not answer.", nextAction: "Reconnect the data cable and try again.",
+    } } });
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "USB-C", exact: true }).click();
+  await page.getByRole("button", { name: "Switch to USB-C", exact: true }).click();
+  const error = page.getByRole("dialog", { name: "Cable VibeTV did not answer.", exact: true });
+  await error.waitFor({ timeout: 10_000 });
+  for (let count = 0; count < 2; count += 1) {
+    await page.waitForResponse((response) => response.url().endsWith("/v1/status") && response.ok());
+  }
+  assert(await error.isVisible(), "Healthy WiFi polls must not dismiss a failed USB action");
+  assert(await page.getByRole("dialog").count() === 1, "Only one error popup may be visible");
+  await error.getByRole("button", { name: "OK", exact: true }).click();
+  await error.waitFor({ state: "detached", timeout: 5_000 });
+  assert(await page.getByRole("button", { name: "WiFi", exact: true }).getAttribute("aria-pressed") === "true", "A failed USB change must retain WiFi");
+  await page.getByRole("button", { name: "USB-C", exact: true }).click();
+  await page.getByRole("button", { name: "Switch to USB-C", exact: true }).click();
+  await error.waitFor({ timeout: 10_000 });
+  assert(attempts === 2, "Dismissing the popup must leave a working retry");
   await page.close();
 }
 
