@@ -3813,6 +3813,7 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
     userAgent: "VibeTVControlCenter/1.0.53",
   });
   let recovered = false;
+  const recoveryUsage = { ok: true, providers: [] };
   // Only the parameterless retry belongs to the usage-service incident;
   // provider rows no longer start background checks or repairs on their own.
   let recoveryRetries = 0;
@@ -3848,15 +3849,14 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
       recoveryRetries += 1;
       if (recoveryRetries === 3) {
         recovered = true;
+        recoveryUsage.providers.push({
+          id: "codex", label: "Codex", session: 12, weekly: 0, usageMode: "used",
+        });
         return readyProviderSetup();
       }
       return brokenSetup;
     },
-    usageResponse: {
-      ok: true,
-      generatedAt: "2026-07-29T08:00:00Z",
-      providers: [],
-    },
+    usageResponse: recoveryUsage,
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });

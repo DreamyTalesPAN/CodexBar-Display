@@ -4213,3 +4213,8 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul requested a spinner on each enabled provider until actual CodexBar usage is available and approved implementation with "ok dann bau das so um". He clarified that one provider with real usage is sufficient, including 0%; other enabled providers need not be ready.
 - Approved customer-visible result: Continue stays disabled until at least one enabled, healthy provider has a displayable reading in the same usage snapshot used by Display Mode. A provider with healthy status but missing usage keeps its spinner. Existing errors and their actions remain visible, and the provider switch remains usable except during its own save. A 0% reading is valid without a reset time or token history. The existing read-only poll updates the usage and provider list together.
 - Validation: Unit and browser regressions cover health arriving before usage, a delayed real zero, other providers needing authentication, the available switch and the resulting Display Mode preview. Native candidate testing remains a separate customer check.
+
+## 2026-09-10 — Provider recovery regression fixture
+
+- User approval: The approved provider-usage gate above remains unchanged: one enabled provider with actual usage, including 0%, is sufficient.
+- Approved customer-visible result: Repairing the usage service only unlocks Continue after the recovered provider supplies displayable usage. The browser fixture now delivers that reading after successful recovery instead of returning an empty usage list forever. Both recovery and delayed-zero browser scenarios pass; no product code changes in this follow-up.
