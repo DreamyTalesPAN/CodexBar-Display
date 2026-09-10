@@ -3,6 +3,8 @@
 import {
   act,
   cleanup,
+  fireEvent,
+  within,
   render as renderDom,
   screen,
 } from "@testing-library/react";
@@ -91,6 +93,50 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
+  it("shows one provider popup, keeps dismissal across polls, and reopens after retry", () => {
+    const onCheckAgain = vi.fn();
+    const onToggle = vi.fn();
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    const props = { usage, providers: [claude, failed], onCheckAgain, onToggle,
+      onContinue: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(within(screen.getByRole("dialog")).getByText(failed.health.reported)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    rerender(<SetupProvidersScreen {...props} providers={[{ ...claude }, { ...failed }]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText(failed.health.reported)).toBeNull();
+    expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Check GitHub Copilot again" }));
+    expect(onCheckAgain).toHaveBeenCalledWith(failed);
+    rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["copilot"])} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<SetupProvidersScreen {...props} />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("switch", { name: "GitHub Copilot" }));
+    expect(onToggle).toHaveBeenCalledWith(failed, false);
+    rerender(<SetupProvidersScreen {...props} providers={[claude, { ...failed, value: false }]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
+    const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
+    renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}
+      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    expect(within(screen.getByRole("dialog")).getByText("OpenAI")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for GitHub Copilot" }));
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+  });
+
   it("shows the approved loading state until the provider list is ready", () => {
     const html = render({ loading: true, providers: [] });
 
@@ -216,9 +262,8 @@ describe("SetupProvidersScreen", () => {
     expect(html).not.toMatch(
       /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
     );
-    expect(html).toContain(
-      "Live usage is unavailable. Showing the last saved reading.",
-    );
+    expect(html).toContain('aria-label="Show provider message for Codex"');
+    expect(html).not.toContain("Live usage is unavailable. Showing the last saved reading.");
   });
 
   // CodexBar ships 65 providers and almost all of them are off. Putting the

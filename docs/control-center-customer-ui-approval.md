@@ -4278,3 +4278,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul requested "error states sind ab jetzt immer pop ups" using the setup wizard as the reference, and fixing matrix issues along the way.
 - Approved customer-visible result: The shared popup remains immediately visible and closes immediately. An inline animation override enforces the already-approved absence of enter/exit keyframes despite inherited stylesheet ordering; layout, text and controls stay the same.
 - Validation: A browser regression checks computed animation names for both open and closed states against the actual production stylesheet.
+
+
+## 2026-09-10 — Provider-result errors use the shared popup
+
+- User approval: Paul explicitly directed "error states sind ab jetzt immer pop ups. schau dir den setup wizard an" and requested fixing issues found while completing the matrix. This applies that standing presentation instruction to the real OpenAI provider failure observed in setup; the provider-owned message is unchanged.
+- Approved customer-visible result: Provider-result failures appear in the existing setup-style popup, titled with the existing provider name and containing the exact CodexBar guidance. OK/Close dismiss it; Copy provider message remains available there. The row retains its on/off switch and retry, and an error icon reopens its message. Only one provider popup appears at a time. Polling does not reopen acknowledged messages; explicit retry can show the result again. The shared provider list gives Setup and Settings the same behavior.
+- Validation: Focused tests cover dismissal through polling, exact message preservation, retry of the same error, provider disable, queued failures and the existing one-ready-provider/zero-usage gates. Native quick-DMG123 confirms the real OpenAI failure popup in both Setup and Settings, OK/Close dismissal, retry of the same error, disabling OpenAI and continuing through Manual Codex to Overview Live on device14799300/fw115. No signing.

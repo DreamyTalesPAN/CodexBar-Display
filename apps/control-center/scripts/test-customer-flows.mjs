@@ -6477,22 +6477,11 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const panel = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
-  await panel
-    .getByText(
-      "Claude connection failed: authentication required to read usage.",
-      { exact: true },
-    )
-    .first()
-    .waitFor({ timeout: 10_000 });
-  for (const action of [
-    "Copy provider message for Claude",
-    "Check Claude again",
-  ]) {
-    await panel
-      .getByRole("button", { name: action })
-      .first()
-      .waitFor({ timeout: 10_000 });
-  }
+  const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
+  await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
+  await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
+  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+  await panel.getByRole("button", { name: "Check Claude again" }).waitFor();
   await panel
     .getByText("GitHub Copilot", { exact: true })
     .waitFor({ timeout: 10_000 });
@@ -6727,6 +6716,7 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     (request) =>
       request.path === "/v1/preferences" && request.method === "GET",
   ).length;
+  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
   await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
   await waitForCondition(
@@ -6738,6 +6728,7 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     "navigation must start the stale read used by the provider-check race",
   );
 
+  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
   await checkAgain.click();
   await waitForCondition(
     () =>
@@ -6882,15 +6873,10 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   assert(await codexRow.locator('[data-slot="spinner"]').count() === 0,
     "Codex must stop spinning once its usage can be displayed");
 
-  await providersScreen
-    .getByText(
-      "Claude connection failed: authentication required to read usage.",
-      { exact: true },
-    )
-    .waitFor({ timeout: 10_000 });
-  await providersScreen
-    .getByRole("button", { name: "Copy provider message for Claude" })
-    .waitFor({ timeout: 10_000 });
+  const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
+  await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
+  await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
+  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
   assert(
     (await providersScreen
       .getByRole("button", { name: "Open CodexBar" })
@@ -6939,6 +6925,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   // Switching the only healthy provider off closes the shared descriptor
   // gate, and switching it back on opens it again.
+  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
   const codexSwitch = providersScreen.getByRole("switch", { name: "Codex" });
   await codexSwitch.click();
   await waitForCondition(

@@ -1,7 +1,7 @@
 "use client";
 
 import type { SupportDiagnostics, UsageSnapshot } from "../control-center-types";
-import { Search, SearchX } from "lucide-react";
+import { Search, SearchX, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SetupProviderRow } from "./setup-provider-row";
+import { SetupProviderRow, setupProviderIssueMessage } from "./setup-provider-row";
+import { SetupDialog } from "./setup-dialog";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
   SetupWizardScreen,
@@ -76,6 +77,25 @@ export function ProviderList({
   providers,
   usage,
 }: ProviderListProps) {
+  // One acknowledged message per provider: polling must not reopen a dismissed
+  // popup, while a new message or an explicit retry may show it again.
+  const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>({});
+  const issue = providers.flatMap((provider) => {
+    if (!provider.value || pendingCheckIds.has(provider.providerId) ||
+        pendingPreferenceIds.has(provider.id)) return [];
+    const message = setupProviderIssueMessage({
+      health: provider.health.state, label: provider.label,
+      detail: provider.health.message, reportedMessage: provider.health.reported,
+    });
+    return message && dismissedIssues[provider.id] !== message
+      ? [{ provider, message }] : [];
+  })[0];
+  const dismissIssue = () => {
+    if (issue) setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
+  };
+  const resetIssue = (provider: ProviderItem) => {
+    setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
+  };
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
   const matching = setupProvidersEnabledFirst(
@@ -90,6 +110,20 @@ export function ProviderList({
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
+      {issue ? (
+        <SetupDialog
+          open
+          title={issue.provider.label}
+          description={issue.message}
+          icon={TriangleAlert}
+          onOpenChange={(open) => { if (!open) dismissIssue(); }}
+          primaryAction={{ label: "OK", onSelect: dismissIssue }}
+          secondaryAction={issue.provider.health.reported ? {
+            label: `Copy provider message for ${issue.provider.label}`,
+            onSelect: () => { void navigator.clipboard?.writeText(issue.provider.health.reported!); },
+          } : undefined}
+        />
+      ) : null}
       <div className="relative w-full">
         <Search
           aria-hidden
@@ -121,10 +155,15 @@ export function ProviderList({
             }
             key={provider.id}
             label={provider.label}
-            detail={provider.health.message}
-            onCheckAgain={() => onCheckAgain(provider)}
-            onToggle={(enabled) => onToggle(provider, enabled)}
-            reportedMessage={provider.health.reported}
+            onShowIssue={() => resetIssue(provider)}
+            onCheckAgain={() => {
+              resetIssue(provider);
+              onCheckAgain(provider);
+            }}
+            onToggle={(enabled) => {
+              resetIssue(provider);
+              onToggle(provider, enabled);
+            }}
             saving={pendingPreferenceIds.has(provider.id)}
           />
         ))}
