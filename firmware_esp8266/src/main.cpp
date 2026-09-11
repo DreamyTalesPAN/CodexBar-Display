@@ -534,11 +534,20 @@ device_settings::ConnectionMode requestedConnectionMode(const String& name) {
   return device_settings::ConnectionMode::kUnspecified;
 }
 
+bool rollbackConnectionTransition(const char* reason);
+
 bool beginConnectionTransition(
     device_settings::ConnectionMode target,
     String& error) {
   const device_settings::ConnectionMode previous = deviceSettings.connectionMode;
   if (connectionTransitionPending) {
+    if (target == connectionTransition.previous) {
+      if (rollbackConnectionTransition("cancelled_by_user")) {
+        return true;
+      }
+      error = "failed to restore previous connection mode";
+      return false;
+    }
     error = "connection mode transition already pending";
     return false;
   }
