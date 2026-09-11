@@ -1400,8 +1400,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				s.firmwareUpdateStartMu.Unlock()
 			}
 		}
-		// Keep connection proof separate from display readiness.
-		reachable = reachable || providerSetupStreamForTarget(device.Stream, device.Target)
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)

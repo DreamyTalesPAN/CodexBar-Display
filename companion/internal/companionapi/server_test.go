@@ -5265,41 +5265,45 @@ func TestCablePairingRequiresTokenWhenDeviceSupportsAuth(t *testing.T) {
 }
 
 func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
-	hello := cableHelloForTest("cable-a")
-	hello.Features = []string{protocol.FeatureCableHealthV1}
-	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
-	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
-	server.readCableHealth = func(string, string) (deviceHealth, error) {
-		health := deviceHealth{OK: true}
-		health.Display.ActiveTheme = "theme-missing"
-		renderOK := true
-		health.Display.ThemeSpec.RenderOK = &renderOK
-		return health, nil
-	}
-	server.streamStatus = func(context.Context, string) displayStreamInfo {
-		return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
-	}
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
-	var got statusResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if !got.Device.Connected || got.Device.Ready || got.Device.ConnectionState != deviceConnectionSetup {
-		t.Fatalf("live health must prove connection, not first-frame readiness: %+v", got.Device)
-	}
-	// A cached hello is not live proof. Once the bounded existing grace expires,
-	// a failed health read must report the device offline again.
-	server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{}, errors.New("unplugged") }
-	server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
-	rec = httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Device.Connected {
-		t.Fatal("cached identity must not keep an unplugged device connected")
+	for _, errorCode := range []string{"device_not_found", "provider_setup_required"} {
+		t.Run(errorCode, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+			hello := cableHelloForTest("cable-a")
+			hello.Features = []string{protocol.FeatureCableHealthV1}
+			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+			server.readCableHealth = func(string, string) (deviceHealth, error) {
+				health := deviceHealth{OK: true}
+				health.Display.ActiveTheme = "theme-missing"
+				renderOK := true
+				health.Display.ThemeSpec.RenderOK = &renderOK
+				return health, nil
+			}
+			server.streamStatus = func(context.Context, string) displayStreamInfo {
+				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: errorCode}
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			var got statusResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if !got.Device.Connected || got.Device.Ready || got.Device.ConnectionState != deviceConnectionSetup {
+				t.Fatalf("live health must prove connection, not first-frame readiness: %+v", got.Device)
+			}
+			// A cached hello is not live proof. Once the bounded existing grace expires,
+			// a failed health read must report the device offline again.
+			server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{}, errors.New("unplugged") }
+			server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
+			rec = httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Device.Connected {
+				t.Fatal("cached identity must not keep an unplugged device connected")
+			}
+		})
 	}
 }
 
