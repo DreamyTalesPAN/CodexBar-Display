@@ -27,7 +27,7 @@ cd companion
 ../codexbar-display service start
 ../codexbar-display doctor
 ../codexbar-display version
-../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
+../codexbar-display upgrade --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 ../codexbar-display rollback --port /dev/cu.usbserial-10
 ```
 
@@ -176,11 +176,12 @@ During setup, runtime assets are installed to:
 
 ## Upgrade (No Re-Setup)
 
-Use `upgrade` for N -> N+1 updates with preflight:
+Use `upgrade` for N -> N+1 updates with preflight. Pass the actual device port
+listed by `ls /dev/cu.usb*`; the port below is an example:
 
 ```bash
 cd companion
-../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
+../codexbar-display upgrade --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 ```
 
 Preflight includes:
@@ -192,7 +193,7 @@ Optional guard override:
 
 ```bash
 # experimental fallback path
-../codexbar-display upgrade \
+../codexbar-display upgrade --port /dev/cu.usbserial-10 \
   --firmware-env lilygo_t_display_s3 \
   --target-firmware-version <x.y.z>
 ```
@@ -200,7 +201,7 @@ Optional guard override:
 If you need to bypass guard (not recommended):
 
 ```bash
-../codexbar-display upgrade --skip-version-guard
+../codexbar-display upgrade --port /dev/cu.usbserial-10 --skip-version-guard
 ```
 
 ## Rollback (Last-Known-Good)
@@ -218,7 +219,7 @@ Wrapper scripts:
 
 ```bash
 cd /path/to/CodexBar-Display
-./scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
+./scripts/upgrade-with-preflight.sh --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 ./scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```
 

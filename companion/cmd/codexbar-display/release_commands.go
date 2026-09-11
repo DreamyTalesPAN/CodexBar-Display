@@ -2268,6 +2268,13 @@ func runRollback(args []string) error {
 	if *skipCompanion && *skipFirmware {
 		return errors.New("rollback requested with --skip-companion and --skip-firmware; nothing to do")
 	}
+	if !*skipFirmware {
+		resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
+		if err != nil {
+			return &commandError{Op: "resolve-port", Code: errcode.RollbackFirmwareRestore, Err: err}
+		}
+		*port = resolvedPort
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {

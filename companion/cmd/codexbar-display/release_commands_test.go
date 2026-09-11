@@ -2814,6 +2814,58 @@ func TestWrapUpgradeLaunchAgentRecoveryErrorAppendsHint(t *testing.T) {
 	}
 }
 
+func TestRunRollbackValidatesFirmwarePortBeforeRestoringCompanion(t *testing.T) {
+	previousResolve, previousLoad := resolveSerialPortFn, loadReleaseStateFn
+	previousRestore, previousRestart := runRestoreKnownGoodCommandFn, rollbackRestartLaunchAgentFn
+	t.Cleanup(func() {
+		resolveSerialPortFn, loadReleaseStateFn = previousResolve, previousLoad
+		runRestoreKnownGoodCommandFn, rollbackRestartLaunchAgentFn = previousRestore, previousRestart
+	})
+	t.Setenv("HOME", t.TempDir())
+	support, err := runtimeSupportDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(support, "bin", "codexbar-display")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "known-good")
+	for path, contents := range map[string]string{target: "current", source: "previous"} {
+		if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loadCalls, restoreCalls, restartCalls := 0, 0, 0
+	resolveSerialPortFn = usb.ResolvePort
+	loadReleaseStateFn = func(string) (releaseState, error) {
+		loadCalls++
+		return releaseState{LastKnownGood: lastKnownGoodState{CompanionBinary: source}}, nil
+	}
+	runRestoreKnownGoodCommandFn = func([]string) error {
+		restoreCalls++
+		return errors.New("firmware restore must not start without a valid port")
+	}
+	rollbackRestartLaunchAgentFn = func(string) error { restartCalls++; return nil }
+	for _, args := range [][]string{nil, {"--port", "  "}, {"--port", filepath.Join(t.TempDir(), "missing-port")}, {"--skip-companion"}} {
+		err := runRollback(args)
+		if err == nil || errcode.Of(err) != errcode.RollbackFirmwareRestore {
+			t.Fatalf("expected firmware port rejection for %v, got %v", args, err)
+		}
+		got, err := os.ReadFile(target)
+		if err != nil || string(got) != "current" || loadCalls != 0 || restoreCalls != 0 || restartCalls != 0 {
+			t.Fatalf("invalid port changed rollback state: binary=%q err=%v load=%d restore=%d restart=%d", got, err, loadCalls, restoreCalls, restartCalls)
+		}
+	}
+	if err := runRollback([]string{"--skip-firmware"}); err != nil {
+		t.Fatalf("companion-only rollback must not need a port: %v", err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil || string(got) != "previous" || restoreCalls != 0 || restartCalls != 1 {
+		t.Fatalf("companion-only rollback did not restore and restart: binary=%q err=%v restore=%d restart=%d", got, err, restoreCalls, restartCalls)
+	}
+}
+
 func TestRunRollbackFirmwareOnlyRestartsLaunchAgent(t *testing.T) {
 	previousResolve := resolveSerialPortFn
 	previousLoadState := loadReleaseStateFn
