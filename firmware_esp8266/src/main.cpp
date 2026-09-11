@@ -1713,6 +1713,9 @@ bool scanSetupNetworks(bool automatic) {
   }
   if (setupMode) {
     WiFi.mode(WIFI_AP);
+  } else if (!codexbar_display::esp8266::device_settings::UsesWifi(
+                 deviceSettings.connectionMode)) {
+    WiFi.mode(WIFI_OFF);
   }
   Serial.printf(
       "wifi_setup_scan_finished networks=%d visible=%u state=%u\n",

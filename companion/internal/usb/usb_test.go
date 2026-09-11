@@ -63,7 +63,7 @@ func TestDeviceHelloDoesNotCacheLegacyReadyAsIdentity(t *testing.T) {
 	sender := NewSenderWithConfig(SenderConfig{
 		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
 		Sleep:       func(time.Duration) {},
-		HelloWindow: time.Millisecond,
+		HelloWindow: 100 * time.Millisecond,
 	})
 	defer sender.Close()
 	if _, err := sender.DeviceHello("/dev/mock"); err == nil {
@@ -82,7 +82,7 @@ func TestDeviceHelloDoesNotCacheLegacyReadyAsIdentity(t *testing.T) {
 func TestDeviceHelloRevalidatesStableIdentityOnSamePath(t *testing.T) {
 	port := newMockSerialPort()
 	opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}
-	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: time.Millisecond})
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: 100 * time.Millisecond})
 	defer sender.Close()
 	for _, id := range []string{"old-device", "replacement-device"} {
 		port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"` + id + `","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")}
@@ -113,7 +113,7 @@ func TestResolverRejectsReplacementForPreviousIdentity(t *testing.T) {
 	for _, control := range []bool{false, true} {
 		t.Run(fmt.Sprint(control), func(t *testing.T) {
 			port := newMockSerialPort()
-			sender := NewSenderWithConfig(SenderConfig{Opener: &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}, Sleep: func(time.Duration) {}, HelloWindow: time.Millisecond})
+			sender := NewSenderWithConfig(SenderConfig{Opener: &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}, Sleep: func(time.Duration) {}, HelloWindow: 100 * time.Millisecond})
 			defer sender.Close()
 			hello := func(id string) []byte {
 				return []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"` + id + `","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")
@@ -140,7 +140,7 @@ func TestDeviceHelloObservesWiFiRollbackWithoutReopeningPort(t *testing.T) {
 	sender := NewSenderWithConfig(SenderConfig{
 		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
 		Sleep:       func(time.Duration) {},
-		HelloWindow: time.Millisecond,
+		HelloWindow: 100 * time.Millisecond,
 	})
 	defer sender.Close()
 	if _, err := sender.DeviceHello("/dev/mock"); err != nil {
@@ -827,5 +827,31 @@ func TestDeviceHelloRetriesLostBootRequestWithoutReopening(t *testing.T) {
 	}
 	if opener.openCount("/dev/mock") != 1 || port.closeCalls != 0 || port.writeCalls != 2 {
 		t.Fatalf("expected two hello requests on one open port: opens=%d closes=%d writes=%d", opener.openCount("/dev/mock"), port.closeCalls, port.writeCalls)
+	}
+}
+
+func TestDeviceHelloWaitsForFailedWiFiJoinBeforeSetup(t *testing.T) {
+	port := newMockSerialPort()
+	started := time.Now()
+	port.readHook = func(_ int) {
+		time.Sleep(time.Millisecond)
+		if time.Since(started) < 21*time.Second {
+			return
+		}
+		port.mu.Lock()
+		defer port.mu.Unlock()
+		if len(port.readQueue) == 0 {
+			port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"14799300","networkMode":"setup","capabilities":{"transport":{"active":"usb","mode":"wifi"}}}` + "\n")}
+		}
+	}
+	opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}})
+	defer sender.Close()
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.DeviceID != "14799300" || hello.NetworkMode != "setup" {
+		t.Fatalf("failed WiFi boot must remain recoverable over Cable: hello=%+v err=%v", hello, err)
+	}
+	if opener.openCount("/dev/mock") != 1 || port.closeCalls != 0 {
+		t.Fatal("waiting must not restart the boot by reopening USB")
 	}
 }

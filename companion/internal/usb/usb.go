@@ -17,9 +17,10 @@ const (
 	closeTimeout         = 200 * time.Millisecond
 	reopenSettleDuration = 50 * time.Millisecond
 	writeTimeout         = 2 * time.Second
-	// A WiFi-mode supplier device measured 6.9 seconds to boot after opening
-	// USB. Bound the entire repeated hello exchange, without reopening it.
-	helloReadWindow      = 10 * time.Second
+	// Opening supplier USB can reset the device. A failed 20-second WiFi
+	// join measured 21.8 seconds until setup answered hello. Keep one port
+	// open through that boot, with a bounded reserve for initialization.
+	helloReadWindow      = 30 * time.Second
 	wifiScanReadWindow   = 12 * time.Second
 	helloReadStepTimeout = 80 * time.Millisecond
 	helloReadBufferBytes = 2048
