@@ -499,11 +499,12 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			cfg, ok := loadRuntimeConfig(deps)
 			if ok && cfg.WiFiTransitionPending() {
 				now := deps.now()
+				if started := time.Unix(cfg.WiFiTransitionStartedAt, 0); cfg.WiFiTransitionStartedAt > 0 && !started.After(now) &&
+					(wifiQuietSince.IsZero() || started.After(wifiQuietSince)) {
+					wifiQuietSince = started
+				}
 				if wifiQuietSince.IsZero() {
 					wifiQuietSince = now
-				}
-				if started := time.Unix(cfg.WiFiTransitionStartedAt, 0); cfg.WiFiTransitionStartedAt > 0 && started.After(wifiQuietSince) {
-					wifiQuietSince = started
 				}
 				waitingForWiFi = now.Sub(wifiQuietSince) < wifiTransitionQuietPeriod
 				if !waitingForWiFi {
