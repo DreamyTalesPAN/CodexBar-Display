@@ -500,6 +500,49 @@ func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testin
 	}
 }
 
+func TestWiFiConnectionChangeDistinguishesRejectionFromLostAcknowledgement(t *testing.T) {
+	for _, configure := range []bool{false, true} {
+		for _, outcome := range []string{"open-failed", "rejected", "lost-ack", "write-failed", "unrelated-error", "other-command-rejected"} {
+			t.Run(fmt.Sprintf("configure=%t/%s", configure, outcome), func(t *testing.T) {
+				port := newMockSerialPort()
+				opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}
+				switch outcome {
+				case "open-failed":
+					opener.portsByPath = nil
+				case "rejected":
+					code := "connection-mode-rejected"
+					if configure {
+						code = "wifi-configuration-rejected"
+					}
+					port.readQueue = [][]byte{[]byte(fmt.Sprintf("{\"kind\":\"error\",\"code\":%q}\n", code))}
+				case "other-command-rejected":
+					code := "wifi-configuration-rejected"
+					if configure {
+						code = "connection-mode-rejected"
+					}
+					port.readQueue = [][]byte{[]byte(fmt.Sprintf("{\"kind\":\"error\",\"code\":%q}\n", code))}
+				case "write-failed":
+					port.writeErr = errors.New("uncertain write")
+				case "unrelated-error":
+					port.readQueue = [][]byte{[]byte("{\"kind\":\"error\",\"code\":\"frame-rejected\"}\n")}
+				}
+				sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: time.Millisecond})
+				defer sender.Close()
+				var err error
+				if configure {
+					err = sender.ConfigureWiFi("/dev/mock", "14799300", "Home", "password")
+				} else {
+					err = sender.SetConnectionMode("/dev/mock", "14799300", "wifi")
+				}
+				definite := outcome == "open-failed" || outcome == "rejected"
+				if err == nil || errors.Is(err, ErrConnectionChangeNotAccepted) != definite {
+					t.Fatalf("wrong acceptance certainty: definite=%t err=%v", definite, err)
+				}
+			})
+		}
+	}
+}
+
 func TestSenderStartsWiFiConnectionModeTransition(t *testing.T) {
 	port := newMockSerialPort()
 	port.readQueue = [][]byte{[]byte(`{"kind":"connection-mode","status":"switching","deviceId":"14799300","mode":"wifi"}` + "\n")}

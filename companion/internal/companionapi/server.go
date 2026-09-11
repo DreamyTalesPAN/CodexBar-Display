@@ -3737,6 +3737,12 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	// Journal WiFi intent before the command that can reboot the USB device.
 	if !modeAlreadySelected {
 		if err := s.setCableConnectionMode(port, hello.DeviceID, mode); err != nil {
+			if mode == "wifi" {
+				if restoreErr := s.restoreRejectedWiFiIntent(cfg, err); restoreErr != nil {
+					writeInternalError(w, restoreErr)
+					return
+				}
+			}
 			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
 			return
 		}
@@ -3912,6 +3918,10 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 	// The reboot can lose its acknowledgement after accepting the credentials.
 	// Keep the persisted intent so discovery and bounded Cable recovery continue.
 	if err := s.configureCableWiFi(port, hello.DeviceID, req.SSID, req.Password); err != nil {
+		if restoreErr := s.restoreRejectedWiFiIntent(cfg, err); restoreErr != nil {
+			writeInternalError(w, restoreErr)
+			return
+		}
 		writeError(w, http.StatusBadGateway, "wifi_configuration_failed", "VibeTV could not save these WiFi details.", "Check the WiFi name and password, keep the Cable connected, then try again.")
 		return
 	}
@@ -3932,6 +3942,27 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 			Capabilities: &hello.Capabilities,
 		},
 	})
+}
+
+func (s *Server) restoreRejectedWiFiIntent(previous runtimeconfig.Config, commandErr error) error {
+	if !errors.Is(commandErr, usb.ErrConnectionChangeNotAccepted) {
+		return nil
+	}
+	_, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.ConnectionMode = previous.ConnectionMode
+		current.WiFiTransitionStartedAt = previous.WiFiTransitionStartedAt
+		current.CableAutoBindDisabled = previous.CableAutoBindDisabled
+		current.ConnectionModeChoiceRequired = previous.ConnectionModeChoiceRequired
+		current.DeviceID = previous.DeviceID
+		current.DeviceTarget = previous.DeviceTarget
+		current.DeviceToken = previous.DeviceToken
+		current.DeviceTransports = previous.DeviceTransports
+		// Pairing may have refreshed the token before the rejected command.
+		if known, ok := current.KnownDevice(previous.DeviceID); ok && known.DeviceToken != "" {
+			current.DeviceToken = known.DeviceToken
+		}
+	})
+	return err
 }
 
 func (s *Server) handleSetupWiFiNetworks(w http.ResponseWriter, r *http.Request) {

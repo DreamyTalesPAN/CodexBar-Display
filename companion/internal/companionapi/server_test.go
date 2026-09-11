@@ -902,11 +902,19 @@ func TestSetupWiFiNetworksReturnsCableScanResults(t *testing.T) {
 
 func TestSetupWiFiJournalsTransitionBeforeDeviceCommand(t *testing.T) {
 	for _, endpoint := range []string{"/v1/setup/wifi", "/v1/setup/connection-mode"} {
-		for _, lostAck := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/lostAck=%t", endpoint, lostAck), func(t *testing.T) {
-				server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceTarget: "http://192.0.2.10", DeviceToken: "pair-token"})
+		for _, outcome := range []string{"accepted", "lost-ack", "rejected"} {
+			t.Run(endpoint+"/"+outcome, func(t *testing.T) {
+				initialToken := "pair-token"
+				if endpoint == "/v1/setup/connection-mode" {
+					initialToken = "previous-token"
+				}
+				server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceTarget: "http://192.0.2.10", DeviceToken: initialToken})
 				server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
-				server.readCableHello = func(string) (protocol.DeviceHello, error) { return cableHelloForTest("cable-a"), nil }
+				server.readCableHello = func(string) (protocol.DeviceHello, error) {
+					hello := cableHelloForTest("cable-a")
+					hello.Capabilities.Auth = &protocol.AuthCapabilities{Paired: true}
+					return hello, nil
+				}
 				server.pairCableDevice = func(string, string) (string, error) { return "pair-token", nil }
 				calls := 0
 				command := func() error {
@@ -915,7 +923,13 @@ func TestSetupWiFiJournalsTransitionBeforeDeviceCommand(t *testing.T) {
 					if err != nil || !cfg.WiFiTransitionPending() || cfg.WiFiTransitionStartedAt == 0 || cfg.DeviceID != "cable-a" || cfg.DeviceToken != "pair-token" {
 						t.Errorf("WiFi intent must be durable before reboot command: pending=%t timestamp=%d err=%v", cfg.WiFiTransitionPending(), cfg.WiFiTransitionStartedAt, err)
 					}
-					if lostAck {
+					if _, err := server.updateConfig(func(current *runtimeconfig.Config) { current.Theme = "mini" }); err != nil {
+						t.Fatal(err)
+					}
+					if outcome == "rejected" && calls == 1 {
+						return fmt.Errorf("rejected before reboot: %w", usb.ErrConnectionChangeNotAccepted)
+					}
+					if outcome == "lost-ack" {
 						return errors.New("acknowledgement lost after firmware accepted command")
 					}
 					return nil
@@ -929,15 +943,27 @@ func TestSetupWiFiJournalsTransitionBeforeDeviceCommand(t *testing.T) {
 				rec := httptest.NewRecorder()
 				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(body)))
 				want := http.StatusAccepted
-				if lostAck {
+				if outcome != "accepted" {
 					want = http.StatusBadGateway
 				}
 				if rec.Code != want || calls != 1 {
 					t.Fatalf("status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
 				}
 				cfg, err := server.config()
-				if err != nil || !cfg.WiFiTransitionPending() || cfg.DeviceID != "cable-a" {
-					t.Fatalf("uncertain acknowledgement lost the selected pending transition: %v", err)
+				if err != nil || cfg.DeviceID != "cable-a" || cfg.DeviceToken != "pair-token" || cfg.DeviceTarget != "http://192.0.2.10" || cfg.Theme != "mini" {
+					t.Fatalf("connection identity changed after command: %+v err=%v", cfg, err)
+				}
+				if outcome == "rejected" {
+					if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || cfg.WiFiTransitionStartedAt != 0 || cfg.ConnectionModeChoiceRequired {
+						t.Fatalf("definite rejection suppressed Cable: %+v", cfg)
+					}
+					retry := httptest.NewRecorder()
+					server.Handler().ServeHTTP(retry, httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(body)))
+					if retry.Code != http.StatusAccepted || calls != 2 {
+						t.Fatalf("immediate retry failed: %d %s", retry.Code, retry.Body.String())
+					}
+				} else if !cfg.WiFiTransitionPending() {
+					t.Fatal("accepted or uncertain command lost the selected pending transition")
 				}
 			})
 		}

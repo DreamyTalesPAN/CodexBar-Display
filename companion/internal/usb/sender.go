@@ -316,13 +316,13 @@ func (s *Sender) ConfirmConnectionMode(path, deviceID string) error {
 func (s *Sender) SetConnectionMode(path, deviceID, mode string) error {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode != "cable" && mode != "wifi" {
-		return fmt.Errorf("unsupported connection mode %q", mode)
+		return fmt.Errorf("%w: unsupported connection mode %q", ErrConnectionChangeNotAccepted, mode)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, err := s.ensurePort(path); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrConnectionChangeNotAccepted, err)
 	}
 	line := []byte(fmt.Sprintf(
 		"{\"kind\":\"request\",\"op\":\"set-connection-mode\",\"deviceId\":%q,\"mode\":%q}\n",
@@ -340,7 +340,7 @@ func (s *Sender) SetConnectionMode(path, deviceID, mode string) error {
 			err,
 		)
 	}
-	if err := readConnectionModeSwitchFromPort(s.port, s.helloWindow, deviceID, mode); err != nil {
+	if err := readConnectionModeSwitchFromPort(s.port, s.helloWindow, deviceID, mode, "connection-mode-rejected"); err != nil {
 		return fmt.Errorf("set connection mode on %s: %w", path, err)
 	}
 	// The acknowledged switch schedules a reboot, so the old serial handle is
@@ -472,7 +472,7 @@ func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
 	defer s.mu.Unlock()
 
 	if _, err := s.ensurePort(path); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrConnectionChangeNotAccepted, err)
 	}
 	request := struct {
 		Kind     string `json:"kind"`
@@ -489,7 +489,7 @@ func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
 	}
 	line, err := json.Marshal(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrConnectionChangeNotAccepted, err)
 	}
 	line = append(line, '\n')
 	_ = s.port.ResetInputBuffer()
@@ -503,7 +503,7 @@ func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
 			err,
 		)
 	}
-	if err := readConnectionModeSwitchFromPort(s.port, s.helloWindow, deviceID, "wifi"); err != nil {
+	if err := readConnectionModeSwitchFromPort(s.port, s.helloWindow, deviceID, "wifi", "wifi-configuration-rejected"); err != nil {
 		return fmt.Errorf("configure WiFi on %s: %w", path, err)
 	}
 	// The firmware owns its reboot. Reopening this USB-UART pulses reset and

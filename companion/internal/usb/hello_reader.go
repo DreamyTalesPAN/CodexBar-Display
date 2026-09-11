@@ -66,7 +66,7 @@ func readConnectionModeConfirmationFromPort(port SerialPort, window time.Duratio
 	return nil
 }
 
-func readConnectionModeSwitchFromPort(port SerialPort, window time.Duration, deviceID, mode string) error {
+func readConnectionModeSwitchFromPort(port SerialPort, window time.Duration, deviceID, mode, rejectionCode string) error {
 	var responseErr error
 	seen := readPortLines(port, window, func(line string) bool {
 		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
@@ -86,6 +86,9 @@ func readConnectionModeSwitchFromPort(port SerialPort, window time.Duration, dev
 		switch strings.TrimSpace(reply.Kind) {
 		case "error":
 			responseErr = fmt.Errorf("device rejected connection mode switch: %s: %s", strings.TrimSpace(reply.Code), strings.TrimSpace(reply.Message))
+			if reply.Code == rejectionCode {
+				responseErr = fmt.Errorf("%w: %w", ErrConnectionChangeNotAccepted, responseErr)
+			}
 			return true
 		case "connection-mode":
 			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) ||
