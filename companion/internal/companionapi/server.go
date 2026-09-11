@@ -5616,7 +5616,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 				api: apiError{
 					Code:       "display_stream_refresh_failed",
 					Message:    "Theme installed, but Mac App did not send a fresh image to VibeTV.",
-					NextAction: "Keep VibeTV powered on, then use Reload image in Control Center.",
+					NextAction: "Keep VibeTV connected and try installing the theme again.",
 				},
 			}
 		}
@@ -5625,7 +5625,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			api: apiError{
 				Code:       "display_render_failed",
 				Message:    "Theme installed, but VibeTV could not redraw the image.",
-				NextAction: "Use Reload image in Control Center. If it keeps failing, choose a lighter theme.",
+				NextAction: "Keep VibeTV connected and try installing the theme again.",
 			},
 		}
 	}
@@ -5641,7 +5641,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 				api: apiError{
 					Code:       "display_stream_refresh_failed",
 					Message:    "Theme installed, but the continuous VibeTV display stream is not running.",
-					NextAction: "Keep VibeTV powered on, then use Reload image in Control Center.",
+					NextAction: "Keep VibeTV connected and try installing the theme again.",
 				},
 			}
 		}

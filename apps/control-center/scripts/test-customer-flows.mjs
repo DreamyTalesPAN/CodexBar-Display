@@ -425,6 +425,9 @@ async function main() {
         appContext.appUrl,
       );
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
+      await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
+      await testThemeInstallShowsIntermediateProgress(browser, appContext.appUrl);
+      await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
       console.log("control-center theme release flow test passed");
       return;
     }
@@ -10123,7 +10126,7 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
   await installButton.waitFor({ timeout: 10_000 });
   await installButton.click();
   await page
-    .getByText("Install failed", { exact: true })
+    .getByRole("dialog", { name: "Theme install failed.", exact: true })
     .waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Try again" }).waitFor({
     timeout: 10_000,
@@ -10146,6 +10149,14 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
     installRequests.length === 1,
     `expected one mocked install request, got ${installRequests.length}`,
   );
+  const popup = page.getByRole("dialog", { name: "Theme install failed.", exact: true });
+  await captureMigrationScreenshot(page, "13-theme-install-error-popup.png");
+  await popup.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForTimeout(250);
+  assert(await popup.count() === 0, "Acknowledged theme failure must stay dismissed through polling");
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await waitForCondition(() => installRequests.length === 2, "Theme retry must submit exactly one more install");
+  await popup.waitFor();
   await assertNoMobileOverflow(page);
   await page.close();
 }
@@ -10259,9 +10270,10 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
   await installButton.waitFor({ timeout: 10_000 });
   await installButton.click();
   await page
-    .getByText("Install failed", { exact: true })
+    .getByRole("dialog", { name: "Theme install failed.", exact: true })
     .waitFor({ timeout: 10_000 });
 
+  await page.getByRole("dialog", { name: "Theme install failed.", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
   await clickNavigation(page, "Support");
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
     timeout: 10_000,

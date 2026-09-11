@@ -9942,6 +9942,9 @@ func TestCableThemeInstallRejectsUnverifiedLiveRender(t *testing.T) {
 	if !errors.As(err, &statusErr) || statusErr.api.Code != "display_render_failed" {
 		t.Fatalf("unverified Cable theme was reported complete: %v", err)
 	}
+	if statusErr.api.NextAction != "Keep VibeTV connected and try installing the theme again." {
+		t.Fatalf("Cable recovery must use the available theme retry: %+v", statusErr.api)
+	}
 }
 
 func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
