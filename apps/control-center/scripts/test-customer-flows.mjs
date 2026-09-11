@@ -5152,6 +5152,7 @@ async function testMixedTransportDeviceSelection(browser, appUrl) {
     connectionModeChoiceRequired: true,
     searchDevices: [
       { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" },
+      { target: "cable://vibetv", deviceId: "second-cable-device", transport: "cable" },
       { target: wifi.target, deviceId: wifi.deviceId, transport: "wifi" },
     ],
     providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
@@ -5169,7 +5170,7 @@ async function testMixedTransportDeviceSelection(browser, appUrl) {
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Choose your VibeTV", exact: true }).waitFor();
-  await page.getByText("2 VibeTVs found.", { exact: true }).waitFor();
+  await page.getByText("3 VibeTVs found.", { exact: true }).waitFor();
   await captureMigrationScreenshot(page, "12-mixed-transport-device-selection.png");
   await page.getByRole("radio", { name: /wifi-device/ }).click();
   await page.getByRole("button", { name: "Connect", exact: true }).click();

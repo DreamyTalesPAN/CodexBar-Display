@@ -62,6 +62,11 @@ describe("setup connection skip matrix", () => {
       .toEqual({ kind: "list", candidates: [cable("ABC"), wifi("2")] });
   });
 
+  it("retains distinct WiFi devices with multiple Cable devices", () => {
+    expect(decideSetupConnection({ candidates: [cable("ABC"), cable("DEF"), wifi("abc"), wifi("def"), wifi("3")], choiceRequired: true }))
+      .toEqual({ kind: "list", candidates: [cable("ABC"), cable("DEF"), wifi("3")] });
+  });
+
   it("connects one WiFi device directly when Cable found none", () => {
     expect(
       decideSetupConnection({ candidates: [wifi("2")], choiceRequired: true }),

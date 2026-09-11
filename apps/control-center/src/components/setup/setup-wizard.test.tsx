@@ -465,14 +465,14 @@ function shownStep(): string {
 }
 
 describe("SetupWizard: direct connection", () => {
-  it("connects the selected WiFi device without switching a different Cable device", async () => {
+  it.each([1, 2])("connects the selected WiFi device without switching any of %i Cable devices", async (cableCount) => {
     const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "cable-a", transport: "cable" };
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-b", transport: "wifi" };
     const connect = vi.fn().mockResolvedValue({ firmware: "1.0.42" });
     const onSelectConnectionMode = vi.fn();
     render(<SetupWizard {...baseProps({
       step: "device", connectionMode: "", connectionModeChoiceRequired: true,
-      deviceCandidates: [cable, wifi], deviceSearchState: "multiple",
+      deviceCandidates: [cable, ...(cableCount === 2 ? [{ ...cable, deviceId: "cable-b" }] : []), wifi], deviceSearchState: "multiple",
       onSelectConnectionMode,
       connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
     })} />);

@@ -79,13 +79,14 @@ export function decideSetupConnection(options: {
   }
   // A transport choice may only choose paths to the same device. A different
   // WiFi identity must remain an explicit device selection, not provision USB.
-  if (cable.length === 1) {
+  if (cable.length > 0) {
     const otherWiFi = wifi.filter((candidate) =>
-      !candidate.deviceId || !cable[0].deviceId ||
-      candidate.deviceId.toLowerCase() !== cable[0].deviceId.toLowerCase()
+      !candidate.deviceId || !cable.some((device) =>
+        device.deviceId?.toLowerCase() === candidate.deviceId?.toLowerCase()
+      )
     );
     if (otherWiFi.length > 0) {
-      return { kind: "list", candidates: [cable[0], ...otherWiFi] };
+      return { kind: "list", candidates: [...cable, ...otherWiFi] };
     }
   }
   if (cable.length >= 2) {

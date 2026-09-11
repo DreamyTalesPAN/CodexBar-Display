@@ -4305,3 +4305,9 @@ issue scope, or release permission never implies UI permission.
   that the Cable device was found on WiFi. The existing list component is reused.
 - Approved files: `setup-connection.ts`, `setup-device-screen.tsx`, matching setup unit/browser tests,
   and this approval record.
+
+## 2026-09-11 — Preserve the approved device list with multiple Cables
+
+- User approval: The standing instruction to fix discovered core-flow issues and the preceding device-before-transport approval apply to this correction of the same selection result.
+- Approved customer-visible result: The existing mixed-device list retains a distinct WiFi VibeTV even when two Cable devices are present. Its existing count reflects all three identities; selecting the WiFi device connects only that device. No new control, layout or wording.
+- Validation: The previous two-device identity test now covers one and two Cable devices; the browser regression uses two Cables plus one WiFi device and rejects any Cable mode write.
