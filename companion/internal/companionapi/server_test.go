@@ -900,6 +900,50 @@ func TestSetupWiFiNetworksReturnsCableScanResults(t *testing.T) {
 	}
 }
 
+func TestSetupWiFiJournalsTransitionBeforeDeviceCommand(t *testing.T) {
+	for _, endpoint := range []string{"/v1/setup/wifi", "/v1/setup/connection-mode"} {
+		for _, lostAck := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/lostAck=%t", endpoint, lostAck), func(t *testing.T) {
+				server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceTarget: "http://192.0.2.10", DeviceToken: "pair-token"})
+				server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+				server.readCableHello = func(string) (protocol.DeviceHello, error) { return cableHelloForTest("cable-a"), nil }
+				server.pairCableDevice = func(string, string) (string, error) { return "pair-token", nil }
+				calls := 0
+				command := func() error {
+					calls++
+					cfg, err := server.config()
+					if err != nil || !cfg.WiFiTransitionPending() || cfg.WiFiTransitionStartedAt == 0 || cfg.DeviceID != "cable-a" || cfg.DeviceToken != "pair-token" {
+						t.Errorf("WiFi intent must be durable before reboot command: pending=%t timestamp=%d err=%v", cfg.WiFiTransitionPending(), cfg.WiFiTransitionStartedAt, err)
+					}
+					if lostAck {
+						return errors.New("acknowledgement lost after firmware accepted command")
+					}
+					return nil
+				}
+				server.configureCableWiFi = func(string, string, string, string) error { return command() }
+				server.setCableConnectionMode = func(string, string, string) error { return command() }
+				body := `{"ssid":"Home","password":"test password"}`
+				if endpoint == "/v1/setup/connection-mode" {
+					body = `{"mode":"wifi"}`
+				}
+				rec := httptest.NewRecorder()
+				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(body)))
+				want := http.StatusAccepted
+				if lostAck {
+					want = http.StatusBadGateway
+				}
+				if rec.Code != want || calls != 1 {
+					t.Fatalf("status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+				}
+				cfg, err := server.config()
+				if err != nil || !cfg.WiFiTransitionPending() || cfg.DeviceID != "cable-a" {
+					t.Fatalf("uncertain acknowledgement lost the selected pending transition: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestSetupWiFiRecoveryRequiresMatchingPendingDevice(t *testing.T) {
 	for _, path := range []string{"/v1/setup/wifi-networks", "/v1/setup/wifi"} {
 		for _, scenario := range []string{"pending", "foreign-device", "station", "committed-wifi", "choice-required", "unbound"} {

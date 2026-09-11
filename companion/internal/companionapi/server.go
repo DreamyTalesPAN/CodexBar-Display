@@ -3713,12 +3713,6 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
-	if !modeAlreadySelected {
-		if err := s.setCableConnectionMode(port, hello.DeviceID, mode); err != nil {
-			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
-			return
-		}
-	}
 	if mode == "wifi" {
 		if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
 			target := ""
@@ -3739,6 +3733,15 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			writeInternalError(w, err)
 			return
 		}
+	}
+	// Journal WiFi intent before the command that can reboot the USB device.
+	if !modeAlreadySelected {
+		if err := s.setCableConnectionMode(port, hello.DeviceID, mode); err != nil {
+			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
+			return
+		}
+	}
+	if mode == "wifi" {
 		writeJSON(w, http.StatusAccepted, struct {
 			OK             bool       `json:"ok"`
 			ConnectionMode string     `json:"connectionMode"`
@@ -3889,10 +3892,6 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support WiFi.", "Keep this VibeTV connected by Cable.")
 		return
 	}
-	if err := s.configureCableWiFi(port, hello.DeviceID, req.SSID, req.Password); err != nil {
-		writeError(w, http.StatusBadGateway, "wifi_configuration_failed", "VibeTV could not save these WiFi details.", "Check the WiFi name and password, keep the Cable connected, then try again.")
-		return
-	}
 	supportedTransports := append([]string(nil), hello.Capabilities.Transport.Supported...)
 	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
 	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
@@ -3908,6 +3907,12 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 		}
 	}); err != nil {
 		writeInternalError(w, err)
+		return
+	}
+	// The reboot can lose its acknowledgement after accepting the credentials.
+	// Keep the persisted intent so discovery and bounded Cable recovery continue.
+	if err := s.configureCableWiFi(port, hello.DeviceID, req.SSID, req.Password); err != nil {
+		writeError(w, http.StatusBadGateway, "wifi_configuration_failed", "VibeTV could not save these WiFi details.", "Check the WiFi name and password, keep the Cable connected, then try again.")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, struct {
