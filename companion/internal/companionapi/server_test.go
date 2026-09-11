@@ -5264,6 +5264,36 @@ func TestCablePairingRequiresTokenWhenDeviceSupportsAuth(t *testing.T) {
 	}
 }
 
+func TestCableHelloProvesConnectionWithoutHealthFeature(t *testing.T) {
+	for _, liveID := range []string{"cable-a", "other-device", ""} {
+		t.Run(liveID, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a"})
+			hello := cableHelloForTest("cable-a")
+			hello.Features = nil
+			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+			server.streamStatus = func(context.Context, string) displayStreamInfo {
+				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "provider_setup_required"}
+			}
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				if liveID == "" {
+					return protocol.DeviceHello{}, errors.New("unplugged")
+				}
+				return cableHelloForTest(liveID), nil
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			var got statusResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Device.Connected != (liveID == "cable-a") {
+				t.Fatalf("only a live matching hello proves connectivity: %+v", got.Device)
+			}
+		})
+	}
+}
+
 func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 	for _, errorCode := range []string{"device_not_found", "provider_setup_required"} {
 		t.Run(errorCode, func(t *testing.T) {

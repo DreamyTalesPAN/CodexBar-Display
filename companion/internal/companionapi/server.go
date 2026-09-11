@@ -1385,20 +1385,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			// status cannot distinguish a live usage screen from the firmware's
 			// "Theme missing" screen and incorrectly skips the existing theme
 			// chooser. The shared Sender serializes this probe with frame writes.
-			if hello.HasFeature(protocol.FeatureCableHealthV1) {
-				s.firmwareUpdateStartMu.Lock()
-				if _, running := s.activeFirmwareUpdateJob(); !running && !s.themeInstallInFlight() {
-					if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
+			s.firmwareUpdateStartMu.Lock()
+			if _, running := s.activeFirmwareUpdateJob(); !running && !s.themeInstallInFlight() {
+				if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
+					if hello.HasFeature(protocol.FeatureCableHealthV1) {
 						if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
 							// The device just answered. Usage may not exist yet on a fresh Mac.
 							reachable = true
 							device.Connected = true
 							device = s.withVerifiedDeviceHealth(device, health, cableDeviceTarget, cfg.DeviceToken, false)
 						}
+					} else if liveHello, err := s.readCableHello(port); err == nil {
+						reachable = cableHelloMatchesConfig(liveHello, cfg.DeviceID)
 					}
 				}
-				s.firmwareUpdateStartMu.Unlock()
 			}
+			s.firmwareUpdateStartMu.Unlock()
 		}
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
