@@ -567,6 +567,10 @@ main() {
     build_firmware_upgrade_args "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
   fi
 
+  if [[ "$(plutil -extract cableAutoBindDisabled raw -o - "${INSTALL_ROOT}/config.json" 2>/dev/null || true)" == "true" ]]; then
+    die "Finish or cancel the pending VibeTV connection change in the Mac App before reinstalling."
+  fi
+
   if [[ -z "$RELEASE_VERSION" ]]; then
     local_tag="$(fetch_latest_release_tag)"
     RELEASE_VERSION="$(normalize_version "$local_tag")"

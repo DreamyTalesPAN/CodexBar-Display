@@ -138,9 +138,10 @@ EOF
 
   cat > "${fake_bin}/plutil" <<'EOF'
 #!/usr/bin/env bash
-case "$(cat "${@: -1}")" in
-  *'"connectionMode":"cable"'*) printf 'cable\n' ;;
-  *'"connectionMode":"wifi"'*) printf 'wifi\n' ;;
+case "$2:$(cat "${@: -1}")" in
+  connectionMode:*'"connectionMode":"cable"'*) printf 'cable\n' ;;
+  connectionMode:*'"connectionMode":"wifi"'*) printf 'wifi\n' ;;
+  cableAutoBindDisabled:*'"cableAutoBindDisabled":true'*) printf 'true\n' ;;
   *) exit 1 ;;
 esac
 EOF
@@ -408,6 +409,33 @@ run_flash_forwards_explicit_port() {
   done
 }
 
+run_reinstall_defers_pending_transition() {
+  local root output config original args
+  for args in implicit explicit; do
+    root="${TMP_WORK_DIR}/pending-${args}"
+    write_fake_commands "${root}/fake-bin"
+    mkdir -p "${root}/home" "${root}/global-bin"
+    write_existing_install "${root}/home"
+    config="${root}/home/Library/Application Support/codexbar-display/config.json"
+    original='{"cableAutoBindDisabled":true,"connectionModeChoiceRequired":true,"deviceId":"pending-device"}'
+    printf '%s\n' "$original" > "$config"
+    : > "${root}/curl.log"
+    : > "${root}/codexbar-display.log"
+    : > "${root}/launchctl.log"
+    if [[ "$args" == explicit ]]; then
+      if output="$(run_installer "$root" --version 9.9.9 -- --transport usb)"; then
+        die "explicit transport must not overwrite a pending transition"
+      fi
+    elif output="$(run_installer "$root" --version 9.9.9)"; then
+      die "pending transition must defer reinstallation"
+    fi
+    assert_contains "$output" "Finish or cancel the pending VibeTV connection change"
+    [[ "$(cat "$config")" == "$original" ]] || die "pending configuration changed"
+    [[ ! -s "${root}/curl.log" && ! -s "${root}/codexbar-display.log" && ! -s "${root}/launchctl.log" ]] || die "pending reinstall started download, setup or service mutation"
+  done
+}
+
+run_reinstall_defers_pending_transition
 run_flash_requires_port_before_install
 run_flash_forwards_explicit_port
 run_reinstall_preserves_connection_mode
