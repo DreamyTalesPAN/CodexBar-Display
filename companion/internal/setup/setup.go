@@ -461,6 +461,16 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		cableHello = hello
 		cableDeviceID = strings.TrimSpace(hello.DeviceID)
 	}
+	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun {
+		mode := strings.ToLower(strings.TrimSpace(cableHello.Capabilities.Transport.Mode))
+		if mode != "" && mode != "cable" {
+			return &StepError{
+				Step: "validate-connection-mode",
+				Err:  fmt.Errorf("VibeTV is in %s mode; USB setup cannot switch WiFi to Cable", mode),
+				Hint: "switch to USB-C in VibeTV Control Center, then rerun setup",
+			}
+		}
+	}
 	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun &&
 		cableHello.Capabilities.Auth != nil {
 		cableDeviceToken, err = d.pairCableDevice(port, cableDeviceID)
@@ -1214,36 +1224,20 @@ func applyRuntimeConfig(
 	}
 	deviceID := strings.TrimSpace(rawDeviceID)
 	if connectionMode == "cable" && deviceID != "" {
-		if cfg.CableAutoBindDisabled {
-			cfg.CableAutoBindDisabled = false
-			changed = true
-		}
-		if cfg.ConnectionModeChoiceRequired {
-			cfg.ConnectionModeChoiceRequired = false
-			changed = true
-		}
+		target, token := cfg.DeviceTarget, cfg.DeviceToken
 		if !strings.EqualFold(cfg.DeviceID, deviceID) {
-			cfg.DeviceID = deviceID
-			// A target and token belong to the previously selected identity. Never
-			// attach them to a different VibeTV merely because Cable setup replaced
-			// the active device ID.
-			cfg.DeviceTarget = ""
-			cfg.DeviceToken = ""
-			changed = true
+			// Pairing data belongs to the selected identity.
+			target, token = "", ""
 		}
-		cableDeviceToken := strings.TrimSpace(rawCableDeviceToken)
-		if cableDeviceToken != "" {
-			known, knownOK := cfg.KnownDevice(deviceID)
-			if cfg.DeviceToken != cableDeviceToken || !knownOK ||
-				known.DeviceToken != cableDeviceToken || known.Target != cfg.DeviceTarget {
-				changed = true
-			}
-			cfg.SetActiveDevice(runtimeconfig.KnownDevice{
-				DeviceID:    deviceID,
-				Target:      cfg.DeviceTarget,
-				DeviceToken: cableDeviceToken,
-			})
+		if cableDeviceToken := strings.TrimSpace(rawCableDeviceToken); cableDeviceToken != "" {
+			token = cableDeviceToken
 		}
+		// Use the same binding owner for authenticated and unauthenticated
+		// devices, before assigning the new ID changes legacy setup detection.
+		cfg.SetActiveDevice(runtimeconfig.KnownDevice{
+			DeviceID: deviceID, Target: target, DeviceToken: token,
+		})
+		changed = true
 	}
 
 	themeInput := strings.TrimSpace(rawTheme)

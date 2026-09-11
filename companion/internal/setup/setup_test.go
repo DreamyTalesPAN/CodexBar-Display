@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1949,5 +1950,60 @@ func noSetupWiFiDiscovery(t *testing.T) func(context.Context, []string) (transpo
 	t.Helper()
 	return func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error) {
 		return transportlayer.WiFiDiscoveryResult{}, errors.New("not found")
+	}
+}
+
+func TestCableSetupRejectsWiFiModeBeforePairingOrConfigWrite(t *testing.T) {
+	for _, skipFlash := range []bool{true, false} {
+		t.Run(fmt.Sprint(skipFlash), func(t *testing.T) {
+			home := t.TempDir()
+			paired := false
+			err := runWithDeps(context.Background(), Options{Transport: "usb", AssumeYes: true, SkipFlash: skipFlash}, deps{
+				stdout: &bytes.Buffer{}, executablePath: func() (string, error) { return mustCreateExecutable(t), nil },
+				homeDir: func() (string, error) { return home, nil }, uid: func() int { return 501 },
+				resolvePort: func(string) (string, error) { return "/dev/cu.usbserial-test", nil },
+				probePort:   func(string) error { return nil }, findCodexbar: func() (string, error) { return "/test/codexbar", nil },
+				lookPath:   func(s string) (string, error) { return "/test/" + s, nil },
+				runCommand: func(context.Context, string, string, ...string) (string, error) { return "state = running", nil },
+				readDeviceHello: func(string) (protocol.DeviceHello, error) {
+					h, _ := setupCableHello("")
+					h.Capabilities.Transport.Mode = "wifi"
+					return h, nil
+				},
+				pairCableDevice: func(string, string) (string, error) { paired = true; return "token", nil },
+			})
+			if err == nil || !strings.Contains(err.Error(), "WiFi") {
+				t.Fatalf("expected explicit WiFi mode rejection, got %v", err)
+			}
+			if paired {
+				t.Fatal("rejected mode must not pair")
+			}
+			if _, err := os.Stat(runtimeconfig.ConfigPath(home)); !os.IsNotExist(err) {
+				t.Fatal("rejected mode must not persist Cable config")
+			}
+		})
+	}
+}
+
+func TestCableConfigPreservesProviderSetupMeaning(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprint(legacy), func(t *testing.T) {
+			home := t.TempDir()
+			if legacy {
+				if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceID: "existing"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := applyRuntimeConfig(home, "", "usb", "", "new-cable", "", nil); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := runtimeconfig.Load(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ProviderSelectionSetupIsComplete() != legacy {
+				t.Fatalf("provider setup complete=%v, legacy=%v", cfg.ProviderSelectionSetupIsComplete(), legacy)
+			}
+		})
 	}
 }
