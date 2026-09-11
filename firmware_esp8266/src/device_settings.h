@@ -53,7 +53,10 @@ inline ConnectionMode ResolveInitialConnectionMode(
 inline bool ShouldImportLegacySdkWifi(
     ConnectionMode stored,
     bool hasSavedWifi) {
-  return stored == ConnectionMode::kUnspecified && !hasSavedWifi;
+  // WiFi mode may already be persisted after a boot without the old router.
+  // The imported credentials, not the mode, mark a completed import. Cable
+  // never starts WiFi; a deliberate WiFi reset also clears the SDK store.
+  return !hasSavedWifi && stored != ConnectionMode::kCable;
 }
 
 inline bool UsesWifi(ConnectionMode mode) {
