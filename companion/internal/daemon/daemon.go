@@ -723,6 +723,9 @@ func connectionModeChanged(deps runtimeDeps) bool {
 		return false
 	}
 	transport := transportForConnectionMode(cfg.ConnectionMode)
+	if cfg.WiFiTransitionPending() {
+		transport = "usb"
+	}
 	return transport != "" && transport != deps.transportName
 }
 

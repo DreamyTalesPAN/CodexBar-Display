@@ -313,6 +313,21 @@ func TestResolveCycleDeviceReconcilesWiFiRollbackToCable(t *testing.T) {
 	}
 }
 
+func TestPendingWiFiTransitionStopsPreviousWiFiWorkerBeforeProbing(t *testing.T) {
+	probes := 0
+	_, _, _, err := resolveCycleDevice("http://192.168.178.72", nil, runtimeDeps{
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceID: "14799300", DeviceTarget: "http://192.168.178.72", CableAutoBindDisabled: true}, nil
+		},
+		resolvePort: func(string) (string, error) { probes++; return "", errors.New("old WiFi target probed") },
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) || probes != 0 {
+		t.Fatalf("pending transition must replace old WiFi worker before probes: err=%v probes=%d", err, probes)
+	}
+}
+
 func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
 	err := runCycleWithDeps(context.Background(), "", nil, runtimeDeps{
 		transportName: "usb",
