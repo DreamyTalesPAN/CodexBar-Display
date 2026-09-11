@@ -465,6 +465,24 @@ function shownStep(): string {
 }
 
 describe("SetupWizard: direct connection", () => {
+  it("connects the selected WiFi device without switching a different Cable device", async () => {
+    const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "cable-a", transport: "cable" };
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-b", transport: "wifi" };
+    const connect = vi.fn().mockResolvedValue({ firmware: "1.0.42" });
+    const onSelectConnectionMode = vi.fn();
+    render(<SetupWizard {...baseProps({
+      step: "device", connectionMode: "", connectionModeChoiceRequired: true,
+      deviceCandidates: [cable, wifi], deviceSearchState: "multiple",
+      onSelectConnectionMode,
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    })} />);
+    expect(screen.getByRole("heading", { name: "Choose your VibeTV" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /wifi-b/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(wifi));
+    expect(onSelectConnectionMode).not.toHaveBeenCalled();
+  });
+
   it("keeps the completed connection screen until the provider state arrives", async () => {
     const props = baseProps({
       step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
@@ -632,6 +650,7 @@ describe("SetupWizard: direct connection", () => {
       connectionModeChoiceRequired: entry === "choice",
       initialWiFiSetup: entry === "settings" ? { status: "wifi_credentials_required", deviceId: cable.deviceId } : null,
       deviceCandidates: entry === "choice" ? [cable, otherWiFi] : [cable],
+      setupWiFiCount: 1,
       deviceSearchState: "multiple",
       connectSteps: {
         checkFirmware: entry === "failed-cable"
@@ -650,6 +669,8 @@ describe("SetupWizard: direct connection", () => {
     const { rerender } = render(<SetupWizard {...props} />);
 
     if (entry === "choice") {
+      fireEvent.click(screen.getByRole("radio", { name: /configured-device/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
       fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
       expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -849,9 +870,9 @@ describe("SetupWizard: going back", () => {
       step: "device",
       connectionModeChoiceRequired: true,
       deviceSearchState: "multiple",
+      setupWiFiCount: 1,
       deviceCandidates: [
         { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" },
-        { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" },
       ],
       connectSteps: { connect, checkFirmware: vi.fn(), installFirmware: vi.fn() },
       onScanWiFiNetworks: vi.fn().mockResolvedValue([]),

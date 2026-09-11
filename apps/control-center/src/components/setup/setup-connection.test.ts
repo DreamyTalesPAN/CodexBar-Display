@@ -42,13 +42,24 @@ describe("setup connection skip matrix", () => {
     }).kind).toBe("direct");
   });
 
-  it("shows the mode choice when both transports are discovered", () => {
+  it("shows the mode choice when both transports identify the same device", () => {
     expect(
       decideSetupConnection({
-        candidates: [cable("1"), wifi("2")],
+        candidates: [cable("1"), wifi("1")],
         choiceRequired: true,
       }).kind,
     ).toBe("mode");
+  });
+
+  it("requires device selection for different Cable and WiFi identities", () => {
+    const candidates = [cable("1"), wifi("2")];
+    expect(decideSetupConnection({ candidates, choiceRequired: true }))
+      .toEqual({ kind: "list", candidates });
+  });
+
+  it("lists one device once when its Cable and WiFi paths coexist with another device", () => {
+    expect(decideSetupConnection({ candidates: [cable("ABC"), wifi("abc"), wifi("2")], choiceRequired: true }))
+      .toEqual({ kind: "list", candidates: [cable("ABC"), wifi("2")] });
   });
 
   it("connects one WiFi device directly when Cable found none", () => {

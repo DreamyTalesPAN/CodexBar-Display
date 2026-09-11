@@ -19,6 +19,7 @@ function render(props: Partial<Parameters<typeof SetupDeviceScreen>[0]> = {}) {
   return renderToStaticMarkup(
     <SetupDeviceScreen
       candidates={[known, other]}
+      transport="wifi"
       logLines={[]}
       onConnect={vi.fn()}
       onChooseTransport={vi.fn()}
@@ -64,6 +65,12 @@ describe("SetupDeviceScreen", () => {
       "1 VibeTV found on your WiFi.",
     );
     expect(render()).toContain("2 VibeTVs found on your WiFi.");
+  });
+
+  it("does not label a mixed device list as WiFi", () => {
+    const html = render({ transport: undefined, candidates: [known, { ...other, transport: "cable" }] });
+    expect(html).toContain("2 VibeTVs found.");
+    expect(html).not.toContain("on your WiFi");
   });
 
   it("cannot connect before a device is chosen", () => {

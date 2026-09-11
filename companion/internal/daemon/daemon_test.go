@@ -6163,6 +6163,67 @@ func TestRunDaemonLoopWaitsForWiFiBeforeProbingDevice(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopRecoversCableAfterUnconfirmedWiFi(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		retry  bool
+		probes []int
+	}{
+		{name: "legacy pending state", probes: []int{11}},
+		{name: "new credential attempt restarts quiet window", retry: true, probes: []int{21}},
+		{name: "absent device gets bounded probes", probes: []int{11, 22}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			home := t.TempDir()
+			cfg := runtimeconfig.Config{DeviceID: "switching-device", CableAutoBindDisabled: true}
+			now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+			started := now
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			cycles := 0
+			deps := runtimeDeps{
+				transportName: "usb", homeDir: func() (string, error) { return home, nil },
+				loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+				saveConfig: func(_ string, next runtimeconfig.Config) error { cfg = next; return nil },
+				now:        func() time.Time { return now }, logf: func(string, ...any) {},
+				after: func(time.Duration) <-chan time.Time {
+					if cycles == len(tc.probes) {
+						return nil
+					}
+					now = now.Add(time.Minute)
+					if tc.retry && now.Sub(started) == 10*time.Minute {
+						cfg.WiFiTransitionStartedAt = now.Unix()
+					}
+					if now.Sub(started) > 24*time.Minute {
+						cancel()
+					}
+					tick := make(chan time.Time, 1)
+					tick <- now
+					return tick
+				},
+			}
+			err := runDaemonLoop(ctx, Options{Interval: time.Minute}, deps, func(context.Context) error {
+				if cycles >= len(tc.probes) || now.Sub(started) != time.Duration(tc.probes[cycles])*time.Minute {
+					t.Fatalf("unexpected USB probe at %s", now.Sub(started))
+				}
+				cycles++
+				if cycles == len(tc.probes) {
+					persistActiveCableIdentity(protocol.DeviceCapabilities{Known: true, DeviceID: cfg.DeviceID, ActiveTransport: "usb", ConnectionMode: "cable"}, deps)
+					cancel()
+				}
+				return nil
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+			if cycles != len(tc.probes) || cfg.WiFiTransitionPending() || cfg.ConnectionMode != "cable" {
+				t.Fatalf("Cable did not resume after firmware rollback: cycles=%d mode=%q pending=%v", cycles, cfg.ConnectionMode, cfg.WiFiTransitionPending())
+			}
+		})
+	}
+}
+
 func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	prepareFastTestEnv(t)
 

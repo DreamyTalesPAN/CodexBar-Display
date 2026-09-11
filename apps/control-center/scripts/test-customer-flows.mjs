@@ -490,6 +490,7 @@ async function main() {
         testLocalWifiSetupRescansAfterNoResults,
         testDeniedLocalNetworkShowsRecovery,
         testFreshCableCanProvisionWiFi,
+        testMixedTransportDeviceSelection,
         testRejectedPairingTokenUsesTypedRecovery,
         testFirstSetupStillWaitsForARenderedPreview,
         testStartupStateMachine,
@@ -846,6 +847,7 @@ async function main() {
     await testFreshCableHasNoEmptyPicker(browser, appContext.appUrl);
     await testCableSurvivesDeniedSetupScan(browser, appContext.appUrl);
     await testFreshCableCanProvisionWiFi(browser, appContext.appUrl);
+    await testMixedTransportDeviceSelection(browser, appContext.appUrl);
     await testFirstSetupStillWaitsForARenderedPreview(
       browser,
       appContext.appUrl,
@@ -5138,6 +5140,42 @@ async function testFreshCableHasNoEmptyPicker(browser, appUrl, { scanDenied = fa
   await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
   const headings = await page.evaluate(() => window.setupHeadings);
   assert(!headings.includes("Choose your VibeTV"), `Single Cable must never flash an empty picker: ${JSON.stringify(headings)}`);
+  await page.close();
+}
+
+async function testMixedTransportDeviceSelection(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const wifi = { ...themeMissingDevice, deviceId: "wifi-device", target: "http://192.168.1.42" };
+  const writes = [];
+  const companion = await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    connectionModeChoiceRequired: true,
+    searchDevices: [
+      { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" },
+      { target: wifi.target, deviceId: wifi.deviceId, transport: "wifi" },
+    ],
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
+  });
+  await page.route("**/v1/setup/connection-mode", async (route) => {
+    writes.push(route.request().postDataJSON());
+    await route.fulfill({ status: 500, json: { error: { message: "Wrong device path" } } });
+  });
+  await page.route("**/v1/device/select", async (route) => {
+    const request = route.request().postDataJSON();
+    writes.push(request);
+    assert(request.target === wifi.target && request.expectedDeviceId === wifi.deviceId, "Selected WiFi identity must own selection");
+    companion.setDevice(wifi);
+    await route.fulfill({ json: { ok: true, device: wifi } });
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Choose your VibeTV", exact: true }).waitFor();
+  await page.getByText("2 VibeTVs found.", { exact: true }).waitFor();
+  await captureMigrationScreenshot(page, "12-mixed-transport-device-selection.png");
+  await page.getByRole("radio", { name: /wifi-device/ }).click();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert(writes.length === 1 && writes[0].target === wifi.target,
+    `Selecting WiFi must not switch the unrelated Cable device: ${JSON.stringify(writes)}`);
   await page.close();
 }
 

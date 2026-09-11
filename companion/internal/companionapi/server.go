@@ -3731,6 +3731,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 				DeviceID: hello.DeviceID, Target: target, DeviceToken: cableToken,
 			})
 			current.ConnectionMode = ""
+			current.WiFiTransitionStartedAt = time.Now().Unix()
 			current.CableAutoBindDisabled = true
 			current.ConnectionModeChoiceRequired = false
 			current.DeviceTransports = supportedTransports
@@ -3896,6 +3897,7 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
 	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
 		current.ConnectionMode = ""
+		current.WiFiTransitionStartedAt = time.Now().Unix()
 		current.DeviceID = strings.TrimSpace(hello.DeviceID)
 		current.CableAutoBindDisabled = true
 		current.ConnectionModeChoiceRequired = false

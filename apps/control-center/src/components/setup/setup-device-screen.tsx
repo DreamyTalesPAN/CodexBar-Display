@@ -368,7 +368,7 @@ export function SetupDeviceScreen({
 
       {showCandidates ? (
         <ItemGroup
-          aria-label={`VibeTVs found ${transport === "cable" ? "by Cable" : "on your WiFi"}`}
+          aria-label={transport ? `VibeTVs found ${transport === "cable" ? "by Cable" : "on your WiFi"}` : "VibeTVs found"}
           className="mt-4 gap-3"
           role="radiogroup"
         >
@@ -485,7 +485,7 @@ function connectingLabel(phase: ConnectPhase | undefined): string {
 }
 
 function foundLabel(count: number, transport?: SetupTransport): string {
-  const suffix = transport === "cable" ? " by Cable" : " on your WiFi";
+  const suffix = transport === "cable" ? " by Cable" : transport === "wifi" ? " on your WiFi" : "";
   return count === 1
     ? `1 VibeTV found${suffix}.`
     : `${count} VibeTVs found${suffix}.`;

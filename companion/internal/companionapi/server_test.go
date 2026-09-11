@@ -8292,7 +8292,7 @@ func TestSetupConnectionModeCollectsWiFiCredentialsBeforeChangingHostMode(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" || cfg.ConnectionModeChoiceRequired {
+	if cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" || cfg.ConnectionModeChoiceRequired || cfg.WiFiTransitionStartedAt == 0 {
 		t.Fatalf("host did not retain a pending WiFi transition: %+v", cfg)
 	}
 }
@@ -8773,7 +8773,7 @@ func TestSetupResetPreservesSameDeviceAuthenticationThroughCableAndWiFiChoice(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" || !cfg.WiFiTransitionPending() {
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" || !cfg.WiFiTransitionPending() || cfg.WiFiTransitionStartedAt == 0 {
 		t.Fatalf("post-reset WiFi selection lost authentication or transition state: %+v", cfg)
 	}
 }

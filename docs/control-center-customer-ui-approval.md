@@ -4291,3 +4291,17 @@ issue scope, or release permission never implies UI permission.
 - User approval: The explicit instruction “error states sind ab jetzt immer pop ups” applies to these existing setup error states.
 - Approved customer-visible result: WiFi selection, scan, credential and timeout errors use one existing setup-style popup, titled “WiFi setup failed”. OK/Close dismisses it without clearing the entered network or password. A failed selection or expired Cable-free wait restores the discovery recovery actions. Existing API error and recovery text is preserved; no inline WiFi banner remains.
 - Validation: Both review findings are reproduced in component tests. The suite verifies rejection from the mode chooser and not-found recovery, repeat attempts, one visible dialog, timeout search termination and recovery after dismissal. The complete 630-test unit suite, TypeScript, focused lint and customer-copy guard pass. All 19 setup-entry browser flows pass, including rejected connection selection and credential submission for single- and multi-device setup; the popup screenshot was visually inspected. The Mac is currently locked, so native candidate proof remains pending.
+
+## 2026-09-11 — Select the device before its connection method
+
+- User approval: The user explicitly instructed Codex in this task to continue
+  every matrix case and fix discovered issues along the way, without further
+  implementation approval questions.
+- Approved customer-visible result: When Cable and WiFi identify different
+  VibeTVs, setup uses the existing device list. Selecting the WiFi device connects
+  that identity; selecting the Cable device offers only its available paths.
+  Two paths to the same device retain the existing connection-method chooser.
+  Mixed results use the neutral count `2 VibeTVs found.` instead of claiming
+  that the Cable device was found on WiFi. The existing list component is reused.
+- Approved files: `setup-connection.ts`, `setup-device-screen.tsx`, matching setup unit/browser tests,
+  and this approval record.

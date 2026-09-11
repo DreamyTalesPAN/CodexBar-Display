@@ -43,6 +43,8 @@ type Options struct {
 }
 
 const (
+	// Firmware allows ten minutes in setup AP mode, plus join/reboot time.
+	wifiTransitionQuietPeriod  = 11 * time.Minute
 	defaultInterval            = 2 * time.Second
 	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second
@@ -486,6 +488,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
+	var wifiQuietSince time.Time
 	deviceWritesPaused := false
 
 	for {
@@ -494,7 +497,23 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		waitingForWiFi := false
 		if deps.transportName == "usb" {
 			cfg, ok := loadRuntimeConfig(deps)
-			waitingForWiFi = ok && cfg.WiFiTransitionPending()
+			if ok && cfg.WiFiTransitionPending() {
+				now := deps.now()
+				if wifiQuietSince.IsZero() {
+					wifiQuietSince = now
+				}
+				if started := time.Unix(cfg.WiFiTransitionStartedAt, 0); cfg.WiFiTransitionStartedAt > 0 && started.After(wifiQuietSince) {
+					wifiQuietSince = started
+				}
+				waitingForWiFi = now.Sub(wifiQuietSince) < wifiTransitionQuietPeriod
+				if !waitingForWiFi {
+					// One bounded probe lets persistActiveCableIdentity observe rollback.
+					// If the device is still absent/joining, leave another full quiet window.
+					wifiQuietSince = now
+				}
+			} else {
+				wifiQuietSince = time.Time{}
+			}
 		}
 		if waitingForWiFi || (opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites()) {
 			if !deviceWritesPaused {

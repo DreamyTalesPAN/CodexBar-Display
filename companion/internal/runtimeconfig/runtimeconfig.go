@@ -41,6 +41,7 @@ var processPermissionMigrations permissionMigrationCache
 var configTransactionLocks sync.Map
 
 type Config struct {
+	WiFiTransitionStartedAt        int64                  `json:"wifiTransitionStartedAt,omitempty"`
 	Theme                          string                 `json:"theme,omitempty"`
 	ConnectionMode                 string                 `json:"connectionMode,omitempty"`
 	DeviceTarget                   string                 `json:"deviceTarget,omitempty"`
@@ -367,6 +368,9 @@ func (cfg Config) KnownDevice(deviceID string) (KnownDevice, bool) {
 func (cfg *Config) Normalize() {
 	cfg.Theme = NormalizeTheme(cfg.Theme)
 	cfg.ConnectionMode = NormalizeConnectionMode(cfg.ConnectionMode)
+	if !cfg.WiFiTransitionPending() {
+		cfg.WiFiTransitionStartedAt = 0
+	}
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
