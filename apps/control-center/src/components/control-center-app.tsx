@@ -4729,6 +4729,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onConnectionModeChange={(mode) => {
               void selectSetupConnectionMode(mode, device?.deviceId).then((result) => {
                 if (result.status !== "selected") {
+                  setHasEnteredControlCenter(false);
                   setSettingsWiFiSetup({ status: result.status, deviceId: result.deviceId });
                   if (result.status === "waiting_for_wifi") void searchAndConnect();
                 }

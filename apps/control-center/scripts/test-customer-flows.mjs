@@ -1710,10 +1710,12 @@ async function testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appUrl) 
     target: "http://192.168.1.42",
     capabilities: { ...cable.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] } },
   };
+  let previewAvailable = true;
   let searches = 0;
   let selections = 0;
   const companion = await routeCompanionOnline(page, [], () => {}, {
     device: cable,
+    displayFrameResponse: () => previewAvailable ? undefined : { ok: false },
     connectionModeChoiceRequired: false,
     onSearch: () => { searches += 1; return []; },
     onSelect: () => { selections += 1; return wifi; },
@@ -1739,10 +1741,16 @@ async function testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appUrl) 
   assert(await waiting.isVisible(), "Retained Cable health must not finish an uncommitted WiFi switch");
   const searchesWhilePending = searches;
   await waitForCondition(() => searches > searchesWhilePending, "Uncommitted WiFi must keep the wizard discovery loop mounted");
+  previewAvailable = false;
   companion.setDevice({ ...wifi, connected: false, ready: false });
   await page.waitForResponse(async (response) => response.url().endsWith("/v1/status") && (await response.json()).device?.connected === false);
   assert(await waiting.isVisible(), "Offline saved WiFi must not finish the Settings switch");
   companion.setDevice(wifi);
+  await page.waitForResponse(async (response) => response.url().endsWith("/v1/status") && (await response.json()).device?.connected === true);
+  await page.waitForTimeout(4_000);
+  assert((await page.getByRole("group", { name: "Connection mode" }).count()) === 0,
+    "Settings WiFi setup must wait for its preview after status confirms the connection");
+  previewAvailable = true;
   await page.getByRole("group", { name: "Connection mode" }).waitFor({ timeout: 15_000 });
   assert(await page.getByRole("button", { name: "WiFi", exact: true }).getAttribute("aria-pressed") === "true", "Confirmed WiFi must return to its selected Settings card");
   assert(selections === 0, "Status confirmation must not select the device again");
@@ -2788,15 +2796,9 @@ async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browse
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const deviceWriteRequests = [];
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    device: {
-      target: "http://192.168.178.70",
-      deviceId: "device-70",
-      active: true,
-      connected: false,
-      paired: true,
-      ready: false,
-    },
+  const connected = { ...companionDevice, target: "http://192.168.178.70", deviceId: "device-70" };
+  const companion = await routeCompanionOnline(page, installRequests, () => {}, {
+    device: connected,
     searchDevices: [
       {
         target: "http://192.168.178.82",
@@ -2819,8 +2821,12 @@ async function testOfflineActiveDeviceOffersReadOnlyPickerAfterSetupReset(browse
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
+  companion.setDevice({ ...connected, connected: false, ready: false });
+  await page.waitForResponse(async (response) =>
+    response.url().endsWith("/v1/status") && (await response.json()).device?.connected === false,
+  );
   assert(deviceWriteRequests.length === 0,
-    "A saved offline pairing must open Overview without adopting another VibeTV");
+    "An admitted session must not adopt another VibeTV after disconnecting");
   await clickNavigation(page, "Settings");
   await page.getByRole("button", { name: "Run setup again" }).click();
   await waitForSetupDeviceStep(page);
@@ -9486,6 +9492,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   const installRequests = [];
   const themeInstallRequests = [];
   const browserRequests = [];
+  const activeRenderPack = await readTrackedThemeRenderPackFixture("clippy");
 
   await page.addInitScript(() => {
     window.localStorage.setItem(
@@ -9513,11 +9520,18 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
       },
     );
   }
+  await page.route(/\/theme-packs\/render\/my-theme\//, async (route) => {
+    await route.fulfill({ json: {
+      themeId: "my-theme", specPath: "/themes/u/my-theme.json",
+      spec: { p: [] }, assets: {},
+    } });
+  });
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
     device: {
       ...companionDevice,
       firmware: "1.0.40",
+      display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } },
       capabilities: {
         ...companionDevice.capabilities,
         theme: {

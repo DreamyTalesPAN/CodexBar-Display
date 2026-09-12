@@ -4331,3 +4331,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul reported the candidate opening Overview without a preview after exchanging VibeTVs and explicitly required: “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt”.
 - Approved customer-visible result: Saved pairing, provider and display choices cannot bypass the wizard on launch. The existing final preview step releases the Control Center only with a rendered theme/frame and a currently connected, ready VibeTV. Losing readiness or changing devices cancels the pending handover. After a successful handover, transient outages preserve the open Control Center. Existing choices are reused; no new UI element.
 - Supersedes the earlier saved-setup shortcut that admitted a configured offline device directly to Overview.
+
+
+## 2026-09-12 — Apply the preview requirement to Settings WiFi setup
+
+- User approval: Paul's current requirement “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” applies to every entry into the existing wizard, including the WiFi switch from Settings.
+- Approved customer-visible result: Opening that WiFi wizard clears the previous handover. A confirmed WiFi status alone cannot return to Settings; the existing live preview must render while the selected VibeTV is connected and ready. Browser fixtures for previously admitted sessions establish a valid preview before simulating later outages, and Theme Studio fixtures provide matching active render packs.
