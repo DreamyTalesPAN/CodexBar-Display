@@ -83,6 +83,8 @@ export type SetupWizardProps = {
   displaySavePending: boolean;
   /** Percent of the running firmware install, for the frozen log line. */
   firmwareProgress?: number;
+  /** A running update restored from the Companion after reopening the app. */
+  firmwareInstallLogs?: string[];
   installingTheme: boolean;
   /** Resolves with the VibeTV at that address, or rejects with what to show. */
   onFindManualTarget: (target: string) => Promise<DeviceCandidate>;
@@ -527,6 +529,7 @@ export function SetupWizard(props: SetupWizardProps) {
   useEffect(() => {
     if (
       step !== "device" ||
+      props.firmwareInstallLogs ||
       searchingForDevices ||
       (props.searchError && !searchErrorDismissed) ||
       wifiSetup ||
@@ -546,7 +549,7 @@ export function SetupWizard(props: SetupWizardProps) {
     directAttempt.current = key;
     setSelectedTarget(key);
     void connect.run(candidate);
-  }, [connect, connectionDecision, props.searchError, searchErrorDismissed, searchingForDevices, step, wifiSetup]);
+  }, [connect, connectionDecision, props.firmwareInstallLogs, props.searchError, searchErrorDismissed, searchingForDevices, step, wifiSetup]);
 
   // The connect log lives in the wizard, the prompt builder one level up, so
   // "Ask AI to fix" used to copy an app event log that setup barely writes to
@@ -635,6 +638,20 @@ export function SetupWizard(props: SetupWizardProps) {
       aiFixPrompt(connectLogLines(connect.state).map((line) => line.text)),
     onCreateSupportReport,
   };
+
+  const restoredInstallLogs = !connectInFlight && props.firmwareInstallLogs
+    ? props.firmwareInstallLogs
+    : props.installingTheme && step !== "theme"
+      ? props.themeInstallLogs
+      : null;
+  if (restoredInstallLogs) {
+    return (
+      <SetupWelcomeScreen
+        {...help}
+        lines={restoredInstallLogs.map((text, index) => ({ id: String(index), text }))}
+      />
+    );
+  }
 
   if (step === "welcome") {
     return (

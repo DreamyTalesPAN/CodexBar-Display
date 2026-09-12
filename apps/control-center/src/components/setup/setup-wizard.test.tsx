@@ -104,6 +104,24 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
   };
 }
 
+describe("SetupWizard: restored installation", () => {
+  it("keeps firmware progress visible without reconnecting or finishing setup", async () => {
+    const props = baseProps({
+      step: "device",
+      connectionModeChoiceRequired: false,
+      deviceSearchState: "idle",
+      deviceCandidates: [{ target: "http://192.168.178.73", deviceId: "vibetv-1", transport: "wifi" }],
+      firmwareInstallLogs: ["Updating VibeTV.", "Restarting VibeTV."],
+    });
+    render(<SetupWizard {...props} />);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(screen.getByRole("status").textContent).toContain("Restarting VibeTV.");
+    expect(props.connectSteps.connect).not.toHaveBeenCalled();
+    expect(props.connectSteps.installFirmware).not.toHaveBeenCalled();
+    expect(props.onFinished).not.toHaveBeenCalled();
+  });
+});
+
 describe("SetupWizard: theme failures", () => {
   it("shows an unavailable catalog over the theme step and reloads it", () => {
     const onRetryTheme = vi.fn();
@@ -254,19 +272,13 @@ describe("SetupWizard: initial provider scan", () => {
     } as ProviderItem;
     const stepAfterConnection = (
       providerSelectionRequired: boolean,
-      providerSetupCompletedThisSession: boolean,
     ) =>
       deriveSetupStep({
         deviceUsable: setupDeviceIsUsable({
           connectionRecoveryRequired: false,
           deviceConnected: true,
-          displayRemediationRequired: false,
           hasActiveDevice: true,
           hasEnteredControlCenter: false,
-          providerSelectionRequired,
-          providerSetupCompletedThisSession,
-          themeSetupRequired: false,
-          ready: false,
         }),
         displayConfigured: false,
         displaySelectionSupported: true,
@@ -306,7 +318,7 @@ describe("SetupWizard: initial provider scan", () => {
 
     // Pairing updates the parent state before the firmware check finishes. The
     // wizard must keep the device screen until that check has actually answered.
-    props = { ...props, step: stepAfterConnection(true, false) };
+    props = { ...props, step: stepAfterConnection(true) };
     rerender(<SetupWizard {...props} />);
     expect(shownStep()).toBe("Choose your VibeTV");
 
@@ -337,7 +349,7 @@ describe("SetupWizard: initial provider scan", () => {
     // the first usage frame is still missing. That must advance to Display Mode,
     // not briefly send the freshly connected customer back to Device.
     await act(async () => {
-      props = { ...props, step: stepAfterConnection(false, true) };
+      props = { ...props, step: stepAfterConnection(false) };
       rerender(<SetupWizard {...props} />);
       finishProviderCompletion(true);
     });

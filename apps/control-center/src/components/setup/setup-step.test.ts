@@ -181,100 +181,25 @@ describe("resolveSetupStep", () => {
 });
 
 describe("setupDeviceIsUsable", () => {
-  const coldStart = {
+  const connected = {
     deviceConnected: true,
     connectionRecoveryRequired: false,
-    displayRemediationRequired: false,
     hasActiveDevice: true,
     hasEnteredControlCenter: false,
-    providerSelectionRequired: true,
-    providerSetupCompletedThisSession: false,
-    themeSetupRequired: false,
-    ready: false,
   };
 
-  // Pairing and the firmware check are enough. The first usage frame and the
-  // provider inventory may both still be in flight when this step ends.
-  it("lets a connected VibeTV reach the provider step", () => {
-    expect(setupDeviceIsUsable(coldStart)).toBe(true);
+  it("lets a connected VibeTV wait for readiness at the live step", () => {
+    expect(setupDeviceIsUsable(connected)).toBe(true);
   });
 
-  // The same state after the provider selection is done is a provider that
-  // died, and the steps ahead have nothing to offer for it. Letting it through
-  // would end on the live screen telling the customer their VibeTV is running.
-  it("does not let it through once the provider selection is done", () => {
-    expect(
-      setupDeviceIsUsable({ ...coldStart, providerSelectionRequired: false }),
-    ).toBe(false);
+  it("keeps a disconnected startup on the device step", () => {
+    expect(setupDeviceIsUsable({ ...connected, deviceConnected: false })).toBe(false);
   });
 
-  it("does not bounce back after Continue completes in this setup", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        providerSelectionRequired: false,
-        providerSetupCompletedThisSession: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("lets a connected VibeTV reach an invalid saved display choice", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        providerSelectionRequired: false,
-        displayRemediationRequired: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("lets a connected VibeTV continue to its required theme setup", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        providerSelectionRequired: false,
-        themeSetupRequired: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("still needs the VibeTV to be connected", () => {
-    expect(
-      setupDeviceIsUsable({ ...coldStart, deviceConnected: false }),
-    ).toBe(false);
-  });
-
-  it("keeps a ready VibeTV usable whatever else is true", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        deviceConnected: false,
-        providerSelectionRequired: false,
-        ready: true,
-      }),
-    ).toBe(true);
-  });
-
-  // Once the customer is inside, a device that is only reconnecting stays
-  // theirs -- unchanged behaviour, pinned so the new term cannot swallow it.
-  it("does not eject someone already inside over a missed poll", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        deviceConnected: false,
-        hasEnteredControlCenter: true,
-        providerSelectionRequired: false,
-      }),
-    ).toBe(true);
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        deviceConnected: false,
-        connectionRecoveryRequired: true,
-        hasEnteredControlCenter: true,
-        providerSelectionRequired: false,
-      }),
-    ).toBe(false);
+  it("keeps an admitted session through a missed poll, but honors explicit recovery", () => {
+    const reconnecting = { ...connected, deviceConnected: false, hasEnteredControlCenter: true };
+    expect(setupDeviceIsUsable(reconnecting)).toBe(true);
+    expect(setupDeviceIsUsable({ ...reconnecting, connectionRecoveryRequired: true })).toBe(false);
   });
 });
 

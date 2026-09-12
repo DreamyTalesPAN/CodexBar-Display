@@ -37,36 +37,15 @@ export type SetupStepInput = {
   themeSetupRequired: boolean;
 };
 
-/**
- * Whether the wizard can move past the device step.
- *
- * `ready` needs a rendered usage frame, which may arrive well after pairing,
- * the firmware check, and even the provider inventory. While provider setup is
- * still open, the successful connection is therefore the whole gate: waiting
- * for a frame or a particular provider status strands the customer here.
- *
- * Only while the provider selection is still outstanding. Letting it through
- * afterwards would carry a customer whose provider has just died past the
- * remaining steps and tell them their VibeTV is live.
- */
+/** The connection step ends on a verified connection; the live step owns readiness. */
 export function setupDeviceIsUsable(input: {
   deviceConnected: boolean;
   hasActiveDevice: boolean;
   hasEnteredControlCenter: boolean;
   connectionRecoveryRequired: boolean;
-  displayRemediationRequired: boolean;
-  providerSelectionRequired: boolean;
-  providerSetupCompletedThisSession: boolean;
-  themeSetupRequired: boolean;
-  ready: boolean;
 }): boolean {
   return (
-    input.ready ||
-    ((input.providerSelectionRequired ||
-      input.providerSetupCompletedThisSession ||
-      input.displayRemediationRequired ||
-      input.themeSetupRequired) &&
-      input.deviceConnected) ||
+    input.deviceConnected ||
     (input.hasEnteredControlCenter &&
       input.hasActiveDevice &&
       !input.connectionRecoveryRequired)

@@ -4348,14 +4348,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const deviceUsableForSetup = setupDeviceIsUsable({
     deviceConnected,
     connectionRecoveryRequired,
-    displayRemediationRequired:
-      providerDisplay?.configured === true && providerDisplay.valid === false,
     hasActiveDevice,
     hasEnteredControlCenter,
-    providerSelectionRequired,
-    providerSetupCompletedThisSession,
-    themeSetupRequired,
-    ready: deviceReady,
   });
 
   const setupStep = deriveSetupStep({
@@ -4397,9 +4391,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Once setup has admitted the customer to the Control Center, it never owns
   // the window again. Theme and screensaver installs can temporarily make the
   // device unready; that is install progress, not a new customer setup.
-  const setupOwnsScreen =
-    Boolean(settingsWiFiSetup) ||
-    !hasEnteredControlCenter;
+  const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
@@ -4584,6 +4576,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           displayMode={providerDisplay?.mode ?? "automatic"}
           displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
           firmwareProgress={firmwareUpdateStatus?.progress}
+          firmwareInstallLogs={
+            firmwareUpdateInProgress ? firmwareUpdateStatus.logs : undefined
+          }
           displayProviders={displayableProviders.map((item) => ({
             id: item.providerId,
             label: item.label,

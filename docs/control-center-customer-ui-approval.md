@@ -4337,3 +4337,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul's current requirement “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” applies to every entry into the existing wizard, including the WiFi switch from Settings.
 - Approved customer-visible result: Opening that WiFi wizard clears the previous handover. A confirmed WiFi status alone cannot return to Settings; the existing live preview must render while the selected VibeTV is connected and ready. Browser fixtures for previously admitted sessions establish a valid preview before simulating later outages, and Theme Studio fixtures provide matching active render packs.
+
+
+## 2026-09-12 — Preserve progress while waiting for the required preview
+
+- User approval: Paul's current instruction “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” requires retaining setup during first-frame waits and when reopening an unfinished installation.
+- Approved customer-visible result: A verified connection advances to the existing preview wait without repeating connection or firmware writes. Running firmware and theme jobs restored on launch show their existing progress log inside the wizard; they cannot bypass preview admission or start a second install. Browser regressions replace the superseded saved-setup shortcut with the required no-preview boundary.
