@@ -1835,9 +1835,7 @@ async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await connectDiscoveredVibeTV(page);
-  await setupConnectLog(page)
-    .getByText("> connected · VibeTV fixture-device-1")
-    .waitFor({ timeout: 10_000 });
+  await page.getByRole("main", { name: "Your VibeTV is live" }).waitFor({ timeout: 20_000 });
   await page.waitForTimeout(1_500);
   assert(
     (await setupNotFoundDialog(page).count()) === 0,
@@ -1853,7 +1851,7 @@ async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
     `A reachable VibeTV without a display frame must not retry automatically, got ${selectRequests.length} attempts`,
   );
   assert(
-    (await page.getByRole("heading", { name: SETUP_DEVICE_SCREEN }).count()) ===
+    (await page.getByRole("main", { name: "Your VibeTV is live" }).count()) ===
       1,
     "A delayed first usage frame must stay inside the setup wizard",
   );
