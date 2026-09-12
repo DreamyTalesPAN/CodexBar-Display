@@ -38,13 +38,19 @@ type permissionMigrationCache struct {
 }
 
 var processPermissionMigrations permissionMigrationCache
+var configTransactionLocks sync.Map
 
 type Config struct {
+	WiFiTransitionStartedAt        int64                  `json:"wifiTransitionStartedAt,omitempty"`
 	Theme                          string                 `json:"theme,omitempty"`
+	ConnectionMode                 string                 `json:"connectionMode,omitempty"`
 	DeviceTarget                   string                 `json:"deviceTarget,omitempty"`
 	DeviceToken                    string                 `json:"deviceToken,omitempty"`
 	DeviceID                       string                 `json:"deviceId,omitempty"`
+	DeviceTransports               []string               `json:"deviceTransports,omitempty"`
 	KnownDevices                   []KnownDevice          `json:"knownDevices,omitempty"`
+	CableAutoBindDisabled          bool                   `json:"cableAutoBindDisabled,omitempty"`
+	ConnectionModeChoiceRequired   bool                   `json:"connectionModeChoiceRequired,omitempty"`
 	ProviderDisplay                *ProviderDisplayConfig `json:"providerDisplay,omitempty"`
 	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
 }
@@ -68,6 +74,34 @@ func DefaultTheme() string {
 	return defaultTheme
 }
 
+func NormalizeConnectionMode(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "cable":
+		return "cable"
+	case "wifi":
+		return "wifi"
+	default:
+		return ""
+	}
+}
+
+func ActiveTransport(cfg Config) string {
+	if cfg.WiFiTransitionPending() {
+		return "usb"
+	}
+	switch NormalizeConnectionMode(cfg.ConnectionMode) {
+	case "wifi":
+		return "wifi"
+	case "cable":
+		return "usb"
+	default:
+		if strings.TrimSpace(cfg.DeviceTarget) != "" {
+			return "wifi"
+		}
+		return "usb"
+	}
+}
+
 func ClearThemeValue(raw string) bool {
 	switch strings.TrimSpace(strings.ToLower(raw)) {
 	case "", "none", "off", "auto", "default":
@@ -79,6 +113,20 @@ func ClearThemeValue(raw string) bool {
 
 func ConfigPath(home string) string {
 	return filepath.Join(home, "Library", "Application Support", "codexbar-display", configFileName)
+}
+
+// WithConfigLock serializes in-process read-modify-write transactions for one
+// runtime config across the Companion API and its display worker.
+func WithConfigLock(home string, run func() error) error {
+	if run == nil {
+		return nil
+	}
+	key := ConfigPath(strings.TrimSpace(home))
+	lockValue, _ := configTransactionLocks.LoadOrStore(key, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	return run()
 }
 
 func deviceSelectionJournalPath(home string) string {
@@ -319,11 +367,18 @@ func (cfg Config) KnownDevice(deviceID string) (KnownDevice, bool) {
 
 func (cfg *Config) Normalize() {
 	cfg.Theme = NormalizeTheme(cfg.Theme)
+	cfg.ConnectionMode = NormalizeConnectionMode(cfg.ConnectionMode)
+	if !cfg.WiFiTransitionPending() {
+		cfg.WiFiTransitionStartedAt = 0
+	}
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
 	if cfg.ProviderDisplay != nil {
 		cfg.ProviderDisplay.Normalize()
+	}
+	for index := range cfg.DeviceTransports {
+		cfg.DeviceTransports[index] = strings.TrimSpace(strings.ToLower(cfg.DeviceTransports[index]))
 	}
 	cfg.normalizeKnownDevices()
 }
@@ -407,21 +462,48 @@ func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	if cfg.ProviderSelectionSetupComplete == nil && !cfg.hasPairedDevice() {
 		cfg.SetProviderSelectionSetupComplete(false)
 	}
+	cfg.CableAutoBindDisabled = false
+	cfg.ConnectionModeChoiceRequired = false
 	cfg.DeviceID = device.DeviceID
 	cfg.DeviceTarget = device.Target
 	cfg.DeviceToken = device.DeviceToken
 	cfg.upsertKnownDevice(device)
 }
 
+func (cfg Config) WiFiTransitionPending() bool {
+	return NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
+		cfg.CableAutoBindDisabled &&
+		!cfg.ConnectionModeChoiceRequired &&
+		strings.TrimSpace(cfg.DeviceID) != ""
+}
+
 func (cfg *Config) RememberDevice(device KnownDevice) {
 	cfg.upsertKnownDevice(device)
 }
 
-func (cfg *Config) ClearDevices() {
+func (cfg *Config) ResetDeviceBinding() {
+	retryingWiFi := cfg.WiFiTransitionPending()
+	retryingDeviceID := strings.TrimSpace(cfg.DeviceID)
+	if strings.TrimSpace(cfg.DeviceID) != "" {
+		cfg.RememberDevice(KnownDevice{
+			DeviceID:    cfg.DeviceID,
+			Target:      cfg.DeviceTarget,
+			DeviceToken: cfg.DeviceToken,
+		})
+	}
+	cfg.CableAutoBindDisabled = true
+	cfg.ConnectionModeChoiceRequired = true
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""
-	cfg.KnownDevices = nil
+	cfg.DeviceTransports = nil
+	if retryingWiFi {
+		for index := range cfg.KnownDevices {
+			if strings.EqualFold(cfg.KnownDevices[index].DeviceID, retryingDeviceID) {
+				cfg.KnownDevices[index].Target = ""
+			}
+		}
+	}
 }
 
 func (cfg *Config) normalizeKnownDevices() {

@@ -1634,3 +1634,36 @@ func TestParseProviderPayloadBuildsOrderedUsageWindows(t *testing.T) {
 		t.Fatalf("expected legacy aliases to mirror the first two windows, got %+v", parsed[0].Frame)
 	}
 }
+
+func TestSetUsageBarsShowUsedUsesCodexBarPreferenceAndReadback(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	t.Setenv("CODEX_TEST_USAGE_PREFERENCE", filepath.Join(dir, "value"))
+	script := `#!/bin/sh
+[ "$2" = "com.steipete.codexbar" ] && [ "$3" = "usageBarsShowUsed" ] || exit 1
+if [ "$1" = "write" ]; then
+  [ "$4" = "-bool" ] || exit 1
+  printf '%s' "$5" > "$CODEX_TEST_USAGE_PREFERENCE"
+else
+  cat "$CODEX_TEST_USAGE_PREFERENCE"
+fi
+`
+	if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, used := range []bool{false, true} {
+		if err := SetUsageBarsShowUsed(context.Background(), used); err != nil {
+			t.Fatal(err)
+		}
+		if got := UsageBarsShowUsed(); got != used {
+			t.Fatalf("readback %v, want %v", got, used)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetUsageBarsShowUsed(context.Background(), false); err == nil {
+		t.Fatal("failed writes must be reported")
+	}
+}

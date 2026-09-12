@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  connectionModeChoiceStatus,
+  statusConfirmsSubmittedWiFiChoice,
   mergeDeviceInfo,
   setupThemeCatalogError,
 } from "./control-center-app";
@@ -78,6 +80,83 @@ describe("device snapshot funnel", () => {
   it("does not invent an incident that never existed", () => {
     const quiet = withStream({ running: true, healthy: false });
     expect(mergeDeviceInfo(quiet, quiet).stream?.errorCode).toBeUndefined();
+  });
+});
+
+describe("connection mode choice status", () => {
+  it("keeps observing an empty early startup snapshot", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionModeChoiceRequired: false,
+        device: { connected: false },
+      }),
+    ).toEqual({ required: true, resolved: false });
+  });
+
+  it("resumes Cable-free WiFi discovery after a reload", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionMode: "wifi",
+        connectionModeChoiceRequired: false,
+        device: { connected: false },
+      }),
+    ).toEqual({ required: false, resolved: true });
+  });
+
+  it("keeps the chooser once Cable auto-binding requires it", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionModeChoiceRequired: true,
+        device: { ...base, target: "Cable" },
+      }),
+    ).toEqual({ required: true, resolved: true });
+  });
+
+  it("accepts an existing saved device as a completed choice", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionModeChoiceRequired: false,
+        device: base,
+      }),
+    ).toEqual({ required: false, resolved: true });
+  });
+
+  it("finishes a submitted WiFi choice only after active WiFi confirmation", () => {
+    expect(statusConfirmsSubmittedWiFiChoice({
+      connectionMode: "wifi",
+      connectionModeChoiceRequired: false,
+      device: { ...base, connected: false },
+    })).toBe(false);
+    expect(
+      statusConfirmsSubmittedWiFiChoice({
+        connectionMode: "wifi",
+        connectionModeChoiceRequired: false,
+        device: {
+          ...base,
+          active: true,
+          target: "http://192.168.1.42",
+        },
+      }),
+    ).toBe(true);
+    expect(
+      statusConfirmsSubmittedWiFiChoice({
+        connectionMode: "wifi",
+        connectionModeChoiceRequired: false,
+        device: {
+          ...base,
+          active: true,
+          target: "cable://vibetv",
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it.each([undefined, "", "cable"])("does not accept retained Cable health while mode is %s", (connectionMode) => {
+    expect(statusConfirmsSubmittedWiFiChoice({
+      connectionMode,
+      connectionModeChoiceRequired: false,
+      device: { ...base, target: "", connected: true },
+    })).toBe(false);
   });
 });
 

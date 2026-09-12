@@ -1,11 +1,22 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
-import type { ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { UsageModeChoice } from "./setup/setup-usage-mode-screen";
+import type { UsageDisplayMode } from "./setup/setup-display-previews";
+import { CircleArrowRight, Wifi } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { ItemSeparator } from "@/components/ui/item";
+import { Item, ItemSeparator } from "@/components/ui/item";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
+import { selectedItemClass } from "./setup/setup-selectable-card";
 import {
   Select,
   SelectContent,
@@ -26,8 +37,10 @@ import {
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
+  deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  type ApiError,
   type DeviceInfo,
   type StandbySettings,
 } from "./control-center-types";
@@ -39,14 +52,21 @@ export function standbyTimeoutLabel(minutes: number): string {
 }
 
 export type SettingsScreenProps = {
+  usageMode?: UsageDisplayMode | null;
+  usageSavePending?: boolean;
+  onUsageModeChange?: (mode: UsageDisplayMode) => void;
   /** Live usage per provider, in the order Automatic moves through them. */
   automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
   brightness: number | null;
   busyAction: string | null;
+  actionError?: ApiError | null;
+  onDismissError: () => void;
+  connectionMode: "cable" | "wifi";
   standby: StandbySettings | null;
   onBrightnessChange: (value: number) => void;
   onChooseScreensaver: () => void;
+  onConnectionModeChange: (mode: "cable" | "wifi") => void;
   onResetSetup: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
@@ -55,19 +75,25 @@ export type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
+  usageMode, usageSavePending, onUsageModeChange,
   automaticPreviews,
   device,
   brightness,
   busyAction,
+  actionError,
+  onDismissError,
+  connectionMode,
   standby,
   onBrightnessChange,
   onChooseScreensaver,
+  onConnectionModeChange,
   onResetSetup,
   onSaveBrightness,
   providerPicker,
   onSaveStandby,
   onStandbyBrightnessChange,
 }: SettingsScreenProps) {
+  const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
   const minBrightness =
@@ -78,6 +104,7 @@ export function SettingsScreen({
   const localActionBusy =
     busyAction === "brightness" ||
     busyAction === "standby" ||
+    busyAction === "connection-mode" ||
     busyAction === "reset-setup" ||
     busyAction === "firmware-update";
   // Firmware that does not advertise standby has no screensaver at all, so the
@@ -92,13 +119,23 @@ export function SettingsScreen({
     !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
+  const supportedTransports = device?.capabilities?.transport?.supported;
+  const cableSupported =
+    !supportedTransports || supportedTransports.includes("usb");
+  const wifiSupported =
+    !supportedTransports || supportedTransports.includes("wifi");
+  const connectionModeDisabled =
+    (!deviceIsCustomerConnected(device) && !deviceCanSwitchToCable(device)) ||
+    localActionBusy;
 
   const providers = (providerPicker.items || []).filter(isProviderItem);
   // Manual pins the device to exactly one provider, so it may only offer ones
   // that can actually produce a reading. Offering every switched-on provider,
   // as the design board's wording does, lets a customer pin VibeTV to a
   // provider that shows nothing.
-  const displayable = providers.filter(setupProviderCanDisplay);
+  const displayable = providers.filter((provider) =>
+    setupProviderCanDisplay(provider, providerPicker.usage),
+  );
   const enabledProviderIds = providers
     .filter((item) => item.value)
     .map((item) => item.providerId);
@@ -117,29 +154,81 @@ export function SettingsScreen({
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
-      <SettingsSection title="Display">
-        <BrightnessControl
-          disabled={
-            !brightnessSupport ||
-            !deviceIsReady(device) ||
-            brightness == null ||
-            localActionBusy
-          }
-          id="vibetv-brightness"
-          label="Brightness"
-          max={maxBrightness}
-          min={minBrightness}
-          onSave={onSaveBrightness}
-          onValueChange={onBrightnessChange}
-          value={currentBrightness}
-          valueLabel={brightness == null ? "Loading" : `${brightness}%`}
-        />
+      <SetupStepFailedDialog
+        error={actionError ?? providerError ?? null}
+        onOpenChange={(open) => !open && onDismissError()}
+      />
+      <SettingsSection title="Connection">
+        <div
+          aria-label="Connection mode"
+          aria-busy={busyAction === "connection-mode"}
+          className="grid grid-cols-2 gap-4"
+          role="group"
+        >
+          {([
+            { mode: "cable", label: "USB-C", description: "Requires a data cable connected to this Mac.", Icon: CircleArrowRight, supported: cableSupported },
+            { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", Icon: Wifi, supported: wifiSupported },
+          ] as const).map(({ mode, label, description, Icon, supported }) => (
+            <Item
+              asChild
+              className={`${selectedItemClass(connectionMode === mode)} max-w-[224px] flex-col items-start gap-2 bg-card p-4 last:justify-self-end disabled:cursor-not-allowed disabled:opacity-50`}
+              key={mode}
+              variant="outline"
+            >
+              <button
+                aria-label={label}
+                aria-pressed={connectionMode === mode}
+                disabled={connectionModeDisabled || !supported}
+                onClick={() => {
+                  if (mode !== connectionMode) setRequestedMode(mode);
+                }}
+                type="button"
+              >
+                <Icon aria-hidden className="size-[18px]" />
+                <span className="text-sm font-semibold">{label}</span>
+                <span className="text-xs leading-normal text-muted-foreground">{description}</span>
+              </button>
+            </Item>
+          ))}
+        </div>
+        {requestedMode !== null ? <Dialog
+          open
+          onOpenChange={(open) => { if (!open) setRequestedMode(null); }}
+        >
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
+              <DialogDescription>
+                {requestedMode === "cable"
+                  ? "Connect VibeTV to this Mac with a data cable. WiFi stays on until the app confirms the cable connection. Your saved network, themes, providers and brightness stay saved."
+                  : "VibeTV connects to your saved WiFi network. If network details are needed, WiFi setup opens. Themes, providers and brightness stay saved."}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button onClick={() => setRequestedMode(null)} type="button" variant="outline">
+                {requestedMode === "cable" ? "Keep WiFi" : "Keep USB-C"}
+              </Button>
+              <Button
+                disabled={connectionModeDisabled}
+                onClick={() => {
+                  if (requestedMode && requestedMode !== connectionMode) onConnectionModeChange(requestedMode);
+                  setRequestedMode(null);
+                }}
+                type="button"
+              >
+                {requestedMode === "cable" ? "Switch to USB-C" : "Switch to WiFi"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog> : null}
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
 
       <SettingsSection title="Display mode">
         <DisplayModeChoice
+          simplePreview
+          usageMode={usageMode ?? undefined}
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}
           manualPreview={
@@ -148,7 +237,7 @@ export function SettingsScreen({
                 preview.providerLabel ===
                 displayable.find(
                   (item) =>
-                    item.providerId === providerPicker.display?.providerIds[0],
+                    item.providerId === manualProviderId,
                 )?.label,
             ) ?? null
           }
@@ -179,6 +268,38 @@ export function SettingsScreen({
           }))}
           saving={displaySavePending}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
+        />
+      </SettingsSection>
+      <ItemSeparator className="my-0" />
+      <SettingsSection title="Show usage as">
+        <UsageModeChoice mode={usageMode ?? null} onSelect={(mode) => onUsageModeChange?.(mode)}
+          saving={usageSavePending || localActionBusy} simplePreview
+          preview={automaticPreviews.find((preview) => preview.providerLabel ===
+            displayable.find((item) => item.providerId === manualProviderId)?.label) ?? automaticPreviews[0] ?? null} />
+      </SettingsSection>
+      <ItemSeparator className="my-0" />
+      <SettingsSection title="Display">
+        <BrightnessControl
+          disabled={
+            !brightnessSupport ||
+            !deviceIsReady(device) ||
+            brightness == null ||
+            localActionBusy
+          }
+          id="vibetv-brightness"
+          label="Brightness"
+          max={maxBrightness}
+          min={minBrightness}
+          onSave={onSaveBrightness}
+          onValueChange={onBrightnessChange}
+          value={currentBrightness}
+          valueLabel={
+            !brightnessSupport
+              ? "Not supported"
+              : brightness == null
+                ? "Loading"
+                : `${brightness}%`
+          }
         />
       </SettingsSection>
 
@@ -285,22 +406,12 @@ export function SettingsScreen({
       <ItemSeparator className="my-0" />
 
       <SettingsSection title="AI providers">
-        {/*
-          The only place a failed provider or display write is reported once the
-          customer is past the wizard.
-        */}
-        {providerError ? (
-          <Alert className="mb-4" variant="destructive">
-            <AlertTriangle />
-            <AlertTitle>{providerError.message}</AlertTitle>
-            <AlertDescription>{providerError.nextAction}</AlertDescription>
-          </Alert>
-        ) : null}
         <ProviderList
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
           onToggle={(provider, enabled) =>
             void providerPicker.onPreferenceChange(provider, enabled)
           }
+          usage={providerPicker.usage}
           pendingCheckIds={providerPicker.pendingCheckIds}
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}

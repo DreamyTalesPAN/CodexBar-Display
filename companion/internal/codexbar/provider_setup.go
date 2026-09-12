@@ -20,6 +20,7 @@ const (
 	ProviderReady              = "ready"
 	ProviderAuthRequired       = "auth_required"
 	ProviderPermissionRequired = "permission_required"
+	ProviderUnsupported        = "unsupported"
 	ProviderNoUsageAvailable   = "no_usage_available"
 	ProviderTimeout            = "timeout"
 	ProviderConfigError        = "config_error"
@@ -544,6 +545,11 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 func classifyProviderError(detail string) string {
 	lower := strings.ToLower(detail)
 	switch {
+	// CodexBar exports provider errors as code/message/kind, without a typed
+	// migration reason. An explicit end-of-support statement takes precedence
+	// over incidental auth words in its guidance; no API or account inference.
+	case strings.Contains(lower, "no longer supports"), strings.Contains(lower, "no longer supported"):
+		return ProviderUnsupported
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
 		return ProviderTimeout
 	case strings.Contains(lower, "permission"), strings.Contains(lower, "not permitted"), strings.Contains(lower, "access denied"), strings.Contains(lower, "keychain") && (strings.Contains(lower, "denied") || strings.Contains(lower, "locked") || strings.Contains(lower, "not allowed")):
@@ -576,6 +582,9 @@ func providerResult(id, status string) ProviderReadiness {
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
 		result.NextAction = "Allow the requested macOS permission, then check again."
+	case ProviderUnsupported:
+		result.Detail = "This provider is no longer supported for this account."
+		result.NextAction = "Follow the provider message and choose another provider."
 	case ProviderNoUsageAvailable:
 		result.Detail = "This account does not expose usage data."
 		result.NextAction = "Choose another provider that exposes usage limits."

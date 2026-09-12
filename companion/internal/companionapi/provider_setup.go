@@ -267,7 +267,8 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 }
 
 func providerSetupFailureMustWin(status string) bool {
-	return status == codexbar.ProviderAuthRequired ||
+	return status == codexbar.ProviderUnsupported ||
+		status == codexbar.ProviderAuthRequired ||
 		status == codexbar.ProviderNotConfigured ||
 		status == codexbar.ProviderPermissionRequired ||
 		status == codexbar.ProviderConfigError

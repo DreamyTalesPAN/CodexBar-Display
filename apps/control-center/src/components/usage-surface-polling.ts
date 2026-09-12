@@ -57,11 +57,17 @@ export function startUsageSurfacePolling({
     }
   };
 
+  // A background Mac window can miss every timer tick. Refresh when it
+  // becomes visible so setup and Settings never wait on the next interval.
+  const visibilityTarget = typeof document === "undefined" ? null : document;
+  visibilityTarget?.addEventListener("visibilitychange", run);
+
   const initialTimer: TimeoutHandle = clock.setTimeout(run, 0);
   const intervalTimer: IntervalHandle = clock.setInterval(run, intervalMs);
 
   return () => {
     stopped = true;
+    visibilityTarget?.removeEventListener("visibilitychange", run);
     usageInFlight = false;
     providerHealthInFlight = false;
     clock.clearTimeout(initialTimer);

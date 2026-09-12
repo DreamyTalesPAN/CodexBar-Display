@@ -14,6 +14,11 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { SimpleUsagePreview } from "./simple-usage-preview";
+import { ThemeRenderPreview } from "../theme-render-preview";
+import { buildFrameData, type FrameData } from "../live-vibetv-preview";
+import { previewUsageMode, type UsageDisplayMode } from "./setup-display-previews";
+import type { SetupThemeOption } from "./setup-theme-screen";
 import { SETUP_REVEAL } from "./setup-reveal";
 import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
 import {
@@ -38,13 +43,15 @@ export type SetupDisplayModeProvider = {
  * arrives as `null` and stays visibly unavailable instead of being invented.
  */
 export type SetupDisplayModePreview = {
+  frame?: FrameData;
   providerLabel: string;
   resetLabel: string | null;
-  sessionPercent: number | null;
-  weeklyPercent: number | null;
+  windows: { label: string; percent: number | null }[];
 };
 
 type SetupDisplayModeScreenProps = {
+  previewTheme?: SetupThemeOption;
+  usageMode?: UsageDisplayMode;
   /** Live usage of the provider Automatic would show right now. */
   automaticPreview: SetupDisplayModePreview | null;
   /**
@@ -71,6 +78,8 @@ type SetupDisplayModeScreenProps = {
 };
 
 export function SetupDisplayModeScreen({
+  previewTheme,
+  usageMode,
   automaticPreview,
   automaticPreviews,
   manualPreview,
@@ -99,6 +108,8 @@ export function SetupDisplayModeScreen({
       </SetupWizardSubtitle>
 
       <DisplayModeChoice
+        previewTheme={previewTheme}
+        usageMode={usageMode}
         automaticPreview={automaticPreview}
         automaticPreviews={automaticPreviews}
         className="mt-4"
@@ -140,6 +151,8 @@ export function SetupDisplayModeScreen({
 
 type DisplayModeChoiceProps = Pick<
   SetupDisplayModeScreenProps,
+  | "previewTheme"
+  | "usageMode"
   | "automaticPreview"
   | "automaticPreviews"
   | "manualPreview"
@@ -149,7 +162,7 @@ type DisplayModeChoiceProps = Pick<
   | "providers"
   | "saving"
   | "selectedProviderId"
-> & { className?: string };
+> & { className?: string; simplePreview?: boolean };
 
 /**
  * The display-mode choice itself: two cards showing what each mode would put
@@ -160,6 +173,9 @@ type DisplayModeChoiceProps = Pick<
  * Settings ended up offering "Always show one" against the wizard's "Manual".
  */
 export function DisplayModeChoice({
+  simplePreview,
+  previewTheme,
+  usageMode,
   automaticPreview,
   automaticPreviews,
   className,
@@ -188,7 +204,7 @@ export function DisplayModeChoice({
           selected={mode === "automatic"}
           title="Automatic"
         >
-          <PreviewTile frames={rotation} index={index} />
+          <PreviewTile simple={simplePreview} preview={rotation[index]} theme={previewTheme} usageMode={usageMode} />
         </ModeCard>
         <ModeCard
           description="VibeTV always shows the one provider you pick — nothing else."
@@ -197,7 +213,7 @@ export function DisplayModeChoice({
           selected={mode === "fixed"}
           title="Manual"
         >
-          <PreviewTile frames={manualPreview ? [manualPreview] : []} index={0} />
+          <PreviewTile simple={simplePreview} preview={manualPreview} theme={previewTheme} usageMode={usageMode} />
         </ModeCard>
       </div>
 
@@ -250,8 +266,7 @@ function rotationFrames(
       : {
           providerLabel: provider.label,
           resetLabel: null,
-          sessionPercent: null,
-          weeklyPercent: null,
+          windows: [],
         },
   );
 }
@@ -287,7 +302,7 @@ function useProviderRotation(count: number): { index: number } {
   return { index: count ? index % count : 0 };
 }
 
-function ModeCard({
+export function ModeCard({
   children,
   description,
   disabled = false,
@@ -305,7 +320,7 @@ function ModeCard({
   return (
     <Item
       asChild
-      className={cn(selectedItemClass(selected), "overflow-hidden p-0")}
+      className={cn(selectedItemClass(selected), "items-start overflow-hidden p-0")}
       variant="outline"
     >
       <button
@@ -317,7 +332,7 @@ function ModeCard({
         <ItemContent className="gap-0">
           {children}
           <span className="flex flex-col gap-1.5 px-4 py-3.5">
-            <ItemTitle className="justify-between">
+            <ItemTitle className="w-full justify-between">
               <span>{title}</span>
               <SelectionCheck selected={selected} />
             </ItemTitle>
@@ -331,152 +346,27 @@ function ModeCard({
   );
 }
 
-/**
- * The VibeTV panel as it looks with these values, drawn from props only. The
- * frame around the numbers — labels, bar tracks, the rotation strip — never
- * moves; only the provider's own readings cross over. A provider whose usage
- * has not been read yet renders as unavailable rather than as a placeholder.
- */
-function PreviewTile({
-  frames,
-  index,
-}: {
-  frames: SetupDisplayModePreview[];
-  index: number;
+/** The selected theme, rendered by the same renderer as the live device preview. */
+export function PreviewTile({ preview, theme, usageMode, simple }: {
+  simple?: boolean;
+  preview: SetupDisplayModePreview | null | undefined;
+  theme?: SetupThemeOption;
+  usageMode?: UsageDisplayMode;
 }) {
-  const frame = frames[index];
-
-  if (!frame) {
-    return (
-      <span
-        className="flex min-h-[140px] w-full items-center justify-center bg-muted/50 p-4 text-center font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase"
-        data-slot="display-mode-preview"
-      >
-        No usage yet
-      </span>
-    );
-  }
-
+  if (simple) return <SimpleUsagePreview preview={preview} usageMode={usageMode} />;
+  const frame = preview?.frame ?? buildFrameData(undefined, {
+    label: preview?.providerLabel,
+    sessionUnavailable: true, weeklyUnavailable: true,
+  });
   return (
-    <span
-      className="flex min-h-[140px] w-full flex-col justify-center gap-3 bg-muted/50 p-4 font-mono"
-      data-slot="display-mode-preview"
-    >
-      <CycledText
-        className="truncate text-center text-[11px] font-bold tracking-[0.12em] uppercase"
-        cycleKey={index}
-      >
-        {frame.providerLabel}
-      </CycledText>
-
-      <span className="flex gap-3">
-        <PreviewReading
-          cycleKey={index}
-          label="Session"
-          percent={frame.sessionPercent}
-        />
-        <PreviewReading
-          align="right"
-          cycleKey={index}
-          label="Weekly"
-          percent={frame.weeklyPercent}
-        />
-      </span>
-
-      <CycledText
-        className="truncate text-center text-[8px] tracking-[0.12em] text-muted-foreground uppercase"
-        cycleKey={index}
-      >
-        {frame.resetLabel || "Reset unavailable"}
-      </CycledText>
-
+    <span className="block aspect-square w-full overflow-hidden bg-muted/50" data-slot="display-mode-preview">
+      {theme ? <ThemeRenderPreview
+        animate
+        className="h-full w-full border-0"
+        themeId={theme.id}
+        themeSpecPath={theme.themeSpecPath}
+        frame={usageMode ? previewUsageMode(frame, usageMode) : frame}
+      /> : <span className="flex h-full items-center justify-center text-xs text-muted-foreground">Theme preview unavailable</span>}
     </span>
   );
 }
-
-/** One half of the panel: a named reading and how full it is. */
-function PreviewReading({
-  align = "left",
-  cycleKey,
-  label,
-  percent,
-}: {
-  align?: "left" | "right";
-  cycleKey: number;
-  label: string;
-  percent: number | null;
-}) {
-  return (
-    <span
-      className={cn(
-        "flex min-w-0 flex-1 flex-col gap-1.5",
-        align === "right" && "items-end",
-      )}
-    >
-      <span className="text-[8px] tracking-[0.12em] text-muted-foreground uppercase">
-        {label}
-      </span>
-      <CycledText
-        className={cn(
-          "text-[26px] leading-none font-bold",
-          percent === null && "text-muted-foreground/60",
-        )}
-        cycleKey={cycleKey}
-      >
-        {percent === null ? (
-          "--"
-        ) : (
-          <>
-            {percent}
-            <span className="text-[12px]">%</span>
-          </>
-        )}
-      </CycledText>
-      <PreviewBar percent={percent} />
-    </span>
-  );
-}
-
-/**
- * Text that belongs to one provider. Remounting it on every step is what
- * replays the fade, so the reading crosses over while nothing around it moves.
- */
-function CycledText({
-  children,
-  className,
-  cycleKey,
-}: {
-  children: ReactNode;
-  className?: string;
-  cycleKey: number;
-}) {
-  return (
-    <span
-      className={cn("block", className)}
-      key={cycleKey}
-      style={{
-        animation: "vibetv-preview-frame-in 180ms cubic-bezier(0.2, 0, 0, 1) both",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
-/** A usage bar that glides to the next provider's reading instead of jumping. */
-function PreviewBar({ percent }: { percent: number | null }) {
-  return (
-    <span className="block h-[3px] w-full rounded-full bg-foreground/10">
-      <span
-        className="block h-full rounded-full bg-[var(--vibetv-support)]"
-        style={{
-          transitionDuration: "320ms",
-          transitionProperty: "width",
-          transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
-          width: `${percent ?? 0}%`,
-        }}
-      />
-    </span>
-  );
-}
-

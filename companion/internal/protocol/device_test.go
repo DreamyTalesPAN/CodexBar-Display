@@ -14,6 +14,7 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 		PreferredProtocolVersion:  2,
 		Board:                     "ESP8266-SMALLTV-ST7789",
 		Firmware:                  "1.0.0",
+		DeviceID:                  "14799300",
 		Features:                  []string{"theme", "theme-spec-v1"},
 		MaxFrameBytes:             512,
 		Capabilities: CapabilityBlock{
@@ -45,6 +46,7 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 			Transport: TransportCapabilities{
 				Active:    "usb",
 				Supported: []string{"usb"},
+				Mode:      "cable",
 			},
 		},
 	})
@@ -87,6 +89,9 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 	if caps.ActiveTransport != "usb" {
 		t.Fatalf("unexpected transport: %q", caps.ActiveTransport)
+	}
+	if caps.DeviceID != "14799300" || caps.ConnectionMode != "cable" {
+		t.Fatalf("unexpected Cable identity: id=%q mode=%q", caps.DeviceID, caps.ConnectionMode)
 	}
 	if !caps.SupportsBrightness || caps.MinBrightnessPercent != 10 || caps.MaxBrightnessPercent != 100 {
 		t.Fatalf("unexpected brightness capabilities: supported=%t min=%d max=%d", caps.SupportsBrightness, caps.MinBrightnessPercent, caps.MaxBrightnessPercent)

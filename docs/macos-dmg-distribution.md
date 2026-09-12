@@ -82,14 +82,17 @@ The embedded LaunchAgent runs the integrated display daemon and local API:
 
 ```bash
 codexbar-display daemon \
-  --transport wifi \
-  --interval 30s \
+  --transport usb \
   --api-addr 127.0.0.1:47832 \
   --api-dev-origin http://127.0.0.1:47832
 ```
 
 The app-managed native plist intentionally does not contain `--target`; the
-Mac App loads the active VibeTV target from its local runtime configuration.
+Mac App loads the active VibeTV connection mode and target from its local
+runtime configuration. A fresh install therefore uses the firmware's Cable
+default, while an existing saved WiFi choice still overrides the launch
+fallback. The interval is transport-owned: Cable uses the fast local cadence
+and WiFi keeps its bounded network cadence.
 
 This keeps normal VibeTV usage frames updating in the background. App install
 and migration do not trigger firmware updates, theme installs, asset uploads,

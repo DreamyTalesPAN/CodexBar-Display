@@ -1,6 +1,8 @@
 "use client";
+import { SetupUsageModeScreen } from "./setup-usage-mode-screen";
+import type { UsageDisplayMode } from "./setup-display-previews";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type {
   ApiError,
   DeviceCandidate,
@@ -9,16 +11,24 @@ import type {
   ProviderDisplaySelection,
   SupportDiagnostics,
   UsageSnapshot,
+  WiFiNetwork,
 } from "../control-center-types";
+import { deviceIsCustomerConnected } from "../control-center-types";
 import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
-import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
+import {
+  useSetupConnect,
+  type ConnectedDevice,
+  type SetupConnectSteps,
+} from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
 import {
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
+  SetupWiFiPhoneDialog,
 } from "./setup-device-dialogs";
+import { SetupDialog } from "./setup-dialog";
 import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupStepFailedDialog } from "./setup-provider-dialogs";
 import {
@@ -44,8 +54,16 @@ import {
 } from "./setup-theme-screen";
 import { SetupUsageDialog, type SetupUsageCause } from "./setup-usage-dialog";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
+import {
+  candidateKey,
+  decideSetupConnection,
+  type SetupConnectionModeResult,
+  type SetupTransport,
+} from "./setup-connection";
 
 export type SetupWizardProps = {
+  initialWiFiSetup?: SetupConnectionModeResult | null;
+  onConnectionComplete?: () => void;
   aiFixPrompt: (setupLog: string[]) => string;
   /**
    * The usage service itself is broken. Shown only where the step has no
@@ -58,6 +76,9 @@ export type SetupWizardProps = {
   onDismissUsageFailure?: () => void;
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
+  connectionMode: string;
+  connectionModeChoiceRequired: boolean;
+  activeDeviceId?: string;
   device: DeviceInfo | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
@@ -72,6 +93,10 @@ export type SetupWizardProps = {
   installingTheme: boolean;
   /** Resolves with the VibeTV at that address, or rejects with what to show. */
   onFindManualTarget: (target: string) => Promise<DeviceCandidate>;
+  onConfigureWiFi: (
+    ssid: string,
+    password: string,
+  ) => Promise<string | undefined>;
   onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
   /**
    * Called once, with what the customer settled on. Resolving false keeps them
@@ -82,7 +107,14 @@ export type SetupWizardProps = {
   ) => void | Promise<boolean | void>;
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
-  onInstallTheme: () => void;
+  selectedThemeInstalled?: boolean;
+  onInstallTheme: () => void | Promise<boolean | void>;
+  usageMode?: UsageDisplayMode | null;
+  usageSavePending?: boolean;
+  usageError?: ApiError | null;
+  onUsageContinue?: (mode: UsageDisplayMode) => Promise<boolean>;
+  onRetryUsageMode?: () => void;
+  onDismissUsageError?: () => void;
   /** What stopped the catalog read or install on the theme step. */
   themeError: ApiError | null;
   themeErrorDismissible?: boolean;
@@ -105,6 +137,11 @@ export type SetupWizardProps = {
   /** Ask the companion again for whatever the step could not read. */
   onRetryProviders: () => void;
   onSearchDevices: () => void;
+  onScanWiFiNetworks: () => Promise<WiFiNetwork[]>;
+  onSelectConnectionMode: (
+    mode: SetupTransport,
+    deviceId?: string,
+  ) => Promise<SetupConnectionModeResult>;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
   /** Preferences whose on/off write is in flight, by preference id. */
@@ -140,12 +177,32 @@ export function SetupWizard(props: SetupWizardProps) {
     deviceCandidates,
     deviceSearchState,
     onCreateSupportReport,
+    onConnectionComplete,
+    onScanWiFiNetworks,
     onSearchDevices,
+    onSelectConnectionMode,
     step: derivedStep,
   } = props;
 
+  const [usageDraft, setUsageDraft] = useState<UsageDisplayMode | null>(null);
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [connectionDeviceId, setConnectionDeviceId] = useState<string | null>(null);
+  const [preferredTransport, setPreferredTransport] =
+    useState<SetupTransport | "choose" | null>(props.initialWiFiSetup ? "wifi" : null);
+  const [wifiSetup, setWiFiSetup] = useState<{
+    phase: "selecting" | "credentials" | "waiting";
+    deviceId?: string;
+    viaCable: boolean;
+    credentialsSent?: boolean;
+  } | null>(props.initialWiFiSetup ? {
+    phase: props.initialWiFiSetup.status === "wifi_credentials_required" ? "credentials" : "waiting",
+    deviceId: props.initialWiFiSetup.deviceId,
+    viaCable: true,
+  } : null);
+  const [wifiNetworks, setWiFiNetworks] = useState<WiFiNetwork[]>([]);
+  const [wifiScanning, setWiFiScanning] = useState(false);
+  const [wifiError, setWiFiError] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
   // The completion this step asked for is still on its way. Held here rather
@@ -156,6 +213,7 @@ export function SetupWizard(props: SetupWizardProps) {
   // continuation pairs the VibeTV and can start a firmware install, so without
   // this Cancel left both to happen anyway.
   const manualAttemptRef = useRef(0);
+  const directAttempt = useRef("");
   const manualLookupInFlightRef = useRef(false);
   const [searchErrorDismissed, setSearchErrorDismissed] = useState(false);
   // Held rather than written on every touch: writing on selection ends the
@@ -165,16 +223,52 @@ export function SetupWizard(props: SetupWizardProps) {
     providerId: string | null;
   } | null>(null);
   // The counterpart to goBack. Without it the override outlives the visit it
-  // was made for: Continue answers, the derived step is already ahead, and the
-  // customer is held on the step they came back to with no Back button left.
-  // The device step has no Continue; there the connect sequence finishing is
-  // what moves on.
-  const goForward = useCallback(() => setWentBackTo(null), []);
+  // was made for. The device step moves forward when its connect sequence ends.
+  const goForward = useCallback(() => {
+    setWentBackTo(null);
+    onConnectionComplete?.();
+  }, [onConnectionComplete]);
+  const finishConnection = useCallback((device: ConnectedDevice) => {
+    setWentBackTo(device?.ready === false ? "providers" : null);
+    onConnectionComplete?.();
+  }, [onConnectionComplete]);
   const connect = useSetupConnect(
     connectSteps,
     props.firmwareProgress,
-    goForward,
+    finishConnection,
   );
+  const { reset: resetConnect } = connect;
+  const connectionCandidates = useMemo(
+    () => connectionDeviceId
+      ? deviceCandidates.filter((candidate) => candidate.deviceId?.toLowerCase() === connectionDeviceId.toLowerCase())
+      : deviceCandidates,
+    [connectionDeviceId, deviceCandidates],
+  );
+  const connectionDecision = useMemo(
+    () =>
+      decideSetupConnection({
+        candidates: connectionCandidates,
+        choiceRequired:
+          preferredTransport === "choose" || props.connectionModeChoiceRequired,
+        savedMode: props.connectionMode,
+        activeDeviceId: props.activeDeviceId || props.device?.deviceId,
+        preferredTransport: preferredTransport === "choose" ? null : preferredTransport,
+      }),
+    [
+      connectionCandidates,
+      preferredTransport,
+      props.connectionMode,
+      props.connectionModeChoiceRequired,
+      props.activeDeviceId,
+      props.device?.deviceId,
+    ],
+  );
+  const visibleCandidates = connectionDecision.candidates;
+  const legacyCandidateFlow = props.connectionModeChoiceRequired === undefined;
+  const showCandidateList =
+    legacyCandidateFlow ||
+    connectionDecision.kind === "list" ||
+    connect.state.phase === "failed";
 
   // Pairing publishes the connected VibeTV before the firmware check and any
   // install have finished, so the derived step can move on while the connect
@@ -196,8 +290,19 @@ export function SetupWizard(props: SetupWizardProps) {
   // reset ("idle") releases the step.
   const connectSettled =
     connect.state.phase === "idle" || connect.state.phase === "done";
-  const derived = connectSettled
-    ? resolveSetupStep(derivedStep, wentBackTo)
+  // A completed connection owns entry to provider selection, even when an
+  // earlier setup is saved and the first fresh usage frame is still missing.
+  // A real device loss still returns to the connection step.
+  const connectedProviderStep =
+    wentBackTo === "providers" &&
+    connect.state.phase === "done" &&
+    deviceIsCustomerConnected(props.device) &&
+    derivedStep === "device";
+  const derived = connectSettled && !(connect.state.phase === "done" && derivedStep === "welcome")
+    ? resolveSetupStep(
+        connectedProviderStep ? "providers" : derivedStep,
+        wentBackTo,
+      )
     : "device";
   // The display choice is written optimistically so it does not flicker, and
   // the derived step reads that optimism as done -- which would put the
@@ -206,9 +311,16 @@ export function SetupWizard(props: SetupWizardProps) {
   // `setupDisplayIsConfigured`: that value also decides whether setup owns the
   // screen at all, so waiting there threw a customer out of Settings and back
   // into the wizard for the length of every display save.
+  const enabledProviders = props.providers.filter((provider) => provider.value);
+  const soleProvider = enabledProviders.length === 1 ? enabledProviders[0] : null;
   const step =
-    props.displaySavePending && derived === "theme" ? "display" : derived;
-  const back = previousSetupStep(step);
+    providersContinuing && derived !== "welcome" && derived !== "device"
+      ? "providers"
+      : props.displaySavePending && (derived === "usage" || derived === "live")
+        ? "display"
+        : derived;
+  const back =
+    step === "usage" && soleProvider ? "theme" : previousSetupStep(step);
   // Counted so a write started before a Back press cannot undo it: the display
   // save can still be running when the customer leaves, and its continuation
   // used to release the override and carry them forward from the step they had
@@ -217,6 +329,10 @@ export function SetupWizard(props: SetupWizardProps) {
   const goBack = back
     ? () => {
         navigations.current += 1;
+        if (back === "device") {
+          resetConnect();
+          directAttempt.current = "";
+        }
         setWentBackTo(back);
       }
     : undefined;
@@ -227,28 +343,39 @@ export function SetupWizard(props: SetupWizardProps) {
     // doing nothing because the target is not in the list any more.
     if (
       selectedTarget &&
-      deviceCandidates.some((candidate) => candidate.target === selectedTarget)
+      visibleCandidates.some(
+        (candidate) => candidateKey(candidate) === selectedTarget,
+      )
     ) {
       return selectedTarget;
     }
-    const known = deviceCandidates.find((candidate) => candidate.known);
+    const known = visibleCandidates.find((candidate) => candidate.known);
     // With nothing in the list, the sequence that failed is still the thing to
     // press: connecting empties the discovered VibeTVs, so dismissing a
     // firmware dialog left a step that is deliberately held for that failure
     // with a closed Connect and a full rescan as the only way back to it.
     return (
-      known?.target ??
-      deviceCandidates[0]?.target ??
+      (known ? candidateKey(known) : null) ??
+      (visibleCandidates[0] ? candidateKey(visibleCandidates[0]) : null) ??
       (connect.state.phase === "failed" ? connect.state.address : null)
     );
-  }, [connect.state, deviceCandidates, selectedTarget]);
+  }, [connect.state, selectedTarget, visibleCandidates]);
 
-  const searchFailed = deviceSearchState === "not-found" && !notFoundDismissed;
+  const searchFailed =
+    connectionDecision.kind === "not-found" &&
+    deviceSearchState === "not-found" &&
+    !notFoundDismissed && !wifiError;
   // "idle" is before the first scan was started, so like "searching" it has no
   // result to report. Claiming a count there told the customer none were found
   // while the scan that would find them had not answered, or not even run.
   const searchingForDevices =
-    deviceSearchState === "idle" || deviceSearchState === "searching";
+    deviceSearchState === "searching" ||
+    (deviceSearchState === "idle" && deviceCandidates.length === 0);
+  useEffect(() => {
+    if (searchingForDevices) {
+      directAttempt.current = "";
+    }
+  }, [searchingForDevices]);
 
   // Searching again clears the dismissal, so a second empty scan is explained
   // rather than leaving the customer on an empty list with no reason for it.
@@ -259,10 +386,16 @@ export function SetupWizard(props: SetupWizardProps) {
   }, [onSearchDevices]);
 
   const startConnect = useCallback(() => {
-    const candidate = deviceCandidates.find(
-      (entry) => entry.target === preselected,
+    const candidate = visibleCandidates.find(
+      (entry) => candidateKey(entry) === preselected,
     );
     if (candidate) {
+      if (candidate.transport === "cable" && candidate.deviceId &&
+          (preferredTransport === "choose" || (!preferredTransport &&
+            (props.connectionModeChoiceRequired || !props.connectionMode)))) {
+        setConnectionDeviceId(candidate.deviceId);
+        return;
+      }
       void connect.run(candidate);
       return;
     }
@@ -270,7 +403,185 @@ export function SetupWizard(props: SetupWizardProps) {
     // again against the VibeTV it ran against, which is the one the customer
     // is half way through setting up.
     connect.retry();
-  }, [connect, deviceCandidates, preselected]);
+  }, [connect, preselected, preferredTransport, props.connectionMode, props.connectionModeChoiceRequired, visibleCandidates]);
+
+  const scanWiFiNetworks = useCallback(async () => {
+    setWiFiScanning(true);
+    setWiFiError(null);
+    try {
+      setWiFiNetworks(await onScanWiFiNetworks());
+    } catch (error) {
+      const failure = error as ApiError;
+      setWiFiNetworks([]);
+      setWiFiError(
+        failure?.nextAction || "Scan again or enter the WiFi name manually.",
+      );
+    } finally {
+      setWiFiScanning(false);
+    }
+  }, [onScanWiFiNetworks]);
+
+  useEffect(() => {
+    if (props.initialWiFiSetup?.status !== "wifi_credentials_required") return;
+    const scan = window.setTimeout(() => void scanWiFiNetworks(), 0);
+    return () => window.clearTimeout(scan);
+  }, [props.initialWiFiSetup, scanWiFiNetworks]);
+
+  const chooseTransport = useCallback(
+    async (transport: SetupTransport) => {
+      resetConnect();
+      setWiFiError(null);
+      setPreferredTransport(transport);
+      setSelectedTarget(null);
+      if (transport === "cable") {
+        setWiFiSetup(null);
+        if (
+          !deviceCandidates.some((candidate) => candidate.transport === "cable")
+        ) {
+          onSearchDevices();
+        }
+        return;
+      }
+      const cable = connectionCandidates.find(
+        (candidate) => candidate.transport === "cable" && candidateKey(candidate) === preselected,
+      ) || connectionCandidates.find((candidate) => candidate.transport === "cable");
+      setWiFiSetup({
+        phase: "selecting",
+        deviceId: cable?.deviceId,
+        viaCable: Boolean(cable),
+      });
+      let result: SetupConnectionModeResult;
+      try {
+        result = await onSelectConnectionMode("wifi", cable?.deviceId);
+      } catch (error) {
+        const failure = error as ApiError;
+        setWiFiError(
+          [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
+            "VibeTV could not switch to WiFi. Check the connection and try again.",
+        );
+        setWiFiSetup(null);
+        setPreferredTransport(null);
+        setNotFoundDismissed(false);
+        return;
+      }
+      if (result.status === "wifi_credentials_required") {
+        setWiFiSetup({
+          phase: "credentials",
+          deviceId: result.deviceId,
+          viaCable: true,
+        });
+        void scanWiFiNetworks();
+      } else if (result.status === "waiting_for_wifi") {
+        setWiFiSetup({
+          phase: "waiting",
+          deviceId: result.deviceId,
+          viaCable: Boolean(cable),
+        });
+      } else {
+        setWiFiSetup(null);
+      }
+    },
+    [
+      resetConnect,
+      connectionCandidates,
+      deviceCandidates,
+      preselected,
+      onSearchDevices,
+      onSelectConnectionMode,
+      scanWiFiNetworks,
+    ],
+  );
+
+  const searchWhileWaitingForWiFi = useEffectEvent(() => {
+    if (step === "device" && !searchingForDevices && connect.state.phase === "idle") {
+      onSearchDevices();
+    }
+  });
+
+  useEffect(() => {
+    if (wifiSetup?.phase !== "waiting") return;
+    const retry = window.setInterval(() => searchWhileWaitingForWiFi(), 1500);
+    const deadline = window.setTimeout(() => {
+      setWiFiSetup((current) => current?.viaCable
+        ? { ...current, phase: "credentials" }
+        : null);
+      setNotFoundDismissed(false);
+      setWiFiError("VibeTV did not reconnect. Check the WiFi details and try again.");
+    }, 60_000);
+    return () => {
+      window.clearInterval(retry);
+      window.clearTimeout(deadline);
+    };
+  }, [wifiSetup?.phase]);
+
+  useEffect(() => {
+    if (
+      step !== "device" ||
+      wifiSetup?.phase !== "waiting" ||
+      searchingForDevices ||
+      connect.state.phase !== "idle"
+    ) {
+      return;
+    }
+    const wifiCandidates = deviceCandidates.filter(
+      (candidate) => candidate.transport !== "cable",
+    );
+    const candidate = wifiCandidates.find(
+      (entry) =>
+        entry.deviceId?.trim().toLowerCase() ===
+        wifiSetup.deviceId?.trim().toLowerCase(),
+    );
+    if (wifiSetup.deviceId ? !candidate : wifiCandidates.length === 0) {
+      return;
+    }
+    if (!wifiSetup.deviceId) {
+      const release = window.setTimeout(() => {
+        setWiFiSetup(null);
+      }, 0);
+      return () => window.clearTimeout(release);
+    }
+    if (!candidate) {
+      return;
+    }
+    const connectTransitionedDevice = window.setTimeout(() => {
+      const key = candidateKey(candidate);
+      directAttempt.current = key;
+      setSelectedTarget(key);
+      setWiFiSetup(null);
+      void connect.run(candidate);
+    }, 0);
+    return () => window.clearTimeout(connectTransitionedDevice);
+  }, [
+    connect,
+    deviceCandidates,
+    searchingForDevices,
+    step,
+    wifiSetup,
+  ]);
+
+  useEffect(() => {
+    if (
+      step !== "device" ||
+      searchingForDevices ||
+      (props.searchError && !searchErrorDismissed) ||
+      wifiSetup ||
+      connectionDecision.kind !== "direct" ||
+      connect.state.phase !== "idle"
+    ) {
+      return;
+    }
+    const candidate = connectionDecision.candidates[0];
+    if (!candidate) {
+      return;
+    }
+    const key = candidateKey(candidate);
+    if (directAttempt.current === key) {
+      return;
+    }
+    directAttempt.current = key;
+    setSelectedTarget(key);
+    void connect.run(candidate);
+  }, [connect, connectionDecision, props.searchError, searchErrorDismissed, searchingForDevices, step, wifiSetup]);
 
   // The connect log lives in the wizard, the prompt builder one level up, so
   // "Ask AI to fix" used to copy an app event log that setup barely writes to
@@ -375,29 +686,104 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   if (step === "device") {
-    const connecting = connectInFlight;
+    const connecting =
+      connectInFlight ||
+      connect.state.phase === "done" ||
+      (!wifiSetup && !searchingForDevices &&
+        connectionDecision.kind === "direct" && connect.state.phase === "idle");
     return (
       <>
-        <SetupDeviceScreen
+        {!wifiSetup && connect.state.phase === "idle" && connectionDecision.kind === "not-found" ? (
+          <SetupWelcomeScreen
+            {...help}
+            lines={props.welcomeLines}
+            onEnterAddressManually={openAddressDialog}
+          />
+        ) : <SetupDeviceScreen
           {...help}
-          candidates={deviceCandidates}
+          alternativeTransport={
+            legacyCandidateFlow ? undefined : connectionDecision.alternative
+          }
+          candidates={visibleCandidates}
           connecting={connecting}
           connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state)}
           onConnect={startConnect}
+          onBack={
+            connect.state.phase === "idle" &&
+            preferredTransport &&
+            preferredTransport !== "choose" &&
+            wifiSetup?.phase !== "waiting"
+              ? () => {
+                  setPreferredTransport("choose");
+                  setConnectionDeviceId(null);
+                  setWiFiSetup(null);
+                  setSelectedTarget(null);
+                  searchAgain();
+                }
+              : undefined
+          }
+          onChooseTransport={(transport) => void chooseTransport(transport)}
+          onEditWiFi={() => setWiFiSetup((current) =>
+            current ? { ...current, phase: "credentials" } : current,
+          )}
+          onConfigureWiFi={async (ssid, password) => {
+            setWiFiError(null);
+            const deviceId = await props.onConfigureWiFi(ssid, password);
+            setWiFiSetup({
+              phase: "waiting",
+              deviceId: deviceId || wifiSetup?.deviceId,
+              viaCable: true,
+              credentialsSent: true,
+            });
+          }}
           onEnterAddressManually={openAddressDialog}
           onSearchAgain={searchAgain}
-          onSelect={(candidate) => setSelectedTarget(candidate.target)}
+          onScanWiFiNetworks={() => void scanWiFiNetworks()}
+          onSelect={(candidate) => setSelectedTarget(candidateKey(candidate))}
           searching={searchingForDevices}
           selectedTarget={preselected}
-        />
+          showModeChoice={!wifiSetup && connectionDecision.kind === "mode"}
+          showCandidates={showCandidateList && !wifiSetup}
+          transport={connectionDecision.transport}
+          wifiNetworks={wifiNetworks}
+          onWiFiError={setWiFiError}
+          wifiScanning={wifiScanning}
+          wifiSetupPhase={wifiSetup?.phase === "selecting" ? "waiting" : wifiSetup?.phase}
+          wifiWaitingViaCable={wifiSetup?.viaCable}
+          wifiCredentialsSent={wifiSetup?.credentialsSent}
+        />}
         {addressDialog}
-        <SetupDeviceNotFoundDialog
-          onEnterAddressManually={openAddressDialog}
-          onOpenChange={(open) => setNotFoundDismissed(!open)}
-          onScanAgain={searchAgain}
-          open={searchFailed}
-        />
+        {wifiError ? (
+          <SetupDialog
+            title="WiFi setup failed"
+            description={wifiError}
+            open
+            onOpenChange={(open) => !open && setWiFiError(null)}
+            primaryAction={{ label: "OK", onSelect: () => setWiFiError(null) }}
+          />
+        ) : null}
+        {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
+          <SetupWiFiPhoneDialog
+            onEnterAddressManually={openAddressDialog}
+            onScanAgain={searchAgain}
+          />
+        ) : (
+          <SetupDeviceNotFoundDialog
+            onEnterAddressManually={openAddressDialog}
+            onOpenChange={(open) => setNotFoundDismissed(!open)}
+            onScanAgain={searchAgain}
+            onUseCable={() => {
+              setNotFoundDismissed(true);
+              void chooseTransport("cable");
+            }}
+            onSetUpWiFi={() => {
+              setNotFoundDismissed(true);
+              void chooseTransport("wifi");
+            }}
+            open={searchFailed && !wifiSetup}
+          />
+        )}
         {/*
           A scan that could not be made at all. Without this the step showed a
           count of zero and kept the reason -- a refused Local Network
@@ -418,7 +804,7 @@ export function SetupWizard(props: SetupWizardProps) {
           }}
           onOpenChange={(open) => setSearchErrorDismissed(!open)}
           onSearchAgain={searchAgain}
-          open={Boolean(props.searchError) && !searchErrorDismissed}
+          open={Boolean(props.searchError) && !searchErrorDismissed && !wifiError}
           title="We couldn't search for your VibeTV"
         />
         <SetupConnectFailedDialog
@@ -470,6 +856,7 @@ export function SetupWizard(props: SetupWizardProps) {
           too, so its dialog wins the same way.
         */}
         {connect.failure ||
+        wifiError ||
         searchFailed ||
         (props.searchError && !searchErrorDismissed) ||
         addressDialogOpen
@@ -493,7 +880,20 @@ export function SetupWizard(props: SetupWizardProps) {
             // customer on to a screen that cannot render it.
             setProvidersContinuing(true);
             const navigation = navigations.current;
-            void Promise.resolve(props.onProvidersContinue())
+            const complete = async () => {
+              if (soleProvider) {
+                const saved = await props.onDisplayContinue({
+                  mode: "fixed",
+                  providerIds: [soleProvider.providerId],
+                });
+                if (saved === false || navigation !== navigations.current) {
+                  return false;
+                }
+                setDisplayDraft(null);
+              }
+              return props.onProvidersContinue();
+            };
+            void complete()
               .then((done) => {
                 if (done === false || navigation !== navigations.current) {
                   return;
@@ -515,6 +915,7 @@ export function SetupWizard(props: SetupWizardProps) {
           pendingPreferenceIds={props.pendingPreferenceIds}
           loading={props.providersLoading}
           providers={props.providers}
+          usage={props.usage}
         />
         <SetupStepFailedDialog
           error={props.providerError}
@@ -529,11 +930,13 @@ export function SetupWizard(props: SetupWizardProps) {
   if (step === "display") {
     const displayMode = displayDraft?.mode ?? props.displayMode;
     const displayProviderId =
-      displayDraft?.providerId ?? props.displayProviderId;
+      displayDraft?.providerId ?? props.displayProviderId ?? props.displayProviders[0]?.id ?? null;
     return (
       <>
         <SetupDisplayModeScreen
           {...help}
+          previewTheme={props.themes.find((theme) => theme.id === props.selectedThemeId)}
+          usageMode={props.usageMode ?? undefined}
           automaticPreview={props.automaticPreviews[0] ?? null}
           automaticPreviews={props.automaticPreviews}
           manualPreview={
@@ -566,7 +969,7 @@ export function SetupWizard(props: SetupWizardProps) {
               // later word on where they want to be, and the save landing
               // does not undo it.
               if (saved !== false && navigation === navigations.current) {
-                goForward();
+                setWentBackTo("usage");
               }
             });
           }}
@@ -596,8 +999,12 @@ export function SetupWizard(props: SetupWizardProps) {
           {...help}
           installLogs={props.themeInstallLogs}
           installing={props.installingTheme}
+          selectedThemeInstalled={props.selectedThemeInstalled}
           onBack={goBack}
-          onInstall={props.onInstallTheme}
+          onInstall={() => {
+            void props.onInstallTheme();
+            goForward();
+          }}
           onSelect={props.onSelectTheme}
           selectedThemeId={props.selectedThemeId}
           themes={props.themes}
@@ -612,6 +1019,30 @@ export function SetupWizard(props: SetupWizardProps) {
         {props.themeError ? null : usageDialog}
       </>
     );
+  }
+
+  if (step === "usage") {
+    const mode = usageDraft ?? props.usageMode ?? null;
+    const continueUsage = () => {
+      if (!mode || !props.onUsageContinue || props.usageSavePending) return;
+      const navigation = navigations.current;
+      void props.onUsageContinue(mode).then((saved) => {
+        if (saved && navigation === navigations.current) goForward();
+      });
+    };
+    return <>
+      <SetupUsageModeScreen {...help}
+        mode={mode} onSelect={setUsageDraft} saving={props.usageSavePending}
+        theme={props.themes.find((theme) => theme.id === props.selectedThemeId)}
+        preview={props.automaticPreviews.find((preview) => preview.providerLabel ===
+          props.displayProviders.find((provider) => provider.id === props.displayProviderId)?.label) ?? props.automaticPreviews[0] ?? null}
+        onBack={goBack}
+        onContinue={continueUsage}
+      />
+      <SetupStepFailedDialog error={props.usageError ?? null}
+        onOpenChange={(open) => { if (!open) props.onDismissUsageError?.(); }}
+        onRetry={mode ? continueUsage : props.onRetryUsageMode} />
+    </>;
   }
 
   return (

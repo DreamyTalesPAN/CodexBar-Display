@@ -66,6 +66,10 @@ case "$VERSION" in
     SHA256="8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"
     LICENSE_SHA256="14293556b79940745123d0160c71d27ed0e9fe9b8a848093f3ed78f4853caafe"
     ;;
+  0.56.8)
+    SHA256="76541469ef4132c9e3f298d876665701ea472312a6d2cb6326ba49bfb6acad10"
+    LICENSE_SHA256="14293556b79940745123d0160c71d27ed0e9fe9b8a848093f3ed78f4853caafe"
+    ;;
   *)
     die "unsupported bundled CodexBar version: ${VERSION:-<missing>}"
     ;;

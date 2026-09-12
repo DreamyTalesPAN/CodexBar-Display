@@ -1,5 +1,6 @@
 "use client";
 
+import { canConnectSetupCandidate } from "./setup/setup-connection";
 import {
   useCallback,
   useEffect,
@@ -44,6 +45,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  deviceUsesCable,
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
@@ -64,6 +66,7 @@ import {
   type StandbySettings,
   type SupportDiagnostics,
   type UsageSnapshot,
+  type WiFiNetwork,
 } from "./control-center-types";
 import {
   applyDeviceRecoveryStatus,
@@ -115,6 +118,7 @@ import {
   setupUsageCauseFor,
 } from "./setup/setup-usage-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
+import type { UsageDisplayMode } from "./setup/setup-display-previews";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen } from "./settings-screen";
 import { collectSupportReport } from "./support-report";
@@ -234,7 +238,7 @@ type FirmwareUpdateJob = {
   phase: "installing" | "complete" | "attention" | "error";
   stage?: string;
   outcome?: string;
-  retryPolicy?: "power_cycle";
+  retryPolicy?: "power_cycle" | "reconnect_cable";
   message?: string;
   progress?: number;
   startedAt?: string;
@@ -294,6 +298,42 @@ type FirmwareCheckOptions = {
 };
 
 type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
+
+export function connectionModeChoiceStatus(payload: {
+  connectionMode?: string;
+  connectionModeChoiceRequired?: boolean;
+  device?: DeviceInfo;
+}) {
+  if (payload.connectionModeChoiceRequired === true) {
+    return { required: true, resolved: true };
+  }
+  if (payload.connectionMode === "wifi") {
+    return { required: false, resolved: true };
+  }
+  const hasBoundDevice = Boolean(
+    payload.device?.active === true ||
+    payload.device?.target?.trim() ||
+    payload.device?.deviceId?.trim(),
+  );
+  return hasBoundDevice
+    ? { required: false, resolved: true }
+    : { required: true, resolved: false };
+}
+
+export function statusConfirmsSubmittedWiFiChoice(payload: {
+  connectionMode?: string;
+  connectionModeChoiceRequired?: boolean;
+  device?: DeviceInfo;
+}) {
+  return Boolean(
+    payload.connectionMode === "wifi" &&
+    payload.connectionModeChoiceRequired === false &&
+    payload.device?.active === true &&
+    payload.device.connected === true &&
+    !deviceUsesCable(payload.device),
+  );
+}
+
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     clearRetiredAiThemeStorage();
@@ -340,6 +380,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const [deviceSearchState, setDeviceSearchState] =
     useState<DeviceSearchState>("idle");
+  const [connectionMode, setConnectionMode] = useState("");
+  const [connectionModeChoiceRequired, setConnectionModeChoiceRequired] =
+    useState(false);
   const [deviceRecoveryPickerReason, setDeviceRecoveryPickerReason] =
     useState<DeviceRecoveryPickerReason | null>(null);
   const [deviceSession, setDeviceSession] = useState<{
@@ -364,6 +407,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [],
   );
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
+  const usageModeRevision = useRef(0);
+  const [usageMode, setUsageMode] = useState<UsageDisplayMode | null>(null);
+  const [usageModePending, setUsageModePending] = useState(false);
+  const [usageModeError, setUsageModeError] = useState<ApiError | null>(null);
+  const [setupDisplayConfirmed, setSetupDisplayConfirmed] = useState(false);
+  const [setupUsageComplete, setSetupUsageComplete] = useState(false);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [standby, setStandby] = useState<StandbySettings | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -430,20 +479,38 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     "repairing" | "failed" | null
   >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
+  // Decide once from the Companion's saved setup and device identity. Null
+  // means those reads have not answered; false means this launch owns setup.
   const [enteredControlCenterThisSession, setEnteredControlCenterThisSession] =
-    useState(false);
-  // Null until the app knows the Mac's state; then it is the answer to "is this
-  // session a customer coming back, or one being set up", settled once. See
-  // where it is written for why both directions have to stay put.
-  const [sessionSkipsSetup, setSessionSkipsSetup] = useState<boolean | null>(
-    null,
-  );
+    useState<boolean | null>(null);
   // The closing step is shown for a moment before the app takes over, but only
   // to someone who actually walked through setup.
   // Flipped by the wizard once its closing step has been seen. A VibeTV that
   // was already set up reaches the shell without it, because nothing put the
   // customer on a step to close.
   const [setupFinished, setSetupFinished] = useState(false);
+  const [settingsWiFiSetup, setSettingsWiFiSetup] = useState<{
+    status: "waiting_for_wifi" | "wifi_credentials_required";
+    deviceId?: string;
+  } | null>(null);
+  const applyConnectionStatus = useCallback((payload: {
+    connectionMode?: string;
+    connectionModeChoiceRequired?: boolean;
+    device?: DeviceInfo;
+  }) => {
+    setConnectionMode(payload.connectionMode || "");
+    setConnectionModeChoiceRequired(payload.connectionModeChoiceRequired === true);
+    if (statusConfirmsSubmittedWiFiChoice(payload)) {
+      setSettingsWiFiSetup((pending) =>
+        pending?.deviceId &&
+        pending.deviceId.trim().toLowerCase() ===
+          payload.device?.deviceId?.trim().toLowerCase()
+          ? null
+          : pending,
+      );
+    }
+  }, []);
+  const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
   const finishSetup = useCallback(() => setSetupFinished(true), []);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
@@ -529,7 +596,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const mergeDevice = useCallback((next: DeviceInfo) => {
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
-      setLastError(null);
+      setLastError((current) => isConnectionRecoveryError(current) ? null : current);
     }
     if (deviceNeedsThemeSetup(next)) {
       setSetupThemeChoiceRequired(true);
@@ -636,7 +703,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDeviceCandidates([]);
           setDeviceSearchState("idle");
         }
-        return true;
+        if (next.connected !== false) {
+          return true;
+        }
       }
 
       if (transition.state.preferredDeviceId) {
@@ -646,10 +715,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // provider_setup_required snapshot started a second native repair
         // instead of showing the approved Try again -- the exact case
         // markDeviceLost was split out to avoid.
-        if (deviceRecoveryConfirmedLoss(transition)) {
-          markDeviceLost();
-        } else {
-          setDevice((current) => markDeviceDisconnected(current));
+        if (!transition.acceptDevice) {
+          if (deviceRecoveryConfirmedLoss(transition)) {
+            markDeviceLost();
+          } else {
+            setDevice((current) => markDeviceDisconnected(current));
+          }
         }
         if (transition.openPicker) {
           setDeviceSearchState("searching");
@@ -855,6 +926,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return null;
         }
+        // A failed verification read is not a new connection verdict. The
+        // regular status poll owns connectivity while setup awaits confirmation.
+        if (quiet) {
+          return null;
+        }
         const normalized = normalizeCaughtError(
           error,
           "VibeTV needs attention.",
@@ -863,17 +939,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           markCompanionAccessBlocked();
         } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
-        } else if (!quiet) {
+        } else {
           applyPolledDeviceSnapshot(null, "/v1/device");
         }
-        if (!quiet) {
-          setLastError(normalized);
-          addEvent({
-            label: "Device check needs attention",
-            detail: normalized.nextAction,
-            tone: "attention",
-          });
-        }
+        setLastError(normalized);
+        addEvent({
+          label: "Device check needs attention",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
         return null;
       }
     },
@@ -1106,6 +1180,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       try {
         const payload = await runCompanion<{
           companion?: CompanionInfo;
+          connectionMode?: string;
+          connectionModeChoiceRequired?: boolean;
           device?: DeviceInfo;
           themeInstall?: ThemeInstallJob;
           firmwareUpdate?: FirmwareUpdateJob;
@@ -1119,13 +1195,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
+        applyConnectionStatus(payload);
         setProviderSetup(payload.providerSetup || null);
         setProviderSelectionSetup(payload.setup || null);
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
           setLastError(pairingRejection);
         } else if (!quiet || deviceIsReady(payload.device)) {
-          setLastError(null);
+          setLastError((current) => isConnectionRecoveryError(current) ? null : current);
         }
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
@@ -1247,6 +1324,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [
       addEvent,
+      applyConnectionStatus,
       applyPolledDeviceSnapshot,
       applyThemeInstallJob,
       companionStatus,
@@ -1268,6 +1346,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     try {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
+        connectionMode?: string;
+        connectionModeChoiceRequired?: boolean;
         device?: DeviceInfo;
         themeInstall?: ThemeInstallJob;
         firmwareUpdate?: FirmwareUpdateJob;
@@ -1279,13 +1359,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
+      applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
         setLastError(pairingRejection);
       } else if (deviceIsReady(payload.device)) {
-        setLastError(null);
+        setLastError((current) => isConnectionRecoveryError(current) ? null : current);
       }
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
@@ -1319,6 +1400,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       statusPollInFlight.current = false;
     }
   }, [
+    applyConnectionStatus,
     applyPolledDeviceSnapshot,
     applyThemeInstallJob,
     markCompanionAccessBlocked,
@@ -1347,11 +1429,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!searchIsCurrent()) {
         return;
       }
-      const candidates = (payload.devices || []).filter(
-        (candidate) => candidate.target && candidate.networkMode !== "setup",
-      );
+      const candidates = (payload.devices || []).filter(canConnectSetupCandidate);
+      setDeviceCandidates(candidates);
       if (candidates.length > 0) {
-        setDeviceCandidates(candidates);
         setDeviceSearchState("multiple");
         return;
       }
@@ -1383,6 +1463,95 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [handleCompanionUnavailableForRepair, runCompanion]);
 
+  const selectSetupConnectionMode = useCallback(
+    async (mode: "cable" | "wifi", deviceId?: string) => {
+      const setupGeneration = setupGenerationRef.current;
+      setBusyAction("connection-mode");
+      setLastError(null);
+      try {
+        const payload = await runCompanion<{
+          device?: DeviceInfo;
+          status?:
+            "selected" | "waiting_for_wifi" | "wifi_credentials_required";
+        }>(
+          "/v1/setup/connection-mode",
+          {
+            method: "POST",
+            body: JSON.stringify({ mode, deviceId }),
+          },
+          { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
+        );
+        if (setupGeneration !== setupGenerationRef.current) {
+          throw new Error("setup changed while selecting the connection");
+        }
+        const status = payload.status || "selected";
+        setConnectionMode(
+          status === "selected" ? mode : mode === "wifi" ? "cable" : mode,
+        );
+        setConnectionModeChoiceRequired(false);
+        if (payload.device && status === "selected") {
+          acceptDeviceSnapshot(payload.device);
+        }
+        return {
+          status,
+          deviceId: payload.device?.deviceId || deviceId,
+          device: payload.device,
+        } as const;
+      } catch (error) {
+        const normalized = normalizeCaughtError(
+          error,
+          "VibeTV could not change its connection.",
+        );
+        setLastError(normalized);
+        throw normalized;
+      } finally {
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
+      }
+    },
+    [acceptDeviceSnapshot, runCompanion],
+  );
+
+  const scanSetupWiFiNetworks = useCallback(async (): Promise<
+    WiFiNetwork[]
+  > => {
+    const payload = await runCompanion<{ networks?: WiFiNetwork[] }>(
+      "/v1/setup/wifi-networks",
+      { method: "POST" },
+    );
+    return payload.networks || [];
+  }, [runCompanion]);
+
+  const configureSetupWiFi = useCallback(
+    async (ssid: string, password: string): Promise<string | undefined> => {
+      setBusyAction("wifi-credentials");
+      setLastError(null);
+      try {
+        const payload = await runCompanion<{ device?: DeviceInfo }>(
+          "/v1/setup/wifi",
+          {
+            method: "POST",
+            body: JSON.stringify({ ssid, password }),
+          },
+        );
+        setConnectionMode("wifi");
+        setConnectionModeChoiceRequired(false);
+        return payload.device?.deviceId;
+      } catch (error) {
+        const normalized = normalizeCaughtError(
+          error,
+          "VibeTV could not save these WiFi details.",
+        );
+        setLastError(normalized);
+        throw normalized;
+      } finally {
+        setBusyAction(null);
+      }
+    },
+    [runCompanion],
+  );
+
   useEffect(() => {
     if (deviceRecoveryPickerReason !== "confirmed-loss") {
       recoverySearchStartedRef.current = false;
@@ -1399,7 +1568,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // customer should be shown. The setup wizard needs the outcome to choose a
   // dialog; every other caller ignores it and reads the state instead.
   const selectAndConnectDevice = useCallback(
-    async (candidate: DeviceCandidate): Promise<ApiError | null> => {
+    async (candidate: DeviceCandidate): Promise<DeviceInfo | ApiError | null> => {
       if (!candidate.deviceId) {
         const error: ApiError = {
           code: "device_identity_missing",
@@ -1440,7 +1609,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "ready",
         });
         void loadSettings();
-        return null;
+        return payload.device;
       } catch (error) {
         if (setupGeneration !== setupGenerationRef.current) {
           return null;
@@ -1478,7 +1647,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               tone: "ready",
             });
             void loadSettings();
-            return null;
+            return statusPayload.device;
           }
         } catch {
           // Keep the select error unless a read-only status check proves that
@@ -1689,6 +1858,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       const payload = await runCompanion<{
         companion?: CompanionInfo;
+        connectionModeChoiceRequired?: boolean;
         device?: DeviceInfo;
         providerSetup?: ProviderSetupInfo;
         setup?: ProviderSelectionSetup;
@@ -1703,10 +1873,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       forgetDeviceTarget();
       setDeviceRecoveryGate(resetDeviceRecoveryGate());
       setDeviceTarget("");
-      setDeviceSession({ device: null, themeSetupIdentity: null });
+      setDeviceSession({
+        device: payload.device || null,
+        themeSetupIdentity: null,
+      });
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
+      setConnectionMode("");
+      setConnectionModeChoiceRequired(
+        payload.connectionModeChoiceRequired !== false,
+      );
       brightnessDirtyRef.current = false;
       setBrightness(null);
       standbyDirtyRef.current = false;
@@ -1730,6 +1907,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // Left standing, the rerun reaches its closing step and is treated as
       // finished before it renders, so the customer never sees VibeTV running.
       setSetupFinished(false);
+      setSetupUsageComplete(false);
+      setSetupDisplayConfirmed(false);
       setProviderSetupCompletedThisSession(false);
       setSetupThemeInstallRequested(false);
       setSetupThemeChoiceRequired(false);
@@ -1751,8 +1930,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
       setEnteredControlCenterThisSession(false);
-      // Run setup again asks the question over.
-      setSessionSkipsSetup(null);
       if (payload.device) {
         setDevice(payload.device.connected ? payload.device : null);
       }
@@ -1796,7 +1973,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     markCompanionAccessBlocked,
     markCompanionUnavailable,
     runCompanion,
-    setDevice,
     setDeviceRecoveryGate,
   ]);
 
@@ -2229,7 +2405,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       connectionRecoveryRequired ||
       !initialCompanionCheckComplete ||
       companionStatus !== "online" ||
-      deviceIsCustomerConnected(device) ||
+      (deviceIsActive(device) && device?.paired === true) ||
       busyAction ||
       deviceSearchState !== "idle" ||
       didRunAutomaticDeviceSearch.current
@@ -2284,7 +2460,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           pendingPairingCandidate.current?.target || deviceTarget,
         );
         const candidates = (payload.devices || []).filter(
-          (candidate) => candidate.target && candidate.networkMode !== "setup",
+          canConnectSetupCandidate,
         );
         const candidate =
           candidates.find(
@@ -2375,7 +2551,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
 
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "hidden" || busyAction) {
+      if (
+        (!isNativeControlCenterApp() &&
+          document.visibilityState === "hidden") ||
+        busyAction
+      ) {
         return;
       }
       void checkCompanion({ quiet: true });
@@ -2857,6 +3037,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           normalizeCaughtError(error, "Usage needs attention."),
         );
         if (normalized.code === "usage_unavailable") {
+          setUsage(null);
           setUsageError(null);
           return;
         }
@@ -3008,9 +3189,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!providerId) {
         return Promise.resolve();
       }
-      setPendingProviderCheckIds((current) =>
-        new Set(current).add(providerId),
-      );
+      setPendingProviderCheckIds((current) => new Set(current).add(providerId));
       const runCheck = async () => {
         // A provider check changes the health this endpoint reports. Detach
         // any GET that started before the check so its old snapshot cannot
@@ -3121,6 +3300,41 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [refreshUsage, runCompanion],
   );
 
+  const loadUsageMode = useCallback(async () => {
+    const revision = ++usageModeRevision.current;
+    try {
+      const payload = await runCompanion<{ items: PreferenceDescriptor[] }>("/v1/preferences?section=display");
+      if (revision !== usageModeRevision.current) return;
+      const value = payload.items.find((item) => item.id === "codexbar.usageBarsShowUsed")?.value;
+      if (typeof value !== "boolean") throw new Error("Usage display setting is unavailable.");
+      setUsageMode(value ? "used" : "remaining");
+      setUsageModeError(null);
+    } catch (error) {
+      if (revision === usageModeRevision.current) setUsageModeError(normalizeCaughtError(error, "Usage display setting could not be loaded."));
+    }
+  }, [runCompanion]);
+
+  const saveUsageMode = useCallback(async (mode: UsageDisplayMode) => {
+    if (setupResetInProgressRef.current) return false;
+    usageModeRevision.current += 1;
+    let finishWrite = () => {};
+    const write = new Promise<void>((resolve) => { finishWrite = resolve; });
+    providerPreferenceWritesRef.current = Promise.all([providerPreferenceWritesRef.current, write]).then(() => undefined);
+    setUsageModePending(true);
+    try {
+      const payload = await runCompanion<{ item: PreferenceDescriptor }>("/v1/preferences/codexbar.usageBarsShowUsed", {
+        method: "PATCH", body: JSON.stringify({ value: mode === "used" }),
+      });
+      setUsageMode(payload.item.value === true ? "used" : "remaining");
+      setUsageModeError(null);
+      void refreshUsage({ quiet: true });
+      return true;
+    } catch (error) {
+      setUsageModeError(normalizeCaughtError(error, "Usage display setting could not be saved."));
+      return false;
+    } finally { finishWrite(); setUsageModePending(false); }
+  }, [refreshUsage, runCompanion]);
+
   const completeProviderSetup = useCallback(async () => {
     setBusyAction("provider-setup-complete");
     try {
@@ -3129,6 +3343,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }>("/v1/setup/providers/complete", { method: "POST" });
       setProviderSelectionSetup(payload.setup);
       setProviderSetupCompletedThisSession(true);
+      setSetupDisplayConfirmed(false);
+      setSetupThemeChoiceRequired(true);
       setSetupThemeInstallRequested(false);
       setProviderDisplayError(null);
       setLastError(null);
@@ -3375,112 +3591,114 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   // Resolves with the collected report, or null when nothing could be read.
   // The Help menu saves what it gets and says which of the two happened.
-  const loadSupportDiagnostics = useCallback(async (): Promise<
-    SupportDiagnostics | null
-  > => {
-    const setupGeneration = setupGenerationRef.current;
-    setSupportReportBusy(true);
-    try {
-      const payload = await collectSupportReport(
-        () => runCompanion<SupportDiagnostics>("/v1/diagnostics"),
-        {
-          runtimeSurface,
-          activeTab,
-          companionStatus,
-          companion: companionInfo,
-          deviceState,
-          deviceTarget,
-          device,
-          deviceSearchState,
-          deviceCandidates,
-          deviceRecovery: {
-            preferredDeviceId:
-              deviceRecoveryGateRef.current.preferredDeviceId || undefined,
-            failedNormalChecks:
-              deviceRecoveryGateRef.current.failedNormalChecks,
-            pickerReason: deviceRecoveryPickerReason,
-            normalFailureLimit: DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
-            operationFailureLimit: DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
+  const loadSupportDiagnostics =
+    useCallback(async (): Promise<SupportDiagnostics | null> => {
+      const setupGeneration = setupGenerationRef.current;
+      setSupportReportBusy(true);
+      try {
+        const payload = await collectSupportReport(
+          () => runCompanion<SupportDiagnostics>("/v1/diagnostics"),
+          {
+            runtimeSurface,
+            activeTab,
+            companionStatus,
+            companion: companionInfo,
+            deviceState,
+            deviceTarget,
+            device,
+            deviceSearchState,
+            deviceCandidates,
+            deviceRecovery: {
+              preferredDeviceId:
+                deviceRecoveryGateRef.current.preferredDeviceId || undefined,
+              failedNormalChecks:
+                deviceRecoveryGateRef.current.failedNormalChecks,
+              pickerReason: deviceRecoveryPickerReason,
+              normalFailureLimit: DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
+              operationFailureLimit: DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
+            },
+            providerSetup,
+            lastError,
+            recentEvents: events,
+            firmwareUpdate,
+            firmwareUpdateStatus,
+            themeInstallStatus,
+            usage,
           },
-          providerSetup,
-          lastError,
-          recentEvents: events,
-          firmwareUpdate,
-          firmwareUpdateStatus,
-          themeInstallStatus,
-          usage,
-        },
-      );
-      if (setupGeneration !== setupGenerationRef.current) {
-        return null;
-      }
-      setSupportDiagnostics(payload);
-      const partial = Boolean(payload.collectionErrors?.length);
-      if (!partial) {
-        setCompanionStatus("online");
-        setCompanionInfo(payload.companion || null);
-        setProviderSetup(payload.providerSetup || null);
-        setThemeInstallEnabled(
-          Boolean(payload.companion?.features?.themeInstallEnabled),
         );
-      }
-      addEvent({
-        label: partial
-          ? "Support report ready with gaps"
-          : "Support report ready",
-        detail: partial
-          ? "Browser and setup details were saved even though the Mac App did not answer."
-          : `${payload.checks?.length || 0} items ready for support.`,
-        tone:
-          partial || payload.checks?.some((check) => check.status === "fail")
-            ? "attention"
-            : "ready",
-      });
-      return payload;
-    } catch (error) {
-      if (setupGeneration !== setupGenerationRef.current) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return null;
+        }
+        setSupportDiagnostics(payload);
+        const partial = Boolean(payload.collectionErrors?.length);
+        if (!partial) {
+          setCompanionStatus("online");
+          setCompanionInfo(payload.companion || null);
+          setProviderSetup(payload.providerSetup || null);
+          setThemeInstallEnabled(
+            Boolean(payload.companion?.features?.themeInstallEnabled),
+          );
+        }
+        addEvent({
+          label: partial
+            ? "Support report ready with gaps"
+            : "Support report ready",
+          detail: partial
+            ? "Browser and setup details were saved even though the Mac App did not answer."
+            : `${payload.checks?.length || 0} items ready for support.`,
+          tone:
+            partial || payload.checks?.some((check) => check.status === "fail")
+              ? "attention"
+              : "ready",
+        });
+        return payload;
+      } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return null;
+        }
+        const normalized = normalizeCaughtError(
+          error,
+          "Support report failed.",
+        );
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else {
+          markCompanionUnavailable();
+        }
+        setSupportDiagnostics(null);
+        setLastError(normalized);
+        addEvent({
+          label: "Support report failed",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
         return null;
+      } finally {
+        setSupportReportBusy(false);
       }
-      const normalized = normalizeCaughtError(error, "Support report failed.");
-      if (isLocalNetworkAccessError(normalized)) {
-        markCompanionAccessBlocked();
-      } else {
-        markCompanionUnavailable();
-      }
-      setSupportDiagnostics(null);
-      setLastError(normalized);
-      addEvent({
-        label: "Support report failed",
-        detail: normalized.nextAction,
-        tone: "attention",
-      });
-      return null;
-    } finally {
-      setSupportReportBusy(false);
-    }
-  }, [
-    addEvent,
-    activeTab,
-    companionInfo,
-    companionStatus,
-    device,
-    deviceCandidates,
-    deviceRecoveryPickerReason,
-    deviceSearchState,
-    deviceState,
-    deviceTarget,
-    events,
-    firmwareUpdate,
-    firmwareUpdateStatus,
-    lastError,
-    markCompanionAccessBlocked,
-    markCompanionUnavailable,
-    providerSetup,
-    runCompanion,
-    runtimeSurface,
-    themeInstallStatus,
-    usage,
-  ]);
+    }, [
+      addEvent,
+      activeTab,
+      companionInfo,
+      companionStatus,
+      device,
+      deviceCandidates,
+      deviceRecoveryPickerReason,
+      deviceSearchState,
+      deviceState,
+      deviceTarget,
+      events,
+      firmwareUpdate,
+      firmwareUpdateStatus,
+      lastError,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      providerSetup,
+      runCompanion,
+      runtimeSurface,
+      themeInstallStatus,
+      usage,
+    ]);
 
   const retryProviderSetup = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
@@ -3651,8 +3869,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Only the path matters here. Depending on the whole standby object would
   // re-run the install effect on every poll, because each poll hands back a
   // fresh object.
-  const screensaverPath =
-    device?.standby?.screensaverPath?.trim() || undefined;
+  const screensaverPath = device?.standby?.screensaverPath?.trim() || undefined;
   const screensaverUpgrade = useMemo(
     () => resolveScreensaverUpgrade(catalog.themes, screensaverPath),
     [catalog.themes, screensaverPath],
@@ -3697,8 +3914,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionRelease?.latestVersion || companionRelease?.release || "";
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
-      activeThemeUpgrade.needed &&
-      !activeThemeUpgrade.unresolved,
+    activeThemeUpgrade.needed &&
+    !activeThemeUpgrade.unresolved,
   );
   useEffect(() => {
     const theme = pendingUpgrade.theme;
@@ -3800,41 +4017,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
   const setupIdentityKnown = setupIdentityIsKnown(
-    initialCompanionCheckComplete,
+    initialCompanionCheckComplete &&
+      companionStatus === "online" &&
+      providerSelectionSetup !== null,
     providerDisplay,
     providerDisplayError,
   );
   const setupLooksComplete =
     setupIdentityKnown &&
     setupWasCompletedBefore({
-      hasActiveDevice,
+      hasPairedDevice: hasActiveDevice && device?.paired === true,
       connectionRecoveryRequired,
       providerSelectionComplete:
         providerSelectionSetup?.providerSelectionComplete === true,
       displayConfigured: displaySetupComplete,
       providerSetupCompletedThisSession,
-      themeSetupRequired,
+      // A lost connection does not complete the theme setup already observed.
+      themeSetupRequired: themeSetupRequired || themeSetupIdentity !== null,
     });
-  // Whether this session belongs to a customer coming back or to one being set
-  // up is settled the first time the app knows the Mac's state, and never
-  // revisited. Both directions have to hold.
-  //
-  // Deciding it true later would hand the window back to setup around someone
-  // working in the app: switching off the provider on display is one click in
-  // Settings, and a reconnecting VibeTV can report its theme missing again.
-  //
-  // Deciding it false later is the mirror: a Mac whose provider and display
-  // choices are already recorded but whose VibeTV is gone or switched off
-  // starts on the device step, and pairing or reconnecting one there must not
-  // turn the session into a returning one and take the connect log off the
-  // screen mid firmware install.
-  //
-  // The deciding render reads the fresh value, so nothing flashes.
-  if (sessionSkipsSetup === null && setupIdentityKnown) {
-    setSessionSkipsSetup(setupLooksComplete);
+  if (enteredControlCenterThisSession === null && setupIdentityKnown) {
+    setEnteredControlCenterThisSession(setupLooksComplete);
   }
   const hasEnteredControlCenter =
-    enteredControlCenterThisSession || (sessionSkipsSetup ?? setupLooksComplete);
+    enteredControlCenterThisSession ?? setupLooksComplete;
   const macAppUpdatePromptedFor = useRef("");
   useEffect(() => {
     if (
@@ -3870,7 +4075,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
-      : connectionRecoveryRequired && device?.target
+      : (connectionRecoveryRequired ||
+          (enteredControlCenterThisSession === false && deviceIsCustomerConnected(device))) && device?.target
         ? [
             {
               target: device.target,
@@ -3878,17 +4084,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               board: device.board,
               firmware: device.firmware,
               networkMode: "station",
+              transport: connectionRecoveryRequired
+                ? undefined
+                : deviceUsesCable(device) ? "cable" : "wifi",
               known: true,
               active: true,
             } satisfies DeviceCandidate,
           ]
         : [];
-  const waitingForFirstUsage =
-    hasActiveDevice &&
-    device?.connected === true &&
-    device.paired !== false &&
-    !connectionRecoveryRequired &&
-    !hasEnteredControlCenter;
   // A repair takes the Mac App down on purpose, so the incident holds while one
   // runs. But an incident whose Mac App never comes back is a Mac App outage:
   // holding it forever hid the recovery screen behind "AI usage could not start"
@@ -3980,9 +4183,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     themeInstallInProgress,
   ]);
 
-  const startupDeviceSearchState: DeviceSearchState = waitingForFirstUsage
-    ? "waiting"
-    : connectionRecoveryRequired && startupDeviceCandidates.length > 0
+  const startupDeviceSearchState: DeviceSearchState =
+    connectionRecoveryRequired && startupDeviceCandidates.length > 0
       ? "multiple"
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
@@ -3995,6 +4197,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     hasEnteredControlCenter,
   );
   const providerPickerProps = {
+    usage,
     display: providerDisplay,
     displayError: providerDisplayError,
     displayPendingProviderId: pendingProviderDisplayId,
@@ -4096,7 +4299,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       companionStatus !== "online" ||
-      !controlCenterAvailable
+      (!controlCenterAvailable && !settingsWiFiSetup)
     ) {
       return;
     }
@@ -4125,22 +4328,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     controlCenterAvailable,
     hostedSetup,
     setupPreviewStep,
+    settingsWiFiSetup,
     syncLocalStatus,
   ]);
 
   useEffect(() => {
     if (
-      (activeShellTab !== "usage" && activeShellTab !== "overview") ||
       companionStatus !== "online" ||
-      !controlCenterAvailable
+      ((setupFinished || setupComplete) &&
+        (!controlCenterAvailable ||
+          !["usage", "overview", "settings"].includes(activeShellTab)))
     ) {
       return;
     }
 
     return startUsageSurfacePolling({
       refreshUsage: () => refreshUsage({ quiet: true }),
-      refreshProviderHealth: () =>
-        refreshProviderPreferences({ quiet: true }),
+      refreshProviderHealth: () => refreshProviderPreferences({ quiet: true }),
     });
   }, [
     activeShellTab,
@@ -4148,6 +4352,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     controlCenterAvailable,
     refreshProviderPreferences,
     refreshUsage,
+    setupFinished,
+    setupComplete,
   ]);
 
   // Settings and the provider step show the display selection; setup also has
@@ -4187,9 +4393,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     return startProviderPreferencesPolling({
-      refresh: () => refreshProviderPreferences({ quiet: true }),
+      refresh: async () => {
+        await Promise.all([
+          refreshProviderPreferences({ quiet: true }),
+          refreshUsage({ quiet: true }),
+        ]);
+      },
     });
-  }, [providerPreferencesPollingWanted, refreshProviderPreferences]);
+  }, [providerPreferencesPollingWanted, refreshProviderPreferences, refreshUsage]);
 
   useEffect(() => {
     if (!providerDisplayWanted) {
@@ -4199,10 +4410,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       void Promise.all([
         refreshProviderPreferences({ quiet: true }),
         refreshProviderDisplay({ quiet: true }),
+        loadUsageMode(),
       ]);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
+    loadUsageMode,
+    providerDisplayWanted,
     activeShellTab,
     companionStatus,
     providerSelectionSetup?.providerSelectionRequired,
@@ -4274,7 +4488,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
-    displayConfigured: displaySetupComplete,
+    displayConfigured: displaySetupComplete && (!providerSetupCompletedThisSession || setupDisplayConfirmed || (providerPreferences || []).filter((item) => isProviderItem(item) && item.value).length === 1),
+    usageConfigured: setupUsageComplete || !providerSetupCompletedThisSession,
     displaySelectionSupported: setupDisplaySelectionSupported(
       providerDisplay,
       providerDisplayError,
@@ -4312,13 +4527,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the window again. Theme and screensaver installs can temporarily make the
   // device unready; that is install progress, not a new customer setup.
   const setupOwnsScreen =
-    !hasEnteredControlCenter && (setupStep !== "live" || !setupFinished);
+    Boolean(settingsWiFiSetup) ||
+    (!hasEnteredControlCenter && (setupStep !== "live" || !setupFinished));
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
   // and into the Manual list, where pinning to it produced a blank device.
-  const displayableProviders = setupProviders.filter(setupProviderCanDisplay);
+  const displayableProviders = setupProviders.filter((provider) =>
+    setupProviderCanDisplay(provider, usage),
+  );
   const enabledProviderIds = setupProviders
     .filter((item) => item.value)
     .map((item) => item.providerId)
@@ -4351,6 +4569,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallEnabled,
         })?.reason ?? null,
     }));
+  const setupThemeAlreadyActive = Boolean(selectedTheme &&
+    selectedTheme.themeId === device?.activeTheme &&
+    selectedTheme.themeSpecPath === device?.display?.themeSpec?.path &&
+    deviceCompletedThemeSetup(device));
   const setupThemeError: ApiError | null =
     themeInstallStatus?.phase === "error"
       ? themeInstallStatus.failure ?? {
@@ -4387,14 +4609,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : null;
     },
     connect: async (candidate) => {
-      const error = await selectAndConnectDevice(candidate);
-      if (error) {
-        throw error;
+      if (candidate.transport === "cable") {
+        const selected = await selectSetupConnectionMode(
+          "cable",
+          candidate.deviceId,
+        );
+        if (selected.status !== "selected") {
+          throw {
+            code: "cable_connection_failed",
+            message: "VibeTV did not finish connecting by Cable.",
+            nextAction:
+              "Keep the selected VibeTV connected by Cable and retry.",
+          };
+        }
+        return selected.device ?? {};
       }
-      // Read the device back rather than trusting this render's copy, which
-      // still describes whatever was connected before this one.
-      const connected = await refreshDevice({ quiet: true });
-      return { board: connected?.board, firmware: connected?.firmware };
+      const connected = await selectAndConnectDevice(candidate);
+      if (!connected || "code" in connected) {
+        throw connected;
+      }
+      // Selection already returned the verified handshake. A second probe can
+      // race the transport worker's restart and discard that fresh identity.
+      return connected;
     },
     installFirmware: async () => {
       lastFirmwareErrorRef.current = null;
@@ -4463,12 +4699,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (setupOwnsScreen) {
       return (
         <SetupWizard
+          usageMode={usageMode}
+          usageSavePending={usageModePending}
+          usageError={usageModeError}
+          onDismissUsageError={() => setUsageModeError(null)}
+          onRetryUsageMode={() => void loadUsageMode()}
+          onUsageContinue={async (mode) => {
+            const generation = setupGenerationRef.current;
+            const saved = await saveUsageMode(mode);
+            if (saved && generation === setupGenerationRef.current) setSetupUsageComplete(true);
+            return saved;
+          }}
+          initialWiFiSetup={settingsWiFiSetup}
+          onConnectionComplete={finishConnectionChange}
           aiFixPrompt={setupAiFixPrompt}
           usageFailure={usageFailureHidden ? null : usageFailure}
           onRepairUsageService={retryUsageService}
           onDismissUsageFailure={() => setUsageFailureHidden(true)}
           automaticPreviews={setupPreviews}
           connectSteps={setupConnectSteps}
+          connectionMode={connectionMode}
+          connectionModeChoiceRequired={connectionModeChoiceRequired}
+          activeDeviceId={deviceRecoveryGateRef.current.preferredDeviceId}
           device={device}
           deviceCandidates={startupDeviceCandidates}
           deviceSearchState={startupDeviceSearchState}
@@ -4501,21 +4753,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               : undefined
           }
           onFindManualTarget={findManualTarget}
+          onConfigureWiFi={configureSetupWiFi}
           onCreateSupportReport={loadSupportDiagnostics}
           onFinished={finishSetup}
-          onDisplayContinue={(selection) =>
-            updateProviderDisplay(
-              selection.mode === "automatic"
-                ? { ...selection, providerIds: enabledProviderIds }
-                : selection,
-              selection.mode === "automatic"
-                ? enabledProviderIds[0] ?? ""
-                : selection.providerIds[0] ?? "",
-            )
-          }
+          onDisplayContinue={async (selection) => {
+            const saved = await updateProviderDisplay(
+              selection.mode === "automatic" ? { ...selection, providerIds: enabledProviderIds } : selection,
+              selection.mode === "automatic" ? enabledProviderIds[0] ?? "" : selection.providerIds[0] ?? "",
+            );
+            if (saved) setSetupDisplayConfirmed(true);
+            return saved;
+          }}
+          selectedThemeInstalled={setupThemeAlreadyActive}
           onInstallTheme={() => {
+            setSetupDisplayConfirmed(false);
+            if (setupThemeAlreadyActive) {
+              setSetupThemeChoiceRequired(false);
+              return Promise.resolve(true);
+            }
+            setSetupThemeChoiceRequired(true);
             setSetupThemeInstallRequested(true);
-            void installTheme();
+            return installTheme();
           }}
           onProviderCheck={(provider) => void checkProvider(provider)}
           onProviderToggle={(provider, enabled) =>
@@ -4540,12 +4798,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           providerError={providerDisplayError || providerPreferencesError}
           onSearchDevices={() => void searchAndConnect()}
+          onScanWiFiNetworks={scanSetupWiFiNetworks}
+          onSelectConnectionMode={selectSetupConnectionMode}
           onUpdateMacApp={checkForMacAppUpdate}
           displaySavePending={pendingProviderDisplayId !== null}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}
           selectedThemeId={selectedThemeId}
-          step={setupStep}
+          step={settingsWiFiSetup ? "device" : setupStep}
           themeInstallLogs={themeInstallStatus?.logs || []}
           themes={setupThemes}
           usage={usage}
@@ -4592,15 +4852,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
+            usageMode={usageMode}
+            usageSavePending={usageModePending}
+            onUsageModeChange={(mode) => void saveUsageMode(mode)}
+            actionError={usageModeError || lastError}
+            onDismissError={() => {
+              setUsageModeError(null);
+              setLastError(null);
+              setProviderDisplayError(null);
+              setProviderPreferencesError(null);
+            }}
             automaticPreviews={setupPreviews}
             brightness={brightness}
-            busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
+            busyAction={
+              firmwareUpdateInProgress ? "firmware-update" : busyAction
+            }
+            connectionMode={
+              connectionMode === "cable" || deviceUsesCable(device)
+                ? "cable"
+                : "wifi"
+            }
             device={device}
             standby={standby}
             onBrightnessChange={changeBrightness}
             onChooseScreensaver={() => {
               setAppearanceSection("screensavers");
               setActiveTab("theme-library");
+            }}
+            onConnectionModeChange={(mode) => {
+              void selectSetupConnectionMode(mode, device?.deviceId).then((result) => {
+                if (result.status !== "selected") {
+                  setSettingsWiFiSetup({ status: result.status, deviceId: result.deviceId });
+                  if (result.status === "waiting_for_wifi") void searchAndConnect();
+                }
+              }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={resetSetup}
             onSaveBrightness={saveBrightness}
@@ -4612,7 +4897,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "theme-library" ? (
           <ThemeLibraryScreen
-            busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
+            busyAction={
+              firmwareUpdateInProgress ? "firmware-update" : busyAction
+            }
             companionStatus={companionStatus}
             device={device}
             installStatus={themeInstallStatus}
@@ -4645,7 +4932,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             storefrontConfigured={catalog.storefrontConfigured}
             themeInstallEnabled={themeInstallEnabled}
             themes={catalog.themes}
-            usage={appearanceSection === "screensavers" ? "screensaver" : "live"}
+            usage={
+              appearanceSection === "screensavers" ? "screensaver" : "live"
+            }
             onSaveStandby={saveStandby}
           />
         ) : null}

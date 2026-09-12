@@ -13,7 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 const (
@@ -26,12 +27,14 @@ const (
 )
 
 type deps struct {
-	stdout      io.Writer
-	uid         func() int
-	homeDir     func() (string, error)
-	runCommand  func(context.Context, string, ...string) (string, error)
-	resolvePort func(string) (string, error)
-	readFile    func(string) ([]byte, error)
+	stdout                io.Writer
+	uid                   func() int
+	launchAgentLabel      string
+	homeDir               func() (string, error)
+	runCommand            func(context.Context, string, ...string) (string, error)
+	readCableCapabilities func() (protocol.DeviceCapabilities, error)
+	loadRuntimeConfig     func(string) (runtimeconfig.Config, error)
+	readFile              func(string) ([]byte, error)
 }
 
 func (d deps) withDefaults() deps {
@@ -41,14 +44,22 @@ func (d deps) withDefaults() deps {
 	if d.uid == nil {
 		d.uid = os.Getuid
 	}
+	if strings.TrimSpace(d.launchAgentLabel) == "" {
+		d.launchAgentLabel = launchAgentLabel
+	}
 	if d.homeDir == nil {
 		d.homeDir = os.UserHomeDir
 	}
 	if d.runCommand == nil {
 		d.runCommand = runSystemCommand
 	}
-	if d.resolvePort == nil {
-		d.resolvePort = usb.ResolvePort
+	if d.readCableCapabilities == nil {
+		d.readCableCapabilities = func() (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{}, fmt.Errorf("running Companion Cable status reader is required")
+		}
+	}
+	if d.loadRuntimeConfig == nil {
+		d.loadRuntimeConfig = runtimeconfig.Load
 	}
 	if d.readFile == nil {
 		d.readFile = os.ReadFile
@@ -67,14 +78,17 @@ type launchAgentConfig struct {
 	Port      string
 }
 
-func Run(ctx context.Context) error {
-	return runWithDeps(ctx, deps{})
+func Run(ctx context.Context, runtimeLabel string, readCableCapabilities func() (protocol.DeviceCapabilities, error)) error {
+	return runWithDeps(ctx, deps{
+		launchAgentLabel:      runtimeLabel,
+		readCableCapabilities: readCableCapabilities,
+	})
 }
 
 func runWithDeps(ctx context.Context, d deps) error {
 	d = d.withDefaults()
 
-	service := fmt.Sprintf("gui/%d/%s", d.uid(), launchAgentLabel)
+	service := fmt.Sprintf("gui/%d/%s", d.uid(), d.launchAgentLabel)
 	launchctlOut, launchctlErr := d.runCommand(ctx, "launchctl", "print", service)
 	state, pid := parseLaunchctlStatus(launchctlOut)
 	if state == "" {
@@ -111,12 +125,12 @@ func runWithDeps(ctx context.Context, d deps) error {
 			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
 		}
 	} else {
-		detectedPort, portErr := d.resolvePort("")
+		caps, statusErr := d.readCableCapabilities()
 		fmt.Fprintln(d.stdout, "transport: usb")
-		if portErr != nil {
-			fmt.Fprintf(d.stdout, "detected port: unavailable (%v)\n", portErr)
+		if statusErr != nil {
+			fmt.Fprintf(d.stdout, "Cable device: unavailable (%v)\n", statusErr)
 		} else {
-			fmt.Fprintf(d.stdout, "detected port: %s\n", detectedPort)
+			fmt.Fprintf(d.stdout, "Cable device: %s board=%s firmware=%s\n", caps.DeviceID, caps.Board, caps.Firmware)
 		}
 	}
 
@@ -169,7 +183,15 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return launchAgentConfig{}
 	}
-	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	if cfg, err := d.loadRuntimeConfig(home); err == nil &&
+		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "" || strings.TrimSpace(cfg.DeviceTarget) != "") {
+		config := launchAgentConfig{Transport: runtimeconfig.ActiveTransport(cfg)}
+		if config.Transport == "wifi" {
+			config.Target = strings.TrimSpace(cfg.DeviceTarget)
+		}
+		return config
+	}
+	path := filepath.Join(home, "Library", "LaunchAgents", d.launchAgentLabel+".plist")
 	data, err := d.readFile(path)
 	if err != nil {
 		return launchAgentConfig{}

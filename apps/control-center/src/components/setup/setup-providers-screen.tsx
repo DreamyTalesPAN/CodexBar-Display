@@ -1,6 +1,6 @@
 "use client";
 
-import type { SupportDiagnostics } from "../control-center-types";
+import type { SupportDiagnostics, UsageSnapshot } from "../control-center-types";
 import { Search, SearchX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import { SetupProviderRow } from "./setup-provider-row";
+import { displayPreviewFor } from "./setup-display-previews";
 import {
   SetupWizardScreen,
   SetupWizardSubtitle,
@@ -40,6 +41,7 @@ type SetupProvidersScreenProps = {
   /** Preferences whose on/off write is in flight, by preference id. */
   pendingPreferenceIds: Set<string>;
   providers: ProviderItem[];
+  usage: UsageSnapshot | null;
 };
 
 /** How many provider rows are on screen before the customer asks for more. */
@@ -55,6 +57,7 @@ type ProviderListProps = {
   /** Preferences whose on/off write is in flight, by preference id. */
   pendingPreferenceIds: Set<string>;
   providers: ProviderItem[];
+  usage: UsageSnapshot | null;
 };
 
 /**
@@ -71,6 +74,7 @@ export function ProviderList({
   pendingCheckIds,
   pendingPreferenceIds,
   providers,
+  usage,
 }: ProviderListProps) {
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
@@ -105,20 +109,41 @@ export function ProviderList({
       </div>
 
       <ItemGroup className="mt-3 gap-2">
-        {visible.map((provider) => (
-          <SetupProviderRow
-            checking={pendingCheckIds.has(provider.providerId)}
-            enabled={provider.value}
-            health={provider.health.state}
-            key={provider.id}
-            label={provider.label}
-            detail={provider.health.message}
-            onCheckAgain={() => onCheckAgain(provider)}
-            onToggle={(enabled) => onToggle(provider, enabled)}
-            reportedMessage={provider.health.reported}
-            saving={pendingPreferenceIds.has(provider.id)}
-          />
-        ))}
+        {visible.map((provider) => {
+          const alternative = setupProviderAlternative(provider, providers);
+          const unavailable = provider.providerId === "gemini"
+            ? "Gemini no longer reports usage for personal Google accounts."
+            : `${provider.label} no longer reports usage for this account.`;
+          return (
+            <SetupProviderRow
+              alternativeActions={alternative && !alternative.value ? (
+                <Button
+                  disabled={!alternative.writable || pendingPreferenceIds.has(alternative.id)}
+                  onClick={() => onToggle(alternative, true)}
+                  size="sm"
+                  type="button"
+                >
+                  {`Turn on ${alternative.label}`}
+                </Button>
+              ) : undefined}
+              unsupportedMessage={alternative
+                ? `${unavailable} ${alternative.value
+                  ? `${alternative.label} is already on — you can turn ${provider.label} off.`
+                  : `You can turn on ${alternative.label} instead.`}`
+                : undefined}
+              checking={pendingCheckIds.has(provider.providerId)}
+              enabled={provider.value}
+              health={provider.value && provider.health.state === "healthy" && !setupProviderCanDisplay(provider, usage) ? "checking" : provider.health.state}
+              key={provider.id}
+              label={provider.label}
+              detail={provider.health.message}
+              onCheckAgain={() => onCheckAgain(provider)}
+              onToggle={(enabled) => onToggle(provider, enabled)}
+              reportedMessage={provider.health.reported}
+              saving={pendingPreferenceIds.has(provider.id)}
+            />
+          );
+        })}
         {matching.length === 0 ? (
           <Empty
             className={cn(
@@ -163,6 +188,7 @@ export function SetupProvidersScreen({
   pendingCheckIds,
   pendingPreferenceIds,
   providers,
+  usage,
 }: SetupProvidersScreenProps) {
   if (loading) {
     return (
@@ -190,6 +216,7 @@ export function SetupProvidersScreen({
         pendingCheckIds={pendingCheckIds}
         pendingPreferenceIds={pendingPreferenceIds}
         providers={providers}
+        usage={usage}
       />
 
       <Button
@@ -198,7 +225,7 @@ export function SetupProvidersScreen({
         // second one, and each of those forces a live provider read before it
         // writes anything -- so the customer paid for the same slow check twice
         // and either answer could move the step or raise a refusal on its own.
-        disabled={continuing || !setupProvidersCanContinue(providers)}
+        disabled={continuing || !setupProvidersCanContinue(providers, usage)}
         onClick={onContinue}
         type="button"
       >
@@ -288,22 +315,12 @@ function SetupProvidersLoadingScreen({
   );
 }
 
-/**
- * Setup may continue once VibeTV has something real to show: one provider that
- * is switched on and has a live or bounded last-good reading. That is the rule
- * docs/control-center-ui-principles.md has stated all along.
- *
- * Demanding every enabled provider instead was a trap, because CodexBar
- * switches providers on by itself: one of them merely not signed in closed
- * Continue on a Mac whose own provider was working. What the device shows is
- * unaffected -- the rotation already skips a provider it cannot read.
- *
- * The same provider descriptor drives this button and the companion's
- * completion gate. A manually requested check may keep running without
- * replacing an already healthy answer.
- */
-export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
-  return providers.some(setupProviderCanDisplay);
+/** One enabled provider with a real reading is enough, including 0%. */
+export function setupProvidersCanContinue(
+  providers: ProviderItem[],
+  usage: UsageSnapshot | null,
+): boolean {
+  return providers.some((provider) => setupProviderCanDisplay(provider, usage));
 }
 
 /** Keep CodexBar's order inside the on and off groups. */
@@ -316,19 +333,21 @@ function setupProvidersEnabledFirst(
   ];
 }
 
-/**
- * Whether this provider can actually put a reading on the device. "stale"
- * counts: it produced a real one before and the saved value is still what the
- * customer sees. Everything else -- waiting for a sign-in, refused a macOS
- * permission, an account with no usage, an outage -- has nothing to show, so
- * offering it on the display step would let the customer pin VibeTV to a
- * permanently blank screen.
- */
-export function setupProviderCanDisplay(provider: ProviderItem): boolean {
-  return (
-    provider.value &&
-    (provider.health.state === "healthy" || provider.health.state === "stale")
+/** Use the preview's actual values, not health alone, to admit a provider. */
+export function setupProviderCanDisplay(
+  provider: ProviderItem,
+  usage: UsageSnapshot | null,
+): boolean {
+  if (!provider.value ||
+      (provider.health.state !== "healthy" && provider.health.state !== "stale")) {
+    return false;
+  }
+  const preview = displayPreviewFor(
+    usage?.providers.find((reading) => reading.id === provider.providerId),
   );
+  return preview?.windows.some((window) =>
+    typeof window.percent === "number" && Number.isFinite(window.percent),
+  ) ?? false;
 }
 
 export function setupProviderMatchesQuery(
@@ -341,5 +360,18 @@ export function setupProviderMatchesQuery(
     provider.label.toLowerCase().includes(normalized) ||
     provider.health.message.toLowerCase().includes(normalized) ||
     provider.providerId.toLowerCase().includes(normalized)
+  );
+}
+
+/** Resolve the upstream replacement from the existing inventory, without probing accounts. */
+function setupProviderAlternative(
+  provider: ProviderItem,
+  inventory: ProviderItem[],
+): ProviderItem | undefined {
+  if (provider.health.state !== "unsupported" || !provider.health.reported) return undefined;
+  const words = (value: string) => ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+  const message = words(provider.health.reported);
+  return inventory.find((candidate) =>
+    candidate.id !== provider.id && message.includes(words(candidate.label)),
   );
 }

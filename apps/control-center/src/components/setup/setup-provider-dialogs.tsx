@@ -33,12 +33,13 @@ export function SetupStepFailedDialog({
   retryLabel = "Try again",
 }: StepFailedDialogProps) {
   const visibleError = error?.code === "COMPANION_UNREACHABLE" ? null : error;
+  if (!visibleError) return null;
   return (
     <SetupDialog
-      description={visibleError?.nextAction ?? ""}
+      description={visibleError.nextAction}
       icon={TriangleAlert}
       onOpenChange={onOpenChange}
-      open={Boolean(visibleError)}
+      open
       primaryAction={
         onRetry
           ? {
@@ -51,7 +52,7 @@ export function SetupStepFailedDialog({
           : { label: "OK", onSelect: () => onOpenChange(false) }
       }
       showCloseButton={dismissible}
-      title={visibleError?.message ?? ""}
+      title={visibleError.message}
     />
   );
 }

@@ -7,6 +7,7 @@ import {
 describe("startUsageSurfacePolling", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("refreshes usage and provider health repeatedly on the usage cadence", async () => {
@@ -65,6 +66,27 @@ describe("startUsageSurfacePolling", () => {
     expect(refreshProviderHealth).toHaveBeenCalledTimes(1);
 
     stop();
+  });
+
+  it("reads a completed background check immediately on returning to the window", async () => {
+    vi.useFakeTimers();
+    const document = new EventTarget();
+    vi.stubGlobal("document", document);
+    let visible = false;
+    const refreshUsage = vi.fn(async () => {});
+    const refreshProviderHealth = vi.fn(async () => {});
+    const stop = startUsageSurfacePolling({ refreshUsage, refreshProviderHealth, isVisible: () => visible });
+    await advance(0);
+    expect(refreshUsage).not.toHaveBeenCalled();
+    visible = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushPromises();
+    expect(refreshUsage).toHaveBeenCalledTimes(1);
+    expect(refreshProviderHealth).toHaveBeenCalledTimes(1);
+    stop();
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushPromises();
+    expect(refreshUsage).toHaveBeenCalledTimes(1);
   });
 
   it("does not overlap usage or provider-health requests", async () => {
