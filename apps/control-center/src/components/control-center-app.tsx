@@ -81,11 +81,7 @@ import {
 } from "./device-recovery-gate";
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
-import {
-  hasRenderableUsage,
-  type DisplayFrameSnapshot,
-  useLatestDisplayFrame,
-} from "./live-vibetv-preview";
+import { useLatestDisplayFrame } from "./live-vibetv-preview";
 import { OverviewScreen } from "./overview-screen";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
@@ -111,7 +107,6 @@ import {
   setupIdentityIsKnown,
   setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
-  setupWasCompletedBefore,
 } from "./setup/setup-step";
 import {
   SetupUsageDialog,
@@ -472,16 +467,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     "repairing" | "failed" | null
   >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
-  // Decide once from the Companion's saved setup and device identity. Null
-  // means those reads have not answered; false means this launch owns setup.
-  const [enteredControlCenterThisSession, setEnteredControlCenterThisSession] =
-    useState<boolean | null>(null);
-  // The closing step is shown for a moment before the app takes over, but only
-  // to someone who actually walked through setup.
-  // Flipped by the wizard once its closing step has been seen. A VibeTV that
-  // was already set up reaches the shell without it, because nothing put the
-  // customer on a step to close.
-  const [setupFinished, setSetupFinished] = useState(false);
+  // Only the live preview can admit this launch to the Control Center.
+  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
   const [settingsWiFiSetup, setSettingsWiFiSetup] = useState<{
     status: "waiting_for_wifi" | "wifi_credentials_required";
     deviceId?: string;
@@ -504,7 +491,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
-  const finishSetup = useCallback(() => setSetupFinished(true), []);
+  const finishSetup = useCallback(() => setHasEnteredControlCenter(true), []);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.
@@ -1899,7 +1886,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // The latch that says the wizard has already handed the screen back.
       // Left standing, the rerun reaches its closing step and is treated as
       // finished before it renders, so the customer never sees VibeTV running.
-      setSetupFinished(false);
+      setHasEnteredControlCenter(false);
       setProviderSetupCompletedThisSession(false);
       setSetupThemeInstallRequested(false);
       setSetupThemeChoiceRequired(false);
@@ -1920,7 +1907,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
-      setEnteredControlCenterThisSession(false);
       if (payload.device) {
         setDevice(payload.device.connected ? payload.device : null);
       }
@@ -2396,7 +2382,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       connectionRecoveryRequired ||
       !initialCompanionCheckComplete ||
       companionStatus !== "online" ||
-      (deviceIsActive(device) && device?.paired === true) ||
+      (hasEnteredControlCenter || deviceIsCustomerConnected(device)) ||
       busyAction ||
       deviceSearchState !== "idle" ||
       didRunAutomaticDeviceSearch.current
@@ -2410,6 +2396,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus,
     connectionRecoveryRequired,
     device,
+    hasEnteredControlCenter,
     deviceSearchState,
     firmwareUpdateInProgress,
     hostedSetup,
@@ -3877,7 +3864,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       requiresMacAppMigration ||
-      (setupThemeChoiceRequired && !setupFinished) ||
+      (setupThemeChoiceRequired && !hasEnteredControlCenter) ||
       !themeInstallEnabled ||
       companionStatus !== "online" ||
       !deviceIsReady(device) ||
@@ -3921,7 +3908,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     pendingUpgrade,
     requiresMacAppMigration,
     screensaverPath,
-    setupFinished,
+    hasEnteredControlCenter,
     setupThemeChoiceRequired,
     setupPreviewStep,
     themeInstallEnabled,
@@ -3940,26 +3927,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const deviceReady = deviceIsReady(device);
   const themeSetupComplete = deviceCompletedThemeSetup(device);
   const displaySetupComplete = setupDisplayIsConfigured(providerDisplay);
-  const handleDisplayFrame = useCallback(
-    (frame: DisplayFrameSnapshot) => {
-      if (
-        hasRenderableUsage(frame) &&
-        providerSelectionSetup?.providerSelectionComplete === true &&
-        displaySetupComplete &&
-        (themeSetupComplete || firmwareUpdateInProgress) &&
-        setupFinished
-      ) {
-        setEnteredControlCenterThisSession(true);
-      }
-    },
-    [
-      providerSelectionSetup?.providerSelectionComplete,
-      displaySetupComplete,
-      firmwareUpdateInProgress,
-      setupFinished,
-      themeSetupComplete,
-    ],
-  );
   const hasActiveDevice = deviceIsActive(device);
   const themeSetupEntryRequired =
     companionStatus === "online" && deviceNeedsThemeSetup(device);
@@ -3970,29 +3937,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
-  const setupIdentityKnown = setupIdentityIsKnown(
-    initialCompanionCheckComplete &&
-      companionStatus === "online" &&
-      providerSelectionSetup !== null,
-    providerDisplay,
-    providerDisplayError,
-  );
-  const setupLooksComplete =
-    setupIdentityKnown &&
-    setupWasCompletedBefore({
-      hasPairedDevice: hasActiveDevice && device?.paired === true,
-      connectionRecoveryRequired,
-      providerSelectionComplete:
-        providerSelectionSetup?.providerSelectionComplete === true,
-      displayConfigured: displaySetupComplete,
-      providerSetupCompletedThisSession,
-      themeSetupRequired,
-    });
-  if (enteredControlCenterThisSession === null && setupIdentityKnown) {
-    setEnteredControlCenterThisSession(setupLooksComplete);
-  }
-  const hasEnteredControlCenter =
-    enteredControlCenterThisSession ?? setupLooksComplete;
   const macAppUpdatePromptedFor = useRef("");
   useEffect(() => {
     if (
@@ -4021,15 +3965,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         hasActiveDevice &&
         device?.paired !== false),
   );
-  const displayFrame = useLatestDisplayFrame(
-    displaySessionActive,
-    handleDisplayFrame,
-  );
+  const displayFrame = useLatestDisplayFrame(displaySessionActive);
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
       : (connectionRecoveryRequired ||
-          (enteredControlCenterThisSession === false && deviceIsCustomerConnected(device))) && device?.target
+          (!hasEnteredControlCenter && deviceIsCustomerConnected(device))) && device?.target
         ? [
             {
               target: device.target,
@@ -4142,13 +4083,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
-  const setupComplete = Boolean(
-    !setupPreviewStep &&
-    companionStatus === "online" &&
-    deviceReady &&
-    providerSelectionSetup?.providerSelectionComplete &&
-    hasEnteredControlCenter,
-  );
   const providerPickerProps = {
     usage,
     display: providerDisplay,
@@ -4288,7 +4222,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     if (
       companionStatus !== "online" ||
-      ((setupFinished || setupComplete) &&
+      (hasEnteredControlCenter &&
         (!controlCenterAvailable ||
           !["usage", "overview", "settings"].includes(activeShellTab)))
     ) {
@@ -4305,8 +4239,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     controlCenterAvailable,
     refreshProviderPreferences,
     refreshUsage,
-    setupFinished,
-    setupComplete,
+    hasEnteredControlCenter,
   ]);
 
   // Settings and the provider step show the display selection; setup also has
@@ -4316,7 +4249,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     (activeShellTab === "settings" ||
       providerSelectionSetup?.providerSelectionRequired === true ||
-      !(setupFinished || setupComplete));
+      !hasEnteredControlCenter);
   const providerPreferencesPollingWanted = providerPreferencesNeedPolling(
     providerDisplayWanted,
     providerPreferences,
@@ -4399,17 +4332,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Once the customer is inside, a device that is only reconnecting stays
   // theirs. Handing the screen back to setup for it would drop them out of
   // whatever they were doing over a missed poll.
-  // Deliberately not setupComplete: that needs a field an older companion
-  // never reports, so the guard would not exist on exactly the Macs that have
-  // one.
-  // A VibeTV whose only problem is that no provider is set up yet reports
-  // ready:false -- readiness needs a rendered usage frame, and there is no
-  // usage to render. Without the middle term the wizard parks a brand-new
-  // customer on the device step and never offers the provider step that is the
-  // only way to fix it. Narrowed to the case that step actually answers:
-  // letting a device through once the provider selection is already done would
-  // carry someone whose provider just died to the live step and tell them
-  // their VibeTV is running.
   const providerSelectionRequired =
     !providerSetupCompletedThisSession &&
     providerSelectionSetup?.providerSelectionRequired === true;
@@ -4477,7 +4399,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // device unready; that is install progress, not a new customer setup.
   const setupOwnsScreen =
     Boolean(settingsWiFiSetup) ||
-    (!hasEnteredControlCenter && (setupStep !== "live" || !setupFinished));
+    !hasEnteredControlCenter;
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.

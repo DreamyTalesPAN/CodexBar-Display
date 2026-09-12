@@ -125,25 +125,6 @@ export function setupIdentityIsKnown(
   );
 }
 
-/** Saved setup and pairing decide startup; reachability and usage do not. */
-export function setupWasCompletedBefore(input: {
-  hasPairedDevice: boolean;
-  connectionRecoveryRequired: boolean;
-  providerSelectionComplete: boolean;
-  displayConfigured: boolean;
-  providerSetupCompletedThisSession: boolean;
-  themeSetupRequired: boolean;
-}): boolean {
-  return (
-    input.hasPairedDevice &&
-    !input.connectionRecoveryRequired &&
-    input.providerSelectionComplete &&
-    input.displayConfigured &&
-    !input.providerSetupCompletedThisSession &&
-    !input.themeSetupRequired
-  );
-}
-
 /** The provider screen owns the first inventory wait and its retry dialog. */
 export function setupProviderInventoryIsLoading(
   providerSelectionRequired: boolean,

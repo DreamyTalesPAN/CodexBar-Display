@@ -4324,3 +4324,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul rejected the location permission and explicitly requested removing open VibeTV-Setup network discovery: “dann bau das so um ... ausschließlich code wegnehmen”. USB users finish setup by Cable and can switch to WiFi later in Settings; existing retry and manual-IP dialogs are sufficient.
 - Approved customer-visible result: The Mac App discovers USB devices and devices already reachable on the local network. A USB-only device connects directly; only two discovered paths to the same device show the existing Cable/WiFi chooser. Nearby setup access points are no longer counted and no location permission or scan-error popup is requested. Existing phone instructions, retry, manual IP and Settings WiFi setup remain. No new UI element. This supersedes the September 10 approval for native setup-SSID scanning.
 - Regression correction: Discovery of an existing LAN path exposed premature connection while the WiFi mode request was still pending. The existing waiting screen now distinguishes the pending selection internally and begins discovery/connection only after the request succeeds; rejected choices remain retryable. No new UI.
+
+
+## 2026-09-12 — Require a valid preview before leaving setup
+
+- User approval: Paul reported the candidate opening Overview without a preview after exchanging VibeTVs and explicitly required: “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt”.
+- Approved customer-visible result: Saved pairing, provider and display choices cannot bypass the wizard on launch. The existing final preview step releases the Control Center only with a rendered theme/frame and a currently connected, ready VibeTV. Losing readiness or changing devices cancels the pending handover. After a successful handover, transient outages preserve the open Control Center. Existing choices are reused; no new UI element.
+- Supersedes the earlier saved-setup shortcut that admitted a configured offline device directly to Overview.
