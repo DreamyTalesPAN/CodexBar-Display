@@ -4695,6 +4695,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             setSetupThemeInstallRequested(false);
           }}
           onInstallTheme={() => {
+            setSetupDisplayConfirmed(false);
             if (setupThemeAlreadyActive) {
               setSetupThemeChoiceRequired(false);
               return Promise.resolve(true);
