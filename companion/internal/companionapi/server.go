@@ -4728,7 +4728,7 @@ func writeCableResolutionError(w http.ResponseWriter, err error) {
 	case errcode.TransportForeignDevice:
 		writeError(w, http.StatusConflict, "foreign_serial_device", "The connected USB device is not a VibeTV.", "Disconnect it and connect VibeTV with a data-capable Cable.")
 	default:
-		writeError(w, http.StatusConflict, "cable_device_not_found", "The selected Cable VibeTV is not available.", "Connect that VibeTV with a data-capable Cable and retry.")
+		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Your cable may only supply power, or your VibeTV may not support USB-C data connections. Try a USB-C data cable or connect via WiFi instead.")
 	}
 }
 
