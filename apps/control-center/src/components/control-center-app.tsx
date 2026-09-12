@@ -4617,6 +4617,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 : selection.providerIds[0] ?? "",
             )
           }
+          onReturnToThemes={() => {
+            setSetupThemeChoiceRequired(true);
+            setSetupThemeInstallRequested(false);
+          }}
           onInstallTheme={() => {
             setSetupThemeInstallRequested(true);
             void installTheme();

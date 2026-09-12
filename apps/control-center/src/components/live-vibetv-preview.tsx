@@ -10,6 +10,7 @@ import {
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
+  deviceUsesCable,
 } from "./control-center-types";
 import {
   companionRequestUrl,
@@ -53,6 +54,7 @@ type ThemePackState = {
 };
 
 export type DisplayFrameSnapshot = {
+  deviceId?: string;
   ok?: boolean;
   savedAt?: string;
   frame?: DisplayFrame;
@@ -554,6 +556,8 @@ export function livePreviewDisplayFrame(
   if (
     (!deviceIsCustomerConnected(device) &&
       (!deviceIsActive(device) || device?.paired === false)) ||
+    (deviceUsesCable(device) &&
+      (!device?.deviceId || displayFrame?.deviceId?.toLowerCase() !== device.deviceId.toLowerCase())) ||
     !hasRenderableUsage(displayFrame)
   ) {
     return null;

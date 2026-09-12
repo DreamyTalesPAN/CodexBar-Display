@@ -66,7 +66,8 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    first display frame carries real usage data. Every launch and every explicit
    return to the wizard, including WiFi setup from Settings, requires a valid
    live preview before opening the Control Center. Losing readiness or changing
-   devices cancels a pending handover.
+   devices cancels a pending handover. Back on the final preview returns to
+   theme selection when the active preview cannot be recovered.
 7. Appearance is additionally locked until theme installs are allowed by the release gate.
 8. During setup, help is the Help control on every wizard screen, offering
    `Ask AI to fix` and `Create support report`. Afterwards Support may stay

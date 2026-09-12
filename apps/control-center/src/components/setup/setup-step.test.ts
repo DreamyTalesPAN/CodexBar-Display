@@ -159,8 +159,8 @@ describe("previousSetupStep", () => {
     expect(previousSetupStep("providers")).toBe("device");
   });
 
-  it("has nowhere to go from the last step", () => {
-    expect(previousSetupStep("live")).toBeNull();
+  it("allows theme recovery from the preview step", () => {
+    expect(previousSetupStep("live")).toBe("theme");
   });
 });
 

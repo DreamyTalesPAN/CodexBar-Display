@@ -157,6 +157,8 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
  */
 export function previousSetupStep(step: SetupStep): SetupStep | null {
   switch (step) {
+    case "live":
+      return "theme";
     case "providers":
       return "device";
     case "display":

@@ -5066,7 +5066,7 @@ func TestStatusUsesAuthoritativeCableStreamWithoutHTTPProbe(t *testing.T) {
 		if target != cableDeviceTarget {
 			t.Fatalf("Cable status target=%q, expected %q", target, cableDeviceTarget)
 		}
-		return displayStreamInfo{
+		return displayStreamInfo{DeviceID: "vibetv-cable",
 			Healthy:    true,
 			Running:    true,
 			Target:     cableDeviceTarget,
@@ -5233,7 +5233,7 @@ func TestCableReadinessUsesVerifiedLiveSurface(t *testing.T) {
 				server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
 				server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
 				server.streamStatus = func(context.Context, string) displayStreamInfo {
-					return displayStreamInfo{Running: true, Healthy: tc.streamHealthy,
+					return displayStreamInfo{DeviceID: "cable-a", Running: true, Healthy: tc.streamHealthy,
 						Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
 				}
 				server.readCableHealth = func(string, string) (deviceHealth, error) {
@@ -6418,7 +6418,7 @@ func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
 		if target != cableDeviceTarget {
 			t.Fatalf("Cable diagnostics target=%q, expected %q", target, cableDeviceTarget)
 		}
-		return displayStreamInfo{
+		return displayStreamInfo{DeviceID: "vibetv-cable",
 			Healthy:    true,
 			Running:    true,
 			Target:     cableDeviceTarget,
@@ -8646,6 +8646,67 @@ func TestSetupConnectionModeReselectsLegacyWiFiOnlyWithoutTransition(t *testing.
 	}
 }
 
+func TestCableSelectionRejectsPreviousDeviceFrame(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "token-a"})
+	hello := cableHelloForTest("cable-b")
+	hello.Features = nil
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-b", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	frameDeviceID := "cable-a"
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: frameDeviceID, Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget, LastSentAt: time.Now().UTC().Format(time.RFC3339)}
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable","deviceId":"cable-b"}`)))
+	var selected deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &selected); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || selected.Device.DeviceID != "cable-b" || selected.Device.Ready || selected.Device.Stream.Healthy {
+		t.Fatalf("selection reused A's frame: status=%d device=%+v", rec.Code, selected.Device)
+	}
+	for _, id := range []string{"cable-a", "", "cable-b"} {
+		frameDeviceID = id
+		rec = httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var status statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+			t.Fatal(err)
+		}
+		if status.Device.Ready != (id == "cable-b") {
+			t.Fatalf("frame from %q gave readiness %+v", id, status.Device)
+		}
+	}
+}
+
+func TestCablePreviewRequiresMatchingAcknowledgedFrame(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-b"})
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	for _, id := range []string{"cable-a", "", "cable-b"} {
+		line := fmt.Sprintf("%s sent frame -> /dev/mock transport=usb deviceId=%s source=oauth fresh=true provider=codex session=29 weekly=71 sessionUnavailable=false weeklyUnavailable=false\n", time.Now().UTC().Format(time.RFC3339Nano), id)
+		if err := os.WriteFile(logPath, []byte(line), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil))
+		if id != "cable-b" {
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("preview reused frame from %q: %s", id, rec.Body.String())
+			}
+			continue
+		}
+		var got displayFrameResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusOK || got.DeviceID != "cable-b" || got.Frame.Weekly != 71 {
+			t.Fatalf("matching preview missing: %s", rec.Body.String())
+		}
+	}
+}
+
 func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode:        "cable",
@@ -8684,7 +8745,7 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 		if target != cableDeviceTarget {
 			t.Fatalf("unexpected stream target %q", target)
 		}
-		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+		return displayStreamInfo{DeviceID: "new-cable-vibetv", Healthy: true, Running: true, Target: target, LastTarget: target}
 	}
 
 	rec := httptest.NewRecorder()
@@ -8740,7 +8801,7 @@ func TestSetupConnectionModeSelectsCableWithoutPairingForBoardWithoutAuth(t *tes
 		return "", nil
 	}
 	server.streamStatus = func(context.Context, string) displayStreamInfo {
-		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+		return displayStreamInfo{DeviceID: "lilygo-cable", Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
 	}
 
 	rec := httptest.NewRecorder()
@@ -9870,7 +9931,7 @@ func TestThemeInstallUsesCableTransferWithoutWiFiDeviceCalls(t *testing.T) {
 	}
 	server.refreshStream = func(context.Context, string) error { return nil }
 	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
-		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+		return displayStreamInfo{DeviceID: "cable-device", Healthy: true, Running: true, Target: target, LastTarget: target}
 	}
 	server.waitRender = func(_ context.Context, target string, _ string, baseline deviceHealth) (deviceHealth, error) {
 		if target != cableDeviceTarget || baseline.Render.FullCount == nil || *baseline.Render.FullCount != 1 {
@@ -12237,7 +12298,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return nil
 	}
 	healthyStream := func(_ context.Context, target string) displayStreamInfo {
+		current, _ := server.config()
 		return displayStreamInfo{
+			DeviceID:   current.DeviceID,
 			Healthy:    true,
 			Running:    true,
 			LastSentAt: time.Now().UTC().Format(time.RFC3339),

@@ -73,6 +73,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onFindManualTarget: vi.fn(),
     onFinished: vi.fn(),
     onInstallTheme: vi.fn(),
+    onReturnToThemes: vi.fn(),
     themeError: null,
     onDismissThemeError: vi.fn(),
     onRetryTheme: vi.fn(),
@@ -103,6 +104,16 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     ...overrides,
   };
 }
+
+describe("SetupWizard: preview recovery", () => {
+  it("requests theme recovery without admitting an unavailable preview", () => {
+    const props = baseProps({ step: "live" });
+    render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(props.onReturnToThemes).toHaveBeenCalledOnce();
+    expect(props.onFinished).not.toHaveBeenCalled();
+  });
+});
 
 describe("SetupWizard: restored installation", () => {
   it("keeps firmware progress visible without reconnecting or finishing setup", async () => {

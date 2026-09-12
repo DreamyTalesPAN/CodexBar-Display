@@ -495,6 +495,7 @@ async function main() {
         testMixedTransportDeviceSelection,
         testRejectedPairingTokenUsesTypedRecovery,
         testFirstSetupStillWaitsForARenderedPreview,
+        testMissingCustomPreviewCanChooseTheme,
         testStartupStateMachine,
         testConnectInstallsFirmwareUpdate,
         testConnectFirmwareUpdateFailureOffersRetry,
@@ -629,6 +630,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testMissingCustomPreviewCanChooseTheme(browser, appContext.appUrl);
       await testTransientDisplayReadStillOpensOverview(
         browser,
         appContext.appUrl,
@@ -856,6 +858,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testMissingCustomPreviewCanChooseTheme(browser, appContext.appUrl);
     await testTransientDisplayReadStillOpensOverview(
       browser,
       appContext.appUrl,
@@ -5253,6 +5256,35 @@ async function testSavedPairingStartupWaitsForPreview(browser, appUrl) {
 
 // The other half of the same rule: a Mac that has NOT been through setup still
 // gets the wizard, and still has to see the VibeTV draw before Overview.
+async function testMissingCustomPreviewCanChooseTheme(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const renderPack = await readTrackedThemeRenderPackFixture("clippy");
+  const installRequests = [];
+  let missingPackReads = 0;
+  await page.route(/\/api\/theme-pack\/lost-custom\?|\/theme-packs\/render\/lost-custom\//, async (route) => {
+    missingPackReads += 1;
+    await route.fulfill({ status: 404, json: { ok: false } });
+  });
+  await page.route(/\/api\/theme-pack\/clippy\?|\/theme-packs\/render\/clippy\//, async (route) => {
+    await route.fulfill({ json: renderPack });
+  });
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { ...companionDevice, activeTheme: "lost-custom", display: { themeSpec: { active: true, renderOk: true, path: "/themes/u/lost-custom.json" } } },
+    deviceAfterThemeInstall: { ...companionDevice, activeTheme: "clippy", display: { themeSpec: { active: true, renderOk: true, path: renderPack.specPath } } },
+    installStatusSequence: [{ phase: "complete", progress: 100, logs: ["Theme is active on VibeTV."], result: { themeId: "clippy", name: "Clippy", activePath: renderPack.specPath, themeRev: 3 } }],
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await waitForCondition(() => missingPackReads > 0, "the missing custom preview should be requested");
+  assert((await page.locator("main.control-center-shell").count()) === 0, "missing custom preview must not admit the Control Center");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("heading", { name: "Choose your theme", exact: true }).waitFor();
+  await page.getByRole("radio", { name: /Fixture Clippy Theme/ }).click();
+  await page.getByRole("button", { name: "Install", exact: true }).click();
+  await page.locator("main.control-center-shell").waitFor({ timeout: 20_000 });
+  assert(installRequests.length === 1, "theme recovery must install once before a valid preview admits the app");
+  await page.close();
+}
+
 async function testFirstSetupStillWaitsForARenderedPreview(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -11306,6 +11338,7 @@ async function routeCompanionOnline(
           ok: true,
           savedAt: usageResponse?.generatedAt || "2026-06-29T10:47:46Z",
           source: "last-good-frame",
+          deviceId: currentDevice.deviceId,
           frame,
         }),
       });

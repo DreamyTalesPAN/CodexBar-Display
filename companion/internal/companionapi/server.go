@@ -147,6 +147,7 @@ var displayStreamLogKeys = []string{
 	"recovery",
 	"err",
 	"transport",
+	"deviceId",
 	"source",
 	"fresh",
 	"usageMode",
@@ -427,6 +428,7 @@ type deviceInfo struct {
 }
 
 type displayStreamInfo struct {
+	DeviceID   string `json:"deviceId,omitempty"`
 	Healthy    bool   `json:"healthy"`
 	Running    bool   `json:"running"`
 	LastSentAt string `json:"lastSentAt,omitempty"`
@@ -791,10 +793,11 @@ type usageRefreshInfo struct {
 const usageRefreshRequestMaxAge = 15 * time.Minute
 
 type displayFrameResponse struct {
-	OK      bool           `json:"ok"`
-	SavedAt string         `json:"savedAt,omitempty"`
-	Source  string         `json:"source,omitempty"`
-	Frame   protocol.Frame `json:"frame"`
+	DeviceID string         `json:"deviceId,omitempty"`
+	OK       bool           `json:"ok"`
+	SavedAt  string         `json:"savedAt,omitempty"`
+	Source   string         `json:"source,omitempty"`
+	Frame    protocol.Frame `json:"frame"`
 }
 
 type persistedDisplayFrame struct {
@@ -1575,6 +1578,9 @@ func (s *Server) withConfiguredConnectionState(
 	reachable bool,
 	identityMismatch bool,
 ) deviceInfo {
+	if samePublicTarget(device.Target, cableDeviceTarget) && device.Stream != nil {
+		device = withDisplayStreamInfo(device, *device.Stream)
+	}
 	device.Active = strings.TrimSpace(cfg.DeviceID) != ""
 	if !device.Active {
 		device.ConnectionState = deviceConnectionSetup
@@ -2180,22 +2186,35 @@ func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
 	logPath := displayStreamOutLogPath()
 	boundary, boundaryOK := displayStreamLogBoundary(logPath)
 	if boundaryOK {
-		if sentAt, frame, ok := lastDisplayStreamFrameSnapshotAfter(logPath, boundary); ok {
+		sentAt, _, line, found := lastDisplayStreamFrameLineAfter(logPath, boundary)
+		frame, valid := frameFromDisplayStreamLogLine(line)
+		deviceID := displayStreamLogValue(line, "deviceId")
+		if found && valid && (!cableMode || (strings.EqualFold(displayStreamLogValue(line, "transport"), "usb") &&
+			deviceID != "" && strings.EqualFold(deviceID, cfg.DeviceID))) {
 			writeJSON(w, http.StatusOK, displayFrameResponse{
-				OK:      true,
-				SavedAt: sentAt.UTC().Format(time.RFC3339Nano),
-				Source:  "last-sent-frame",
-				Frame:   frame.Normalize(),
+				DeviceID: deviceID,
+				OK:       true,
+				SavedAt:  sentAt.UTC().Format(time.RFC3339Nano),
+				Source:   "last-sent-frame",
+				Frame:    frame.Normalize(),
 			})
 			return
 		}
 	}
 
 	saved, ok := s.loadLastGoodDisplayFrame()
-	if !ok || !boundaryOK || (!boundary.IsZero() && saved.SavedAt.Before(boundary)) {
+	// Persisted usage has no device identity. Cable preview must use the actual
+	// acknowledged frame above, never the previous device's last-good snapshot.
+	if cableMode || !ok || !boundaryOK || (!boundary.IsZero() && saved.SavedAt.Before(boundary)) {
 		writeError(
 			w,
 			http.StatusNotFound,
@@ -5662,6 +5681,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	if cableMode {
 		device := withDisplayStreamInfo(deviceInfo{
+			DeviceID:  cfg.DeviceID,
 			Target:    publicTarget(displayTarget),
 			Connected: true,
 			Paired:    true,
@@ -9050,6 +9070,14 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 	if strings.TrimSpace(stream.Target) == "" {
 		stream.Target = device.Target
 	}
+	// All Cable devices share a transport target. Only the identity captured by
+	// the worker that sent this frame can make it proof for the selected device.
+	if samePublicTarget(device.Target, cableDeviceTarget) && (stream.Healthy || stream.LastSentAt != "") &&
+		(stream.DeviceID == "" || !strings.EqualFold(stream.DeviceID, device.DeviceID)) {
+		stream.Healthy = false
+		stream.ErrorCode = "device_frame_mismatch"
+		stream.Detail = "Waiting for an image from the selected VibeTV."
+	}
 	device.Stream = streamPointer(stream)
 	if stream.ErrorCode == "device_pairing_required" {
 		device.Paired = false
@@ -9333,6 +9361,7 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 	}
 	stream.LastSentAt = lastSentAt.UTC().Format(time.RFC3339)
 	stream.LastTarget = publicTarget(lastTarget)
+	stream.DeviceID = displayStreamLogValue(frameLine, "deviceId")
 
 	if samePublicTarget(target, cableDeviceTarget) {
 		if !strings.EqualFold(displayStreamLogValue(frameLine, "transport"), "usb") {
@@ -9479,18 +9508,6 @@ func lastDisplayStreamFrame(path string) (time.Time, string) {
 		return time.Time{}, ""
 	}
 	return when, target
-}
-
-func lastDisplayStreamFrameSnapshotAfter(path string, boundary time.Time) (time.Time, protocol.Frame, bool) {
-	when, _, line, ok := lastDisplayStreamFrameLineAfter(path, boundary)
-	if !ok {
-		return time.Time{}, protocol.Frame{}, false
-	}
-	frame, ok := frameFromDisplayStreamLogLine(line)
-	if !ok {
-		return time.Time{}, protocol.Frame{}, false
-	}
-	return when, frame, true
 }
 
 func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {

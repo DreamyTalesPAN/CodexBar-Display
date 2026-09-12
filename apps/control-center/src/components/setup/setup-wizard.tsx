@@ -103,6 +103,7 @@ export type SetupWizardProps = {
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
   onInstallTheme: () => void;
+  onReturnToThemes: () => void;
   /** What stopped the catalog read or install on the theme step. */
   themeError: ApiError | null;
   themeErrorDismissible?: boolean;
@@ -296,6 +297,10 @@ export function SetupWizard(props: SetupWizardProps) {
   const goBack = back
     ? () => {
         navigations.current += 1;
+        if (back === "theme") {
+          props.onReturnToThemes();
+          return;
+        }
         if (back === "device") {
           resetConnect();
           directAttempt.current = "";
@@ -991,6 +996,7 @@ export function SetupWizard(props: SetupWizardProps) {
         device={props.device}
         displayFrame={props.displayFrame}
         onPreviewReady={props.onFinished}
+        onBack={goBack}
         usage={props.usage}
       />
       {usageDialog}
