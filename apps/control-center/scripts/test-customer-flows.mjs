@@ -9931,16 +9931,21 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
   const installRequests = [];
   const themeInstallRequests = [];
   const browserRequests = [];
+  const activeRenderPack = await readTrackedThemeRenderPackFixture("clippy");
 
   page.on("request", (request) => {
     browserRequests.push(request.url());
   });
   await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  await page.route(/\/theme-packs\/render\/clippy\//, async (route) => {
+    await route.fulfill({ json: activeRenderPack });
+  });
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
     device: {
       ...companionDevice,
       firmware: "1.0.32",
+      display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } },
     },
     installStatusSequence: [
       {
