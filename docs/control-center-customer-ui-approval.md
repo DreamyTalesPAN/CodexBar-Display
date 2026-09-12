@@ -4419,3 +4419,8 @@ issue scope, or release permission never implies UI permission.
 - User approval: The same 2026-09-12 request specifies Theme, then Display Mode, then Show usage as.
 - Approved customer-visible result: Returning to Theme and continuing follows that order again; one enabled provider still skips Display Mode.
 - Connection-loss validation: A pending theme setup remains incomplete if the device disconnects before the initial display preference read settles. This preserves the existing recovery behavior with the new theme-first ordering.
+
+## Settings preview correction
+
+- User approval: "in den settings nicht das richtige theme zeigen, da bei der visualisierung bleiben wie vorher. auch bei show usage as"
+- Approved customer-visible result: Settings uses the previous compact provider/percentage/bar visualization for both Display Mode and Show usage as. Setup retains its selected-theme previews. The Used/Remaining preference and its persistence are unchanged.

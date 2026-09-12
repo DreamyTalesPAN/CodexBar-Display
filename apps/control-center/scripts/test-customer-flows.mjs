@@ -12979,6 +12979,12 @@ async function testThemeThenUsageChoice(browser, appUrl) {
     const choices = page.getByRole("group", { name: "Show usage as", exact: true });
     await choices.waitFor();
     assert(await choices.getByRole("button", { name: /Remaining/ }).getAttribute("aria-pressed") === "true", "Settings retains the wizard choice");
+    assert(await page.locator('svg[aria-label*="clippy"]').count() === 0, "Settings must keep the simple visualization instead of the active theme");
+    const usedPreview = choices.getByRole("button", { name: /Used/ }).locator('[data-slot="display-mode-preview"]');
+    const remainingPreview = choices.getByRole("button", { name: /Remaining/ }).locator('[data-slot="display-mode-preview"]');
+    assert((await usedPreview.textContent()).includes("90%"), "simple Used preview shows consumed usage");
+    assert((await remainingPreview.textContent()).includes("10%"), "simple Remaining preview shows available usage");
+
     if (migrationScreenshotDir) { await choices.scrollIntoViewIfNeeded(); await page.screenshot({ animations: "disabled", path: join(migrationScreenshotDir, "settings-usage-clippy.png") }); }
     await choices.getByRole("button", { name: /Used/ }).click();
     await waitForCondition(() => requests.some((request) => request.path === "/v1/preferences/codexbar.usageBarsShowUsed" && request.method === "PATCH" && JSON.parse(request.body).value === true), "Settings saves Used");
