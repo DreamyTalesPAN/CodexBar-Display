@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import {
+  previewUsageMode,
   displayPreviewFor,
   displayPreviewsFor,
 } from "./setup-display-previews";
@@ -19,7 +20,7 @@ function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
 
 describe("displayPreviewFor", () => {
   it("carries the provider's own reading", () => {
-    expect(displayPreviewFor(provider({}))).toEqual({
+    expect(displayPreviewFor(provider({}))).toMatchObject({
       providerLabel: "Codex",
       resetLabel: "Reset in 3h 0m",
       windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
@@ -122,5 +123,30 @@ describe("displayPreviewsFor", () => {
         windows: [],
       },
     ]);
+  });
+});
+
+describe("usage presentation", () => {
+  it("converts the real windows in both directions without changing quota or missing data", () => {
+    const frame = displayPreviewFor(provider({ sessionUnavailable: true,
+      windows: [{ id: "spark", label: "Codex Spark 5-hour", usedPercent: 90, resetSecs: 120 }],
+      totalTokens: 1234,
+    }))!.frame!;
+    const remaining = previewUsageMode(frame, "remaining");
+    expect(remaining.usageSlot1Percent).toBe(10);
+    expect(remaining.usageWindows[0]).toMatchObject({ label: "Codex Spark 5-hour", percent: 10, resetSecs: 120 });
+    expect(remaining.sessionUnavailable).toBe(true);
+    expect(remaining.totalTokens).toBe(1234);
+    expect(previewUsageMode(remaining, "used")).toEqual(frame);
+    expect(frame.usageWindows[0].percent).toBe(90);
+  });
+  it("preserves unavailable windows in either mode", () => {
+    const frame = displayPreviewFor(provider({ usageUnavailable: true,
+      windows: [{ id: "weekly", label: "Weekly", usedPercent: 90 }],
+    }))!.frame!;
+    const remaining = previewUsageMode(frame, "remaining");
+    expect(remaining.usageWindows).toEqual([]);
+    expect(remaining.usageSlot1Available).toBe(false);
+    expect(remaining.weeklyUnavailable).toBe(true);
   });
 });

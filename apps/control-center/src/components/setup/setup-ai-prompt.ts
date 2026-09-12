@@ -15,6 +15,7 @@ const SCREEN_SOURCE: Record<SetupStep, string> = {
   device: "apps/control-center/src/components/setup/setup-device-screen.tsx",
   providers:
     "apps/control-center/src/components/setup/setup-providers-screen.tsx",
+  usage: "Show usage as",
   display:
     "apps/control-center/src/components/setup/setup-display-mode-screen.tsx",
   theme: "apps/control-center/src/components/setup/setup-theme-screen.tsx",

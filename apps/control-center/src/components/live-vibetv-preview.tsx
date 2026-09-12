@@ -161,7 +161,7 @@ export type ThemePrimitive = {
   p?: string[];
 };
 
-type FrameData = {
+export type FrameData = {
   provider: string;
   label: string;
   session: number;

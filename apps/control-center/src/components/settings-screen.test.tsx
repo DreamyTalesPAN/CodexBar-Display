@@ -67,6 +67,7 @@ function render(
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
+      usageMode="used"
       automaticPreviews={[]}
       brightness={brightness}
       busyAction={null}
@@ -208,7 +209,7 @@ describe("SettingsScreen standby controls", () => {
     const html = render(standbyDevice);
     const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
 
-    expect(headings).toHaveLength(6);
+    expect(headings).toHaveLength(7);
     expect(html).toContain(">Display</h2>");
     expect(html).toContain(">Display mode</h2>");
     expect(html).toContain(">AI providers</h2>");
@@ -216,7 +217,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain(">Connection</h2>");
     expect(html).toContain(">Setup</h2>");
     expect(html).toContain("Connect this Mac to another VibeTV.");
-    expect(html.match(/<section /g)).toHaveLength(6);
+    expect(html.match(/<section /g)).toHaveLength(7);
   });
 
   // The provider list is the longest thing on the page, so it closes it rather
@@ -229,8 +230,9 @@ describe("SettingsScreen standby controls", () => {
 
     expect(order).toEqual([
       "Connection",
-      "Display",
       "Display mode",
+      "Show usage as",
+      "Display",
       "Screensaver",
       "Setup",
       "AI providers",
@@ -317,6 +319,7 @@ describe("SettingsScreen standby controls", () => {
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
+      usageMode="used"
         automaticPreviews={[]}
         brightness={50}
         busyAction="firmware-update"

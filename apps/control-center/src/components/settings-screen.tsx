@@ -1,5 +1,8 @@
 "use client";
 
+import { UsageModeChoice } from "./setup/setup-usage-mode-screen";
+import type { UsageDisplayMode } from "./setup/setup-display-previews";
+import type { SetupThemeOption } from "./setup/setup-theme-screen";
 import { CircleArrowRight, Wifi } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -50,6 +53,10 @@ export function standbyTimeoutLabel(minutes: number): string {
 }
 
 export type SettingsScreenProps = {
+  usageMode?: UsageDisplayMode | null;
+  usageSavePending?: boolean;
+  onUsageModeChange?: (mode: UsageDisplayMode) => void;
+  previewTheme?: SetupThemeOption;
   /** Live usage per provider, in the order Automatic moves through them. */
   automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
@@ -70,6 +77,7 @@ export type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
+  usageMode, usageSavePending, onUsageModeChange, previewTheme,
   automaticPreviews,
   device,
   brightness,
@@ -219,35 +227,10 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="Display">
-        <BrightnessControl
-          disabled={
-            !brightnessSupport ||
-            !deviceIsReady(device) ||
-            brightness == null ||
-            localActionBusy
-          }
-          id="vibetv-brightness"
-          label="Brightness"
-          max={maxBrightness}
-          min={minBrightness}
-          onSave={onSaveBrightness}
-          onValueChange={onBrightnessChange}
-          value={currentBrightness}
-          valueLabel={
-            !brightnessSupport
-              ? "Not supported"
-              : brightness == null
-                ? "Loading"
-                : `${brightness}%`
-          }
-        />
-      </SettingsSection>
-
-      <ItemSeparator className="my-0" />
-
       <SettingsSection title="Display mode">
         <DisplayModeChoice
+          previewTheme={previewTheme}
+          usageMode={usageMode ?? undefined}
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}
           manualPreview={
@@ -256,7 +239,7 @@ export function SettingsScreen({
                 preview.providerLabel ===
                 displayable.find(
                   (item) =>
-                    item.providerId === providerPicker.display?.providerIds[0],
+                    item.providerId === manualProviderId,
                 )?.label,
             ) ?? null
           }
@@ -287,6 +270,38 @@ export function SettingsScreen({
           }))}
           saving={displaySavePending}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
+        />
+      </SettingsSection>
+      <ItemSeparator className="my-0" />
+      <SettingsSection title="Show usage as">
+        <UsageModeChoice mode={usageMode ?? null} onSelect={(mode) => onUsageModeChange?.(mode)}
+          saving={usageSavePending || localActionBusy} theme={previewTheme}
+          preview={automaticPreviews.find((preview) => preview.providerLabel ===
+            displayable.find((item) => item.providerId === manualProviderId)?.label) ?? automaticPreviews[0] ?? null} />
+      </SettingsSection>
+      <ItemSeparator className="my-0" />
+      <SettingsSection title="Display">
+        <BrightnessControl
+          disabled={
+            !brightnessSupport ||
+            !deviceIsReady(device) ||
+            brightness == null ||
+            localActionBusy
+          }
+          id="vibetv-brightness"
+          label="Brightness"
+          max={maxBrightness}
+          min={minBrightness}
+          onSave={onSaveBrightness}
+          onValueChange={onBrightnessChange}
+          value={currentBrightness}
+          valueLabel={
+            !brightnessSupport
+              ? "Not supported"
+              : brightness == null
+                ? "Loading"
+                : `${brightness}%`
+          }
         />
       </SettingsSection>
 
