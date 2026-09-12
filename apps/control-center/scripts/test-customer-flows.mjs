@@ -453,6 +453,7 @@ async function main() {
       return;
     }
     if (process.argv.includes("--usage-choice")) {
+      await testThemeSetupLeavesChooserWhenConnectionIsLost(browser, appContext.appUrl);
       await testThemeThenUsageChoice(browser, appContext.appUrl);
       console.log("theme and usage choice flows passed");
       return;
@@ -4729,7 +4730,7 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     page,
     installRequests,
     () => {},
-    { device: themeMissingDevice, searchDevices: [] },
+    { device: themeMissingDevice, searchDevices: [], providerDisplayGetDelayMs: 6000 },
   );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -12956,6 +12957,15 @@ async function testThemeThenUsageChoice(browser, appUrl) {
       console.error(JSON.stringify(requests.filter((request) => request.method !== "GET")));
       throw error;
     });
+    if (count === 2) {
+      await usage.getByRole("button", { name: "Back", exact: true }).click();
+      await setupScreen(page, SETUP_DISPLAY_SCREEN).getByRole("button", { name: "Back", exact: true }).click();
+      await theme.getByRole("button", { name: "Continue", exact: true }).click();
+      const display = setupScreen(page, SETUP_DISPLAY_SCREEN);
+      await display.waitFor({ timeout: 15000 });
+      await display.getByRole("button", { name: "Continue", exact: true }).click();
+      await usage.waitFor();
+    }
     assert(!await setupScreen(page, SETUP_DISPLAY_SCREEN).isVisible(), "single provider skips Display Mode");
     await usage.locator('svg[aria-label*="clippy"]').first().waitFor();
     await usage.getByRole("button", { name: /Remaining/ }).click();

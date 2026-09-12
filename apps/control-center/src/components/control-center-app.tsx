@@ -4032,7 +4032,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerSelectionSetup?.providerSelectionComplete === true,
       displayConfigured: displaySetupComplete,
       providerSetupCompletedThisSession,
-      themeSetupRequired,
+      // A lost connection does not complete the theme setup already observed.
+      themeSetupRequired: themeSetupRequired || themeSetupIdentity !== null,
     });
   if (enteredControlCenterThisSession === null && setupIdentityKnown) {
     setEnteredControlCenterThisSession(setupLooksComplete);
@@ -4765,6 +4766,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }}
           selectedThemeInstalled={setupThemeAlreadyActive}
           onInstallTheme={() => {
+            setSetupDisplayConfirmed(false);
             if (setupThemeAlreadyActive) {
               setSetupThemeChoiceRequired(false);
               return Promise.resolve(true);

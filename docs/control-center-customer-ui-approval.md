@@ -4415,3 +4415,7 @@ issue scope, or release permission never implies UI permission.
 - Screenshot follow-up: Keep both preview cards aligned at the top when their descriptions have different lengths, as in the approved design above.
 - User approval: The 2026-09-12 request to implement the updated design ("bau das beides noch ein") covers this alignment correction in the same cards.
 - Approved customer-visible result: Display Mode and Show usage as keep the selected theme previews aligned at the top, even when their descriptions wrap to different lengths.
+
+- User approval: The same 2026-09-12 request specifies Theme, then Display Mode, then Show usage as.
+- Approved customer-visible result: Returning to Theme and continuing follows that order again; one enabled provider still skips Display Mode.
+- Connection-loss validation: A pending theme setup remains incomplete if the device disconnects before the initial display preference read settles. This preserves the existing recovery behavior with the new theme-first ordering.
