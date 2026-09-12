@@ -35,12 +35,13 @@ void test_scan_filters_deduplicates_and_sorts() {
   TEST_ASSERT_FALSE(AddScanResult(state, "FiveGHz", -30, 36));
   TEST_ASSERT_TRUE(AddScanResult(state, "Weak", -82, 1));
   TEST_ASSERT_TRUE(AddScanResult(state, "Home", -67, 6));
-  TEST_ASSERT_TRUE(AddScanResult(state, "Strong", -48, 11));
+  TEST_ASSERT_TRUE(AddScanResult(state, "Strong", -48, 11, false));
   TEST_ASSERT_TRUE(AddScanResult(state, "Home", -55, 1));
   FinishScan(state, 5);
 
   TEST_ASSERT_EQUAL_UINT8(3, state.networkCount);
   TEST_ASSERT_EQUAL_STRING("Strong", state.networks[0].ssid);
+  TEST_ASSERT_FALSE(state.networks[0].encrypted);
   TEST_ASSERT_EQUAL_STRING("Home", state.networks[1].ssid);
   TEST_ASSERT_EQUAL_INT(-55, state.networks[1].rssi);
   TEST_ASSERT_EQUAL_STRING("Weak", state.networks[2].ssid);

@@ -420,8 +420,8 @@ main() {
     'the runtime must own the paired device before the API firmware update starts'
   assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
     'public guest states must prove already_current through the runtime API as well'
-  assert_contains "$GUEST_TEST" 'if expected_uploads and not any(event.get("path") == "/update/firmware.raw"' \
-    'the Raw OTA assertion must be conditional: a candidate whose firmware matches the baseline uploads nothing, and demanding a Raw OTA regardless fails every release that ships no new firmware'
+  assert_contains "$GUEST_TEST" 'if expected_uploads and not any(event.get("path") == "/update/firmware"' \
+    'the multipart OTA assertion must be conditional: a candidate whose firmware matches the baseline uploads nothing, and demanding an upload regardless fails every release that ships no new firmware'
   assert_contains "$GUEST_TEST" 'expected_uploads = int(sys.argv[2])' \
     'guest test must read the expected upload count once and reuse it for both state assertions'
   assert_contains "$GUEST_TEST" 'listenerOwner' \

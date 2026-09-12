@@ -10,6 +10,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +41,7 @@ function provider(): ProviderItem {
     effectiveValue: true,
     health: { message: "", service: "operational", state: "healthy" },
     id: "codexbar.providers.codex.enabled",
+    providerId: "codex",
     label: "Codex",
     owner: "codexbar",
     value: true,
@@ -54,6 +56,8 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
       connect: vi.fn(),
       installFirmware: vi.fn(),
     } as unknown as SetupWizardProps["connectSteps"],
+    connectionMode: "wifi",
+    connectionModeChoiceRequired: undefined as unknown as boolean,
     device: null,
     deviceCandidates: [],
     deviceSearchState: "idle",
@@ -64,10 +68,12 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     displayProviders: [{ id: "codex", label: "Codex" }],
     installingTheme: false,
     onCreateSupportReport: vi.fn(),
+    onConfigureWiFi: vi.fn(),
     onDisplayContinue: vi.fn(),
     onFindManualTarget: vi.fn(),
     onFinished: vi.fn(),
     onInstallTheme: vi.fn(),
+    onReturnToThemes: vi.fn(),
     themeError: null,
     onDismissThemeError: vi.fn(),
     onRetryTheme: vi.fn(),
@@ -79,6 +85,8 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     providerError: null,
     searchError: null,
     onSearchDevices: vi.fn(),
+    onScanWiFiNetworks: vi.fn(),
+    onSelectConnectionMode: vi.fn(),
     pendingCheckIds: new Set<string>(),
     pendingPreferenceIds: new Set<string>(),
     providersLoading: false,
@@ -89,11 +97,41 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     step: "display",
     themeInstallLogs: [],
     themes: [],
-    usage: null,
+    usage: { providers: ["codex", "claude"].map((id) => ({
+      id, label: id, session: 0, weekly: 0, resetSecs: 0, usageMode: "used",
+    })) },
     welcomeLines: [],
     ...overrides,
   };
 }
+
+describe("SetupWizard: preview recovery", () => {
+  it("requests theme recovery without admitting an unavailable preview", () => {
+    const props = baseProps({ step: "live" });
+    render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(props.onReturnToThemes).toHaveBeenCalledOnce();
+    expect(props.onFinished).not.toHaveBeenCalled();
+  });
+});
+
+describe("SetupWizard: restored installation", () => {
+  it("keeps firmware progress visible without reconnecting or finishing setup", async () => {
+    const props = baseProps({
+      step: "device",
+      connectionModeChoiceRequired: false,
+      deviceSearchState: "idle",
+      deviceCandidates: [{ target: "http://192.168.178.73", deviceId: "vibetv-1", transport: "wifi" }],
+      firmwareInstallLogs: ["Updating VibeTV.", "Restarting VibeTV."],
+    });
+    render(<SetupWizard {...props} />);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(screen.getByRole("status").textContent).toContain("Restarting VibeTV.");
+    expect(props.connectSteps.connect).not.toHaveBeenCalled();
+    expect(props.connectSteps.installFirmware).not.toHaveBeenCalled();
+    expect(props.onFinished).not.toHaveBeenCalled();
+  });
+});
 
 describe("SetupWizard: theme failures", () => {
   it("shows an unavailable catalog over the theme step and reloads it", () => {
@@ -245,19 +283,13 @@ describe("SetupWizard: initial provider scan", () => {
     } as ProviderItem;
     const stepAfterConnection = (
       providerSelectionRequired: boolean,
-      providerSetupCompletedThisSession: boolean,
     ) =>
       deriveSetupStep({
         deviceUsable: setupDeviceIsUsable({
           connectionRecoveryRequired: false,
           deviceConnected: true,
-          displayRemediationRequired: false,
           hasActiveDevice: true,
           hasEnteredControlCenter: false,
-          providerSelectionRequired,
-          providerSetupCompletedThisSession,
-          themeSetupRequired: false,
-          ready: false,
         }),
         displayConfigured: false,
         displaySelectionSupported: true,
@@ -297,7 +329,7 @@ describe("SetupWizard: initial provider scan", () => {
 
     // Pairing updates the parent state before the firmware check finishes. The
     // wizard must keep the device screen until that check has actually answered.
-    props = { ...props, step: stepAfterConnection(true, false) };
+    props = { ...props, step: stepAfterConnection(true) };
     rerender(<SetupWizard {...props} />);
     expect(shownStep()).toBe("Choose your VibeTV");
 
@@ -328,7 +360,7 @@ describe("SetupWizard: initial provider scan", () => {
     // the first usage frame is still missing. That must advance to Display Mode,
     // not briefly send the freshly connected customer back to Device.
     await act(async () => {
-      props = { ...props, step: stepAfterConnection(false, true) };
+      props = { ...props, step: stepAfterConnection(false) };
       rerender(<SetupWizard {...props} />);
       finishProviderCompletion(true);
     });
@@ -455,7 +487,430 @@ function shownStep(): string {
   return document.querySelector("main")?.getAttribute("aria-label") ?? "";
 }
 
+describe("SetupWizard: direct connection", () => {
+  it.each([1, 2])("connects the selected WiFi device without switching any of %i Cable devices", async (cableCount) => {
+    const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "cable-a", transport: "cable" };
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-b", transport: "wifi" };
+    const connect = vi.fn().mockResolvedValue({ firmware: "1.0.42" });
+    const onSelectConnectionMode = vi.fn();
+    render(<SetupWizard {...baseProps({
+      step: "device", connectionMode: "", connectionModeChoiceRequired: true,
+      deviceCandidates: [cable, ...(cableCount === 2 ? [{ ...cable, deviceId: "cable-b" }] : []), wifi], deviceSearchState: "multiple",
+      onSelectConnectionMode,
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    })} />);
+    expect(screen.getByRole("heading", { name: "Choose your VibeTV" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /wifi-b/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(wifi));
+    expect(onSelectConnectionMode).not.toHaveBeenCalled();
+  });
+
+  it("keeps the completed connection screen until the provider state arrives", async () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: "cable://vibetv", deviceId: "cable-a", transport: "cable" }],
+      connectSteps: { connect: vi.fn().mockResolvedValue({ firmware: "1.0.40" }), checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await waitFor(() => expect(screen.getByText("> firmware is up to date")).toBeTruthy());
+    expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Choose your VibeTV" })).toBeNull();
+    rerender(<SetupWizard {...props} step="welcome" deviceCandidates={[]} deviceSearchState="searching" />);
+    expect(screen.getByRole("heading", { name: "Connecting to VibeTV" })).toBeTruthy();
+    expect(screen.getByText("> firmware is up to date")).toBeTruthy();
+  });
+
+  it.each(["waiting", "not-found"] as const)("keeps Welcome behind an empty device result (%s)", (deviceSearchState) => {
+    render(<SetupWizard {...baseProps({
+      step: "device", deviceSearchState, deviceCandidates: [],
+      connectionMode: "", connectionModeChoiceRequired: false,
+    })} />);
+    expect(document.querySelector('main[aria-label="Welcome"]')).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Choose your VibeTV" })).toBeNull();
+  });
+
+  it("runs the approved connect flow again after Back from providers", async () => {
+    const connect = vi.fn().mockResolvedValue({ firmware: "1.0.40" });
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: "cable://vibetv", deviceId: "cable-a", transport: "cable" }],
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText("> firmware is up to date")).toBeTruthy());
+    rerender(<SetupWizard {...props} step="providers" />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(shownStep()).toBe("Choose AI providers"));
+    expect(screen.queryByText("VibeTV is being connected automatically.")).toBeNull();
+  });
+
+  it("requires selection when only another WiFi device is found while the bound cable device reconnects", async () => {
+    const connect = vi.fn();
+    render(<SetupWizard {...baseProps({
+      step: "device",
+      connectionMode: "cable",
+      connectionModeChoiceRequired: true,
+      activeDeviceId: "5804508",
+      device: null,
+      deviceCandidates: [{ target: "http://192.168.178.105", deviceId: "5804416", transport: "wifi" }],
+      deviceSearchState: "multiple",
+      connectSteps: { checkFirmware: vi.fn(), connect, installFirmware: vi.fn() },
+    })} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(connect).not.toHaveBeenCalled();
+    expect(screen.queryByText("Connecting to VibeTV")).toBeNull();
+  });
+
+  it("retries the same single device after a fresh search", async () => {
+    const candidate: DeviceCandidate = {
+      target: "http://192.168.1.42",
+      deviceId: "vibetv-42",
+      transport: "wifi",
+    };
+    const connect = vi.fn().mockRejectedValue({
+      message: "VibeTV could not connect",
+      nextAction: "Search again.",
+    });
+    const onSearchDevices = vi.fn();
+    const props = baseProps({
+      step: "device",
+      connectionModeChoiceRequired: true,
+      deviceCandidates: [candidate],
+      deviceSearchState: "multiple",
+      connectSteps: {
+        checkFirmware: vi.fn(),
+        connect,
+        installFirmware: vi.fn(),
+      },
+      onSearchDevices,
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    const failure = await screen.findByRole("dialog", {
+      name: "VibeTV could not connect",
+    });
+    fireEvent.click(
+      within(failure).getByRole("button", { name: "Search again" }),
+    );
+    expect(onSearchDevices).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <SetupWizard
+        {...props}
+        deviceCandidates={[]}
+        deviceSearchState="searching"
+      />,
+    );
+    rerender(<SetupWizard {...props} />);
+
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
+  });
+
+  it.each([
+    { message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry." },
+    { message: "VibeTV could not save these WiFi details.", nextAction: "Check the Cable and try again." },
+  ])("shows a rejected WiFi submission and allows retry: $message", async (failure) => {
+    const onConfigureWiFi = vi.fn()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValue("configured-device");
+    render(<SetupWizard {...baseProps({
+      step: "device",
+      initialWiFiSetup: { status: "wifi_credentials_required", deviceId: "configured-device" },
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onConfigureWiFi,
+    })} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter hidden network" }));
+    fireEvent.change(screen.getByLabelText("WiFi network"), { target: { value: "Home" } });
+    fireEvent.change(screen.getByLabelText("WiFi password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    const alert = await screen.findByRole("dialog", { name: "WiFi setup failed" });
+    expect(alert.textContent).toContain(failure.message);
+    expect(alert.textContent).toContain(failure.nextAction);
+    fireEvent.click(within(alert).getByRole("button", { name: "OK" }));
+    expect((screen.getByLabelText("WiFi network") as HTMLInputElement).value).toBe("Home");
+    expect((screen.getByLabelText("WiFi password") as HTMLInputElement).value).toBe("test-password");
+    const retry = screen.getByRole("button", { name: "Connect to WiFi" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+    fireEvent.click(retry);
+    await screen.findByRole("button", { name: "Connecting to WiFi…" });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onConfigureWiFi).toHaveBeenCalledTimes(2);
+    expect(onConfigureWiFi).toHaveBeenLastCalledWith("Home", "test-password");
+  });
+
+  it.each(["choice", "failed-cable", "settings"] as const)("connects the same VibeTV over WiFi from %s", async (entry) => {
+    const cable: DeviceCandidate = {
+      target: "cable://vibetv",
+      deviceId: "configured-device",
+      transport: "cable",
+    };
+    const otherWiFi: DeviceCandidate = {
+      target: "http://192.168.1.10",
+      deviceId: "other-device",
+      transport: "wifi",
+    };
+    const transitioned: DeviceCandidate = {
+      target: "http://192.168.1.42",
+      deviceId: "configured-device",
+      transport: "wifi",
+    };
+    const connect = vi.fn().mockResolvedValue({
+      board: "esp8266_smalltv_st7789",
+      firmware: "1.0.40",
+    });
+    const onConfigureWiFi = vi
+      .fn()
+      .mockResolvedValue("configured-device");
+    const props = baseProps({
+      step: "device",
+      connectionMode: "cable",
+      connectionModeChoiceRequired: entry === "choice",
+      initialWiFiSetup: entry === "settings" ? { status: "wifi_credentials_required", deviceId: cable.deviceId } : null,
+      deviceCandidates: entry === "choice" ? [cable, transitioned, otherWiFi] : [cable],
+      deviceSearchState: "multiple",
+      connectSteps: {
+        checkFirmware: entry === "failed-cable"
+          ? vi.fn().mockRejectedValueOnce({ message: "Firmware unavailable" }).mockResolvedValue(null)
+          : vi.fn().mockResolvedValue(null),
+        connect,
+        installFirmware: vi.fn(),
+      },
+      onConfigureWiFi,
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onSelectConnectionMode: vi.fn().mockResolvedValue({
+        status: "wifi_credentials_required",
+        deviceId: "configured-device",
+      }),
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    if (entry === "choice") {
+      fireEvent.click(screen.getByRole("radio", { name: /configured-device/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+      fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+      expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    } else if (entry === "failed-cable") {
+      await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+      fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+      fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
+    } else {
+      await waitFor(() => expect(props.onScanWiFiNetworks).toHaveBeenCalledOnce());
+      expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+    }
+    await screen.findByRole("heading", { name: "Connect VibeTV to WiFi" });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Enter hidden network" }),
+    );
+    fireEvent.change(screen.getByLabelText("WiFi network"), {
+      target: { value: "Home" },
+    });
+    expect(screen.queryByText("WiFi details sent over cable")).toBeNull();
+    expect((screen.getByRole("button", { name: "Connect to WiFi" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.submit(screen.getByLabelText("WiFi network").closest("form")!);
+    expect(onConfigureWiFi).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("WiFi password"), {
+      target: { value: "test-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    await waitFor(() => expect(onConfigureWiFi).toHaveBeenCalledWith("Home", "test-password"));
+    const network = screen.getByLabelText("WiFi network") as HTMLInputElement;
+    expect(network.value).toBe("Home");
+    expect(network.disabled).toBe(true);
+    const waiting = screen.getByRole("button", { name: "Connecting to WiFi…" }) as HTMLButtonElement;
+    expect(waiting.disabled).toBe(true);
+    fireEvent.submit(network.closest("form")!);
+    expect(onConfigureWiFi).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Edit WiFi details" }));
+    expect((screen.getByLabelText("WiFi network") as HTMLInputElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("WiFi password"), {
+      target: { value: "corrected-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    await waitFor(() => expect(onConfigureWiFi).toHaveBeenLastCalledWith("Home", "corrected-password"));
+
+    rerender(
+      <SetupWizard
+        {...props}
+        deviceCandidates={[transitioned]}
+        deviceSearchState="multiple"
+      />,
+    );
+
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(transitioned));
+  });
+});
+
+describe("SetupWizard: WiFi recovery dialogs", () => {
+  it.each(["choice", "not-found"])("shows a rejected WiFi selection from %s and allows retry", async (entry) => {
+    const failure = { code: "cable_missing", message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry." };
+    const onSelectConnectionMode = vi.fn().mockRejectedValue(failure);
+    render(<SetupWizard {...baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: entry === "choice",
+      deviceSearchState: entry === "choice" ? "multiple" : "not-found",
+      deviceCandidates: entry === "choice" ? [{ target: "cable://vibetv", deviceId: "same", transport: "cable" }, { target: "http://192.168.1.42", deviceId: "same", transport: "wifi" }] : [],
+      onSelectConnectionMode,
+    })} />);
+    function chooseWiFi() {
+      if (entry === "choice") {
+        fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+        fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+      } else {
+        fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ }));
+      }
+    }
+    chooseWiFi();
+    const dialog = await screen.findByRole("dialog", { name: "WiFi setup failed" });
+    expect(dialog.textContent).toContain(failure.message);
+    expect(dialog.textContent).toContain(failure.nextAction);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole("button", { name: "OK" }));
+    chooseWiFi();
+    await screen.findByRole("dialog", { name: "WiFi setup failed" });
+    expect(onSelectConnectionMode).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the Cable-free deadline and restores recovery after dismissal", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+    });
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ })); });
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    const dialog = screen.getByRole("dialog", { name: "WiFi setup failed" });
+    expect(dialog.textContent).toContain("VibeTV did not reconnect.");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches);
+    fireEvent.click(within(dialog).getByRole("button", { name: "OK" }));
+    const recovery = screen.getByRole("dialog", { name: "We couldn't find your VibeTV" });
+    expect(within(recovery).getByRole("button", { name: /Use the cable/ })).toBeTruthy();
+    fireEvent.click(within(recovery).getByRole("button", { name: "Scan again" }));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 1);
+  });
+});
+
+describe("SetupWizard: bounded WiFi discovery", () => {
+  it("retries empty and failed scans until the same device appears", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", deviceSearchState: "not-found",
+      initialWiFiSetup: { status: "waiting_for_wifi", deviceId: "fresh-device" },
+      connectSteps: { connect: vi.fn().mockResolvedValue({}), checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    // Status renders and new callback identities must not postpone discovery.
+    for (let i = 0; i < 3; i++) {
+      rerender(<SetupWizard {...props} onSearchDevices={() => props.onSearchDevices()} />);
+      await act(() => vi.advanceTimersByTimeAsync(500));
+    }
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(1);
+    rerender(<SetupWizard {...props} deviceSearchState="searching" />);
+    rerender(<SetupWizard {...props} searchError={{ code: "network_unavailable", message: "WiFi unavailable", nextAction: "Reconnect WiFi." }} />);
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(2);
+    const other: DeviceCandidate = { target: "http://192.168.1.10", deviceId: "other", transport: "wifi" };
+    rerender(<SetupWizard {...props} deviceCandidates={[other]} deviceSearchState="multiple" />);
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(3);
+    expect(props.connectSteps.connect).not.toHaveBeenCalled();
+    const same: DeviceCandidate = { ...other, deviceId: "fresh-device" };
+    rerender(<SetupWizard {...props} deviceCandidates={[same]} deviceSearchState="multiple" />);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(props.connectSteps.connect).toHaveBeenCalledWith(same);
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(3);
+  });
+
+  it("releases waiting after the deadline and stops automatic searches", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", deviceSearchState: "not-found",
+      initialWiFiSetup: { status: "waiting_for_wifi", deviceId: "fresh-device" },
+    });
+    render(<SetupWizard {...props} />);
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(screen.getByRole("heading", { name: "Connect VibeTV to WiFi" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Connecting to WiFi…" })).toBeNull();
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches);
+  });
+});
+
+describe("SetupWizard: saved WiFi recovery", () => {
+  it("rescans and reconnects the same device after reusing its saved network", async () => {
+    const cable: DeviceCandidate = {
+      deviceId: "saved-device",
+      target: "cable://vibetv",
+      transport: "cable",
+    };
+    const wifi: DeviceCandidate = { ...cable, target: "http://192.168.1.42", transport: "wifi" };
+    const connect = vi.fn().mockResolvedValue({ board: "esp8266_smalltv_st7789", firmware: "1.0.40" });
+    const onSearchDevices = vi.fn();
+    const props = baseProps({
+      step: "device",
+      connectionMode: "cable",
+      connectionModeChoiceRequired: false,
+      deviceCandidates: [cable],
+      deviceSearchState: "multiple",
+      onSearchDevices,
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi", deviceId: cable.deviceId }),
+      connectSteps: {
+        connect,
+        checkFirmware: vi.fn().mockRejectedValueOnce({ message: "Firmware unavailable" }).mockResolvedValue(null),
+        installFirmware: vi.fn(),
+      },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await screen.findByRole("button", { name: "Use WiFi instead" });
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
+    await waitFor(() => expect(props.onSelectConnectionMode).toHaveBeenCalledWith("wifi", cable.deviceId));
+    await waitFor(() => expect(onSearchDevices).toHaveBeenCalledOnce(), { timeout: 2_500 });
+    expect(props.onConfigureWiFi).not.toHaveBeenCalled();
+    rerender(<SetupWizard {...props} deviceCandidates={[wifi]} />);
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(wifi));
+  });
+});
+
 describe("SetupWizard: going back", () => {
+  it("returns from WiFi credentials to the choice even after the Mac saved Cable mode", async () => {
+    const connect = vi.fn();
+    const props = baseProps({
+      step: "device",
+      connectionModeChoiceRequired: true,
+      deviceSearchState: "multiple",
+      deviceCandidates: [
+        { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" },
+        { target: "http://192.168.1.42", deviceId: "cable-device", transport: "wifi" },
+      ],
+      connectSteps: { connect, checkFirmware: vi.fn(), installFirmware: vi.fn() },
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "wifi_credentials_required", deviceId: "cable-device" }),
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByRole("heading", { name: "Connect VibeTV to WiFi" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Enter hidden network" }).hasAttribute("disabled")).toBe(false));
+    rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "How should VibeTV connect?" })).toBeTruthy();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   // The derived step stays "display" throughout: the server already accepted
   // the providers, which is exactly why Back is offered there at all. Before
   // the fix the override outlived the visit and the customer was held on the
@@ -640,11 +1095,11 @@ describe("SetupWizard: going back", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Choose your VibeTV");
+    expect(shownStep()).toBe("Welcome");
 
     await act(async () => settle(true));
 
-    expect(shownStep()).toBe("Choose your VibeTV");
+    expect(shownStep()).toBe("Welcome");
   });
 
   // The display choice is written optimistically, and the derived step reads
@@ -983,7 +1438,7 @@ describe("SetupWizard: a VibeTV that a rescan no longer finds", () => {
     ).toBe(false);
   });
 
-  it("leaves Connect closed when a rescan finds nothing at all", () => {
+  it("returns to Welcome when a rescan finds nothing at all", () => {
     const props = baseProps({
       step: "device",
       deviceSearchState: "multiple",
@@ -994,9 +1449,8 @@ describe("SetupWizard: a VibeTV that a rescan no longer finds", () => {
 
     rerender(<SetupWizard {...props} deviceCandidates={[]} />);
 
-    expect(
-      screen.getByRole("button", { name: "Connect" }).hasAttribute("disabled"),
-    ).toBe(true);
+    expect(shownStep()).toBe("Welcome");
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
   });
 });
 
@@ -1028,9 +1482,7 @@ describe("SetupWizard: a scan that could not be made", () => {
     ).toContain("System Settings");
   });
 
-  // Every dialog can be dismissed, and dismissing the only rescan control left
-  // the step with nothing but the address field. The step carries its own.
-  it("keeps a way to scan again on the step itself", () => {
+  it("offers another scan in the designed dialog over Welcome", () => {
     const onSearchDevices = vi.fn();
     render(
       <SetupWizard
@@ -1042,11 +1494,8 @@ describe("SetupWizard: a scan that could not be made", () => {
       />,
     );
 
-    fireEvent.keyDown(document.activeElement ?? document.body, {
-      key: "Escape",
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Search again" }));
-
+    expect(shownStep()).toBe("Welcome");
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
     expect(onSearchDevices).toHaveBeenCalled();
   });
 

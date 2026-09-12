@@ -312,12 +312,12 @@ import json, sys
 state = json.load(open(sys.argv[1], encoding="utf-8"))
 expected_uploads = int(sys.argv[2])
 if state.get("updateUploads") != expected_uploads or state.get("violations") or state.get("framesAccepted", 0) < 1:
-    raise SystemExit("candidate companion did not complete raw OTA/render/no-op sequence")
+    raise SystemExit("candidate companion did not complete multipart OTA/render/no-op sequence")
 # A candidate whose firmware matches the baseline uploads nothing -- the outcome
-# asserted above is already_current -- so there is no Raw OTA to find. Demanding
+# asserted above is already_current -- so there is no multipart OTA to find. Demanding
 # one regardless fails every release that ships no new firmware.
-if expected_uploads and not any(event.get("path") == "/update/firmware.raw" for event in state.get("events", [])):
-    raise SystemExit("candidate companion did not use Raw OTA port 8081")
+if expected_uploads and not any(event.get("path") == "/update/firmware" for event in state.get("events", [])):
+    raise SystemExit("candidate companion did not use multipart OTA")
 PY
 
 if [[ "$STATE" == clean_os ]]; then
@@ -327,5 +327,5 @@ fi
 screencapture -x "$OUTPUT/guest-${STATE}.png"
 python3 - "$OUTPUT/result.json" "$STATE" "$VERSION" <<'PY'
 import json, sys
-json.dump({"schemaVersion": 1, "state": sys.argv[2], "version": sys.argv[3], "status": "passed", "checks": ["signed-dmg", "installed-baseline-to-sparkle-update", "candidate-companion-raw-ota-rediscovery-no-op", "candidate-daemon-render", "installed-runtime-port-47832"]}, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+json.dump({"schemaVersion": 1, "state": sys.argv[2], "version": sys.argv[3], "status": "passed", "checks": ["signed-dmg", "installed-baseline-to-sparkle-update", "candidate-companion-multipart-ota-rediscovery-no-op", "candidate-daemon-render", "installed-runtime-port-47832"]}, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
 PY

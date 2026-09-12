@@ -57,7 +57,7 @@ export function selectRecoveryDevice(
 export function applyDeviceRecoveryStatus(
   state: DeviceRecoveryGateState,
   status: {
-    device?: Pick<DeviceInfo, "connected" | "deviceId" | "target"> | null;
+    device?: Pick<DeviceInfo, "active" | "connected" | "deviceId" | "target"> | null;
     countFailure?: boolean;
     operationInProgress?: boolean;
   },
@@ -69,6 +69,13 @@ export function applyDeviceRecoveryStatus(
   const selectedDeviceReachable =
     Boolean(status.device?.target) &&
     status.device?.connected !== false &&
+    deviceMatchesPreferred;
+
+  // An offline snapshot still carries the Companion's configured identity and
+  // pairing verdict. Accept it without calling it reachable or resetting loss.
+  const acceptConfiguredDevice =
+    Boolean(status.device?.target) &&
+    status.device?.active === true &&
     deviceMatchesPreferred;
 
   if (selectedDeviceReachable) {
@@ -99,10 +106,10 @@ export function applyDeviceRecoveryStatus(
 
   if (status.countFailure === false) {
     return {
-      acceptDevice: false,
+      acceptDevice: acceptConfiguredDevice,
       closePicker: false,
       openPicker: false,
-      state,
+      state: { ...state, preferredDeviceId },
     };
   }
 
@@ -114,7 +121,7 @@ export function applyDeviceRecoveryStatus(
     failedNormalChecks >= failureLimit && state.pickerReason !== "confirmed-loss";
 
   return {
-    acceptDevice: false,
+    acceptDevice: acceptConfiguredDevice,
     closePicker: false,
     openPicker,
     state: {

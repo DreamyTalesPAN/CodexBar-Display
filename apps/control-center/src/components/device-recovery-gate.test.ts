@@ -9,6 +9,38 @@ import {
 } from "./device-recovery-gate";
 
 describe("device recovery gate", () => {
+  it("remembers the bound device from an initial disconnected status", () => {
+    const initial = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+      device: { connected: false, deviceId: "5804508", target: "cable://vibetv" },
+      countFailure: false,
+    });
+    expect(initial.state.preferredDeviceId).toBe("5804508");
+    expect(initial.state.failedNormalChecks).toBe(0);
+    expect(initial.acceptDevice).toBe(false);
+    const foreign = applyDeviceRecoveryStatus(initial.state, {
+      device: { connected: true, deviceId: "5804416", target: "http://192.168.178.105" },
+    });
+    expect(foreign.acceptDevice).toBe(false);
+    expect(foreign.state.preferredDeviceId).toBe("5804508");
+  });
+
+  it("accepts saved offline identity without inventing a connection", () => {
+    const device = { active: true, connected: false, deviceId: "saved", target: "cable://vibetv" };
+    const initial = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+      device, countFailure: false,
+    });
+    expect(initial.acceptDevice).toBe(true);
+    expect(initial.state.failedNormalChecks).toBe(0);
+    const miss = applyDeviceRecoveryStatus(initial.state, { device });
+    expect(miss.acceptDevice).toBe(true);
+    expect(miss.state.failedNormalChecks).toBe(1);
+    expect(miss.closePicker).toBe(false);
+    const foreign = applyDeviceRecoveryStatus(initial.state, {
+      device: { ...device, deviceId: "other" },
+    });
+    expect(foreign.acceptDevice).toBe(false);
+  });
+
   it("keeps the preferred VibeTV through the first two normal failures", () => {
     let state = selectRecoveryDevice(createDeviceRecoveryGateState(), {
       deviceId: "stable-a",

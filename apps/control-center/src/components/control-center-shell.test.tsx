@@ -21,4 +21,25 @@ describe("ControlCenterShell", () => {
     expect(html).not.toContain("VibeTV not connected");
     expect(html).not.toContain("VibeTV connected");
   });
+
+  it("hides controls that cannot work on the active connection", () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <ControlCenterShell
+          activeTab="overview"
+          device={{ active: true, connected: true }}
+          hiddenTabs={["settings", "theme-library", "updates"]}
+          onTabChange={vi.fn()}
+        >
+          <div>Overview content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+
+    expect(html).not.toContain(">Settings<");
+    expect(html).not.toContain(">Appearance<");
+    expect(html).not.toContain(">Updates<");
+    expect(html).toContain(">Usage<");
+    expect(html).toContain(">Support<");
+  });
 });

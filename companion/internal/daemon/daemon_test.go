@@ -58,6 +58,306 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	}
 }
 
+func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("wifi"); got != "usb" {
+		t.Fatalf("runtime config must own connection mode, got %q", got)
+	}
+}
+
+func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "legacy-vibetv",
+	}); err != nil {
+		t.Fatalf("save legacy runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("usb"); got != "wifi" {
+		t.Fatalf("legacy WiFi target must override the new Cable fallback, got %q", got)
+	}
+}
+
+func TestConfiguredConnectionModeKeepsPendingWiFiTransitionOnCableWorker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget:          "http://192.168.178.72",
+		DeviceToken:           "pair-token",
+		DeviceID:              "transitioning-vibetv",
+		CableAutoBindDisabled: true,
+	}); err != nil {
+		t.Fatalf("save transitional runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("wifi"); got != "usb" {
+		t.Fatalf("pending WiFi transition must stay on Cable worker, got %q", got)
+	}
+}
+
+func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
+	cfg := runtimeconfig.Config{}
+	port, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(requested, expectedDeviceID string) (string, error) {
+			if requested != "" || expectedDeviceID != "" {
+				t.Fatalf("fresh Cable resolution received requested=%q expectedDeviceID=%q", requested, expectedDeviceID)
+			}
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                      true,
+				DeviceID:                   "fresh-vibetv",
+				ConnectionMode:             "cable",
+				ActiveTransport:            "usb",
+				SupportedTransportChannels: []string{"usb", "wifi"},
+				MaxFrameBytes:              2048,
+				ProtocolVersion:            protocol.ProtocolVersionV2,
+				NegotiatedProtocolVersion:  protocol.ProtocolVersionV2,
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve fresh Cable device: %v", err)
+	}
+	if port != "/dev/cu.usbserial-vibetv" || cfg.ConnectionMode != "cable" || cfg.DeviceID != "fresh-vibetv" {
+		t.Fatalf("fresh Cable identity was not persisted: port=%q cfg=%+v", port, cfg)
+	}
+	if !cfg.ConnectionModeChoiceRequired {
+		t.Fatal("fresh Cable auto-binding must preserve the connection chooser")
+	}
+	if !cfg.CableAutoBindDisabled {
+		t.Fatal("fresh Cable auto-binding must block writes until the connection choice")
+	}
+	if cfg.ProviderSelectionSetupIsComplete() || cfg.ProviderDisplayPredatesSetup() {
+		t.Fatal("fresh Cable binding must not skip provider and display setup")
+	}
+	if len(cfg.DeviceTransports) != 2 || cfg.DeviceTransports[1] != "wifi" {
+		t.Fatalf("fresh Cable capabilities were not persisted: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestResolveCycleDeviceDoesNotRebindCableAfterSetupReset(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode:        "cable",
+		CableAutoBindDisabled: true,
+	}
+	saveCalls := 0
+	_, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			saveCalls++
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "previous-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve Cable device after reset: %v", err)
+	}
+	if saveCalls != 0 || cfg.DeviceID != "" {
+		t.Fatalf("reset Cable binding was restored: saveCalls=%d cfg=%+v", saveCalls, cfg)
+	}
+}
+
+func TestRunCycleDoesNotWriteCableAfterSetupReset(t *testing.T) {
+	prepareFastTestEnv(t)
+	cfg := runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+	}
+	sendCalls := 0
+	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		resolveUSBDevice: func(requested, expectedDeviceID string) (string, error) {
+			if requested != "" || expectedDeviceID != "" {
+				t.Fatalf("reset Cable resolution received requested=%q expectedDeviceID=%q", requested, expectedDeviceID)
+			}
+			return "/dev/cu.usbserial-replacement", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "replacement-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		sendLine: func(string, []byte) error {
+			sendCalls++
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run reset Cable cycle: %v", err)
+	}
+	if sendCalls != 0 {
+		t.Fatalf("reset Cable cycle sent %d usage frames before an explicit choice", sendCalls)
+	}
+}
+
+func TestRunCycleDoesNotWriteCableBeforeFreshConnectionChoice(t *testing.T) {
+	prepareFastTestEnv(t)
+	cfg := runtimeconfig.Config{}
+	sendCalls := 0
+	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-fresh", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "fresh-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		sendLine: func(string, []byte) error {
+			sendCalls++
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run fresh Cable cycle: %v", err)
+	}
+	if sendCalls != 0 {
+		t.Fatalf("fresh Cable cycle sent %d usage frames before an explicit choice", sendCalls)
+	}
+	if !cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("fresh Cable choice gate was not persisted: %+v", cfg)
+	}
+}
+
+func TestResolveCycleDeviceReconcilesWiFiRollbackToCable(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: false,
+		DeviceID:                     "returning-vibetv",
+		DeviceTarget:                 "http://192.168.178.72",
+		DeviceToken:                  "pair-token",
+	}
+	_, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                      true,
+				DeviceID:                   "returning-vibetv",
+				ConnectionMode:             "cable",
+				ActiveTransport:            "usb",
+				SupportedTransportChannels: []string{"usb", "wifi"},
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve rolled-back Cable device: %v", err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("WiFi rollback was not reconciled to an explicit Cable choice: %+v", cfg)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("WiFi rollback discarded the saved pairing: %+v", cfg)
+	}
+}
+
+func TestPendingWiFiTransitionStopsPreviousWiFiWorkerBeforeProbing(t *testing.T) {
+	probes := 0
+	_, _, _, err := resolveCycleDevice("http://192.168.178.72", nil, runtimeDeps{
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceID: "14799300", DeviceTarget: "http://192.168.178.72", CableAutoBindDisabled: true}, nil
+		},
+		resolvePort: func(string) (string, error) { probes++; return "", errors.New("old WiFi target probed") },
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) || probes != 0 {
+		t.Fatalf("pending transition must replace old WiFi worker before probes: err=%v probes=%d", err, probes)
+	}
+}
+
+func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
+	err := runCycleWithDeps(context.Background(), "", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ConnectionMode: "wifi"}, nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected current Cable cycle to stop for WiFi mode, got %v", err)
+	}
+}
+
+func TestConnectionModeChangeStopsCollectorCycleBeforeResolvingOldTransport(t *testing.T) {
+	err := runCycleFromCollector(context.Background(), "", nil, nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ConnectionMode: "wifi"}, nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			t.Fatal("must leave the old Cable worker before trying to resolve it")
+			return "", nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected collector cycle to switch to WiFi, got %v", err)
+	}
+}
+
 func TestRunCycleCoordinatesOnlyTheDeviceWrite(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -3408,6 +3708,30 @@ func TestRunDaemonLoopRetriesQuicklyAfterCycleError(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopReturnsConnectionModeChange(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	cycleCalls := 0
+	err := runDaemonLoop(context.Background(), Options{Interval: time.Second}, runtimeDeps{
+		now:  time.Now,
+		logf: func(string, ...any) {},
+		after: func(time.Duration) <-chan time.Time {
+			t.Fatal("connection mode change must exit before retry wait")
+			return nil
+		},
+	}, func(context.Context) error {
+		cycleCalls++
+		return ErrConnectionModeChanged
+	})
+
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected connection mode change, got %v", err)
+	}
+	if cycleCalls != 1 {
+		t.Fatalf("expected one cycle before exit, got %d", cycleCalls)
+	}
+}
+
 func TestRunWithDepsUsesConfiguredIntervalAfterSleepWakeGap(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4172,6 +4496,33 @@ func TestProviderCollectorUsesInventoryWithoutTreatingFetchFailureAsDisable(t *t
 	collector.collectOnce(context.Background())
 	if frames := collector.providerFrames(now); len(frames) != 0 {
 		t.Fatalf("authoritative inventory did not prune disabled last provider: %#v", frames)
+	}
+}
+
+func TestProviderCollectorCancellationPreservesSharedUsage(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 8, 7, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 23, 100, 7200)}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	collector.fetchProviders = func(ctx context.Context) ([]codexbar.ParsedFrame, error) {
+		cancel() // The old display worker is stopped during a transport switch.
+		return nil, ctx.Err()
+	}
+	collector.collectOnce(ctx)
+	usage, ok := LoadPersistedUsage(now)
+	if !ok || len(usage.Providers) != 1 || usage.Providers[0].Stale || usage.Providers[0].Retained {
+		t.Fatalf("worker cancellation corrupted the shared last successful reading: %#v", usage)
 	}
 }
 
@@ -5779,6 +6130,123 @@ func TestRunDaemonLoopRetriesAfterCycleTimeout(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopWaitsForWiFiBeforeProbingDevice(t *testing.T) {
+	for _, nextMode := range []string{"wifi", "cable"} {
+		t.Run(nextMode, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			cfg := runtimeconfig.Config{DeviceID: "switching-device", CableAutoBindDisabled: true}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			waits, cycles := 0, 0
+			deps := runtimeDeps{
+				transportName: "usb", homeDir: func() (string, error) { return t.TempDir(), nil },
+				loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+				now:        time.Now, logf: func(string, ...any) {},
+				after: func(time.Duration) <-chan time.Time {
+					waits++
+					if waits > 1 {
+						return nil
+					}
+					cfg.ConnectionMode = nextMode
+					cfg.CableAutoBindDisabled = false
+					resumed := make(chan time.Time, 1)
+					resumed <- time.Now()
+					return resumed
+				},
+			}
+			err := runDaemonLoop(ctx, Options{Interval: time.Second}, deps, func(context.Context) error {
+				cycles++
+				if cfg.WiFiTransitionPending() {
+					t.Error("old USB worker probed while WiFi was joining")
+				}
+				if connectionModeChanged(deps) {
+					return ErrConnectionModeChanged
+				}
+				cancel()
+				return nil
+			})
+			if nextMode == "wifi" && !errors.Is(err, ErrConnectionModeChanged) {
+				t.Fatalf("WiFi commit must replace USB worker: %v", err)
+			}
+			if nextMode == "cable" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("Cable cancellation must resume worker: %v", err)
+			}
+			if waits < 1 || cycles != 1 {
+				t.Fatalf("waits=%d cycles=%d; want a pause before the one resumed cycle", waits, cycles)
+			}
+		})
+	}
+}
+
+func TestRunDaemonLoopRecoversCableAfterUnconfirmedWiFi(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		startedMinutesAgo int
+		retry             bool
+		probes            []int
+	}{
+		{name: "legacy pending state", probes: []int{11}},
+		{name: "restart during persisted window", startedMinutesAgo: 10, probes: []int{1}},
+		{name: "restart after persisted window", startedMinutesAgo: 20, probes: []int{0}},
+		{name: "new credential attempt restarts quiet window", retry: true, probes: []int{21}},
+		{name: "absent device gets bounded probes", probes: []int{11, 22}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			home := t.TempDir()
+			cfg := runtimeconfig.Config{DeviceID: "switching-device", CableAutoBindDisabled: true}
+			now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+			started := now
+			if tc.startedMinutesAgo != 0 {
+				cfg.WiFiTransitionStartedAt = now.Add(-time.Duration(tc.startedMinutesAgo) * time.Minute).Unix()
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			cycles := 0
+			deps := runtimeDeps{
+				transportName: "usb", homeDir: func() (string, error) { return home, nil },
+				loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+				saveConfig: func(_ string, next runtimeconfig.Config) error { cfg = next; return nil },
+				now:        func() time.Time { return now }, logf: func(string, ...any) {},
+				after: func(time.Duration) <-chan time.Time {
+					if ctx.Err() != nil || cycles == len(tc.probes) {
+						return nil
+					}
+					now = now.Add(time.Minute)
+					if tc.retry && now.Sub(started) == 10*time.Minute {
+						cfg.WiFiTransitionStartedAt = now.Unix()
+					}
+					if now.Sub(started) > 24*time.Minute {
+						cancel()
+					}
+					tick := make(chan time.Time, 1)
+					tick <- now
+					return tick
+				},
+			}
+			err := runDaemonLoop(ctx, Options{Interval: time.Minute}, deps, func(context.Context) error {
+				if cycles >= len(tc.probes) || now.Sub(started) != time.Duration(tc.probes[cycles])*time.Minute {
+					t.Errorf("unexpected USB probe at %s", now.Sub(started))
+					cancel()
+					return ctx.Err()
+				}
+				cycles++
+				if cycles == len(tc.probes) {
+					persistActiveCableIdentity(protocol.DeviceCapabilities{Known: true, DeviceID: cfg.DeviceID, ActiveTransport: "usb", ConnectionMode: "cable"}, deps)
+					cancel()
+				}
+				return nil
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+			if cycles != len(tc.probes) || cfg.WiFiTransitionPending() || cfg.ConnectionMode != "cable" {
+				t.Fatalf("Cable did not resume after firmware rollback: cycles=%d mode=%q pending=%v", cycles, cfg.ConnectionMode, cfg.WiFiTransitionPending())
+			}
+		})
+	}
+}
+
 func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -6061,6 +6529,65 @@ func TestRunCycleFromCollectorWaitsForFirstCollectionBeforeNoProviders(t *testin
 	}
 }
 
+func TestRunCycleFromCollectorExpiresSnapshotWhileFirstCollectionWarms(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
+
+	now := time.Date(2026, 8, 31, 9, 15, 0, 0, time.UTC)
+	collectedAt := now.Add(-defaultProviderMaxAge - time.Second)
+	lastGood := testParsedFrame("codex", 8, 0, 3600).Frame
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    lastGood,
+		lastGoodAt:  collectedAt,
+		hasLastGood: true,
+	}
+	collector := &providerCollector{
+		now:                 func() time.Time { return now },
+		logf:                func(string, ...any) {},
+		order:               []string{"codex"},
+		snapshotMaxAge:      defaultProviderMaxAge,
+		warmupUntil:         now.Add(time.Minute),
+		firstCollectStarted: true,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Source:    "codexbar-dashboard",
+				Collected: collectedAt,
+				Frame:     lastGood,
+			},
+		},
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("warming restart must expire stale usage, got %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 {
+		t.Fatalf("warming restart kept expired usage visible: %+v", frame)
+	}
+}
+
+func TestCollectorWarmupOutlastsCodexBarCommandAndDashboardRecovery(t *testing.T) {
+	t.Setenv(collectorWarmupEnvVar, "")
+	t.Setenv("CODEXBAR_DISPLAY_TIMEOUT_SECS", "")
+
+	wantMinimum := codexbar.CommandTimeout() + 2*time.Minute
+	if got := collectorWarmupMaxAge(); got < wantMinimum {
+		t.Fatalf("collector warm-up=%s, want at least %s", got, wantMinimum)
+	}
+}
+
 // Past the warm-up bound a collection that never completed reports its own
 // failure kind instead of flattening into no-providers: a Mac whose usage
 // engine cannot be read is not a Mac without providers.
@@ -6324,6 +6851,66 @@ func TestFirstCollectionDoesNotSettleOnTransportError(t *testing.T) {
 	}
 	if !first.warming || !first.started || first.fetchErr == nil {
 		t.Fatalf("the failed attempt keeps warming with its error retained: %+v", first)
+	}
+}
+
+func TestRunWithDepsReusesRuntimeDashboardAcrossTransports(t *testing.T) {
+	prepareFastTestEnv(t)
+	shared := staticDashboardServe{info: testDashboardServeInfo(1001)}
+	for _, mode := range []string{"usb", "wifi"} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		observed := make(chan codexbar.DashboardServeInfo, 1)
+		err := runWithDeps(ctx, Options{
+			Transport: mode, Dashboard: shared,
+			PauseDeviceWrites: func() bool { return true },
+		}, runtimeDeps{
+			transportName: mode,
+			logf:          func(string, ...any) {},
+			startDashboard: func(context.Context, func(string, ...any)) codexbar.DashboardServe {
+				t.Error("transport worker started a second CodexBar serve")
+				return shared
+			},
+			fetchDashboard: func(_ context.Context, info codexbar.DashboardServeInfo, _ time.Time) ([]codexbar.ParsedFrame, error) {
+				observed <- info
+				cancel()
+				return nil, context.Canceled
+			},
+			fetchInventory:  func(context.Context) ([]codexbar.ProviderSetting, error) { return nil, context.Canceled },
+			fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) { return nil, false },
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("%s did not collect from the shared serve: %v", mode, err)
+		}
+		select {
+		case info := <-observed:
+			if info != shared.info {
+				t.Fatalf("%s changed the source: %#v", mode, info)
+			}
+		default:
+			t.Fatalf("%s did not use the runtime dashboard", mode)
+		}
+	}
+}
+
+func TestRunWithDepsStopsOwnedDashboardOnTransportChange(t *testing.T) {
+	prepareFastTestEnv(t)
+	var dashboardCtx context.Context
+	err := runWithDeps(context.Background(), Options{Transport: "usb"}, runtimeDeps{
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		startDashboard: func(ctx context.Context, _ func(string, ...any)) codexbar.DashboardServe {
+			dashboardCtx = ctx
+			return staticDashboardServe{info: testDashboardServeInfo(1001)}
+		},
+		loadConfig: func(string) (runtimeconfig.Config, error) { return runtimeconfig.Config{ConnectionMode: "wifi"}, nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			t.Fatal("old transport must stop before collection")
+			return nil, nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) || dashboardCtx == nil || !errors.Is(dashboardCtx.Err(), context.Canceled) {
+		t.Fatalf("owned serve survived worker exit: worker=%v dashboard=%v", err, dashboardCtx)
 	}
 }
 

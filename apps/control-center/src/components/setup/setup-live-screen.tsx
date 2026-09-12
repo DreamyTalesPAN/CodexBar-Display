@@ -17,12 +17,13 @@ type SetupLiveScreenProps = {
   aiFixPrompt?: () => string;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onPreviewReady?: () => void;
+  onBack?: () => void;
   usage: UsageSnapshot | null;
 };
 
 /**
- * Last step. It has no controls and no way back: the wizard leaves on its own
- * once the first frame renders, so the only thing left to show is the frame.
+ * The wizard leaves once the first frame renders. Back keeps theme recovery
+ * available when the active custom preview was lost with the Mac's data.
  */
 export function SetupLiveScreen({
   device,
@@ -30,6 +31,7 @@ export function SetupLiveScreen({
   aiFixPrompt,
   onCreateSupportReport,
   onPreviewReady,
+  onBack,
   usage,
 }: SetupLiveScreenProps) {
   return (
@@ -37,6 +39,7 @@ export function SetupLiveScreen({
       label="Your VibeTV is live"
       aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
+      onBack={onBack}
     >
       <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>
       <LiveVibeTVPreview

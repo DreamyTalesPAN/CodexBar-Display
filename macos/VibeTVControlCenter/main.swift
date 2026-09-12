@@ -2194,6 +2194,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        for (title, action, key) in [
+            ("Cut", #selector(NSText.cut(_:)), "x"),
+            ("Copy", #selector(NSText.copy(_:)), "c"),
+            ("Paste", #selector(NSText.paste(_:)), "v"),
+            ("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ] {
+            editMenu.addItem(NSMenuItem(title: title, action: action, keyEquivalent: key))
+        }
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
         NSApp.mainMenu = mainMenu
     }
 
@@ -3737,9 +3749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 helperURL.path,
                 "daemon",
                 "--transport",
-                "wifi",
-                "--interval",
-                "30s",
+                "usb",
                 "--api-addr",
                 "127.0.0.1:47832",
                 "--api-dev-origin",
@@ -3792,13 +3802,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             label: previewRuntimeLaunchAgentLabel
         )
         _ = launchctlExitStatus(["bootout", service])
-        guard !legacyServiceIsLoaded(
-            label: previewRuntimeLaunchAgentLabel
-        ) else {
-            NSLog("VibeTV Control Center could not stop its local preview runtime")
-            return false
+        // bootout can return while the old service is still exiting. Wait for
+        // launchd to remove it before registering the replacement.
+        let deadline = Date().addingTimeInterval(runtimeUnregistrationQuiesceTimeout)
+        while legacyServiceIsLoaded(label: previewRuntimeLaunchAgentLabel) {
+            guard Date() < deadline else {
+                NSLog("VibeTV Control Center could not stop its local preview runtime")
+                return false
+            }
+            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
         }
-        try? await Task<Never, Never>.sleep(for: .milliseconds(250))
         return true
     }
 

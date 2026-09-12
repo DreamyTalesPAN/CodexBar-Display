@@ -10,6 +10,7 @@ import {
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
+  deviceUsesCable,
 } from "./control-center-types";
 import {
   companionRequestUrl,
@@ -53,6 +54,7 @@ type ThemePackState = {
 };
 
 export type DisplayFrameSnapshot = {
+  deviceId?: string;
   ok?: boolean;
   savedAt?: string;
   frame?: DisplayFrame;
@@ -262,10 +264,7 @@ type SpriteRect = {
   color: string;
 };
 
-export function useLatestDisplayFrame(
-  connected: boolean,
-  onFrame?: (frame: DisplayFrameSnapshot) => void,
-) {
+export function useLatestDisplayFrame(connected: boolean) {
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
@@ -295,7 +294,6 @@ export function useLatestDisplayFrame(
           return;
         }
         setDisplayFrame(nextFrame);
-        onFrame?.(nextFrame);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -310,7 +308,7 @@ export function useLatestDisplayFrame(
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [connected, onFrame]);
+  }, [connected]);
 
   return displayFrame;
 }
@@ -464,14 +462,28 @@ export function LiveVibeTVPreview({
     };
   }, [themeId, themeSpecHash, themeSpecPath, packRetryNonce]);
 
-  const previewReady = Boolean(deviceConnected && pack?.spec && frame);
+  const previewReady = Boolean(
+    deviceIsCustomerConnected(device) &&
+      deviceReady &&
+      !updateOwnedDisconnect &&
+      pack?.spec &&
+      frame,
+  );
   useEffect(() => {
     if (!previewReady || !onPreviewReady) {
       return;
     }
     const timer = window.setTimeout(onPreviewReady, PREVIEW_HANDOVER_MS);
     return () => window.clearTimeout(timer);
-  }, [onPreviewReady, previewReady]);
+  }, [
+    onPreviewReady,
+    previewReady,
+    device?.deviceId,
+    device?.target,
+    themeId,
+    themeSpecHash,
+    themeSpecPath,
+  ]);
 
   return (
     <figure className="w-full max-w-[520px]">
@@ -544,6 +556,8 @@ export function livePreviewDisplayFrame(
   if (
     (!deviceIsCustomerConnected(device) &&
       (!deviceIsActive(device) || device?.paired === false)) ||
+    (deviceUsesCable(device) &&
+      (!device?.deviceId || displayFrame?.deviceId?.toLowerCase() !== device.deviceId.toLowerCase())) ||
     !hasRenderableUsage(displayFrame)
   ) {
     return null;

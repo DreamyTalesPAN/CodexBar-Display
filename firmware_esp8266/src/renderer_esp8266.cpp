@@ -15,6 +15,7 @@ namespace esp8266 {
 namespace {
 
 constexpr uint16_t kBacklightPwmRange = 1023;
+constexpr uint16_t kBrandNeon = 0xCFE0;  // Brandbook #CCFF00 in RGB565.
 
 uint8_t clampBrightnessPercent(uint8_t percent) {
   if (percent < 1) {
@@ -212,7 +213,7 @@ void RendererESP8266::DrawStatus(
   }
 
   display::SetTextSize(titleSize);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setTextColor(kBrandNeon, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(title.c_str(), titleSize), y);
   tft.print(title);
 
@@ -237,72 +238,9 @@ void RendererESP8266::DrawStatus(
 #endif
 }
 
-void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address) {
-#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  display::AttachContext(ctx);
-
-  TFT_eSPI& tft = display::Tft();
-  display::DisplayTransaction transaction;
-  display::PrimitiveFillScreen(TFT_BLACK);
-  tft.setTextWrap(false);
-  tft.setTextFont(1);
-
-  const char* title = "USE PHONE";
-  const char* action = "Join WiFi:";
-  const char* detail = "Open:";
-  const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
-  const int ssidSize = display::ChooseTextSizeToFit(ssid.c_str(), 3, 2, tft.width() - 8);
-  const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
-  const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
-  const int addressSize = display::ChooseTextSizeToFit(address.c_str(), 2, 1, tft.width() - 8);
-
-  const int totalH =
-      display::TextPixelHeight(titleSize) + 14 +
-      display::TextPixelHeight(actionSize) + 4 +
-      display::TextPixelHeight(ssidSize) + 10 +
-      display::TextPixelHeight(detailSize) + 4 +
-      display::TextPixelHeight(addressSize);
-  int y = (tft.height() - totalH) / 2;
-  if (y < 6) {
-    y = 6;
-  }
-
-  display::SetTextSize(titleSize);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(title, titleSize), y);
-  tft.print(title);
-
-  y += display::TextPixelHeight(titleSize) + 14;
-  display::SetTextSize(actionSize);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(action, actionSize), y);
-  tft.print(action);
-
-  y += display::TextPixelHeight(actionSize) + 4;
-  display::SetTextSize(ssidSize);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(ssid.c_str(), ssidSize), y);
-  tft.print(ssid);
-
-  y += display::TextPixelHeight(ssidSize) + 10;
-  display::SetTextSize(detailSize);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(detail, detailSize), y);
-  tft.print(detail);
-
-  y += display::TextPixelHeight(detailSize) + 4;
-  display::SetTextSize(addressSize);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(address.c_str(), addressSize), y);
-  tft.print(address);
-
-  ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
-  ctx.screenDirty = false;
-#else
-  (void)ctx;
-  Serial.printf("probe_setup ssid=%s address=%s\n", ssid.c_str(), address.c_str());
-#endif
+void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx) {
+  // The Mac App owns setup guidance; the access point remains available behind it.
+  DrawStatus(ctx, "VIBE TV", "Download Mac App", "app.vibetv.shop");
 }
 
 void RendererESP8266::DrawConnectedSetupInstructions(

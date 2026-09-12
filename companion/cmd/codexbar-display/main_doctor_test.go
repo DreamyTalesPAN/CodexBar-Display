@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,29 +12,6 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
-
-func TestParsePinnedPortFromLaunchAgentPlist(t *testing.T) {
-	t.Run("unpinned", func(t *testing.T) {
-		plist := `<plist><dict><key>ProgramArguments</key><array><string>codexbar-display</string></array></dict></plist>`
-		if got := parsePinnedPortFromLaunchAgentPlist(plist); got != "" {
-			t.Fatalf("expected no pinned port, got %q", got)
-		}
-	})
-
-	t.Run("pinned", func(t *testing.T) {
-		plist := `<plist><dict><array><string>daemon</string><string>--port</string><string>/dev/cu.usbserial-10</string></array></dict></plist>`
-		if got := parsePinnedPortFromLaunchAgentPlist(plist); got != "/dev/cu.usbserial-10" {
-			t.Fatalf("expected pinned port, got %q", got)
-		}
-	})
-
-	t.Run("malformed", func(t *testing.T) {
-		plist := `<plist><dict><array><string>daemon</string><string>--port</string></array></dict></plist>`
-		if got := parsePinnedPortFromLaunchAgentPlist(plist); got != "" {
-			t.Fatalf("expected no pinned port for malformed plist, got %q", got)
-		}
-	})
-}
 
 func TestParseLaunchAgentArgument(t *testing.T) {
 	plist := `<plist><dict><array><string>daemon</string><string>--transport</string><string>wifi</string><string>--target</string><string>http://192.0.2.10?mode=x&amp;token=secret</string></array></dict></plist>`
@@ -53,6 +29,26 @@ func TestDoctorWiFiTargetFallsBackToLegacyPlist(t *testing.T) {
 	}
 	if got := doctorWiFiTarget("http://192.0.2.20", "http://192.0.2.10"); got != "http://192.0.2.20" {
 		t.Fatalf("expected runtime config target to win, got %q", got)
+	}
+}
+
+func TestDoctorTransportFollowsRuntimeConnectionMode(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  runtimeconfig.Config
+		want string
+	}{
+		{name: "fresh bundled runtime", cfg: runtimeconfig.Config{}, want: "usb"},
+		{name: "Cable", cfg: runtimeconfig.Config{ConnectionMode: "cable", DeviceTarget: "http://192.0.2.10"}, want: "usb"},
+		{name: "WiFi", cfg: runtimeconfig.Config{ConnectionMode: "wifi"}, want: "wifi"},
+		{name: "legacy WiFi", cfg: runtimeconfig.Config{DeviceTarget: "http://192.0.2.10"}, want: "wifi"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := doctorTransportForRuntimeConfig(tt.cfg); got != tt.want {
+				t.Fatalf("doctor transport=%q, expected %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -102,6 +98,27 @@ func TestDoctorLaunchAgentStateMustBeActive(t *testing.T) {
 	}
 	if doctorLaunchAgentStateHealthy("state = exited") {
 		t.Fatal("exited LaunchAgent must not be treated as active")
+	}
+}
+
+func TestHealthRuntimeOwnerUsesRunningBundledRuntime(t *testing.T) {
+	for _, want := range []string{
+		"shop.vibetv.control-center.runtime",
+		"shop.vibetv.control-center.preview-runtime",
+	} {
+		t.Run(want, func(t *testing.T) {
+			restoreDoctorTestDeps(t)
+			t.Setenv("HOME", t.TempDir())
+			doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
+				if label == want {
+					return []byte("state = running"), nil
+				}
+				return nil, os.ErrNotExist
+			}
+			if got := healthRuntimeOwner(); got != want {
+				t.Fatalf("health runtime owner=%q, expected %q", got, want)
+			}
+		})
 	}
 }
 
@@ -255,13 +272,87 @@ func TestDoctorCompanionHealthRequiresAppRuntimeOwner(t *testing.T) {
 	}
 }
 
-func TestContainsPort(t *testing.T) {
-	ports := []string{"/dev/cu.usbmodem101", "/dev/cu.usbserial-10"}
-	if !containsPort(ports, "/dev/cu.usbserial-10") {
-		t.Fatalf("expected exact port match")
+func TestDoctorCableReadsCapabilitiesFromRunningCompanion(t *testing.T) {
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/status" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ok":true,
+			"companion":{"runtime":{"listenerOwner":"shop.vibetv.control-center.runtime"}},
+			"device":{
+				"deviceId":"vibetv-cable",
+				"connected":true,
+				"board":"esp8266-smalltv-st7789",
+				"firmware":"1.0.55",
+				"capabilities":{
+					"theme":{"supportsThemeSpecV1":true},
+					"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}
+				}
+			}
+		}`))
+	}))
+	defer companion.Close()
+
+	caps, err := readLocalCableCapabilitiesOrigins(
+		[]string{companion.URL},
+		"shop.vibetv.control-center.runtime",
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if containsPort(ports, "/dev/cu.usbserial-11") {
-		t.Fatalf("did not expect unknown port to match")
+	if !caps.Known || caps.DeviceID != "vibetv-cable" || caps.Board != "esp8266-smalltv-st7789" ||
+		caps.ActiveTransport != "usb" || caps.ConnectionMode != "cable" || !caps.SupportsThemeSpecV1 {
+		t.Fatalf("unexpected Cable capabilities: %+v", caps)
+	}
+}
+
+func TestDoctorCableRejectsDisconnectedSavedCapabilities(t *testing.T) {
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ok":true,
+			"companion":{"runtime":{"listenerOwner":"shop.vibetv.control-center.runtime"}},
+			"device":{
+				"deviceId":"saved-cable-device",
+				"connected":false,
+				"board":"esp8266-smalltv-st7789",
+				"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}
+			}
+		}`))
+	}))
+	defer companion.Close()
+
+	_, err := readLocalCableCapabilitiesOrigins(
+		[]string{companion.URL},
+		"shop.vibetv.control-center.runtime",
+	)
+	if err == nil || !strings.Contains(err.Error(), "disconnected") {
+		t.Fatalf("expected disconnected Cable status to fail, got %v", err)
+	}
+}
+
+func TestDoctorCableRejectsDifferentCompanionOwner(t *testing.T) {
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ok":true,
+			"companion":{"runtime":{"listenerOwner":"com.codexbar-display.daemon"}},
+			"device":{
+				"board":"esp8266-smalltv-st7789",
+				"capabilities":{"transport":{"active":"usb","mode":"cable"}}
+			}
+		}`))
+	}))
+	defer companion.Close()
+
+	_, err := readLocalCableCapabilitiesOrigins(
+		[]string{companion.URL},
+		"shop.vibetv.control-center.runtime",
+	)
+	if err == nil || !strings.Contains(err.Error(), "belongs to") {
+		t.Fatalf("expected mismatched runtime owner to fail, got %v", err)
 	}
 }
 
@@ -352,48 +443,50 @@ func TestDoctorWiFiRejectsUnknownCapabilities(t *testing.T) {
 	}
 }
 
-func TestDoctorUSBStillRejectsAmbiguousUnpinnedPorts(t *testing.T) {
+func TestDoctorUSBUsesCompanionAcrossSeveralPortNames(t *testing.T) {
 	restoreDoctorTestDeps(t)
 	doctorListPortsFn = func() ([]string, error) {
 		return []string{"/dev/cu.usbserial-1", "/dev/cu.usbserial-2"}, nil
 	}
-	doctorResolvePortFn = func(string) (string, error) { return "/dev/cu.usbserial-1", nil }
-	doctorProbePortFn = func(string) error { return nil }
-	doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{}, errors.New("must not reach device hello")
+	doctorReadCableCapabilitiesFn = func(string) (protocol.DeviceCapabilities, error) {
+		return protocol.DeviceCapabilities{
+			Known:                     true,
+			Board:                     "esp8266-smalltv-st7789",
+			SupportsTheme:             true,
+			NegotiatedProtocolVersion: protocol.ProtocolVersionV1,
+			ActiveTransport:           "usb",
+			ConnectionMode:            "cable",
+		}, nil
 	}
 
 	err := runDoctorTransportChecks(doctorRuntimeConfig{configured: true, transport: "usb"})
-	if err == nil || !strings.Contains(err.Error(), "2 serial ports detected") {
-		t.Fatalf("expected USB ambiguity error, got %v", err)
+	if err != nil {
+		t.Fatalf("port names must not create ambiguity after identity resolution: %v", err)
 	}
 }
 
-func TestDoctorUSBResolvesConfiguredPort(t *testing.T) {
+func TestDoctorUSBUsesCompanionWithoutOpeningSerialPort(t *testing.T) {
 	restoreDoctorTestDeps(t)
-	const configuredPort = "/dev/cu.usbserial-pinned"
-	doctorResolvePortFn = func(requested string) (string, error) {
-		if requested != configuredPort {
-			t.Fatalf("expected configured port %q, got %q", configuredPort, requested)
+	doctorReadCableCapabilitiesFn = func(owner string) (protocol.DeviceCapabilities, error) {
+		if owner != "shop.vibetv.control-center.runtime" {
+			t.Fatalf("unexpected runtime owner %q", owner)
 		}
-		return requested, nil
-	}
-	doctorProbePortFn = func(port string) error {
-		if port != configuredPort {
-			t.Fatalf("expected probe on %q, got %q", configuredPort, port)
-		}
-		return nil
-	}
-	doctorReadDeviceHelloFn = func(port string) (protocol.DeviceHello, error) {
-		if port != configuredPort {
-			t.Fatalf("expected hello on %q, got %q", configuredPort, port)
-		}
-		return protocol.DeviceHello{}, errors.New("handshake unavailable")
+		return protocol.DeviceCapabilities{
+			Known:                     true,
+			Board:                     "esp8266-smalltv-st7789",
+			SupportsTheme:             true,
+			NegotiatedProtocolVersion: protocol.ProtocolVersionV1,
+			ActiveTransport:           "usb",
+			ConnectionMode:            "cable",
+		}, nil
 	}
 
-	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{port: configuredPort}, []string{configuredPort})
+	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{
+		label:     "shop.vibetv.control-center.runtime",
+		transport: "usb",
+	})
 	if err != nil {
-		t.Fatalf("expected configured USB port check to pass, got %v", err)
+		t.Fatalf("expected Companion-owned Cable check to pass, got %v", err)
 	}
 }
 
@@ -413,18 +506,16 @@ func TestDoctorWithoutRuntimeRequestsSetupWithoutListingPorts(t *testing.T) {
 func restoreDoctorTestDeps(t *testing.T) {
 	t.Helper()
 	listPorts := doctorListPortsFn
-	resolvePort := doctorResolvePortFn
-	probePort := doctorProbePortFn
-	readHello := doctorReadDeviceHelloFn
+	readCableCapabilities := doctorReadCableCapabilitiesFn
 	readWiFiCapabilities := doctorReadWiFiCapabilitiesFn
 	checkCompanionHealth := doctorCheckCompanionHealthFn
+	launchAgentPrint := doctorLaunchAgentPrintFn
 	t.Cleanup(func() {
 		doctorListPortsFn = listPorts
-		doctorResolvePortFn = resolvePort
-		doctorProbePortFn = probePort
-		doctorReadDeviceHelloFn = readHello
+		doctorReadCableCapabilitiesFn = readCableCapabilities
 		doctorReadWiFiCapabilitiesFn = readWiFiCapabilities
 		doctorCheckCompanionHealthFn = checkCompanionHealth
+		doctorLaunchAgentPrintFn = launchAgentPrint
 	})
 }
 

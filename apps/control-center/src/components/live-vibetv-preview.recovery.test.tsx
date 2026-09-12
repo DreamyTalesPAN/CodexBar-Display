@@ -59,7 +59,62 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("Cable preview identity", () => {
+  it("does not render or admit a frame from the previous Cable device", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(matchingPack)));
+    const onPreviewReady = vi.fn();
+    const props = { device: { ...connectedDevice, deviceId: "cable-b", target: "cable:" }, displayFrame: { ...renderableFrame, deviceId: "cable-a" }, onPreviewReady, usage: null };
+    const { rerender } = render(createElement(LiveVibeTVPreview, props));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    rerender(createElement(LiveVibeTVPreview, { ...props, displayFrame: { ...renderableFrame, deviceId: "cable-b" } }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(onPreviewReady).toHaveBeenCalledOnce();
+  });
+});
+
 describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
+  it.each(["disconnect", "not-ready", "update"])(
+    "cancels setup handover on %s even while a cached preview remains visible",
+    async (failure) => {
+      vi.useFakeTimers();
+      const onPreviewReady = vi.fn();
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(matchingPack)));
+      const props = { device: connectedDevice, displayFrame: renderableFrame, onPreviewReady, usage: null };
+      const { rerender } = render(createElement(LiveVibeTVPreview, props));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      act(() => vi.advanceTimersByTime(2_999));
+      rerender(createElement(LiveVibeTVPreview, {
+        ...props,
+        device: { ...connectedDevice, connected: failure !== "disconnect", ready: failure !== "not-ready" },
+        updateOwnedDisconnect: failure === "update",
+      }));
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(onPreviewReady).not.toHaveBeenCalled();
+      rerender(createElement(LiveVibeTVPreview, props));
+      act(() => vi.advanceTimersByTime(2_999));
+      expect(onPreviewReady).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
+      expect(onPreviewReady).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("restarts handover when the selected VibeTV changes", async () => {
+    vi.useFakeTimers();
+    const onPreviewReady = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(matchingPack)));
+    const props = { device: { ...connectedDevice, deviceId: "first" }, displayFrame: renderableFrame, onPreviewReady, usage: null };
+    const { rerender } = render(createElement(LiveVibeTVPreview, props));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    act(() => vi.advanceTimersByTime(2_999));
+    rerender(createElement(LiveVibeTVPreview, { ...props, device: { ...connectedDevice, deviceId: "second" } }));
+    act(() => vi.advanceTimersByTime(2_999));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onPreviewReady).toHaveBeenCalledTimes(1);
+  });
+
   it("renders a real frame instead of a stale provider-setup placeholder", async () => {
     vi.useFakeTimers();
     const onPreviewReady = vi.fn();
@@ -104,6 +159,12 @@ describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
     act(() => vi.advanceTimersByTime(2_999));
     expect(onPreviewReady).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    rerender(createElement(LiveVibeTVPreview, {
+      ...props,
+      device: { ...props.device, ready: true, stream: { healthy: true } },
+    }));
+    act(() => vi.advanceTimersByTime(3_000));
     expect(onPreviewReady).toHaveBeenCalledTimes(1);
   });
 

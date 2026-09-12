@@ -30,7 +30,7 @@ assert_contains() {
   local haystack needle
   haystack="$1"
   needle="$2"
-  printf '%s\n' "$haystack" | grep -F "$needle" >/dev/null \
+  printf '%s\n' "$haystack" | grep -F -e "$needle" >/dev/null \
     || die "expected output to contain: ${needle}"
 }
 
@@ -38,7 +38,7 @@ assert_not_contains() {
   local haystack needle
   haystack="$1"
   needle="$2"
-  if printf '%s\n' "$haystack" | grep -F "$needle" >/dev/null; then
+  if printf '%s\n' "$haystack" | grep -F -e "$needle" >/dev/null; then
     die "expected output not to contain: ${needle}"
   fi
 }
@@ -85,6 +85,7 @@ case "$*" in
     cat > "$out" <<'BIN'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'release binary called: %s\n' "$*" >> "${FAKE_CODEXBAR_DISPLAY_LOG:?}"
 case "${1:-}" in
   setup)
     bin="${HOME}/Library/Application Support/codexbar-display/bin/codexbar-display"
@@ -134,6 +135,17 @@ BIN
     ;;
 esac
 EOF
+
+  cat > "${fake_bin}/plutil" <<'EOF'
+#!/usr/bin/env bash
+case "$2:$(cat "${@: -1}")" in
+  connectionMode:*'"connectionMode":"cable"'*) printf 'cable\n' ;;
+  connectionMode:*'"connectionMode":"wifi"'*) printf 'wifi\n' ;;
+  cableAutoBindDisabled:*'"cableAutoBindDisabled":true'*) printf 'true\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "${fake_bin}/plutil"
 
   cat > "${fake_bin}/shasum" <<'EOF'
 #!/usr/bin/env bash
@@ -269,6 +281,7 @@ run_fresh_install_starts_without_theme_pack() {
   }
 
   app_log="$(cat "${root}/codexbar-display.log")"
+  assert_contains "$app_log" "release binary called: setup --yes --skip-flash --transport wifi --target http://192.0.2.10"
   assert_not_contains "$app_log" "theme-pack install"
   assert_contains "$output" "no theme selected; install one in the Mac App"
   grep -F '"future-provider"' "${root}/home/.codexbar/config.json" >/dev/null \
@@ -350,6 +363,82 @@ EOF
   assert_not_contains "$(cat "${root}/ln.log")" "ln called"
 }
 
+run_reinstall_preserves_connection_mode() {
+  local mode root output expected
+  for mode in cable wifi; do
+    root="${TMP_WORK_DIR}/reinstall-${mode}"
+    write_fake_commands "${root}/fake-bin"
+    mkdir -p "${root}/home" "${root}/global-bin"
+    write_existing_install "${root}/home"
+    printf '{"connectionMode":"%s"}\n' "$mode" > "${root}/home/Library/Application Support/codexbar-display/config.json"
+    output="$(run_installer "$root" --version 9.9.9)" || die "reinstall failed for ${mode}: ${output}"
+    expected="$mode"
+    [[ "$mode" != "cable" ]] || expected="usb"
+    assert_contains "$(cat "${root}/codexbar-display.log")" "release binary called: setup --yes --skip-flash --transport ${expected}"
+  done
+}
+
+run_flash_requires_port_before_install() {
+  local root output
+  root="${TMP_WORK_DIR}/flash-without-port"
+  write_fake_commands "${root}/fake-bin"
+  mkdir -p "${root}/home" "${root}/global-bin"
+  : > "${root}/curl.log"
+  : > "${root}/codexbar-display.log"
+  if output="$(run_installer "$root" --version 9.9.9 --flash-firmware)"; then
+    die "firmware install without an explicit port must fail before setup"
+  fi
+  assert_contains "$output" "--flash-firmware requires --port"
+  [[ ! -s "${root}/curl.log" && ! -s "${root}/codexbar-display.log" ]] \
+    || die "missing port must fail before downloads or setup"
+}
+
+run_flash_forwards_explicit_port() {
+  local root output form
+  for form in split equals; do
+    root="${TMP_WORK_DIR}/flash-with-port-${form}"
+    write_fake_commands "${root}/fake-bin"
+    mkdir -p "${root}/home" "${root}/global-bin"
+    if [[ "$form" == "split" ]]; then
+      output="$(run_installer "$root" --version 9.9.9 --flash-firmware -- --port /dev/mock --transport usb)" || die "$output"
+      assert_contains "$(cat "${root}/codexbar-display.log")" "upgrade --repo DreamyTalesPAN/CodexBar-Display --port /dev/mock"
+    else
+      output="$(run_installer "$root" --version 9.9.9 --flash-firmware -- --port=/dev/mock --transport usb)" || die "$output"
+      assert_contains "$(cat "${root}/codexbar-display.log")" "upgrade --repo DreamyTalesPAN/CodexBar-Display --port=/dev/mock"
+    fi
+  done
+}
+
+run_reinstall_defers_pending_transition() {
+  local root output config original args
+  for args in implicit explicit; do
+    root="${TMP_WORK_DIR}/pending-${args}"
+    write_fake_commands "${root}/fake-bin"
+    mkdir -p "${root}/home" "${root}/global-bin"
+    write_existing_install "${root}/home"
+    config="${root}/home/Library/Application Support/codexbar-display/config.json"
+    original='{"cableAutoBindDisabled":true,"connectionModeChoiceRequired":true,"deviceId":"pending-device"}'
+    printf '%s\n' "$original" > "$config"
+    : > "${root}/curl.log"
+    : > "${root}/codexbar-display.log"
+    : > "${root}/launchctl.log"
+    if [[ "$args" == explicit ]]; then
+      if output="$(run_installer "$root" --version 9.9.9 -- --transport usb)"; then
+        die "explicit transport must not overwrite a pending transition"
+      fi
+    elif output="$(run_installer "$root" --version 9.9.9)"; then
+      die "pending transition must defer reinstallation"
+    fi
+    assert_contains "$output" "Finish or cancel the pending VibeTV connection change"
+    [[ "$(cat "$config")" == "$original" ]] || die "pending configuration changed"
+    [[ ! -s "${root}/curl.log" && ! -s "${root}/codexbar-display.log" && ! -s "${root}/launchctl.log" ]] || die "pending reinstall started download, setup or service mutation"
+  done
+}
+
+run_reinstall_defers_pending_transition
+run_flash_requires_port_before_install
+run_flash_forwards_explicit_port
+run_reinstall_preserves_connection_mode
 run_install_sh_enables_control_center_in_daemon
 run_fresh_install_starts_without_theme_pack
 run_explicit_theme_pack_is_still_installed

@@ -17,8 +17,6 @@ class ThemeSpecRuntimePolicy {
   static constexpr uint32_t kMinRenderMaxFreeBlockBytes = 2048UL;
   static constexpr uint32_t kMinAnimationFreeHeapBytes = 8192UL;
   static constexpr uint32_t kMinAnimationMaxFreeBlockBytes = 3072UL;
-  static constexpr uint32_t kCbaBufferHeapReserveBytes =
-      kMinAnimationFreeHeapBytes + 4096UL;
 
   static bool CanRender(uint32_t freeHeapBytes, uint32_t maxFreeBlockBytes) {
     return freeHeapBytes >= kMinRenderFreeHeapBytes &&
@@ -127,7 +125,7 @@ class ThemeSpecRuntimePolicy {
       uint32_t maxFreeBlockBytes,
       uint32_t bufferBytes) {
     return bufferBytes > 0 &&
-           freeHeapBytes >= bufferBytes + kCbaBufferHeapReserveBytes &&
+           freeHeapBytes >= bufferBytes + kMinAnimationFreeHeapBytes &&
            maxFreeBlockBytes >= bufferBytes;
   }
 

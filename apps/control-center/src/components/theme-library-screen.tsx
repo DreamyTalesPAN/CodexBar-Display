@@ -11,13 +11,11 @@ import {
   ShieldCheck,
   Trash2,
   Wifi,
-  X,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
-  AlertAction,
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
@@ -82,7 +80,8 @@ import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilit
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import { ThemeRenderPreview } from "./theme-render-preview";
-import type { StandbySettings } from "./control-center-types";
+import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
+import type { ApiError, StandbySettings } from "./control-center-types";
 import {
   ThemeStudioScreen,
   type ThemeStudioEditorTheme,
@@ -154,6 +153,7 @@ export type ThemeInstallStatus = {
   logs: string[];
   result?: ThemeInstallResult;
   error?: string;
+  failure?: ApiError;
 };
 
 export type ThemeLibraryScreenProps = {
@@ -897,6 +897,7 @@ function ThemeListItem({
   const visibleInstallStatus = Boolean(
     installStatus?.themeId === item.themeId,
   );
+  const retryingFailedInstall = visibleInstallStatus && installStatus?.phase === "error";
   const screensaverLockBlocker: ThemeInstallBlocker | null =
     screensaverInstallLocked
       ? { reason: "Turn on Show screensaver first." }
@@ -907,17 +908,18 @@ function ThemeListItem({
       ? buildThemeInstallBlocker({
           device,
           theme,
-          allowUnreadyInstall: false,
+          allowUnreadyInstall: retryingFailedInstall,
           themeInstallBlockedReason,
           themeInstallEnabled,
         })
       : buildCustomThemeInstallBlocker({
+          allowUnreadyInstall: retryingFailedInstall,
           device,
           themeInstallBlockedReason,
           themeInstallEnabled,
         }));
   const blockedLabel = labelForInstallBlocker(blocker);
-  const disabled = actionInFlight || installed || Boolean(blocker);
+  const disabled = actionInFlight || (installed && !retryingFailedInstall) || Boolean(blocker);
   const title = disabled
       ? installDisabledReason({
           actionInFlight,
@@ -1034,61 +1036,45 @@ function InlineInstallProgress({
   status: ThemeInstallStatus;
   usage: ThemeStudioUsage;
 }) {
-  const failed = status.phase === "error";
+  const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
+  if (status.phase === "error") {
+    const dismissed = dismissedErrorAt === status.startedAt;
+    const retry = () => {
+      setDismissedErrorAt(null);
+      onRetry();
+    };
+    return <>
+      <SetupStepFailedDialog
+        error={dismissed ? null : status.failure || {
+          code: "theme_install_failed",
+          message: "Theme install failed.",
+          nextAction: status.error || "Keep VibeTV connected and try installing the theme again.",
+        }}
+        onOpenChange={(open) => { if (!open) setDismissedErrorAt(status.startedAt); }}
+        onRetry={canRetry ? retry : undefined}
+      />
+      {dismissed && canRetry ? <Button onClick={retry} size="sm" type="button" variant="outline">Try again</Button> : null}
+    </>;
+  }
   const complete = status.phase === "complete";
-  const progress = clampInstallProgress(
-    failed || complete ? 100 : status.progress,
-  );
-  const title = failed
-    ? "Install failed"
-    : complete
-      ? "Installed"
-      : "Installing";
-  const detail = failed
-    ? status.error || "Theme was not installed. Try again."
-    : complete
-      // The Companion says how the install ended. On a VibeTV without a ready
-      // provider that is "shows it once AI usage is ready", and overriding it
-      // here claimed the theme was on screen while the device drew the error
-      // frame. The fallback only covers a completion that carries no message.
-      ? status.message ||
-        (usage === "screensaver"
-          ? "Screensaver is ready on VibeTV."
-          : "Theme is active on VibeTV.")
-      : status.message ||
-        status.logs[status.logs.length - 1] ||
-        "Preparing theme install.";
-  const previousSteps = failed || complete ? [] : status.logs.slice(-4, -1);
-
+  const detail = complete
+    ? status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
+    : status.message || status.logs[status.logs.length - 1] || "Preparing theme install.";
+  const previousSteps = complete ? [] : status.logs.slice(-4, -1);
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
-      <Progress className={failed || complete ? "" : "animate-pulse"} value={progress} />
-      <Alert variant={failed ? "destructive" : "default"}>
-          {failed ? (
-            <X aria-hidden />
-          ) : complete ? (
-            <ShieldCheck aria-hidden />
-          ) : (
-            <Spinner />
-          )}
-          <AlertTitle>{title}</AlertTitle>
-          <AlertDescription>
-            <p>{detail}</p>
-            {previousSteps.length > 0 ? (
-              <ol className="mt-2 flex flex-col gap-1 text-xs leading-5">
-                {previousSteps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-            ) : null}
-          </AlertDescription>
-        {failed && canRetry ? (
-          <AlertAction>
-            <Button onClick={onRetry} size="sm" type="button" variant="outline">
-              Try again
-            </Button>
-          </AlertAction>
-        ) : null}
+      <Progress className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
+      <Alert>
+        {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
+        <AlertTitle>{complete ? "Installed" : "Installing"}</AlertTitle>
+        <AlertDescription>
+          <p>{detail}</p>
+          {previousSteps.length > 0 ? (
+            <ol className="mt-2 flex flex-col gap-1 text-xs leading-5">
+              {previousSteps.map((step) => <li key={step}>{step}</li>)}
+            </ol>
+          ) : null}
+        </AlertDescription>
       </Alert>
     </div>
   );
@@ -1135,15 +1121,17 @@ function labelForInstallButton({
 }
 
 function buildCustomThemeInstallBlocker({
+  allowUnreadyInstall = false,
   device,
   themeInstallBlockedReason,
   themeInstallEnabled,
 }: {
+  allowUnreadyInstall?: boolean;
   device: ThemeLibraryDeviceInfo | null;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
 }): ThemeInstallBlocker | null {
-  if (device?.ready !== true) {
+  if (device?.ready !== true && !(allowUnreadyInstall && device?.connected && device.paired)) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {

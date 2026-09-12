@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   DeviceCandidate,
   PreferenceHealthState,
@@ -13,6 +19,7 @@ import {
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
 } from "./setup-device-dialogs";
+import { candidateKey } from "./setup-connection";
 import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupDisplayModeScreen } from "./setup-display-mode-screen";
 import {
@@ -37,17 +44,27 @@ const WELCOME_LINES: SetupLogLine[] = [
 
 const CANDIDATES: DeviceCandidate[] = [
   {
+    transport: "wifi",
     target: "http://192.168.178.153",
     deviceId: "5804508",
     firmware: "1.0.55",
     known: true,
   },
   {
+    transport: "wifi",
     target: "http://192.168.178.159",
     deviceId: "5863327",
     firmware: "1.0.55",
   },
 ];
+
+const CABLE_CANDIDATES: DeviceCandidate[] = CANDIDATES.map(
+  (candidate, index) => ({
+    ...candidate,
+    transport: "cable",
+    target: `/dev/cu.usbserial-preview-${index}`,
+  }),
+);
 
 /** The phases a connect walks through, with the dwell time of each. */
 const CONNECT_SCRIPT: { ms: number; phase: ConnectPhase }[] = [
@@ -125,20 +142,17 @@ const AUTOMATIC_PREVIEWS = [
   {
     providerLabel: "Codex",
     resetLabel: "RESET IN 3H",
-    sessionPercent: 42,
-    weeklyPercent: 26,
+    windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
   },
   {
     providerLabel: "Cursor",
     resetLabel: "RESET IN 11H",
-    sessionPercent: 18,
-    weeklyPercent: 63,
+    windows: [{ label: "Session", percent: 18 }, { label: "Weekly", percent: 63 }],
   },
   {
     providerLabel: "Claude",
     resetLabel: "RESET IN 5H",
-    sessionPercent: 71,
-    weeklyPercent: 44,
+    windows: [{ label: "Session", percent: 71 }, { label: "Weekly", percent: 44 }],
   },
 ];
 
@@ -173,7 +187,12 @@ function galleryStep(entryId: string): SetupStep {
 
 const ENTRIES: Entry[] = [
   { id: "01", label: "01 Welcome" },
-  { id: "02", label: "02 Choose" },
+  { id: "02", label: "02 Connection" },
+  { id: "02-cable", label: "· Cable devices" },
+  { id: "02-cable-connecting", label: "· Cable connecting" },
+  { id: "02-wifi", label: "· WiFi devices" },
+  { id: "02-wifi-setup", label: "· WiFi over cable" },
+  { id: "02-phone", label: "· WiFi with phone" },
   { id: "03", label: "03 Providers" },
   { id: "04", label: "04 Display" },
   { id: "05", label: "05 Theme" },
@@ -195,7 +214,10 @@ const ENTRIES: Entry[] = [
 export function SetupPreviewGallery() {
   const [active, setActive] = useState<string>("01");
   const [dialogOpen, setDialogOpen] = useState(true);
-  const [selected, setSelected] = useState<string | null>(CANDIDATES[0].target);
+  const [wifiWaiting, setWiFiWaiting] = useState(false);
+  const [selected, setSelected] = useState<string | null>(
+    candidateKey(CANDIDATES[0]),
+  );
   const [connectPhase, setConnectPhase] = useState<ConnectPhase>("idle");
   const [displayMode, setDisplayMode] = useState<"automatic" | "fixed">(
     "automatic",
@@ -218,6 +240,12 @@ export function SetupPreviewGallery() {
       clearTimers();
       setActive(step);
       setDialogOpen(true);
+      setWiFiWaiting(false);
+      setSelected(
+        candidateKey(
+          step.startsWith("02-cable") ? CABLE_CANDIDATES[0] : CANDIDATES[0],
+        ),
+      );
       setConnectPhase("idle");
       setInstalling(false);
     },
@@ -250,31 +278,77 @@ export function SetupPreviewGallery() {
     timers.current.push(setTimeout(() => goTo("06"), 1800));
   }
 
-  const selectedCandidate = CANDIDATES.find(
-    (candidate) => candidate.target === selected,
+  const selectedCandidate = [...CANDIDATES, ...CABLE_CANDIDATES].find(
+    (candidate) => candidateKey(candidate) === selected,
   );
   const connectState = {
-    address: selectedCandidate?.target.replace(/^https?:\/\//, "") || "",
+    address:
+      selectedCandidate?.transport === "cable"
+        ? "VibeTV by Cable"
+        : selectedCandidate?.target.replace(/^https?:\/\//, "") || "",
     deviceLabel: `VibeTV ${selectedCandidate?.deviceId || ""}`,
     firmwareFrom: "1.0.55",
     firmwareTo: "1.0.61",
-    phase: connectPhase,
+    phase:
+      active === "02-cable-connecting" ? ("connecting" as const) : connectPhase,
   };
   const connecting =
-    connectPhase !== "idle" && connectPhase !== "done" && connectPhase !== "failed";
+    connectState.phase !== "idle" &&
+    connectState.phase !== "done" &&
+    connectState.phase !== "failed";
 
   function deviceScreen(lines?: SetupLogLine[]) {
     return (
       <SetupDeviceScreen
+        onWiFiError={() => {}}
         aiFixPrompt={aiFixPrompt}
-            onCreateSupportReport={createSupportReport}
-        candidates={CANDIDATES}
+        onCreateSupportReport={createSupportReport}
+        candidates={
+          active.startsWith("02-cable")
+            ? CABLE_CANDIDATES
+            : active === "02"
+              ? [CABLE_CANDIDATES[0], ...CANDIDATES]
+              : active === "02-phone"
+                ? []
+                : CANDIDATES
+        }
+        transport={active.startsWith("02-cable") ? "cable" : "wifi"}
+        showModeChoice={active === "02"}
+        showCandidates={
+          !["02", "02-phone", "02-wifi-setup", "02-cable-connecting"].includes(
+            active,
+          )
+        }
+        wifiSetupPhase={
+          active === "02-phone"
+            ? "waiting"
+            : active === "02-wifi-setup"
+              ? wifiWaiting
+                ? "waiting"
+                : "credentials"
+              : undefined
+        }
+        wifiWaitingViaCable={active === "02-wifi-setup"}
+        wifiCredentialsSent={wifiWaiting}
+        wifiNetworks={[
+          { ssid: "Home WiFi", rssi: -48, encrypted: true },
+          { ssid: "Guest", rssi: -70, encrypted: false },
+        ]}
+        onBack={active === "02" ? undefined : () => goTo("02")}
         connecting={connecting}
         logLines={lines ?? connectLogLines(connectState)}
         onConnect={runConnect}
+        onChooseTransport={(transport) =>
+          goTo(transport === "cable" ? "02-cable" : "02-wifi-setup")
+        }
+        onConfigureWiFi={async () => {
+          setWiFiWaiting(true);
+          timers.current.push(setTimeout(() => goTo("03"), 6000));
+        }}
         onEnterAddressManually={() => setActive("02b")}
         onSearchAgain={() => setActive("02")}
-        onSelect={(candidate) => setSelected(candidate.target)}
+        onScanWiFiNetworks={() => {}}
+        onSelect={(candidate) => setSelected(candidateKey(candidate))}
         selectedTarget={selected}
       />
     );
@@ -310,7 +384,12 @@ export function SetupPreviewGallery() {
         : "not found yet",
       // The app's event log prepends, so the newest entry is first.
       events: [
-        { id: "2", at: "14:02:41", label: "Search finished", detail: "2 found" },
+        {
+          id: "2",
+          at: "14:02:41",
+          label: "Search finished",
+          detail: "2 found",
+        },
         { id: "1", at: "14:02:11", label: "Search started", detail: "en0" },
       ],
       osVersion: "15.2",
@@ -328,6 +407,11 @@ export function SetupPreviewGallery() {
           />
         );
       case "02":
+      case "02-cable":
+      case "02-cable-connecting":
+      case "02-wifi":
+      case "02-wifi-setup":
+      case "02-phone":
         return deviceScreen();
       case "02b":
         return (
@@ -354,6 +438,8 @@ export function SetupPreviewGallery() {
               onEnterAddressManually={() => setActive("02b")}
               onOpenChange={setDialogOpen}
               onScanAgain={() => goTo("02")}
+              onUseCable={() => goTo("02-cable")}
+              onSetUpWiFi={() => goTo("02-phone")}
               open={dialogOpen}
             />
           </>
@@ -426,6 +512,7 @@ export function SetupPreviewGallery() {
             onToggle={noop}
             pendingCheckIds={NO_PENDING_CHECKS}
             pendingPreferenceIds={NO_PENDING_CHECKS}
+            usage={null}
             providers={PROVIDERS}
           />
         );
@@ -438,6 +525,7 @@ export function SetupPreviewGallery() {
               onToggle={noop}
               pendingCheckIds={NO_PENDING_CHECKS}
               pendingPreferenceIds={NO_PENDING_CHECKS}
+              usage={null}
               providers={PROVIDERS.slice(0, 3)}
             />
             <SetupUsageDialog
@@ -459,8 +547,7 @@ export function SetupPreviewGallery() {
             manualPreview={{
               providerLabel: displayProvider === "claude" ? "Claude" : "Codex",
               resetLabel: "RESET IN 5H",
-              sessionPercent: 45,
-              weeklyPercent: 26,
+              windows: [{ label: "Session", percent: 45 }, { label: "Weekly", percent: 26 }],
             }}
             mode={displayMode}
             onBack={() => goTo("03")}
@@ -507,29 +594,37 @@ export function SetupPreviewGallery() {
   return (
     <div className="min-h-svh bg-muted">
       <div className="relative">{screen()}</div>
-      <nav className="fixed top-3 left-3 z-70 flex w-36 flex-col gap-0.5 rounded-xl bg-foreground/90 p-1.5 shadow-lg">
-        {ENTRIES.map((entry) => (
+      <details
+        className="fixed top-3 right-3 z-70 w-36 rounded-xl bg-foreground/90 p-1.5 text-background shadow-lg"
+        open
+      >
+        <summary className="cursor-pointer px-2.5 py-1 text-xs font-semibold">
+          Preview screens
+        </summary>
+        <nav className="flex flex-col gap-0.5">
+          {ENTRIES.map((entry) => (
+            <button
+              className={
+                entry.id === active
+                  ? "rounded-lg bg-background px-2.5 py-1 text-left text-xs font-semibold text-foreground"
+                  : "rounded-lg px-2.5 py-1 text-left text-xs font-semibold text-background/70 hover:text-background"
+              }
+              key={entry.id}
+              onClick={() => goTo(entry.id)}
+              type="button"
+            >
+              {entry.label}
+            </button>
+          ))}
           <button
-            className={
-              entry.id === active
-                ? "rounded-lg bg-background px-2.5 py-1 text-left text-xs font-semibold text-foreground"
-                : "rounded-lg px-2.5 py-1 text-left text-xs font-semibold text-background/70 hover:text-background"
-            }
-            key={entry.id}
-            onClick={() => goTo(entry.id)}
+            className="mt-1 rounded-lg border-t border-background/20 px-2.5 pt-1.5 text-left text-xs font-semibold text-background/70 hover:text-background"
+            onClick={() => goTo(STEP_ORDER[0])}
             type="button"
           >
-            {entry.label}
+            {stepIndex >= 0 ? `↻ restart (${stepIndex + 1}/6)` : "↻ restart"}
           </button>
-        ))}
-        <button
-          className="mt-1 rounded-lg border-t border-background/20 px-2.5 pt-1.5 text-left text-xs font-semibold text-background/70 hover:text-background"
-          onClick={() => goTo(STEP_ORDER[0])}
-          type="button"
-        >
-          {stepIndex >= 0 ? `↻ restart (${stepIndex + 1}/6)` : "↻ restart"}
-        </button>
-      </nav>
+        </nav>
+      </details>
     </div>
   );
 }

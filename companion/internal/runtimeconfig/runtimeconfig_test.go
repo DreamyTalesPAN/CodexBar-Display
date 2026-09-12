@@ -8,7 +8,46 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+func TestConnectionModeNormalizationKeepsOnlyCustomerChoices(t *testing.T) {
+	for input, want := range map[string]string{
+		" Cable ": "cable",
+		"WIFI":    "wifi",
+		"":        "",
+		"serial":  "",
+		"auto":    "",
+	} {
+		if got := NormalizeConnectionMode(input); got != want {
+			t.Fatalf("NormalizeConnectionMode(%q)=%q, expected %q", input, got, want)
+		}
+	}
+
+	cfg := Config{ConnectionMode: " CABLE "}
+	cfg.Normalize()
+	if cfg.ConnectionMode != "cable" {
+		t.Fatalf("unexpected normalized config mode %q", cfg.ConnectionMode)
+	}
+}
+
+func TestActiveTransportFollowsRuntimeDeviceSelection(t *testing.T) {
+	tests := []struct {
+		cfg  Config
+		want string
+	}{
+		{cfg: Config{}, want: "usb"},
+		{cfg: Config{ConnectionMode: "cable", DeviceTarget: "http://192.0.2.10"}, want: "usb"},
+		{cfg: Config{ConnectionMode: "wifi"}, want: "wifi"},
+		{cfg: Config{DeviceTarget: "http://192.0.2.10"}, want: "wifi"},
+		{cfg: Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.10", CableAutoBindDisabled: true}, want: "usb"},
+	}
+	for _, tt := range tests {
+		if got := ActiveTransport(tt.cfg); got != tt.want {
+			t.Fatalf("ActiveTransport(%+v)=%q, expected %q", tt.cfg, got, tt.want)
+		}
+	}
+}
 
 func TestLoadMigratesActiveDeviceIntoKnownDevices(t *testing.T) {
 	home := t.TempDir()
@@ -198,9 +237,10 @@ func assertPermissions(t *testing.T, path string, want os.FileMode) {
 
 func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	cfg := Config{
-		DeviceID:     "device-a",
-		DeviceTarget: "192.168.1.20",
-		DeviceToken:  "token-a",
+		DeviceID:              "device-a",
+		DeviceTarget:          "192.168.1.20",
+		DeviceToken:           "token-a",
+		CableAutoBindDisabled: true,
 	}
 	cfg.Normalize()
 	cfg.SetActiveDevice(KnownDevice{
@@ -218,6 +258,12 @@ func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	}
 	if previous, ok := cfg.KnownDevice("device-a"); !ok || previous.DeviceToken != "token-a" {
 		t.Fatalf("previous device was not preserved: %+v", cfg.KnownDevices)
+	}
+	if cfg.CableAutoBindDisabled {
+		t.Fatal("selecting a device must re-enable Cable binding")
+	}
+	if cfg.ConnectionModeChoiceRequired {
+		t.Fatal("selecting a device must record the explicit connection choice")
 	}
 }
 
@@ -250,17 +296,124 @@ func TestProviderDisplayNormalizeAndSetupMigration(t *testing.T) {
 	}
 }
 
-func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
+func TestResetDeviceBindingPreservesAuthenticationProfiles(t *testing.T) {
 	cfg := Config{
-		DeviceID:     "device-a",
-		DeviceTarget: "192.168.1.20",
-		DeviceToken:  "token-a",
-		KnownDevices: []KnownDevice{{DeviceID: "device-b", Target: "192.168.2.30", DeviceToken: "token-b"}},
+		DeviceID:         "device-a",
+		DeviceTarget:     "192.168.1.20",
+		DeviceToken:      "token-a",
+		DeviceTransports: []string{"usb"},
+		KnownDevices:     []KnownDevice{{DeviceID: "device-b", Target: "192.168.2.30", DeviceToken: "token-b"}},
 	}
-	cfg.ClearDevices()
+	cfg.ResetDeviceBinding()
 
-	if cfg.DeviceID != "" || cfg.DeviceTarget != "" || cfg.DeviceToken != "" || len(cfg.KnownDevices) != 0 {
-		t.Fatalf("expected a complete device reset, got %+v", cfg)
+	if cfg.DeviceID != "" || cfg.DeviceTarget != "" || cfg.DeviceToken != "" {
+		t.Fatalf("expected the active device binding to be reset, got %+v", cfg)
+	}
+	if len(cfg.KnownDevices) != 2 {
+		t.Fatalf("expected both authentication profiles to remain, got %+v", cfg.KnownDevices)
+	}
+	if active, ok := cfg.KnownDevice("device-a"); !ok || active.DeviceToken != "token-a" {
+		t.Fatalf("active authentication profile was lost: %+v", cfg.KnownDevices)
+	}
+	if other, ok := cfg.KnownDevice("device-b"); !ok || other.DeviceToken != "token-b" {
+		t.Fatalf("known authentication profile was lost: %+v", cfg.KnownDevices)
+	}
+	if !cfg.CableAutoBindDisabled {
+		t.Fatal("device reset must prevent automatic Cable rebinding")
+	}
+	if !cfg.ConnectionModeChoiceRequired {
+		t.Fatal("device reset must require a new connection choice")
+	}
+	if len(cfg.DeviceTransports) != 0 {
+		t.Fatalf("device reset retained transport support without its device identity: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestResetDeviceBindingClearsFailedWiFiTransitionTarget(t *testing.T) {
+	cfg := Config{
+		DeviceID:              "device-a",
+		DeviceTarget:          "192.168.1.20",
+		DeviceToken:           "token-a",
+		CableAutoBindDisabled: true,
+	}
+	cfg.Normalize()
+	cfg.ResetDeviceBinding()
+
+	known, ok := cfg.KnownDevice("device-a")
+	if !ok || known.Target != "" || known.DeviceToken != "token-a" {
+		t.Fatalf("failed WiFi transition retained stale target or lost authentication: %+v", cfg.KnownDevices)
+	}
+}
+
+func TestWithConfigLockSerializesReadModifyWrite(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{Theme: "mini"}); err != nil {
+		t.Fatal(err)
+	}
+	firstLoaded := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- WithConfigLock(home, func() error {
+			cfg, err := Load(home)
+			if err != nil {
+				return err
+			}
+			close(firstLoaded)
+			<-releaseFirst
+			cfg.DeviceID = "worker-device"
+			return Save(home, cfg)
+		})
+	}()
+	<-firstLoaded
+	resetDone := make(chan error, 1)
+	go func() {
+		resetDone <- WithConfigLock(home, func() error {
+			cfg, err := Load(home)
+			if err != nil {
+				return err
+			}
+			cfg.ResetDeviceBinding()
+			return Save(home, cfg)
+		})
+	}()
+	select {
+	case err := <-resetDone:
+		t.Fatalf("reset bypassed active config transaction: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-resetDone; err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != "" || !cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("serialized reset was overwritten by stale worker state: %+v", cfg)
+	}
+}
+
+func TestWiFiTransitionPendingDistinguishesResetAndLegacyWiFi(t *testing.T) {
+	pending := Config{
+		DeviceID:              "device-a",
+		DeviceTarget:          "http://192.168.178.72",
+		CableAutoBindDisabled: true,
+	}
+	if !pending.WiFiTransitionPending() {
+		t.Fatal("expected transitional Cable-to-WiFi config")
+	}
+	pending.ConnectionModeChoiceRequired = true
+	if pending.WiFiTransitionPending() {
+		t.Fatal("explicit setup reset must not be a pending WiFi transition")
+	}
+	pending = Config{DeviceID: "legacy", DeviceTarget: "http://192.168.178.72"}
+	if pending.WiFiTransitionPending() {
+		t.Fatal("legacy WiFi config must not be a pending transition")
 	}
 }
 
