@@ -43,12 +43,11 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    kept off the display, and only providers that can actually produce a reading
    reach the display step. This is a deliberate departure from the design's
    "Provider row states" board, decided by the product owner on 2026-08-30.
-4. An existing setup opens Overview without setup writes or extra
-   confirmation, also on a launch where its connected VibeTV is still coming
-   up: a completed setup is remembered by the Mac App, and Overview reports
-   what is not ready yet rather than reopening setup. A VibeTV that is
-   switched off when the app starts still opens on the device step, where the
-   recovery picker and the automatic reconnect live. If VibeTV or the Mac App
+4. Every launch stays in the wizard until the selected VibeTV is connected,
+   ready, and its live preview has rendered. Existing setup choices are reused
+   without repeated setup writes or extra confirmation; saved completion never
+   bypasses the preview. A VibeTV that is switched off when the app starts opens
+   on the device step, where recovery and automatic reconnect live. If VibeTV or the Mac App
    becomes unavailable after Control
    Center was entered, the current tab and navigation remain visible, and
    Overview reports the saved VibeTV as not reachable rather than presenting
@@ -64,9 +63,10 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    least one switched-on AI provider has passed its check and supplied a
    displayable usage reading (including 0%), a display mode is
    stored wherever the Mac App can store one, a theme is installed, and the
-   first display frame carries real usage data. That is decided once: a
-   later launch does not wait for the frame again, but Overview renders no
-   theme and no usage until a real one arrives.
+   first display frame carries real usage data. Every launch and every explicit
+   return to the wizard, including WiFi setup from Settings, requires a valid
+   live preview before opening the Control Center. Losing readiness or changing
+   devices cancels a pending handover.
 7. Appearance is additionally locked until theme installs are allowed by the release gate.
 8. During setup, help is the Help control on every wizard screen, offering
    `Ask AI to fix` and `Create support report`. Afterwards Support may stay

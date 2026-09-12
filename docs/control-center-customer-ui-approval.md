@@ -4343,3 +4343,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul's current instruction “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” requires retaining setup during first-frame waits, including after WiFi verification, and when reopening an unfinished installation.
 - Approved customer-visible result: A verified Cable or WiFi connection advances to the existing preview wait without repeating connection or firmware writes. Running firmware and theme jobs restored on launch show their existing progress log inside the wizard; they cannot bypass preview admission or start a second install. Browser regressions replace the superseded saved-setup shortcut with the required no-preview boundary.
+
+## 2026-09-12 — Validate the accepted preview gate in Theme Studio
+
+- User approval: Paul confirmed the candidate with “top, passt” and explicitly requested pushing this state, fixing valid review/CI findings and repeating the review loop. His requirement “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” remains the approved visible result.
+- Approved customer-visible result: The accepted preview gate is unchanged. The Screensaver browser fixture now supplies the tracked active Clippy render pack with a matching device path before navigating out of setup. The UI principles now document the already approved preview requirement for every launch and Settings WiFi setup instead of the superseded saved-setup shortcut.
+- Validation: The complete Theme Studio safety browser suite passed. This correction changes only test data and documentation; no app, firmware, layout or copy changes.
