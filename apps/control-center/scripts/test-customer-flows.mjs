@@ -4820,7 +4820,7 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     page,
     installRequests,
     () => {},
-    { device: themeMissingDevice },
+    { device: themeMissingDevice, searchDevices: [] },
   );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -13017,6 +13017,10 @@ async function testSingleProviderSkipsDisplayMode(browser, appUrl) {
   const writes = [];
   await routeCompanionOnline(page, [], () => {}, {
     device: themeMissingDevice,
+    usageResponse: { ok: true, providers: [
+      { id: "codex", label: "Codex", session: 12, weekly: 34 },
+      { id: "claude", label: "Claude", session: 24, weekly: 36 },
+    ] },
     providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
     providerDisplay: { mode: "automatic", providerIds: [], configured: false, valid: false },
     providerDisplayPatchDelayMs: 500,
