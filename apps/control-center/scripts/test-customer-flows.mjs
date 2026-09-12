@@ -486,13 +486,10 @@ async function main() {
         testSavedPairingStartupRecoversWithoutWizard,
         testCableBackUsesConnectedDeviceWithoutNewSearch,
         testFreshCableHasNoEmptyPicker,
-        testCableSurvivesDeniedSetupScan,
         testMissingVibeTVOffersRetry,
-        testSetupNetworkWithoutLAN,
-        testSetupNetworkScanDenied,
         testLocalWifiSetupRescansAfterNoResults,
         testDeniedLocalNetworkShowsRecovery,
-        testFreshCableCanProvisionWiFi,
+        testDiscoveredDualTransportCanRecoverWiFi,
         testMixedTransportDeviceSelection,
         testRejectedPairingTokenUsesTypedRecovery,
         testFirstSetupStillWaitsForARenderedPreview,
@@ -848,8 +845,7 @@ async function main() {
     await testSavedPairingStartupRecoversWithoutWizard(browser, appContext.appUrl);
     await testCableBackUsesConnectedDeviceWithoutNewSearch(browser, appContext.appUrl);
     await testFreshCableHasNoEmptyPicker(browser, appContext.appUrl);
-    await testCableSurvivesDeniedSetupScan(browser, appContext.appUrl);
-    await testFreshCableCanProvisionWiFi(browser, appContext.appUrl);
+    await testDiscoveredDualTransportCanRecoverWiFi(browser, appContext.appUrl);
     await testMixedTransportDeviceSelection(browser, appContext.appUrl);
     await testFirstSetupStillWaitsForARenderedPreview(
       browser,
@@ -1971,13 +1967,6 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
-  await page.addInitScript(() => {
-    window.setupSSIDScanCalls = 0;
-    window.webkit = { messageHandlers: { vibetvSetupWiFi: { postMessage: async () => {
-      window.setupSSIDScanCalls += 1;
-      throw new Error("Location Services denied");
-    } } } };
-  });
   const requests = [];
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
@@ -2067,7 +2056,6 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
       .count()) === 0,
     "The first-time provider step must not reappear after Continue",
   );
-  assert(await page.evaluate(() => window.setupSSIDScanCalls) === 0, "An existing WiFi device must work without asking for an SSID scan");
   await page.close();
 }
 
@@ -2142,37 +2130,6 @@ async function testMultipleVibeTVsRequireAChoice(browser, appUrl) {
     searchRequests === 1,
     `A multi-device setup must not rescan on its own, got ${searchRequests} searches`,
   );
-  await page.close();
-}
-
-async function testSetupNetworkWithoutLAN(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
-  await page.addInitScript(() => {
-    window.webkit = { messageHandlers: { vibetvSetupWiFi: { postMessage: async () => ({ count: 1 }) } } };
-  });
-  await routeCompanionOnline(page, [], () => {}, {
-    device: { connected: false, paired: false },
-    searchError: { code: "network_unavailable", message: "This Mac is not connected to a WiFi network." },
-  });
-  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  const dialog = page.getByRole("dialog", { name: "Connect to WiFi", exact: true });
-  await dialog.getByText("1 VibeTV found.", { exact: false }).waitFor();
-  await dialog.getByText("192.168.4.1", { exact: true }).waitFor();
-  assert(await page.getByRole("radiogroup", { name: "Connection method" }).count() === 0, "Setup WiFi without USB needs no Cable/WiFi selector");
-  await captureMigrationScreenshot(page, "13-setup-network-without-lan.png");
-  await page.close();
-}
-
-async function testSetupNetworkScanDenied(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
-  await page.addInitScript(() => {
-    window.webkit = { messageHandlers: { vibetvSetupWiFi: { postMessage: async () => { throw new Error("Allow Location Services to find VibeTV-Setup."); } } } };
-  });
-  await routeCompanionOnline(page, [], () => {}, { device: { connected: false, paired: false }, searchDevices: [] });
-  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  const dialog = page.getByRole("dialog", { name: "We couldn't search for your VibeTV" });
-  await dialog.getByText("Allow Location Services to find VibeTV-Setup.", { exact: false }).waitFor();
-  assert(await page.getByText("0 VibeTVs found", { exact: true }).count() === 0, "A denied scan must not claim there are zero networks");
   await page.close();
 }
 
@@ -5087,18 +5044,8 @@ async function testTransientDisplayReadStillOpensOverview(browser, appUrl) {
   await page.close();
 }
 
-async function testCableSurvivesDeniedSetupScan(browser, appUrl) {
-  await testFreshCableHasNoEmptyPicker(browser, appUrl, { scanDenied: true });
-}
-
-async function testFreshCableHasNoEmptyPicker(browser, appUrl, { scanDenied = false } = {}) {
+async function testFreshCableHasNoEmptyPicker(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
-  await page.addInitScript((denied) => {
-    window.webkit = { messageHandlers: { vibetvSetupWiFi: { postMessage: async () => {
-      if (denied) throw new Error("Allow Location Services to find VibeTV-Setup.");
-      return { count: 1 };
-    } } } };
-  }, scanDenied);
   await page.addInitScript(() => {
     window.setupHeadings = [];
     new MutationObserver(() => {
@@ -5123,18 +5070,6 @@ async function testFreshCableHasNoEmptyPicker(browser, appUrl, { scanDenied = fa
     await route.fulfill({ json: { ok: true, status: "selected", device } });
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  if (scanDenied) {
-    const error = page.getByRole("dialog", { name: "We couldn't search for your VibeTV", exact: true });
-    await error.getByText("Allow Location Services to find VibeTV-Setup.", { exact: false }).waitFor();
-    assert(selections.length === 0, "The scan error must remain available before continuing Cable setup");
-    await error.getByRole("button", { name: "Close", exact: true }).click();
-  } else {
-    await page.getByRole("radiogroup", { name: "Connection method" }).waitFor();
-    await page.getByRole("radio", { name: "Cable", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
-    await page.getByRole("radio", { name: "WiFi", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
-    await captureMigrationScreenshot(page, "09-fresh-connection-choice.png");
-    await page.getByRole("button", { name: "Connect", exact: true }).click();
-  }
   await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
   assert(selections.length === 1 && selections[0].mode === "cable" && selections[0].deviceId === device.deviceId,
     "Cable setup must retain and select exactly the discovered device");
@@ -5142,6 +5077,7 @@ async function testFreshCableHasNoEmptyPicker(browser, appUrl, { scanDenied = fa
   await page.getByRole("heading", { name: "Connecting to VibeTV", exact: true }).waitFor();
   await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
   const headings = await page.evaluate(() => window.setupHeadings);
+  assert(!headings.includes("How should VibeTV connect?"), "USB-only setup must skip the connection-method chooser");
   assert(!headings.includes("Choose your VibeTV"), `Single Cable must never flash an empty picker: ${JSON.stringify(headings)}`);
   await page.close();
 }
@@ -5183,80 +5119,51 @@ async function testMixedTransportDeviceSelection(browser, appUrl) {
   await page.close();
 }
 
-async function testFreshCableCanProvisionWiFi(browser, appUrl) {
+async function testDiscoveredDualTransportCanRecoverWiFi(browser, appUrl) {
   for (const multiple of [false, true]) {
     const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
-    await page.addInitScript(() => {
-      window.webkit = { messageHandlers: { vibetvSetupWiFi: { postMessage: async () => ({ count: 1 }) } } };
-    });
     const deviceId = "14799300";
-    let selected;
-    let submitted;
-    let modeAttempts = 0;
-    let wifiAttempts = 0;
-    await routeCompanionOnline(page, [], () => {}, {
+    const wifi = { ...themeMissingDevice, deviceId, target: "http://192.168.1.42" };
+    const selections = [];
+    const companion = await routeCompanionOnline(page, [], () => {}, {
       device: { connected: false, paired: false },
       connectionModeChoiceRequired: true,
       searchDevices: [
-        ...(multiple ? [{ target: "cable://vibetv", deviceId: "another-device", transport: "cable", networkMode: "setup" }] : []),
-        { target: "cable://vibetv", deviceId, transport: "cable", networkMode: "setup" },
+        ...(multiple ? [{ target: "cable://vibetv", deviceId: "another-device", transport: "cable" }] : []),
+        { target: "cable://vibetv", deviceId, transport: "cable" },
+        { target: wifi.target, deviceId, transport: "wifi" },
       ],
+      providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
     });
     await page.route("**/v1/setup/connection-mode", async (route) => {
-      selected = route.request().postDataJSON();
-      if (++modeAttempts === 1) {
+      selections.push(route.request().postDataJSON());
+      if (selections.length === 1) {
         await route.fulfill({ status: 409, json: { ok: false, error: {
           code: "cable_missing", message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry.",
         } } });
         return;
       }
-      await route.fulfill({ json: { ok: true, status: "wifi_credentials_required", device: { deviceId } } });
-    });
-    await page.route("**/v1/setup/wifi-networks", async (route) => {
-      await route.fulfill({ json: { ok: true, networks: [{ ssid: "Test WiFi", rssi: -40, encrypted: true }] } });
-    });
-    await page.route("**/v1/setup/wifi", async (route) => {
-      if (++wifiAttempts === 1) {
-        await route.fulfill({ status: 409, json: { ok: false, error: {
-          code: "wifi_setup_failed", message: "VibeTV could not save these WiFi details.", nextAction: "Check the Cable and try again.",
-        } } });
-        return;
-      }
-      submitted = route.request().postDataJSON();
-      await route.fulfill({ json: { ok: true, device: { deviceId } } });
+      companion.setDevice(wifi);
+      await route.fulfill({ json: { ok: true, status: "selected", device: wifi } });
     });
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
     if (multiple) {
       await page.getByRole("radio", { name: new RegExp(`VibeTV ${deviceId}`) }).click();
       await page.getByRole("button", { name: "Connect", exact: true }).click();
     }
+    await page.getByRole("radio", { name: "Cable", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
+    await page.getByRole("radio", { name: "WiFi", exact: true }).getByText("1 VibeTV found", { exact: true }).waitFor();
     await page.getByRole("radio", { name: "WiFi", exact: true }).click();
     await page.getByRole("button", { name: "Connect", exact: true }).click();
     const modeError = page.getByRole("dialog", { name: "WiFi setup failed", exact: true });
     await modeError.waitFor();
     assert((await modeError.innerText()).includes("Reconnect the Cable and retry."), "A rejected WiFi choice must explain recovery");
-    await captureMigrationScreenshot(page, multiple ? "11-wifi-choice-error.png" : "10-wifi-choice-error.png");
     await modeError.getByRole("button", { name: "OK", exact: true }).click();
     await page.getByRole("radio", { name: "WiFi", exact: true }).click();
     await page.getByRole("button", { name: "Connect", exact: true }).click();
-    await page.getByRole("combobox", { name: "WiFi network", exact: true }).click();
-    await page.getByRole("option", { name: /Test WiFi/ }).click();
-    await page.getByLabel("WiFi password", { exact: true }).fill("test-password-only");
-    await captureMigrationScreenshot(page, multiple ? "11-selected-device-wifi.png" : "10-fresh-wifi-over-cable.png");
-    await page.getByRole("button", { name: "Connect to WiFi", exact: true }).click();
-    const wifiError = page.getByRole("dialog", { name: "WiFi setup failed", exact: true });
-    await wifiError.waitFor();
-    assert((await wifiError.innerText()).includes("Check the Cable and try again."), "A rejected WiFi submission must explain recovery");
-    await wifiError.getByRole("button", { name: "OK", exact: true }).click();
-    assert(await page.getByLabel("WiFi password", { exact: true }).inputValue() === "test-password-only", "Dismissal must preserve the WiFi password");
-    await page.getByRole("button", { name: "Connect to WiFi", exact: true }).click();
-    await waitForCondition(() => Boolean(submitted), "WiFi credentials must be sent over Cable");
-    assert(selected.mode === "wifi" && selected.deviceId === deviceId, "WiFi setup must keep the selected Cable identity");
-    assert(submitted.ssid === "Test WiFi" && submitted.password === "test-password-only", "WiFi setup must submit the chosen network");
-    const waiting = page.getByRole("button", { name: "Connecting to WiFi…", exact: true });
-    await waiting.waitFor();
-    assert(await waiting.isDisabled(), "Submitting WiFi must wait for the actual connection");
-    assert(!(await setupScreen(page, SETUP_PROVIDERS_SCREEN).isVisible()), "Sending credentials must not pretend WiFi is already connected");
+    await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+    assert(selections.length === 2 && selections.every((selection) => selection.mode === "wifi" && selection.deviceId === deviceId),
+      "Retry must switch only the chosen device to WiFi");
     await page.close();
   }
 }

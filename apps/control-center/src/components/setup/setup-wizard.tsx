@@ -74,7 +74,6 @@ export type SetupWizardProps = {
   activeDeviceId?: string;
   device: DeviceInfo | null;
   deviceCandidates: DeviceCandidate[];
-  setupWiFiCount?: number;
   deviceSearchState: DeviceSearchState;
   displayFrame: DisplayFrameSnapshot | null;
   displayMode: ProviderDisplaySelection["mode"];
@@ -177,7 +176,7 @@ export function SetupWizard(props: SetupWizardProps) {
   const [preferredTransport, setPreferredTransport] =
     useState<SetupTransport | "choose" | null>(props.initialWiFiSetup ? "wifi" : null);
   const [wifiSetup, setWiFiSetup] = useState<{
-    phase: "credentials" | "waiting";
+    phase: "selecting" | "credentials" | "waiting";
     deviceId?: string;
     viaCable: boolean;
     credentialsSent?: boolean;
@@ -230,7 +229,6 @@ export function SetupWizard(props: SetupWizardProps) {
     () =>
       decideSetupConnection({
         candidates: connectionCandidates,
-        setupWiFiCount: props.setupWiFiCount,
         choiceRequired:
           preferredTransport === "choose" || props.connectionModeChoiceRequired,
         savedMode: props.connectionMode,
@@ -239,7 +237,6 @@ export function SetupWizard(props: SetupWizardProps) {
       }),
     [
       connectionCandidates,
-      props.setupWiFiCount,
       preferredTransport,
       props.connectionMode,
       props.connectionModeChoiceRequired,
@@ -414,7 +411,7 @@ export function SetupWizard(props: SetupWizardProps) {
         (candidate) => candidate.transport === "cable" && candidateKey(candidate) === preselected,
       ) || connectionCandidates.find((candidate) => candidate.transport === "cable");
       setWiFiSetup({
-        phase: "waiting",
+        phase: "selecting",
         deviceId: cable?.deviceId,
         viaCable: Boolean(cable),
       });
@@ -673,7 +670,6 @@ export function SetupWizard(props: SetupWizardProps) {
             legacyCandidateFlow ? undefined : connectionDecision.alternative
           }
           candidates={visibleCandidates}
-          setupWiFiCount={props.setupWiFiCount}
           connecting={connecting}
           connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state)}
@@ -718,7 +714,7 @@ export function SetupWizard(props: SetupWizardProps) {
           wifiNetworks={wifiNetworks}
           onWiFiError={setWiFiError}
           wifiScanning={wifiScanning}
-          wifiSetupPhase={wifiSetup?.phase}
+          wifiSetupPhase={wifiSetup?.phase === "selecting" ? "waiting" : wifiSetup?.phase}
           wifiWaitingViaCable={wifiSetup?.viaCable}
           wifiCredentialsSent={wifiSetup?.credentialsSent}
         />}
@@ -734,7 +730,6 @@ export function SetupWizard(props: SetupWizardProps) {
         ) : null}
         {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
           <SetupWiFiPhoneDialog
-            foundCount={props.setupWiFiCount}
             onEnterAddressManually={openAddressDialog}
             onScanAgain={searchAgain}
           />

@@ -190,12 +190,10 @@ export function SetupDeviceNotFoundDialog({
 
 /** The phone path stays a dismissible dialog while discovery continues. */
 export function SetupWiFiPhoneDialog({
-  foundCount = 0,
   onEnterAddressManually,
   onScanAgain,
   scanning = false,
 }: {
-  foundCount?: number;
   onEnterAddressManually: () => void;
   onScanAgain: () => void;
   scanning?: boolean;
@@ -207,9 +205,7 @@ export function SetupWiFiPhoneDialog({
         Set up WiFi with your phone
       </Button>
       <SetupDialog
-        description={foundCount > 0
-          ? `${foundCount} ${foundCount === 1 ? "VibeTV" : "VibeTVs"} found. Connect it to your WiFi with your phone.`
-          : "Set it up with your phone — VibeTV opens its own network for that."}
+        description="Set it up with your phone — VibeTV opens its own network for that."
         icon={Wifi}
         tone="neutral"
         onOpenChange={setOpen}

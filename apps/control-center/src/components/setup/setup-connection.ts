@@ -27,7 +27,6 @@ export function candidateKey(candidate: DeviceCandidate): string {
 
 export function decideSetupConnection(options: {
   candidates: DeviceCandidate[];
-  setupWiFiCount?: number;
   choiceRequired: boolean;
   savedMode?: string;
   activeDeviceId?: string;
@@ -97,9 +96,9 @@ export function decideSetupConnection(options: {
       alternative: "wifi",
     };
   }
-  // Offer both paths only when WiFi discovery found a device or its open setup AP.
+  // Offer both paths only when the device is also reachable on the local network.
   if (cable.length === 1) {
-    return wifi.length > 0 || (options.setupWiFiCount || 0) > 0
+    return wifi.length > 0
       ? { kind: "mode", candidates: options.candidates }
       : { kind: singleCandidateKind(cable[0]), transport: "cable", candidates: cable };
   }

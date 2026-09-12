@@ -649,8 +649,7 @@ describe("SetupWizard: direct connection", () => {
       connectionMode: "cable",
       connectionModeChoiceRequired: entry === "choice",
       initialWiFiSetup: entry === "settings" ? { status: "wifi_credentials_required", deviceId: cable.deviceId } : null,
-      deviceCandidates: entry === "choice" ? [cable, otherWiFi] : [cable],
-      setupWiFiCount: 1,
+      deviceCandidates: entry === "choice" ? [cable, transitioned, otherWiFi] : [cable],
       deviceSearchState: "multiple",
       connectSteps: {
         checkFirmware: entry === "failed-cable"
@@ -730,9 +729,9 @@ describe("SetupWizard: WiFi recovery dialogs", () => {
     const failure = { code: "cable_missing", message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry." };
     const onSelectConnectionMode = vi.fn().mockRejectedValue(failure);
     render(<SetupWizard {...baseProps({
-      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: entry === "choice", setupWiFiCount: entry === "choice" ? 1 : 0,
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: entry === "choice",
       deviceSearchState: entry === "choice" ? "multiple" : "not-found",
-      deviceCandidates: entry === "choice" ? [{ target: "cable://vibetv", deviceId: "same", transport: "cable" }] : [],
+      deviceCandidates: entry === "choice" ? [{ target: "cable://vibetv", deviceId: "same", transport: "cable" }, { target: "http://192.168.1.42", deviceId: "same", transport: "wifi" }] : [],
       onSelectConnectionMode,
     })} />);
     function chooseWiFi() {
@@ -870,9 +869,9 @@ describe("SetupWizard: going back", () => {
       step: "device",
       connectionModeChoiceRequired: true,
       deviceSearchState: "multiple",
-      setupWiFiCount: 1,
       deviceCandidates: [
         { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" },
+        { target: "http://192.168.1.42", deviceId: "cable-device", transport: "wifi" },
       ],
       connectSteps: { connect, checkFirmware: vi.fn(), installFirmware: vi.fn() },
       onScanWiFiNetworks: vi.fn().mockResolvedValue([]),

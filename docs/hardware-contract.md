@@ -407,11 +407,13 @@ unexplained transport error instead of an authentication failure.
 - The device setup screen first offers `Download Mac App` at `app.vibetv.shop`.
   The access point stays available in the background. After an empty discovery,
   the Mac App tells customers to join `VibeTV-Setup` and open `192.168.4.1`.
-- The native startup scan counts nearby open `VibeTV-Setup` networks using
-  CoreWLAN, alongside local-network device discovery. Both use the same
-  "VibeTV found" label. No internet connection is required. macOS location
-  authorization is used only to read network names; denied or failed scans
-  remain errors rather than zero discoveries.
+- The Mac App discovers USB devices and devices reachable on the local network.
+  It does not scan nearby WiFi network names or request location authorization.
+  A device found only over USB connects directly by Cable; the connection-method
+  chooser appears only when that device is also found on the local network.
+  USB customers can switch to WiFi later in Settings. No internet connection is
+  required for discovery. The existing phone instructions, re-scan and manual IP
+  entry handle devices not yet on the network.
   Downloading/opening the Mac App does not depend on first joining home WiFi.
 - The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
   and keeps manual SSID entry available for hidden networks.
