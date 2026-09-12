@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 import { cn } from "@/lib/utils";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
   ThemeSpecPreview,
   type ThemeRenderPack,
+  type FrameData,
 } from "./live-vibetv-preview";
 
 type ThemeRenderPreviewProps = {
   animate?: boolean;
+  frame?: FrameData;
   className?: string;
   /** Supplied for a Theme Studio theme, whose spec only exists locally. */
   pack?: ThemeRenderPack | null;
@@ -26,6 +29,7 @@ type ThemeRenderPreviewProps = {
  */
 export function ThemeRenderPreview({
   animate = false,
+  frame,
   className,
   pack: providedPack,
   themeId,
@@ -42,16 +46,15 @@ export function ThemeRenderPreview({
     if (providedPack || !themeId) {
       return;
     }
+    const localPack = themeSpecPath ? loadLocalThemeRenderPack(themeId, themeSpecPath) : null;
     const controller = new AbortController();
-    fetch(themeRenderPackUrl(themeId, themeSpecPath), {
+    const loadPack = localPack ? Promise.resolve(localPack) : fetch(themeRenderPackUrl(themeId, themeSpecPath), {
       signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("theme preview unavailable");
-        }
-        return response.json() as Promise<ThemeRenderPack>;
-      })
+    }).then((response) => {
+      if (!response.ok) throw new Error("theme preview unavailable");
+      return response.json() as Promise<ThemeRenderPack>;
+    });
+    loadPack
       .then((payload) => {
         setPackState({
           pack: payload,
@@ -88,6 +91,7 @@ export function ThemeRenderPreview({
     >
       <ThemeSpecPreview
         animate={animate}
+        frame={frame}
         pack={pack}
         status={status}
         themeId={themeId}

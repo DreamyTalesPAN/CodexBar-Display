@@ -1,3 +1,4 @@
+import { buildFrameData, type FrameData } from "../live-vibetv-preview";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import { formatReset } from "../usage-screen";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
@@ -17,6 +18,19 @@ export function displayPreviewFor(
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
   return {
+    frame: buildFrameData(undefined, {
+      provider: provider.id, label: provider.label,
+      session: provider.session, weekly: provider.weekly,
+      sessionUnavailable: unavailable || provider.sessionUnavailable,
+      weeklyUnavailable: unavailable || provider.weeklyUnavailable,
+      resetSecs: unavailable ? undefined : provider.resetSecs,
+      usageMode: provider.usageMode,
+      usageWindows: unavailable ? [] : provider.windows?.map((window) => ({
+        id: window.id, label: window.label, percent: window.usedPercent, resetSecs: window.resetSecs,
+      })),
+      sessionTokens: provider.sessionTokens, weekTokens: provider.weekTokens,
+      totalTokens: provider.totalTokens,
+    }),
     providerLabel: provider.label,
     resetLabel: unavailable ? null : formatReset(provider.windows?.[0]?.resetSecs ?? provider.resetSecs),
     windows: provider.windows?.length
@@ -55,4 +69,19 @@ export function displayPreviewsFor(
         windows: [],
       },
   );
+}
+
+export type UsageDisplayMode = "used" | "remaining";
+
+/** Convert only the presentation; the collector's snapshot stays untouched. */
+export function previewUsageMode(frame: FrameData, mode: UsageDisplayMode): FrameData {
+  if (frame.usageMode === mode) return frame;
+  const percent = (value: number) => 100 - Math.max(0, Math.min(100, value));
+  return {
+    ...frame, usageMode: mode,
+    session: percent(frame.session), weekly: percent(frame.weekly),
+    usageSlot1Percent: percent(frame.usageSlot1Percent), usageSlot2Percent: percent(frame.usageSlot2Percent),
+    usageWindows: frame.usageWindows.map((slot) => ({ ...slot, percent: percent(slot.percent) })),
+    providerSlots: frame.providerSlots.map((slot) => ({ ...slot, percent: percent(slot.percent) })),
+  };
 }

@@ -4402,3 +4402,12 @@ issue scope, or release permission never implies UI permission.
   work open providers before continuing to a missing theme; live usage arriving
   later does not skip that choice. Browser expectations now exercise this same
   approved result, including firmware-in-progress and failure gates.
+
+
+## 2026-09-12 — Theme first and used/remaining in setup and Settings
+
+- User approval: Paul requested the updated Claude Design project: "es soll jetzt ne möglichkeit geben, usage als used oder remaining anzuzeigen ... das geht 1x beim setup im wizard und danach in settings" and "im setup soll man erst das theme auswählen, dann folgen display mode und show usage as, jew. mit richtiger preview von dem theme, das ich ausgewählt habe. ... bau das beides noch ein".
+- Approved customer-visible result: Setup chooses providers, then a theme, Display Mode (only for two or more enabled providers), and Show usage as. Used and Remaining cards render the selected theme with the existing usage snapshot. Settings exposes the same choice using the active theme. Saving updates CodexBar's existing usageBarsShowUsed preference, already used by the Companion API and device stream. Missing readings remain unavailable; failed writes remain on the originating screen.
+- Design source: Live Claude Design MCP, project 36eb7a1c-bd59-42f0-b120-3f1eb3905e4b, Setup Wizard Redesign.dc.html and Control Center Redesign.dc.html, including their imported design system.
+- Rebase: PR #427 updated onto PR #407 c00485e, including main 1d470ea. Retain this PR's previously approved global inline provider notices and #407's actual-usage readiness gate.
+- Validation: Local component/API/browser checks are recorded with the candidate. No physical-device rehearsal or signed release qualification is claimed by these UI checks.

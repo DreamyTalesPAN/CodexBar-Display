@@ -2,8 +2,9 @@ export const SETUP_STEPS = [
   "welcome",
   "device",
   "providers",
-  "display",
   "theme",
+  "display",
+  "usage",
   "live",
 ] as const;
 
@@ -18,6 +19,7 @@ export type SetupStepInput = {
   deviceUsable: boolean;
   /** A display mode has been written for this Mac. */
   displayConfigured: boolean;
+  usageConfigured?: boolean;
   /**
    * The companion can store a display mode at all. An older one cannot, and
    * asking for a choice it will refuse to keep is a dead end.
@@ -179,12 +181,9 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
   if (input.providerSelectionRequired) {
     return "providers";
   }
-  if (input.displaySelectionSupported && !input.displayConfigured) {
-    return "display";
-  }
-  if (input.themeSetupRequired) {
-    return "theme";
-  }
+  if (input.themeSetupRequired) return "theme";
+  if (input.displaySelectionSupported && !input.displayConfigured) return "display";
+  if (input.usageConfigured === false) return "usage";
   return "live";
 }
 
@@ -199,9 +198,11 @@ export function previousSetupStep(step: SetupStep): SetupStep | null {
   switch (step) {
     case "providers":
       return "device";
-    case "display":
-      return "providers";
     case "theme":
+      return "providers";
+    case "display":
+      return "theme";
+    case "usage":
       return "display";
     default:
       return null;

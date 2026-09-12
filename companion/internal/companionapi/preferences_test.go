@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1779,5 +1781,43 @@ func TestUnsupportedProviderKeepsGuidanceWithoutInventingReadiness(t *testing.T)
 	items = server.providerDescriptors(settings)
 	if items[0].Health.State != "disabled" || items[0].Health.Reported != "" {
 		t.Fatalf("disabled provider retained guidance: %+v", items)
+	}
+}
+
+func TestUsageDisplayPreferencePersistsThroughCodexBar(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	t.Setenv("CODEX_TEST_USAGE_PREFERENCE", filepath.Join(dir, "value"))
+	if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte(`#!/bin/sh
+if [ "$1" = "write" ]; then printf '%s' "$5" > "$CODEX_TEST_USAGE_PREFERENCE"; else cat "$CODEX_TEST_USAGE_PREFERENCE"; fi
+`), 0700); err != nil {
+		t.Fatal(err)
+	}
+	server := newTestServer(t, runtimeconfig.Config{})
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	for _, value := range []bool{false, true} {
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageDisplayPreferenceID, strings.NewReader(fmt.Sprintf(`{"value":%v}`, value))))
+		if response.Code != http.StatusOK {
+			t.Fatalf("write %d: %s", response.Code, response.Body.String())
+		}
+		if codexbar.UsageBarsShowUsed() != value {
+			t.Fatal("stream preference differs from saved setting")
+		}
+		response = httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=display", nil))
+		var got preferencesResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 1 || got.Items[0].Value != value {
+			t.Fatalf("unexpected readback: %+v", got)
+		}
+	}
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageDisplayPreferenceID, strings.NewReader(`{"value":"remaining"}`)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid value accepted: %d", response.Code)
 	}
 }

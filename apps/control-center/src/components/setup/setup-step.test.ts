@@ -111,14 +111,14 @@ describe("deriveSetupStep", () => {
     ).toBe("theme");
   });
 
-  it("asks for a display mode before a theme", () => {
+  it("asks for a theme before display mode", () => {
     expect(
       deriveSetupStep({
         ...done,
         displayConfigured: false,
         themeSetupRequired: true,
       }),
-    ).toBe("display");
+    ).toBe("theme");
   });
 
   it("is finished once nothing is left to ask for", () => {
@@ -157,8 +157,8 @@ describe("previousSetupStep", () => {
   });
 
   it("walks back through the choices that can be revisited", () => {
-    expect(previousSetupStep("theme")).toBe("display");
-    expect(previousSetupStep("display")).toBe("providers");
+    expect(previousSetupStep("theme")).toBe("providers");
+    expect(previousSetupStep("display")).toBe("theme");
     expect(previousSetupStep("providers")).toBe("device");
   });
 
@@ -169,7 +169,7 @@ describe("previousSetupStep", () => {
 
 describe("resolveSetupStep", () => {
   it("honours a step the customer went back to", () => {
-    expect(resolveSetupStep("theme", "display")).toBe("display");
+    expect(resolveSetupStep("display", "theme")).toBe("theme");
   });
 
   it("drops it once the state has moved past it anyway", () => {
@@ -472,4 +472,12 @@ describe("setupIdentityIsKnown", () => {
   it("treats a companion without a display choice as answered", () => {
     expect(setupIdentityIsKnown(true, null, { code: "HTTP_404" })).toBe(true);
   });
+});
+
+it("requires theme, display and usage in order during a new setup", () => {
+  expect(deriveSetupStep({ ...done, themeSetupRequired: true, displayConfigured: false, usageConfigured: false })).toBe("theme");
+  expect(deriveSetupStep({ ...done, displayConfigured: false, usageConfigured: false })).toBe("display");
+  expect(deriveSetupStep({ ...done, usageConfigured: false })).toBe("usage");
+  expect(deriveSetupStep({ ...done, usageConfigured: true })).toBe("live");
+  expect(previousSetupStep("usage")).toBe("display");
 });

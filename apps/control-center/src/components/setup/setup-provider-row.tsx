@@ -115,7 +115,7 @@ export function SetupProviderRow({
   reportedMessage,
   saving = false,
 }: SetupProviderRowProps) {
-  const variant = setupProviderRowVariant(health);
+  const variant = enabled ? setupProviderRowVariant(health) : "toggle";
   const unusable = variant === "no_usage" || variant === "outage";
   const checkAgain = (
     <SetupProviderRowAction

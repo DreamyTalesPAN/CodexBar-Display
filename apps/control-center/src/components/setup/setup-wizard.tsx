@@ -1,4 +1,6 @@
 "use client";
+import { SetupUsageModeScreen } from "./setup-usage-mode-screen";
+import type { UsageDisplayMode } from "./setup-display-previews";
 
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type {
@@ -105,7 +107,14 @@ export type SetupWizardProps = {
   ) => void | Promise<boolean | void>;
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
-  onInstallTheme: () => void;
+  selectedThemeInstalled?: boolean;
+  onInstallTheme: () => void | Promise<boolean | void>;
+  usageMode?: UsageDisplayMode | null;
+  usageSavePending?: boolean;
+  usageError?: ApiError | null;
+  onUsageContinue?: (mode: UsageDisplayMode) => Promise<boolean>;
+  onRetryUsageMode?: () => void;
+  onDismissUsageError?: () => void;
   /** What stopped the catalog read or install on the theme step. */
   themeError: ApiError | null;
   themeErrorDismissible?: boolean;
@@ -175,6 +184,7 @@ export function SetupWizard(props: SetupWizardProps) {
     step: derivedStep,
   } = props;
 
+  const [usageDraft, setUsageDraft] = useState<UsageDisplayMode | null>(null);
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [connectionDeviceId, setConnectionDeviceId] = useState<string | null>(null);
@@ -306,11 +316,11 @@ export function SetupWizard(props: SetupWizardProps) {
   const step =
     providersContinuing && derived !== "welcome" && derived !== "device"
       ? "providers"
-      : props.displaySavePending && derived === "theme"
+      : props.displaySavePending && (derived === "usage" || derived === "live")
         ? "display"
         : derived;
   const back =
-    step === "theme" && soleProvider ? "providers" : previousSetupStep(step);
+    step === "usage" && soleProvider ? "theme" : previousSetupStep(step);
   // Counted so a write started before a Back press cannot undo it: the display
   // save can still be running when the customer leaves, and its continuation
   // used to release the override and carry them forward from the step they had
@@ -896,11 +906,7 @@ export function SetupWizard(props: SetupWizardProps) {
                   setWentBackTo(done);
                   return;
                 }
-                if (enabledProviders.length > 1) {
-                  setWentBackTo("display");
-                } else {
-                  goForward();
-                }
+                goForward();
               })
               .finally(() => setProvidersContinuing(false));
           }}
@@ -924,11 +930,13 @@ export function SetupWizard(props: SetupWizardProps) {
   if (step === "display") {
     const displayMode = displayDraft?.mode ?? props.displayMode;
     const displayProviderId =
-      displayDraft?.providerId ?? props.displayProviderId;
+      displayDraft?.providerId ?? props.displayProviderId ?? props.displayProviders[0]?.id ?? null;
     return (
       <>
         <SetupDisplayModeScreen
           {...help}
+          previewTheme={props.themes.find((theme) => theme.id === props.selectedThemeId)}
+          usageMode={props.usageMode ?? undefined}
           automaticPreview={props.automaticPreviews[0] ?? null}
           automaticPreviews={props.automaticPreviews}
           manualPreview={
@@ -961,7 +969,7 @@ export function SetupWizard(props: SetupWizardProps) {
               // later word on where they want to be, and the save landing
               // does not undo it.
               if (saved !== false && navigation === navigations.current) {
-                goForward();
+                setWentBackTo("usage");
               }
             });
           }}
@@ -991,8 +999,12 @@ export function SetupWizard(props: SetupWizardProps) {
           {...help}
           installLogs={props.themeInstallLogs}
           installing={props.installingTheme}
+          selectedThemeInstalled={props.selectedThemeInstalled}
           onBack={goBack}
-          onInstall={props.onInstallTheme}
+          onInstall={() => {
+            void props.onInstallTheme();
+            goForward();
+          }}
           onSelect={props.onSelectTheme}
           selectedThemeId={props.selectedThemeId}
           themes={props.themes}
@@ -1007,6 +1019,30 @@ export function SetupWizard(props: SetupWizardProps) {
         {props.themeError ? null : usageDialog}
       </>
     );
+  }
+
+  if (step === "usage") {
+    const mode = usageDraft ?? props.usageMode ?? null;
+    const continueUsage = () => {
+      if (!mode || !props.onUsageContinue || props.usageSavePending) return;
+      const navigation = navigations.current;
+      void props.onUsageContinue(mode).then((saved) => {
+        if (saved && navigation === navigations.current) goForward();
+      });
+    };
+    return <>
+      <SetupUsageModeScreen {...help}
+        mode={mode} onSelect={setUsageDraft} saving={props.usageSavePending}
+        theme={props.themes.find((theme) => theme.id === props.selectedThemeId)}
+        preview={props.automaticPreviews.find((preview) => preview.providerLabel ===
+          props.displayProviders.find((provider) => provider.id === props.displayProviderId)?.label) ?? props.automaticPreviews[0] ?? null}
+        onBack={goBack}
+        onContinue={continueUsage}
+      />
+      <SetupStepFailedDialog error={props.usageError ?? null}
+        onOpenChange={(open) => { if (!open) props.onDismissUsageError?.(); }}
+        onRetry={mode ? continueUsage : props.onRetryUsageMode} />
+    </>;
   }
 
   return (

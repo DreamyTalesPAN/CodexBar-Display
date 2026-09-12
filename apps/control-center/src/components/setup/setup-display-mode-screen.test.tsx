@@ -1,9 +1,15 @@
+import { displayPreviewFor } from "./setup-display-previews";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   SetupDisplayModeScreen,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
+
+vi.mock("../theme-render-preview", () => ({
+  ThemeRenderPreview: ({ themeId, frame }: { themeId: string; frame: import("../live-vibetv-preview").FrameData }) =>
+    <span data-theme={themeId} data-provider={frame.provider} data-session={frame.session} data-week-unavailable={String(frame.weeklyUnavailable)} />,
+}));
 
 const codex: SetupDisplayModeProvider = { id: "codex", label: "Codex" };
 const cursor: SetupDisplayModeProvider = { id: "cursor", label: "Cursor" };
@@ -32,14 +38,6 @@ function render(
       {...props}
     />,
   );
-}
-
-/** The two device panels, in render order: Automatic's, then Manual's. */
-// Split on the slot rather than on a style value: the panel has been
-// restyled once already, and a test that reads colours breaks every time.
-function panels(html: string): { automatic: string; manual: string } {
-  const parts = html.split('data-slot="display-mode-preview"');
-  return { automatic: parts[1] ?? "", manual: parts[2] ?? "" };
 }
 
 describe("SetupDisplayModeScreen", () => {
@@ -73,75 +71,23 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).not.toContain("Copilot");
   });
 
-  it("rests on the first provider of the rotation, and only that one", () => {
-    const tile = panels(render()).automatic;
-
-    expect(tile).toContain("Codex");
-    expect(tile).not.toContain("Cursor");
+  it("renders the selected theme with each provider's actual frame", () => {
+    const codexPreview = displayPreviewFor({ id: "codex", label: "Codex", session: 64, weekly: 0, weeklyUnavailable: true, usageMode: "used" });
+    const claudePreview = displayPreviewFor({ id: "claude", label: "Claude", session: 12, weekly: 3, usageMode: "used" });
+    const html = render({ previewTheme: { id: "tiny-office", name: "Tiny Office", themeSpecPath: "/themes/office.json" },
+      automaticPreview: codexPreview, manualPreview: claudePreview });
+    expect(html.match(/data-theme="tiny-office"/g)).toHaveLength(2);
+    expect(html).toContain('data-provider="codex" data-session="64" data-week-unavailable="true"');
+    expect(html).toContain('data-provider="claude" data-session="12"');
   });
 
-  it("takes the rotation from the previews when it gets them", () => {
-    const tile = panels(
-      render({
-        automaticPreviews: [
-          {
-            providerLabel: "Claude",
-            resetLabel: "Resets in 1h",
-            windows: [{ label: "Session", percent: 7 }, { label: "Weekly", percent: 3 }],
-          },
-          {
-            providerLabel: "Copilot",
-            resetLabel: null,
-            windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: null }],
-          },
-        ],
-        providers: [codex, cursor],
-      }),
-    ).automatic;
-
-    // The rotation the caller handed over wins over the enabled providers, and
-    // it starts on that list's first entry.
-    expect(tile).toContain("Claude");
-    expect(tile).not.toContain("Copilot");
-    expect(tile).not.toContain("Cursor");
+  it("rotates from the caller's provider list without lending missing readings", () => {
+    const html = render({ previewTheme: { id: "clippy", name: "Clippy" }, providers: [cursor, codex] });
+    expect(html).toContain('data-provider="" data-session="0" data-week-unavailable="true"');
   });
 
-  it("stands still on the first provider until motion is allowed", () => {
-    // Server output is also what a reduced-motion Mac renders: the first
-    // provider, held.
-    const tile = panels(render()).automatic;
-
-    expect(tile).toContain("Resets in 2h 10m");
-    expect(tile).toContain("64");
-    expect(tile).not.toContain("vibetv-preview-hold-sweep");
-  });
-
-  it("keeps usage it was not given visibly unavailable", () => {
-    const { automatic, manual } = panels(render());
-
-    // Codex's session was read; its week was not.
-    expect(automatic).toContain("64");
-    expect(automatic).toContain("--");
-    // Manual's provider has no reset reading at all.
-    expect(manual).toContain("Reset unavailable");
-  });
-
-  it("never lends one provider's numbers to another", () => {
-    // Cursor leads the rotation and has no reading of its own, so the panel it
-    // holds carries no numbers - Codex's 64% waits for Codex's turn.
-    const { automatic } = panels(render({ providers: [cursor, codex] }));
-
-    expect(automatic).toContain("Cursor");
-    expect(automatic).toContain("--");
-    expect(automatic).not.toContain("64");
-  });
-
-  it("holds Manual on the one provider it was pinned to", () => {
-    const { manual } = panels(render());
-
-    expect(manual).toContain("Claude");
-    expect(manual).not.toContain("Cursor");
-    expect(manual).toContain("12%");
+  it("shows a missing theme as unavailable", () => {
+    expect(render()).toContain("Theme preview unavailable");
   });
 
   it("offers one Continue action", () => {

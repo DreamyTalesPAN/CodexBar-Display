@@ -247,7 +247,7 @@ func (s *Server) preferenceRegistry() []preferenceAdapter {
 	if len(s.preferenceAdapters) > 0 {
 		return s.preferenceAdapters
 	}
-	return []preferenceAdapter{providerPreferenceAdapter{server: s}}
+	return []preferenceAdapter{providerPreferenceAdapter{server: s}, usageDisplayPreferenceAdapter{}}
 }
 
 func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
@@ -843,4 +843,30 @@ func writePreferencesReadError(w http.ResponseWriter, err error) {
 
 func writePreferenceNotFound(w http.ResponseWriter) {
 	writeError(w, http.StatusNotFound, "preference_not_found", "This setting was not found.", "Refresh settings, then try again.")
+}
+
+// CodexBar remains the owner; both the API and stream already read this key.
+type usageDisplayPreferenceAdapter struct{}
+
+const usageDisplayPreferenceID = "codexbar.usageBarsShowUsed"
+
+func (usageDisplayPreferenceAdapter) Section() string     { return "display" }
+func (usageDisplayPreferenceAdapter) Owns(id string) bool { return id == usageDisplayPreferenceID }
+func (usageDisplayPreferenceAdapter) List(context.Context) ([]preferenceDescriptor, error) {
+	value := codexbar.UsageBarsShowUsed()
+	return []preferenceDescriptor{{ID: usageDisplayPreferenceID, Section: "display", Owner: "codexbar", Type: preferenceTypeBoolean, Label: "Show usage as", Value: value, EffectiveValue: value, Writable: true, WriteStrategy: "codexbar-defaults", Availability: preferenceAvailability{State: "available"}}}, nil
+}
+func (a usageDisplayPreferenceAdapter) Write(ctx context.Context, id string, value any) (preferenceDescriptor, error) {
+	if !a.Owns(id) {
+		return preferenceDescriptor{}, errPreferenceNotFound
+	}
+	showUsed, ok := value.(bool)
+	if !ok {
+		return preferenceDescriptor{}, errors.New("usage display preference requires boolean")
+	}
+	if err := codexbar.SetUsageBarsShowUsed(ctx, showUsed); err != nil {
+		return preferenceDescriptor{}, err
+	}
+	items, err := a.List(ctx)
+	return items[0], err
 }
