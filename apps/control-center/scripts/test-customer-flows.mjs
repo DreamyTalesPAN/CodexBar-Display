@@ -4729,7 +4729,7 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     page,
     installRequests,
     () => {},
-    { device: themeMissingDevice },
+    { device: themeMissingDevice, searchDevices: [] },
   );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -4749,8 +4749,8 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     },
   });
 
-  // Before Overview has ever opened, losing the VibeTV is still setup. The
-  // With no connected device or selection, the wizard returns to Welcome.
+  // Losing the VibeTV is still setup. Discovery must also report it absent;
+  // a discoverable fixture would immediately reconnect and end this outage.
   await setupScreen(page, SETUP_WELCOME_SCREEN).waitFor({ timeout: 20_000 });
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
@@ -12831,6 +12831,10 @@ async function testSingleProviderSkipsDisplayMode(browser, appUrl) {
   const writes = [];
   await routeCompanionOnline(page, [], () => {}, {
     device: themeMissingDevice,
+    usageResponse: { ok: true, providers: [
+      { id: "codex", label: "Codex", session: 12, weekly: 34 },
+      { id: "claude", label: "Claude", session: 24, weekly: 36 },
+    ] },
     providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
     providerDisplay: { mode: "automatic", providerIds: [], configured: false, valid: false },
     providerDisplayPatchDelayMs: 500,

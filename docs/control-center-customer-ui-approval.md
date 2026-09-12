@@ -4411,3 +4411,5 @@ issue scope, or release permission never implies UI permission.
 - Design source: Live Claude Design MCP, project 36eb7a1c-bd59-42f0-b120-3f1eb3905e4b, Setup Wizard Redesign.dc.html and Control Center Redesign.dc.html, including their imported design system.
 - Rebase: PR #427 updated onto PR #407 c00485e, including main 1d470ea. Retain this PR's previously approved global inline provider notices and #407's actual-usage readiness gate.
 - Validation: Local component/API/browser checks are recorded with the candidate. No physical-device rehearsal or signed release qualification is claimed by these UI checks.
+
+- Screenshot follow-up: Keep both preview cards aligned at the top when their descriptions have different lengths, as in the approved design above.

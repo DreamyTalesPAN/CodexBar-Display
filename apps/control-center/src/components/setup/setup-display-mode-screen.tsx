@@ -318,7 +318,7 @@ export function ModeCard({
   return (
     <Item
       asChild
-      className={cn(selectedItemClass(selected), "overflow-hidden p-0")}
+      className={cn(selectedItemClass(selected), "items-start overflow-hidden p-0")}
       variant="outline"
     >
       <button
