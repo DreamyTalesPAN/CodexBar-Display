@@ -4784,7 +4784,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             usageMode={usageMode}
             usageSavePending={usageModePending}
             onUsageModeChange={(mode) => void saveUsageMode(mode)}
-            previewTheme={device?.activeTheme ? { id: device.activeTheme, name: device.activeTheme, themeSpecPath: device.display?.themeSpec?.path } : undefined}
             actionError={usageModeError || lastError}
             onDismissError={() => {
               setUsageModeError(null);

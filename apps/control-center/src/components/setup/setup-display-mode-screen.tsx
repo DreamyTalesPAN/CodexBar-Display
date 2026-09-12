@@ -14,6 +14,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { SimpleUsagePreview } from "./simple-usage-preview";
 import { ThemeRenderPreview } from "../theme-render-preview";
 import { buildFrameData, type FrameData } from "../live-vibetv-preview";
 import { previewUsageMode, type UsageDisplayMode } from "./setup-display-previews";
@@ -161,7 +162,7 @@ type DisplayModeChoiceProps = Pick<
   | "providers"
   | "saving"
   | "selectedProviderId"
-> & { className?: string };
+> & { className?: string; simplePreview?: boolean };
 
 /**
  * The display-mode choice itself: two cards showing what each mode would put
@@ -172,6 +173,7 @@ type DisplayModeChoiceProps = Pick<
  * Settings ended up offering "Always show one" against the wizard's "Manual".
  */
 export function DisplayModeChoice({
+  simplePreview,
   previewTheme,
   usageMode,
   automaticPreview,
@@ -202,7 +204,7 @@ export function DisplayModeChoice({
           selected={mode === "automatic"}
           title="Automatic"
         >
-          <PreviewTile preview={rotation[index]} theme={previewTheme} usageMode={usageMode} />
+          <PreviewTile simple={simplePreview} preview={rotation[index]} theme={previewTheme} usageMode={usageMode} />
         </ModeCard>
         <ModeCard
           description="VibeTV always shows the one provider you pick — nothing else."
@@ -211,7 +213,7 @@ export function DisplayModeChoice({
           selected={mode === "fixed"}
           title="Manual"
         >
-          <PreviewTile preview={manualPreview} theme={previewTheme} usageMode={usageMode} />
+          <PreviewTile simple={simplePreview} preview={manualPreview} theme={previewTheme} usageMode={usageMode} />
         </ModeCard>
       </div>
 
@@ -345,11 +347,13 @@ export function ModeCard({
 }
 
 /** The selected theme, rendered by the same renderer as the live device preview. */
-export function PreviewTile({ preview, theme, usageMode }: {
+export function PreviewTile({ preview, theme, usageMode, simple }: {
+  simple?: boolean;
   preview: SetupDisplayModePreview | null | undefined;
   theme?: SetupThemeOption;
   usageMode?: UsageDisplayMode;
 }) {
+  if (simple) return <SimpleUsagePreview preview={preview} usageMode={usageMode} />;
   const frame = preview?.frame ?? buildFrameData(undefined, {
     label: preview?.providerLabel,
     sessionUnavailable: true, weeklyUnavailable: true,

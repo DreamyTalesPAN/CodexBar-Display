@@ -21,6 +21,7 @@ type UsageModeChoiceProps = {
   preview: SetupDisplayModePreview | null;
   theme?: SetupThemeOption;
   saving?: boolean;
+  simplePreview?: boolean;
 };
 
 export function UsageModeChoice({
@@ -29,6 +30,7 @@ export function UsageModeChoice({
   preview,
   theme,
   saving,
+  simplePreview,
 }: UsageModeChoiceProps) {
   return (
     <div
@@ -48,7 +50,7 @@ export function UsageModeChoice({
           disabled={saving || mode === null}
           onSelect={() => onSelect(value)}
         >
-          <PreviewTile preview={preview} theme={theme} usageMode={value} />
+          <PreviewTile simple={simplePreview} preview={preview} theme={theme} usageMode={value} />
         </ModeCard>
       ))}
     </div>
