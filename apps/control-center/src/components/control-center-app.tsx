@@ -227,6 +227,7 @@ type FirmwareUpdateResult = {
   healthVerified?: boolean;
   streamVerified?: boolean;
   renderVerified?: boolean;
+  renderSkipped?: string;
 };
 
 type FirmwareUpdateJob = {
@@ -2611,7 +2612,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           at: finishedAt,
           tone: "attention",
         });
-        return true;
+        lastFirmwareErrorRef.current = {
+          code: "firmware_update_attention",
+          message:
+            finishedJob.message ||
+            "Firmware is current, but VibeTV still needs attention.",
+          nextAction:
+            "Keep VibeTV powered on and create a support report. Do not install the firmware again.",
+        };
+        return false;
       }
       const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
       const finishedAt = formatTime();
@@ -4844,7 +4853,7 @@ async function pollThemeInstallJob({
   } satisfies ApiError;
 }
 
-async function pollFirmwareUpdateJob({
+export async function pollFirmwareUpdateJob({
   applyUpdateJob,
   jobId,
   runCompanion,
@@ -4861,8 +4870,19 @@ async function pollFirmwareUpdateJob({
       { preserveLastError: true },
     );
     applyUpdateJob(payload.job);
-    if (payload.job.phase === "complete" || payload.job.phase === "error") {
+    if (
+      payload.job.phase === "complete" ||
+      payload.job.phase === "attention" ||
+      payload.job.phase === "error"
+    ) {
       return payload.job;
+    }
+    if (payload.job.phase !== "installing") {
+      throw {
+        code: "firmware_update_status_invalid",
+        message: "VibeTV returned an unknown update status.",
+        nextAction: "Keep VibeTV powered on, then create a support report.",
+      } satisfies ApiError;
     }
   }
   throw {

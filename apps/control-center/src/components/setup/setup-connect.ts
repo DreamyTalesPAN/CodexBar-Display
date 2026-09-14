@@ -12,6 +12,7 @@ import {
 export type ConnectFailure =
   | { kind: "connect"; description: string; title: string }
   | { kind: "firmware-blocked"; reason: FirmwareBlockedReason }
+  | { kind: "firmware-attention"; description: string }
   | { kind: "firmware-update" };
 
 /** What the device reported once it was connected. */
@@ -140,6 +141,13 @@ export function useSetupConnect(
         await steps.installFirmware();
       } catch (error) {
         const api = error as ApiError;
+        if (api?.code === "firmware_update_attention") {
+          fail(
+            { kind: "firmware-attention", description: api.message },
+            api.message,
+          );
+          return;
+        }
         const blocked = firmwareBlockedReason(api?.code);
         fail(
           blocked

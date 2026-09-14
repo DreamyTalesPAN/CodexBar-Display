@@ -87,6 +87,7 @@ export function SetupFirmwareBlockedDialog({
 }
 
 type UpdateFailedDialogProps = {
+  attentionMessage?: string;
   busy?: boolean;
   onCreateSupportReport: () => void;
   onOpenChange: (open: boolean) => void;
@@ -96,6 +97,7 @@ type UpdateFailedDialogProps = {
 
 /** 02f — the update started and stopped part way through. */
 export function SetupFirmwareUpdateFailedDialog({
+  attentionMessage,
   busy = false,
   onCreateSupportReport,
   onOpenChange,
@@ -104,16 +106,28 @@ export function SetupFirmwareUpdateFailedDialog({
 }: UpdateFailedDialogProps) {
   return (
     <SetupDialog
-      description="Unplug VibeTV from power, plug it back in, then try again."
+      description={
+        attentionMessage ||
+        "Unplug VibeTV from power, plug it back in, then try again."
+      }
       icon={CircleAlert}
       onOpenChange={onOpenChange}
       open={open}
-      primaryAction={{ busy, label: "Try update again", onSelect: onRetry }}
-      secondaryAction={{
-        label: "Create support report",
-        onSelect: onCreateSupportReport,
-      }}
-      title="Firmware update did not finish"
+      primaryAction={
+        attentionMessage
+          ? { busy, label: "Create support report", onSelect: onCreateSupportReport }
+          : { busy, label: "Try update again", onSelect: onRetry }
+      }
+      secondaryAction={
+        attentionMessage
+          ? undefined
+          : { label: "Create support report", onSelect: onCreateSupportReport }
+      }
+      title={
+        attentionMessage
+          ? "Firmware current — attention needed"
+          : "Firmware update did not finish"
+      }
     />
   );
 }

@@ -575,8 +575,10 @@ type firmwareUpdateJob struct {
 	Result      *firmwareUpdateResult `json:"result,omitempty"`
 	Warnings    []string              `json:"warnings,omitempty"`
 	Error       *apiError             `json:"error,omitempty"`
-	target      string
-	firmware    string
+
+	target                         string
+	firmware                       string
+	themeSetupRequiredBeforeUpdate bool
 }
 
 type firmwareUpdateJobResponse struct {
@@ -4949,7 +4951,6 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		s.deviceMaintenanceMu.Lock()
 		defer s.deviceMaintenanceMu.Unlock()
 
-		s.firmwareUpdateActive.Store(true)
 		// The OTA runs in a child process. Close this process's idle keep-alive
 		// sockets to the device first, so no half-open connection occupies the
 		// single-threaded ESP8266 server while the updater runs its
@@ -4975,7 +4976,22 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), firmwareUpdateJobTime)
 		defer cancel()
+		// Only a positively unconfigured device may skip render verification.
+		// Remember this before OTA: a theme lost during the update is a failure,
+		// and an unavailable/older health response is not proof of first setup.
+		probeCtx, cancelProbe := context.WithTimeout(ctx, 3*time.Second)
+		before, probeErr := s.getHealth(probeCtx, cfg.DeviceTarget, cfg.DeviceToken)
+		cancelProbe()
+		if probeErr == nil && firmwareThemeSetupRequired(before) {
+			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+				job.themeSetupRequiredBeforeUpdate = true
+			})
+		}
+		if s.client != nil {
+			s.client.CloseIdleConnections()
+		}
 		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
+		s.firmwareUpdateActive.Store(true)
 		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
 		s.firmwareUpdateActive.Store(false)
 		resumeStream()
@@ -5108,9 +5124,13 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
-	if streamAwaitingProvider {
+	themeSetupRequired := snapshot.themeSetupRequiredBeforeUpdate && firmwareThemeSetupRequired(health)
+	if streamAwaitingProvider || themeSetupRequired {
 		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 			result.RenderSkipped = "provider_setup_required"
+			if themeSetupRequired {
+				result.RenderSkipped = "theme_setup_required"
+			}
 		})
 		if snapshot.Outcome == "already_current" {
 			return "already_current", "", nil
@@ -5135,6 +5155,13 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return "already_current", "", nil
 	}
 	return "updated", "", nil
+}
+
+func firmwareThemeSetupRequired(health deviceHealth) bool {
+	spec := health.Display.ThemeSpec
+	return health.OK && health.Display.ActiveTheme == "theme-missing" &&
+		!spec.Active && strings.TrimSpace(spec.Path) == "" &&
+		strings.TrimSpace(spec.Hash) == "" && strings.TrimSpace(spec.RenderError) == ""
 }
 
 // repairParkedDisplayAfterFirmwareUpdate verifies the picture after an update
