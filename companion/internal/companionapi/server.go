@@ -5193,12 +5193,14 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	return "updated", "", nil
 }
 
-// Standby displays a separate screensaver slot. Compare the saved live slot,
+// Standby and screensaver preview display a separate slot. Compare the live slot,
 // which firmware restores on reboot, not the picture currently on screen.
 func firmwareUpdateLiveThemeState(health deviceHealth) (string, bool) {
-	if health.Standby != nil && health.Standby.Active {
+	if health.Standby != nil {
 		path := strings.TrimSpace(health.Standby.LiveThemePath)
-		return path, path != ""
+		if path != "" || health.Standby.Active {
+			return path, path != ""
+		}
 	}
 	return strings.TrimSpace(health.Display.ThemeSpec.Path), health.Display.ThemeSpec.Active
 }
@@ -5206,7 +5208,7 @@ func firmwareUpdateLiveThemeState(health deviceHealth) (string, bool) {
 func firmwareThemeSetupRequired(health deviceHealth) bool {
 	spec := health.Display.ThemeSpec
 	return health.OK && health.Display.ActiveTheme == "theme-missing" &&
-		(health.Standby == nil || !health.Standby.Active) &&
+		(health.Standby == nil || (!health.Standby.Active && strings.TrimSpace(health.Standby.LiveThemePath) == "")) &&
 		!spec.Active && strings.TrimSpace(spec.Path) == "" &&
 		strings.TrimSpace(spec.Hash) == "" && strings.TrimSpace(spec.RenderError) == ""
 }
