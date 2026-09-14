@@ -5147,12 +5147,20 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		result.StreamVerified = true
 	})
 	// Missing usage may defer a picture, but must not hide a theme lost by OTA.
-	if (snapshot.themePathBeforeUpdate != "" && strings.TrimSpace(health.Display.ThemeSpec.Path) == "") ||
-		(streamAwaitingProvider && snapshot.themeActiveBeforeUpdate && !health.Display.ThemeSpec.Active) {
+	if snapshot.themePathBeforeUpdate != "" && strings.TrimSpace(health.Display.ThemeSpec.Path) == "" {
 		s.setFirmwareUpdateStage(jobID, "verifying_render")
 		return firmwareAttentionOutcome("render"), "Firmware is current, but the stored theme could not be verified.", nil
 	}
 	themeSetupRequired := snapshot.themeSetupRequiredBeforeUpdate && firmwareThemeSetupRequired(health)
+	storedThemeUnchanged := snapshot.themePathBeforeUpdate != "" &&
+		snapshot.themePathBeforeUpdate == strings.TrimSpace(health.Display.ThemeSpec.Path) &&
+		snapshot.themeActiveBeforeUpdate == health.Display.ThemeSpec.Active &&
+		strings.TrimSpace(health.Display.ThemeSpec.RenderError) == "" &&
+		(health.Display.ThemeSpec.RenderOK == nil || *health.Display.ThemeSpec.RenderOK)
+	if streamAwaitingProvider && !themeSetupRequired && !storedThemeUnchanged {
+		s.setFirmwareUpdateStage(jobID, "verifying_render")
+		return firmwareAttentionOutcome("render"), "Firmware is current, but the stored theme could not be verified.", nil
+	}
 	if streamAwaitingProvider || themeSetupRequired {
 		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 			result.RenderSkipped = "provider_setup_required"

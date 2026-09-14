@@ -20,11 +20,16 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 	const stored = `{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy.json"}}}`
 	for _, tc := range []struct {
 		name, before, after string
-		streamFailure, skip bool
+		streamFailure       bool
+		skip                string
 		providerSetup       bool
 		slowProbe           bool
 	}{
-		{name: "factory device", before: missing, after: missing, skip: true},
+		{name: "factory device", before: missing, after: missing, skip: "theme_setup_required"},
+		{name: "unchanged stored theme without provider", before: stored, after: stored, providerSetup: true, skip: "provider_setup_required"},
+		{name: "factory device without provider", before: missing, after: missing, providerSetup: true, skip: "theme_setup_required"},
+		{name: "broken stored theme without provider", before: stored, after: `{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy.json","renderOk":false,"renderError":"broken asset"}}}`, providerSetup: true},
+		{name: "unknown baseline without provider", before: "", after: missing, providerSetup: true},
 		{name: "lost stored theme", before: stored, after: missing},
 		{name: "lost stored theme without provider", before: stored, after: missing, providerSetup: true},
 		{name: "deactivated stored theme without provider", before: stored, after: `{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/clippy.json"}}}`, providerSetup: true},
@@ -102,7 +107,7 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 				return displayStreamInfo{Healthy: !tc.streamFailure, Running: true, Target: target, LastTarget: target}
 			}
 			server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
-				if tc.skip {
+				if tc.skip != "" {
 					t.Error("factory device must not wait for an unconfigured theme to render")
 				}
 				return deviceHealth{}, errors.New("no picture")
@@ -142,8 +147,8 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 			if job.FinishedAt == nil || uploads.Load() != 1 {
 				t.Fatalf("must finish with exactly one upload: %+v, uploads=%d", job, uploads.Load())
 			}
-			if tc.skip {
-				if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified || !job.Result.HealthVerified || !job.Result.StreamVerified || job.Result.RenderVerified || job.Result.RenderSkipped != "theme_setup_required" {
+			if tc.skip != "" {
+				if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified || !job.Result.HealthVerified || !job.Result.StreamVerified || job.Result.RenderVerified || job.Result.RenderSkipped != tc.skip {
 					t.Fatalf("expected verified firmware with honest theme setup skip: %+v result=%+v", job, job.Result)
 				}
 			} else if job.Phase != "attention" || job.Result == nil || job.Result.RenderSkipped != "" {
