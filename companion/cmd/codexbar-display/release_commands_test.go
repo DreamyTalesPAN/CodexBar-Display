@@ -1249,6 +1249,20 @@ func TestEnsureFirmwareUpdateDeviceTokenPairsOnlyOnceWhenFreshTokenIsRejected(t 
 	}
 }
 
+func TestFirmwareOTAAuthErrorDoesNotClassifyTransportAddressAsStatus(t *testing.T) {
+	for _, port := range []string{"40165", "40312"} {
+		err := &url.Error{Op: "Get", URL: "http://127.0.0.1:" + port + "/hello", Err: io.EOF}
+		if firmwareOTAAuthError(err) {
+			t.Fatalf("transport failure on port %s is not an authentication response", port)
+		}
+	}
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		if !firmwareOTAAuthError(fmt.Errorf("preflight: %w", &firmwareDeviceHTTPError{StatusCode: status})) {
+			t.Fatalf("HTTP %d must remain an authentication failure", status)
+		}
+	}
+}
+
 func TestEnsureFirmwareUpdateDeviceTokenRetriesTransientPreflightError(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {

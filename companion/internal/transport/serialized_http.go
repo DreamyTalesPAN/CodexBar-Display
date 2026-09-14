@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -32,9 +33,7 @@ type serializedDeviceRoundTripper struct {
 }
 
 func (t *serializedDeviceRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	gateKey := strings.ToLower(req.URL.Scheme + "://" + req.URL.Host)
-	gateValue, _ := deviceRequestGates.LoadOrStore(gateKey, newDeviceRequestGate())
-	release, err := gateValue.(*deviceRequestGate).acquire(req.Context())
+	release, err := AcquireDeviceHTTPGate(req.Context(), req.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -55,6 +54,15 @@ func (t *serializedDeviceRoundTripper) RoundTrip(req *http.Request) (*http.Respo
 		release:    release,
 	}
 	return response, nil
+}
+
+// AcquireDeviceHTTPGate drains the current request and excludes local HTTP
+// traffic until release. A parent may hold it while a separate OTA process
+// owns the device; do not issue serialized HTTP requests while holding it.
+func AcquireDeviceHTTPGate(ctx context.Context, target *url.URL) (func(), error) {
+	gateKey := strings.ToLower(target.Scheme + "://" + target.Host)
+	gateValue, _ := deviceRequestGates.LoadOrStore(gateKey, newDeviceRequestGate())
+	return gateValue.(*deviceRequestGate).acquire(ctx)
 }
 
 // CloseIdleConnections delegates to the wrapped transport so
