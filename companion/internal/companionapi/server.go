@@ -4995,8 +4995,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		if probeErr == nil && before.OK {
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 				job.themeSetupRequiredBeforeUpdate = firmwareThemeSetupRequired(before)
-				job.themePathBeforeUpdate = strings.TrimSpace(before.Display.ThemeSpec.Path)
-				job.themeActiveBeforeUpdate = before.Display.ThemeSpec.Active
+				job.themePathBeforeUpdate, job.themeActiveBeforeUpdate = firmwareUpdateLiveThemeState(before)
 			})
 		}
 		if s.client != nil {
@@ -5147,14 +5146,15 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		result.StreamVerified = true
 	})
 	// Missing usage may defer a picture, but must not hide a theme lost by OTA.
-	if snapshot.themePathBeforeUpdate != "" && strings.TrimSpace(health.Display.ThemeSpec.Path) == "" {
+	liveThemePath, liveThemeActive := firmwareUpdateLiveThemeState(health)
+	if snapshot.themePathBeforeUpdate != "" && liveThemePath == "" {
 		s.setFirmwareUpdateStage(jobID, "verifying_render")
 		return firmwareAttentionOutcome("render"), "Firmware is current, but the stored theme could not be verified.", nil
 	}
 	themeSetupRequired := snapshot.themeSetupRequiredBeforeUpdate && firmwareThemeSetupRequired(health)
 	storedThemeUnchanged := snapshot.themePathBeforeUpdate != "" &&
-		snapshot.themePathBeforeUpdate == strings.TrimSpace(health.Display.ThemeSpec.Path) &&
-		snapshot.themeActiveBeforeUpdate == health.Display.ThemeSpec.Active &&
+		snapshot.themePathBeforeUpdate == liveThemePath &&
+		snapshot.themeActiveBeforeUpdate == liveThemeActive &&
 		strings.TrimSpace(health.Display.ThemeSpec.RenderError) == "" &&
 		(health.Display.ThemeSpec.RenderOK == nil || *health.Display.ThemeSpec.RenderOK)
 	if streamAwaitingProvider && !themeSetupRequired && !storedThemeUnchanged {
@@ -5193,9 +5193,20 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	return "updated", "", nil
 }
 
+// Standby displays a separate screensaver slot. Compare the saved live slot,
+// which firmware restores on reboot, not the picture currently on screen.
+func firmwareUpdateLiveThemeState(health deviceHealth) (string, bool) {
+	if health.Standby != nil && health.Standby.Active {
+		path := strings.TrimSpace(health.Standby.LiveThemePath)
+		return path, path != ""
+	}
+	return strings.TrimSpace(health.Display.ThemeSpec.Path), health.Display.ThemeSpec.Active
+}
+
 func firmwareThemeSetupRequired(health deviceHealth) bool {
 	spec := health.Display.ThemeSpec
 	return health.OK && health.Display.ActiveTheme == "theme-missing" &&
+		(health.Standby == nil || !health.Standby.Active) &&
 		!spec.Active && strings.TrimSpace(spec.Path) == "" &&
 		strings.TrimSpace(spec.Hash) == "" && strings.TrimSpace(spec.RenderError) == ""
 }

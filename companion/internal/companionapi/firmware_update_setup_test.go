@@ -18,6 +18,7 @@ import (
 func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 	const missing = `{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"","hash":""}}}`
 	const stored = `{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy.json"}}}`
+	const standby = `{"ok":true,"standby":{"active":true,"liveThemePath":"/themes/u/clippy.json"},"display":{"activeTheme":"screensaver","themeSpec":{"active":true,"path":"/themes/u/screensaver.json"}}}`
 	for _, tc := range []struct {
 		name, before, after string
 		streamFailure       bool
@@ -27,6 +28,9 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 	}{
 		{name: "factory device", before: missing, after: missing, skip: "theme_setup_required"},
 		{name: "unchanged stored theme without provider", before: stored, after: stored, providerSetup: true, skip: "provider_setup_required"},
+		{name: "standby wakes to live theme", before: standby, after: stored, providerSetup: true, skip: "provider_setup_required"},
+		{name: "standby stays active", before: standby, after: standby, providerSetup: true, skip: "provider_setup_required"},
+		{name: "standby live theme is lost", before: standby, after: missing, providerSetup: true},
 		{name: "factory device without provider", before: missing, after: missing, providerSetup: true, skip: "theme_setup_required"},
 		{name: "broken stored theme without provider", before: stored, after: `{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy.json","renderOk":false,"renderError":"broken asset"}}}`, providerSetup: true},
 		{name: "unknown baseline without provider", before: "", after: missing, providerSetup: true},
