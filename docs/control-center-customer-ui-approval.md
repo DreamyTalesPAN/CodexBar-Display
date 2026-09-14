@@ -3860,3 +3860,32 @@ issue scope, or release permission never implies UI permission.
   deferred signing. Full signed cold/warm update rehearsals remain a separate
   acceptance gate and are not claimed here. This records local validation and
   approval to push the PR branch, not approval to merge, release, or sign.
+
+## 2026-09-14 — Firmware update completion and first-theme onboarding (#445)
+
+- User approval: Marcus tested the installed candidate from PR #445 at
+  `e3d628bd4cae7c6349c499d43047356891a05def`, confirmed "ok hat geklappt",
+  repeated the fresh setup, and then explicitly requested "ne nur den
+  getstetet firmware fix mergen". His approval is limited to the tested
+  firmware-update behavior; the separate provider-readiness checking problem
+  observed during the repeated test remains open and is not covered here.
+- Approved customer-visible result: Firmware updates stop waiting when their
+  actual result is known. Successful updates continue first-time setup even
+  when the device has no theme yet. A result requiring attention ends the
+  busy state and shows the existing support/report recovery instead of
+  waiting until a misleading timeout or starting a second firmware upload.
+  Existing theme-loss and render failures remain actionable. No provider
+  selection behavior, theme design, or unrelated UI is changed.
+- Evidence: The signed candidate 9999.0.99 (run 34848902448) replaced the old
+  Mac App through its customer update flow. Device 16201042 updated from
+  1.0.41 to the candidate and reported firmware, health, stream, and render
+  verification complete; its stored Clippy theme was restored automatically.
+  Marcus then tested first-theme onboarding using the same PR App after
+  firmware 1.0.41, empty theme assets, WLAN reset, and clean Mac state were
+  established. The app reached provider selection on firmware 1.0.42;
+  the separately observed provider-check refusal is not claimed fixed.
+- Approved files: The firmware polling and setup changes in
+  `control-center-app.tsx`, `setup-connect.ts`, `setup-firmware-dialogs.tsx`,
+  `setup-wizard.tsx`, their regression tests, and `test-customer-flows.mjs`.
+- Scope: Approval to merge this firmware fix only. No production release,
+  new firmware flash, provider fix, or additional feature is authorized.
