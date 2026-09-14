@@ -36,6 +36,7 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var uploads atomic.Int32
+			var server *Server
 			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/hello":
@@ -44,6 +45,8 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 					body := tc.before
 					if uploads.Load() > 0 {
 						body = tc.after
+					} else if !server.firmwareUpdateActive.Load() {
+						t.Error("ordinary device traffic must stay blocked during the baseline probe")
 					}
 					if body == "" {
 						http.Error(w, "unavailable", http.StatusServiceUnavailable)
@@ -57,7 +60,14 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 				}
 			}))
 			defer device.Close()
-			server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "setup-device", DeviceToken: "pair-token"})
+			server = newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "setup-device", DeviceToken: "pair-token"})
+			server.pauseDisplayStream = func(paused bool) {
+				if paused && uploads.Load() == 0 {
+					if _, err := server.getHello(context.Background(), device.URL, "pair-token"); err == nil {
+						t.Error("ordinary status probes must be excluded before the stream pauses")
+					}
+				}
+			}
 			server.refreshStream = func(context.Context, string) error { return nil }
 			server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
 				if tc.providerSetup {

@@ -4952,6 +4952,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		s.deviceMaintenanceMu.Lock()
 		defer s.deviceMaintenanceMu.Unlock()
 
+		s.firmwareUpdateActive.Store(true)
 		// The OTA runs in a child process. Close this process's idle keep-alive
 		// sockets to the device first, so no half-open connection occupies the
 		// single-threaded ESP8266 server while the updater runs its
@@ -4981,7 +4982,14 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		// Remember this before OTA: a theme lost during the update is a failure,
 		// and an unavailable/older health response is not proof of first setup.
 		probeCtx, cancelProbe := context.WithTimeout(ctx, 3*time.Second)
-		before, probeErr := s.getHealth(probeCtx, cfg.DeviceTarget, cfg.DeviceToken)
+		var before deviceHealth
+		// Only this maintenance-owned request bypasses doJSON's OTA exclusion;
+		// ordinary status probes must remain blocked throughout the baseline.
+		probeReq, probeErr := http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint(cfg.DeviceTarget, "/health"), nil)
+		if probeErr == nil {
+			applyDeviceToken(probeReq, cfg.DeviceToken)
+			probeErr = s.do(probeReq, &before)
+		}
 		cancelProbe()
 		if probeErr == nil && before.OK {
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
@@ -4989,7 +4997,6 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 				job.themePathBeforeUpdate = strings.TrimSpace(before.Display.ThemeSpec.Path)
 			})
 		}
-		s.firmwareUpdateActive.Store(true)
 		if s.client != nil {
 			s.client.CloseIdleConnections()
 		}
