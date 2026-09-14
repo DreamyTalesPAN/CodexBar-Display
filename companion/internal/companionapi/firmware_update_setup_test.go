@@ -21,9 +21,11 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 	for _, tc := range []struct {
 		name, before, after string
 		streamFailure, skip bool
+		providerSetup       bool
 	}{
 		{name: "factory device", before: missing, after: missing, skip: true},
 		{name: "lost stored theme", before: stored, after: missing},
+		{name: "lost stored theme without provider", before: stored, after: missing, providerSetup: true},
 		{name: "unknown baseline", before: `{"ok":true}`, after: missing},
 		{name: "inactive stored theme", before: `{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/clippy.json"}}}`, after: missing},
 		{name: "incomplete stored theme metadata", before: `{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"hash":"previous-theme"}}}`, after: missing},
@@ -58,6 +60,9 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "setup-device", DeviceToken: "pair-token"})
 			server.refreshStream = func(context.Context, string) error { return nil }
 			server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+				if tc.providerSetup {
+					return displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
+				}
 				return displayStreamInfo{Healthy: !tc.streamFailure, Running: true, Target: target, LastTarget: target}
 			}
 			server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {

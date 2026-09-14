@@ -579,6 +579,7 @@ type firmwareUpdateJob struct {
 	target                         string
 	firmware                       string
 	themeSetupRequiredBeforeUpdate bool
+	themePathBeforeUpdate          string
 }
 
 type firmwareUpdateJobResponse struct {
@@ -4982,16 +4983,17 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		probeCtx, cancelProbe := context.WithTimeout(ctx, 3*time.Second)
 		before, probeErr := s.getHealth(probeCtx, cfg.DeviceTarget, cfg.DeviceToken)
 		cancelProbe()
-		if probeErr == nil && firmwareThemeSetupRequired(before) {
+		if probeErr == nil && before.OK {
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
-				job.themeSetupRequiredBeforeUpdate = true
+				job.themeSetupRequiredBeforeUpdate = firmwareThemeSetupRequired(before)
+				job.themePathBeforeUpdate = strings.TrimSpace(before.Display.ThemeSpec.Path)
 			})
 		}
+		s.firmwareUpdateActive.Store(true)
 		if s.client != nil {
 			s.client.CloseIdleConnections()
 		}
 		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
-		s.firmwareUpdateActive.Store(true)
 		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
 		s.firmwareUpdateActive.Store(false)
 		resumeStream()
@@ -5124,6 +5126,11 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
+	// Missing usage may defer a picture, but must not hide a theme lost by OTA.
+	if snapshot.themePathBeforeUpdate != "" && strings.TrimSpace(health.Display.ThemeSpec.Path) == "" {
+		s.setFirmwareUpdateStage(jobID, "verifying_render")
+		return firmwareAttentionOutcome("render"), "Firmware is current, but the stored theme could not be verified.", nil
+	}
 	themeSetupRequired := snapshot.themeSetupRequiredBeforeUpdate && firmwareThemeSetupRequired(health)
 	if streamAwaitingProvider || themeSetupRequired {
 		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
