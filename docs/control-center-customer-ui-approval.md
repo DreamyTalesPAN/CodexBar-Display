@@ -3889,3 +3889,18 @@ issue scope, or release permission never implies UI permission.
   `setup-wizard.tsx`, their regression tests, and `test-customer-flows.mjs`.
 - Scope: Approval to merge this firmware fix only. No production release,
   new firmware flash, provider fix, or additional feature is authorized.
+
+## 2026-09-14 — Repair the blocking test checks for #445
+
+- User approval: Marcus explicitly requested "Und ja behebe vorher die
+  Probleme" after the repeated CI failure and broken local static test were
+  reported. This authorizes repairing those checks, not the provider issue.
+- Approved customer-visible result: No new customer-visible change. The
+  firmware onboarding behavior tested and approved above remains unchanged.
+  The browser fixture now returns the Companion's actual device-not-found
+  API response instead of simulating loss of the Companion connection.
+  The same assertions still require setup to stay incomplete until device
+  confirmation and prohibit a second theme installation.
+- Scope: Test fixtures, focused test coverage, shell syntax failure detection,
+  and checking the currently catalogued screensaver archive. No additional
+  product, provider, firmware, installation, or release change is included.

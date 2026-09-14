@@ -410,6 +410,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeSetupWaitsAfterDeviceReadbackFailure(
+        browser,
+        appContext.appUrl,
+      );
       console.log("control-center theme-missing flow test passed");
       return;
     }
@@ -11412,7 +11416,21 @@ async function routeCompanionOnline(
         deviceReadFailuresRemaining > 0
       ) {
         deviceReadFailuresRemaining -= 1;
-        await route.abort("failed");
+        // A device read failure is an API response from the still-running
+        // Companion. Aborting fetch instead marks the Companion unavailable
+        // and races its next status poll, testing a different recovery path.
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: {
+              code: "device_not_found",
+              message: "No VibeTV device was found.",
+              nextAction: "Restart VibeTV, wait until it shows WiFi connected, then run setup again.",
+            },
+          }),
+        });
         return;
       }
       await route.fulfill({
