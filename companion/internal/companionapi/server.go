@@ -580,6 +580,7 @@ type firmwareUpdateJob struct {
 	firmware                       string
 	themeSetupRequiredBeforeUpdate bool
 	themePathBeforeUpdate          string
+	themeActiveBeforeUpdate        bool
 }
 
 type firmwareUpdateJobResponse struct {
@@ -4995,13 +4996,25 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 				job.themeSetupRequiredBeforeUpdate = firmwareThemeSetupRequired(before)
 				job.themePathBeforeUpdate = strings.TrimSpace(before.Display.ThemeSpec.Path)
+				job.themeActiveBeforeUpdate = before.Display.ThemeSpec.Active
 			})
 		}
 		if s.client != nil {
 			s.client.CloseIdleConnections()
 		}
 		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
-		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
+		// A probe that passed the exclusion before this job started may still
+		// own or await the HTTP gate, even when our three-second baseline timed
+		// out. Drain it and hold the gate across the child-process OTA.
+		err := probeErr
+		if probeReq != nil {
+			var release func()
+			release, err = transportlayer.AcquireDeviceHTTPGate(ctx, probeReq.URL)
+			if err == nil {
+				err = s.updateFirmware(ctx, s.home, cfg, req, writer)
+				release()
+			}
+		}
 		s.firmwareUpdateActive.Store(false)
 		resumeStream()
 
@@ -5134,7 +5147,8 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		result.StreamVerified = true
 	})
 	// Missing usage may defer a picture, but must not hide a theme lost by OTA.
-	if snapshot.themePathBeforeUpdate != "" && strings.TrimSpace(health.Display.ThemeSpec.Path) == "" {
+	if (snapshot.themePathBeforeUpdate != "" && strings.TrimSpace(health.Display.ThemeSpec.Path) == "") ||
+		(streamAwaitingProvider && snapshot.themeActiveBeforeUpdate && !health.Display.ThemeSpec.Active) {
 		s.setFirmwareUpdateStage(jobID, "verifying_render")
 		return firmwareAttentionOutcome("render"), "Firmware is current, but the stored theme could not be verified.", nil
 	}

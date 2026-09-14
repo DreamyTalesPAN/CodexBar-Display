@@ -22,10 +22,13 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 		name, before, after string
 		streamFailure, skip bool
 		providerSetup       bool
+		slowProbe           bool
 	}{
 		{name: "factory device", before: missing, after: missing, skip: true},
 		{name: "lost stored theme", before: stored, after: missing},
 		{name: "lost stored theme without provider", before: stored, after: missing, providerSetup: true},
+		{name: "deactivated stored theme without provider", before: stored, after: `{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/clippy.json"}}}`, providerSetup: true},
+		{name: "drain in-flight probe before OTA", before: missing, after: missing, slowProbe: true},
 		{name: "unknown baseline", before: `{"ok":true}`, after: missing},
 		{name: "inactive stored theme", before: `{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/clippy.json"}}}`, after: missing},
 		{name: "incomplete stored theme metadata", before: `{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"hash":"previous-theme"}}}`, after: missing},
@@ -37,8 +40,14 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var uploads atomic.Int32
 			var server *Server
+			slowStarted := make(chan struct{})
+			releaseSlow := make(chan struct{})
 			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
+				case "/slow":
+					close(slowStarted)
+					<-releaseSlow
+					_, _ = io.WriteString(w, `{}`)
 				case "/hello":
 					_, _ = io.WriteString(w, `{"kind":"hello","deviceId":"setup-device","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.42"}`)
 				case "/health":
@@ -66,6 +75,23 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 					if _, err := server.getHello(context.Background(), device.URL, "pair-token"); err == nil {
 						t.Error("ordinary status probes must be excluded before the stream pauses")
 					}
+					if tc.slowProbe {
+						// Model a request that passed doJSON's flag immediately before OTA.
+						go func() {
+							response, err := server.client.Get(device.URL + "/slow")
+							if err == nil {
+								_ = response.Body.Close()
+							}
+						}()
+						<-slowStarted
+						go func() {
+							time.Sleep(3200 * time.Millisecond)
+							if uploads.Load() != 0 {
+								t.Error("OTA started before an in-flight request drained")
+							}
+							close(releaseSlow)
+						}()
+					}
 				}
 			}
 			server.refreshStream = func(context.Context, string) error { return nil }
@@ -83,6 +109,16 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 			}
 			server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
 				uploads.Add(1)
+				if tc.slowProbe {
+					probeCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+					defer cancel()
+					request, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, device.URL+"/hello", nil)
+					response, err := server.client.Do(request)
+					if err == nil {
+						_ = response.Body.Close()
+						t.Error("queued HTTP traffic must remain excluded throughout the child OTA")
+					}
+				}
 				_, err := io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.42","target":"`+device.URL+`","deviceId":"setup-device","artifactValidated":true,"uploadAccepted":true}`+"\n")
 				return err
 			}
@@ -96,7 +132,7 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 				t.Fatal(err)
 			}
 			var job firmwareUpdateJob
-			for attempt := 0; attempt < 300; attempt++ {
+			for attempt := 0; attempt < 600; attempt++ {
 				job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
 				if job.FinishedAt != nil {
 					break
