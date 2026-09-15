@@ -27,8 +27,9 @@ Companion for everything it needs.
 - `vibetv://` links from the UI are intercepted in the webview:
   `restart-control-center`, `repair-runtime` (re-registers and re-checks the
   task, answers with `vibetv:runtime-repair-result`), `repair-codexbar`
-  (same check; on Windows the CLI is a plain file next to the Companion, there
-  is nothing to stage, answers with `vibetv:codexbar-repair-result`),
+  (the CLI is a plain file the Companion daemon runs itself, so the usage
+  engine is that daemon: `service start` replaces its running task instance,
+  then the same check; answers with `vibetv:codexbar-repair-result`),
   `check-for-updates`. `open-codexbar` has no Windows equivalent (no
   CodexBar window) and is logged only.
 - Updates: the Updates tab shows the native "Update" button once the

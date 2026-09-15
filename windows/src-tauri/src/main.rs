@@ -10,6 +10,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -45,6 +46,9 @@ const BUILD: &str = match option_env!("VIBETV_BUILD") {
 struct Shell {
     runtime_origin: Mutex<Url>,
     preparing: Mutex<bool>,
+    // Bumped on every present; a delayed hide only applies if nothing
+    // presented the window again while it waited.
+    presentations: AtomicU64,
 }
 
 fn main() {
@@ -62,6 +66,7 @@ fn main() {
         .manage(Shell {
             runtime_origin: Mutex::new(Url::parse(DEFAULT_RUNTIME_ORIGIN).expect("static origin")),
             preparing: Mutex::new(false),
+            presentations: AtomicU64::new(0),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -204,6 +209,9 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn present_window(app: &AppHandle) {
+    app.state::<Shell>()
+        .presentations
+        .fetch_add(1, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.show();
         let _ = window.unminimize();
@@ -217,9 +225,14 @@ fn hide_after_flush(app: &AppHandle) {
         return;
     };
     let _ = window.eval("window.dispatchEvent(new Event('vibetv:native-window-will-close'))");
+    let handle = app.clone();
+    let presented = handle.state::<Shell>().presentations.load(Ordering::SeqCst);
     std::thread::spawn(move || {
         std::thread::sleep(WINDOW_CLOSE_FLUSH_DELAY);
-        let _ = window.hide();
+        // Reopened from the tray or a second launch meanwhile: keep it open.
+        if handle.state::<Shell>().presentations.load(Ordering::SeqCst) == presented {
+            let _ = window.hide();
+        }
     });
 }
 
@@ -231,11 +244,13 @@ fn handle_native_action(app: &AppHandle, url: &Url) {
             dispatch_result(app, "vibetv:runtime-repair-result", success);
         }
         "check-for-updates" => check_for_updates(app.clone()),
-        // CodexBar on Windows is a plain console CLI next to the Companion.
-        // There is nothing to stage or stop, so a repair only re-checks the
-        // runtime and reports that.
+        // CodexBar on Windows is a plain console CLI that the Companion
+        // daemon runs itself. The usage engine is therefore that daemon:
+        // replace its running Scheduled Task instance and only then wait
+        // for a healthy runtime, so a stuck or repeatedly failing engine is
+        // really restarted instead of merely re-checked.
         "repair-codexbar" => {
-            let success = prepare_and_load(app.clone());
+            let success = restart_runtime(app) && prepare_and_load(app.clone());
             dispatch_result(app, "vibetv:codexbar-repair-result", success);
         }
         "finish-codexbar-recovery" => {}
@@ -243,6 +258,22 @@ fn handle_native_action(app: &AppHandle, url: &Url) {
             log("open-codexbar is not available on Windows: the CLI has no window");
         }
         other => log(&format!("ignoring unknown native action {other}")),
+    }
+}
+
+// `service start` stops a running task instance before starting it again.
+// A missing task is not a failure here: prepare_and_load installs it.
+fn restart_runtime(app: &AppHandle) -> bool {
+    match run_companion(app, &["service", "start", "--label", RUNTIME_LABEL]) {
+        Ok(_) => true,
+        Err(error) if error.contains("rerun setup") => {
+            log(&format!("no runtime task to restart yet: {error}"));
+            true
+        }
+        Err(error) => {
+            log(&format!("usage service restart failed: {error}"));
+            false
+        }
     }
 }
 

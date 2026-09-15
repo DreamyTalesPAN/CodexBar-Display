@@ -133,10 +133,14 @@ foreach ($candidate in $folder.GetTasks(1)) { if ($candidate.Name -eq $name) { $
 `
 
 // Stop is asynchronous in Task Scheduler. Wait for all action processes before
-// allowing setup/upgrade to replace the installed executable.
-const stopTask = `$task.Stop(0)
+// allowing setup/upgrade to replace the installed executable. The instance
+// list empties before the action process has exited (about a second on a
+// real machine); running the task again inside that window fails with
+// LastTaskResult 1, so the engine processes are waited for as well.
+const stopTask = `$engines = @($task.GetInstances(0) | ForEach-Object { $_.EnginePID })
+$task.Stop(0)
 $deadline = [DateTime]::UtcNow.AddSeconds(20)
-while ($task.GetInstances(0).Count -gt 0) {
+while ($task.GetInstances(0).Count -gt 0 -or ($engines | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })) {
   if ([DateTime]::UtcNow -ge $deadline) { throw 'Task did not stop within 20 seconds' }
   Start-Sleep -Milliseconds 100
 }
