@@ -204,6 +204,41 @@ func TestFetchProviderSettingsReportsSilentProbeAsUnavailableOnWindows(t *testin
 	}
 }
 
+// Usage join on Windows: a switched-on provider whose probe returned no JSON
+// appears as an unavailable provider in the joined answer instead of vanishing.
+func TestRunUsageAllEnabledKeepsSilentProviderVisibleOnWindows(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		switch {
+		case reflect.DeepEqual(args, providerInventoryArgs()):
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
+		case len(args) >= 4 && args[3] == "codex":
+			return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":8}}}]`), nil
+		default:
+			return []byte("dashboard data not found"), errors.New("exit status 1")
+		}
+	}
+
+	raw, err := runUsageAllEnabled(context.Background(), time.Second, "codexbar", "--web-timeout", "8")
+	if err != nil {
+		t.Fatalf("usage join: %v", err)
+	}
+	frames, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parse joined usage: %v", err)
+	}
+	if len(frames) != 2 || frames[0].Provider != "codex" || frames[1].Provider != "claude" {
+		t.Fatalf("expected both enabled providers, got %#v", frames)
+	}
+	if frames[0].Frame.UsageUnavailable || !frames[1].Frame.UsageUnavailable {
+		t.Fatalf("silent probe must be unavailable, healthy one not: %#v", frames)
+	}
+}
+
 // Win-CodexBar 0.56.8 rejects "config disable --provider claude"; the provider
 // is a positional argument there.
 func TestSetProviderEnabledUsesPositionalProviderOnWindows(t *testing.T) {

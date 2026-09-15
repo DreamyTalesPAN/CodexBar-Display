@@ -28,8 +28,12 @@ Companion for everything it needs.
   `restart-control-center`, `repair-runtime` (re-registers and re-checks the
   task, answers with `vibetv:runtime-repair-result`), `repair-codexbar`
   (the CLI is a plain file the Companion daemon runs itself, so the usage
-  engine is that daemon: `service start` replaces its running task instance,
-  then the same check; answers with `vibetv:codexbar-repair-result`),
+  engine is that daemon: the shell first claims
+  `POST /v1/runtime-health/update-hold` like the Mac App -- a 409 means a
+  firmware update or theme install owns the runtime and the repair reports
+  failure instead of killing that job -- then `service start` replaces the
+  running task instance and the same check follows; answers with
+  `vibetv:codexbar-repair-result`),
   `check-for-updates`. `open-codexbar` has no Windows equivalent (no
   CodexBar window) and is logged only.
 - Updates: the Updates tab shows the native "Update" button once the

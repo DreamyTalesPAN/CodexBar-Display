@@ -250,7 +250,21 @@ fn handle_native_action(app: &AppHandle, url: &Url) {
         // for a healthy runtime, so a stuck or repeatedly failing engine is
         // really restarted instead of merely re-checked.
         "repair-codexbar" => {
-            let success = restart_runtime(app) && prepare_and_load(app.clone());
+            let success = match claim_update_hold() {
+                UpdateHold::UpdateRunning => {
+                    log("usage service restart deferred: a firmware update or theme install owns the runtime");
+                    false
+                }
+                UpdateHold::Granted | UpdateHold::NoAnswer => {
+                    let restarted = restart_runtime(app);
+                    if !restarted {
+                        // The runtime survived; do not leave updates refused
+                        // for the rest of the hold window.
+                        release_update_hold();
+                    }
+                    restarted && prepare_and_load(app.clone())
+                }
+            };
             dispatch_result(app, "vibetv:codexbar-repair-result", success);
         }
         "finish-codexbar-recovery" => {}
@@ -275,6 +289,61 @@ fn restart_runtime(app: &AppHandle) -> bool {
             false
         }
     }
+}
+
+enum UpdateHold {
+    Granted,
+    UpdateRunning,
+    NoAnswer,
+}
+
+// A firmware update or theme install runs inside the Companion process, so
+// restarting it mid-job leaves the device half-written. Asking first and
+// stopping second is a race; the Companion therefore offers a claim: from
+// this call on it refuses new jobs, and answers 409 when one already owns
+// the runtime. Same contract as the Mac App's runtimeClaimUpdateHold. A
+// runtime that does not answer at all is not running a job either -- the
+// job lives in that process -- so the repair proceeds.
+fn claim_update_hold() -> UpdateHold {
+    let http = runtime_http();
+    for origin in runtime_origin_candidates() {
+        let url = origin.join("/v1/runtime-health/update-hold").expect("static path");
+        let Ok(response) = http
+            .post(url.as_str())
+            .header("Content-Type", "application/json")
+            .send("{}")
+        else {
+            continue;
+        };
+        return match response.status().as_u16() {
+            409 => UpdateHold::UpdateRunning,
+            200..=299 => UpdateHold::Granted,
+            // An older runtime without the endpoint cannot promise anything;
+            // hold back rather than strand an update, as the Mac App does.
+            _ => UpdateHold::UpdateRunning,
+        };
+    }
+    UpdateHold::NoAnswer
+}
+
+fn release_update_hold() {
+    let http = runtime_http();
+    for origin in runtime_origin_candidates() {
+        let url = origin.join("/v1/runtime-health/update-hold").expect("static path");
+        let _ = http
+            .post(url.as_str())
+            .header("Content-Type", "application/json")
+            .send(r#"{"release":true}"#);
+    }
+}
+
+fn runtime_http() -> ureq::Agent {
+    ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_global(Some(RUNTIME_HEALTH_REQUEST_TIMEOUT))
+            .http_status_as_error(false)
+            .build(),
+    )
 }
 
 fn dispatch_result(app: &AppHandle, event: &str, success: bool) {
@@ -398,12 +467,7 @@ struct RuntimeEndpoint {
 fn wait_for_healthy_runtime(app: &AppHandle, expected_version: &str, timeout: Duration) -> Result<Url, String> {
     let deadline = Instant::now() + timeout;
     let mut last_error = String::from("no response");
-    let http = ureq::Agent::new_with_config(
-        ureq::Agent::config_builder()
-            .timeout_global(Some(RUNTIME_HEALTH_REQUEST_TIMEOUT))
-            .http_status_as_error(false)
-            .build(),
-    );
+    let http = runtime_http();
     loop {
         for origin in runtime_origin_candidates() {
             match check_runtime_health(app, &http, &origin, expected_version) {

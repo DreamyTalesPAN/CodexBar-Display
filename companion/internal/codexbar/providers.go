@@ -38,7 +38,7 @@ func providerInventoryArgs() []string {
 // inventory and asks each switched-on provider one by one, then joins the
 // answers into the same JSON array the Mac CLI returns.
 func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, extra ...string) ([]byte, error) {
-	if runtime.GOOS != "windows" {
+	if !providerProbePerProvider {
 		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
 	}
 	raw, err := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
@@ -62,6 +62,12 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 		}
 		var root any
 		if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
+			// Same rule as the health join: a switched-on provider whose
+			// probe produced no JSON is reported unavailable, not dropped
+			// from the answer.
+			if encoded, encodeErr := json.Marshal(silentProbePayload(inventory[i], runErr)); encodeErr == nil {
+				joined = append(joined, encoded)
+			}
 			continue
 		}
 		for _, item := range extractProviderList(root) {
@@ -75,6 +81,20 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 		return nil, lastErr
 	}
 	return json.Marshal(joined)
+}
+
+// silentProbePayload is the error item the Mac CLI would have returned for a
+// provider whose Windows probe ended without JSON.
+func silentProbePayload(setting ProviderSetting, runErr error) map[string]any {
+	reason := "provider probe returned no result"
+	if runErr != nil {
+		reason = "provider probe failed: " + runErr.Error()
+	}
+	return map[string]any{
+		"provider": setting.ID,
+		"label":    setting.Label,
+		"error":    map[string]any{"kind": "probe", "message": reason},
+	}
 }
 
 type ProviderHealthState string
@@ -198,15 +218,7 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 			// this provider "checking" behind a healthy neighbour: report it
 			// as unavailable with the reason, so the combined refresh keeps
 			// the per-provider failure instead of dropping it.
-			reason := "provider probe returned no result"
-			if runErr != nil {
-				reason = "provider probe failed: " + runErr.Error()
-			}
-			encoded, encodeErr := json.Marshal(map[string]any{
-				"provider": settings[i].ID,
-				"error":    map[string]any{"kind": "probe", "message": reason},
-			})
-			if encodeErr == nil {
+			if encoded, encodeErr := json.Marshal(silentProbePayload(settings[i], runErr)); encodeErr == nil {
 				joined = append(joined, encoded)
 			}
 			continue
