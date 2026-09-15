@@ -4751,6 +4751,30 @@ func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorUnavailableTokenHistoryCompletesWithoutKnownZero(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	c := &providerCollector{
+		now: func() time.Time { return now }, logf: func(string, ...any) {},
+		snapshotMaxAge: time.Minute, persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{"codex": {
+			Provider: "codex", Collected: now,
+			Frame: protocol.Frame{Provider: "codex", Weekly: 20, TotalTokens: 99, TokenTotalsKnown: true},
+			Meta:  codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 99}},
+		}},
+		fetchTokenStatsReport: func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex": {Unavailable: true}, "not-configured": {Unavailable: true},
+			}, codexbar.ProviderTokenStatsReport{OK: true}
+		},
+	}
+	c.collectTokenStatsOnce(context.Background())
+	got := c.providers["codex"]
+	if len(c.providers) != 1 || got.Frame.TokenTotalsKnown || got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(now) || got.Frame.Weekly != 20 {
+		t.Fatalf("unavailable history changed providers, quota or known-zero state: %+v", c.providers)
+	}
+}
+
 func TestProviderCollectorPartialTokenScanKeepsFailedProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -27,7 +28,18 @@ const tokenStatsHistoryDays = "30"
 // presented as the finished history.
 var tokenStatsCostArgs = []string{"cost", "--json", "--refresh", "--days", tokenStatsHistoryDays}
 
+func tokenStatsArgs(platform string) []string {
+	if platform == "windows" {
+		// Pinned Win-CodexBar 0.56.8 scans on invocation, rejects --refresh,
+		// and defaults to Claude. Ask its cost command for all providers.
+		return []string{"cost", "--json", "--days", tokenStatsHistoryDays, "--provider", "all"}
+	}
+	return tokenStatsCostArgs
+}
+
 type ProviderTokenStats struct {
+	// Unavailable is a completed scan without known history, not zero usage.
+	Unavailable   bool
 	SessionTokens int64
 	WeekTokens    int64
 	TotalTokens   int64
@@ -48,7 +60,7 @@ type ProviderTokenStatsReport struct {
 }
 
 func (s ProviderTokenStats) HasAny() bool {
-	return s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0 || s.Cost != nil
+	return s.Unavailable || s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0 || s.Cost != nil
 }
 
 func FetchProviderTokenStats(ctx context.Context) (map[string]ProviderTokenStats, bool) {
@@ -83,7 +95,7 @@ func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]Provid
 
 func fetchProviderTokenStatsWithReport(ctx context.Context, bin string, report ProviderTokenStatsReport) (map[string]ProviderTokenStats, ProviderTokenStatsReport) {
 	costStarted := time.Now()
-	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, tokenStatsCostArgs...)
+	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, tokenStatsArgs(runtime.GOOS)...)
 	report.CostDuration = time.Since(costStarted)
 	if err != nil {
 		report.Reason = tokenStatsFailureReason(ctx, err, report.CostDuration, tokenStatsCommandTimeout, "cost")
@@ -152,6 +164,44 @@ func parseProviderTokenStatsWithFailures(raw []byte) (map[string]ProviderTokenSt
 			continue
 		}
 		key := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))
+		if supported, windowsShape := payload["supported"].(bool); windowsShape && key != "" && (!supported || !providerPayloadHasError(payload)) {
+			if !supported {
+				parsed[key] = ProviderTokenStats{Unavailable: true}
+				continue
+			}
+			if contract, ok := payload["spendContract"].(map[string]any); ok {
+				// Padding a daily series with zeroes does not establish history.
+				// Preserve the upstream coverage/known-zero decision.
+				coverage, _ := contract["historyCoverageEstablished"].(bool)
+				knownZero, _ := contract["knownZero"].(bool)
+				daily, ok := contract["daily"].([]any)
+				if !ok {
+					return nil, nil, ErrUnexpectedProviderShape
+				}
+				var total int64
+				complete := coverage
+				normalizedDays := make([]any, 0, len(daily))
+				for _, value := range daily {
+					day, ok := value.(map[string]any)
+					if !ok {
+						return nil, nil, ErrUnexpectedProviderShape
+					}
+					if value, known := floatAtPaths(day, "totalTokens"); !known || value < 0 || usageDayKey(firstString(day, "day")) == "" {
+						complete = false
+					}
+					tokens := int64AtPaths(day, "totalTokens")
+					total += tokens
+					normalizedDays = append(normalizedDays, map[string]any{
+						"date": day["day"], "totalTokens": tokens, "totalCostUSD": day["costUsd"],
+					})
+				}
+				if !complete || (total == 0 && !knownZero) {
+					parsed[key] = ProviderTokenStats{Unavailable: true}
+					continue
+				}
+				payload = map[string]any{"provider": key, "source": "local", "daily": normalizedDays, "totalTokens": total, "knownZero": knownZero && total == 0}
+			}
+		}
 		if key != "" && providerPayloadHasError(payload) {
 			failed[key] = struct{}{}
 			continue
@@ -230,6 +280,7 @@ func parseProviderCostUsagePayload(payload map[string]any, fallbackLatestTokens 
 	if cost.TopModel == "" {
 		cost.TopModel = topModelFromCostDays(daily)
 	}
+	cost.KnownZero, _ = payload["knownZero"].(bool)
 
 	if cost.Last30DaysCostUSD <= 0 {
 		for _, day := range daily {

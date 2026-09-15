@@ -3,6 +3,7 @@ package codexbar
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -37,4 +38,14 @@ func testBinary(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return bin
+}
+
+// skipMacCLIContract marks tests of the Mac CLI's aggregate usage, JSON
+// inventory and CODEXBAR_CONFIG contract. Windows intentionally does these
+// differently (Win-CodexBar 0.56.8, #415); its contract has its own tests.
+func skipMacCLIContract(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Mac CLI contract; Windows uses per-provider probes and %APPDATA%\\CodexBar\\settings.json")
+	}
 }

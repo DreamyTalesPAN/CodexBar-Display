@@ -59,6 +59,22 @@ func ReadTaskConfig(home, label string) (TaskConfig, error) {
 	return config, err
 }
 
+// WindowsRuntimeLabel is the task that diagnostics (doctor, health) inspect
+// when no label is handed over. Standalone processes do not inherit the
+// daemon's label environment, so the installed task configuration decides:
+// the shell runtime first, then the legacy setup task.
+func WindowsRuntimeLabel(home string) string {
+	if label := strings.TrimSpace(os.Getenv(runtimepaths.DisplayStreamLaunchAgentLabelEnv)); label != "" {
+		return label
+	}
+	for _, label := range []string{runtimepaths.ShellDisplayStreamLaunchAgentLabel, runtimepaths.LegacyDisplayStreamLaunchAgentLabel} {
+		if _, err := os.Stat(TaskConfigPath(home, label)); err == nil {
+			return label
+		}
+	}
+	return runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+}
+
 type scheduledTask struct {
 	label, home string
 	run         Runner
@@ -133,19 +149,28 @@ foreach ($candidate in $folder.GetTasks(1)) { if ($candidate.Name -eq $name) { $
 `
 
 // Stop is asynchronous in Task Scheduler. Wait for all action processes before
-// allowing setup/upgrade to replace the installed executable.
-const stopTask = `$task.Stop(0)
+// allowing setup/upgrade to replace the installed executable. The instance
+// list empties before the action process has exited (about a second on a
+// real machine); running the task again inside that window fails with
+// LastTaskResult 1, so the engine processes are waited for as well.
+const stopTask = `$engines = @($task.GetInstances(0) | ForEach-Object { $_.EnginePID })
+$task.Stop(0)
 $deadline = [DateTime]::UtcNow.AddSeconds(20)
-while ($task.GetInstances(0).Count -gt 0) {
+while ($task.GetInstances(0).Count -gt 0 -or ($engines | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })) {
   if ([DateTime]::UtcNow -ge $deadline) { throw 'Task did not stop within 20 seconds' }
   Start-Sleep -Milliseconds 100
 }
 `
 
+// Start replaces a running instance like launchctl kickstart -k on macOS:
+// a stale or unresponsive daemon must not survive a repair or upgrade just
+// because Task Scheduler still reports the task as running.
 func (s *scheduledTask) Start(ctx context.Context) error {
 	_, err := s.command(ctx, findTask+`if ($null -eq $task) { throw 'Task not installed; rerun setup' }
 $task.Enabled = $true
-if ($task.State -ne 4) { $null = $task.Run($null) }
+if ($task.State -eq 4) {
+`+stopTask+`}
+$null = $task.Run($null)
 `)
 	return err
 }

@@ -2621,6 +2621,34 @@ func TestUsageTreatsExplicitZeroCostAsTokenResult(t *testing.T) {
 	}
 }
 
+// Win-CodexBar reports a complete scan without any usage as knownZero with
+// no daily rows and no timestamp. That is a result, not "history unavailable".
+func TestUsageKeepsKnownZeroTokenHistory(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used"},
+				Meta:        codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{KnownZero: true}},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Providers) != 1 || got.Providers[0].Cost == nil || !got.Providers[0].Cost.KnownZero {
+		t.Fatalf("known-zero history must reach the UI as a cost result, got %s", rec.Body.String())
+	}
+}
+
 func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 12, 30, 0, 0, time.UTC)

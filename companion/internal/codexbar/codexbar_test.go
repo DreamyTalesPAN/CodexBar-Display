@@ -1143,6 +1143,7 @@ func TestFetchAllProvidersDoesNotFallBackToCodexCLIOnAggregateCommandFailure(t *
 }
 
 func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
+	skipMacCLIContract(t)
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
@@ -1175,6 +1176,7 @@ func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
 }
 
 func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.T) {
+	skipMacCLIContract(t)
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
@@ -1239,6 +1241,7 @@ func TestFetchAllProvidersReturnsRuntimeErrorForOfficialGlobalCLIError(t *testin
 }
 
 func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
+	skipMacCLIContract(t)
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn

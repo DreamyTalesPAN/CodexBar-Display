@@ -57,6 +57,30 @@ func TestNormalizeKeepsGenuineZeroWindow(t *testing.T) {
 	}
 }
 
+func TestNormalizeDropsInformationalWindows(t *testing.T) {
+	for _, flag := range []string{"is_informational", "isInformational"} {
+		t.Run(flag, func(t *testing.T) {
+			result := normalizeFixture(t, `{"schemaVersion":1,"providers":[{"id":"codex","windows":[
+				{"kind":"session","label":"Session","usedPercent":0},
+				{"kind":"weekly","label":"Weekly","usedPercent":25},
+				{"kind":"notice","label":"Notice","usedPercent":0},
+				{"kind":"real-zero","label":"Real zero","usedPercent":0}
+			]}]}`, `[{"provider":"codex","usage":{
+				"primary":{"used_percent":0,"window_minutes":300,"`+flag+`":true,"reset_description":"No active 5h session"},
+				"secondary":{"used_percent":25,"window_minutes":10080,"`+flag+`":false},
+				"extraRateWindows":[
+					{"id":"notice","window":{"usedPercent":0,"`+flag+`":true}},
+					{"id":"real-zero","window":{"usedPercent":0,"`+flag+`":false}}
+				]
+			}}]`, "codex")
+			if result.Unavailable {
+				t.Fatal("weekly quota must stay available")
+			}
+			assertWindowLabels(t, result.Windows, "Weekly", "Real zero")
+		})
+	}
+}
+
 func TestNormalizeMarksProviderWithOnlyFilteredWindowsUnavailable(t *testing.T) {
 	zero := 0.0
 	unknown := false

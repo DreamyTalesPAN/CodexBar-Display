@@ -1,0 +1,5 @@
+target/
+gen/
+
+binaries/codexbar-*
+!binaries/.gitkeep
