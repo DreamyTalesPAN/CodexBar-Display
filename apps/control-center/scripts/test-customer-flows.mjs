@@ -4847,8 +4847,8 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     },
   });
 
-  // Before the first preview, a disconnect returns to device discovery.
-  await waitForSetupDeviceStep(page, 20_000);
+  // With no discovery candidates, the welcome screen owns the reconnect wait.
+  await setupScreen(page, SETUP_WELCOME_SCREEN).waitFor({ timeout: 20_000 });
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,

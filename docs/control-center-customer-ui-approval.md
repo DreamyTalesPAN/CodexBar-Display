@@ -4515,3 +4515,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested rebasing this PR onto current PR #407 and previously authorized fixing resulting CI failures within this setup scope.
 - Approved customer-visible result: The approved connection → provider confirmation → theme → usage choice flow remains unchanged. The inherited successful firmware-onboarding browser case now confirms these existing choices before asserting a valid final preview, while retaining terminal polling and exactly-one-upload/install assertions.
+
+## 2026-09-15 — Preserve no-device setup recovery coverage
+
+- User approval: Paul requested the current PR #407 rebase and authorized fixing integration test failures for these approved setup flows.
+- Approved customer-visible result: No runtime change. When the unfinished theme setup loses its only VibeTV and discovery returns no candidates, the existing welcome/search screen remains visible. The regression asserts this screen plus no Control Center admission and no theme install. The focused one/two-provider theme and usage flow passes.
