@@ -200,6 +200,9 @@ func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 
 func TestSetProviderEnabledUsesExactProcessArguments(t *testing.T) {
 	withProviderCommandTestBinary(t, "0.46.0")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = false
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
 	var calls [][]string
