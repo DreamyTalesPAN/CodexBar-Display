@@ -194,6 +194,21 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 		}
 		var root any
 		if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
+			// A probe that timed out or exited without JSON must not leave
+			// this provider "checking" behind a healthy neighbour: report it
+			// as unavailable with the reason, so the combined refresh keeps
+			// the per-provider failure instead of dropping it.
+			reason := "provider probe returned no result"
+			if runErr != nil {
+				reason = "provider probe failed: " + runErr.Error()
+			}
+			encoded, encodeErr := json.Marshal(map[string]any{
+				"provider": settings[i].ID,
+				"error":    map[string]any{"kind": "probe", "message": reason},
+			})
+			if encodeErr == nil {
+				joined = append(joined, encoded)
+			}
 			continue
 		}
 		for _, item := range extractProviderList(root) {

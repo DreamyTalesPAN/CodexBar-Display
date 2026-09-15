@@ -474,25 +474,59 @@ fn runtime_origin_candidates() -> Vec<Url> {
 
 // The Updates tab's "Update" button lands here (vibetv://check-for-updates),
 // as does the tray item. The NSIS updater exits this process and relaunches
-// the new build, which re-registers the Companion task on start.
+// the new build, which re-registers the Companion task on start. This exe
+// has no console, so every outcome the customer waits for is shown in a
+// native message box; stderr alone would leave the click unanswered.
 fn check_for_updates(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let updater = match app.updater() {
-            Ok(updater) => updater,
+        let result = async {
+            let updater = app.updater().map_err(|error| format!("updater unavailable: {error}"))?;
+            let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
+            let Some(update) = update else {
+                return Ok(None);
+            };
+            log(&format!("installing update {}", update.version));
+            update
+                .download_and_install(|_, _| {}, || {})
+                .await
+                .map_err(|error| format!("update failed: {error}"))?;
+            Ok::<Option<String>, String>(Some(update.version))
+        }
+        .await;
+        match result {
+            Ok(Some(_)) => {}
+            Ok(None) => show_message("VibeTV Control Center is up to date."),
             Err(error) => {
-                log(&format!("updater unavailable: {error}"));
-                return;
+                log(&error);
+                show_message(
+                    "The update could not be installed. Check your internet connection and try again; if this keeps happening, download the latest installer from vibetv.shop.",
+                );
             }
-        };
-        match updater.check().await {
-            Ok(Some(update)) => {
-                log(&format!("installing update {}", update.version));
-                if let Err(error) = update.download_and_install(|_, _| {}, || {}).await {
-                    log(&format!("update failed: {error}"));
-                }
-            }
-            Ok(None) => log("no update available"),
-            Err(error) => log(&format!("update check failed: {error}")),
         }
     });
+}
+
+// Native message box: works while the webview is hidden or still loading.
+fn show_message(message: &str) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TASKMODAL, MessageBoxW,
+        };
+        let text: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
+        let title: Vec<u16> = "VibeTV Control Center".encode_utf16().chain(Some(0)).collect();
+        std::thread::spawn(move || {
+            // SAFETY: both buffers are NUL-terminated and outlive the call.
+            unsafe {
+                MessageBoxW(
+                    std::ptr::null_mut(),
+                    text.as_ptr(),
+                    title.as_ptr(),
+                    MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TASKMODAL,
+                );
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    log(message);
 }

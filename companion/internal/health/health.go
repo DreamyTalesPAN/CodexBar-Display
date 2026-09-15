@@ -60,7 +60,7 @@ func (d deps) withDefaults() deps {
 				d.runCommand = runSystemCommand
 			}
 			home, _ := d.homeDir()
-			d.serviceManager = service.NewWindows(launchAgentLabel, home, d.runCommand)
+			d.serviceManager = service.NewWindows(service.WindowsRuntimeLabel(home), home, d.runCommand)
 		} else if d.runCommand == nil {
 			d.serviceManager = service.New(launchAgentLabel, "", false)
 		} else {
@@ -208,7 +208,7 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 	}
 	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	if d.goos == "windows" {
-		data, err := d.readFile(service.TaskConfigPath(home, launchAgentLabel))
+		data, err := d.readFile(service.TaskConfigPath(home, service.WindowsRuntimeLabel(home)))
 		if err != nil {
 			return launchAgentConfig{}
 		}

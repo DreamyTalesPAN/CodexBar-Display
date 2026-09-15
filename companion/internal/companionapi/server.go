@@ -850,6 +850,8 @@ type usageCostInfo struct {
 	LatestTokens      int64              `json:"latestTokens,omitempty"`
 	TopModel          string             `json:"topModel,omitempty"`
 	Daily             []usageCostDayInfo `json:"daily,omitempty"`
+	// KnownZero: the engine finished a complete scan and found no usage.
+	KnownZero bool `json:"knownZero,omitempty"`
 }
 
 type usageCostDayInfo struct {
@@ -2711,11 +2713,13 @@ func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {
 		LatestTokens:      meta.Cost.LatestTokens,
 		TopModel:          strings.TrimSpace(meta.Cost.TopModel),
 		Daily:             usageCostDaysFromMeta(meta.Cost.Daily),
+		KnownZero:         meta.Cost.KnownZero,
 	}
 	if cost.CurrencyCode == "" {
 		cost.CurrencyCode = "USD"
 	}
-	if cost.TodayCostUSD <= 0 &&
+	if !cost.KnownZero &&
+		cost.TodayCostUSD <= 0 &&
 		cost.Last30DaysCostUSD <= 0 &&
 		cost.Last30DaysTokens <= 0 &&
 		cost.LatestTokens <= 0 &&

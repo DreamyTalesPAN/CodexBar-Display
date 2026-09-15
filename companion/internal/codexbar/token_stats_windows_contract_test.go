@@ -63,6 +63,9 @@ func TestWindowsCostKnownHistoryUsesSpendContract(t *testing.T) {
 			if got.Unavailable || got.Cost == nil || got.Cost.Last30DaysTokens != tc.total || got.TotalTokens != tc.total {
 				t.Fatalf("known result lost: %+v", got)
 			}
+			if got.Cost.KnownZero != (tc.total == 0) {
+				t.Fatalf("known-zero marker must follow the contract: %+v", got.Cost)
+			}
 		})
 	}
 }

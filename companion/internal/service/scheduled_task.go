@@ -59,6 +59,22 @@ func ReadTaskConfig(home, label string) (TaskConfig, error) {
 	return config, err
 }
 
+// WindowsRuntimeLabel is the task that diagnostics (doctor, health) inspect
+// when no label is handed over. Standalone processes do not inherit the
+// daemon's label environment, so the installed task configuration decides:
+// the shell runtime first, then the legacy setup task.
+func WindowsRuntimeLabel(home string) string {
+	if label := strings.TrimSpace(os.Getenv(runtimepaths.DisplayStreamLaunchAgentLabelEnv)); label != "" {
+		return label
+	}
+	for _, label := range []string{runtimepaths.ShellDisplayStreamLaunchAgentLabel, runtimepaths.LegacyDisplayStreamLaunchAgentLabel} {
+		if _, err := os.Stat(TaskConfigPath(home, label)); err == nil {
+			return label
+		}
+	}
+	return runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+}
+
 type scheduledTask struct {
 	label, home string
 	run         Runner

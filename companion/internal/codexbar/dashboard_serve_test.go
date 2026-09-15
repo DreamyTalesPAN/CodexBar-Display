@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,7 +103,8 @@ func TestDashboardServeSupervisorStartsPrivateLoopbackChild(t *testing.T) {
 	if got := argValue(record.Args, "--refresh-interval"); got != "60" {
 		t.Fatalf("expected refresh interval to clamp to 60 seconds, got %q in %v", got, record.Args)
 	}
-	if got := argValue(record.Args, "--request-timeout"); got != "0" {
+	// Win-CodexBar 0.56.8 rejects the flag; see dashboard_serve.go.
+	if got := argValue(record.Args, "--request-timeout"); runtime.GOOS != "windows" && got != "0" {
 		t.Fatalf("expected request timeout to be disabled, got %q in %v", got, record.Args)
 	}
 }
@@ -192,6 +194,11 @@ func TestDashboardServeSupervisorAllowsStartupFailuresBeforeReady(t *testing.T) 
 	}()
 
 	waitForDashboardServeHealthy(t, supervisor)
+	// The mocked health answers before the child has written its record on a
+	// slow runner; wait for the first record, then require that no second
+	// child was started.
+	waitForDashboardServeRecords(t, recordPath, 1)
+	time.Sleep(50 * time.Millisecond)
 	if records := readDashboardServeRecords(t, recordPath); len(records) != 1 {
 		t.Fatalf("startup health failures must not restart the child before the grace period, got %#v", records)
 	}

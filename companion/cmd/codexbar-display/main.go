@@ -997,7 +997,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		return doctorRuntimeConfig{}, err
 	}
 	if runtime.GOOS == "windows" {
-		label := "com.codexbar-display.daemon"
+		label := service.WindowsRuntimeLabel(home)
 		manager := service.New(label, home, false)
 		status, err := manager.Status(context.Background())
 		if err != nil {
@@ -1459,6 +1459,9 @@ func runService(args []string) error {
 		if _, err := service.WriteTaskConfig(home, label, service.TaskConfig{Executable: executable, Arguments: append([]string{"daemon"}, args[1:]...)}); err != nil {
 			return err
 		}
+		if err := migrateLegacyWindowsTask(home, label); err != nil {
+			return err
+		}
 		if err := restartLaunchAgent(home); err != nil {
 			return err
 		}
@@ -1512,6 +1515,34 @@ func runService(args []string) error {
 	default:
 		return fmt.Errorf("unknown service subcommand %q: expected start, stop, status, install, or uninstall", args[0])
 	}
+}
+
+// legacyWindowsTaskManagerFn is replaced in tests.
+var legacyWindowsTaskManagerFn = func(home string) service.Manager {
+	return service.New(runtimepaths.LegacyDisplayStreamLaunchAgentLabel, home, false)
+}
+
+// migrateLegacyWindowsTask retires the task an earlier "codexbar-display
+// setup" registered under the legacy label before the shell runtime takes
+// over. Both daemons share the writer lock and API port, so the legacy task
+// would otherwise keep running and the shell's health check would reject its
+// owner forever. Mirrors the Mac App's legacy LaunchAgent migration.
+func migrateLegacyWindowsTask(home, label string) error {
+	if runtime.GOOS != "windows" || label == runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+		return nil
+	}
+	legacyConfig := service.TaskConfigPath(home, runtimepaths.LegacyDisplayStreamLaunchAgentLabel)
+	if _, err := os.Stat(legacyConfig); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err := legacyWindowsTaskManagerFn(home).Uninstall(context.Background()); err != nil {
+		return fmt.Errorf("retire legacy background task: %w", err)
+	}
+	if err := os.Remove(legacyConfig); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	fmt.Println("background service: retired legacy task " + runtimepaths.LegacyDisplayStreamLaunchAgentLabel)
+	return nil
 }
 
 func runThemeValidate(args []string) error {

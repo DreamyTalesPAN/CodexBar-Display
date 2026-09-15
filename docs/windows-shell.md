@@ -56,6 +56,15 @@ Companion for everything it needs.
   current label and registers/starts the task; `service uninstall` removes
   both. `service stop|status` follow `CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL`
   like the rest of the runtime instead of the legacy label only.
+  `service install` under the shell label also retires a task left behind by
+  an earlier `codexbar-display setup` (`com.codexbar-display.daemon`): both
+  daemons would share the writer lock and API port, and the shell's health
+  check rejects the legacy owner. `doctor` and `health` inspect the task whose
+  configuration is installed (shell label first, then legacy) when no label
+  is handed over.
+- Updater outcomes (up to date, failed) are shown in a native message box;
+  the exe has no console and the customer would otherwise see no answer to
+  the Update click.
 - `installedInApplications` on Windows means "the shell exe sits next to the
   Companion"; `app.path` is that directory.
 

@@ -17,6 +17,7 @@ import (
 )
 
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -96,6 +97,7 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 }
 
 func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -124,6 +126,7 @@ func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T
 }
 
 func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	home := t.TempDir()
 	standard := filepath.Join(home, ".config", "codexbar", "config.json")
@@ -158,6 +161,7 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 }
 
 func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	home := t.TempDir()
 	testenv.Home(t, home)
 	t.Setenv("CODEXBAR_CONFIG", "")
@@ -396,6 +400,7 @@ func TestProviderReadinessCopyHidesInternalUsageServiceName(t *testing.T) {
 }
 
 func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -587,6 +592,7 @@ func fileMode(t *testing.T, path string) os.FileMode {
 // not-configured stand-in, and the customer was told to download the CodexBar
 // they already have. CodexBar's own inventory is the authority on the switches.
 func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -745,6 +751,7 @@ func TestProviderReadinessKeepsReportedMessageInternal(t *testing.T) {
 // A ready provider means there is nothing to disclose and no inventory call to
 // pay for.
 func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {

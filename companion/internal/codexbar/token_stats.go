@@ -199,7 +199,7 @@ func parseProviderTokenStatsWithFailures(raw []byte) (map[string]ProviderTokenSt
 					parsed[key] = ProviderTokenStats{Unavailable: true}
 					continue
 				}
-				payload = map[string]any{"provider": key, "source": "local", "daily": normalizedDays, "totalTokens": total}
+				payload = map[string]any{"provider": key, "source": "local", "daily": normalizedDays, "totalTokens": total, "knownZero": knownZero && total == 0}
 			}
 		}
 		if key != "" && providerPayloadHasError(payload) {
@@ -280,6 +280,7 @@ func parseProviderCostUsagePayload(payload map[string]any, fallbackLatestTokens 
 	if cost.TopModel == "" {
 		cost.TopModel = topModelFromCostDays(daily)
 	}
+	cost.KnownZero, _ = payload["knownZero"].(bool)
 
 	if cost.Last30DaysCostUSD <= 0 {
 		for _, day := range daily {

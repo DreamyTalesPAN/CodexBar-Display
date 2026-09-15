@@ -527,6 +527,9 @@ type ProviderCostUsage struct {
 	LatestTokens      int64
 	TopModel          string
 	Daily             []ProviderCostDay
+	// KnownZero marks a complete scan that found no usage at all. An
+	// all-zero result is otherwise indistinguishable from "nothing known".
+	KnownZero bool
 }
 
 type ProviderCostDay struct {

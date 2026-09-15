@@ -19,7 +19,7 @@ ureq = { version = "3", default-features = false }
 url = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_System_Threading"] }
+windows-sys = { version = "0.60", features = ["Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]
 tauri-build = "2"

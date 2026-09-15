@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,6 +68,7 @@ func TestParseProviderHealthClassifiesSafeStatesAndService(t *testing.T) {
 }
 
 func TestFetchProviderSettingsUsesStatusEvenAfterNonzeroExit(t *testing.T) {
+	skipMacCLIContract(t)
 	withProviderCommandTestBinary(t, "0.46.0")
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
@@ -106,7 +108,7 @@ func TestFetchProviderInventoryDoesNotRunHealthProbe(t *testing.T) {
 	if len(settings) != 2 || !settings[0].Enabled || settings[1].Enabled {
 		t.Fatalf("unexpected inventory: %#v", settings)
 	}
-	want := [][]string{{"config", "providers", "--json"}}
+	want := [][]string{providerInventoryArgs()}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("inventory added a slow health probe: got %v want %v", calls, want)
 	}
@@ -126,7 +128,7 @@ func TestFetchProviderSettingsProbesEachEnabledProviderOnWindows(t *testing.T) {
 	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string(nil), args...))
 		switch {
-		case reflect.DeepEqual(args, []string{"config", "providers", "--json"}):
+		case reflect.DeepEqual(args, providerInventoryArgs()):
 			return []byte(`[
 				{"provider":"codex","displayName":"Codex","enabled":true},
 				{"provider":"claude","displayName":"Claude","enabled":true},
@@ -160,6 +162,45 @@ func TestFetchProviderSettingsProbesEachEnabledProviderOnWindows(t *testing.T) {
 	}
 	if len(calls) != 3 {
 		t.Fatalf("expected inventory + one probe per enabled provider, got %v", calls)
+	}
+}
+
+// One enabled provider answers, the other probe times out without JSON. The
+// silent provider must become "unavailable", not stay "checking" forever.
+func TestFetchProviderSettingsReportsSilentProbeAsUnavailableOnWindows(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.56.8")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		switch {
+		case reflect.DeepEqual(args, providerInventoryArgs()):
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":true}
+			]`), nil
+		case reflect.DeepEqual(args, []string{"usage", "--json", "--provider", "codex", "--status", "--web-timeout", "8"}):
+			return []byte(`[{"provider":"codex","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
+		default:
+			return nil, errors.New("signal: killed")
+		}
+	}
+
+	settings, err := FetchProviderSettings(context.Background())
+	if err != nil {
+		t.Fatalf("fetch settings: %v", err)
+	}
+	byID := map[string]ProviderSetting{}
+	for _, setting := range settings {
+		byID[setting.ID] = setting
+	}
+	if byID["codex"].Health != ProviderHealthHealthy {
+		t.Fatalf("codex must stay healthy, got %#v", byID["codex"])
+	}
+	if byID["claude"].Health != ProviderHealthUnavailable || !strings.Contains(byID["claude"].Reported, "signal: killed") {
+		t.Fatalf("a silent probe must be reported as unavailable, got %#v", byID["claude"])
 	}
 }
 
