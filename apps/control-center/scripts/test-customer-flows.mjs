@@ -394,6 +394,12 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (process.argv.includes("--firmware-onboarding")) {
+      await testFirmwareOnboardingTerminalStates(browser, appContext.appUrl);
+      await testFirmwareAttentionDoesNotOfferSecondFlash(browser, appContext.appUrl);
+      console.log("firmware onboarding regression tests passed");
+      return;
+    }
     if (themeMissingOnly) {
       await testThemeMissingDeviceWaitsForInitialProviderCheck(
         browser,
@@ -403,7 +409,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appContext.appUrl);
+      await testThemeSetupWaitsAfterDeviceReadbackFailure(
+        browser,
+        appContext.appUrl,
+      );
       console.log("control-center theme-missing flow test passed");
       return;
     }
@@ -722,6 +731,7 @@ async function main() {
       appContext.appUrl,
     );
     await testConnectInstallsFirmwareUpdate(browser, appContext.appUrl);
+    await testFirmwareOnboardingTerminalStates(browser, appContext.appUrl);
     await testConnectFirmwareUpdateFailureOffersRetry(
       browser,
       appContext.appUrl,
@@ -1417,6 +1427,69 @@ async function setupConnectLogLines(page) {
 // Firmware belongs to the connect the customer pressed: a VibeTV whose build
 // does not match the app driving it is not usable yet, so the sequence checks
 // and installs it before setup moves on, and says so as it goes.
+async function testFirmwareOnboardingTerminalStates(browser, appUrl) {
+  for (const [phase, needsProviders] of [["complete", true], ["complete", false], ["attention", true]]) {
+    const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+    const installRequests = [];
+    const { candidate, connected } = firmwareConnectFixture();
+    const factoryDevice = {
+      ...connected,
+      activeTheme: "theme-missing",
+      display: { activeTheme: "theme-missing", themeSpec: { active: false, path: "" } },
+    };
+    let uploads = 0;
+    let polls = 0;
+    await routeCompanionOnline(page, installRequests, () => {}, {
+      companionVersion: "1.0.99",
+      providerSelectionSetup: { providerSelectionRequired: needsProviders, providerSelectionComplete: !needsProviders },
+      device: { connected: false, paired: false, ready: false, active: false },
+      searchDevices: [candidate],
+      onSelect: () => factoryDevice,
+      onUpdate: () => { uploads += 1; },
+      onRequest: (path) => { if (path === "/v1/updates/install/status") polls += 1; },
+      deviceAfterFirmwareUpdate: { ...factoryDevice, firmware: "1.0.33" },
+      deviceAfterThemeInstall: { ...synthwaveDevice, deviceId: "customer-device", firmware: "1.0.33" },
+      installStatusSequence: [{ phase: "complete", progress: 100, message: "Theme is active on VibeTV.", result: { themeId: "synthwave", name: "Synthwave", activePath: "/themes/u/synthwave.json" } }],
+      updateStatusSequence: [{
+        phase,
+        stage: "verifying_render",
+        outcome: phase === "complete" ? "updated" : "firmware_current_render_attention",
+        message: phase === "complete" ? "Update complete." : "Firmware is current, but the picture could not be verified.",
+        progress: 100,
+        result: { firmware: "1.0.33", helloVerified: true, healthVerified: true, streamVerified: true, renderVerified: false, ...(phase === "complete" ? { renderSkipped: "theme_setup_required" } : {}) },
+      }],
+    });
+    await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+    await connectDiscoveredVibeTV(page, { deviceId: "customer-device" });
+    if (phase === "complete" && needsProviders) {
+      await page.getByRole("heading", { name: "Choose AI providers", exact: true }).waitFor({ timeout: 20_000 });
+      assert((await page.getByRole("dialog").count()) === 0, "Factory setup must advance without an update error");
+    } else if (phase === "complete") {
+      await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).waitFor({ timeout: 20_000 });
+      await page.getByRole("radio", { name: "Fixture Synthwave Theme" }).click();
+      const install = setupScreen(page, SETUP_THEME_SCREEN).getByRole("button", { name: "Install", exact: true });
+      await waitForEnabled(page, install, "Firmware completion must unlock first theme installation");
+      await install.click();
+      await page.getByRole("navigation", { name: "Control Center" }).waitFor({ timeout: 20_000 });
+    } else {
+      const dialog = page.getByRole("dialog", { name: "Firmware current — attention needed" });
+      await dialog.waitFor({ timeout: 10_000 });
+      assert(await dialog.getByRole("button", { name: "Create support report" }).isEnabled(), "Terminal attention must release busy state for support");
+      assert((await dialog.getByRole("button", { name: /try.*again/i }).count()) === 0, "Verified firmware must not offer another flash");
+    }
+    const terminalPolls = polls;
+    await page.waitForTimeout(1600);
+    assert(polls === terminalPolls, `Polling must stop after ${phase}: ${terminalPolls} -> ${polls}`);
+    assert(uploads === 1, `Onboarding must upload firmware exactly once, got ${uploads}`);
+    if (phase === "complete" && !needsProviders) {
+      assert(installRequests.length === 1, "Customer must reach the live app after exactly one chosen theme install");
+    } else {
+      assertNoInstallRequests(installRequests);
+    }
+    await page.close();
+  }
+}
+
 async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -8493,7 +8566,11 @@ async function testFailedAutomaticThemeRefreshStaysPaused(browser, appUrl) {
 async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
+  let polls = 0;
+  let uploads = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
+    onRequest: (path) => { if (path === "/v1/updates/install/status") polls += 1; },
+    onUpdate: () => { uploads += 1; },
     companionVersion: "1.0.99",
     updateStatusSequence: [
       {
@@ -8537,6 +8614,11 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
   await page.getByRole("button", { name: "Create report" }).waitFor({
     timeout: 10_000,
   });
+  assert(await page.getByRole("button", { name: "Create report" }).isEnabled(), "Attention must release the busy action");
+  const terminalPolls = polls;
+  await page.waitForTimeout(1600);
+  assert(polls === terminalPolls, "Attention must terminate polling, not just paint warning text");
+  assert(uploads === 1, "Attention must not reflash verified firmware");
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -11744,7 +11826,21 @@ async function routeCompanionOnline(
         deviceReadFailuresRemaining > 0
       ) {
         deviceReadFailuresRemaining -= 1;
-        await route.abort("failed");
+        // A device read failure is an API response from the still-running
+        // Companion. Aborting fetch instead marks the Companion unavailable
+        // and races its next status poll, testing a different recovery path.
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: {
+              code: "device_not_found",
+              message: "No VibeTV device was found.",
+              nextAction: "Restart VibeTV, wait until it shows WiFi connected, then run setup again.",
+            },
+          }),
+        });
         return;
       }
       await route.fulfill({

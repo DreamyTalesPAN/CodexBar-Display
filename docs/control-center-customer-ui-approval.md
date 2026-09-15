@@ -4355,3 +4355,53 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul accepted the candidate, required that the wizard never finish without a valid preview, and explicitly instructed Codex to fix legitimate Bug Detector findings and repeat the push/review loop without further confirmation. Both current findings affect that exact setup requirement.
 - Approved customer-visible result: Selecting another Cable VibeTV waits for a frame acknowledged by that device; the previous device's cached picture cannot admit setup. The existing Back control on the final preview returns to the existing theme selection, allowing replacement of a custom theme whose local preview was lost after purging the Mac. Installation errors retain the normal retry flow; successful installation still requires a valid preview before admission. No automatic theme or firmware write is added.
 - Validation: New regressions cover foreign/missing/matching Cable frame identities in status, the frame endpoint and preview admission. The browser flow starts with an irretrievable custom theme, returns to the catalog, installs a theme once and enters Control Center only after its preview renders. The existing parent-owned theme-choice state handles recovery.
+
+## 2026-09-14 — Firmware update completion and first-theme onboarding (#445)
+
+- User approval: Marcus tested the installed candidate from PR #445 at
+  `e3d628bd4cae7c6349c499d43047356891a05def`, confirmed "ok hat geklappt",
+  repeated the fresh setup, and then explicitly requested "ne nur den
+  getstetet firmware fix mergen". His approval is limited to the tested
+  firmware-update behavior; the separate provider-readiness checking problem
+  observed during the repeated test remains open and is not covered here.
+- Approved customer-visible result: Firmware updates stop waiting when their
+  actual result is known. Successful updates continue first-time setup even
+  when the device has no theme yet. A result requiring attention ends the
+  busy state and shows the existing support/report recovery instead of
+  waiting until a misleading timeout or starting a second firmware upload.
+  Existing theme-loss and render failures remain actionable. No provider
+  selection behavior, theme design, or unrelated UI is changed.
+- Evidence: The signed candidate 9999.0.99 (run 34848902448) replaced the old
+  Mac App through its customer update flow. Device 16201042 updated from
+  1.0.41 to the candidate and reported firmware, health, stream, and render
+  verification complete; its stored Clippy theme was restored automatically.
+  Marcus then tested first-theme onboarding using the same PR App after
+  firmware 1.0.41, empty theme assets, WLAN reset, and clean Mac state were
+  established. The app reached provider selection on firmware 1.0.42;
+  the separately observed provider-check refusal is not claimed fixed.
+- Approved files: The firmware polling and setup changes in
+  `control-center-app.tsx`, `setup-connect.ts`, `setup-firmware-dialogs.tsx`,
+  `setup-wizard.tsx`, their regression tests, and `test-customer-flows.mjs`.
+- Scope: Approval to merge this firmware fix only. No production release,
+  new firmware flash, provider fix, or additional feature is authorized.
+
+## 2026-09-14 — Repair the blocking test checks for #445
+
+- User approval: Marcus explicitly requested "Und ja behebe vorher die
+  Probleme" after the repeated CI failure and broken local static test were
+  reported. This authorizes repairing those checks, not the provider issue.
+- Approved customer-visible result: No new customer-visible change. The
+  firmware onboarding behavior tested and approved above remains unchanged.
+  The browser fixture now returns the Companion's actual device-not-found
+  API response instead of simulating loss of the Companion connection.
+  The same assertions still require setup to stay incomplete until device
+  confirmation and prohibit a second theme installation.
+- Scope: Test fixtures, focused test coverage, shell syntax failure detection,
+  and checking the currently catalogued screensaver archive. No additional
+  product, provider, firmware, installation, or release change is included.
+
+## 2026-09-15 — Merge the firmware onboarding fix from main into PR #407
+
+- User approval: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
+- Approved customer-visible result: Preserve the required matching live preview before leaving the wizard while retaining main's completed firmware-update and attention handling. Fresh devices without an installed theme can continue setup after a verified firmware update; loss of an existing theme remains visible. Cable reads its baseline over USB and WiFi over HTTP, then both apply the same existing theme-verification rule. Attention never starts another automatic firmware upload.
+- Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.

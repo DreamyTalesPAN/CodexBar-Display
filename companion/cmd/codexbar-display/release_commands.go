@@ -1054,10 +1054,9 @@ func firmwareOTAAuthError(err error) bool {
 	if errors.As(err, &httpErr) {
 		return httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unauthorized") ||
-		strings.Contains(msg, "forbidden") ||
-		strings.Contains(msg, "pairing token required")
+	// The preflight wraps actual HTTP responses in firmwareDeviceHTTPError.
+	// Transport error text includes addresses (e.g. port 40165), not statuses.
+	return false
 }
 
 type releaseHTTPDoer interface {

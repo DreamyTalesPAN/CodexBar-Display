@@ -600,8 +600,12 @@ type firmwareUpdateJob struct {
 	Result      *firmwareUpdateResult `json:"result,omitempty"`
 	Warnings    []string              `json:"warnings,omitempty"`
 	Error       *apiError             `json:"error,omitempty"`
-	target      string
-	firmware    string
+
+	target                         string
+	firmware                       string
+	themeSetupRequiredBeforeUpdate bool
+	themePathBeforeUpdate          string
+	themeActiveBeforeUpdate        bool
 }
 
 type firmwareUpdateJobResponse struct {
@@ -6255,14 +6259,60 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), firmwareUpdateJobTime)
 		defer cancel()
+		// Only a positively unconfigured device may skip render verification.
+		// Remember this before OTA: a theme lost during the update is a failure,
+		// and an unavailable/older health response is not proof of first setup.
+		cableUpdate := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
+		var before deviceHealth
+		var probeReq *http.Request
+		var probeErr error
+		if cableUpdate {
+			var port string
+			var hello protocol.DeviceHello
+			port, hello, probeErr = s.cableControlDevice(cfg)
+			if probeErr == nil && hello.HasFeature(protocol.FeatureCableHealthV1) {
+				before, probeErr = s.readCableHealth(port, hello.DeviceID)
+			}
+		} else {
+			probeCtx, cancelProbe := context.WithTimeout(ctx, 3*time.Second)
+			// Only this maintenance-owned request bypasses doJSON's OTA exclusion;
+			// ordinary status probes remain blocked throughout the baseline.
+			probeReq, probeErr = http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint(cfg.DeviceTarget, "/health"), nil)
+			if probeErr == nil {
+				applyDeviceToken(probeReq, cfg.DeviceToken)
+				probeErr = s.do(probeReq, &before)
+			}
+			cancelProbe()
+		}
+		if probeErr == nil && before.OK {
+			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+				job.themeSetupRequiredBeforeUpdate = firmwareThemeSetupRequired(before)
+				job.themePathBeforeUpdate, job.themeActiveBeforeUpdate = firmwareUpdateLiveThemeState(before)
+			})
+		}
+		if s.client != nil {
+			s.client.CloseIdleConnections()
+		}
 		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
-		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
+		// A probe that passed the exclusion before this job started may still
+		// own or await the HTTP gate, even when our three-second baseline timed
+		// out. Drain it and hold the gate across the child-process OTA.
+		err := probeErr
+		if cableUpdate {
+			err = s.updateFirmware(ctx, s.home, cfg, req, writer)
+		} else if probeReq != nil {
+			var release func()
+			release, err = transportlayer.AcquireDeviceHTTPGate(ctx, probeReq.URL)
+			if err == nil {
+				err = s.updateFirmware(ctx, s.home, cfg, req, writer)
+				release()
+			}
+		}
 		s.firmwareUpdateActive.Store(false)
 		resumeStream()
 
 		snapshot, _ := s.firmwareUpdateJobSnapshot(jobID)
 		shouldVerify := err == nil || (snapshot.Result != nil && snapshot.Result.UploadAccepted)
-		cableUpdate := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
 		if shouldVerify {
 			var outcome string
 			var attentionMessage string
@@ -6387,9 +6437,14 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
-	if streamAwaitingProvider {
+	renderSkipped, attentionMessage := firmwareUpdateRenderSkip(snapshot, health, streamAwaitingProvider)
+	if attentionMessage != "" {
+		s.setFirmwareUpdateStage(jobID, "verifying_render")
+		return firmwareAttentionOutcome("render"), attentionMessage, nil
+	}
+	if renderSkipped != "" {
 		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
-			result.RenderSkipped = "provider_setup_required"
+			result.RenderSkipped = renderSkipped
 		})
 		return firmwareUpdateOutcome(snapshot), "", nil
 	}
@@ -6491,9 +6546,14 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
-	if streamAwaitingProvider {
+	renderSkipped, attentionMessage := firmwareUpdateRenderSkip(snapshot, health, streamAwaitingProvider)
+	if attentionMessage != "" {
+		s.setFirmwareUpdateStage(jobID, "verifying_render")
+		return firmwareAttentionOutcome("render"), attentionMessage, nil
+	}
+	if renderSkipped != "" {
 		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
-			result.RenderSkipped = "provider_setup_required"
+			result.RenderSkipped = renderSkipped
 		})
 		return firmwareUpdateOutcome(snapshot), "", nil
 	}
@@ -6512,6 +6572,49 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		result.RenderVerified = true
 	})
 	return firmwareUpdateOutcome(snapshot), "", nil
+}
+
+// Apply the same first-setup and lost-theme rules after Cable and WiFi updates.
+// An empty skip reason still requires actual render verification.
+func firmwareUpdateRenderSkip(snapshot firmwareUpdateJob, health deviceHealth, streamAwaitingProvider bool) (skipReason, attentionMessage string) {
+	liveThemePath, liveThemeActive := firmwareUpdateLiveThemeState(health)
+	themeSetupRequired := snapshot.themeSetupRequiredBeforeUpdate && firmwareThemeSetupRequired(health)
+	storedThemeUnchanged := snapshot.themePathBeforeUpdate != "" &&
+		snapshot.themePathBeforeUpdate == liveThemePath &&
+		snapshot.themeActiveBeforeUpdate == liveThemeActive &&
+		strings.TrimSpace(health.Display.ThemeSpec.RenderError) == "" &&
+		(health.Display.ThemeSpec.RenderOK == nil || *health.Display.ThemeSpec.RenderOK)
+	if (snapshot.themePathBeforeUpdate != "" && liveThemePath == "") ||
+		(streamAwaitingProvider && !themeSetupRequired && !storedThemeUnchanged) {
+		return "", "Firmware is current, but the stored theme could not be verified."
+	}
+	if themeSetupRequired {
+		return "theme_setup_required", ""
+	}
+	if streamAwaitingProvider {
+		return "provider_setup_required", ""
+	}
+	return "", ""
+}
+
+// Standby and screensaver preview display a separate slot. Compare the live slot,
+// which firmware restores on reboot, not the picture currently on screen.
+func firmwareUpdateLiveThemeState(health deviceHealth) (string, bool) {
+	if health.Standby != nil {
+		path := strings.TrimSpace(health.Standby.LiveThemePath)
+		if path != "" || health.Standby.Active {
+			return path, path != ""
+		}
+	}
+	return strings.TrimSpace(health.Display.ThemeSpec.Path), health.Display.ThemeSpec.Active
+}
+
+func firmwareThemeSetupRequired(health deviceHealth) bool {
+	spec := health.Display.ThemeSpec
+	return health.OK && health.Display.ActiveTheme == "theme-missing" &&
+		(health.Standby == nil || (!health.Standby.Active && strings.TrimSpace(health.Standby.LiveThemePath) == "")) &&
+		!spec.Active && strings.TrimSpace(spec.Path) == "" &&
+		strings.TrimSpace(spec.Hash) == "" && strings.TrimSpace(spec.RenderError) == ""
 }
 
 // repairParkedDisplayAfterFirmwareUpdate verifies the picture after an update

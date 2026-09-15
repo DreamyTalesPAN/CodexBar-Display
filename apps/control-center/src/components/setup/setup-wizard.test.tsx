@@ -133,6 +133,34 @@ describe("SetupWizard: restored installation", () => {
   });
 });
 
+describe("SetupWizard: terminal firmware attention", () => {
+  it("releases the running update but preserves the warning without a second flash", async () => {
+    const installFirmware = vi.fn().mockRejectedValue({
+      code: "firmware_update_attention",
+      message: "Firmware is current, but the picture could not be verified.",
+    });
+    const props = baseProps({
+      step: "device",
+      deviceCandidates: [{ deviceId: "vibetv-1", target: "http://192.168.178.73", known: true } as DeviceCandidate],
+      connectSteps: {
+        connect: vi.fn().mockResolvedValue({ firmware: "1.0.41" }),
+        checkFirmware: vi.fn().mockResolvedValue({ from: "1.0.41", to: "1.0.42" }),
+        installFirmware,
+      },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    rerender(<SetupWizard {...props} step="providers" />);
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+    expect(screen.getByText("Firmware is current, but the picture could not be verified.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try update again" })).toBeNull();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create support report" }));
+    expect(props.onCreateSupportReport).toHaveBeenCalledTimes(1);
+    expect(installFirmware).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Choose AI Providers")).toBeNull();
+  });
+});
+
 describe("SetupWizard: theme failures", () => {
   it("shows an unavailable catalog over the theme step and reloads it", () => {
     const onRetryTheme = vi.fn();
