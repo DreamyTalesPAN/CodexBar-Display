@@ -4505,3 +4505,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: "in den settings nicht das richtige theme zeigen, da bei der visualisierung bleiben wie vorher. auch bei show usage as"
 - Approved customer-visible result: Settings uses the previous compact provider/percentage/bar visualization for both Display Mode and Show usage as. Setup retains its selected-theme previews. The Used/Remaining preference and its persistence are unchanged.
+
+## 2026-09-15 — Rebase provider and usage setup onto current PR #407
+
+- User approval: Paul explicitly requested “ok nochmal rebasen auf pr 407, da ist noch einiges dazugekommen”, preserving the provider, theme-first setup and simple Settings previews approved in this task.
+- Approved customer-visible result: Retain PR #407's device-matching live preview admission and completed firmware-update handling together with explicit provider continuation, Theme → Display Mode → Show usage as, and compact Settings visuals. Back to Theme also updates the existing wizard navigation override; the parent still owns missing-theme recovery. No new layout, hardware write, installation or release is introduced.

@@ -334,7 +334,6 @@ export function SetupWizard(props: SetupWizardProps) {
         navigations.current += 1;
         if (back === "theme") {
           props.onReturnToThemes();
-          return;
         }
         if (back === "device") {
           resetConnect();

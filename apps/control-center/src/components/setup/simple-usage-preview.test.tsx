@@ -17,7 +17,7 @@ describe("simple Settings usage previews", () => {
 
   it("keeps unavailable readings unavailable in Remaining", () => {
     const preview = displayPreviewFor({ id: "gemini", label: "Gemini", session: 0, weekly: 0,
-      usageUnavailable: true, windows: [{ id: "weekly", label: "Weekly", usedPercent: 0 }],
+      usageMode: "used", usageUnavailable: true, windows: [{ id: "weekly", label: "Weekly", usedPercent: 0 }],
     });
     const html = renderToStaticMarkup(<SimpleUsagePreview preview={preview} usageMode="remaining" />);
     expect(html).toContain("--");

@@ -343,7 +343,7 @@ describe("SetupWizard: initial provider scan", () => {
           hasActiveDevice: true,
           hasEnteredControlCenter: false,
         }),
-        displayConfigured: providerSetupCompletedThisSession,
+        displayConfigured: !providerSelectionRequired,
         displaySelectionSupported: true,
         initialCheckComplete: true,
         providerSelectionRequired,
