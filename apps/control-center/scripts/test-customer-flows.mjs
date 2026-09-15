@@ -1456,6 +1456,7 @@ async function testFirmwareOnboardingTerminalStates(browser, appUrl) {
     let polls = 0;
     await routeCompanionOnline(page, installRequests, () => {}, {
       companionVersion: "1.0.99",
+      preferencesResponse: { ok: true, items: [providerPreferenceFixture("codex", "Codex")] },
       providerSelectionSetup: { providerSelectionRequired: needsProviders, providerSelectionComplete: !needsProviders },
       device: { connected: false, paired: false, ready: false, active: false },
       searchDevices: [candidate],
@@ -1480,11 +1481,16 @@ async function testFirmwareOnboardingTerminalStates(browser, appUrl) {
       await page.getByRole("heading", { name: "Choose AI providers", exact: true }).waitFor({ timeout: 20_000 });
       assert((await page.getByRole("dialog").count()) === 0, "Factory setup must advance without an update error");
     } else if (phase === "complete") {
+      // Explicit connection confirms providers even when an earlier selection is saved.
+      const providers = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+      await providers.waitFor({ timeout: 20_000 });
+      await providers.getByRole("button", { name: "Continue", exact: true }).click();
       await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).waitFor({ timeout: 20_000 });
       await page.getByRole("radio", { name: "Fixture Synthwave Theme" }).click();
       const install = setupScreen(page, SETUP_THEME_SCREEN).getByRole("button", { name: "Install", exact: true });
       await waitForEnabled(page, install, "Firmware completion must unlock first theme installation");
       await install.click();
+      await setupScreen(page, "Show usage as").getByRole("button", { name: "Continue", exact: true }).click();
       await page.getByRole("navigation", { name: "Control Center" }).waitFor({ timeout: 20_000 });
     } else {
       const dialog = page.getByRole("dialog", { name: "Firmware current — attention needed" });

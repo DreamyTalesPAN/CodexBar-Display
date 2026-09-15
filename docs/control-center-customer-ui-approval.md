@@ -4510,3 +4510,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul explicitly requested “ok nochmal rebasen auf pr 407, da ist noch einiges dazugekommen”, preserving the provider, theme-first setup and simple Settings previews approved in this task.
 - Approved customer-visible result: Retain PR #407's device-matching live preview admission and completed firmware-update handling together with explicit provider continuation, Theme → Display Mode → Show usage as, and compact Settings visuals. Back to Theme also updates the existing wizard navigation override; the parent still owns missing-theme recovery. No new layout, hardware write, installation or release is introduced.
+
+## 2026-09-15 — Align inherited firmware onboarding coverage
+
+- User approval: Paul requested rebasing this PR onto current PR #407 and previously authorized fixing resulting CI failures within this setup scope.
+- Approved customer-visible result: The approved connection → provider confirmation → theme → usage choice flow remains unchanged. The inherited successful firmware-onboarding browser case now confirms these existing choices before asserting a valid final preview, while retaining terminal polling and exactly-one-upload/install assertions.
