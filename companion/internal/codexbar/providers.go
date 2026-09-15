@@ -266,6 +266,11 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	if err != nil {
 		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
+	if enabled && providerID == "claude" && providerProbePerProvider {
+		if err := grantClaudeCredentialsFn(); err != nil {
+			return providerSettingsError(ProviderSettingsErrorUnavailable, err)
+		}
+	}
 	return nil
 }
 
