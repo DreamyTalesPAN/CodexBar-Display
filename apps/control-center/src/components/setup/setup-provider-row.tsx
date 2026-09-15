@@ -17,6 +17,7 @@ import type { PreferenceHealthState } from "../control-center-types";
 
 export type SetupProviderRowVariant =
   | "checking"
+  | "unsupported"
   | "no_usage"
   | "outage"
   | "permission"
@@ -54,6 +55,8 @@ export function setupProviderRowVariant(
       return "sign_in";
     case "permission_required":
       return "permission";
+    case "unsupported":
+      return "unsupported";
     case "no_usage_available":
       return "no_usage";
     case "service_outage":
@@ -72,6 +75,10 @@ type SetupProviderRowProps = {
    * has not been satisfied, and repeating the sign-in work behind the check.
    */
   checking?: boolean;
+  /** In-app action for the replacement named by the usage service. */
+  alternativeActions?: ReactNode;
+  /** Customer-facing explanation for a terminal provider migration. */
+  unsupportedMessage?: string;
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
@@ -96,6 +103,8 @@ type SetupProviderRowProps = {
 };
 
 export function SetupProviderRow({
+  alternativeActions,
+  unsupportedMessage,
   checking = false,
   detail,
   enabled,
@@ -106,7 +115,7 @@ export function SetupProviderRow({
   reportedMessage,
   saving = false,
 }: SetupProviderRowProps) {
-  const variant = setupProviderRowVariant(health);
+  const variant = enabled ? setupProviderRowVariant(health) : "toggle";
   const unusable = variant === "no_usage" || variant === "outage";
   const checkAgain = (
     <SetupProviderRowAction
@@ -127,6 +136,8 @@ export function SetupProviderRow({
       ? `Sign in to ${label}`
       : variant === "permission"
         ? "Allow access in macOS"
+        : variant === "unsupported"
+          ? "This provider is no longer supported for this account"
         : variant === "no_usage"
           ? "No usage data on this account"
           : variant === "outage"
@@ -136,9 +147,28 @@ export function SetupProviderRow({
             : "Check timed out";
   const guidance = reportedMessage || detail || fallbackMessage;
 
+  const hasNotice = variant !== "checking" && variant !== "toggle";
+  const notice = variant === "unsupported"
+    ? unsupportedMessage || fallbackMessage
+    : guidance;
+  const actions = variant === "unsupported" ? alternativeActions : (
+    <>
+      {copyReportedMessage}
+      {variant === "stale" ? null : checking ? (
+        <>
+          <span className="sr-only">Checking {label}…</span>
+          <Spinner />
+        </>
+      ) : checkAgain}
+    </>
+  );
+
   return (
     <Item
-      className="rounded-[var(--radius-card)] p-4"
+      className={cn(
+        "rounded-[var(--radius-card)] p-4",
+        hasNotice && "gap-3 border-0 bg-card px-4 pt-3 pb-4 ring-1 ring-foreground/10",
+      )}
       role="listitem"
       variant="outline"
     >
@@ -146,28 +176,7 @@ export function SetupProviderRow({
         <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
       </ItemContent>
       <ItemActions>
-        {variant === "checking" ? (
-          <Spinner />
-        ) : variant === "toggle" ? null : (
-          <>
-            <SetupProviderRowMessage>{guidance}</SetupProviderRowMessage>
-            {copyReportedMessage}
-            {variant === "stale" ? null : checking ? (
-              <>
-                <span className="sr-only">Checking {label}…</span>
-                <Spinner />
-              </>
-            ) : (
-              checkAgain
-            )}
-          </>
-        )}
-        {/*
-          Outside the branches on purpose: the health decides what help to
-          offer, never whether the customer may switch the provider off.
-          Turning one off is always valid and always theirs, and a provider
-          they cannot switch off is one they cannot keep off the display.
-        */}
+        {variant === "checking" ? <Spinner /> : null}
         <Switch
           aria-label={label}
           checked={enabled}
@@ -175,12 +184,16 @@ export function SetupProviderRow({
           onCheckedChange={onToggle}
         />
       </ItemActions>
+      {hasNotice ? (
+        <div data-slot="provider-notice" className="-mx-4 flex basis-[calc(100%+2rem)] items-center gap-3 border-t border-border px-4 pt-3 text-left">
+          <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{notice}</p>
+          {(variant === "unsupported" ? alternativeActions : variant !== "stale" || copyReportedMessage) ? (
+            <div className="flex shrink-0 items-center justify-end gap-2">{actions}</div>
+          ) : null}
+        </div>
+      ) : null}
     </Item>
   );
-}
-
-function SetupProviderRowMessage({ children }: { children: ReactNode }) {
-  return <span className="text-sm text-muted-foreground">{children}</span>;
 }
 
 function SetupProviderRowAction({

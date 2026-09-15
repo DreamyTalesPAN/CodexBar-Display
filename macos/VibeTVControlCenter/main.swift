@@ -49,11 +49,11 @@ private let runtimeValidationUnregisterArgument =
 private let runtimeValidationUnregisterEnvironmentKey =
     "VIBETV_RUNTIME_VALIDATION_UNREGISTER"
 private let codexBarBundleIdentifier = "com.steipete.codexbar"
-private let codexBarPinnedVersion = "0.46.0"
+private let codexBarPinnedVersion = "0.56.8"
 private let codexBarPinnedTeamIdentifier = "Y5PE65HELJ"
-private let codexBarArchiveName = "CodexBar-macos-universal-0.46.0.zip"
+private let codexBarArchiveName = "CodexBar-macos-universal-0.56.8.zip"
 private let codexBarArchiveSHA256 =
-    "8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"
+    "76541469ef4132c9e3f298d876665701ea472312a6d2cb6326ba49bfb6acad10"
 private let codexBarDisallowedSigningXattrs = [
     "com.apple.FinderInfo",
     "com.apple.ResourceFork",
@@ -2194,6 +2194,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        for (title, action, key) in [
+            ("Cut", #selector(NSText.cut(_:)), "x"),
+            ("Copy", #selector(NSText.copy(_:)), "c"),
+            ("Paste", #selector(NSText.paste(_:)), "v"),
+            ("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ] {
+            editMenu.addItem(NSMenuItem(title: title, action: action, keyEquivalent: key))
+        }
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
         NSApp.mainMenu = mainMenu
     }
 
@@ -3737,9 +3749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 helperURL.path,
                 "daemon",
                 "--transport",
-                "wifi",
-                "--interval",
-                "30s",
+                "usb",
                 "--api-addr",
                 "127.0.0.1:47832",
                 "--api-dev-origin",
@@ -3792,13 +3802,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             label: previewRuntimeLaunchAgentLabel
         )
         _ = launchctlExitStatus(["bootout", service])
-        guard !legacyServiceIsLoaded(
-            label: previewRuntimeLaunchAgentLabel
-        ) else {
-            NSLog("VibeTV Control Center could not stop its local preview runtime")
-            return false
+        // bootout can return while the old service is still exiting. Wait for
+        // launchd to remove it before registering the replacement.
+        let deadline = Date().addingTimeInterval(runtimeUnregistrationQuiesceTimeout)
+        while legacyServiceIsLoaded(label: previewRuntimeLaunchAgentLabel) {
+            guard Date() < deadline else {
+                NSLog("VibeTV Control Center could not stop its local preview runtime")
+                return false
+            }
+            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
         }
-        try? await Task<Never, Never>.sleep(for: .milliseconds(250))
         return true
     }
 

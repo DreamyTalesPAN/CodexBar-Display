@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  UsageSnapshot,
   PreferenceDescriptor,
   ProviderDisplaySelection,
 } from "./control-center-types";
@@ -15,6 +16,7 @@ import type {
  * finish what that checkbox left half-done.
  */
 export type ProviderPickerProps = {
+  usage: UsageSnapshot | null;
   display: ProviderDisplaySelection | null;
   displayError?: ApiError | null;
   displayPendingProviderId?: string | null;

@@ -151,4 +151,17 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Reconnect VibeTV to continue");
     expect(html).not.toContain("Reconnecting to VibeTV");
   });
+
+  it("does not add a connection-mode banner to the overview", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{ active: true, connected: true, paired: true, ready: true }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV is connected");
+    expect(html).not.toContain("Connected by Cable");
+    expect(html).not.toContain("Change connection");
+  });
 });

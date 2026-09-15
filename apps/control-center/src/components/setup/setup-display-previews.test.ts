@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import {
+  previewUsageMode,
   displayPreviewFor,
   displayPreviewsFor,
 } from "./setup-display-previews";
@@ -19,11 +20,10 @@ function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
 
 describe("displayPreviewFor", () => {
   it("carries the provider's own reading", () => {
-    expect(displayPreviewFor(provider({}))).toEqual({
+    expect(displayPreviewFor(provider({}))).toMatchObject({
       providerLabel: "Codex",
       resetLabel: "Reset in 3h 0m",
-      sessionPercent: 42,
-      weeklyPercent: 26,
+      windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
     });
   });
 
@@ -32,15 +32,15 @@ describe("displayPreviewFor", () => {
       provider({ weeklyUnavailable: true }),
     );
 
-    expect(preview?.sessionPercent).toBe(42);
-    expect(preview?.weeklyPercent).toBeNull();
+    expect(preview?.windows[0].percent).toBe(42);
+    expect(preview?.windows[1].percent).toBeNull();
   });
 
   it("shows nothing measured when the provider itself has no usage", () => {
     const preview = displayPreviewFor(provider({ usageUnavailable: true }));
 
-    expect(preview?.sessionPercent).toBeNull();
-    expect(preview?.weeklyPercent).toBeNull();
+    expect(preview?.windows[0].percent).toBeNull();
+    expect(preview?.windows[1].percent).toBeNull();
     expect(preview?.resetLabel).toBeNull();
   });
 
@@ -49,8 +49,16 @@ describe("displayPreviewFor", () => {
       provider({ session: 0, sessionUnavailable: true }),
     );
 
-    expect(preview?.sessionPercent).not.toBe(0);
-    expect(preview?.sessionPercent).toBeNull();
+    expect(preview?.windows[0].percent).not.toBe(0);
+    expect(preview?.windows[0].percent).toBeNull();
+  });
+
+  it("preserves the collector's window labels when the primary window is absent", () => {
+    expect(displayPreviewFor(provider({
+      session: 28,
+      weekly: 0,
+      windows: [{ id: "weekly", label: "Weekly", usedPercent: 28 }, { id: "codex-spark", label: "Codex Spark 5-hour", usedPercent: 0 }],
+    }))?.windows).toEqual([{ label: "Weekly", percent: 28 }, { label: "Codex Spark 5-hour", percent: 0 }]);
   });
 
   it("has nothing to draw without a provider", () => {
@@ -102,8 +110,7 @@ describe("displayPreviewsFor", () => {
     expect(previews[1]).toEqual({
       providerLabel: "Gemini",
       resetLabel: null,
-      sessionPercent: null,
-      weeklyPercent: null,
+      windows: [],
     });
   });
 
@@ -113,9 +120,33 @@ describe("displayPreviewsFor", () => {
       {
         providerLabel: "Codex",
         resetLabel: null,
-        sessionPercent: null,
-        weeklyPercent: null,
+        windows: [],
       },
     ]);
+  });
+});
+
+describe("usage presentation", () => {
+  it("converts the real windows in both directions without changing quota or missing data", () => {
+    const frame = displayPreviewFor(provider({ sessionUnavailable: true,
+      windows: [{ id: "spark", label: "Codex Spark 5-hour", usedPercent: 90, resetSecs: 120 }],
+      totalTokens: 1234,
+    }))!.frame!;
+    const remaining = previewUsageMode(frame, "remaining");
+    expect(remaining.usageSlot1Percent).toBe(10);
+    expect(remaining.usageWindows[0]).toMatchObject({ label: "Codex Spark 5-hour", percent: 10, resetSecs: 120 });
+    expect(remaining.sessionUnavailable).toBe(true);
+    expect(remaining.totalTokens).toBe(1234);
+    expect(previewUsageMode(remaining, "used")).toEqual(frame);
+    expect(frame.usageWindows[0].percent).toBe(90);
+  });
+  it("preserves unavailable windows in either mode", () => {
+    const frame = displayPreviewFor(provider({ usageUnavailable: true,
+      windows: [{ id: "weekly", label: "Weekly", usedPercent: 90 }],
+    }))!.frame!;
+    const remaining = previewUsageMode(frame, "remaining");
+    expect(remaining.usageWindows).toEqual([]);
+    expect(remaining.usageSlot1Available).toBe(false);
+    expect(remaining.weeklyUnavailable).toBe(true);
   });
 });

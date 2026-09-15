@@ -9,7 +9,6 @@ import {
   setupIdentityIsKnown,
   setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
-  setupWasCompletedBefore,
   type SetupStepInput,
 } from "./setup-step";
 
@@ -111,19 +110,17 @@ describe("deriveSetupStep", () => {
     ).toBe("theme");
   });
 
-  it("asks for a display mode before a theme", () => {
+  it("asks for a theme before display mode", () => {
     expect(
       deriveSetupStep({
         ...done,
         displayConfigured: false,
         themeSetupRequired: true,
       }),
-    ).toBe("display");
+    ).toBe("theme");
   });
 
-  it("is finished once nothing is left to ask for", () => {
-    // A customer who set up long ago boots straight into this, before any
-    // frame has arrived — waiting on one would put them back on a step.
+  it("waits for the live preview once nothing is left to ask for", () => {
     expect(deriveSetupStep(done)).toBe("live");
   });
 
@@ -157,19 +154,19 @@ describe("previousSetupStep", () => {
   });
 
   it("walks back through the choices that can be revisited", () => {
-    expect(previousSetupStep("theme")).toBe("display");
-    expect(previousSetupStep("display")).toBe("providers");
+    expect(previousSetupStep("theme")).toBe("providers");
+    expect(previousSetupStep("display")).toBe("theme");
     expect(previousSetupStep("providers")).toBe("device");
   });
 
-  it("has nowhere to go from the last step", () => {
-    expect(previousSetupStep("live")).toBeNull();
+  it("allows theme recovery from the preview step", () => {
+    expect(previousSetupStep("live")).toBe("theme");
   });
 });
 
 describe("resolveSetupStep", () => {
   it("honours a step the customer went back to", () => {
-    expect(resolveSetupStep("theme", "display")).toBe("display");
+    expect(resolveSetupStep("display", "theme")).toBe("theme");
   });
 
   it("drops it once the state has moved past it anyway", () => {
@@ -184,100 +181,25 @@ describe("resolveSetupStep", () => {
 });
 
 describe("setupDeviceIsUsable", () => {
-  const coldStart = {
+  const connected = {
     deviceConnected: true,
     connectionRecoveryRequired: false,
-    displayRemediationRequired: false,
     hasActiveDevice: true,
     hasEnteredControlCenter: false,
-    providerSelectionRequired: true,
-    providerSetupCompletedThisSession: false,
-    themeSetupRequired: false,
-    ready: false,
   };
 
-  // Pairing and the firmware check are enough. The first usage frame and the
-  // provider inventory may both still be in flight when this step ends.
-  it("lets a connected VibeTV reach the provider step", () => {
-    expect(setupDeviceIsUsable(coldStart)).toBe(true);
+  it("lets a connected VibeTV wait for readiness at the live step", () => {
+    expect(setupDeviceIsUsable(connected)).toBe(true);
   });
 
-  // The same state after the provider selection is done is a provider that
-  // died, and the steps ahead have nothing to offer for it. Letting it through
-  // would end on the live screen telling the customer their VibeTV is running.
-  it("does not let it through once the provider selection is done", () => {
-    expect(
-      setupDeviceIsUsable({ ...coldStart, providerSelectionRequired: false }),
-    ).toBe(false);
+  it("keeps a disconnected startup on the device step", () => {
+    expect(setupDeviceIsUsable({ ...connected, deviceConnected: false })).toBe(false);
   });
 
-  it("does not bounce back after Continue completes in this setup", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        providerSelectionRequired: false,
-        providerSetupCompletedThisSession: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("lets a connected VibeTV reach an invalid saved display choice", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        providerSelectionRequired: false,
-        displayRemediationRequired: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("lets a connected VibeTV continue to its required theme setup", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        providerSelectionRequired: false,
-        themeSetupRequired: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("still needs the VibeTV to be connected", () => {
-    expect(
-      setupDeviceIsUsable({ ...coldStart, deviceConnected: false }),
-    ).toBe(false);
-  });
-
-  it("keeps a ready VibeTV usable whatever else is true", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        deviceConnected: false,
-        providerSelectionRequired: false,
-        ready: true,
-      }),
-    ).toBe(true);
-  });
-
-  // Once the customer is inside, a device that is only reconnecting stays
-  // theirs -- unchanged behaviour, pinned so the new term cannot swallow it.
-  it("does not eject someone already inside over a missed poll", () => {
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        deviceConnected: false,
-        hasEnteredControlCenter: true,
-        providerSelectionRequired: false,
-      }),
-    ).toBe(true);
-    expect(
-      setupDeviceIsUsable({
-        ...coldStart,
-        deviceConnected: false,
-        connectionRecoveryRequired: true,
-        hasEnteredControlCenter: true,
-        providerSelectionRequired: false,
-      }),
-    ).toBe(false);
+  it("keeps an admitted session through a missed poll, but honors explicit recovery", () => {
+    const reconnecting = { ...connected, deviceConnected: false, hasEnteredControlCenter: true };
+    expect(setupDeviceIsUsable(reconnecting)).toBe(true);
+    expect(setupDeviceIsUsable({ ...reconnecting, connectionRecoveryRequired: true })).toBe(false);
   });
 });
 
@@ -378,77 +300,6 @@ describe("setupStepForProviderRefusal", () => {
   });
 });
 
-// Entering the Control Center is otherwise proved by the first rendered frame.
-// A VibeTV that is off, or reachable but not yet drawing, never sends one, and
-// the wizard took the window back from a customer whose setup was long finished.
-describe("setupWasCompletedBefore", () => {
-  const returning = {
-    hasActiveDevice: true,
-    connectionRecoveryRequired: false,
-    providerSelectionComplete: true,
-    displayConfigured: true,
-    providerSetupCompletedThisSession: false,
-    themeSetupRequired: false,
-  };
-
-  it("recognises a customer coming back to an unreachable VibeTV", () => {
-    expect(setupWasCompletedBefore(returning)).toBe(true);
-  });
-
-  it("still holds a first setup at the step it is on", () => {
-    // Continue on the provider step has just succeeded, so the companion
-    // already reports the selection complete. The display, theme and closing
-    // steps are still ahead, and the frame requirement still owns them.
-    expect(
-      setupWasCompletedBefore({
-        ...returning,
-        providerSetupCompletedThisSession: true,
-      }),
-    ).toBe(false);
-  });
-
-  it("keeps the display step for a selection that no longer stands", () => {
-    expect(
-      setupWasCompletedBefore({ ...returning, displayConfigured: false }),
-    ).toBe(false);
-  });
-
-  it("keeps the theme step for a VibeTV that can still be asked", () => {
-    // themeSetupRequired, never themeSetupComplete: the completed state needs a
-    // connected device, so it is false exactly in the offline case this exists
-    // for, while this one is false when there is nothing to ask.
-    expect(
-      setupWasCompletedBefore({ ...returning, themeSetupRequired: true }),
-    ).toBe(false);
-  });
-
-  it("keeps the device step for a Mac with no VibeTV of its own", () => {
-    // A provider choice made for a VibeTV this Mac no longer has must not carry
-    // anyone past picking one -- including a customer choosing between two that
-    // the startup search has just found.
-    expect(
-      setupWasCompletedBefore({ ...returning, hasActiveDevice: false }),
-    ).toBe(false);
-  });
-
-  it("keeps the device step for a VibeTV that needs its Connect pressed", () => {
-    // A lost pairing is fixed on the device step, the one screen with Connect
-    // on it -- the same line setupDeviceIsUsable draws for someone inside.
-    expect(
-      setupWasCompletedBefore({ ...returning, connectionRecoveryRequired: true }),
-    ).toBe(false);
-  });
-
-  it("does not admit a Mac that never chose a provider", () => {
-    expect(
-      setupWasCompletedBefore({
-        ...returning,
-        providerSelectionComplete: false,
-      }),
-    ).toBe(false);
-  });
-});
-
 // A dropped display read must not decide the whole session.
 describe("setupIdentityIsKnown", () => {
   it("waits for the first status answer", () => {
@@ -472,4 +323,12 @@ describe("setupIdentityIsKnown", () => {
   it("treats a companion without a display choice as answered", () => {
     expect(setupIdentityIsKnown(true, null, { code: "HTTP_404" })).toBe(true);
   });
+});
+
+it("requires theme, display and usage in order during a new setup", () => {
+  expect(deriveSetupStep({ ...done, themeSetupRequired: true, displayConfigured: false, usageConfigured: false })).toBe("theme");
+  expect(deriveSetupStep({ ...done, displayConfigured: false, usageConfigured: false })).toBe("display");
+  expect(deriveSetupStep({ ...done, usageConfigured: false })).toBe("usage");
+  expect(deriveSetupStep({ ...done, usageConfigured: true })).toBe("live");
+  expect(previousSetupStep("usage")).toBe("display");
 });

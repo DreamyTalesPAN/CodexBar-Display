@@ -71,6 +71,7 @@ describe("provider preference polling", () => {
           onToggle={vi.fn()}
           pendingCheckIds={new Set<string>()}
           pendingPreferenceIds={new Set<string>()}
+          usage={{ providers: [{ id: "claude", label: "Claude", session: 0, weekly: 0, resetSecs: 0, usageMode: "used" }] }}
           providers={providers}
         />
       );

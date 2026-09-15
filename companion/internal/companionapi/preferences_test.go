@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -283,7 +286,7 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode provider inventory: %v", err)
 	}
-	if len(response.Items) != 1 || response.Items[0].Label != "Future Provider" || response.Items[0].Health.State != "checking" {
+	if len(response.Items) != 1 || response.Items[0].Label != "Future Provider" || response.Items[0].Health.State != "healthy" {
 		t.Fatalf("dynamic inventory was not returned immediately: %#v", response)
 	}
 	select {
@@ -325,6 +328,57 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 	}
 	if len(response.Items) != 1 || response.Items[0].Health.State != "healthy" {
 		t.Fatalf("background health result was not observable: %#v", response)
+	}
+}
+
+func TestBackgroundProviderRefreshPreservesNotice(t *testing.T) {
+	for _, health := range []codexbar.ProviderHealthState{
+		codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
+		codexbar.ProviderHealthUnsupported, codexbar.ProviderHealthNoUsage,
+		codexbar.ProviderHealthUnavailable, codexbar.ProviderHealthChecking,
+	} {
+		t.Run(string(health), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			started := make(chan struct{})
+			release := make(chan struct{})
+			t.Cleanup(func() { close(release) })
+			server.providerPreferences.cached = []codexbar.ProviderSetting{{
+				ID: "gemini", Label: "Gemini", Enabled: true,
+				Health: health, Service: codexbar.ProviderServiceUnknown,
+				Reported: "Sign in to this provider, then check again.",
+			}}
+			server.providerPreferences.at = time.Now().Add(-2 * providerPreferenceCache)
+			server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{
+					ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthChecking,
+				}}, nil
+			}
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				close(started)
+				<-release
+				return nil, errors.New("background collection failed")
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+			for i := 0; i < 2; i++ {
+				recorder := httptest.NewRecorder()
+				server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+				var response preferencesResponse
+				if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				if len(response.Items) != 1 || response.Items[0].Health.State != string(health) {
+					t.Fatalf("background refresh replaced completed result: %#v", response.Items)
+				}
+				if health != codexbar.ProviderHealthChecking && response.Items[0].Health.Reported == "" {
+					t.Fatal("background refresh erased the provider guidance")
+				}
+			}
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("background collection did not start")
+			}
+		})
 	}
 }
 
@@ -1653,5 +1707,117 @@ func TestSecretPreferenceDescriptorNeverReturnsSecretValue(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), `"secretState":"configured"`) || !strings.Contains(recorder.Body.String(), `"value":null`) {
 		t.Fatalf("secret descriptor should expose state only: %s", recorder.Body.String())
+	}
+}
+
+func TestProviderBackgroundRefreshPreservesReadyUntilItsResult(t *testing.T) {
+	for _, fails := range []bool{false, true} {
+		t.Run(fmt.Sprint("failure=", fails), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			now := time.Now().UTC()
+			server.now = func() time.Time { return now }
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+			server.providerPreferences.cached = []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy}}
+			server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthChecking}}, nil
+			}
+			release := make(chan struct{})
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				<-release
+				if fails {
+					return nil, errors.New("health read failed")
+				}
+				return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired}}, nil
+			}
+			list := httptest.NewRecorder()
+			server.Handler().ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			complete := httptest.NewRecorder()
+			server.Handler().ServeHTTP(complete, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+			close(release)
+			if complete.Code != http.StatusOK {
+				t.Fatalf("pending refresh contradicted ready provider: %s", complete.Body.String())
+			}
+			deadline := time.Now().Add(time.Second)
+			for {
+				server.providerPreferences.mu.Lock()
+				running := server.providerPreferences.healthRefresh
+				server.providerPreferences.mu.Unlock()
+				if !running {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("health refresh did not finish")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			complete = httptest.NewRecorder()
+			server.Handler().ServeHTTP(complete, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+			if complete.Code != http.StatusConflict {
+				t.Fatalf("completed failure kept provider ready: %s", complete.Body.String())
+			}
+		})
+	}
+}
+
+func TestUnsupportedProviderKeepsGuidanceWithoutInventingReadiness(t *testing.T) {
+	now := time.Date(2026, 9, 8, 10, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	const message = "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh."
+	settings := []codexbar.ProviderSetting{{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthUnsupported, Reported: message}}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("gemini", "Gemini", now.Add(-time.Minute))
+		usage.Providers[0].Retained = true
+		return usage, true
+	}
+	items := server.providerDescriptors(settings)
+	if len(items) != 1 || items[0].Health.State != "unsupported" || items[0].Health.Reported != message {
+		t.Fatalf("unsupported provider lost its state or guidance: %+v", items)
+	}
+	if providerReadinessNextAction(codexbar.ProviderUnsupported) != "Follow the provider message and choose another provider." {
+		t.Fatal("unsupported provider got retry or repair guidance")
+	}
+	settings[0].Enabled = false
+	items = server.providerDescriptors(settings)
+	if items[0].Health.State != "disabled" || items[0].Health.Reported != "" {
+		t.Fatalf("disabled provider retained guidance: %+v", items)
+	}
+}
+
+func TestUsageDisplayPreferencePersistsThroughCodexBar(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	t.Setenv("CODEX_TEST_USAGE_PREFERENCE", filepath.Join(dir, "value"))
+	if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte(`#!/bin/sh
+if [ "$1" = "write" ]; then printf '%s' "$5" > "$CODEX_TEST_USAGE_PREFERENCE"; else cat "$CODEX_TEST_USAGE_PREFERENCE"; fi
+`), 0700); err != nil {
+		t.Fatal(err)
+	}
+	server := newTestServer(t, runtimeconfig.Config{})
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	for _, value := range []bool{false, true} {
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageDisplayPreferenceID, strings.NewReader(fmt.Sprintf(`{"value":%v}`, value))))
+		if response.Code != http.StatusOK {
+			t.Fatalf("write %d: %s", response.Code, response.Body.String())
+		}
+		if codexbar.UsageBarsShowUsed() != value {
+			t.Fatal("stream preference differs from saved setting")
+		}
+		response = httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=display", nil))
+		var got preferencesResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 1 || got.Items[0].Value != value {
+			t.Fatalf("unexpected readback: %+v", got)
+		}
+	}
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageDisplayPreferenceID, strings.NewReader(`{"value":"remaining"}`)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid value accepted: %d", response.Code)
 	}
 }

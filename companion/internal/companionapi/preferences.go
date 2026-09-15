@@ -232,6 +232,8 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 		return codexbar.ProviderHealthAuthRequired
 	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
 		return codexbar.ProviderHealthSetupRequired
+	case codexbar.ProviderUnsupported:
+		return codexbar.ProviderHealthUnsupported
 	case codexbar.ProviderNoUsageAvailable:
 		return codexbar.ProviderHealthNoUsage
 	default:
@@ -245,7 +247,7 @@ func (s *Server) preferenceRegistry() []preferenceAdapter {
 	if len(s.preferenceAdapters) > 0 {
 		return s.preferenceAdapters
 	}
-	return []preferenceAdapter{providerPreferenceAdapter{server: s}}
+	return []preferenceAdapter{providerPreferenceAdapter{server: s}, usageDisplayPreferenceAdapter{}}
 }
 
 func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
@@ -463,28 +465,20 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	s.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
 	s.providerPreferences.at = now
 	s.cacheProviderInventory(settings)
-	if inventoryOnly && s.startProviderHealthRefreshLocked() {
-		// The inventory copied the previous health only to avoid an empty row.
-		// Once its replacement is running, expose that wait instead of letting
-		// the copied result look current and stop the browser poll.
-		for i := range s.providerPreferences.cached {
-			if !s.providerPreferences.cached[i].Enabled {
-				continue
-			}
-			s.providerPreferences.cached[i].Health = codexbar.ProviderHealthChecking
-			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
-			s.providerPreferences.cached[i].Reported = ""
-		}
-		settings = append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
+	if inventoryOnly {
+		// Background collection must not erase a completed result. Cold or
+		// newly enabled providers already carry checking; explicit retries
+		// have their own pending state in the customer UI.
+		s.startProviderHealthRefreshLocked()
 	}
 	return append([]codexbar.ProviderSetting(nil), settings...), nil
 }
 
-func (s *Server) startProviderHealthRefreshLocked() bool {
+func (s *Server) startProviderHealthRefreshLocked() {
 	if s.providerPreferences.healthRefresh ||
 		s.providerPreferences.load == nil ||
 		s.providerPreferences.loadInventory == nil {
-		return false
+		return
 	}
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
@@ -496,7 +490,16 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		s.providerPreferences.mu.Lock()
 		defer s.providerPreferences.mu.Unlock()
 		s.providerPreferences.healthRefresh = false
-		if err != nil || revision != s.providerPreferences.revision {
+		if revision != s.providerPreferences.revision {
+			return
+		}
+		if err != nil {
+			for i := range s.providerPreferences.cached {
+				setting := &s.providerPreferences.cached[i]
+				if setting.Enabled && (setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
+					setting.Health = codexbar.ProviderHealthUnavailable
+				}
+			}
 			return
 		}
 		healthByID := make(map[string]codexbar.ProviderSetting, len(settings))
@@ -514,7 +517,6 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		}
 		s.providerPreferences.at = s.currentTime().UTC()
 	}()
-	return true
 }
 
 func (s *Server) providerInventoryForUsage(ctx context.Context) []codexbar.ProviderSetting {
@@ -647,16 +649,12 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "disabled"
 			message = "Provider is off."
 			reported = ""
-		} else if _, retained := retainedSuccess[setting.ID]; retained {
+		} else if _, retained := retainedSuccess[setting.ID]; retained && setting.Health != codexbar.ProviderHealthUnsupported {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 			if reported != "" {
 				reported = message + " " + reported
 			}
-		} else if setting.Health == codexbar.ProviderHealthChecking {
-			state = string(codexbar.ProviderHealthChecking)
-			message = providerHealthMessage(codexbar.ProviderHealthChecking)
-			reported = ""
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
 			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
 			state = providerReadinessHealthState(readiness.Status)
@@ -720,7 +718,7 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 	}
 	switch setting.Health {
 	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
-		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnsupported, codexbar.ProviderHealthUnavailable:
 		return false
 	default:
 		return true
@@ -743,6 +741,8 @@ func providerReadinessHealthState(status string) string {
 		return "auth_required"
 	case codexbar.ProviderPermissionRequired:
 		return "permission_required"
+	case codexbar.ProviderUnsupported:
+		return "unsupported"
 	case codexbar.ProviderNoUsageAvailable:
 		return "no_usage_available"
 	case codexbar.ProviderTimeout:
@@ -766,6 +766,8 @@ func providerReadinessMessage(status string) string {
 		return "This provider needs an active sign-in."
 	case codexbar.ProviderPermissionRequired:
 		return "macOS blocked access required by this provider."
+	case codexbar.ProviderUnsupported:
+		return "This provider is no longer supported for this account."
 	case codexbar.ProviderNoUsageAvailable:
 		return "This account does not expose usage data."
 	case codexbar.ProviderTimeout:
@@ -787,6 +789,8 @@ func providerReadinessNextAction(status string) string {
 		return "Open provider setup, sign in again, then check this provider."
 	case codexbar.ProviderPermissionRequired:
 		return "Allow the required macOS access, then check this provider."
+	case codexbar.ProviderUnsupported:
+		return "Follow the provider message and choose another provider."
 	case codexbar.ProviderNoUsageAvailable:
 		return "Use this provider once or connect an account with usage, then check again."
 	case codexbar.ProviderTimeout:
@@ -818,6 +822,8 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Sign in again for this provider."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
+	case codexbar.ProviderHealthUnsupported:
+		return "This provider is no longer supported for this account."
 	case codexbar.ProviderHealthNoUsage:
 		return "This account does not expose usage data."
 	case codexbar.ProviderHealthUnavailable:
@@ -837,4 +843,30 @@ func writePreferencesReadError(w http.ResponseWriter, err error) {
 
 func writePreferenceNotFound(w http.ResponseWriter) {
 	writeError(w, http.StatusNotFound, "preference_not_found", "This setting was not found.", "Refresh settings, then try again.")
+}
+
+// CodexBar remains the owner; both the API and stream already read this key.
+type usageDisplayPreferenceAdapter struct{}
+
+const usageDisplayPreferenceID = "codexbar.usageBarsShowUsed"
+
+func (usageDisplayPreferenceAdapter) Section() string     { return "display" }
+func (usageDisplayPreferenceAdapter) Owns(id string) bool { return id == usageDisplayPreferenceID }
+func (usageDisplayPreferenceAdapter) List(context.Context) ([]preferenceDescriptor, error) {
+	value := codexbar.UsageBarsShowUsed()
+	return []preferenceDescriptor{{ID: usageDisplayPreferenceID, Section: "display", Owner: "codexbar", Type: preferenceTypeBoolean, Label: "Show usage as", Value: value, EffectiveValue: value, Writable: true, WriteStrategy: "codexbar-defaults", Availability: preferenceAvailability{State: "available"}}}, nil
+}
+func (a usageDisplayPreferenceAdapter) Write(ctx context.Context, id string, value any) (preferenceDescriptor, error) {
+	if !a.Owns(id) {
+		return preferenceDescriptor{}, errPreferenceNotFound
+	}
+	showUsed, ok := value.(bool)
+	if !ok {
+		return preferenceDescriptor{}, errors.New("usage display preference requires boolean")
+	}
+	if err := codexbar.SetUsageBarsShowUsed(ctx, showUsed); err != nil {
+		return preferenceDescriptor{}, err
+	}
+	items, err := a.List(ctx)
+	return items[0], err
 }

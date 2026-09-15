@@ -315,6 +315,11 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			inventoryAuthoritative = true
 		}
 	}
+	// Stopping a display worker is not a provider failure. Its canceled read
+	// must not overwrite the shared snapshot used by the replacement worker.
+	if parent.Err() != nil {
+		return
+	}
 	collectedAt := c.now().UTC()
 	if err != nil {
 		updated := false

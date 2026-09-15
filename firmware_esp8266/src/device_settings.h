@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace codexbar_display {
@@ -9,6 +10,123 @@ namespace device_settings {
 constexpr uint8_t kDefaultBrightnessPercent = 20;
 constexpr uint8_t kMinBrightnessPercent = 1;
 constexpr uint8_t kMaxBrightnessPercent = 100;
+
+enum class ConnectionMode : uint8_t {
+  kUnspecified = 0,
+  kCable = 1,
+  kWifi = 2,
+  kLegacyWifiOnly = 3,
+};
+
+constexpr size_t kConnectionTransitionRecordBytes = 5;
+constexpr unsigned long kConnectionTransitionConfirmationMs = 60000UL;
+constexpr unsigned long kConnectionTransitionSetupMs = 10UL * 60UL * 1000UL;
+
+struct ConnectionTransition {
+  ConnectionMode previous = ConnectionMode::kUnspecified;
+  ConnectionMode target = ConnectionMode::kUnspecified;
+};
+
+inline ConnectionMode DecodeConnectionMode(int value) {
+  switch (value) {
+    case static_cast<int>(ConnectionMode::kCable):
+      return ConnectionMode::kCable;
+    case static_cast<int>(ConnectionMode::kWifi):
+      return ConnectionMode::kWifi;
+    case static_cast<int>(ConnectionMode::kLegacyWifiOnly):
+      return ConnectionMode::kLegacyWifiOnly;
+    default:
+      return ConnectionMode::kUnspecified;
+  }
+}
+
+inline ConnectionMode ResolveInitialConnectionMode(
+    ConnectionMode stored) {
+  if (stored == ConnectionMode::kCable || stored == ConnectionMode::kWifi) {
+    return stored;
+  }
+  // First boot keeps phone setup available; old WiFi installations gain the
+  // same Cable switching support while preserving their credentials.
+  return ConnectionMode::kWifi;
+}
+
+inline bool ShouldImportLegacySdkWifi(
+    ConnectionMode stored,
+    bool hasSavedWifi) {
+  // WiFi mode may already be persisted after a boot without the old router.
+  // The imported credentials, not the mode, mark a completed import. Cable
+  // never starts WiFi; a deliberate WiFi reset also clears the SDK store.
+  return !hasSavedWifi && stored != ConnectionMode::kCable;
+}
+
+inline bool UsesWifi(ConnectionMode mode) {
+  return mode == ConnectionMode::kWifi || mode == ConnectionMode::kLegacyWifiOnly;
+}
+
+inline bool SupportsCable(ConnectionMode mode) {
+  return mode == ConnectionMode::kCable || mode == ConnectionMode::kWifi;
+}
+
+inline bool IsSwitchableConnectionMode(ConnectionMode mode) {
+  return mode == ConnectionMode::kCable || mode == ConnectionMode::kWifi;
+}
+
+inline bool CanBeginConnectionTransition(ConnectionMode current, ConnectionMode target) {
+  return IsSwitchableConnectionMode(current) &&
+         IsSwitchableConnectionMode(target) &&
+         current != target;
+}
+
+inline bool CanConfigureWifiOverCable(ConnectionMode mode, bool setupMode) {
+  return mode == ConnectionMode::kCable ||
+         (mode == ConnectionMode::kWifi && setupMode);
+}
+
+inline unsigned long ConnectionTransitionTimeoutMs(bool setupMode) {
+  return setupMode ? kConnectionTransitionSetupMs
+                   : kConnectionTransitionConfirmationMs;
+}
+
+inline void EncodeConnectionTransition(
+    const ConnectionTransition& transition,
+    uint8_t* record) {
+  record[0] = 'C';
+  record[1] = 'M';
+  record[2] = 1;
+  record[3] = static_cast<uint8_t>(transition.previous);
+  record[4] = static_cast<uint8_t>(transition.target);
+}
+
+inline bool DecodeConnectionTransition(
+    const uint8_t* record,
+    size_t length,
+    ConnectionTransition& transition) {
+  if (record == nullptr || length != kConnectionTransitionRecordBytes ||
+      record[0] != 'C' || record[1] != 'M' || record[2] != 1) {
+    return false;
+  }
+  const ConnectionMode previous = DecodeConnectionMode(record[3]);
+  const ConnectionMode target = DecodeConnectionMode(record[4]);
+  if (!CanBeginConnectionTransition(previous, target)) {
+    return false;
+  }
+  transition.previous = previous;
+  transition.target = target;
+  return true;
+}
+
+inline const char* ConnectionModeName(ConnectionMode mode) {
+  switch (mode) {
+    case ConnectionMode::kCable:
+      return "cable";
+    case ConnectionMode::kWifi:
+      return "wifi";
+    case ConnectionMode::kLegacyWifiOnly:
+      return "legacy-wifi-only";
+    default:
+      return "unspecified";
+  }
+}
 
 inline uint8_t ClampBrightnessPercent(int value) {
   if (value < kMinBrightnessPercent) {

@@ -92,7 +92,7 @@ describe("Tiny Office theme pack", () => {
     const centers = [label, percent].map((p) => {
       const size = themeTextFittedSize(text(p, data), p.f!, p.s!, p.w!, true);
       const height = 16 * size; // TFT_eSPI font 2 height.
-      return themeTextAlignedY(p.y, p.h!, height, p.va) + height / 2;
+      return themeTextAlignedY(p.y ?? 0, p.h!, height, p.va) + height / 2;
     });
     expect(themeTextFittedSize(text(label, data), label.f!, label.s!, label.w!, true)).toBe(1);
     expect(centers).toEqual([186, 186]);
@@ -112,7 +112,7 @@ describe("Tiny Office theme pack", () => {
     // The firmware clips vertically instead of shrinking: font 2 is 16 px per size step.
     for (const p of primitives.filter((p) => p.t === "tx")) {
       const height = (p.f === 2 ? 16 : 8) * (p.s ?? 1);
-      expect(p.y + height, `${p.v ?? p.b} bottom`).toBeLessThanOrEqual(240);
+      expect((p.y ?? 0) + height, `${p.v ?? p.b} bottom`).toBeLessThanOrEqual(240);
     }
   });
 

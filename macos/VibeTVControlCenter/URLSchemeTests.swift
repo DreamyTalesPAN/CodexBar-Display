@@ -181,12 +181,12 @@ func runURLSchemeTests() {
     )
     require(
         appManagedCodexBarAppURL(applicationSupportURL: appSupportURL).path
-            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.46.0/CodexBar.app",
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.56.8/CodexBar.app",
         "VibeTV must publish CodexBar only into its private versioned app support directory"
     )
     require(
         appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL).path
-            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.46.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.56.8/CodexBar.app/Contents/Helpers/CodexBarCLI",
         "the Companion must use the exact private CodexBarCLI path"
     )
     testPrivateCodexBarTargetRejectsSymlinks()

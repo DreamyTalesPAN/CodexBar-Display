@@ -16,7 +16,11 @@ export type ConnectFailure =
   | { kind: "firmware-update" };
 
 /** What the device reported once it was connected. */
-export type ConnectedDevice = { board?: string; firmware?: string };
+export type ConnectedDevice = {
+  board?: string;
+  firmware?: string;
+  ready?: boolean;
+};
 
 export type SetupConnectSteps = {
   /**
@@ -46,7 +50,7 @@ export function useSetupConnect(
   /** How far the running firmware install has got, for the frozen log line. */
   firmwareProgress = 0,
   /** Called once the sequence finished: the device step's way forward. */
-  onDone?: () => void,
+  onDone?: (device: ConnectedDevice) => void,
 ) {
   const [state, setState] = useState<ConnectState>(IDLE);
   const [failure, setFailure] = useState<ConnectFailure | null>(null);
@@ -124,7 +128,7 @@ export function useSetupConnect(
 
       if (!firmware) {
         setState({ ...base, phase: "done" });
-        onDone?.();
+        onDone?.(connected);
         return;
       }
 
@@ -164,7 +168,7 @@ export function useSetupConnect(
         firmwareTo: firmware.to,
         phase: "done",
       });
-      onDone?.();
+      onDone?.(connected);
     },
     [onDone, steps],
   );

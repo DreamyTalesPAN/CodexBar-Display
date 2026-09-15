@@ -195,3 +195,30 @@ describe("SetupProviderRow", () => {
     }
   });
 });
+
+describe("provider notices", () => {
+  it.each([
+    "auth_required", "setup_required", "permission_required", "timeout",
+    "no_usage_available", "service_outage", "unavailable", "config_error",
+    "engine_error", "stale", "unsupported",
+  ])("uses the same separated notice section for %s", (health) => {
+    const html = render({health, label: "Any provider"});
+    expect(html).toContain('data-slot="provider-notice"');
+    expect(html).toContain("border-t border-border");
+    expect(html.indexOf('role="switch"')).toBeLessThan(html.indexOf('data-slot="provider-notice"'));
+    expect(html).toContain("text-xs leading-normal text-muted-foreground");
+  });
+  it.each(["healthy", "disabled", "checking"])("does not add a notice for %s", (health) => {
+    expect(render({health})).not.toContain('data-slot="provider-notice"');
+  });
+  it("keeps terminal upstream instructions out of the customer notice", () => {
+    const html = render({health: "unsupported", reportedMessage: "Google no longer supports Gemini CLI OAuth. Enable CodexBar's Antigravity provider or run agy.", label: "Gemini"});
+    expect(html).toContain("This provider is no longer supported for this account");
+    expect(html).not.toContain("OAuth");
+    expect(html).not.toContain("CodexBar");
+    expect(html).not.toContain("run agy");
+    expect(html).not.toContain("Check Gemini again");
+    expect(html).not.toContain("Copy provider message");
+    expect(html).toContain('role="switch"');
+  });
+});
