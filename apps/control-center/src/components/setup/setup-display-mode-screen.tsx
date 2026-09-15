@@ -40,8 +40,7 @@ export type SetupDisplayModeProvider = {
 export type SetupDisplayModePreview = {
   providerLabel: string;
   resetLabel: string | null;
-  sessionPercent: number | null;
-  weeklyPercent: number | null;
+  windows: { label: string; percent: number | null }[];
 };
 
 type SetupDisplayModeScreenProps = {
@@ -250,8 +249,7 @@ function rotationFrames(
       : {
           providerLabel: provider.label,
           resetLabel: null,
-          sessionPercent: null,
-          weeklyPercent: null,
+          windows: [],
         },
   );
 }
@@ -370,17 +368,15 @@ function PreviewTile({
       </CycledText>
 
       <span className="flex gap-3">
-        <PreviewReading
-          cycleKey={index}
-          label="Session"
-          percent={frame.sessionPercent}
-        />
-        <PreviewReading
-          align="right"
-          cycleKey={index}
-          label="Weekly"
-          percent={frame.weeklyPercent}
-        />
+        {frame.windows.length ? frame.windows.slice(0, 2).map((window, position) => (
+          <PreviewReading
+            key={window.label}
+            align={position === 0 ? "left" : "right"}
+            cycleKey={index}
+            label={window.label}
+            percent={window.percent}
+          />
+        )) : <span className="w-full text-center text-[10px]">Usage unavailable</span>}
       </span>
 
       <CycledText

@@ -15,14 +15,19 @@ export function displayPreviewFor(
   if (!provider) {
     return null;
   }
-  const unavailable = provider.usageUnavailable === true;
+  const unavailable = provider.stale === true || provider.usageUnavailable === true;
   return {
     providerLabel: provider.label,
-    resetLabel: unavailable ? null : formatReset(provider.resetSecs),
-    sessionPercent:
-      unavailable || provider.sessionUnavailable ? null : provider.session,
-    weeklyPercent:
-      unavailable || provider.weeklyUnavailable ? null : provider.weekly,
+    resetLabel: unavailable ? null : formatReset(provider.windows?.[0]?.resetSecs ?? provider.resetSecs),
+    windows: provider.windows?.length
+      ? provider.windows.map((window) => ({
+          label: window.label,
+          percent: unavailable ? null : window.usedPercent,
+        }))
+      : [
+          { label: "Session", percent: unavailable || provider.sessionUnavailable ? null : provider.session },
+          { label: "Weekly", percent: unavailable || provider.weeklyUnavailable ? null : provider.weekly },
+        ],
   };
 }
 
@@ -47,8 +52,7 @@ export function displayPreviewsFor(
       displayPreviewFor(reported.get(provider.id)) ?? {
         providerLabel: provider.label,
         resetLabel: null,
-        sessionPercent: null,
-        weeklyPercent: null,
+        windows: [],
       },
   );
 }

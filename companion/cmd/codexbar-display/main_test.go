@@ -647,6 +647,30 @@ func TestSuperviseDisplayWorkerRestartsAfterError(t *testing.T) {
 	}
 }
 
+func TestSuperviseDisplayWorkerRestartsModeChangeWithoutDelay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := 0
+	afterCalls := 0
+	superviseDisplayWorker(ctx, daemon.Options{}, func(ctx context.Context, _ daemon.Options) error {
+		calls++
+		if calls == 1 {
+			return daemon.ErrConnectionModeChanged
+		}
+		cancel()
+		<-ctx.Done()
+		return ctx.Err()
+	}, func(time.Duration) <-chan time.Time {
+		afterCalls++
+		return make(chan time.Time)
+	}, func(string, ...any) {})
+
+	if calls != 2 || afterCalls != 0 {
+		t.Fatalf("mode change must restart immediately, calls=%d delays=%d", calls, afterCalls)
+	}
+}
+
 func TestSuperviseDisplayWorkerRestartsAfterPanic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

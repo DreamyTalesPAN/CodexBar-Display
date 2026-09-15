@@ -516,9 +516,7 @@ expected_arguments = [
     "codexbar-display",
     "daemon",
     "--transport",
-    "wifi",
-    "--interval",
-    "30s",
+    "usb",
     "--api-addr",
     "127.0.0.1:47832",
     "--api-dev-origin",
@@ -572,10 +570,10 @@ preview_runtime_end = source.index(
     preview_runtime_start,
 )
 preview_runtime_source = source[preview_runtime_start:preview_runtime_end]
-if '"--interval",\n                "30s"' not in preview_runtime_source:
-    raise SystemExit("local preview runtime must use the stable 30s interval")
-if '"--interval",\n                "5s"' in preview_runtime_source:
-    raise SystemExit("local preview runtime must not restore the overloaded 5s interval")
+if '"--transport",\n                "usb"' not in preview_runtime_source:
+    raise SystemExit("local preview runtime must default to the fresh-device Cable transport")
+if '"--interval"' in preview_runtime_source:
+    raise SystemExit("local preview runtime must use the transport-owned default interval")
 
 required_source = [
     "import ServiceManagement",

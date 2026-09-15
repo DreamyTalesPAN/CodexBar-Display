@@ -16,14 +16,12 @@ function render(
       automaticPreview={{
         providerLabel: "Codex",
         resetLabel: "Resets in 2h 10m",
-        sessionPercent: 64,
-        weeklyPercent: null,
+        windows: [{ label: "Session", percent: 64 }, { label: "Weekly", percent: null }],
       }}
       manualPreview={{
         providerLabel: "Claude",
         resetLabel: null,
-        sessionPercent: null,
-        weeklyPercent: 12,
+        windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: 12 }],
       }}
       mode="automatic"
       onContinue={vi.fn()}
@@ -89,14 +87,12 @@ describe("SetupDisplayModeScreen", () => {
           {
             providerLabel: "Claude",
             resetLabel: "Resets in 1h",
-            sessionPercent: 7,
-            weeklyPercent: 3,
+            windows: [{ label: "Session", percent: 7 }, { label: "Weekly", percent: 3 }],
           },
           {
             providerLabel: "Copilot",
             resetLabel: null,
-            sessionPercent: null,
-            weeklyPercent: null,
+            windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: null }],
           },
         ],
         providers: [codex, cursor],

@@ -191,12 +191,19 @@ export type DeviceState = "unknown" | "online" | "offline" | "paired";
 
 export type DeviceCandidate = {
   target: string;
+  transport?: "cable" | "wifi";
   deviceId?: string;
   board?: string;
   firmware?: string;
   networkMode?: "station" | "setup" | string;
   known?: boolean;
   active?: boolean;
+};
+
+export type WiFiNetwork = {
+  ssid: string;
+  rssi: number;
+  encrypted: boolean;
 };
 
 export type DeviceSearchState =
@@ -301,6 +308,8 @@ export type DeviceInfo = {
     };
     transport?: {
       active?: string;
+      mode?: string;
+      supported?: string[];
     };
   };
 };
@@ -553,6 +562,26 @@ export function deviceIsWaitingForUsage(
 
 export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
+}
+
+export function deviceUsesCable(device: DeviceInfo | null | undefined) {
+  const transport = device?.capabilities?.transport;
+  return Boolean(
+    (transport?.active === "usb" && transport.mode === "cable") ||
+      device?.target?.toLowerCase().startsWith("cable:"),
+  );
+}
+
+export function deviceCanSwitchToCable(
+  device: DeviceInfo | null | undefined,
+) {
+  const supported = device?.capabilities?.transport?.supported;
+  return Boolean(
+    device?.active === true &&
+      device.connected === false &&
+      !deviceUsesCable(device) &&
+      supported?.includes("usb"),
+  );
 }
 
 // A reachable VibeTV whose display stream is running for this exact device but

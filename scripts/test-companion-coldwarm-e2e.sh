@@ -117,11 +117,15 @@ cat > "$HOME/Library/Application Support/codexbar-display/config.json" <<CFG
   "deviceTarget": "http://${DEV_ADDR}",
   "deviceToken": "virtual-pair-token",
   "deviceId": "virtual-vibetv-001",
+  "connectionMode": "wifi",
   "knownDevices": [
     {"deviceId": "virtual-vibetv-001", "target": "http://${DEV_ADDR}", "deviceToken": "virtual-pair-token"}
   ]
 }
 CFG
+
+THEME_PATH="/themes/u/cold-warm.json"
+printf '{}\n' > "$WORK/cold-warm-theme.json"
 
 status() { curl -s -m 3 "http://${API}/v1/status" 2>/dev/null || echo "{}"; }
 jqget() { python3 -c "import json,sys;d=json.load(sys.stdin);print(json.dumps({k:d.get('device',{}).get(k) for k in ['connected','ready','connectionState','active']}))" 2>/dev/null || echo "{}"; }
@@ -154,6 +158,14 @@ start_device() {
   "$WORK/virtual-vibetv" -addr "$DEV_ADDR" -raw-addr 127.0.0.1:0 \
     -firmware 1.0.39 >"$WORK/device.log" 2>&1 &
   DEVICE_PID=$!
+  for _ in $(seq 1 30); do
+    curl -fsS -m 1 "http://${DEV_ADDR}/hello" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  curl -fsS -m 5 -F "asset=@$WORK/cold-warm-theme.json;type=application/json" \
+    "http://${DEV_ADDR}/assets?path=${THEME_PATH}&token=virtual-pair-token" >/dev/null
+  curl -fsS -m 5 -X POST "http://${DEV_ADDR}/theme/active?token=virtual-pair-token" \
+    -H 'Content-Type: application/json' --data "{\"path\":\"${THEME_PATH}\"}" >/dev/null
 }
 
 echo "== S1: runtime cold start, device OFF =="
