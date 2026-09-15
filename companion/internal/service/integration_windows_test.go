@@ -115,6 +115,26 @@ $d=$task.Definition; @{LogonType=[int]$d.Principal.LogonType; RunLevel=[int]$d.P
 		t.Fatal(err)
 	}
 	waitState("running", true)
+	// Repair path: Start on a running task must replace the old instance.
+	instancePID := func() string {
+		t.Helper()
+		out, err := m.(*scheduledTask).command(ctx, findTask+`$instances = $task.GetInstances(0)
+if ($instances.Count -ne 1) { throw "expected exactly one instance, got $($instances.Count)" }
+$instances.Item(1).EnginePID`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(out)
+	}
+	before := instancePID()
+	if err := m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitState("running", true)
+	if after := instancePID(); after == before || after == "" || before == "" {
+		t.Fatalf("start did not replace the running instance: pid before=%q after=%q", before, after)
+	}
+	t.Logf("start replaced running instance: pid %s -> %s", before, instancePID())
 	if err := m.Stop(ctx, false); err != nil {
 		t.Fatal(err)
 	}

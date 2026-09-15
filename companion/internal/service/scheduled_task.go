@@ -142,10 +142,15 @@ while ($task.GetInstances(0).Count -gt 0) {
 }
 `
 
+// Start replaces a running instance like launchctl kickstart -k on macOS:
+// a stale or unresponsive daemon must not survive a repair or upgrade just
+// because Task Scheduler still reports the task as running.
 func (s *scheduledTask) Start(ctx context.Context) error {
 	_, err := s.command(ctx, findTask+`if ($null -eq $task) { throw 'Task not installed; rerun setup' }
 $task.Enabled = $true
-if ($task.State -ne 4) { $null = $task.Run($null) }
+if ($task.State -eq 4) {
+`+stopTask+`}
+$null = $task.Run($null)
 `)
 	return err
 }
