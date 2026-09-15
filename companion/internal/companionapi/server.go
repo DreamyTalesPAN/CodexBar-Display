@@ -6241,11 +6241,6 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			s.pauseDisplayStream(true)
 			streamPaused = true
 		}
-		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" && s.resetCableSender != nil {
-			// The updater is a child process. Release the parent's exclusive
-			// serial handle after pausing its writer so the child can open it.
-			s.resetCableSender()
-		}
 		resumeStream := func() {
 			if !streamPaused {
 				return
@@ -6299,6 +6294,11 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		// out. Drain it and hold the gate across the child-process OTA.
 		err := probeErr
 		if cableUpdate {
+			// Baseline reads retain the shared serial handle. Release it after
+			// the probe, including failures, so the child updater can open it.
+			if s.resetCableSender != nil {
+				s.resetCableSender()
+			}
 			err = s.updateFirmware(ctx, s.home, cfg, req, writer)
 		} else if probeReq != nil {
 			var release func()

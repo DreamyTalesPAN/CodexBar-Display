@@ -57,6 +57,7 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 			}
 			t.Run(mode+"/"+tc.name, func(t *testing.T) {
 				var uploads atomic.Int32
+				var cableHandleOpen atomic.Bool
 				var server *Server
 				slowStarted := make(chan struct{})
 				releaseSlow := make(chan struct{})
@@ -93,12 +94,15 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 				server = newTestServer(t, runtimeconfig.Config{ConnectionMode: mode, DeviceTarget: device.URL, DeviceID: "setup-device", DeviceToken: "pair-token"})
 				target := device.URL
 				if mode == "cable" {
+					server.resetCableSender = func() { cableHandleOpen.Store(false) }
 					target = cableDeviceTarget
 					server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
 					server.readCableHello = func(string) (protocol.DeviceHello, error) {
+						cableHandleOpen.Store(true)
 						return protocol.DeviceHello{DeviceID: "setup-device", Board: "esp8266-smalltv-st7789", Firmware: "1.0.42", Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableHealthV1}, Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}}}, nil
 					}
 					server.readCableHealth = func(string, string) (deviceHealth, error) {
+						cableHandleOpen.Store(true)
 						body := tc.before
 						if uploads.Load() > 0 {
 							body = tc.after
@@ -149,6 +153,9 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 					return deviceHealth{}, errors.New("no picture")
 				}
 				server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+					if cableHandleOpen.Load() {
+						t.Error("baseline probe must release the serial handle before the child updater")
+					}
 					uploads.Add(1)
 					if tc.slowProbe {
 						probeCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
