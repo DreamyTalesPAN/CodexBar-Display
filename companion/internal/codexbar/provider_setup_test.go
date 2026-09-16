@@ -492,6 +492,60 @@ func writeExecutable(t *testing.T, path string) {
 	}
 }
 
+// Windows probes each switched-on provider one by one with an 18 s budget
+// each. A shared 20 s deadline over the whole loop would hand the second
+// provider an almost spent context and mark it unavailable, so the per-provider
+// path must not run under the aggregate probe deadline.
+func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	writeExecutable(t, bin)
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.56.8"), nil
+	}
+	var probeDeadlines []bool
+	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":true}
+			]`), nil
+		}
+		_, hasDeadline := ctx.Deadline()
+		probeDeadlines = append(probeDeadlines, hasDeadline)
+		provider := args[3]
+		return []byte(`[{"provider":"` + provider + `","usage":{"primary":{"usedPercent":5}}}]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if got.Status != ProviderReady || len(got.Providers) != 2 {
+		t.Fatalf("unexpected readiness: %+v", got)
+	}
+	for _, provider := range got.Providers {
+		if provider.Status != ProviderReady {
+			t.Fatalf("every probed provider must be ready: %+v", got.Providers)
+		}
+	}
+	if len(probeDeadlines) != 2 {
+		t.Fatalf("expected one probe per enabled provider, got %d", len(probeDeadlines))
+	}
+	for i, hasDeadline := range probeDeadlines {
+		if hasDeadline {
+			t.Fatalf("probe %d ran under the shared aggregate deadline; each provider needs its own budget", i)
+		}
+	}
+}
+
 func TestProbeProviderSetupForProviderDoesNotCacheUndatedExactUsage(t *testing.T) {
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn

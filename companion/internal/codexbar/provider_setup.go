@@ -361,6 +361,16 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()
+	// Windows probes every switched-on provider one by one with its own 18 s
+	// budget (runUsageAllEnabled), so a shared 20 s ceiling would hand the
+	// second provider an almost spent context and report it unavailable. The
+	// aggregate path therefore runs on the deadline-free context; each CLI
+	// call still carries its own timeout, so the total stays bounded by
+	// inventory + 18 s per enabled provider.
+	aggregateCtx := probeCtx
+	if providerProbePerProvider {
+		aggregateCtx = configuredCtx
+	}
 	var exactSetting *ProviderSetting
 	var out []byte
 	var commandErr error
@@ -392,11 +402,11 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			"--web-timeout", "8",
 		)
 	} else {
-		out, commandErr = runUsageAllEnabled(probeCtx, 18*time.Second, bin, "--web-timeout", "8")
+		out, commandErr = runUsageAllEnabled(aggregateCtx, 18*time.Second, bin, "--web-timeout", "8")
 	}
 	if exactProvider == "" {
-		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
-		result.Providers = providersWithSwitchState(probeCtx, bin, result.Providers)
+		result.Providers = providerReadinessFromOutput(out, commandErr, aggregateCtx.Err())
+		result.Providers = providersWithSwitchState(aggregateCtx, bin, result.Providers)
 	} else {
 		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())
 		provider.Label = exactSetting.Label
