@@ -3738,6 +3738,17 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
   their tests, and this approval record.
 
+## 2026-09-16 — Imported files never take an AI-generated name
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `47eeac88` found that an imported file named like generated artwork
+  (for example `ai-pet-1.cba`) would be replaced by the next AI creation.
+- Approved customer-visible result: **A picture or animation the customer
+  imports stays on the display after later AI creations, whatever its file
+  name. No new screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
+  test, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding

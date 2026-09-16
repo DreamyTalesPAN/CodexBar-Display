@@ -368,24 +368,30 @@ export function themeAssetPathForFile(
   )}`;
 }
 
+/** Every AI-generated asset (screen, animation, scene loops, pets) lives under this prefix. */
+const AI_MANAGED_ASSET_PATTERN = /^\/themes\/u\/ai-/;
+
 /**
  * Returns `path` unchanged when free, otherwise appends -2, -3, … before the
  * extension so a second import with the same file name never overwrites the
- * first asset. Keeps the firmware's 21-character name limit.
+ * first asset. AI-managed names are always treated as taken so an import can
+ * never be mistaken for generated artwork and replaced on the next creation.
+ * Keeps the firmware's 21-character name limit.
  */
 export function uniqueAssetPath(path: string, taken: Record<string, unknown>): string {
-  if (!(path in taken)) return path;
+  const reserved = (candidate: string) => candidate in taken || AI_MANAGED_ASSET_PATTERN.test(candidate);
+  if (!reserved(path)) return path;
   const slash = path.lastIndexOf("/");
   const dir = path.slice(0, slash + 1);
   const file = path.slice(slash + 1);
   const dot = file.lastIndexOf(".");
   const extension = file.slice(dot);
-  const base = file.slice(0, dot);
+  const base = AI_MANAGED_ASSET_PATTERN.test(path) ? `my-${file.slice(0, dot)}` : file.slice(0, dot);
   for (let n = 2; n < 1000; n += 1) {
     const suffix = `-${n}`;
     const maxBase = 21 - extension.length - suffix.length;
     const candidate = `${dir}${base.slice(0, maxBase).replace(/[._-]+$/g, "") || "asset"}${suffix}${extension}`;
-    if (!(candidate in taken)) return candidate;
+    if (!reserved(candidate)) return candidate;
   }
   throw new Error("Too many assets with the same name.");
 }
