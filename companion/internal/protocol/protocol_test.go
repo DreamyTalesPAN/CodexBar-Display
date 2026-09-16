@@ -673,6 +673,43 @@ func TestV2WireFrameStaysReadableByPublicFirmware1039(t *testing.T) {
 // firmware 1.0.39 device has no usageMode field, so whatever lands in session
 // and weekly is what the customer reads off the screen.
 func TestV2WireFrameLegacyLanesAgreeWithUsageWindows(t *testing.T) {
+	t.Run("weekly-only keeps the session lane unavailable", func(t *testing.T) {
+		// Win-CodexBar marks its primary session window informational; after
+		// filtering, only the weekly quota remains and must not be shown as
+		// a session percentage on older firmware.
+		frame := Frame{
+			V:        ProtocolVersionV2,
+			Provider: "codex",
+			Label:    "Codex",
+			UsageWindows: []UsageWindow{
+				{ID: "weekly", Label: "Weekly", Percent: 75, ResetSec: 262464},
+			},
+		}
+		normalized := frame.Normalize()
+		if !normalized.SessionUnavailable || normalized.Session != 0 {
+			t.Fatalf("weekly-only frame must leave the session lane unavailable: %+v", normalized)
+		}
+		if normalized.WeeklyUnavailable || normalized.Weekly != 75 {
+			t.Fatalf("weekly lane must carry the weekly window: %+v", normalized)
+		}
+		legacy := Frame{V: ProtocolVersionV1, UsageWindows: frame.UsageWindows}.Normalize()
+		if !legacy.SessionUnavailable || legacy.Session != 0 || legacy.Weekly != 75 {
+			t.Fatalf("v1 projection drifted: %+v", legacy)
+		}
+	})
+	t.Run("windows without structural ids stay positional", func(t *testing.T) {
+		frame := Frame{
+			V: ProtocolVersionV2,
+			UsageWindows: []UsageWindow{
+				{ID: "five-hour", Label: "5h", Percent: 12},
+				{ID: "seven-day", Label: "7d", Percent: 34},
+			},
+		}
+		normalized := frame.Normalize()
+		if normalized.Session != 12 || normalized.Weekly != 34 || normalized.SessionUnavailable || normalized.WeeklyUnavailable {
+			t.Fatalf("positional fallback drifted: %+v", normalized)
+		}
+	})
 	frame := Frame{
 		V:        ProtocolVersionV2,
 		Provider: "claude",

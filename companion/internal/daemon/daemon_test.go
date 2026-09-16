@@ -2611,7 +2611,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 	if !ok || len(inside.Providers) != 1 {
 		t.Fatalf("expected bounded persisted usage, got ok=%t usage=%+v", ok, inside)
 	}
-	if inside.Providers[0].Frame.UsageUnavailable || inside.Providers[0].Frame.Session != 68 ||
+	if inside.Providers[0].Frame.UsageUnavailable || inside.Providers[0].Frame.Weekly != 68 ||
 		len(inside.Providers[0].Frame.UsageSlots) != 1 || len(inside.Providers[0].Meta.Windows) != 1 {
 		t.Fatalf("bounded snapshot changed before expiry: %+v", inside.Providers[0])
 	}
@@ -3732,7 +3732,7 @@ func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthyWit
 	}
 
 	frames := collector.providerFrames(now)
-	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Session != 21 {
+	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Weekly != 21 {
 		t.Fatalf("expected dashboard usage after readiness retry, got %#v", frames)
 	}
 }
@@ -4009,8 +4009,12 @@ func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *tes
 		len(frame.UsageSlots) != 2 ||
 		frame.UsageSlots[0].Label != "Weekly" ||
 		frame.UsageSlots[1].Label != "Codex Spark Weekly" ||
-		frame.Session != 24 ||
-		frame.Weekly != 0 ||
+		// Only a weekly window is present: the session lane stays unavailable
+		// instead of showing the weekly quota positionally.
+		frame.Session != 0 ||
+		!frame.SessionUnavailable ||
+		frame.Weekly != 24 ||
+		frame.WeeklyUnavailable ||
 		frame.ResetSec != 3600 {
 		t.Fatalf("expected Codex dashboard usage as v1 legacy slots in sent frame, got %+v", frame)
 	}
@@ -5305,7 +5309,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			if dashboardCalls != 2 || fallbackCalls != 0 {
 				t.Fatalf("expected dashboard attempts without usage-json fallback, dashboard=%d fallback=%d", dashboardCalls, fallbackCalls)
 			}
-			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Session != 68 ||
+			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Weekly != 68 || !frames[0].Frame.SessionUnavailable ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" ||
 				!frames[0].Stale || frames[0].Frame.UsageUnavailable {
 				t.Fatalf("expected dashboard snapshot within last-good window unchanged, got %+v", frames)
@@ -5326,7 +5330,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			current = current.Add(time.Second)
 			collector.collectOnce(context.Background())
 			frames = collector.providerFrames(current)
-			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 21 ||
+			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Weekly != 21 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" {
 				t.Fatalf("expected fresh dashboard recovery, got %+v", frames)
 			}
@@ -5441,7 +5445,7 @@ func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t
 	if frames[0].Provider != "codex" || !frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 0 || len(frames[0].Meta.Windows) != 0 {
 		t.Fatalf("expected expired Codex usage to be cleared, got %+v", frames[0])
 	}
-	if frames[1].Provider != "claude" || frames[1].Frame.UsageUnavailable || frames[1].Frame.Session != 22 || len(frames[1].Meta.Windows) != 2 {
+	if frames[1].Provider != "claude" || frames[1].Frame.UsageUnavailable || frames[1].Frame.Weekly != 22 || !frames[1].Frame.SessionUnavailable || len(frames[1].Meta.Windows) != 2 {
 		t.Fatalf("expected Claude to remain fresh while Codex is unavailable, got %+v", frames[1])
 	}
 
@@ -5455,7 +5459,7 @@ func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t
 	collector.collectOnce(context.Background())
 	frames = collector.providerFrames(current)
 	if len(frames) != 2 || frames[0].Provider != "codex" || frames[0].Frame.UsageUnavailable ||
-		frames[0].Frame.Session != 31 || len(frames[0].Frame.UsageSlots) != 2 {
+		frames[0].Frame.Weekly != 31 || len(frames[0].Frame.UsageSlots) != 2 {
 		t.Fatalf("expected Codex dashboard recovery to replace unavailable state, got %+v", frames)
 	}
 }
