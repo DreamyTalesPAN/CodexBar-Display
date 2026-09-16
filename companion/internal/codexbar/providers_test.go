@@ -329,10 +329,13 @@ func TestRunProviderHealthProbeStopsWhenCallerCancels(t *testing.T) {
 	parent, cancel := context.WithCancel(context.Background())
 	var cancelled []bool
 	runProviderCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		// Record before cancelling: the forwarded cancellation is
+		// asynchronous and may reach ctx before this probe returns.
+		cancelled = append(cancelled, ctx.Err() != nil)
 		if args[3] == "codex" {
 			cancel()
+			<-ctx.Done()
 		}
-		cancelled = append(cancelled, ctx.Err() != nil)
 		return nil, ctx.Err()
 	}
 	settings := []ProviderSetting{
