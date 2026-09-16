@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bindingDisplayLabel, clampCompanionSize, isAspectLockedPrimitive, primitiveTitle, textPrimitiveNaturalWidth } from "./editor-geometry";
+import { bindingDisplayLabel, clampCompanionSize, clampedMoveDelta, isAspectLockedPrimitive, primitiveMaxBottom, primitiveTitle, textPrimitiveNaturalWidth } from "./editor-geometry";
 import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
 
 describe("isAspectLockedPrimitive", () => {
@@ -14,6 +14,13 @@ describe("isAspectLockedPrimitive", () => {
     expect(clampCompanionSize(100)).toBe(80);
     expect(clampCompanionSize(5)).toBe(16);
     expect(clampCompanionSize(48)).toBe(48);
+  });
+  it("keeps companions inside the 128px scene when moved", () => {
+    const cat = { type: "sprite" as const, assetPath: "/themes/u/ai-pet-1.cba", x: 170, y: 72, width: 48, height: 48 };
+    expect(primitiveMaxBottom(cat)).toBe(128);
+    expect(primitiveMaxBottom({ type: "rect", x: 0, y: 0, width: 10, height: 10 })).toBe(240);
+    const delta = clampedMoveDelta([{ index: 0, x: cat.x, y: cat.y, width: 48, height: 48, maxBottom: primitiveMaxBottom(cat) }], 0, 100);
+    expect(delta.y).toBe(8);
   });
 });
 

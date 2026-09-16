@@ -49,6 +49,7 @@ import {
   DISPLAY_SIZE,
   isAspectLockedPrimitive,
   primitiveBounds,
+  primitiveMaxBottom,
   setPrimitiveField,
   textPrimitiveFontSizeFromVisualHeight,
   textPrimitiveNaturalWidth,
@@ -293,6 +294,7 @@ export function AIThemeStudioScreen() {
                 index: i,
                 x: p.x,
                 y: p.y,
+                maxBottom: primitiveMaxBottom(p),
                 width: primitiveBounds(p).width,
                 height: primitiveBounds(p).height,
               },
@@ -822,7 +824,7 @@ export function AIThemeStudioScreen() {
                       const height = clampInt(
                         size.height,
                         1,
-                        DISPLAY_SIZE - p.y,
+                        primitiveMaxBottom(p) - p.y,
                       );
                       if (p.type === "text") {
                         p.fontSize = clampInt(
@@ -1052,7 +1054,11 @@ export function AIThemeStudioScreen() {
                               mutate((d) => {
                                 const p = d.spec.primitives[index];
                                 if (!p) return;
-                                const size = clampCompanionSize(value);
+                                const size = Math.min(
+                                  clampCompanionSize(value),
+                                  primitiveMaxBottom(p) - p.y,
+                                  DISPLAY_SIZE - p.x,
+                                );
                                 p.width = size;
                                 p.height = size;
                               })

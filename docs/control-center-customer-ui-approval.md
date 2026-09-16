@@ -3668,6 +3668,21 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/lib/ai-theme-document.ts`, their tests, and this
   approval record.
 
+## 2026-09-16 — Companions stay inside the scene area
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ad67c9eb` found that a companion could be dragged, nudged or enlarged
+  below the 128 px scene, which the AI helper later rejects.
+- Approved customer-visible result: **An animated companion cannot be moved or
+  enlarged past the bottom of the picture area; dragging, arrow keys, the
+  corner handle and the "Size" field stop at that edge. Other elements move
+  as before.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`, its
+  test, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding

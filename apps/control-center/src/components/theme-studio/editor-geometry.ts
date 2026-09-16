@@ -45,6 +45,8 @@ export type ResizeSize = {
 
 export const COMPANION_MIN_SIZE = 16;
 export const COMPANION_MAX_SIZE = 80;
+/** Companions live in the 240x128 scene above the native UI. */
+export const COMPANION_SCENE_BOTTOM = 128;
 
 /** Animated companions are square sprites; they only scale uniformly. */
 export function isAspectLockedPrimitive(primitive: ThemeStudioPrimitive): boolean {
@@ -56,9 +58,15 @@ export function clampCompanionSize(size: number): number {
   return clampInt(size, COMPANION_MIN_SIZE, COMPANION_MAX_SIZE);
 }
 
+/** Lowest allowed bottom edge for a primitive (companions must stay in the scene). */
+export function primitiveMaxBottom(primitive: ThemeStudioPrimitive): number {
+  return isAspectLockedPrimitive(primitive) ? COMPANION_SCENE_BOTTOM : DISPLAY_SIZE;
+}
+
 export type DragMoveOrigin = {
   height: number;
   index: number;
+  maxBottom?: number;
   width: number;
   x: number;
   y: number;
@@ -213,7 +221,9 @@ export function clampedMoveDelta(
   );
   const minDeltaY = Math.max(...origins.map((origin) => -origin.y));
   const maxDeltaY = Math.min(
-    ...origins.map((origin) => DISPLAY_SIZE - origin.y - origin.height),
+    ...origins.map(
+      (origin) => (origin.maxBottom ?? DISPLAY_SIZE) - origin.y - origin.height,
+    ),
   );
 
   return {
