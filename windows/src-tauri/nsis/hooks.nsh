@@ -16,8 +16,18 @@
 
 !macro NSIS_HOOK_PREUNINSTALL
   nsExec::ExecToLog 'taskkill /F /IM VibeTVControlCenter.exe'
-  IfFileExists "$INSTDIR\codexbar-display.exe" 0 +2
+  ; A firmware update or theme install runs inside codexbar-display.exe.
+  ; "service uninstall" claims the same update hold the shell takes before a
+  ; repair and exits non-zero while a device write owns the runtime; killing
+  ; the process then would leave the VibeTV half-written, so the uninstall
+  ; stops here instead and the customer tries again once the job is done.
+  IfFileExists "$INSTDIR\codexbar-display.exe" 0 uninstall_runtime_done
     nsExec::ExecToLog '"$INSTDIR\codexbar-display.exe" service uninstall --label shop.vibetv.control-center.runtime'
+    Pop $0
+    StrCmp $0 "0" uninstall_runtime_done
+      MessageBox MB_OK|MB_ICONEXCLAMATION "A VibeTV update or theme install is still running. Wait for it to finish, then uninstall VibeTV Control Center again." /SD IDOK
+      Abort
+  uninstall_runtime_done:
   nsExec::ExecToLog 'taskkill /F /IM codexbar-display.exe'
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "VibeTV Control Center"
   Sleep 1500

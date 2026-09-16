@@ -1346,6 +1346,61 @@ func checkDoctorCompanionHealth(expectedOwner string) error {
 }
 
 func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) error {
+	return forEachOwnedRuntimeOrigin(origins, expectedOwner, func(string) error { return nil })
+}
+
+// claimRuntimeUpdateHold asks the runtime owned by label for the update hold
+// the shell's repair path claims (main.rs claim_update_hold). A runtime that
+// does not answer is not running a job -- the job lives in that process -- so
+// only a refusal (409) or a failed request to an identified runtime blocks.
+func claimRuntimeUpdateHold(home, label string) error {
+	return claimRuntimeUpdateHoldAt(runtimeHealthOrigins(home), label)
+}
+
+func claimRuntimeUpdateHoldAt(origins []string, label string) error {
+	client := &http.Client{Timeout: 3 * time.Second}
+	identified := false
+	err := forEachOwnedRuntimeOrigin(origins, label, func(origin string) error {
+		identified = true
+		response, err := client.Post(strings.TrimRight(origin, "/")+"/v1/runtime-health/update-hold", "application/json", strings.NewReader("{}"))
+		if err != nil {
+			return fmt.Errorf("runtime update hold request failed: %w", err)
+		}
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+		_ = response.Body.Close()
+		switch {
+		case response.StatusCode == http.StatusConflict:
+			return fmt.Errorf("a VibeTV update or theme install is still running; try again when it has finished (%s)", strings.TrimSpace(string(body)))
+		case response.StatusCode < 200 || response.StatusCode >= 300:
+			return fmt.Errorf("runtime update hold refused with HTTP %d", response.StatusCode)
+		}
+		return nil
+	})
+	if !identified {
+		return nil
+	}
+	return err
+}
+
+func runtimeHealthOrigins(home string) []string {
+	defaultOrigin := "http://" + companionapi.DefaultAddr
+	origins := []string{defaultOrigin}
+	if data, err := os.ReadFile(runtimeEndpointPath(home)); err == nil {
+		var endpoint runtimeEndpoint
+		if json.Unmarshal(data, &endpoint) == nil {
+			if published := strings.TrimSpace(endpoint.Origin); published != "" && published != defaultOrigin {
+				origins = append([]string{published}, origins...)
+			}
+		}
+	}
+	return origins
+}
+
+// forEachOwnedRuntimeOrigin runs then against the first origin whose
+// runtime-health identifies a healthy runtime owned by expectedOwner. The
+// health probing is checkDoctorCompanionHealth's; when no origin answers, the
+// last probe error is returned.
+func forEachOwnedRuntimeOrigin(origins []string, expectedOwner string, then func(origin string) error) error {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var lastErr error
 	for _, origin := range origins {
@@ -1390,7 +1445,7 @@ func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) e
 			lastErr = fmt.Errorf("runtime health belongs to %q, expected %q", owner, expectedOwner)
 			continue
 		}
-		return nil
+		return then(origin)
 	}
 	return lastErr
 }
@@ -1469,6 +1524,16 @@ func runService(args []string) error {
 		return nil
 	case "uninstall":
 		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		// The Windows uninstaller calls this before it kills the process. A
+		// firmware update or theme install runs inside that process, so the
+		// same hold the shell claims before a repair is claimed here; a
+		// refusal aborts the uninstall instead of leaving a half-written
+		// device behind.
+		if runtime.GOOS == "windows" {
+			if err := claimRuntimeUpdateHold(home, label); err != nil {
+				return err
+			}
+		}
 		if err := service.New(label, home, label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Uninstall(context.Background()); err != nil {
 			return err
 		}
