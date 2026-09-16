@@ -3621,6 +3621,180 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
 
+## 2026-09-16 — Local AI Theme Studio preview with animated companions
+
+- User approval: Marcus tested the local preview at
+  `/internal/theme-studio-preview` as a customer during the September 16
+  session and approved the direction step by step: a still background with
+  one or two AI-chosen animated companion sprites ("das ist glaube ich der
+  beste Ansatz"), only the spinner inside the Create button, no lock between
+  requests, companions that resize only uniformly, and "cool dann jetzt commit
+  und push in den PR".
+- Approved customer-visible result: **The Theme Studio has one text field
+  "Your idea" and one primary "Create with AI" button that shows a spinner and
+  "Creating…" while the AI works, with a "Cancel" button that leaves the design
+  unchanged. The result is a still background plus one or two animated
+  companion sprites on the display, each selectable, movable, and resizable
+  only as a square through the corner handle or a single "Size" field. Plain
+  layout wishes (size, position, labels, timers, removal) change the design
+  directly with an "AI plan:" note and Undo; wishes that cannot be done (third
+  companion, mixed image and UI changes, contradictory or unclear requests)
+  answer with a short clarification instead of changing anything. Settings hold
+  the OpenAI key only in memory and state the consent with at most five
+  generated images per creation.**
+- Approved files: `apps/control-center/src/app/internal/theme-studio-preview/`,
+  `apps/control-center/src/app/api/local-companion/[...path]/`,
+  `apps/control-center/src/components/theme-studio/`,
+  `apps/control-center/src/components/live-vibetv-preview.tsx`,
+  `apps/control-center/src/lib/ai-theme*.ts`,
+  `apps/control-center/src/lib/ai-companion-sprites.ts`,
+  `apps/control-center/src/lib/theme-studio-assets.ts`, their tests, the
+  companion `ai_theme*` Go files, and this approval record.
+
+## 2026-09-16 — Companion size bounds and artwork placement after companion edits
+
+- User approval: Marcus asked that animated companions only resize
+  uniformly and approved the push to PR #422; the exact-head Codex review of
+  `c1acf1c7` found that the manual "Size" field and corner handle accepted
+  1..240 although the AI helper only accepts 16..80, and that adding or
+  revising a companion reset manually moved artwork.
+- Approved customer-visible result: **The "Size" field and the corner handle
+  of an animated companion stop at 16 and 80 pixels. After a companion-only
+  AI change, artwork the customer moved or resized stays where it was.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`,
+  `apps/control-center/src/lib/ai-theme-document.ts`, their tests, and this
+  approval record.
+
+## 2026-09-16 — Companions stay inside the scene area
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ad67c9eb` found that a companion could be dragged, nudged or enlarged
+  below the 128 px scene, which the AI helper later rejects.
+- Approved customer-visible result: **An animated companion cannot be moved or
+  enlarged past the bottom of the picture area; dragging, arrow keys, the
+  corner handle and the "Size" field stop at that edge. Other elements move
+  as before.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`, its
+  test, and this approval record.
+
+## 2026-09-16 — Companions saved outside the scene are repaired on open
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `d384ea8c` found that a design saved or imported with a companion below
+  the scene could be shrunk under 16 px by the new bottom clamp.
+- Approved customer-visible result: **Opening or importing a design moves an
+  animated companion back inside the picture area at its saved size. Enlarging
+  a companion near the bottom edge moves it up instead of stopping early.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`,
+  `apps/control-center/src/components/theme-studio/theme-studio-editor-state.ts`
+  (the same repair also applies to the design restored automatically on
+  open, per the exact-head review of `26ce55ee`), their tests, and this
+  approval record.
+
+## 2026-09-16 — Automatically restored designs get the same companion repair
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `26ce55ee` found that the design restored automatically on open
+  bypassed the companion repair.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  design that opens automatically shows its animated companion inside the
+  picture area at a valid size, exactly like a design opened from the library
+  or a file.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/theme-studio-editor-state.ts`,
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  their tests, and this approval record.
+
+## 2026-09-16 — Imported pictures fit the display's picture budget
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `6b41ecba` found that a large square picture imported through "Add
+  element" became a 240x240 asset that the design could no longer save or
+  export.
+- Approved customer-visible result: **An imported picture is scaled down a
+  little further when needed (for example a square photo appears at 181x181
+  instead of 240x240) so the design can always be saved and exported. No new
+  screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
+  test, and this approval record.
+
+## 2026-09-16 — Unsaved edits made while a file is being read are protected
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `43ed2c3b` found that an edit made while a design file was still being
+  read could be replaced without the unsaved-changes confirmation.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  existing unsaved-changes confirmation also appears when the customer edits
+  the design while an opened file is still loading.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`
+  and this approval record.
+
+## 2026-09-16 — AI bar reading changes drop the old window owner
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `9d7cb30f` found that an AI reading change on a usage bar kept stale
+  provider/usage ownership fields, so the bar could stay hidden or gated by
+  the old window.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  the AI switches a usage bar to another reading, the bar shows that reading
+  exactly like the manual reading selector does.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
+## 2026-09-16 — AI text edits widen the label box
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ae040f25` found that an AI edit giving a narrow label longer text, a
+  longer reading or a bigger font kept the old width and clipped the value.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  label the AI changes shows its full new text, exactly like a label edited by
+  hand.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
+## 2026-09-16 — AI literal-text edits drop the old reading owner
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ac2f4f41` found that replacing a live reading with fixed text kept the
+  old provider/window ownership, so the new label could stay hidden.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  fixed label the AI writes over a live reading is always shown, exactly like
+  one typed by hand.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
+## 2026-09-16 — Imported pictures with the same file name keep both pictures
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `6109837d` found that importing a second file with the same name
+  silently replaced the first picture.
+- Approved customer-visible result: **Importing two pictures that share a
+  file name keeps both on the display; the earlier picture no longer changes.
+  No new screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`,
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  their tests, and this approval record.
+
+## 2026-09-16 — Imported files never take an AI-generated name
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `47eeac88` found that an imported file named like generated artwork
+  (for example `ai-pet-1.cba`) would be replaced by the next AI creation.
+- Approved customer-visible result: **A picture or animation the customer
+  imports stays on the display after later AI creations, whatever its file
+  name. No new screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
+  test, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding

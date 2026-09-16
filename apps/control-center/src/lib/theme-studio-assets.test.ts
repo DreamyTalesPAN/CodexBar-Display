@@ -3,12 +3,35 @@ import { describe, expect, it } from "vitest";
 import {
   assetKind,
   formatBytes,
+  importedImageSize,
   spriteMetadata,
   themeAssetByteLength,
   themeAssetPathForFile,
+  uniqueAssetPath,
 } from "./theme-studio-assets";
 
 describe("Theme Studio asset helpers", () => {
+  it("never overwrites an existing asset when a second import has the same name", () => {
+    const taken = { "/themes/u/image.cbi": 1, "/themes/u/image-2.cbi": 1 };
+    expect(uniqueAssetPath("/themes/u/photo.cbi", taken)).toBe("/themes/u/photo.cbi");
+    expect(uniqueAssetPath("/themes/u/image.cbi", taken)).toBe("/themes/u/image-3.cbi");
+    const long = uniqueAssetPath("/themes/u/averyveryverylong.cbi", { "/themes/u/averyveryverylong.cbi": 1 });
+    expect(long).toBe("/themes/u/averyveryverylo-2.cbi");
+    expect(long.slice(long.lastIndexOf("/") + 1).length).toBeLessThanOrEqual(21);
+  });
+  it("keeps imports out of the AI-managed asset namespace", () => {
+    expect(uniqueAssetPath("/themes/u/ai-pet-1.cba", {})).toBe("/themes/u/my-ai-pet-1-2.cba");
+    expect(uniqueAssetPath("/themes/u/ai-screen.cbi", {})).toBe("/themes/u/my-ai-screen-2.cbi");
+    expect(uniqueAssetPath("/themes/u/ai-scene-loop.cba", {})).toBe("/themes/u/my-ai-scene-loo-2.cba");
+    expect(uniqueAssetPath("/themes/u/aircraft.cbi", {})).toBe("/themes/u/aircraft.cbi");
+  });
+  it("scales imported pictures into the static sprite pixel budget", () => {
+    expect(importedImageSize(1000, 1000)).toEqual({ width: 181, height: 181 });
+    expect(importedImageSize(181, 181)).toEqual({ width: 181, height: 181 });
+    expect(importedImageSize(1920, 1080)).toEqual({ width: 240, height: 135 });
+    expect(importedImageSize(240, 128)).toEqual({ width: 240, height: 128 });
+    expect(importedImageSize(1000, 1000).width ** 2).toBeLessThanOrEqual(32768);
+  });
   it("reads static and animated sprite metadata", () => {
     expect(spriteMetadata("CBI1\n16 8\n1\n#FFFFFF\n16.\n")).toEqual({
       fps: 0,
