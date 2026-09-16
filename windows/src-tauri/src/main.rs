@@ -318,12 +318,20 @@ fn claim_update_hold() -> UpdateHold {
             continue;
         }
         let url = origin.join("/v1/runtime-health/update-hold").expect("static path");
-        let Ok(response) = http
+        // From here on a live runtime of ours is known to exist. A failed
+        // hold request does not mean it is idle -- it may be mid-job -- so a
+        // transport error must hold back the restart instead of falling
+        // through to NoAnswer.
+        let response = match http
             .post(url.as_str())
             .header("Content-Type", "application/json")
             .send("{}")
-        else {
-            continue;
+        {
+            Ok(response) => response,
+            Err(error) => {
+                log(&format!("update hold request failed: {error}"));
+                return UpdateHold::UpdateRunning;
+            }
         };
         return match response.status().as_u16() {
             409 => UpdateHold::UpdateRunning,
