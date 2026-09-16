@@ -7,6 +7,15 @@ const before:ThemeStudioDocument={packName:'Office cat',usage:'live',assets:{'/t
 const add={action:'add',index:-1,kind:'text',x:12,y:224,fontSize:1,color:'#FFFFFF',reading:'usageSlot1Reset'} as const;
 const plan=(edits:AIThemeLayoutPlan['edits']):AIThemeLayoutPlan=>({mode:'layout',notes:'Added reset countdown',edits});
 describe('AI native layout edits',()=>{
+ it('clears old provider/usage owners when the AI changes a bar reading',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives.push({type:'progress',x:12,y:204,width:216,height:13,color:'#0055AA',binding:'providerSlot1Percent',providerSlot:1,usageIndex:0});
+  const next=applyAIThemeLayout(doc,plan([{action:'update',index:2,kind:'progress',reading:'weekly'}]));
+  const bar=next.spec.primitives[2];
+  expect(bar).toMatchObject({binding:'weekly',slot:2});
+  expect(bar).not.toHaveProperty('providerSlot');
+  expect(bar).not.toHaveProperty('usageIndex');
+ });
  it('adds a bar using the existing design styling instead of black/green renderer defaults',()=>{
   const doc=structuredClone(before);
   doc.spec.primitives.push({type:'progress',x:12,y:204,width:216,height:13,color:'#0055AA',bgColor:'#EAF6FF',borderColor:'#FFB56B',borderRadius:0,progressStyle:'solid',binding:'weekly'});

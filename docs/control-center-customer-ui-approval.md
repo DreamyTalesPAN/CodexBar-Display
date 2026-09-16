@@ -3738,6 +3738,18 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`
   and this approval record.
 
+## 2026-09-16 — AI bar reading changes drop the old window owner
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `9d7cb30f` found that an AI reading change on a usage bar kept stale
+  provider/usage ownership fields, so the bar could stay hidden or gated by
+  the old window.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  the AI switches a usage bar to another reading, the bar shows that reading
+  exactly like the manual reading selector does.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
 ## 2026-09-16 — Imported pictures with the same file name keep both pictures
 
 - User approval: Same push approval for PR #422; the exact-head Codex review

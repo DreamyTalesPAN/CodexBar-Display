@@ -74,7 +74,7 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       if(!LIVE_READINGS.some(([id])=>id===edit.reading)||!['text','progress'].includes(p.type)) return fail();
       if(p.type==='progress'){
         if(!['session','weekly','usageSlot1Percent','usageSlot2Percent'].includes(edit.reading)) return fail();
-        p.binding=edit.reading;p.slot=['weekly','usageSlot2Percent'].includes(edit.reading)?2:1;
+        delete p.providerSlot;delete p.usageIndex;p.binding=edit.reading;p.slot=['weekly','usageSlot2Percent'].includes(edit.reading)?2:1;
       }else setReading(p,edit.reading);
     }
     if(p.type==='text'&&!p.text&&!p.binding) return fail();
