@@ -1551,6 +1551,13 @@ func runService(args []string) error {
 		fmt.Println("background service: enabled and started")
 		return nil
 	case "stop":
+		// The Windows installer stops the task before replacing the binary,
+		// exactly like the uninstaller; the same hold guards both.
+		if runtime.GOOS == "windows" {
+			if err := claimRuntimeUpdateHold(home, runtimepaths.DisplayStreamLaunchAgentLabel()); err != nil {
+				return err
+			}
+		}
 		if err := stopLaunchAgent(true); err != nil {
 			return err
 		}

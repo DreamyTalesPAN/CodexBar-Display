@@ -7,8 +7,18 @@
 ; both hooks kill what is left and give Windows a moment to release the files.
 
 !macro NSIS_HOOK_PREINSTALL
-  IfFileExists "$INSTDIR\codexbar-display.exe" 0 +2
+  ; An installer launched by hand (not by the shell's updater, which claims
+  ; the hold itself) reaches this hook while a firmware update or theme
+  ; install may be writing to the device from inside codexbar-display.exe.
+  ; "service stop" claims the update hold and exits non-zero while a device
+  ; write owns the runtime; the install stops here instead of killing it.
+  IfFileExists "$INSTDIR\codexbar-display.exe" 0 install_runtime_done
     nsExec::ExecToLog '"$INSTDIR\codexbar-display.exe" service stop --label shop.vibetv.control-center.runtime'
+    Pop $0
+    StrCmp $0 "0" install_runtime_done
+      MessageBox MB_OK|MB_ICONEXCLAMATION "A VibeTV update or theme install is still running. Wait for it to finish, then run the installer again." /SD IDOK
+      Abort
+  install_runtime_done:
   nsExec::ExecToLog 'taskkill /F /IM VibeTVControlCenter.exe'
   nsExec::ExecToLog 'taskkill /F /IM codexbar-display.exe'
   Sleep 1500
