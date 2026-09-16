@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bindingDisplayLabel, clampCompanionSize, clampedMoveDelta, isAspectLockedPrimitive, primitiveMaxBottom, primitiveTitle, textPrimitiveNaturalWidth } from "./editor-geometry";
+import { bindingDisplayLabel, clampCompanionSize, clampedMoveDelta, isAspectLockedPrimitive, normalizeCompanionPrimitive, primitiveMaxBottom, primitiveTitle, textPrimitiveNaturalWidth } from "./editor-geometry";
 import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
 
 describe("isAspectLockedPrimitive", () => {
@@ -21,6 +21,17 @@ describe("isAspectLockedPrimitive", () => {
     expect(primitiveMaxBottom({ type: "rect", x: 0, y: 0, width: 10, height: 10 })).toBe(240);
     const delta = clampedMoveDelta([{ index: 0, x: cat.x, y: cat.y, width: 48, height: 48, maxBottom: primitiveMaxBottom(cat) }], 0, 100);
     expect(delta.y).toBe(8);
+  });
+  it("repairs companions saved outside the scene instead of shrinking them below 16px", () => {
+    const low = { type: "sprite" as const, assetPath: "/themes/u/ai-pet-1.cba", x: 230, y: 120, width: 16, height: 16 };
+    normalizeCompanionPrimitive(low);
+    expect(low).toMatchObject({ x: 224, y: 112, width: 16, height: 16 });
+    const big = { type: "sprite" as const, assetPath: "/themes/u/ai-pet-2.cba", x: 200, y: 100, width: 100, height: 40 };
+    normalizeCompanionPrimitive(big);
+    expect(big).toMatchObject({ x: 160, y: 48, width: 80, height: 80 });
+    const ui = { type: "rect" as const, x: 10, y: 200, width: 100, height: 30 };
+    normalizeCompanionPrimitive(ui);
+    expect(ui).toMatchObject({ x: 10, y: 200, width: 100, height: 30 });
   });
 });
 

@@ -63,6 +63,20 @@ export function primitiveMaxBottom(primitive: ThemeStudioPrimitive): number {
   return isAspectLockedPrimitive(primitive) ? COMPANION_SCENE_BOTTOM : DISPLAY_SIZE;
 }
 
+/**
+ * Repairs a companion in place so the AI helper accepts it again: square,
+ * 16..80 pixels, fully inside the 240x128 scene. Size wins over position so a
+ * sprite saved too low is moved up instead of shrunk below the minimum.
+ */
+export function normalizeCompanionPrimitive(primitive: ThemeStudioPrimitive): void {
+  if (!isAspectLockedPrimitive(primitive)) return;
+  const size = clampCompanionSize(primitive.width || primitive.height || COMPANION_MIN_SIZE);
+  primitive.width = size;
+  primitive.height = size;
+  primitive.x = clampInt(primitive.x, 0, DISPLAY_SIZE - size);
+  primitive.y = clampInt(primitive.y, 0, COMPANION_SCENE_BOTTOM - size);
+}
+
 export type DragMoveOrigin = {
   height: number;
   index: number;

@@ -3683,6 +3683,19 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/theme-studio/editor-geometry.ts`, its
   test, and this approval record.
 
+## 2026-09-16 — Companions saved outside the scene are repaired on open
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `d384ea8c` found that a design saved or imported with a companion below
+  the scene could be shrunk under 16 px by the new bottom clamp.
+- Approved customer-visible result: **Opening or importing a design moves an
+  animated companion back inside the picture area at its saved size. Enlarging
+  a companion near the bottom edge moves it up instead of stopping early.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`, its
+  test, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding

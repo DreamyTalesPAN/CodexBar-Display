@@ -48,6 +48,7 @@ import {
   COMPANION_MAX_SIZE,
   DISPLAY_SIZE,
   isAspectLockedPrimitive,
+  normalizeCompanionPrimitive,
   primitiveBounds,
   primitiveMaxBottom,
   setPrimitiveField,
@@ -315,6 +316,7 @@ export function AIThemeStudioScreen() {
     setStatus(type === "undo" ? "Last edit undone." : "Edit restored.");
   }
   function load(next: { document: ThemeStudioDocument; id?: string }) {
+    next.document.spec.primitives.forEach(normalizeCompanionPrimitive);
     dispatch({ type: "load", document: next.document });
     setLibraryId(next.id);
     setSelected([]);
@@ -833,6 +835,10 @@ export function AIThemeStudioScreen() {
                           8,
                         );
                         p.width = Math.max(width, textPrimitiveNaturalWidth(p));
+                      } else if (isAspectLockedPrimitive(p)) {
+                        p.width = Math.min(width, height);
+                        p.height = p.width;
+                        normalizeCompanionPrimitive(p);
                       } else {
                         p.width = width;
                         p.height = height;
@@ -1054,13 +1060,9 @@ export function AIThemeStudioScreen() {
                               mutate((d) => {
                                 const p = d.spec.primitives[index];
                                 if (!p) return;
-                                const size = Math.min(
-                                  clampCompanionSize(value),
-                                  primitiveMaxBottom(p) - p.y,
-                                  DISPLAY_SIZE - p.x,
-                                );
-                                p.width = size;
-                                p.height = size;
+                                p.width = clampCompanionSize(value);
+                                p.height = p.width;
+                                normalizeCompanionPrimitive(p);
                               })
                             }
                           />
