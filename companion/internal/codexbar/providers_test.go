@@ -322,6 +322,30 @@ func TestRunProviderHealthProbeStopsWhenCallerCancels(t *testing.T) {
 	}
 }
 
+// The caller's expired deadline is exactly the shared budget the detached
+// context exists to escape; only explicit cancellation may cut probes short.
+func TestWithoutDeadlineForwardsCancelButNotDeadline(t *testing.T) {
+	expired, cancelExpired := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancelExpired()
+	<-expired.Done()
+	detached, stop := withoutDeadline(expired)
+	defer stop()
+	time.Sleep(20 * time.Millisecond)
+	if detached.Err() != nil {
+		t.Fatalf("expired parent deadline must not cancel the detached probes: %v", detached.Err())
+	}
+
+	parent, cancel := context.WithCancel(context.Background())
+	detached, stop = withoutDeadline(parent)
+	defer stop()
+	cancel()
+	select {
+	case <-detached.Done():
+	case <-time.After(time.Second):
+		t.Fatal("explicit cancellation must reach the detached probes")
+	}
+}
+
 // Win-CodexBar 0.56.8 rejects "config disable --provider claude"; the provider
 // is a positional argument there.
 func TestSetProviderEnabledUsesPositionalProviderOnWindows(t *testing.T) {

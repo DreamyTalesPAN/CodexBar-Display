@@ -26,12 +26,17 @@ var providerProbePerProvider = runtime.GOOS == "windows"
 const perProviderProbeTimeout = 18 * time.Second
 
 // withoutDeadline drops the caller's deadline but keeps its values and its
-// cancellation: a client that disconnects or a Companion that shuts down
-// still ends the sequential Windows probes, only the shared time budget is
-// replaced by the per-provider one.
+// explicit cancellation: a client that disconnects or a Companion that shuts
+// down still ends the sequential Windows probes, while the caller's expired
+// deadline is not forwarded -- the shared time budget is replaced by the
+// per-provider one.
 func withoutDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
 	detached, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	stop := context.AfterFunc(ctx, cancel)
+	stop := context.AfterFunc(ctx, func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			cancel()
+		}
+	})
 	return detached, func() {
 		stop()
 		cancel()

@@ -161,10 +161,26 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
     tray.on_menu_event(|app, event| match event.id().as_ref() {
         MENU_OPEN => present_window(app),
         MENU_RELOAD => {
-            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-                let _ = window.reload();
+            // While the runtime UI has not loaded yet (startup timed out or
+            // failed transiently), reloading the bootstrap page would only
+            // show the starting screen again; rerun the preparation instead.
+            // The bootstrap page lives on Tauri's own origin
+            // (http://tauri.localhost), the runtime UI on the Companion's.
+            let runtime_origin = app.state::<Shell>().runtime_origin.lock().unwrap().clone();
+            let runtime_loaded = app
+                .get_webview_window(WINDOW_LABEL)
+                .and_then(|window| window.url().ok())
+                .map(|url| url.origin() == runtime_origin.origin())
+                .unwrap_or(false);
+            if runtime_loaded {
+                if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+                    let _ = window.reload();
+                }
+                present_window(app);
+            } else {
+                let handle = app.clone();
+                std::thread::spawn(move || prepare_and_load(handle));
             }
-            present_window(app);
         }
         MENU_UPDATES => check_for_updates(app.clone()),
         MENU_QUIT => app.exit(0),
