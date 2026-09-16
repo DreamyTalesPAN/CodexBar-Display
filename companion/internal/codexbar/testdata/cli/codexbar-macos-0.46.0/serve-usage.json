@@ -1,0 +1,98 @@
+[
+  {
+    "account": "redacted@example.com",
+    "provider": "codex",
+    "source": "oauth",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "codexResetCredits": {
+        "availableCount": 0,
+        "credits": [],
+        "updatedAt": "2026-09-02T13:53:25Z"
+      },
+      "dataConfidence": "exact",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "loginMethod": "free",
+        "providerID": "codex"
+      },
+      "loginMethod": "free",
+      "primary": {
+        "resetDescription": "Oct 2 at 3:53\u202fPM",
+        "resetsAt": "2026-10-02T13:53:24Z",
+        "usedPercent": 0,
+        "windowMinutes": 43200
+      },
+      "secondary": null,
+      "tertiary": null,
+      "updatedAt": "2026-09-02T13:53:25Z"
+    },
+    "version": "0.152.1"
+  },
+  {
+    "pace": {
+      "primary": {
+        "deltaPercent": -14,
+        "expectedUsedPercent": 61,
+        "stage": "farBehind",
+        "summary": "14% in reserve | Expected 61% used | Lasts until reset",
+        "willLastToReset": true
+      },
+      "secondary": {
+        "deltaPercent": 10,
+        "etaSeconds": 275526,
+        "expectedUsedPercent": 16,
+        "stage": "ahead",
+        "summary": "10% in deficit | Expected 16% used | Runs out in 3d 4h",
+        "willLastToReset": false
+      }
+    },
+    "provider": "claude",
+    "source": "web",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "accountOrganization": "redacted@example.com's Organization",
+      "extraRateWindows": [
+        {
+          "id": "claude-weekly-scoped-fable",
+          "title": "Fable only",
+          "window": {
+            "resetsAt": "2026-09-08T10:59:59Z",
+            "usedPercent": 39,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "accountOrganization": "redacted@example.com's Organization",
+        "loginMethod": "Claude Max 20x",
+        "providerID": "claude"
+      },
+      "loginMethod": "Claude Max 20x",
+      "primary": {
+        "resetDescription": "Sep 2 at 5:49PM",
+        "resetsAt": "2026-09-02T15:49:59Z",
+        "usedPercent": 47,
+        "windowMinutes": 300
+      },
+      "providerCost": {
+        "balance": 0,
+        "currencyCode": "EUR",
+        "limit": 100,
+        "period": "Monthly cap",
+        "updatedAt": "2026-09-02T13:53:24Z",
+        "used": 0
+      },
+      "secondary": {
+        "resetDescription": "Sep 8 at 12:59PM",
+        "resetsAt": "2026-09-08T10:59:59Z",
+        "usedPercent": 26,
+        "windowMinutes": 10080
+      },
+      "tertiary": null,
+      "updatedAt": "2026-09-02T13:53:26Z"
+    },
+    "version": "2.1.252"
+  }
+]

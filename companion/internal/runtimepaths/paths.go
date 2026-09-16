@@ -2,23 +2,25 @@ package runtimepaths
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 )
 
 const (
-	DisplayStreamOutLogEnv                    = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
-	DisplayWriterLockEnv                      = "CODEXBAR_DISPLAY_WRITER_LOCK"
-	DisplayStreamLaunchAgentLabelEnv          = "CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL"
-	FirmwareUpdateLogEnv                      = "CODEXBAR_DISPLAY_FIRMWARE_UPDATE_LOG"
-	LegacyDisplayStreamLaunchAgentLabel       = "com.codexbar-display.daemon"
-	displayStreamOutLog                       = "daemon.out.log"
-	firmwareUpdateLog                         = "firmware-update.log"
-	FirmwareUpdateLogMaxBytes           int64 = 512 * 1024
-	DisplayStreamLogMaxBytes            int64 = 1024 * 1024
-	DisplayStreamLogTailBytes           int64 = 64 * 1024
-	DisplayStreamMarkerRepeatBytes      int64 = 32 * 1024
-	DisplayStreamLogRecordMaxBytes      int64 = 8 * 1024
+	DisplayStreamOutLogEnv              = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
+	DisplayWriterLockEnv                = "CODEXBAR_DISPLAY_WRITER_LOCK"
+	DisplayStreamLaunchAgentLabelEnv    = "CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL"
+	FirmwareUpdateLogEnv                = "CODEXBAR_DISPLAY_FIRMWARE_UPDATE_LOG"
+	LegacyDisplayStreamLaunchAgentLabel = "com.codexbar-display.daemon"
+	// ShellDisplayStreamLaunchAgentLabel is the runtime registered by the
+	// Mac App and the Windows shell (windows/src-tauri RUNTIME_LABEL).
+	ShellDisplayStreamLaunchAgentLabel       = "shop.vibetv.control-center.runtime"
+	displayStreamOutLog                      = "daemon.out.log"
+	firmwareUpdateLog                        = "firmware-update.log"
+	FirmwareUpdateLogMaxBytes          int64 = 512 * 1024
+	DisplayStreamLogMaxBytes           int64 = 1024 * 1024
+	DisplayStreamLogTailBytes          int64 = 64 * 1024
+	DisplayStreamMarkerRepeatBytes     int64 = 32 * 1024
+	DisplayStreamLogRecordMaxBytes     int64 = 8 * 1024
 )
 
 // DisplayWriterLock returns the per-user lock shared by every Companion daemon.
@@ -40,7 +42,7 @@ func DisplayWriterLock(home string) string {
 		return ""
 	}
 
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "run", "display-writer.lock")
+	return Path(home, "run", "display-writer.lock")
 }
 
 // DisplayStreamOutLog returns the shared display-worker log used by both the
@@ -63,7 +65,7 @@ func DisplayStreamOutLog(home string) string {
 		return ""
 	}
 
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
+	return Path(home, "logs", displayStreamOutLog)
 }
 
 // FirmwareUpdateLog returns the file that keeps the firmware updater's raw
@@ -86,7 +88,7 @@ func FirmwareUpdateLog(home string) string {
 		return ""
 	}
 
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", firmwareUpdateLog)
+	return Path(home, "logs", firmwareUpdateLog)
 }
 
 // DisplayStreamOutLogArchive is the single bounded archive retained when the

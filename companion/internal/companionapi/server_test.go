@@ -3224,6 +3224,34 @@ func TestUsageTreatsExplicitZeroCostAsTokenResult(t *testing.T) {
 	}
 }
 
+// Win-CodexBar reports a complete scan without any usage as knownZero with
+// no daily rows and no timestamp. That is a result, not "history unavailable".
+func TestUsageKeepsKnownZeroTokenHistory(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used"},
+				Meta:        codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{KnownZero: true}},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Providers) != 1 || got.Providers[0].Cost == nil || !got.Providers[0].Cost.KnownZero {
+		t.Fatalf("known-zero history must reach the UI as a cost result, got %s", rec.Body.String())
+	}
+}
+
 func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 12, 30, 0, 0, time.UTC)
@@ -3397,8 +3425,9 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
 		t.Fatalf("unexpected frame identity: %+v", got.Frame)
 	}
-	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
-		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	// "secondary" is the weekly lane; the session lane stays unavailable.
+	if got.Frame.Session != 0 || got.Frame.Weekly != 75 || got.Frame.ResetSec != 490812 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
@@ -3439,8 +3468,9 @@ func TestDisplayFrameLatestUsesUsageSlotsWhenUsageWindowsPlaceholder(t *testing.
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
-		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	// "secondary" is the weekly lane; the session lane stays unavailable.
+	if got.Frame.Session != 0 || got.Frame.Weekly != 75 || got.Frame.ResetSec != 490812 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("expected usageSlots to drive legacy preview values, got %+v", got.Frame)
 	}
 	if len(got.Frame.UsageWindows) != 2 ||
@@ -3478,7 +3508,7 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	}
 
 	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
-	wantService := fmt.Sprintf("gui/%d/shop.vibetv.control-center.runtime", os.Getuid())
+	wantService := "shop.vibetv.control-center.runtime"
 	if gotService != wantService {
 		t.Fatalf("expected launchctl service %q, got %q", wantService, gotService)
 	}

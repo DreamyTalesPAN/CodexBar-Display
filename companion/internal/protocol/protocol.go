@@ -68,37 +68,37 @@ type ClockSchedule struct {
 }
 
 type Frame struct {
-	V                     int             `json:"v"`
-	Provider              string          `json:"provider,omitempty"`
-	Label                 string          `json:"label,omitempty"`
-	Session               int             `json:"session,omitempty"`
-	Weekly                int             `json:"weekly,omitempty"`
-	ResetSec              int64           `json:"resetSecs,omitempty"`
-	ResetAgeSec           int64           `json:"resetAgeSecs,omitempty"`
-	ResetTrustSec         int64           `json:"resetTrustSecs,omitempty"`
-	ResetSource           string          `json:"resetSource,omitempty"`
-	ResetTrust            string          `json:"resetTrust,omitempty"`
-	UsageUnavailable      bool            `json:"usageUnavailable,omitempty"`
-	SessionUnavailable    bool            `json:"sessionUnavailable,omitempty"`
-	WeeklyUnavailable     bool            `json:"weeklyUnavailable,omitempty"`
-	UsageMode             string          `json:"usageMode,omitempty"`
-	UsageWindows          []UsageWindow   `json:"usageWindows,omitempty"`
-	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
+	V                  int           `json:"v"`
+	Provider           string        `json:"provider,omitempty"`
+	Label              string        `json:"label,omitempty"`
+	Session            int           `json:"session,omitempty"`
+	Weekly             int           `json:"weekly,omitempty"`
+	ResetSec           int64         `json:"resetSecs,omitempty"`
+	ResetAgeSec        int64         `json:"resetAgeSecs,omitempty"`
+	ResetTrustSec      int64         `json:"resetTrustSecs,omitempty"`
+	ResetSource        string        `json:"resetSource,omitempty"`
+	ResetTrust         string        `json:"resetTrust,omitempty"`
+	UsageUnavailable   bool          `json:"usageUnavailable,omitempty"`
+	SessionUnavailable bool          `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable  bool          `json:"weeklyUnavailable,omitempty"`
+	UsageMode          string        `json:"usageMode,omitempty"`
+	UsageWindows       []UsageWindow `json:"usageWindows,omitempty"`
+	UsageSlots         []UsageSlot   `json:"usageSlots,omitempty"`
 	// ProviderSlots lists every configured provider with its soonest usage
 	// reset across that provider's windows. Unlike UsageWindows, which carry
 	// the currently displayed provider, these rows span all providers so a
 	// theme can render "Claude 1h / Codex 3h" style overviews.
-	ProviderSlots         []UsageSlot     `json:"providerSlots,omitempty"`
-	Time                  string          `json:"time,omitempty"`
-	Date                  string          `json:"date,omitempty"`
-	NextClockTransition   *ClockSchedule  `json:"clockSchedule,omitempty"`
-	SessionTokens         int64           `json:"sessionTokens,omitempty"`
-	WeekTokens            int64           `json:"weekTokens,omitempty"`
-	TotalTokens           int64           `json:"totalTokens,omitempty"`
+	ProviderSlots       []UsageSlot    `json:"providerSlots,omitempty"`
+	Time                string         `json:"time,omitempty"`
+	Date                string         `json:"date,omitempty"`
+	NextClockTransition *ClockSchedule `json:"clockSchedule,omitempty"`
+	SessionTokens       int64          `json:"sessionTokens,omitempty"`
+	WeekTokens          int64          `json:"weekTokens,omitempty"`
+	TotalTokens         int64          `json:"totalTokens,omitempty"`
 	// TokenTotalsKnown marks a completed token-history result on the wire.
 	// Zero totals are omitted by omitempty, so without this marker a device
 	// cannot tell a genuine all-zero history from an unavailable one.
-	TokenTotalsKnown bool `json:"tokenTotalsKnown,omitempty"`
+	TokenTotalsKnown      bool            `json:"tokenTotalsKnown,omitempty"`
 	Activity              string          `json:"activity,omitempty"`
 	Theme                 string          `json:"theme,omitempty"`
 	ThemeSpec             json.RawMessage `json:"themeSpec,omitempty"`
@@ -275,7 +275,28 @@ func applyLegacyUsageProjection(f Frame) Frame {
 	if len(f.UsageWindows) == 0 {
 		return f
 	}
-	f.Session = f.UsageWindows[0].Percent
+	// The legacy lanes are named, not positional: a provider whose primary
+	// window is informational (Win-CodexBar's session notice) reports only
+	// "weekly", and that percentage must not land in Session. Windows
+	// without either structural id keep the positional projection.
+	// The direct CLI parser names the same lanes "primary" and "secondary"
+	// (codexbar.parseUsageWindows), so both spellings are structural here.
+	session, hasSession := usageWindowByID(f.UsageWindows, "session", "primary")
+	weekly, hasWeekly := usageWindowByID(f.UsageWindows, "weekly", "secondary")
+	if !hasSession && !hasWeekly {
+		session, hasSession = f.UsageWindows[0], true
+		if len(f.UsageWindows) > 1 {
+			weekly, hasWeekly = f.UsageWindows[1], true
+		}
+	}
+	f.Session = 0
+	if hasSession {
+		f.Session = session.Percent
+	}
+	f.Weekly = 0
+	if hasWeekly {
+		f.Weekly = weekly.Percent
+	}
 	f.ResetSec = 0
 	for _, window := range f.UsageWindows {
 		if window.ResetSec > 0 {
@@ -283,14 +304,20 @@ func applyLegacyUsageProjection(f Frame) Frame {
 			break
 		}
 	}
-	if len(f.UsageWindows) > 1 {
-		f.Weekly = f.UsageWindows[1].Percent
-	} else {
-		f.Weekly = 0
-	}
-	f.SessionUnavailable = false
-	f.WeeklyUnavailable = len(f.UsageWindows) < 2
+	f.SessionUnavailable = !hasSession
+	f.WeeklyUnavailable = !hasWeekly
 	return f
+}
+
+func usageWindowByID(windows []UsageWindow, ids ...string) (UsageWindow, bool) {
+	for _, id := range ids {
+		for _, window := range windows {
+			if window.ID == id {
+				return window, true
+			}
+		}
+	}
+	return UsageWindow{}, false
 }
 
 func reanchorResetSec(resetSec int64, age int64) int64 {

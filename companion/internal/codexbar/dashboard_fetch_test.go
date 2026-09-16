@@ -54,6 +54,45 @@ func TestFetchDashboardProvidersUsesSnapshotAsAuthority(t *testing.T) {
 	}
 }
 
+func TestFetchDashboardProvidersFiltersWindowsInformationalSession(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[{"id":"codex","windows":[
+				{"kind":"session","label":"Session","usedPercent":0},
+				{"kind":"weekly","label":"Weekly","usedPercent":26}
+			]}]}`))
+		case dashboardUsagePath:
+			_, _ = w.Write([]byte(`[{"provider":"codex","usage":{
+				"primary":{"is_informational":true,"used_percent":0,"window_minutes":300},
+				"secondary":{"is_informational":false,"used_percent":26,"window_minutes":10080}
+			}}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("expected one provider, got %+v", providers)
+	}
+	got := providers[0]
+	if got.Frame.UsageUnavailable || got.Stale || len(got.Frame.UsageWindows) != 1 || len(got.Meta.Windows) != 1 {
+		t.Fatalf("expected only real Weekly quota: %+v", got)
+	}
+	if window := got.Frame.UsageWindows[0]; window.ID != "weekly" || window.Label != "Weekly" || window.Percent != 26 {
+		t.Fatalf("weekly quota lost: %+v", window)
+	}
+}
+
 func TestFetchDashboardProvidersKeepsLaterWindowResetTrusted(t *testing.T) {
 	server := newDashboardFetchTestServer(t, `{
 	  "schemaVersion": 1,
@@ -148,7 +187,11 @@ func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(snapshot))
 	})
-	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.Query().Get("provider") != "all" {
+			http.Error(w, "usage requires bearer and all providers", http.StatusUnauthorized)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 		  {

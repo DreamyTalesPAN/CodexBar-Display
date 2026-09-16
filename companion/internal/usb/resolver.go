@@ -48,6 +48,19 @@ func ResolvePort(explicit string) (string, error) {
 			errors.New("an explicit serial port is required for recovery"),
 		)
 	}
+	if isCOMPort(explicit) {
+		ports, err := ListPorts()
+		if err != nil {
+			return "", err
+		}
+		for _, port := range ports {
+			if samePort(explicit, port) {
+				return port, nil
+			}
+		}
+		return "", wrapTransportError(errcode.TransportSerialPortNotFound, "resolve-explicit-port", explicit,
+			"List serial ports and pass an available COM port via --port.", errors.New("serial port not found"))
+	}
 	if _, err := os.Stat(explicit); err != nil {
 		return "", wrapTransportError(
 			errcode.TransportSerialPortNotFound,
@@ -198,7 +211,7 @@ func cableSerialCandidates(ports []string, goos string) []string {
 	for _, candidate := range ports {
 		candidate = strings.TrimSpace(candidate)
 		lower := strings.ToLower(candidate)
-		if candidate == "" || !strings.Contains(lower, "usb") {
+		if candidate == "" || (!strings.Contains(lower, "usb") && !isCOMPort(candidate)) {
 			continue
 		}
 		// macOS exposes one USB-UART twice. /dev/cu.* is the callout endpoint
@@ -301,4 +314,23 @@ func isSupportedCableBoard(board string) bool {
 	default:
 		return false
 	}
+}
+
+func isCOMPort(port string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(port))
+	if !strings.HasPrefix(upper, "COM") || len(upper) <= 3 {
+		return false
+	}
+	for _, c := range upper[3:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+func samePort(a, b string) bool {
+	if isCOMPort(a) && isCOMPort(b) {
+		return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+	}
+	return a == b
 }

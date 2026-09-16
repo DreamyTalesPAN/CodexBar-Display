@@ -131,7 +131,10 @@ func cloneDeviceHello(hello protocol.DeviceHello) protocol.DeviceHello {
 func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.deviceHelloLocked(path)
+}
 
+func (s *Sender) deviceHelloLocked(path string) (protocol.DeviceHello, error) {
 	if _, err := s.ensurePort(path); err != nil {
 		return protocol.DeviceHello{}, err
 	}

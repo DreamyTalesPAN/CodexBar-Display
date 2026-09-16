@@ -37,6 +37,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
@@ -136,8 +137,9 @@ const (
 	localNetworkDenialProbeMaxElapsed = 250 * time.Millisecond
 )
 
-var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
-	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
+var printDisplayStreamService = func(ctx context.Context, label string) ([]byte, error) {
+	status, err := service.New(label, "", false).Status(ctx)
+	return []byte(status.DiagnosticOutput()), err
 }
 
 var displayStreamLogKeys = []string{
@@ -185,6 +187,9 @@ type Options struct {
 	PauseDisplayStream   func(bool)
 	WakeDisplayStream    func()
 	RenderDisplayStream  func()
+	// Supplied only by the process supervising the actual worker. Running alone
+	// never establishes frame freshness or device readiness.
+	DisplayStreamRunning func() bool
 }
 
 type Server struct {
@@ -226,6 +231,7 @@ type Server struct {
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
 	renderDisplayStream    func()
+	displayStreamRunning   func() bool
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
 	updateHoldUntil        time.Time
@@ -874,6 +880,8 @@ type usageCostInfo struct {
 	LatestTokens      int64              `json:"latestTokens,omitempty"`
 	TopModel          string             `json:"topModel,omitempty"`
 	Daily             []usageCostDayInfo `json:"daily,omitempty"`
+	// KnownZero: the engine finished a complete scan and found no usage.
+	KnownZero bool `json:"knownZero,omitempty"`
 }
 
 type usageCostDayInfo struct {
@@ -988,30 +996,33 @@ func New(opts Options) (*Server, error) {
 		subnetTargets:          localSubnetTargets,
 		localNetworkAvailable:  hostHasUsableNetwork,
 		defaultWiFiTarget:      setup.DefaultWiFiTarget,
-		streamStatus:           inspectDisplayStream,
-		waitRender:             nil,
-		refreshStream:          opts.RefreshDisplayStream,
-		pauseDisplayStream:     opts.PauseDisplayStream,
-		wakeDisplayStream:      opts.WakeDisplayStream,
-		renderDisplayStream:    opts.RenderDisplayStream,
-		pairAttempts:           defaultPairAttempts,
-		pairAttemptTimeout:     defaultPairAttemptTimeout,
-		pairRetryGap:           defaultPairRetryGap,
-		repairFlights:          make(map[string]*deviceRepairFlight),
-		helloProbeCache:        make(map[string]helloProbeSnapshot),
-		helloProbeFlights:      make(map[string]*helloProbeFlight),
-		healthProbeCache:       make(map[string]healthProbeSnapshot),
-		healthProbeFlights:     make(map[string]*healthProbeFlight),
-		probeCacheTime:         deviceProbeCacheTime,
-		connectionStates:       make(map[string]*configuredDeviceConnection),
-		now:                    time.Now,
-		displayVerifications:   make(map[string]displayVerification),
-		allowMacAppSelfUpdate:  false,
-		installationMode:       macAppInstallationMode(),
-		loadUsage:              daemon.LoadPersistedUsage,
-		probeProviderSetup:     codexbar.ProbeProviderSetup,
-		probeExactProvider:     codexbar.ProbeProviderSetupForProvider,
-		exactProviderProbes:    make(map[string]*exactProviderProbeFlight),
+		streamStatus: func(ctx context.Context, target string) displayStreamInfo {
+			return inspectDisplayStreamAfterRunning(ctx, target, time.Time{}, opts.DisplayStreamRunning)
+		},
+		displayStreamRunning:  opts.DisplayStreamRunning,
+		waitRender:            nil,
+		refreshStream:         opts.RefreshDisplayStream,
+		pauseDisplayStream:    opts.PauseDisplayStream,
+		wakeDisplayStream:     opts.WakeDisplayStream,
+		renderDisplayStream:   opts.RenderDisplayStream,
+		pairAttempts:          defaultPairAttempts,
+		pairAttemptTimeout:    defaultPairAttemptTimeout,
+		pairRetryGap:          defaultPairRetryGap,
+		repairFlights:         make(map[string]*deviceRepairFlight),
+		helloProbeCache:       make(map[string]helloProbeSnapshot),
+		helloProbeFlights:     make(map[string]*helloProbeFlight),
+		healthProbeCache:      make(map[string]healthProbeSnapshot),
+		healthProbeFlights:    make(map[string]*healthProbeFlight),
+		probeCacheTime:        deviceProbeCacheTime,
+		connectionStates:      make(map[string]*configuredDeviceConnection),
+		now:                   time.Now,
+		displayVerifications:  make(map[string]displayVerification),
+		allowMacAppSelfUpdate: false,
+		installationMode:      macAppInstallationMode(),
+		loadUsage:             daemon.LoadPersistedUsage,
+		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
+		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
@@ -2265,7 +2276,7 @@ func (s *Server) lastGoodDisplayFramePath() string {
 	if home == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
+	return runtimepaths.Path(home, "last-good-frame.json")
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -2953,11 +2964,13 @@ func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {
 		LatestTokens:      meta.Cost.LatestTokens,
 		TopModel:          strings.TrimSpace(meta.Cost.TopModel),
 		Daily:             usageCostDaysFromMeta(meta.Cost.Daily),
+		KnownZero:         meta.Cost.KnownZero,
 	}
 	if cost.CurrencyCode == "" {
 		cost.CurrencyCode = "USD"
 	}
-	if cost.TodayCostUSD <= 0 &&
+	if !cost.KnownZero &&
+		cost.TodayCostUSD <= 0 &&
 		cost.Last30DaysCostUSD <= 0 &&
 		cost.Last30DaysTokens <= 0 &&
 		cost.LatestTokens <= 0 &&
@@ -5818,10 +5831,7 @@ func writeThemeRenderPackFile(destination string, payload []byte) error {
 
 func (s *Server) themeRenderPackPath(themeID string) string {
 	return filepath.Join(
-		s.home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(s.home),
 		themeRenderPackDir,
 		themeID+".json",
 	)
@@ -5833,10 +5843,7 @@ func (s *Server) themeRenderPackRevisionPath(themeID, specPath string) string {
 
 func (s *Server) themeRenderPackRevisionDir(themeID string) string {
 	return filepath.Join(
-		s.home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(s.home),
 		themeRenderPackDir,
 		themeID,
 	)
@@ -9087,6 +9094,12 @@ func currentCompanionAppInfo(installationMode string) companionAppInfo {
 	build := strings.TrimSpace(os.Getenv(macAppBuildEnv))
 	appPath := companionAppBundlePath()
 	installed := strings.HasPrefix(filepath.Clean(appPath), filepath.Clean("/Applications")+string(os.PathSeparator))
+	if runtime.GOOS == "windows" {
+		// The Windows shell installs the companion next to its own exe; the
+		// shell runs the updater itself, so "installed" means the shell is
+		// present, not any particular directory.
+		installed = appPath != ""
+	}
 	return companionAppInfo{
 		Version:                 version,
 		Build:                   build,
@@ -9119,6 +9132,9 @@ func companionAppBundlePath() string {
 	if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
 		executable = resolved
 	}
+	if runtime.GOOS == "windows" {
+		return windowsShellAppPath(filepath.Dir(executable))
+	}
 	helpersDir := filepath.Dir(executable)
 	if filepath.Base(helpersDir) != "Helpers" {
 		return ""
@@ -9132,6 +9148,15 @@ func companionAppBundlePath() string {
 		return ""
 	}
 	return filepath.Clean(appDir)
+}
+
+const windowsShellExecutable = "VibeTVControlCenter.exe"
+
+func windowsShellAppPath(dir string) string {
+	if info, err := os.Stat(filepath.Join(dir, windowsShellExecutable)); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return filepath.Clean(dir)
 }
 
 func minInt(a, b int) int {
@@ -9422,6 +9447,10 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 }
 
 func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	return inspectDisplayStreamAfterRunning(ctx, target, notBefore, nil)
+}
+
+func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBefore time.Time, running func() bool) displayStreamInfo {
 	target = publicTarget(target)
 	stream := displayStreamInfo{Target: target}
 	if target == "" {
@@ -9429,13 +9458,17 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 		return stream
 	}
 
-	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), displayStreamLaunchAgentLabel())
-	output, err := printDisplayStreamService(ctx, service)
-	state := parseDisplayStreamLaunchState(string(output))
-	stream.Running = displayStreamLaunchStateRunning(state)
-	if err != nil {
-		stream.Detail = "Display stream is not loaded."
-		return stream
+	if running != nil {
+		stream.Running = running()
+	} else {
+		output, err := printDisplayStreamService(ctx, displayStreamLaunchAgentLabel())
+		state := parseDisplayStreamLaunchState(string(output))
+		stream.Running = displayStreamLaunchStateRunning(state)
+		if err != nil {
+			stream.Running = false
+			stream.Detail = "Display stream is not loaded."
+			return stream
+		}
 	}
 	if !stream.Running {
 		stream.Detail = "Display stream is not running."
@@ -9444,6 +9477,11 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 
 	logPath := displayStreamOutLogPath()
 	boundary, boundaryOK := displayStreamLogBoundary(logPath)
+	if running != nil {
+		// The in-process worker always writes a session marker, including with
+		// the legacy label. Frames from a previous daemon are not liveness proof.
+		boundary, boundaryOK = latestDisplayStreamStartMarker(logPath, displayStreamLaunchAgentLabel())
+	}
 	if !boundaryOK {
 		stream.Detail = "Display stream is starting."
 		return stream
@@ -9501,7 +9539,10 @@ func (s *Server) waitForDisplayStreamMode(
 	waitTime time.Duration,
 ) displayStreamInfo {
 	return waitForDisplayStreamAfterProbe(
-		ctx, target, notBefore, stopOnPairingError, waitTime, inspectDisplayStreamAfter,
+		ctx, target, notBefore, stopOnPairingError, waitTime,
+		func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+			return inspectDisplayStreamAfterRunning(ctx, target, notBefore, s.displayStreamRunning)
+		},
 		func(stream displayStreamInfo) bool {
 			return providerSetupStreamForTarget(&stream, target) &&
 				providerSetupNeedsCustomerAction(s.providerSetupForStatus())
