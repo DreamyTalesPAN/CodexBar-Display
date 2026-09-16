@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bindingDisplayLabel, isAspectLockedPrimitive, primitiveTitle, textPrimitiveNaturalWidth } from "./editor-geometry";
+import { bindingDisplayLabel, clampCompanionSize, isAspectLockedPrimitive, primitiveTitle, textPrimitiveNaturalWidth } from "./editor-geometry";
 import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
 
 describe("isAspectLockedPrimitive", () => {
@@ -9,6 +9,11 @@ describe("isAspectLockedPrimitive", () => {
     expect(isAspectLockedPrimitive({ type: "sprite", assetPath: "/themes/u/ai-pet-2.cba", x: 0, y: 0 })).toBe(true);
     expect(isAspectLockedPrimitive({ type: "sprite", assetPath: "/themes/u/ai-scene.cba", x: 0, y: 0 })).toBe(false);
     expect(isAspectLockedPrimitive({ type: "rect", x: 0, y: 0, width: 10, height: 20 })).toBe(false);
+  });
+  it("keeps manual companion sizes inside the helper's 16..80 range", () => {
+    expect(clampCompanionSize(100)).toBe(80);
+    expect(clampCompanionSize(5)).toBe(16);
+    expect(clampCompanionSize(48)).toBe(48);
   });
 });
 

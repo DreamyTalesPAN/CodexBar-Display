@@ -42,7 +42,9 @@ export function applyAIThemeCandidate(
     const oldCharacter = current.spec.primitives.find(
       (p) => p.assetPath === ANIMATION,
     );
-    const hasLoop = candidate.spec.primitives.some((p) => p.assetPath === LOOP || isCompanionSprite(p.assetPath));
+    // Only an attached scene loop dictates the artwork rectangle; independent
+    // companion sprites leave manually placed artwork where the customer put it.
+    const hasLoop = candidate.spec.primitives.some((p) => p.assetPath === LOOP);
     next.spec.primitives = next.spec.primitives.filter(
       (p) => !managed(p.assetPath),
     );

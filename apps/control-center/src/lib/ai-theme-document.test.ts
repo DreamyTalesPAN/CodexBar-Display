@@ -50,6 +50,16 @@ function candidate() {
   return buildAIThemeAnimationCandidateFromRGBA(concept, background, frames);
 }
 describe("AI scene document", () => {
+  it("keeps manually placed artwork geometry when only companion sprites change", () => {
+    const c = candidate();
+    c.spec.primitives = c.spec.primitives.filter((p) => p.assetPath !== ANIMATION);
+    c.spec.primitives.splice(1, 0, { type: "sprite", assetPath: "/themes/u/ai-pet-1.cba", x: 170, y: 72, width: 48, height: 48, fps: 4 });
+    c.assets["/themes/u/ai-pet-1.cba"] = { data: "", encoding: "base64", contentType: "application/octet-stream" };
+    const d: ThemeStudioDocument = { assets: { ...c.assets }, packName: "Mine", spec: { ...c.spec, primitives: c.spec.primitives.map((p) => ({ ...p })) } };
+    d.spec.primitives[0] = { ...d.spec.primitives[0], x: 8, y: 12, width: 200, height: 100 };
+    const result = applyAIThemeCandidate(d, c, "auto");
+    expect(result.spec.primitives.find((p) => p.assetPath === ART)).toMatchObject({ x: 8, y: 12, width: 200, height: 100 });
+  });
   it("sends all eight previous frames for refinement instead of truncating the return leg", () => {
     const canvases: Array<{width:number;height:number; calls:number[][]}> = [];
     const fakeDocument={createElement:()=>{

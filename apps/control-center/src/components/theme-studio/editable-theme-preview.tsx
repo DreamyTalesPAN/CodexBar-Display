@@ -6,6 +6,7 @@ import type { ThemeStudioSpec } from "@/lib/theme-studio";
 import { ThemeSpecPreview, type ThemeRenderPack } from "../live-vibetv-preview";
 import {
   aspectLockedResizeSize,
+  clampCompanionSize,
   clampInt,
   clampedMoveDelta,
   DISPLAY_SIZE,
@@ -225,9 +226,9 @@ export function EditableThemePreview({
         ),
         width: clampInt(point.x - drag.originX - drag.edgeOffsetX, 1, maxWidth),
       };
-      onResize(
-        drag.index,
-        event.shiftKey || isAspectLockedPrimitive(primitive)
+      const aspectLocked = isAspectLockedPrimitive(primitive);
+      let size =
+        event.shiftKey || aspectLocked
           ? aspectLockedResizeSize({
               maxHeight,
               maxWidth,
@@ -236,8 +237,12 @@ export function EditableThemePreview({
               targetHeight: freeSize.height,
               targetWidth: freeSize.width,
             })
-          : freeSize,
-      );
+          : freeSize;
+      if (aspectLocked) {
+        const side = clampCompanionSize(Math.min(size.width, maxWidth, maxHeight));
+        size = { height: side, width: side };
+      }
+      onResize(drag.index, size);
       return;
     }
     if (drag.origins.length === 0) {

@@ -42,8 +42,10 @@ import { DesignElementsPanel } from "./design-elements-panel";
 import { createDesignElement, isTypingTarget, LIVE_READINGS, moveLayer, pinnedElement, readingKey, setReading, swapRowPositions, type AddElementKind } from "./design-controls";
 import { ColorField, NumberField } from "./editor-fields";
 import {
+  clampCompanionSize,
   clampedMoveDelta,
   clampInt,
+  COMPANION_MAX_SIZE,
   DISPLAY_SIZE,
   isAspectLockedPrimitive,
   primitiveBounds,
@@ -1045,12 +1047,12 @@ export function AIThemeStudioScreen() {
                           <NumberField
                             label="Size"
                             value={primitive.width || 24}
-                            max={240}
+                            max={COMPANION_MAX_SIZE}
                             onChange={(value) =>
                               mutate((d) => {
                                 const p = d.spec.primitives[index];
                                 if (!p) return;
-                                const size = Math.max(1, Math.min(240, value));
+                                const size = clampCompanionSize(value);
                                 p.width = size;
                                 p.height = size;
                               })

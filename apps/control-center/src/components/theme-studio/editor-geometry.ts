@@ -43,9 +43,17 @@ export type ResizeSize = {
   width: number;
 };
 
+export const COMPANION_MIN_SIZE = 16;
+export const COMPANION_MAX_SIZE = 80;
+
 /** Animated companions are square sprites; they only scale uniformly. */
 export function isAspectLockedPrimitive(primitive: ThemeStudioPrimitive): boolean {
   return primitive.type === "sprite" && isCompanionSprite(primitive.assetPath);
+}
+
+/** Companions render through a fixed firmware buffer, so their display size is bounded. */
+export function clampCompanionSize(size: number): number {
+  return clampInt(size, COMPANION_MIN_SIZE, COMPANION_MAX_SIZE);
 }
 
 export type DragMoveOrigin = {
