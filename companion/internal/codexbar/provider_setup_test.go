@@ -493,9 +493,10 @@ func writeExecutable(t *testing.T, path string) {
 }
 
 // Windows probes each switched-on provider one by one with an 18 s budget
-// each. A shared 20 s deadline over the whole loop would hand the second
-// provider an almost spent context and mark it unavailable, so the per-provider
-// path must not run under the aggregate probe deadline.
+// each. A shared deadline over the whole loop -- the probe's own 20 s or the
+// 25 s the setup handlers put on the request context -- would hand the second
+// provider an almost spent context and mark it unavailable, so the
+// per-provider path must not run under any inherited deadline.
 func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.T) {
 	originalMode := providerProbePerProvider
 	t.Cleanup(func() { providerProbePerProvider = originalMode })
@@ -527,7 +528,9 @@ func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.
 		return []byte(`[{"provider":"` + provider + `","usage":{"primary":{"usedPercent":5}}}]`), nil
 	}
 
-	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	parent, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	got := ProbeProviderSetup(parent, t.TempDir())
 	if got.Status != ProviderReady || len(got.Providers) != 2 {
 		t.Fatalf("unexpected readiness: %+v", got)
 	}
