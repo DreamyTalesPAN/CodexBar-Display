@@ -249,9 +249,11 @@ func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
 	var deadlines []bool
-	runProviderCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+	var timeouts []time.Duration
+	runProviderCommandFn = func(ctx context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
 		_, hasDeadline := ctx.Deadline()
 		deadlines = append(deadlines, hasDeadline)
+		timeouts = append(timeouts, timeout)
 		return []byte(`[{"provider":"` + args[3] + `","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
 	}
 	parent, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -260,7 +262,7 @@ func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T
 		{ID: "codex", Label: "Codex", Enabled: true},
 		{ID: "claude", Label: "Claude", Enabled: true},
 	}
-	raw, err := runProviderHealthProbe(parent, 18*time.Second, "codexbar", settings)
+	raw, err := runProviderHealthProbe(parent, 300*time.Second, "codexbar", settings)
 	if err != nil {
 		t.Fatalf("health probe: %v", err)
 	}
@@ -274,6 +276,13 @@ func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T
 	for i, hasDeadline := range deadlines {
 		if hasDeadline {
 			t.Fatalf("probe %d ran under the shared refresh deadline", i)
+		}
+	}
+	// Without the shared deadline the collector's 300 s timeout must not
+	// become the per-probe budget; a hanging CLI is capped per provider.
+	for i, timeout := range timeouts {
+		if timeout != perProviderProbeTimeout {
+			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
 		}
 	}
 }

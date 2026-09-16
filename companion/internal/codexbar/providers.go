@@ -21,6 +21,10 @@ var runProviderCommandFn = runUsageCommand
 // A variable so the Windows path is testable on the Mac.
 var providerProbePerProvider = runtime.GOOS == "windows"
 
+// perProviderProbeTimeout caps one Windows provider probe, matching the
+// 18 s the setup probe grants each provider.
+const perProviderProbeTimeout = 18 * time.Second
+
 // providerInventoryArgs is the CLI command for the provider inventory.
 // Win-CodexBar 0.56.8 has no JSON inventory (#415), so Windows reads the
 // text form that parseProviderSettings also understands.
@@ -201,12 +205,17 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 	if !providerProbePerProvider {
 		return runProviderCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, statusArgs...)...)
 	}
-	// Each probe gets its own timeout budget (#437): under the caller's
-	// shared deadline (25 s in the background health refresh) a slow first
-	// provider would leave the next one an almost spent context and report
-	// it unavailable although it is healthy. Values such as the config path
-	// are kept; every CLI call still runs under its own timeout.
+	// Each probe gets its own short budget (#437): under the caller's shared
+	// deadline (25 s in the background health refresh) a slow first provider
+	// would leave the next one an almost spent context and report it
+	// unavailable although it is healthy. The inherited deadline is dropped
+	// (values such as the config path are kept) and replaced by a fixed cap
+	// per provider, so a hanging CLI cannot keep the rows "checking" for the
+	// 300 s collector timeout.
 	probeCtx := context.WithoutCancel(ctx)
+	if timeout > perProviderProbeTimeout {
+		timeout = perProviderProbeTimeout
+	}
 	joined := make([]json.RawMessage, 0, len(settings))
 	var lastErr error
 	for i := range settings {
