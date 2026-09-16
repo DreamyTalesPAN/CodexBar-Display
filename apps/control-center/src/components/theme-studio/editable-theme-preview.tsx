@@ -3,15 +3,13 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ThemeStudioSpec } from "@/lib/theme-studio";
-import {
-  ThemeSpecPreview,
-  type ThemeRenderPack,
-} from "../live-vibetv-preview";
+import { ThemeSpecPreview, type ThemeRenderPack } from "../live-vibetv-preview";
 import {
   aspectLockedResizeSize,
   clampInt,
   clampedMoveDelta,
   DISPLAY_SIZE,
+  isAspectLockedPrimitive,
   isFullCanvasRect,
   normalizeSelectedIndices,
   normalizedSelectionBox,
@@ -49,6 +47,9 @@ type DragState =
     };
 
 export function EditableThemePreview({
+  animate,
+  elementLabels,
+  nonInteractiveIndices = [],
   onInteractionCancel,
   onInteractionCommit,
   onInteractionStart,
@@ -61,6 +62,9 @@ export function EditableThemePreview({
   selectedIndices,
   spec,
 }: {
+  animate?: boolean;
+  elementLabels?: string[];
+  nonInteractiveIndices?: number[];
   onInteractionCancel: () => void;
   onInteractionCommit: () => void;
   onInteractionStart: () => void;
@@ -75,6 +79,7 @@ export function EditableThemePreview({
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const gestureRectRef = useRef<DOMRect | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() =>
     typeof window === "undefined"
@@ -91,7 +96,8 @@ export function EditableThemePreview({
   }, []);
 
   function pointerPoint(event: ReactPointerEvent<SVGElement>) {
-    const rect = svgRef.current?.getBoundingClientRect();
+    // Selection can reveal controls and change the canvas layout mid-gesture.
+    const rect = gestureRectRef.current ?? svgRef.current?.getBoundingClientRect();
     if (!rect) {
       return { x: 0, y: 0 };
     }
@@ -101,12 +107,10 @@ export function EditableThemePreview({
     };
   }
 
-  function startDrag(
-    event: ReactPointerEvent<SVGRectElement>,
-    index: number,
-  ) {
+  function startDrag(event: ReactPointerEvent<SVGRectElement>, index: number) {
     event.preventDefault();
     event.stopPropagation();
+    gestureRectRef.current = svgRef.current?.getBoundingClientRect() ?? null;
     const point = pointerPoint(event);
     const primitive = spec.primitives[index];
     if (isFullCanvasRect(primitive)) {
@@ -123,7 +127,9 @@ export function EditableThemePreview({
       !event.shiftKey &&
       !event.metaKey &&
       !event.ctrlKey;
-    const moveIndices = shouldMoveSelection ? normalizedSelection : [index];
+    const moveIndices = (
+      shouldMoveSelection ? normalizedSelection : [index]
+    ).filter((i) => !nonInteractiveIndices.includes(i));
     dragRef.current = {
       mode: "move",
       origins: moveIndices.flatMap((moveIndex) => {
@@ -132,13 +138,15 @@ export function EditableThemePreview({
           return [];
         }
         const bounds = primitiveBounds(movePrimitive);
-        return [{
-          height: bounds.height,
-          index: moveIndex,
-          width: bounds.width,
-          x: movePrimitive.x,
-          y: movePrimitive.y,
-        }];
+        return [
+          {
+            height: bounds.height,
+            index: moveIndex,
+            width: bounds.width,
+            x: movePrimitive.x,
+            y: movePrimitive.y,
+          },
+        ];
       }),
       startX: point.x,
       startY: point.y,
@@ -152,6 +160,7 @@ export function EditableThemePreview({
 
   function startSelection(event: ReactPointerEvent<SVGRectElement>) {
     event.preventDefault();
+    gestureRectRef.current = svgRef.current?.getBoundingClientRect() ?? null;
     const point = pointerPoint(event);
     dragRef.current = {
       currentX: point.x,
@@ -164,12 +173,10 @@ export function EditableThemePreview({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function startResize(
-    event: ReactPointerEvent<SVGElement>,
-    index: number,
-  ) {
+  function startResize(event: ReactPointerEvent<SVGElement>, index: number) {
     event.preventDefault();
     event.stopPropagation();
+    gestureRectRef.current = svgRef.current?.getBoundingClientRect() ?? null;
     const point = pointerPoint(event);
     const primitive = spec.primitives[index];
     const bounds = primitiveBounds(primitive);
@@ -211,12 +218,16 @@ export function EditableThemePreview({
       const maxWidth = DISPLAY_SIZE - drag.originX;
       const maxHeight = DISPLAY_SIZE - drag.originY;
       const freeSize = {
-        height: clampInt(point.y - drag.originY - drag.edgeOffsetY, 1, maxHeight),
+        height: clampInt(
+          point.y - drag.originY - drag.edgeOffsetY,
+          1,
+          maxHeight,
+        ),
         width: clampInt(point.x - drag.originX - drag.edgeOffsetX, 1, maxWidth),
       };
       onResize(
         drag.index,
-        event.shiftKey
+        event.shiftKey || isAspectLockedPrimitive(primitive)
           ? aspectLockedResizeSize({
               maxHeight,
               maxWidth,
@@ -249,6 +260,7 @@ export function EditableThemePreview({
   function stopDrag(outcome: "cancel" | "commit" | "selection" = "commit") {
     const drag = dragRef.current;
     dragRef.current = null;
+    gestureRectRef.current = null;
     setSelectionBox(null);
     if (!drag || drag.mode === "select" || outcome === "selection") {
       return;
@@ -276,7 +288,9 @@ export function EditableThemePreview({
       onSelectMany(
         box.width < 2 && box.height < 2
           ? []
-          : selectedPrimitiveIndices(spec.primitives, box),
+          : selectedPrimitiveIndices(spec.primitives, box).filter(
+              (i) => !nonInteractiveIndices.includes(i),
+            ),
       );
     }
     stopDrag(drag.mode === "select" ? "selection" : "commit");
@@ -297,7 +311,7 @@ export function EditableThemePreview({
   return (
     <div className="relative aspect-square w-full max-w-[480px] overflow-hidden border border-[#1B1B1B] bg-black p-0">
       <ThemeSpecPreview
-        animate={!prefersReducedMotion}
+        animate={animate ?? !prefersReducedMotion}
         pack={pack}
         status="ready"
         themeId={spec.themeId}
@@ -322,13 +336,14 @@ export function EditableThemePreview({
           y="0"
         />
         {spec.primitives.map((primitive, index) => {
+          if (nonInteractiveIndices.includes(index)) return null;
           const bounds = primitiveBounds(primitive);
           const selected = selectedIndices.includes(index);
           const active = selectedIndex === index;
           return (
             <g key={`${primitive.type}-${index}`}>
               <rect
-                aria-label={`Select ${primitive.type} ${index + 1}`}
+                aria-label={`Select ${elementLabels?.[index] || primitive.type} ${index + 1}`}
                 className="cursor-move"
                 fill="transparent"
                 height={Math.max(8, bounds.height)}

@@ -3,6 +3,8 @@ import {
   type ThemeStudioPrimitive,
   type ThemeStudioSpec,
 } from "@/lib/theme-studio";
+import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
+import { isCompanionSprite } from "@/lib/ai-theme";
 
 export const DISPLAY_SIZE = 240;
 
@@ -23,10 +25,10 @@ const DEFAULT_FRAME = {
   ],
   usageSlot1Label: "Weekly",
   usageSlot1Percent: 62,
-  usageSlot1Reset: "1h",
+  usageSlot1Reset: "1h 0m",
   usageSlot2Label: "Codex Spark Weekly",
   usageSlot2Percent: 38,
-  usageSlot2Reset: "2h",
+  usageSlot2Reset: "2h 0m",
   usageMode: "remaining",
   activity: "preview",
   sessionTokens: 12000,
@@ -40,6 +42,11 @@ export type ResizeSize = {
   height: number;
   width: number;
 };
+
+/** Animated companions are square sprites; they only scale uniformly. */
+export function isAspectLockedPrimitive(primitive: ThemeStudioPrimitive): boolean {
+  return primitive.type === "sprite" && isCompanionSprite(primitive.assetPath);
+}
 
 export type DragMoveOrigin = {
   height: number;
@@ -299,9 +306,11 @@ export function textPrimitiveNaturalWidth(
     ? boundText(primitive.binding)
     : substituteText(primitive.text || "Text");
   const renderFontSize = textPrimitiveRenderFontSize(primitive, fontSize);
+  const width = themeFirmwareTextMetrics(text, primitive.font || 1, fontSize)?.width
+    ?? Math.ceil(text.length * renderFontSize * 0.6);
   return Math.min(
     Math.max(1, DISPLAY_SIZE - primitive.x),
-    Math.ceil(text.length * renderFontSize * 0.6),
+    width,
   );
 }
 

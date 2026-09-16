@@ -40,6 +40,7 @@ type EncodedSprite = {
 export async function importSpriteFile(
   file: File,
   usage: ThemeStudioUsage = "live",
+  rasterLayout: "sheet" | "image" = "sheet",
 ): Promise<SpriteImportResult> {
   if (isSpriteTextFile(file)) {
     const raw = ensureTrailingNewline(await file.text());
@@ -69,15 +70,30 @@ export async function importSpriteFile(
 
   const bitmap = await createImageBitmap(file);
   try {
-    const frame = inferSpriteSheetFrame(bitmap.width, bitmap.height);
-    const sprite = spriteFromBitmap(bitmap, frame);
+    // The customer scene editor imports ordinary pictures, not inferred sprite
+    // sheets. Keep the full image and its aspect ratio; explicit CBA files above
+    // retain their animation. The technical editor keeps its sheet workflow.
+    const scale = Math.min(1, 240 / bitmap.width, 240 / bitmap.height);
+    const frame = rasterLayout === "image"
+      ? {
+          columns: 1,
+          frameCount: 1,
+          width: Math.max(1, Math.round(bitmap.width * scale)),
+          height: Math.max(1, Math.round(bitmap.height * scale)),
+        }
+      : inferSpriteSheetFrame(bitmap.width, bitmap.height);
+    const sprite = spriteFromBitmap(bitmap, frame, rasterLayout === "image");
     return {
       asset: {
         contentType: "text/plain",
         data: encodeSpriteAsset(sprite),
         encoding: "text",
       },
-      assetPath: themeAssetPathForFile(file.name, ".cba", usage),
+      assetPath: themeAssetPathForFile(
+        file.name,
+        rasterLayout === "image" ? ".cbi" : ".cba",
+        usage,
+      ),
       fps: sprite.fps,
       frameCount: sprite.frameCount,
       height: sprite.height,
@@ -135,6 +151,7 @@ function inferSpriteSheetFrame(width: number, height: number) {
 function spriteFromBitmap(
   bitmap: ImageBitmap,
   frame: { columns: number; frameCount: number; height: number; width: number },
+  wholeImage = false,
 ): EncodedSprite {
   const canvas = document.createElement("canvas");
   canvas.width = frame.width;
@@ -161,8 +178,8 @@ function spriteFromBitmap(
       bitmap,
       sx,
       sy,
-      frame.width,
-      frame.height,
+      wholeImage ? bitmap.width : frame.width,
+      wholeImage ? bitmap.height : frame.height,
       0,
       0,
       frame.width,
