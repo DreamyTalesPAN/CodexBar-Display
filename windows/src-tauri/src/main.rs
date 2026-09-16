@@ -303,10 +303,16 @@ enum UpdateHold {
 // this call on it refuses new jobs, and answers 409 when one already owns
 // the runtime. Same contract as the Mac App's runtimeClaimUpdateHold. A
 // runtime that does not answer at all is not running a job either -- the
-// job lives in that process -- so the repair proceeds.
+// job lives in that process -- so the repair proceeds. Only our own runtime
+// can promise anything: runtime-endpoint.json may be stale and its port
+// reused by an unrelated listener, whose replies are skipped like the
+// health check skips them.
 fn claim_update_hold() -> UpdateHold {
     let http = runtime_http();
     for origin in runtime_origin_candidates() {
+        if !runtime_identity_matches(&http, &origin) {
+            continue;
+        }
         let url = origin.join("/v1/runtime-health/update-hold").expect("static path");
         let Ok(response) = http
             .post(url.as_str())
@@ -326,9 +332,29 @@ fn claim_update_hold() -> UpdateHold {
     UpdateHold::NoAnswer
 }
 
+// True when a VibeTV runtime owned by this shell's task answers at origin.
+fn runtime_identity_matches(http: &ureq::Agent, origin: &Url) -> bool {
+    let url = origin.join("/v1/runtime-health").expect("static path");
+    let Ok(mut response) = http.get(url.as_str()).call() else {
+        return false;
+    };
+    if response.status() != 200 {
+        return false;
+    }
+    let Ok(body) = response.body_mut().read_to_string() else {
+        return false;
+    };
+    serde_json::from_str::<RuntimeHealth>(&body)
+        .map(|health| health.companion.runtime.listener_owner == RUNTIME_LABEL)
+        .unwrap_or(false)
+}
+
 fn release_update_hold() {
     let http = runtime_http();
     for origin in runtime_origin_candidates() {
+        if !runtime_identity_matches(&http, &origin) {
+            continue;
+        }
         let url = origin.join("/v1/runtime-health/update-hold").expect("static path");
         let _ = http
             .post(url.as_str())
@@ -549,9 +575,16 @@ fn check_for_updates(app: AppHandle) {
             let Some(update) = update else {
                 return Ok(UpdateOutcome::UpToDate);
             };
+            log(&format!("downloading update {}", update.version));
+            let bytes = update
+                .download(|_, _| {}, || {})
+                .await
+                .map_err(|error| format!("update download failed: {error}"))?;
             // Installing replaces the Companion binary and restarts its task
             // while a firmware update or theme install may be writing to the
-            // device. Claim the runtime first, exactly like repair-codexbar.
+            // device. The hold lasts one minute, so it is claimed only now,
+            // after the download, right before the installer takes over --
+            // exactly like repair-codexbar.
             let hold = tauri::async_runtime::spawn_blocking(claim_update_hold)
                 .await
                 .map_err(|error| format!("update hold check failed: {error}"))?;
@@ -559,13 +592,10 @@ fn check_for_updates(app: AppHandle) {
                 return Ok(UpdateOutcome::Busy);
             }
             log(&format!("installing update {}", update.version));
-            if let Err(error) = update
-                .download_and_install(|_, _| {}, || {})
-                .await
-            {
+            if let Err(error) = update.install(bytes) {
                 // Nothing was replaced; give the runtime back to device jobs.
                 let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
-                return Err(format!("update failed: {error}"));
+                return Err(format!("update install failed: {error}"));
             }
             Ok::<UpdateOutcome, String>(UpdateOutcome::Installed)
         }
