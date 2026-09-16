@@ -3621,6 +3621,36 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
 
+## 2026-09-16 — Local AI Theme Studio preview with animated companions
+
+- User approval: Marcus tested the local preview at
+  `/internal/theme-studio-preview` as a customer during the September 16
+  session and approved the direction step by step: a still background with
+  one or two AI-chosen animated companion sprites ("das ist glaube ich der
+  beste Ansatz"), only the spinner inside the Create button, no lock between
+  requests, companions that resize only uniformly, and "cool dann jetzt commit
+  und push in den PR".
+- Approved customer-visible result: **The Theme Studio has one text field
+  "Your idea" and one primary "Create with AI" button that shows a spinner and
+  "Creating…" while the AI works, with a "Cancel" button that leaves the design
+  unchanged. The result is a still background plus one or two animated
+  companion sprites on the display, each selectable, movable, and resizable
+  only as a square through the corner handle or a single "Size" field. Plain
+  layout wishes (size, position, labels, timers, removal) change the design
+  directly with an "AI plan:" note and Undo; wishes that cannot be done (third
+  companion, mixed image and UI changes, contradictory or unclear requests)
+  answer with a short clarification instead of changing anything. Settings hold
+  the OpenAI key only in memory and state the consent with at most five
+  generated images per creation.**
+- Approved files: `apps/control-center/src/app/internal/theme-studio-preview/`,
+  `apps/control-center/src/app/api/local-companion/[...path]/`,
+  `apps/control-center/src/components/theme-studio/`,
+  `apps/control-center/src/components/live-vibetv-preview.tsx`,
+  `apps/control-center/src/lib/ai-theme*.ts`,
+  `apps/control-center/src/lib/ai-companion-sprites.ts`,
+  `apps/control-center/src/lib/theme-studio-assets.ts`, their tests, the
+  companion `ai_theme*` Go files, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding
