@@ -663,7 +663,10 @@ func TestV2WireFrameStaysReadableByPublicFirmware1039(t *testing.T) {
 		t.Fatalf("v2 frame must carry usageWindows: %s", line)
 	}
 	session, weekly, reset := legacyFirmwareReader(t, line)
-	if session != 42 || weekly != 7 || reset != 15480 {
+	// "secondary" is the weekly lane; with the informational primary filtered
+	// out the session lane stays unavailable (0 on this firmware) instead of
+	// borrowing the weekly percentage.
+	if session != 0 || weekly != 42 || reset != 15480 {
 		t.Fatalf("firmware 1.0.39 would render session=%d weekly=%d reset=%d from %s", session, weekly, reset, line)
 	}
 }
@@ -708,6 +711,28 @@ func TestV2WireFrameLegacyLanesAgreeWithUsageWindows(t *testing.T) {
 		normalized := frame.Normalize()
 		if normalized.Session != 12 || normalized.Weekly != 34 || normalized.SessionUnavailable || normalized.WeeklyUnavailable {
 			t.Fatalf("positional fallback drifted: %+v", normalized)
+		}
+	})
+	t.Run("secondary-only from the direct CLI parser keeps the session lane unavailable", func(t *testing.T) {
+		// codexbar.parseUsageWindows names the lanes primary/secondary. With
+		// the informational primary filtered out, "secondary" alone is still
+		// the weekly lane and must not be projected into Session.
+		frame := Frame{
+			V: ProtocolVersionV2,
+			UsageWindows: []UsageWindow{
+				{ID: "secondary", Label: "Weekly", Percent: 75, ResetSec: 262464},
+			},
+		}
+		normalized := frame.Normalize()
+		if !normalized.SessionUnavailable || normalized.Session != 0 || normalized.WeeklyUnavailable || normalized.Weekly != 75 {
+			t.Fatalf("secondary-only frame drifted: %+v", normalized)
+		}
+		both := Frame{V: ProtocolVersionV2, UsageWindows: []UsageWindow{
+			{ID: "primary", Label: "Session", Percent: 42},
+			{ID: "secondary", Label: "Weekly", Percent: 7},
+		}}.Normalize()
+		if both.Session != 42 || both.Weekly != 7 || both.SessionUnavailable || both.WeeklyUnavailable {
+			t.Fatalf("primary/secondary lanes drifted: %+v", both)
 		}
 	})
 	frame := Frame{

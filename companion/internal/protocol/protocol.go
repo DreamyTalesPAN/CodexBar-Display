@@ -279,8 +279,10 @@ func applyLegacyUsageProjection(f Frame) Frame {
 	// window is informational (Win-CodexBar's session notice) reports only
 	// "weekly", and that percentage must not land in Session. Windows
 	// without either structural id keep the positional projection.
-	session, hasSession := usageWindowByID(f.UsageWindows, "session")
-	weekly, hasWeekly := usageWindowByID(f.UsageWindows, "weekly")
+	// The direct CLI parser names the same lanes "primary" and "secondary"
+	// (codexbar.parseUsageWindows), so both spellings are structural here.
+	session, hasSession := usageWindowByID(f.UsageWindows, "session", "primary")
+	weekly, hasWeekly := usageWindowByID(f.UsageWindows, "weekly", "secondary")
 	if !hasSession && !hasWeekly {
 		session, hasSession = f.UsageWindows[0], true
 		if len(f.UsageWindows) > 1 {
@@ -307,10 +309,12 @@ func applyLegacyUsageProjection(f Frame) Frame {
 	return f
 }
 
-func usageWindowByID(windows []UsageWindow, id string) (UsageWindow, bool) {
-	for _, window := range windows {
-		if window.ID == id {
-			return window, true
+func usageWindowByID(windows []UsageWindow, ids ...string) (UsageWindow, bool) {
+	for _, id := range ids {
+		for _, window := range windows {
+			if window.ID == id {
+				return window, true
+			}
 		}
 	}
 	return UsageWindow{}, false

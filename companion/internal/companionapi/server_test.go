@@ -2822,8 +2822,9 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
 		t.Fatalf("unexpected frame identity: %+v", got.Frame)
 	}
-	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
-		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	// "secondary" is the weekly lane; the session lane stays unavailable.
+	if got.Frame.Session != 0 || got.Frame.Weekly != 75 || got.Frame.ResetSec != 490812 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
@@ -2864,8 +2865,9 @@ func TestDisplayFrameLatestUsesUsageSlotsWhenUsageWindowsPlaceholder(t *testing.
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
-		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	// "secondary" is the weekly lane; the session lane stays unavailable.
+	if got.Frame.Session != 0 || got.Frame.Weekly != 75 || got.Frame.ResetSec != 490812 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("expected usageSlots to drive legacy preview values, got %+v", got.Frame)
 	}
 	if len(got.Frame.UsageWindows) != 2 ||
