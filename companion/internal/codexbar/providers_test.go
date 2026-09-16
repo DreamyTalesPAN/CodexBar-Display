@@ -287,6 +287,41 @@ func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T
 	}
 }
 
+// Dropping the shared deadline must not drop the caller's cancellation: a
+// disconnected client or a shutting-down Companion still ends the sequential
+// Windows probes instead of leaving them running for minutes.
+func TestRunProviderHealthProbeStopsWhenCallerCancels(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	parent, cancel := context.WithCancel(context.Background())
+	var cancelled []bool
+	runProviderCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if args[3] == "codex" {
+			cancel()
+		}
+		cancelled = append(cancelled, ctx.Err() != nil)
+		return nil, ctx.Err()
+	}
+	settings := []ProviderSetting{
+		{ID: "codex", Label: "Codex", Enabled: true},
+		{ID: "claude", Label: "Claude", Enabled: true},
+	}
+	raw, err := runProviderHealthProbe(parent, perProviderProbeTimeout, "codexbar", settings)
+	if len(cancelled) != 1 || cancelled[0] {
+		t.Fatalf("no probe must start after the caller cancelled, got %v", cancelled)
+	}
+	// The answer already collected is kept; only claude was never asked.
+	if err != nil {
+		t.Fatalf("partial answer must be returned, got %v", err)
+	}
+	if health := parseProviderHealth(raw); len(health) != 1 || health["codex"].health != ProviderHealthUnavailable {
+		t.Fatalf("expected only the probed provider in the answer, got %#v", health)
+	}
+}
+
 // Win-CodexBar 0.56.8 rejects "config disable --provider claude"; the provider
 // is a positional argument there.
 func TestSetProviderEnabledUsesPositionalProviderOnWindows(t *testing.T) {

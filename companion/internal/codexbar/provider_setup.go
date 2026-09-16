@@ -365,12 +365,14 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	// budget (runUsageAllEnabled), so a shared ceiling -- the 20 s here or
 	// the 25 s the setup handlers put on ctx -- would hand the second
 	// provider an almost spent context and report it unavailable. The
-	// aggregate path therefore drops every inherited deadline; each CLI call
-	// still carries its own timeout, so the total stays bounded by
-	// inventory + 18 s per enabled provider.
+	// aggregate path therefore drops every inherited deadline while keeping
+	// the caller's cancellation; each CLI call still carries its own
+	// timeout, so the total stays bounded by inventory + 18 s per provider.
 	aggregateCtx := probeCtx
 	if providerProbePerProvider {
-		aggregateCtx = context.WithoutCancel(configuredCtx)
+		var stop context.CancelFunc
+		aggregateCtx, stop = withoutDeadline(configuredCtx)
+		defer stop()
 	}
 	var exactSetting *ProviderSetting
 	var out []byte

@@ -25,6 +25,19 @@ var providerProbePerProvider = runtime.GOOS == "windows"
 // 18 s the setup probe grants each provider.
 const perProviderProbeTimeout = 18 * time.Second
 
+// withoutDeadline drops the caller's deadline but keeps its values and its
+// cancellation: a client that disconnects or a Companion that shuts down
+// still ends the sequential Windows probes, only the shared time budget is
+// replaced by the per-provider one.
+func withoutDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stop := context.AfterFunc(ctx, cancel)
+	return detached, func() {
+		stop()
+		cancel()
+	}
+}
+
 // providerInventoryArgs is the CLI command for the provider inventory.
 // Win-CodexBar 0.56.8 has no JSON inventory (#415), so Windows reads the
 // text form that parseProviderSettings also understands.
@@ -58,6 +71,13 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 	for i := range inventory {
 		if !inventory[i].Enabled {
 			continue
+		}
+		if err := ctx.Err(); err != nil {
+			// The caller gave up; do not start further probes.
+			if len(joined) == 0 {
+				return nil, err
+			}
+			break
 		}
 		args := append([]string{"usage", "--json", "--provider", inventory[i].ID}, extra...)
 		out, runErr := runUsageCommandFn(ctx, timeout, bin, args...)
@@ -209,10 +229,11 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 	// deadline (25 s in the background health refresh) a slow first provider
 	// would leave the next one an almost spent context and report it
 	// unavailable although it is healthy. The inherited deadline is dropped
-	// (values such as the config path are kept) and replaced by a fixed cap
-	// per provider, so a hanging CLI cannot keep the rows "checking" for the
+	// (values and cancellation are kept) and replaced by a fixed cap per
+	// provider, so a hanging CLI cannot keep the rows "checking" for the
 	// 300 s collector timeout.
-	probeCtx := context.WithoutCancel(ctx)
+	probeCtx, stop := withoutDeadline(ctx)
+	defer stop()
 	if timeout > perProviderProbeTimeout {
 		timeout = perProviderProbeTimeout
 	}
@@ -221,6 +242,14 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 	for i := range settings {
 		if !settings[i].Enabled {
 			continue
+		}
+		if err := ctx.Err(); err != nil {
+			// The caller gave up (client gone, Companion shutting down);
+			// do not start further probes.
+			if len(joined) == 0 {
+				return nil, err
+			}
+			break
 		}
 		args := append([]string{"usage", "--json", "--provider", settings[i].ID}, statusArgs...)
 		out, runErr := runProviderCommandFn(probeCtx, timeout, bin, args...)
