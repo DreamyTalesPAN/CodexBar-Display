@@ -3699,6 +3699,20 @@ issue scope, or release permission never implies UI permission.
   open, per the exact-head review of `26ce55ee`), their tests, and this
   approval record.
 
+## 2026-09-16 — Automatically restored designs get the same companion repair
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `26ce55ee` found that the design restored automatically on open
+  bypassed the companion repair.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  design that opens automatically shows its animated companion inside the
+  picture area at a valid size, exactly like a design opened from the library
+  or a file.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/theme-studio-editor-state.ts`,
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  their tests, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding
