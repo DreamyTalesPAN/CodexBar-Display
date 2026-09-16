@@ -3726,6 +3726,18 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
   test, and this approval record.
 
+## 2026-09-16 — Unsaved edits made while a file is being read are protected
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `43ed2c3b` found that an edit made while a design file was still being
+  read could be replaced without the unsaved-changes confirmation.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  existing unsaved-changes confirmation also appears when the customer edits
+  the design while an opened file is still loading.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`
+  and this approval record.
+
 ## 2026-09-16 — Imported pictures with the same file name keep both pictures
 
 - User approval: Same push approval for PR #422; the exact-head Codex review

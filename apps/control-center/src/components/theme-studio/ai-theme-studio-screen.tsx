@@ -112,6 +112,12 @@ export function AIThemeStudioScreen() {
   );
   const document = state.present;
   const dirty = isThemeStudioDirty(state);
+  // Async import paths read this after awaiting file contents so an edit made
+  // meanwhile still triggers the unsaved-changes confirmation.
+  const dirtyRef = useRef(dirty);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
   const [selected, setSelected] = useState<number[]>([]);
   const [panel, setPanel] = useState<
     "setup" | "settings" | "add" | "tools" | "library" | null
@@ -325,7 +331,7 @@ export function AIThemeStudioScreen() {
     setStatus("Design opened.");
   }
   function requestLoad(next: { document: ThemeStudioDocument; id?: string }) {
-    if (dirty) setPending(next);
+    if (dirtyRef.current) setPending(next);
     else load(next);
   }
   async function loadSample() {
