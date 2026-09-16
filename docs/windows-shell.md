@@ -127,6 +127,12 @@ selection. Initialization errors stop CLI startup instead of falling back to
 the upstream enabled defaults. No health-based provider selection is added;
 macOS bootstrap behavior is unchanged.
 
+Win-CodexBar keeps `claude_allow_reading_claude_code_credentials` off by
+default. Switching Claude on in the Control Center is the customer's consent,
+so the Companion sets that flag in Win-CodexBar's `settings.json` at that
+moment (`SetProviderEnabled` → `grantClaudeCredentials`); no manual edit is
+needed.
+
 ## Open
 
 - Authenticode: `bundle.windows.signCommand` is unset until the certificate
@@ -136,9 +142,6 @@ macOS bootstrap behavior is unchanged.
   `TAURI_SIGNING_PRIVATE_KEY` GitHub secret before the first Windows release.
   The release workflow does not yet build or publish the Windows installer and
   `latest-windows.json`.
-- Win-CodexBar keeps `claude_allow_reading_claude_code_credentials` off by
-  default, so Claude never appears until the customer enables it in
-  Win-CodexBar's `settings.json`. How customers get there is not decided.
 - Pinned-CLI validation (`validate-codexbar`) is a stub outside macOS; the
   Windows CLI is trusted by the installer SHA-256 pin only.
 - Not proven in the VM: ARM64 hosts, Cable transport, a real N→N+1 update
