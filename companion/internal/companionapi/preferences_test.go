@@ -146,6 +146,34 @@ func TestPreferencesMarkFreshCollectorProviderHealthy(t *testing.T) {
 	}
 }
 
+// A health pass that is still running must not hide a reading the device is
+// already showing: on Windows the CodexBar CLI needs twenty seconds per pass
+// and the setup step polls while a row is checking, so the provider list and
+// the completion gate spent most of their time refusing a working Codex.
+func TestPreferencesFreshCollectorUsageOutranksRunningHealthCheck(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 9, 16, 8, 55, 0, 0, time.UTC)
+	server.now = func() time.Time { return collectedAt.Add(20 * time.Second) }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{
+			ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthChecking, Service: codexbar.ProviderServiceUnknown,
+		}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", collectedAt), true
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 1 || response.Items[0].Health.State != "healthy" {
+		t.Fatalf("running health check hid a fresh collector reading: %#v", response.Items)
+	}
+}
+
 func TestPreferencesFreshCollectorUsagePreservesHardHealthFailures(t *testing.T) {
 	for _, health := range []codexbar.ProviderHealthState{
 		codexbar.ProviderHealthAuthRequired,
