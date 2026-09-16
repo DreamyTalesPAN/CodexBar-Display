@@ -3651,6 +3651,23 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/lib/theme-studio-assets.ts`, their tests, the
   companion `ai_theme*` Go files, and this approval record.
 
+## 2026-09-16 — Companion size bounds and artwork placement after companion edits
+
+- User approval: Marcus asked that animated companions only resize
+  uniformly and approved the push to PR #422; the exact-head Codex review of
+  `c1acf1c7` found that the manual "Size" field and corner handle accepted
+  1..240 although the AI helper only accepts 16..80, and that adding or
+  revising a companion reset manually moved artwork.
+- Approved customer-visible result: **The "Size" field and the corner handle
+  of an animated companion stop at 16 and 80 pixels. After a companion-only
+  AI change, artwork the customer moved or resized stays where it was.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`,
+  `apps/control-center/src/lib/ai-theme-document.ts`, their tests, and this
+  approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding
