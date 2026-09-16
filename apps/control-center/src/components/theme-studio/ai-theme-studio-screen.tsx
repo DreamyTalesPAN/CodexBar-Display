@@ -316,7 +316,6 @@ export function AIThemeStudioScreen() {
     setStatus(type === "undo" ? "Last edit undone." : "Edit restored.");
   }
   function load(next: { document: ThemeStudioDocument; id?: string }) {
-    next.document.spec.primitives.forEach(normalizeCompanionPrimitive);
     dispatch({ type: "load", document: next.document });
     setLibraryId(next.id);
     setSelected([]);

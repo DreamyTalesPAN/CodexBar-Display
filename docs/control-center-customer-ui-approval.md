@@ -3693,8 +3693,11 @@ issue scope, or release permission never implies UI permission.
   a companion near the bottom edge moves it up instead of stopping early.**
 - Approved files:
   `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
-  `apps/control-center/src/components/theme-studio/editor-geometry.ts`, its
-  test, and this approval record.
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`,
+  `apps/control-center/src/components/theme-studio/theme-studio-editor-state.ts`
+  (the same repair also applies to the design restored automatically on
+  open, per the exact-head review of `26ce55ee`), their tests, and this
+  approval record.
 
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
