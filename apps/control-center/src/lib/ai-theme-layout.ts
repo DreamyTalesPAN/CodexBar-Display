@@ -68,7 +68,7 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       const umlauts:Record<string,string>={ä:'ae',ö:'oe',ü:'ue',Ä:'AE',Ö:'OE',Ü:'UE',ß:'ss'};
       p.text=edit.text.replace(/[äöüÄÖÜß]/g,c=>umlauts[c]).normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
       if(/[^\x20-\x7e\n]/.test(p.text)) throw new Error('The display font cannot show these characters. Please use a Latin-letter label. Your design is unchanged.');
-      delete p.binding;
+      delete p.binding;delete p.slot;delete p.providerSlot;delete p.usageIndex;
     }
     if(edit.reading!=null){
       if(!LIVE_READINGS.some(([id])=>id===edit.reading)||!['text','progress'].includes(p.type)) return fail();

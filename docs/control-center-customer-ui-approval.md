@@ -3761,6 +3761,17 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
   and this approval record.
 
+## 2026-09-16 — AI literal-text edits drop the old reading owner
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ac2f4f41` found that replacing a live reading with fixed text kept the
+  old provider/window ownership, so the new label could stay hidden.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  fixed label the AI writes over a live reading is always shown, exactly like
+  one typed by hand.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
 ## 2026-09-16 — Imported pictures with the same file name keep both pictures
 
 - User approval: Same push approval for PR #422; the exact-head Codex review

@@ -8,6 +8,14 @@ const before:ThemeStudioDocument={packName:'Office cat',usage:'live',assets:{'/t
 const add={action:'add',index:-1,kind:'text',x:12,y:224,fontSize:1,color:'#FFFFFF',reading:'usageSlot1Reset'} as const;
 const plan=(edits:AIThemeLayoutPlan['edits']):AIThemeLayoutPlan=>({mode:'layout',notes:'Added reset countdown',edits});
 describe('AI native layout edits',()=>{
+ it('clears provider/usage owners when the AI replaces a reading with literal text',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives.push({type:'text',x:12,y:200,text:'{providerSlot1Name}',binding:'providerSlot1Name',providerSlot:1,slot:1,usageIndex:0,color:'#FFFFFF',fontSize:1});
+  const next=applyAIThemeLayout(doc,plan([{action:'update',index:2,kind:'text',text:'OFFICE'}]));
+  const label=next.spec.primitives[2];
+  expect(label.text).toBe('OFFICE');
+  for(const key of ['binding','slot','providerSlot','usageIndex']) expect(label).not.toHaveProperty(key);
+ });
  it('widens a clipped text box when the AI assigns longer content',()=>{
   const doc=structuredClone(before);
   doc.spec.primitives.push({type:'text',x:12,y:200,width:30,text:'12:00',color:'#FFFFFF',fontSize:1});
