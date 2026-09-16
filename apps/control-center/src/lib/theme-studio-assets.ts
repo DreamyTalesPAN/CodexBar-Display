@@ -368,6 +368,28 @@ export function themeAssetPathForFile(
   )}`;
 }
 
+/**
+ * Returns `path` unchanged when free, otherwise appends -2, -3, … before the
+ * extension so a second import with the same file name never overwrites the
+ * first asset. Keeps the firmware's 21-character name limit.
+ */
+export function uniqueAssetPath(path: string, taken: Record<string, unknown>): string {
+  if (!(path in taken)) return path;
+  const slash = path.lastIndexOf("/");
+  const dir = path.slice(0, slash + 1);
+  const file = path.slice(slash + 1);
+  const dot = file.lastIndexOf(".");
+  const extension = file.slice(dot);
+  const base = file.slice(0, dot);
+  for (let n = 2; n < 1000; n += 1) {
+    const suffix = `-${n}`;
+    const maxBase = 21 - extension.length - suffix.length;
+    const candidate = `${dir}${base.slice(0, maxBase).replace(/[._-]+$/g, "") || "asset"}${suffix}${extension}`;
+    if (!(candidate in taken)) return candidate;
+  }
+  throw new Error("Too many assets with the same name.");
+}
+
 function safeAssetName(name: string, extension: ".cba" | ".cbi" | ".gif"): string {
   const cleaned = name
     .toLowerCase()

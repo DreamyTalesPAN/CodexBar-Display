@@ -69,7 +69,7 @@ import {
   normalizeThemeSpec,
   validateThemeSpec,
 } from "@/lib/theme-studio";
-import { importSpriteFile, spriteMetadata } from "@/lib/theme-studio-assets";
+import { importSpriteFile, spriteMetadata, uniqueAssetPath } from "@/lib/theme-studio-assets";
 import {
   loadUserThemes,
   writeUserThemes,
@@ -438,14 +438,15 @@ export function AIThemeStudioScreen() {
           return;
         }
         mutate((d) => {
-          d.assets[imported.assetPath] = imported.asset;
+          const assetPath = uniqueAssetPath(imported.assetPath, d.assets);
+          d.assets[assetPath] = imported.asset;
           d.spec.primitives.push({
             type: "sprite",
             x: Math.max(0, Math.min(80, DISPLAY_SIZE - imported.width)),
             y: Math.max(0, Math.min(45, DISPLAY_SIZE - imported.height)),
             width: imported.width,
             height: imported.height,
-            assetPath: imported.assetPath,
+            assetPath,
             frameCount: imported.frameCount,
             fps: imported.fps,
             sheetColumns: imported.sheetColumns,

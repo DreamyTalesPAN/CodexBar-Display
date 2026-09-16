@@ -3726,6 +3726,18 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
   test, and this approval record.
 
+## 2026-09-16 — Imported pictures with the same file name keep both pictures
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `6109837d` found that importing a second file with the same name
+  silently replaced the first picture.
+- Approved customer-visible result: **Importing two pictures that share a
+  file name keeps both on the display; the earlier picture no longer changes.
+  No new screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`,
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  their tests, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding

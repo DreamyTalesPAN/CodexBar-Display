@@ -7,9 +7,18 @@ import {
   spriteMetadata,
   themeAssetByteLength,
   themeAssetPathForFile,
+  uniqueAssetPath,
 } from "./theme-studio-assets";
 
 describe("Theme Studio asset helpers", () => {
+  it("never overwrites an existing asset when a second import has the same name", () => {
+    const taken = { "/themes/u/image.cbi": 1, "/themes/u/image-2.cbi": 1 };
+    expect(uniqueAssetPath("/themes/u/photo.cbi", taken)).toBe("/themes/u/photo.cbi");
+    expect(uniqueAssetPath("/themes/u/image.cbi", taken)).toBe("/themes/u/image-3.cbi");
+    const long = uniqueAssetPath("/themes/u/averyveryverylong.cbi", { "/themes/u/averyveryverylong.cbi": 1 });
+    expect(long).toBe("/themes/u/averyveryverylo-2.cbi");
+    expect(long.slice(long.lastIndexOf("/") + 1).length).toBeLessThanOrEqual(21);
+  });
   it("scales imported pictures into the static sprite pixel budget", () => {
     expect(importedImageSize(1000, 1000)).toEqual({ width: 181, height: 181 });
     expect(importedImageSize(181, 181)).toEqual({ width: 181, height: 181 });
