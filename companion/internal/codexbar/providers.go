@@ -71,6 +71,12 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 	if err != nil {
 		return nil, fmt.Errorf("read provider inventory: %w", err)
 	}
+	// One hanging provider CLI must not hold every provider after it for
+	// the collector's 300 s default; each probe gets the same short cap as
+	// the health join.
+	if timeout > perProviderProbeTimeout {
+		timeout = perProviderProbeTimeout
+	}
 	joined := make([]json.RawMessage, 0, len(inventory))
 	var lastErr error
 	for i := range inventory {

@@ -239,6 +239,36 @@ func TestRunUsageAllEnabledKeepsSilentProviderVisibleOnWindows(t *testing.T) {
 	}
 }
 
+// The collector hands runUsageAllEnabled its 300 s default timeout. One
+// hanging provider CLI must not hold every provider after it for that long,
+// so each sequential usage probe is capped like the health join.
+func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	var timeouts []time.Duration
+	runUsageCommandFn = func(_ context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
+		if reflect.DeepEqual(args, providerInventoryArgs()) {
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
+		}
+		timeouts = append(timeouts, timeout)
+		return []byte(`[{"provider":"` + args[3] + `","usage":{"primary":{"usedPercent":8}}}]`), nil
+	}
+	if _, err := runUsageAllEnabled(context.Background(), 300*time.Second, "codexbar", "--web-timeout", "8"); err != nil {
+		t.Fatalf("usage join: %v", err)
+	}
+	if len(timeouts) != 2 {
+		t.Fatalf("expected one probe per enabled provider, got %d", len(timeouts))
+	}
+	for i, timeout := range timeouts {
+		if timeout != perProviderProbeTimeout {
+			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
+		}
+	}
+}
+
 // The background health refresh hands runProviderHealthProbe a shared 25 s
 // deadline. On Windows the probes run one after another with 18 s each, so
 // the second provider must not inherit the almost spent parent deadline.
