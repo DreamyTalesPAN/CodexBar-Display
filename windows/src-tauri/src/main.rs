@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -49,6 +49,9 @@ struct Shell {
     // Bumped on every present; a delayed hide only applies if nothing
     // presented the window again while it waited.
     presentations: AtomicU64,
+    // One updater at a time: the tray item and vibetv://check-for-updates
+    // must not launch two NSIS installers over the same files.
+    updating: AtomicBool,
 }
 
 fn main() {
@@ -67,6 +70,7 @@ fn main() {
             runtime_origin: Mutex::new(Url::parse(DEFAULT_RUNTIME_ORIGIN).expect("static origin")),
             preparing: Mutex::new(false),
             presentations: AtomicU64::new(0),
+            updating: AtomicBool::new(false),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -568,6 +572,14 @@ fn runtime_origin_candidates() -> Vec<Url> {
 // has no console, so every outcome the customer waits for is shown in a
 // native message box; stderr alone would leave the click unanswered.
 fn check_for_updates(app: AppHandle) {
+    if app
+        .state::<Shell>()
+        .updating
+        .swap(true, Ordering::SeqCst)
+    {
+        log("update check already running; ignoring repeated request");
+        return;
+    }
     tauri::async_runtime::spawn(async move {
         let result = async {
             let updater = app.updater().map_err(|error| format!("updater unavailable: {error}"))?;
@@ -600,6 +612,9 @@ fn check_for_updates(app: AppHandle) {
             Ok::<UpdateOutcome, String>(UpdateOutcome::Installed)
         }
         .await;
+        // The installer relaunches this process on success; every other
+        // outcome frees the guard for the next request.
+        app.state::<Shell>().updating.store(false, Ordering::SeqCst);
         match result {
             Ok(UpdateOutcome::Installed) => {}
             Ok(UpdateOutcome::UpToDate) => show_message("VibeTV Control Center is up to date."),
