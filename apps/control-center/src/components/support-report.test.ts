@@ -2,7 +2,7 @@
 //
 // Issue #341: the loopback Control Center route answers 410 Gone in a normal
 // browser, so a support report must never present it as a page to open.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { collectSupportReport, serializeSupportReport } from "./support-report";
 import type {
@@ -47,6 +47,7 @@ async function report(
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   if (originalLocation) {
     Object.defineProperty(window, "location", originalLocation);
   }
@@ -56,6 +57,13 @@ afterEach(() => {
 });
 
 describe("support report surface", () => {
+  it("identifies the Windows native shell even when diagnostics fail", async () => {
+    visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    const fallback = await collectSupportReport(async () => { throw new Error("offline"); }, clientState);
+    expect(fallback.client?.environment.surface).toBe("native-windows-app");
+    expect(fallback.client?.environment.page).toBeUndefined();
+  });
   it("keeps the native loopback route out of customer-navigable fields", async () => {
     visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
 

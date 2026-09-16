@@ -15,8 +15,8 @@
 </head>
 <body>
 <main>
-  <div id="starting"><h1>Starting the VibeTV Companion…</h1><p>This takes a few seconds after installation.</p></div>
-  <div id="error"><h1>VibeTV Control Center could not start its Companion.</h1><p id="detail"></p></div>
+  <div id="starting"><h1>Starting VibeTV Control Center…</h1><p>This takes a few seconds after installation.</p></div>
+  <div id="error"><h1>VibeTV Control Center could not start.</h1><p id="detail"></p><p><a style="color:#CCFF00" href="vibetv://repair-runtime">Try again</a></p></div>
 </main>
 <script>
   window.addEventListener("vibetv:shell-status", function (event) {
@@ -28,4 +28,3 @@
 </script>
 </body>
 </html>
-

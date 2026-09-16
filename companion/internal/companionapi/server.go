@@ -684,6 +684,7 @@ type companion struct {
 }
 
 type companionAppInfo struct {
+	Platform                string `json:"platform"`
 	Version                 string `json:"version,omitempty"`
 	Build                   string `json:"build,omitempty"`
 	Path                    string `json:"path,omitempty"`
@@ -2361,6 +2362,11 @@ func (s *Server) macAppReleaseInfoCached(ctx context.Context, useCache bool) com
 	if macAppReleaseCheckDisabled() {
 		info.Status = "disabled"
 		info.Message = "Mac App update check is disabled."
+		s.cacheMacAppReleaseInfo(now, info)
+		return info
+	}
+	if runtime.GOOS == "windows" {
+		info = fetchWindowsAppReleaseInfo(ctx, windowsAppReleaseURL, installedVersion)
 		s.cacheMacAppReleaseInfo(now, info)
 		return info
 	}
@@ -7418,6 +7424,7 @@ func currentCompanionAppInfo(installationMode string) companionAppInfo {
 		installed = appPath != ""
 	}
 	return companionAppInfo{
+		Platform:                runtime.GOOS,
 		Version:                 version,
 		Build:                   build,
 		Path:                    appPath,

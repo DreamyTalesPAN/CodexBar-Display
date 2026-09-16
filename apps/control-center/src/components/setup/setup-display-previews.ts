@@ -16,9 +16,18 @@ export function displayPreviewFor(
     return null;
   }
   const unavailable = provider.usageUnavailable === true;
+  // The legacy session/weekly fields are positional display slots, not window
+  // names. Use CodexBar's normalized windows whenever they are available.
+  const windows = provider.windows?.length ? provider.windows.slice(0, 2) : null;
   return {
     providerLabel: provider.label,
-    resetLabel: unavailable ? null : formatReset(provider.resetSecs),
+    resetLabel: unavailable ? null : formatReset(windows ? windows[0].resetSecs : provider.resetSecs),
+    ...(windows ? { windows: windows.map((window) => ({
+      label: window.label,
+      percent: unavailable ? null : Math.round(Math.max(0, Math.min(100,
+        provider.usageMode === "remaining" ? 100 - window.usedPercent : window.usedPercent,
+      ))),
+    })) } : {}),
     sessionPercent:
       unavailable || provider.sessionUnavailable ? null : provider.session,
     weeklyPercent:

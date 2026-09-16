@@ -34,7 +34,7 @@ export async function collectSupportReport(
       client,
       collectionErrors: [
         {
-          source: "Mac App diagnostics",
+          source: "VibeTV App diagnostics",
           message: safeErrorMessage(error),
         },
       ],
@@ -42,7 +42,7 @@ export async function collectSupportReport(
         {
           name: "companion_api",
           status: "fail",
-          detail: "The Mac App diagnostics endpoint could not be reached.",
+          detail: "The VibeTV App diagnostics endpoint could not be reached.",
           errorCode: "companion_diagnostics_unreachable",
           nextAction: "Attach this report so support can inspect the setup state.",
         },
@@ -92,7 +92,9 @@ function readClientEnvironment() {
     viewport: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     visibility: document.visibilityState,
-    surface: native ? "native-mac-app" : "browser",
+    surface: native
+      ? /^Win/i.test(navigator.platform) ? "native-windows-app" : "native-mac-app"
+      : "browser",
     appVersion: version,
     appBuild: build,
     // A loopback route is only served to the native Mac App: in a browser the
@@ -108,7 +110,7 @@ function safeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
-  return "Mac App diagnostics are unavailable.";
+  return "VibeTV App diagnostics are unavailable.";
 }
 
 export function redactSensitiveValues(value: unknown): unknown {

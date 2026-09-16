@@ -1,0 +1,14 @@
+[
+  {
+    "provider": "codex",
+    "source": "oauth",
+    "usage": {
+      "primary": {"is_informational": true, "reset_description": "No active 5h session", "used_percent": 0, "window_minutes": 300},
+      "secondary": {"is_informational": false, "reset_description": "6d 3h", "resets_at": "2026-09-16T10:54:49Z", "used_percent": 32, "window_minutes": 10080},
+      "extra_rate_windows": [
+        {"id": "codex-spark", "title": "Codex Spark 5-hour", "window": {"is_informational": false, "reset_description": "4h 59m", "resets_at": "2026-09-10T12:44:32Z", "used_percent": 0, "window_minutes": 300}},
+        {"id": "reset-credits", "title": "Reset credits", "window": {"is_informational": true, "reset_description": "2 reset credits available", "resets_at": "2026-10-04T02:16:13.579083Z", "used_percent": 0}}
+      ]
+    }
+  }
+]

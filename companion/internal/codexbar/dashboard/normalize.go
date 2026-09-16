@@ -40,17 +40,20 @@ type UsageProvider struct {
 }
 
 type UsageMetadata struct {
-	Primary          *RateWindow       `json:"primary"`
-	Secondary        *RateWindow       `json:"secondary"`
-	Tertiary         *RateWindow       `json:"tertiary"`
-	ExtraRateWindows []NamedRateWindow `json:"extraRateWindows"`
-	Extra            []NamedRateWindow `json:"extra"`
+	Primary               *RateWindow       `json:"primary"`
+	Secondary             *RateWindow       `json:"secondary"`
+	Tertiary              *RateWindow       `json:"tertiary"`
+	ExtraRateWindows      []NamedRateWindow `json:"extraRateWindows"`
+	ExtraRateWindowsSnake []NamedRateWindow `json:"extra_rate_windows"`
+	Extra                 []NamedRateWindow `json:"extra"`
 }
 
 type RateWindow struct {
 	UsedPercent            *float64   `json:"usedPercent"`
 	WindowMinutes          *int       `json:"windowMinutes"`
+	WindowMinutesSnake     *int       `json:"window_minutes"`
 	ResetsAt               *time.Time `json:"resetsAt"`
+	ResetsAtSnake          *time.Time `json:"resets_at"`
 	ResetAt                *time.Time `json:"resetAt"`
 	IsSyntheticPlaceholder bool       `json:"isSyntheticPlaceholder"`
 	IsInformational        bool       `json:"isInformational"`
@@ -197,7 +200,11 @@ func indexUsageMetadata(usage UsageMetadata) map[string]usageWindowMetadata {
 	addStructuralWindow(index, "session", usage.Primary)
 	addStructuralWindow(index, "weekly", usage.Secondary)
 	addStructuralWindow(index, "tertiary", usage.Tertiary)
-	for _, extra := range append(usage.ExtraRateWindows, usage.Extra...) {
+	extras := usage.ExtraRateWindows
+	if extras == nil {
+		extras = usage.ExtraRateWindowsSnake
+	}
+	for _, extra := range append(extras, usage.Extra...) {
 		addNamedWindow(index, extra)
 	}
 	return index
@@ -210,7 +217,7 @@ func addStructuralWindow(index map[string]usageWindowMetadata, dashboardKind str
 	index[dashboardKind] = usageWindowMetadata{
 		usageKnown:      knownUsage(window.UsageKnown),
 		synthetic:       window.IsSyntheticPlaceholder || window.IsInformational || window.IsInformationalSnake,
-		windowMinutes:   window.WindowMinutes,
+		windowMinutes:   window.windowMinutes(),
 		metadataReset:   window.resetAt(),
 		structuralAlias: true,
 	}
@@ -234,7 +241,7 @@ func addNamedWindow(index map[string]usageWindowMetadata, named NamedRateWindow)
 	index[id] = usageWindowMetadata{
 		usageKnown:    usageKnown,
 		synthetic:     named.Window.IsSyntheticPlaceholder || named.Window.IsInformational || named.Window.IsInformationalSnake,
-		windowMinutes: named.Window.WindowMinutes,
+		windowMinutes: named.Window.windowMinutes(),
 		metadataReset: named.Window.resetAt(),
 	}
 }
@@ -243,7 +250,17 @@ func (window RateWindow) resetAt() *time.Time {
 	if window.ResetsAt != nil {
 		return window.ResetsAt
 	}
-	return window.ResetAt
+	if window.ResetAt != nil {
+		return window.ResetAt
+	}
+	return window.ResetsAtSnake
+}
+
+func (window RateWindow) windowMinutes() *int {
+	if window.WindowMinutes != nil {
+		return window.WindowMinutes
+	}
+	return window.WindowMinutesSnake
 }
 
 func dedupeStructuralAliases(candidates []windowCandidate) []UsageWindow {

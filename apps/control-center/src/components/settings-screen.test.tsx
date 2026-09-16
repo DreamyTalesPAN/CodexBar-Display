@@ -190,7 +190,8 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain(">AI providers</h2>");
     expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain(">Setup</h2>");
-    expect(html).toContain("Connect this Mac to another VibeTV.");
+    expect(html).toContain("Connect this computer to another VibeTV.");
+    expect(html).not.toContain("this Mac");
     expect(html.match(/<section /g)).toHaveLength(5);
   });
 

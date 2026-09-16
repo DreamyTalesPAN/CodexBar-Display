@@ -42,6 +42,7 @@ export type SetupDisplayModePreview = {
   resetLabel: string | null;
   sessionPercent: number | null;
   weeklyPercent: number | null;
+  windows?: { label: string; percent: number | null }[];
 };
 
 type SetupDisplayModeScreenProps = {
@@ -370,17 +371,18 @@ function PreviewTile({
       </CycledText>
 
       <span className="flex gap-3">
-        <PreviewReading
-          cycleKey={index}
-          label="Session"
-          percent={frame.sessionPercent}
-        />
-        <PreviewReading
-          align="right"
-          cycleKey={index}
-          label="Weekly"
-          percent={frame.weeklyPercent}
-        />
+        {(frame.windows ?? [
+          { label: "Session", percent: frame.sessionPercent },
+          { label: "Weekly", percent: frame.weeklyPercent },
+        ]).map((window, position) => (
+          <PreviewReading
+            key={position}
+            align={position === 0 ? "left" : "right"}
+            cycleKey={index}
+            label={window.label}
+            percent={window.percent}
+          />
+        ))}
       </span>
 
       <CycledText
@@ -412,6 +414,7 @@ function PreviewReading({
         "flex min-w-0 flex-1 flex-col gap-1.5",
         align === "right" && "items-end",
       )}
+      data-slot="preview-reading"
     >
       <span className="text-[8px] tracking-[0.12em] text-muted-foreground uppercase">
         {label}
@@ -479,4 +482,3 @@ function PreviewBar({ percent }: { percent: number | null }) {
     </span>
   );
 }
-

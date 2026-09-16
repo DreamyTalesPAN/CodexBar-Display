@@ -60,6 +60,7 @@ type providerCollector struct {
 	persistInterval       time.Duration
 	wake                  <-chan struct{}
 	afterWakeCollect      func()
+	onFirstFresh          func()
 
 	warmupUntil time.Time
 
@@ -71,6 +72,7 @@ type providerCollector struct {
 	inventoryEnabled        map[string]struct{}
 	firstCollectStarted     bool
 	firstCollectDone        bool
+	firstFreshNotified      bool
 	lastFetchErr            error
 	tokenStatsMu            sync.Mutex
 	tokenStatsRunning       bool
@@ -435,12 +437,19 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		successes++
 		updated = true
 	}
+	notifyFirstFresh := successes > 0 && !c.firstFreshNotified
+	if notifyFirstFresh {
+		c.firstFreshNotified = true
+	}
 	c.mu.Unlock()
 
 	if updated {
 		c.persistIfNeeded(collectedAt)
 	}
 	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
+	if notifyFirstFresh && c.onFirstFresh != nil {
+		c.onFirstFresh()
+	}
 }
 
 func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {

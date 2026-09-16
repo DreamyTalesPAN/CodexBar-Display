@@ -28,6 +28,7 @@ export type AiFixProviderState = {
 };
 
 export type AiFixPromptInput = {
+  platform?: string;
   /** The Mac App's own version, not the background service's. */
   appVersion?: string;
   appBuild?: string;
@@ -60,18 +61,19 @@ export type AiFixPromptInput = {
  * report's redaction on the way out.
  */
 export function buildAiFixPrompt(input: AiFixPromptInput): string {
+  const windows = input.platform === "windows";
   const setupLog = (input.setupLog || [])
     .map((line) => clean(line))
     .filter(Boolean);
   const lines = [
     "You are an AI support and coding agent. Your first and highest priority is",
-    "to get this VibeTV setup working on this Mac. Work with the existing local",
+    `to get this VibeTV setup working on this ${windows ? "Windows PC" : "Mac"}. Work with the existing local`,
     "installation and state. Do not clone the repository or open a pull request.",
     "",
     `Repository: ${REPOSITORY}`,
     `Failing screen: ${input.screen} — ${SCREEN_SOURCE[input.screen]}`,
-    `Mac App: ${versionLabel(input.appVersion, input.appBuild)}${
-      input.osVersion ? ` · macOS ${clean(input.osVersion)}` : ""
+    `${windows ? "Windows" : "Mac"} App: ${versionLabel(input.appVersion, input.appBuild)}${
+      input.osVersion ? ` · ${windows ? "Windows" : "macOS"} ${clean(input.osVersion)}` : ""
     }`,
     `Background service: ${versionLabel(
       input.companionVersion,

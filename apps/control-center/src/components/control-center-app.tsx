@@ -2447,6 +2447,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     release: hostedCompanionRelease,
   } = useCompanionRelease(
     companionInfo?.app?.version || companionInfo?.version,
+    { enabled: companionInfo?.app?.platform !== "windows" },
   );
 
   const checkUpdates = useCallback(async () => {
@@ -3678,6 +3679,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // unannounced.
   const runtimeRelease = companionInfo?.update;
   const companionRelease =
+    companionInfo?.app?.platform === "windows"
+      ? runtimeRelease || null
+      :
     runtimeRelease &&
     runtimeRelease.status !== "check_failed" &&
     companionInfo?.app?.installedInApplications
@@ -4416,6 +4420,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // wizard behind it yet, can still offer the same Help control.
   const setupAiFixPrompt = (setupLog: string[] = []) =>
     buildAiFixPrompt({
+      platform: companionInfo?.app?.platform,
       appBuild: companionInfo?.app?.build,
       appVersion: companionInfo?.app?.version,
       companionCommit: companionInfo?.runtime?.commit,
@@ -4571,6 +4576,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       >
         {activeShellTab === "overview" ? (
           <OverviewScreen
+            companionPlatform={companionInfo?.app?.platform}
             companionVersion={companionInfo?.version}
             companionStatus={companionStatus}
             device={device}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-10T07:44:31Z",
+  "providers": [{
+    "id": "codex",
+    "name": "Codex",
+    "windows": [
+      {"kind": "session", "label": "Session", "usedPercent": 0, "remainingPercent": 100, "resetAt": null},
+      {"kind": "weekly", "label": "Weekly", "usedPercent": 32, "remainingPercent": 68, "resetAt": "2026-09-16T10:54:49Z"},
+      {"kind": "codex-spark", "label": "Codex Spark 5-hour", "usedPercent": 0, "remainingPercent": 100, "resetAt": "2026-09-10T12:44:31Z"},
+      {"kind": "reset-credits", "label": "Reset credits", "usedPercent": 0, "remainingPercent": 100, "resetAt": "2026-10-04T02:16:13.579083Z"}
+    ]
+  }]
+}

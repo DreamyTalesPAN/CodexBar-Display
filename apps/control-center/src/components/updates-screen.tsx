@@ -109,6 +109,8 @@ export function UpdatesScreen({
   supportReportBusy = false,
   themeUpdateAvailable = false,
 }: UpdatesScreenProps) {
+  const windowsApp = companionInfo?.app?.platform === "windows";
+  const appLabel = windowsApp ? "Windows App" : "Mac App";
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
   // firmware update check), never from an update job result: a failed job
@@ -156,7 +158,7 @@ export function UpdatesScreen({
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
   );
-  const verifiedDmgDownloadUrl = availableMacAppDmgDownloadUrl(companionRelease);
+  const verifiedDmgDownloadUrl = windowsApp ? undefined : availableMacAppDmgDownloadUrl(companionRelease);
   const macAppMigrationReady = Boolean(
     requiresMacAppMigration && verifiedDmgDownloadUrl,
   );
@@ -188,6 +190,7 @@ export function UpdatesScreen({
   const macAppCheckFailed =
     macAppRunning &&
     (companionRelease?.status === "check_failed" ||
+      (windowsApp && companionRelease?.status === "missing_asset") ||
       companionRelease?.dmgDownloadStatus === "check_failed");
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   const companionInstalled =
@@ -195,7 +198,8 @@ export function UpdatesScreen({
       ? "Not running"
       : companionInfo?.app?.version || companionVersion || "Unknown";
   const companionAvailable =
-    companionRelease?.latestVersion || companionRelease?.release || "Checking";
+    companionRelease?.latestVersion || companionRelease?.release ||
+    (companionRelease?.status === "missing_asset" ? "Not available" : "Checking");
   const pageStatusHeading =
     installingUpdate
       ? updateStatus?.stage === "rebooting" ||
@@ -240,14 +244,18 @@ export function UpdatesScreen({
       <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
-          description="Software running on this Mac."
+          description={windowsApp ? "Software running on this Windows PC." : "Software running on this Mac."}
           installedLabel="Installed"
           installedValue={companionInstalled}
           latestLabel="Available"
           latestValue={companionAvailable}
-          title="Mac App"
+          title={appLabel}
           updateAvailable={macAppUpdateAvailable || macAppMigrationReady}
-        />
+        >
+          {macAppCheckFailed && companionRelease?.message ? (
+            <Alert><AlertDescription>{companionRelease.message}</AlertDescription></Alert>
+          ) : null}
+        </UpdateCard>
 
         <UpdateCard
           description="Software running on your VibeTV."
@@ -263,13 +271,13 @@ export function UpdatesScreen({
               <ShieldCheck aria-hidden />
               <AlertTitle>
                 {macAppMustUpdateFirst
-                  ? "Update Mac App first"
-                  : "Checking Mac App"}
+                  ? `Update ${appLabel} first`
+                  : `Checking ${appLabel}`}
               </AlertTitle>
               <AlertDescription>
                 {macAppMustUpdateFirst
-                  ? "Update the Mac App first. The VibeTV firmware update comes next."
-                  : "Waiting for the Mac App update check. The VibeTV update unlocks when it finishes."}
+                  ? `Update the ${appLabel} first. The VibeTV firmware update comes next.`
+                  : `Waiting for the ${appLabel} update check. The VibeTV update unlocks when it finishes.`}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -384,23 +392,19 @@ function PrimaryUpdateAction({
 
   const label = installingFirmware
     ? "Updating VibeTV"
-    : firmwareUpdateAvailable
-      ? "Update"
-      : macAppMigrationRequired
-        ? macAppCheckFailed
-          ? "Check again"
-          : "Update"
-        : macAppUpdateAvailable
+    : checking
+      ? "Checking updates"
+      : macAppCheckFailed
+        ? "Check again"
+        : firmwareUpdateAvailable || macAppMigrationRequired || macAppUpdateAvailable
           ? "Update"
-          : checking
-            ? "Checking updates"
-            : "Check for updates";
+          : "Check for updates";
   const icon = installingFirmware || checking ? (
     <Spinner data-icon="inline-start" />
-  ) : firmwareUpdateAvailable ? (
-    <Download data-icon="inline-start" aria-hidden />
   ) : macAppCheckFailed ? (
     <RefreshCw data-icon="inline-start" aria-hidden />
+  ) : firmwareUpdateAvailable ? (
+    <Download data-icon="inline-start" aria-hidden />
   ) : macAppMigrationRequired ? (
     <Download data-icon="inline-start" aria-hidden />
   ) : (

@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -46,12 +46,11 @@ const BUILD: &str = match option_env!("VIBETV_BUILD") {
 struct Shell {
     runtime_origin: Mutex<Url>,
     preparing: Mutex<bool>,
+    updating: Mutex<bool>,
+    last_error: Mutex<Option<String>>,
     // Bumped on every present; a delayed hide only applies if nothing
     // presented the window again while it waited.
     presentations: AtomicU64,
-    // One updater at a time: the tray item and vibetv://check-for-updates
-    // must not launch two NSIS installers over the same files.
-    updating: AtomicBool,
 }
 
 fn main() {
@@ -59,7 +58,9 @@ fn main() {
         // A second launch (autostart plus Start menu, or the updater's
         // relaunch) brings the existing window forward instead of starting a
         // second shell that would fight over the same Companion.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| present_window(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            present_window(app)
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -69,8 +70,9 @@ fn main() {
         .manage(Shell {
             runtime_origin: Mutex::new(Url::parse(DEFAULT_RUNTIME_ORIGIN).expect("static origin")),
             preparing: Mutex::new(false),
+            updating: Mutex::new(false),
+            last_error: Mutex::new(None),
             presentations: AtomicU64::new(0),
-            updating: AtomicBool::new(false),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -97,6 +99,20 @@ fn main() {
 
 fn log(message: &str) {
     eprintln!("VibeTV Control Center: {message}");
+    // A GUI-subsystem executable has no customer-visible stderr.
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let dir = PathBuf::from(appdata).join("codexbar-display").join("logs");
+        if std::fs::create_dir_all(&dir).is_ok() {
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("windows-shell.log"))
+            {
+                let _ = writeln!(file, "{message}");
+            }
+        }
+    }
 }
 
 fn version(app: &AppHandle) -> String {
@@ -147,11 +163,29 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
-            &MenuItem::with_id(app, MENU_OPEN, "Open VibeTV Control Center", true, None::<&str>)?,
-            &MenuItem::with_id(app, MENU_RELOAD, "Reload Control Center", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_OPEN,
+                "Open VibeTV Control Center",
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(
+                app,
+                MENU_RELOAD,
+                "Reload Control Center",
+                true,
+                None::<&str>,
+            )?,
             &MenuItem::with_id(app, MENU_UPDATES, "Check for Updates…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, MENU_QUIT, "Quit VibeTV Control Center", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_QUIT,
+                "Quit VibeTV Control Center",
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
     let tray = app
@@ -190,6 +224,14 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
         .inner_size(1280.0, 900.0)
         .min_inner_size(960.0, 640.0)
         .user_agent(&user_agent(app))
+        .on_page_load(|window, _| {
+            // The first runtime failure can arrive before the welcome page
+            // attaches its listener. Replay it when that page is ready.
+            let shell = window.state::<Shell>();
+            let error = shell.last_error.lock().unwrap().clone();
+            let detail = serde_json::json!({ "error": error });
+            let _ = window.eval(format!("window.dispatchEvent(new CustomEvent('vibetv:shell-status', {{ detail: {detail} }}))"));
+        })
         // vibetv:// links are the UI's way of asking the shell for something;
         // handled here, so WebView2 never looks for a protocol handler.
         .on_navigation(move |url| {
@@ -241,7 +283,8 @@ fn hide_after_flush(app: &AppHandle) {
 }
 
 fn handle_native_action(app: &AppHandle, url: &Url) {
-    match url.host_str().unwrap_or_default() {
+    match native_action(url).unwrap_or_default() {
+        "open-control-center" => present_window(app),
         "restart-control-center" => app.restart(),
         "repair-runtime" => {
             let success = prepare_and_load(app.clone());
@@ -254,21 +297,7 @@ fn handle_native_action(app: &AppHandle, url: &Url) {
         // for a healthy runtime, so a stuck or repeatedly failing engine is
         // really restarted instead of merely re-checked.
         "repair-codexbar" => {
-            let success = match claim_update_hold() {
-                UpdateHold::UpdateRunning => {
-                    log("usage service restart deferred: a firmware update or theme install owns the runtime");
-                    false
-                }
-                UpdateHold::Granted | UpdateHold::NoAnswer => {
-                    let restarted = restart_runtime(app);
-                    if !restarted {
-                        // The runtime survived; do not leave updates refused
-                        // for the rest of the hold window.
-                        release_update_hold();
-                    }
-                    restarted && prepare_and_load(app.clone())
-                }
-            };
+            let success = restart_runtime(app) && prepare_and_load(app.clone());
             dispatch_result(app, "vibetv:codexbar-repair-result", success);
         }
         "finish-codexbar-recovery" => {}
@@ -295,85 +324,27 @@ fn restart_runtime(app: &AppHandle) -> bool {
     }
 }
 
-enum UpdateHold {
-    Granted,
-    UpdateRunning,
-    NoAnswer,
-}
-
-// A firmware update or theme install runs inside the Companion process, so
-// restarting it mid-job leaves the device half-written. Asking first and
-// stopping second is a race; the Companion therefore offers a claim: from
-// this call on it refuses new jobs, and answers 409 when one already owns
-// the runtime. Same contract as the Mac App's runtimeClaimUpdateHold. A
-// runtime that does not answer at all is not running a job either -- the
-// job lives in that process -- so the repair proceeds. Only our own runtime
-// can promise anything: runtime-endpoint.json may be stale and its port
-// reused by an unrelated listener, whose replies are skipped like the
-// health check skips them.
-fn claim_update_hold() -> UpdateHold {
-    let http = runtime_http();
-    for origin in runtime_origin_candidates() {
-        if !runtime_identity_matches(&http, &origin) {
-            continue;
-        }
-        let url = origin.join("/v1/runtime-health/update-hold").expect("static path");
-        let Ok(response) = http
-            .post(url.as_str())
-            .header("Content-Type", "application/json")
-            .send("{}")
-        else {
-            continue;
-        };
-        return match response.status().as_u16() {
-            409 => UpdateHold::UpdateRunning,
-            200..=299 => UpdateHold::Granted,
-            // An older runtime without the endpoint cannot promise anything;
-            // hold back rather than strand an update, as the Mac App does.
-            _ => UpdateHold::UpdateRunning,
-        };
+fn native_action(url: &Url) -> Option<&str> {
+    if url.scheme() != "vibetv"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "" | "/")
+    {
+        return None;
     }
-    UpdateHold::NoAnswer
-}
-
-// True when a VibeTV runtime owned by this shell's task answers at origin.
-fn runtime_identity_matches(http: &ureq::Agent, origin: &Url) -> bool {
-    let url = origin.join("/v1/runtime-health").expect("static path");
-    let Ok(mut response) = http.get(url.as_str()).call() else {
-        return false;
-    };
-    if response.status() != 200 {
-        return false;
+    match url.host_str()? {
+        action @ ("open-control-center"
+        | "restart-control-center"
+        | "repair-runtime"
+        | "check-for-updates"
+        | "repair-codexbar"
+        | "finish-codexbar-recovery"
+        | "open-codexbar") => Some(action),
+        _ => None,
     }
-    let Ok(body) = response.body_mut().read_to_string() else {
-        return false;
-    };
-    serde_json::from_str::<RuntimeHealth>(&body)
-        .map(|health| health.companion.runtime.listener_owner == RUNTIME_LABEL)
-        .unwrap_or(false)
-}
-
-fn release_update_hold() {
-    let http = runtime_http();
-    for origin in runtime_origin_candidates() {
-        if !runtime_identity_matches(&http, &origin) {
-            continue;
-        }
-        let url = origin.join("/v1/runtime-health/update-hold").expect("static path");
-        let _ = http
-            .post(url.as_str())
-            .header("Content-Type", "application/json")
-            .send(r#"{"release":true}"#);
-    }
-}
-
-fn runtime_http() -> ureq::Agent {
-    ureq::Agent::new_with_config(
-        ureq::Agent::config_builder()
-            .timeout_global(Some(RUNTIME_HEALTH_REQUEST_TIMEOUT))
-            .http_status_as_error(false)
-            .build(),
-    )
 }
 
 fn dispatch_result(app: &AppHandle, event: &str, success: bool) {
@@ -385,6 +356,7 @@ fn dispatch_result(app: &AppHandle, event: &str, success: bool) {
 }
 
 fn show_status(app: &AppHandle, error: Option<&str>) {
+    *app.state::<Shell>().last_error.lock().unwrap() = error.map(str::to_owned);
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let detail = serde_json::json!({ "error": error });
         let _ = window.eval(format!(
@@ -428,7 +400,9 @@ fn prepare_runtime(app: &AppHandle) -> Result<Url, String> {
     let expected_version = run_companion(app, &["version", "--short"])?;
     // A healthy runtime of this exact build needs no re-registration; this is
     // the common path on every start after the first.
-    if let Ok(origin) = wait_for_healthy_runtime(app, &expected_version, RUNTIME_INITIAL_HEALTH_TIMEOUT) {
+    if let Ok(origin) =
+        wait_for_healthy_runtime(app, &expected_version, RUNTIME_INITIAL_HEALTH_TIMEOUT)
+    {
         return Ok(origin);
     }
     let version = version(app);
@@ -494,10 +468,19 @@ struct RuntimeEndpoint {
     origin: String,
 }
 
-fn wait_for_healthy_runtime(app: &AppHandle, expected_version: &str, timeout: Duration) -> Result<Url, String> {
+fn wait_for_healthy_runtime(
+    app: &AppHandle,
+    expected_version: &str,
+    timeout: Duration,
+) -> Result<Url, String> {
     let deadline = Instant::now() + timeout;
     let mut last_error = String::from("no response");
-    let http = runtime_http();
+    let http = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_global(Some(RUNTIME_HEALTH_REQUEST_TIMEOUT))
+            .http_status_as_error(false)
+            .build(),
+    );
     loop {
         for origin in runtime_origin_candidates() {
             match check_runtime_health(app, &http, &origin, expected_version) {
@@ -512,19 +495,33 @@ fn wait_for_healthy_runtime(app: &AppHandle, expected_version: &str, timeout: Du
     }
 }
 
-fn check_runtime_health(app: &AppHandle, http: &ureq::Agent, origin: &Url, expected_version: &str) -> Result<(), String> {
+fn check_runtime_health(
+    app: &AppHandle,
+    http: &ureq::Agent,
+    origin: &Url,
+    expected_version: &str,
+) -> Result<(), String> {
     let url = origin.join("/v1/runtime-health").expect("static path");
-    let mut response = http.get(url.as_str()).call().map_err(|error| error.to_string())?;
+    let mut response = http
+        .get(url.as_str())
+        .call()
+        .map_err(|error| error.to_string())?;
     if response.status() != 200 {
         return Err(format!("HTTP {}", response.status()));
     }
-    let body = response.body_mut().read_to_string().map_err(|error| error.to_string())?;
+    let body = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|error| error.to_string())?;
     let health: RuntimeHealth = serde_json::from_str(&body).map_err(|error| error.to_string())?;
     if !health.ok {
         return Err("runtime reports not ok".into());
     }
     if health.companion.version != expected_version {
-        return Err(format!("runtime version {} != {expected_version}", health.companion.version));
+        return Err(format!(
+            "runtime version {} != {expected_version}",
+            health.companion.version
+        ));
     }
     if health.companion.app.version != version(app) || health.companion.app.build != BUILD {
         return Err(format!(
@@ -538,7 +535,10 @@ fn check_runtime_health(app: &AppHandle, http: &ureq::Agent, origin: &Url, expec
         return Err("runtime does not run next to the shell".into());
     }
     if health.companion.runtime.listener_owner != RUNTIME_LABEL {
-        return Err(format!("runtime is owned by {}", health.companion.runtime.listener_owner));
+        return Err(format!(
+            "runtime is owned by {}",
+            health.companion.runtime.listener_owner
+        ));
     }
     Ok(())
 }
@@ -548,7 +548,10 @@ fn check_runtime_health(app: &AppHandle, http: &ureq::Agent, origin: &Url, expec
 fn runtime_origin_candidates() -> Vec<Url> {
     let mut candidates = Vec::new();
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        let path = PathBuf::from(appdata).join("codexbar-display").join("run").join("runtime-endpoint.json");
+        let path = PathBuf::from(appdata)
+            .join("codexbar-display")
+            .join("run")
+            .join("runtime-endpoint.json");
         if let Ok(data) = std::fs::read(path) {
             if let Ok(endpoint) = serde_json::from_slice::<RuntimeEndpoint>(&data) {
                 if let Ok(origin) = Url::parse(&endpoint.origin) {
@@ -568,99 +571,113 @@ fn runtime_origin_candidates() -> Vec<Url> {
 
 // The Updates tab's "Update" button lands here (vibetv://check-for-updates),
 // as does the tray item. The NSIS updater exits this process and relaunches
-// the new build, which re-registers the Companion task on start. This exe
-// has no console, so every outcome the customer waits for is shown in a
-// native message box; stderr alone would leave the click unanswered.
+// the new build, which re-registers the Companion task on start.
 fn check_for_updates(app: AppHandle) {
-    if app
-        .state::<Shell>()
-        .updating
-        .swap(true, Ordering::SeqCst)
     {
-        log("update check already running; ignoring repeated request");
-        return;
+        let shell = app.state::<Shell>();
+        let mut updating = shell.updating.lock().unwrap();
+        if *updating {
+            return;
+        }
+        *updating = true;
     }
     tauri::async_runtime::spawn(async move {
         let result = async {
-            let updater = app.updater().map_err(|error| format!("updater unavailable: {error}"))?;
-            let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
-            let Some(update) = update else {
-                return Ok(UpdateOutcome::UpToDate);
-            };
-            log(&format!("downloading update {}", update.version));
-            let bytes = update
-                .download(|_, _| {}, || {})
-                .await
-                .map_err(|error| format!("update download failed: {error}"))?;
-            // Installing replaces the Companion binary and restarts its task
-            // while a firmware update or theme install may be writing to the
-            // device. The hold lasts one minute, so it is claimed only now,
-            // after the download, right before the installer takes over --
-            // exactly like repair-codexbar.
-            let hold = tauri::async_runtime::spawn_blocking(claim_update_hold)
-                .await
-                .map_err(|error| format!("update hold check failed: {error}"))?;
-            if let UpdateHold::UpdateRunning = hold {
-                return Ok(UpdateOutcome::Busy);
+            let updater = app.updater().map_err(|error| error.to_string())?;
+            match updater.check().await.map_err(|error| error.to_string())? {
+                Some(update) => {
+                    let message = format!(
+                        "VibeTV Control Center {} is available. Install this update now?",
+                        update.version
+                    );
+                    let confirmed = tauri::async_runtime::spawn_blocking(move || {
+                        native_update_dialog(&message, true)
+                    })
+                    .await
+                    .unwrap_or(false);
+                    if confirmed {
+                        update
+                            .download_and_install(|_, _| {}, || {})
+                            .await
+                            .map_err(|error| error.to_string())?;
+                    }
+                }
+                None => {
+                    let _ = tauri::async_runtime::spawn_blocking(|| {
+                        native_update_dialog("VibeTV Control Center is up to date.", false)
+                    })
+                    .await;
+                }
             }
-            log(&format!("installing update {}", update.version));
-            if let Err(error) = update.install(bytes) {
-                // Nothing was replaced; give the runtime back to device jobs.
-                let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
-                return Err(format!("update install failed: {error}"));
-            }
-            Ok::<UpdateOutcome, String>(UpdateOutcome::Installed)
+            Ok::<(), String>(())
         }
         .await;
-        // The installer relaunches this process on success; every other
-        // outcome frees the guard for the next request.
-        app.state::<Shell>().updating.store(false, Ordering::SeqCst);
-        match result {
-            Ok(UpdateOutcome::Installed) => {}
-            Ok(UpdateOutcome::UpToDate) => show_message("VibeTV Control Center is up to date."),
-            Ok(UpdateOutcome::Busy) => {
-                log("update deferred: a firmware update or theme install owns the runtime");
-                show_message(
-                    "The update was not installed because a VibeTV update or theme install is running. Try again when it has finished.",
-                );
-            }
-            Err(error) => {
-                log(&error);
-                show_message(
-                    "The update could not be installed. Check your internet connection and try again; if this keeps happening, download the latest installer from vibetv.shop.",
-                );
-            }
+        if let Err(error) = result {
+            log(&format!("update check/install failed: {error}"));
+            let _ = tauri::async_runtime::spawn_blocking(|| native_update_dialog(
+                "The Windows update could not be completed. Check your connection and try again later. If this continues, open Support in VibeTV Control Center.", false)).await;
         }
+        *app.state::<Shell>().updating.lock().unwrap() = false;
     });
 }
 
-enum UpdateOutcome {
-    Installed,
-    UpToDate,
-    Busy,
-}
-
-// Native message box: works while the webview is hidden or still loading.
-fn show_message(message: &str) {
+fn native_update_dialog(message: &str, confirm: bool) -> bool {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TASKMODAL, MessageBoxW,
+            IDYES, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TASKMODAL, MB_YESNO, MessageBoxW,
         };
         let text: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
-        let title: Vec<u16> = "VibeTV Control Center".encode_utf16().chain(Some(0)).collect();
-        std::thread::spawn(move || {
-            // SAFETY: both buffers are NUL-terminated and outlive the call.
-            unsafe {
-                MessageBoxW(
-                    std::ptr::null_mut(),
-                    text.as_ptr(),
-                    title.as_ptr(),
-                    MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TASKMODAL,
-                );
-            }
-        });
+        let title: Vec<u16> = "VibeTV Control Center"
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        let style = (if confirm { MB_YESNO } else { MB_OK })
+            | MB_ICONINFORMATION
+            | MB_SETFOREGROUND
+            | MB_TASKMODAL;
+        // Both strings are NUL-terminated and remain alive for the modal call.
+        return unsafe {
+            MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), style) == IDYES
+        };
     }
     #[cfg(not(windows))]
-    log(message);
+    {
+        let _ = confirm;
+        log(message);
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_actions_match_mac_url_boundary() {
+        for action in [
+            "open-control-center",
+            "restart-control-center",
+            "repair-runtime",
+            "check-for-updates",
+            "repair-codexbar",
+            "finish-codexbar-recovery",
+            "open-codexbar",
+        ] {
+            assert_eq!(
+                native_action(&Url::parse(&format!("vibetv://{action}")).unwrap()),
+                Some(action)
+            );
+        }
+        for url in [
+            "https://repair-runtime",
+            "vibetv://repair-runtime/path",
+            "vibetv://repair-runtime?x=1",
+            "vibetv://repair-runtime#x",
+            "vibetv://user@repair-runtime",
+            "vibetv://repair-runtime:123",
+            "vibetv://unknown",
+        ] {
+            assert_eq!(native_action(&Url::parse(url).unwrap()), None, "{url}");
+        }
+    }
 }

@@ -85,7 +85,7 @@ export function LogsScreen({
             <CardTitle>Connected VibeTV</CardTitle>
             <CardDescription>
               {deviceConnected
-                ? "The VibeTV currently controlled by this Mac."
+                ? "The VibeTV currently controlled by this computer."
                 : "No VibeTV is currently connected."}
             </CardDescription>
             <CardAction>

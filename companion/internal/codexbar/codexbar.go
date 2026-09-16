@@ -1113,6 +1113,12 @@ func parseUsageWindows(payload map[string]any) []UsageWindow {
 	if !ok {
 		extra, ok = payload["extraRateWindows"]
 	}
+	if !ok {
+		extra, ok = getPath(payload, "usage.extra_rate_windows")
+	}
+	if !ok {
+		extra, ok = payload["extra_rate_windows"]
+	}
 	if ok {
 		windows = append(windows, parseExtraUsageWindows(extra)...)
 	}

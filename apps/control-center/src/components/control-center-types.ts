@@ -27,6 +27,7 @@ export type CompanionInfo = {
   version?: string;
   installationMode?: "legacy" | "dmg";
   app?: {
+    platform?: string;
     version?: string;
     build?: string;
     path?: string;
@@ -146,7 +147,7 @@ export type SupportDiagnostics = {
       viewport?: string;
       timezone?: string;
       visibility?: string;
-      surface?: "native-mac-app" | "browser";
+      surface?: "native-mac-app" | "native-windows-app" | "browser";
       appVersion?: string;
       appBuild?: string;
       /** Loopback runtime address. Diagnostic only; not navigable. */

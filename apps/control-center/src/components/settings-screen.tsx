@@ -262,7 +262,7 @@ export function SettingsScreen({
       <ItemSeparator className="my-0" />
 
       <SettingsSection
-        description="Connect this Mac to another VibeTV."
+        description="Connect this computer to another VibeTV."
         title="Setup"
       >
         <div>

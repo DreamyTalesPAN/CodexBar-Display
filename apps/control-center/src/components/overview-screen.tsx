@@ -36,6 +36,7 @@ import {
 } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
+  companionPlatform?: string;
   companionVersion?: string;
   companionStatus: CompanionStatus;
   device: DeviceInfo | null;
@@ -48,6 +49,7 @@ type OverviewScreenProps = {
 };
 
 export function OverviewScreen({
+  companionPlatform,
   companionVersion,
   companionStatus,
   device,
@@ -102,7 +104,7 @@ export function OverviewScreen({
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
             <StatusItem
               icon={<AppWindow aria-hidden />}
-              label="Mac App"
+              label={companionPlatform === "windows" ? "Windows App" : "Mac App"}
               value={labelForCompanion(companionStatus, companionVersion)}
             />
             <StatusItem

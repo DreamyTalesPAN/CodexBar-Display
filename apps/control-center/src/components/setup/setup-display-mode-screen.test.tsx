@@ -45,6 +45,16 @@ function panels(html: string): { automatic: string; manual: string } {
 }
 
 describe("SetupDisplayModeScreen", () => {
+  it("renders the supplied window names without inventing Session or a second lane", () => {
+    const tile = panels(render({ automaticPreview: {
+      providerLabel: "Codex", resetLabel: null, sessionPercent: 36, weeklyPercent: 0,
+      windows: [{ label: "Weekly", percent: 36 }],
+    } })).automatic;
+    expect(tile).toContain("Weekly");
+    expect(tile).not.toContain("Session");
+    expect(tile.match(/data-slot="preview-reading"/g)).toHaveLength(1);
+  });
+
   it("explains both display modes", () => {
     const html = render();
 

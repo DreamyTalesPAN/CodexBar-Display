@@ -12,6 +12,12 @@ function event(
 }
 
 describe("buildAiFixPrompt", () => {
+  it("identifies Windows without sending support down the Mac repair path", () => {
+    const prompt = buildAiFixPrompt({ ...base, platform: "windows", appVersion: "1.4.2", osVersion: "11" });
+    expect(prompt).toContain("working on this Windows PC");
+    expect(prompt).toContain("Windows App: 1.4.2 · Windows 11");
+    expect(prompt).not.toContain("Mac");
+  });
   it("repairs the local setup first and leaves a pull request to the user", () => {
     const prompt = buildAiFixPrompt({
       appVersion: "1.4.2",

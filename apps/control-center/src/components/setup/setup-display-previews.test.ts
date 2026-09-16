@@ -18,6 +18,26 @@ function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
 }
 
 describe("displayPreviewFor", () => {
+  it("keeps the normalized Weekly and Spark labels, including a real zero", () => {
+    const preview = displayPreviewFor(provider({ windows: [
+      { id: "weekly", label: "Weekly", usedPercent: 36, resetSecs: 3600 },
+      { id: "spark", label: "Codex Spark 5-hour", usedPercent: 0 },
+    ] }));
+    expect(preview?.windows).toEqual([
+      { label: "Weekly", percent: 36 },
+      { label: "Codex Spark 5-hour", percent: 0 },
+    ]);
+    expect(preview?.resetLabel).toBe("Reset in 1h 0m");
+  });
+
+  it("does not invent a second window and respects remaining mode and unavailable data", () => {
+    const window = { id: "monthly", label: "Monthly", usedPercent: 27 };
+    expect(displayPreviewFor(provider({ usageMode: "remaining", windows: [window] }))?.windows)
+      .toEqual([{ label: "Monthly", percent: 73 }]);
+    expect(displayPreviewFor(provider({ usageUnavailable: true, windows: [window] }))?.windows)
+      .toEqual([{ label: "Monthly", percent: null }]);
+  });
+
   it("carries the provider's own reading", () => {
     expect(displayPreviewFor(provider({}))).toEqual({
       providerLabel: "Codex",
