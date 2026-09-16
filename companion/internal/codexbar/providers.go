@@ -344,14 +344,16 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	if enabled {
 		action = "enable"
 	}
-	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, providerToggleArgs(action, providerID)...)
-	if err != nil {
-		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
-	}
+	// Consent first: if the settings file cannot take the flag, Claude
+	// stays switched off and the UI matches CodexBar without a rollback.
 	if enabled && providerID == "claude" && providerProbePerProvider {
 		if err := grantClaudeCredentialsFn(); err != nil {
 			return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 		}
+	}
+	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, providerToggleArgs(action, providerID)...)
+	if err != nil {
+		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	return nil
 }

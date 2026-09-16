@@ -140,7 +140,18 @@ func TestSetProviderEnabledGrantsClaudeCredentialsOnWindowsOnly(t *testing.T) {
 
 	providerProbePerProvider = true
 	grantClaudeCredentialsFn = func() error { return errors.New("dpapi failed") }
+	toggled := false
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"claude","displayName":"Claude","enabled":false}]`), nil
+		}
+		toggled = true
+		return []byte(""), nil
+	}
 	if err := SetProviderEnabled(context.Background(), "claude", true); err == nil {
 		t.Fatal("grant failure must surface")
+	}
+	if toggled {
+		t.Fatal("Claude must stay disabled in CodexBar when the consent flag cannot be written")
 	}
 }
