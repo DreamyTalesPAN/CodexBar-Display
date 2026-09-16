@@ -3,12 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   assetKind,
   formatBytes,
+  importedImageSize,
   spriteMetadata,
   themeAssetByteLength,
   themeAssetPathForFile,
 } from "./theme-studio-assets";
 
 describe("Theme Studio asset helpers", () => {
+  it("scales imported pictures into the static sprite pixel budget", () => {
+    expect(importedImageSize(1000, 1000)).toEqual({ width: 181, height: 181 });
+    expect(importedImageSize(181, 181)).toEqual({ width: 181, height: 181 });
+    expect(importedImageSize(1920, 1080)).toEqual({ width: 240, height: 135 });
+    expect(importedImageSize(240, 128)).toEqual({ width: 240, height: 128 });
+    expect(importedImageSize(1000, 1000).width ** 2).toBeLessThanOrEqual(32768);
+  });
   it("reads static and animated sprite metadata", () => {
     expect(spriteMetadata("CBI1\n16 8\n1\n#FFFFFF\n16.\n")).toEqual({
       fps: 0,

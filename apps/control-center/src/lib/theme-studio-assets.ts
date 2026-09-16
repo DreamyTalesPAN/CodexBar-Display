@@ -73,14 +73,8 @@ export async function importSpriteFile(
     // The customer scene editor imports ordinary pictures, not inferred sprite
     // sheets. Keep the full image and its aspect ratio; explicit CBA files above
     // retain their animation. The technical editor keeps its sheet workflow.
-    const scale = Math.min(1, 240 / bitmap.width, 240 / bitmap.height);
     const frame = rasterLayout === "image"
-      ? {
-          columns: 1,
-          frameCount: 1,
-          width: Math.max(1, Math.round(bitmap.width * scale)),
-          height: Math.max(1, Math.round(bitmap.height * scale)),
-        }
+      ? { columns: 1, frameCount: 1, ...importedImageSize(bitmap.width, bitmap.height) }
       : inferSpriteSheetFrame(bitmap.width, bitmap.height);
     const sprite = spriteFromBitmap(bitmap, frame, rasterLayout === "image");
     return {
@@ -103,6 +97,26 @@ export async function importSpriteFile(
   } finally {
     bitmap.close();
   }
+}
+
+/**
+ * Display size for a whole imported picture: keeps the aspect ratio, fits the
+ * 240x240 display and stays within the firmware's static-sprite pixel budget
+ * so the imported design can still be validated, saved and exported.
+ */
+export function importedImageSize(width: number, height: number): { width: number; height: number } {
+  const scale = Math.min(
+    1,
+    240 / width,
+    240 / height,
+    Math.sqrt(MAX_SPRITE_TOTAL_PIXELS / (width * height)),
+  );
+  let w = Math.max(1, Math.round(width * scale));
+  let h = Math.max(1, Math.round(height * scale));
+  while (w * h > MAX_SPRITE_TOTAL_PIXELS) {
+    if (w >= h) w -= 1; else h -= 1;
+  }
+  return { width: w, height: h };
 }
 
 function inferSpriteSheetFrame(width: number, height: number) {

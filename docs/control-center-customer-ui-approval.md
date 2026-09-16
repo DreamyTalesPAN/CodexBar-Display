@@ -3713,6 +3713,19 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
   their tests, and this approval record.
 
+## 2026-09-16 — Imported pictures fit the display's picture budget
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `6b41ecba` found that a large square picture imported through "Add
+  element" became a 240x240 asset that the design could no longer save or
+  export.
+- Approved customer-visible result: **An imported picture is scaled down a
+  little further when needed (for example a square photo appears at 181x181
+  instead of 240x240) so the design can always be saved and exported. No new
+  screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
+  test, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding
