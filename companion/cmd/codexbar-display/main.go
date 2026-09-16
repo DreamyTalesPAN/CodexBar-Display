@@ -1498,7 +1498,21 @@ func runService(args []string) error {
 		args = append(args[:1], args[3:]...)
 	}
 
-	switch strings.TrimSpace(strings.ToLower(args[0])) {
+	subcommand := strings.TrimSpace(strings.ToLower(args[0]))
+	// Every subcommand that replaces or stops the running Windows task can
+	// cut off a firmware update or theme install living inside it. The same
+	// hold the shell claims before a repair (main.rs claim_update_hold) is
+	// claimed here, centrally, so the installer hooks and a customer typing
+	// "service start" by hand are guarded alike.
+	if runtime.GOOS == "windows" {
+		switch subcommand {
+		case "install", "uninstall", "start", "stop":
+			if err := claimRuntimeUpdateHold(home, runtimepaths.DisplayStreamLaunchAgentLabel()); err != nil {
+				return err
+			}
+		}
+	}
+	switch subcommand {
 	case "install":
 		if runtime.GOOS != "windows" {
 			return errors.New("service install is only supported on Windows; run setup instead")
@@ -1524,16 +1538,6 @@ func runService(args []string) error {
 		return nil
 	case "uninstall":
 		label := runtimepaths.DisplayStreamLaunchAgentLabel()
-		// The Windows uninstaller calls this before it kills the process. A
-		// firmware update or theme install runs inside that process, so the
-		// same hold the shell claims before a repair is claimed here; a
-		// refusal aborts the uninstall instead of leaving a half-written
-		// device behind.
-		if runtime.GOOS == "windows" {
-			if err := claimRuntimeUpdateHold(home, label); err != nil {
-				return err
-			}
-		}
 		if err := service.New(label, home, label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Uninstall(context.Background()); err != nil {
 			return err
 		}
@@ -1551,13 +1555,6 @@ func runService(args []string) error {
 		fmt.Println("background service: enabled and started")
 		return nil
 	case "stop":
-		// The Windows installer stops the task before replacing the binary,
-		// exactly like the uninstaller; the same hold guards both.
-		if runtime.GOOS == "windows" {
-			if err := claimRuntimeUpdateHold(home, runtimepaths.DisplayStreamLaunchAgentLabel()); err != nil {
-				return err
-			}
-		}
 		if err := stopLaunchAgent(true); err != nil {
 			return err
 		}
