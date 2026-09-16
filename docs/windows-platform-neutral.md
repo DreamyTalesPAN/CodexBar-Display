@@ -19,18 +19,23 @@ Gatekeeper, and CLI `--version`, normalizes the two signing xattrs, publishes
 atomically, then validates again. Swift only reports whether the exact private
 GUI app is already running, preserving its existing reuse exception.
 
-## Known dependency blockers (also recorded in issue #415)
+## Known dependency gaps (also recorded in issue #415)
 
-- Keep the JSON provider inventory. Win-CodexBar 0.55.0 does not support
-  `config providers --json`. Wait for released support; no text fallback and no
-  Windows release before the authoritative inventory works.
-- Keep `serve --request-timeout 0`. Removing a flag added for slow-refresh
-  availability needs a visible bench comparison. Win-CodexBar 0.55.0 cannot yet
-  run the unchanged production serve command.
+Win-CodexBar 0.56.8 still lacks two Mac CLI options. The Companion works
+around both on Windows only (`runtime.GOOS == "windows"`); the Mac path is
+unchanged. CI's contract test fails as soon as upstream adds either option,
+so the workaround is revisited then.
 
-CI extracts the pinned Windows CLI from the SHA-256-verified upstream installer
-(this release is unsigned; no upstream source
-build, patch, installer execution, or tray launch). Both released binaries run
+- `config providers --json` is missing. Windows reads the text inventory
+  (`codex: enabled default (Codex)`) through the same parser
+  (`providerInventoryArgs`, `parseProviderSettingsText`).
+- `serve --request-timeout 0` is rejected. Windows omits the flag. The flag was
+  added for slow-refresh availability on the Mac; whether Windows needs it has
+  no bench comparison yet.
+
+CI downloads the pinned Windows console CLI from the SHA-256-verified upstream
+release zip (this release is unsigned; no upstream source build, patch,
+installer execution, or tray launch). Both released binaries run
 contract checks alongside #357's recordings. Known gaps are explicit assertions:
 when an upstream release closes them, CI requires revisiting the blockers.
 Green contract tests do not waive those blockers or prove authenticated usage.

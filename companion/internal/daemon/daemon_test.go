@@ -2611,7 +2611,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 	if !ok || len(inside.Providers) != 1 {
 		t.Fatalf("expected bounded persisted usage, got ok=%t usage=%+v", ok, inside)
 	}
-	if inside.Providers[0].Frame.UsageUnavailable || inside.Providers[0].Frame.Session != 68 ||
+	if inside.Providers[0].Frame.UsageUnavailable || inside.Providers[0].Frame.Weekly != 68 ||
 		len(inside.Providers[0].Frame.UsageSlots) != 1 || len(inside.Providers[0].Meta.Windows) != 1 {
 		t.Fatalf("bounded snapshot changed before expiry: %+v", inside.Providers[0])
 	}
@@ -3732,7 +3732,7 @@ func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthyWit
 	}
 
 	frames := collector.providerFrames(now)
-	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Session != 21 {
+	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Weekly != 21 {
 		t.Fatalf("expected dashboard usage after readiness retry, got %#v", frames)
 	}
 }
@@ -4009,8 +4009,12 @@ func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *tes
 		len(frame.UsageSlots) != 2 ||
 		frame.UsageSlots[0].Label != "Weekly" ||
 		frame.UsageSlots[1].Label != "Codex Spark Weekly" ||
-		frame.Session != 24 ||
-		frame.Weekly != 0 ||
+		// Only a weekly window is present: the session lane stays unavailable
+		// instead of showing the weekly quota positionally.
+		frame.Session != 0 ||
+		!frame.SessionUnavailable ||
+		frame.Weekly != 24 ||
+		frame.WeeklyUnavailable ||
 		frame.ResetSec != 3600 {
 		t.Fatalf("expected Codex dashboard usage as v1 legacy slots in sent frame, got %+v", frame)
 	}
@@ -4093,6 +4097,46 @@ func TestProviderCollectorPrunesDisabledProviderFromAuthoritativeInventory(t *te
 	}
 	if !reflect.DeepEqual(collector.order, []string{"codex"}) {
 		t.Fatalf("disabled provider remained in authoritative order: %v", collector.order)
+	}
+}
+
+// A switched-off provider keeps its local token history and cost --provider
+// all still reports it; the token pass must not resurrect the snapshot the
+// authoritative inventory just removed.
+func TestProviderCollectorTokenHistoryDoesNotRecreateDisabledProvider(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 9, 16, 9, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: true},
+				{ID: "cursor", Enabled: false},
+			}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex":  {SessionTokens: 10, WeekTokens: 20, TotalTokens: 30, UpdatedAt: now},
+				"cursor": {SessionTokens: 5, WeekTokens: 6, TotalTokens: 7, UpdatedAt: now},
+			}, true
+		},
+	}
+	collector.collectOnce(context.Background())
+	collector.collectTokenStatsOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 || frames[0].Provider != "codex" {
+		t.Fatalf("token history recreated a disabled provider: %#v", frames)
+	}
+	if frames[0].Frame.TotalTokens != 30 {
+		t.Fatalf("enabled provider lost its token history: %#v", frames[0].Frame)
 	}
 }
 
@@ -4751,6 +4795,30 @@ func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorUnavailableTokenHistoryCompletesWithoutKnownZero(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	c := &providerCollector{
+		now: func() time.Time { return now }, logf: func(string, ...any) {},
+		snapshotMaxAge: time.Minute, persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{"codex": {
+			Provider: "codex", Collected: now,
+			Frame: protocol.Frame{Provider: "codex", Weekly: 20, TotalTokens: 99, TokenTotalsKnown: true},
+			Meta:  codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 99}},
+		}},
+		fetchTokenStatsReport: func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex": {Unavailable: true}, "not-configured": {Unavailable: true},
+			}, codexbar.ProviderTokenStatsReport{OK: true}
+		},
+	}
+	c.collectTokenStatsOnce(context.Background())
+	got := c.providers["codex"]
+	if len(c.providers) != 1 || got.Frame.TokenTotalsKnown || got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(now) || got.Frame.Weekly != 20 {
+		t.Fatalf("unavailable history changed providers, quota or known-zero state: %+v", c.providers)
+	}
+}
+
 func TestProviderCollectorPartialTokenScanKeepsFailedProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -5281,7 +5349,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			if dashboardCalls != 2 || fallbackCalls != 0 {
 				t.Fatalf("expected dashboard attempts without usage-json fallback, dashboard=%d fallback=%d", dashboardCalls, fallbackCalls)
 			}
-			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Session != 68 ||
+			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Weekly != 68 || !frames[0].Frame.SessionUnavailable ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" ||
 				!frames[0].Stale || frames[0].Frame.UsageUnavailable {
 				t.Fatalf("expected dashboard snapshot within last-good window unchanged, got %+v", frames)
@@ -5302,7 +5370,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			current = current.Add(time.Second)
 			collector.collectOnce(context.Background())
 			frames = collector.providerFrames(current)
-			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 21 ||
+			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Weekly != 21 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" {
 				t.Fatalf("expected fresh dashboard recovery, got %+v", frames)
 			}
@@ -5417,7 +5485,7 @@ func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t
 	if frames[0].Provider != "codex" || !frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 0 || len(frames[0].Meta.Windows) != 0 {
 		t.Fatalf("expected expired Codex usage to be cleared, got %+v", frames[0])
 	}
-	if frames[1].Provider != "claude" || frames[1].Frame.UsageUnavailable || frames[1].Frame.Session != 22 || len(frames[1].Meta.Windows) != 2 {
+	if frames[1].Provider != "claude" || frames[1].Frame.UsageUnavailable || frames[1].Frame.Weekly != 22 || !frames[1].Frame.SessionUnavailable || len(frames[1].Meta.Windows) != 2 {
 		t.Fatalf("expected Claude to remain fresh while Codex is unavailable, got %+v", frames[1])
 	}
 
@@ -5431,7 +5499,7 @@ func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t
 	collector.collectOnce(context.Background())
 	frames = collector.providerFrames(current)
 	if len(frames) != 2 || frames[0].Provider != "codex" || frames[0].Frame.UsageUnavailable ||
-		frames[0].Frame.Session != 31 || len(frames[0].Frame.UsageSlots) != 2 {
+		frames[0].Frame.Weekly != 31 || len(frames[0].Frame.UsageSlots) != 2 {
 		t.Fatalf("expected Codex dashboard recovery to replace unavailable state, got %+v", frames)
 	}
 }

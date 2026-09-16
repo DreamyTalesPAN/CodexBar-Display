@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -123,7 +124,7 @@ func TestFetchProviderTokenStatsRequestsCompleteCostScan(t *testing.T) {
 	if gotBin != "/tmp/CodexBarCLI" {
 		t.Fatalf("unexpected binary %q", gotBin)
 	}
-	if !slices.Equal(gotArgs, []string{"cost", "--json", "--refresh", "--days", "30"}) {
+	if !slices.Equal(gotArgs, tokenStatsArgs(runtime.GOOS)) {
 		t.Fatalf("expected an explicit complete 30-day cost scan, got %#v", gotArgs)
 	}
 }

@@ -45,9 +45,10 @@ func TestParseProviderPayloadPreservesKnownLaneWhenOtherLaneIsUnknown(t *testing
 			knownPercent:      17,
 		},
 		{
-			name:         "explicit unknown primary",
-			raw:          `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
-			knownPercent: 57,
+			name:               "explicit unknown primary",
+			raw:                `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
+			sessionUnavailable: true,
+			knownPercent:       57,
 		},
 	}
 	for _, test := range tests {
@@ -1143,6 +1144,7 @@ func TestFetchAllProvidersDoesNotFallBackToCodexCLIOnAggregateCommandFailure(t *
 }
 
 func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
+	skipMacCLIContract(t)
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
@@ -1175,6 +1177,7 @@ func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
 }
 
 func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.T) {
+	skipMacCLIContract(t)
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
@@ -1239,6 +1242,7 @@ func TestFetchAllProvidersReturnsRuntimeErrorForOfficialGlobalCLIError(t *testin
 }
 
 func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
+	skipMacCLIContract(t)
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn

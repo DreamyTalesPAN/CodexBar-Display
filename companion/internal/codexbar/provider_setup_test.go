@@ -17,6 +17,7 @@ import (
 )
 
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -96,6 +97,7 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 }
 
 func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -124,6 +126,7 @@ func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T
 }
 
 func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	home := t.TempDir()
 	standard := filepath.Join(home, ".config", "codexbar", "config.json")
@@ -158,6 +161,7 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 }
 
 func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	home := t.TempDir()
 	testenv.Home(t, home)
 	t.Setenv("CODEXBAR_CONFIG", "")
@@ -347,7 +351,8 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
       {"provider":"claude","error":{"message":"No Claude session key found in browser cookies."}},
       {"provider":"cursor","error":{"message":"Keychain access denied."}},
       {"provider":"gemini","usage":{}},
-      {"provider":"copilot","error":{"message":"No available fetch strategy."}}
+      {"provider":"copilot","error":{"message":"No available fetch strategy."}},
+      {"provider":"kimi","error":"Kimi usage failed from all configured sources. OAuth: Reading credentials is off; CLI: not installed"}
     ]`)
 	got := providerReadinessFromOutput(raw, errors.New("exit status 1"), nil)
 	statuses := make(map[string]string)
@@ -360,7 +365,7 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	want := map[string]string{
 		"codex": ProviderReady, "claude": ProviderAuthRequired,
 		"cursor": ProviderPermissionRequired, "gemini": ProviderNoUsageAvailable,
-		"copilot": ProviderNotConfigured,
+		"copilot": ProviderNotConfigured, "kimi": ProviderAuthRequired,
 	}
 	for provider, status := range want {
 		if statuses[provider] != status {
@@ -395,6 +400,7 @@ func TestProviderReadinessCopyHidesInternalUsageServiceName(t *testing.T) {
 }
 
 func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -483,6 +489,63 @@ func writeExecutable(t *testing.T, path string) {
 	}
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Windows probes each switched-on provider one by one with an 18 s budget
+// each. A shared deadline over the whole loop -- the probe's own 20 s or the
+// 25 s the setup handlers put on the request context -- would hand the second
+// provider an almost spent context and mark it unavailable, so the
+// per-provider path must not run under any inherited deadline.
+func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	writeExecutable(t, bin)
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.56.8"), nil
+	}
+	var probeDeadlines []bool
+	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":true}
+			]`), nil
+		}
+		_, hasDeadline := ctx.Deadline()
+		probeDeadlines = append(probeDeadlines, hasDeadline)
+		provider := args[3]
+		return []byte(`[{"provider":"` + provider + `","usage":{"primary":{"usedPercent":5}}}]`), nil
+	}
+
+	parent, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	got := ProbeProviderSetup(parent, t.TempDir())
+	if got.Status != ProviderReady || len(got.Providers) != 2 {
+		t.Fatalf("unexpected readiness: %+v", got)
+	}
+	for _, provider := range got.Providers {
+		if provider.Status != ProviderReady {
+			t.Fatalf("every probed provider must be ready: %+v", got.Providers)
+		}
+	}
+	if len(probeDeadlines) != 2 {
+		t.Fatalf("expected one probe per enabled provider, got %d", len(probeDeadlines))
+	}
+	for i, hasDeadline := range probeDeadlines {
+		if hasDeadline {
+			t.Fatalf("probe %d ran under the shared aggregate deadline; each provider needs its own budget", i)
+		}
 	}
 }
 
@@ -586,6 +649,7 @@ func fileMode(t *testing.T, path string) os.FileMode {
 // not-configured stand-in, and the customer was told to download the CodexBar
 // they already have. CodexBar's own inventory is the authority on the switches.
 func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -744,6 +808,7 @@ func TestProviderReadinessKeepsReportedMessageInternal(t *testing.T) {
 // A ready provider means there is nothing to disclose and no inventory call to
 // pay for.
 func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {

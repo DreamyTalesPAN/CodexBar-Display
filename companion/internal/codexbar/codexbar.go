@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
@@ -325,7 +327,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	// before the customer saw a screen, then providers arriving and toggling
 	// themselves on under their hands. Which providers are on is CodexBar's
 	// own setting and the customer's choice, not something to seed from a probe.
-	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+	out, err := runUsageAllEnabled(ctx, timeout, bin, "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
 
 	if err != nil {
@@ -431,8 +433,12 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 	cmdCtx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, bin, args...)
-	cmd.Env = commandEnvironment(configPathFromContext(parent))
+	cmd := childproc.Hide(exec.CommandContext(cmdCtx, bin, args...))
+	env, err := commandEnvironment(configPathFromContext(parent))
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil && cmdCtx.Err() != nil {
 		return out, cmdCtx.Err()
@@ -521,6 +527,9 @@ type ProviderCostUsage struct {
 	LatestTokens      int64
 	TopModel          string
 	Daily             []ProviderCostDay
+	// KnownZero marks a complete scan that found no usage at all. An
+	// all-zero result is otherwise indistinguishable from "nothing known".
+	KnownZero bool
 }
 
 type ProviderCostDay struct {
@@ -1181,9 +1190,6 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 }
 
 func parseUsageWindowMap(windowMap map[string]any, id string, label string) (UsageWindow, bool) {
-	if usageKnown, ok := anyToBool(windowMap["usageKnown"]); ok && !usageKnown {
-		return UsageWindow{}, false
-	}
 	used, known := knownUsagePercentAtPaths(windowMap, "usedPercent", "used_percent", "percent", "usagePercent")
 	if !known {
 		return UsageWindow{}, false
@@ -2779,14 +2785,31 @@ func firstRFC3339AtPaths(m map[string]any, paths ...string) time.Time {
 	return parsed.UTC()
 }
 
+func usageWindowUnavailable(m map[string]any) bool {
+	if usageKnown, exists := anyToBool(m["usageKnown"]); exists && !usageKnown {
+		return true
+	}
+	// CodexBar also uses rate-window objects for informational notices (for
+	// example an absent session). Their numeric value is not a quota.
+	for _, key := range []string{"isInformational", "is_informational"} {
+		if informational, _ := anyToBool(m[key]); informational {
+			return true
+		}
+	}
+	return false
+}
+
 func knownUsagePercentAtPaths(m map[string]any, paths ...string) (int, bool) {
+	if usageWindowUnavailable(m) {
+		return 0, false
+	}
 	for _, path := range paths {
 		value, ok := getPath(m, path)
 		if !ok {
 			continue
 		}
 		if window, ok := value.(map[string]any); ok {
-			if usageKnown, exists := anyToBool(window["usageKnown"]); exists && !usageKnown {
+			if usageWindowUnavailable(window) {
 				return 0, false
 			}
 			for _, key := range []string{"usedPercent", "used_percent", "percent", "usagePercent"} {

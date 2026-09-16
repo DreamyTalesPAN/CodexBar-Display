@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -58,7 +60,7 @@ func (d deps) withDefaults() deps {
 				d.runCommand = runSystemCommand
 			}
 			home, _ := d.homeDir()
-			d.serviceManager = service.NewWindows(launchAgentLabel, home, d.runCommand)
+			d.serviceManager = service.NewWindows(service.WindowsRuntimeLabel(home), home, d.runCommand)
 		} else if d.runCommand == nil {
 			d.serviceManager = service.New(launchAgentLabel, "", false)
 		} else {
@@ -183,7 +185,7 @@ func runWithDeps(ctx context.Context, d deps) error {
 }
 
 func runSystemCommand(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, name, args...))
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
@@ -206,7 +208,7 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 	}
 	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	if d.goos == "windows" {
-		data, err := d.readFile(service.TaskConfigPath(home, launchAgentLabel))
+		data, err := d.readFile(service.TaskConfigPath(home, service.WindowsRuntimeLabel(home)))
 		if err != nil {
 			return launchAgentConfig{}
 		}

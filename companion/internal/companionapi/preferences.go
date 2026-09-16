@@ -653,7 +653,15 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			if reported != "" {
 				reported = message + " " + reported
 			}
-		} else if setting.Health == codexbar.ProviderHealthChecking {
+		} else if _, fresh := freshSuccess[setting.ID]; setting.Health == codexbar.ProviderHealthChecking && !fresh {
+			// A check is running and nothing else speaks for the provider. A
+			// fresh collector reading does: the device is showing it right now,
+			// so the row falls through to the exact-readiness and usage
+			// evidence below instead of closing Continue for the length of the
+			// check. The Windows CLI takes twenty seconds per health pass, and
+			// the setup step polls while a row is checking, so on that machine
+			// every enabled provider was "checking" two thirds of the time and
+			// the completion gate refused a working Codex in the same rhythm.
 			state = string(codexbar.ProviderHealthChecking)
 			message = providerHealthMessage(codexbar.ProviderHealthChecking)
 			reported = ""

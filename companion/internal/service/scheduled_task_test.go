@@ -47,6 +47,12 @@ func TestWindowsTaskLifecycleHermetic(t *testing.T) {
 	if !strings.Contains(scripts[3], "$task.Enabled = $true") || !strings.Contains(scripts[4], "$folder.DeleteTask($name, 0)") {
 		t.Fatal("restart/uninstall missing")
 	}
+	if !strings.Contains(scripts[1], "if ($task.State -eq 4) {\n$engines = @($task.GetInstances(0) | ForEach-Object { $_.EnginePID })\n$task.Stop(0)") || !strings.Contains(scripts[1], "$null = $task.Run($null)") {
+		t.Fatal("start must replace a running instance before running the task")
+	}
+	if !strings.Contains(scripts[2], "Get-Process -Id $_ -ErrorAction SilentlyContinue") {
+		t.Fatal("stop must wait for the action processes, not only the instance list")
+	}
 }
 
 func TestWindowsStatusStatesAndErrors(t *testing.T) {

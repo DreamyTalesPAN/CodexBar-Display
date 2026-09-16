@@ -153,11 +153,11 @@ func main() {
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
 	fmt.Println("  codexbar-display api [--addr 127.0.0.1:47832] [--dev-origin http://localhost:3000]")
-	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini] [--api-addr 127.0.0.1:47832]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini] [--api-addr 127.0.0.1:47832] [--native-shell --app-version x.y.z --app-build n --runtime-label <label>]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display open-control-center [--addr 127.0.0.1:47832] [--path /control-center] [--no-open]")
-	fmt.Println("  codexbar-display service <start|stop|status>")
+	fmt.Println("  codexbar-display service <start|stop|status|install|uninstall> [--label <label>] [daemon args for install...]")
 	fmt.Println("  codexbar-display version [--short] [--json]")
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--repo owner/name] [--skip-version-guard]")
 	fmt.Println("  codexbar-display install-update [--target http://<device-ip>] [--manifest-url url] [--confirm-live-update] [--force] [--verbose]")
@@ -206,6 +206,26 @@ func runDaemon(args []string) error {
 	}
 	if opts.LastGoodMaxAge > 0 {
 		if err := os.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", opts.LastGoodMaxAge.String()); err != nil {
+			return err
+		}
+	}
+	// A native shell (Windows) registers the daemon as a Scheduled Task, which
+	// cannot carry environment variables the way a LaunchAgent plist does, so
+	// the shell passes the same settings as flags.
+	for key, value := range map[string]string{
+		"VIBETV_MAC_APP_VERSION":                      opts.AppVersion,
+		"VIBETV_MAC_APP_BUILD":                        opts.AppBuild,
+		runtimepaths.DisplayStreamLaunchAgentLabelEnv: opts.RuntimeLabel,
+	} {
+		if value == "" {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	if opts.NativeShell {
+		if err := os.Setenv("VIBETV_DISABLE_MAC_APP_SELF_UPDATE", "1"); err != nil {
 			return err
 		}
 	}
@@ -309,6 +329,10 @@ type daemonCommandOptions struct {
 	APIAddr        string
 	APIDevOrigin   string
 	APIFallback    bool
+	AppVersion     string
+	AppBuild       string
+	NativeShell    bool
+	RuntimeLabel   string
 }
 
 func parseDaemonOptions(args []string) (daemon.Options, error) {
@@ -328,6 +352,10 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	apiDevOrigin := fs.String("api-dev-origin", "http://localhost:3000", "additional allowed local dev origin for --api-addr")
 	apiFallback := fs.Bool("api-fallback", false, "fall back to a free loopback port when --api-addr is in use")
 	lastGoodMaxAge := fs.Duration("last-good-max-age", 0, "override last-good frame maximum age (otherwise use environment/default)")
+	appVersion := fs.String("app-version", "", "native shell version reported as the Control Center app version")
+	appBuild := fs.String("app-build", "", "native shell build number reported as the Control Center app build")
+	nativeShell := fs.Bool("native-shell", false, "serve the Control Center only to the native shell (disables the browser UI and the in-runtime self update)")
+	runtimeLabel := fs.String("runtime-label", "", "service label that owns this runtime (otherwise use environment/default)")
 	if err := fs.Parse(args); err != nil {
 		return daemonCommandOptions{}, err
 	}
@@ -356,6 +384,10 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 		APIAddr:      strings.TrimSpace(*apiAddr),
 		APIDevOrigin: strings.TrimSpace(*apiDevOrigin),
 		APIFallback:  *apiFallback,
+		AppVersion:   strings.TrimSpace(*appVersion),
+		AppBuild:     strings.TrimSpace(*appBuild),
+		NativeShell:  *nativeShell,
+		RuntimeLabel: strings.TrimSpace(*runtimeLabel),
 	}, nil
 }
 
@@ -965,7 +997,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		return doctorRuntimeConfig{}, err
 	}
 	if runtime.GOOS == "windows" {
-		label := "com.codexbar-display.daemon"
+		label := service.WindowsRuntimeLabel(home)
 		manager := service.New(label, home, false)
 		status, err := manager.Status(context.Background())
 		if err != nil {
@@ -1314,6 +1346,61 @@ func checkDoctorCompanionHealth(expectedOwner string) error {
 }
 
 func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) error {
+	return forEachOwnedRuntimeOrigin(origins, expectedOwner, func(string) error { return nil })
+}
+
+// claimRuntimeUpdateHold asks the runtime owned by label for the update hold
+// the shell's repair path claims (main.rs claim_update_hold). A runtime that
+// does not answer is not running a job -- the job lives in that process -- so
+// only a refusal (409) or a failed request to an identified runtime blocks.
+func claimRuntimeUpdateHold(home, label string) error {
+	return claimRuntimeUpdateHoldAt(runtimeHealthOrigins(home), label)
+}
+
+func claimRuntimeUpdateHoldAt(origins []string, label string) error {
+	client := &http.Client{Timeout: 3 * time.Second}
+	identified := false
+	err := forEachOwnedRuntimeOrigin(origins, label, func(origin string) error {
+		identified = true
+		response, err := client.Post(strings.TrimRight(origin, "/")+"/v1/runtime-health/update-hold", "application/json", strings.NewReader("{}"))
+		if err != nil {
+			return fmt.Errorf("runtime update hold request failed: %w", err)
+		}
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+		_ = response.Body.Close()
+		switch {
+		case response.StatusCode == http.StatusConflict:
+			return fmt.Errorf("a VibeTV update or theme install is still running; try again when it has finished (%s)", strings.TrimSpace(string(body)))
+		case response.StatusCode < 200 || response.StatusCode >= 300:
+			return fmt.Errorf("runtime update hold refused with HTTP %d", response.StatusCode)
+		}
+		return nil
+	})
+	if !identified {
+		return nil
+	}
+	return err
+}
+
+func runtimeHealthOrigins(home string) []string {
+	defaultOrigin := "http://" + companionapi.DefaultAddr
+	origins := []string{defaultOrigin}
+	if data, err := os.ReadFile(runtimeEndpointPath(home)); err == nil {
+		var endpoint runtimeEndpoint
+		if json.Unmarshal(data, &endpoint) == nil {
+			if published := strings.TrimSpace(endpoint.Origin); published != "" && published != defaultOrigin {
+				origins = append([]string{published}, origins...)
+			}
+		}
+	}
+	return origins
+}
+
+// forEachOwnedRuntimeOrigin runs then against the first origin whose
+// runtime-health identifies a healthy runtime owned by expectedOwner. The
+// health probing is checkDoctorCompanionHealth's; when no origin answers, the
+// last probe error is returned.
+func forEachOwnedRuntimeOrigin(origins []string, expectedOwner string, then func(origin string) error) error {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var lastErr error
 	for _, origin := range origins {
@@ -1358,7 +1445,7 @@ func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) e
 			lastErr = fmt.Errorf("runtime health belongs to %q, expected %q", owner, expectedOwner)
 			continue
 		}
-		return nil
+		return then(origin)
 	}
 	return lastErr
 }
@@ -1395,15 +1482,72 @@ func runSetup(args []string) error {
 
 func runService(args []string) error {
 	if len(args) == 0 {
-		return errors.New("missing service subcommand: expected start, stop, or status")
+		return errors.New("missing service subcommand: expected start, stop, status, install, or uninstall")
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory: %w", err)
 	}
+	// The Windows shell installs its runtime under its own label and has no
+	// environment to hand over; --label names the task for every subcommand.
+	if len(args) >= 3 && args[1] == "--label" {
+		if err := os.Setenv(runtimepaths.DisplayStreamLaunchAgentLabelEnv, strings.TrimSpace(args[2])); err != nil {
+			return err
+		}
+		args = append(args[:1], args[3:]...)
+	}
 
-	switch strings.TrimSpace(strings.ToLower(args[0])) {
+	subcommand := strings.TrimSpace(strings.ToLower(args[0]))
+	// Every subcommand that replaces or stops the running Windows task can
+	// cut off a firmware update or theme install living inside it. The same
+	// hold the shell claims before a repair (main.rs claim_update_hold) is
+	// claimed here, centrally, so the installer hooks and a customer typing
+	// "service start" by hand are guarded alike.
+	if runtime.GOOS == "windows" {
+		switch subcommand {
+		case "install", "uninstall", "start", "stop":
+			if err := claimRuntimeUpdateHold(home, runtimepaths.DisplayStreamLaunchAgentLabel()); err != nil {
+				return err
+			}
+		}
+	}
+	switch subcommand {
+	case "install":
+		if runtime.GOOS != "windows" {
+			return errors.New("service install is only supported on Windows; run setup instead")
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if _, err := parseDaemonCommandOptions(args[1:]); err != nil {
+			return err
+		}
+		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		if _, err := service.WriteTaskConfig(home, label, service.TaskConfig{Executable: executable, Arguments: append([]string{"daemon"}, args[1:]...)}); err != nil {
+			return err
+		}
+		if err := migrateLegacyWindowsTask(home, label); err != nil {
+			return err
+		}
+		if err := restartLaunchAgent(home); err != nil {
+			return err
+		}
+		fmt.Println("background service: installed and started")
+		return nil
+	case "uninstall":
+		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		if err := service.New(label, home, label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Uninstall(context.Background()); err != nil {
+			return err
+		}
+		if runtime.GOOS == "windows" {
+			if err := os.Remove(service.TaskConfigPath(home, label)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		fmt.Println("background service: uninstalled")
+		return nil
 	case "start":
 		if err := startLaunchAgent(home); err != nil {
 			return err
@@ -1432,14 +1576,48 @@ func runService(args []string) error {
 			fmt.Printf("pid: %s\n", status.PID)
 		}
 		if runtime.GOOS == "windows" {
-			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, strings.TrimSuffix(launchAgentLabel, ".plist")))
+			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, runtimepaths.DisplayStreamLaunchAgentLabel()))
 		} else {
 			fmt.Printf("plist: %s\n", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel))
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown service subcommand %q: expected start, stop, or status", args[0])
+		return fmt.Errorf("unknown service subcommand %q: expected start, stop, status, install, or uninstall", args[0])
 	}
+}
+
+// legacyWindowsTaskManagerFn is replaced in tests.
+var legacyWindowsTaskManagerFn = func(home string) service.Manager {
+	return service.New(runtimepaths.LegacyDisplayStreamLaunchAgentLabel, home, false)
+}
+
+// migrateLegacyWindowsTask retires the task an earlier "codexbar-display
+// setup" registered under the legacy label before the shell runtime takes
+// over. Both daemons share the writer lock and API port, so the legacy task
+// would otherwise keep running and the shell's health check would reject its
+// owner forever. Mirrors the Mac App's legacy LaunchAgent migration.
+func migrateLegacyWindowsTask(home, label string) error {
+	if runtime.GOOS != "windows" || label == runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+		return nil
+	}
+	legacyConfig := service.TaskConfigPath(home, runtimepaths.LegacyDisplayStreamLaunchAgentLabel)
+	if _, err := os.Stat(legacyConfig); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	// The central claim in runService asks only the new label; the task
+	// retired here runs under the legacy label and may be mid firmware
+	// update, so its own hold is claimed before it is uninstalled.
+	if err := claimRuntimeUpdateHold(home, runtimepaths.LegacyDisplayStreamLaunchAgentLabel); err != nil {
+		return err
+	}
+	if err := legacyWindowsTaskManagerFn(home).Uninstall(context.Background()); err != nil {
+		return fmt.Errorf("retire legacy background task: %w", err)
+	}
+	if err := os.Remove(legacyConfig); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	fmt.Println("background service: retired legacy task " + runtimepaths.LegacyDisplayStreamLaunchAgentLabel)
+	return nil
 }
 
 func runThemeValidate(args []string) error {
