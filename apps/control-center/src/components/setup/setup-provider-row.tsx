@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
 
 export type SetupProviderRowVariant =
+  | "browser_sign_in"
   | "checking"
   | "no_usage"
   | "outage"
@@ -52,6 +53,10 @@ export function setupProviderRowVariant(
     case "auth_required":
     case "setup_required":
       return "sign_in";
+    // Signed in to the tool, but the usage endpoint only answers a browser
+    // session (Claude on Windows). The row offers to open that page.
+    case "browser_sign_in_required":
+      return "browser_sign_in";
     case "permission_required":
       return "permission";
     case "no_usage_available":
@@ -84,6 +89,12 @@ type SetupProviderRowProps = {
    */
   reportedMessage?: string;
   onCheckAgain: () => void;
+  /**
+   * Opens the provider's browser sign-in page through the companion. Only
+   * rendered for "browser_sign_in_required"; absent when the shell has no
+   * page to open.
+   */
+  onOpenSignIn?: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -102,6 +113,7 @@ export function SetupProviderRow({
   health,
   label,
   onCheckAgain,
+  onOpenSignIn,
   onToggle,
   reportedMessage,
   saving = false,
@@ -125,6 +137,8 @@ export function SetupProviderRow({
   const fallbackMessage =
     variant === "sign_in"
       ? `Sign in to ${label}`
+      : variant === "browser_sign_in"
+        ? `Sign in to ${label} in your browser, then check again`
       : variant === "permission"
         ? "Allow access in macOS"
         : variant === "no_usage"
@@ -134,7 +148,12 @@ export function SetupProviderRow({
             : variant === "stale"
               ? "Live usage is unavailable"
             : "Check timed out";
-  const guidance = reportedMessage || detail || fallbackMessage;
+  // The browser sign-in row shows our own guidance: CodexBar's sentence
+  // there is the three-source failure list, which names the wrong fix.
+  const guidance =
+    variant === "browser_sign_in"
+      ? detail || fallbackMessage
+      : reportedMessage || detail || fallbackMessage;
 
   return (
     <Item
@@ -152,6 +171,13 @@ export function SetupProviderRow({
           <>
             <SetupProviderRowMessage>{guidance}</SetupProviderRowMessage>
             {copyReportedMessage}
+            {variant === "browser_sign_in" && onOpenSignIn ? (
+              <SetupProviderRowAction
+                icon={ExternalLink}
+                label={`Open ${label} sign-in in your browser`}
+                onClick={onOpenSignIn}
+              />
+            ) : null}
             {variant === "stale" ? null : checking ? (
               <>
                 <span className="sr-only">Checking {label}…</span>

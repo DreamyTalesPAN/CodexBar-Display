@@ -137,6 +137,10 @@ const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
+// Sign-in follow-up: the Windows CLI needs ~20 s per exact Claude check, so
+// checks are spaced out and stop after a few minutes if nobody signs in.
+const PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS = 15_000;
+const PROVIDER_SIGN_IN_FOLLOW_UP_CHECKS = 12;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -3058,6 +3062,77 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [refreshProviderPreferences, runCompanion],
   );
 
+  // After the browser sign-in page opens, keep asking for this provider's
+  // exact check until the row leaves "browser_sign_in_required" or the
+  // window runs out. The customer signs in in another window; without this
+  // the row only moves when they come back and press check again.
+  const providerSignInFollowUpRef = useRef<{
+    providerId: string;
+    stop: () => void;
+  } | null>(null);
+  const openProviderSignIn = useCallback(
+    async (item: PreferenceDescriptor) => {
+      const providerId = item.providerId?.trim().toLowerCase();
+      if (!providerId) {
+        return;
+      }
+      try {
+        await runCompanion(
+          `/v1/providers/sign-in?provider=${encodeURIComponent(providerId)}`,
+          { method: "POST" },
+        );
+        setProviderPreferencesError(null);
+      } catch (error) {
+        setProviderPreferencesError(
+          normalizeCaughtError(
+            error,
+            `The ${item.label} sign-in page could not be opened.`,
+          ),
+        );
+        return;
+      }
+      providerSignInFollowUpRef.current?.stop();
+      let stopped = false;
+      let remaining = PROVIDER_SIGN_IN_FOLLOW_UP_CHECKS;
+      let timer: number | null = null;
+      const stillWaiting = () =>
+        providerPreferencesRef.current?.some(
+          (preference) =>
+            preference.providerId?.trim().toLowerCase() === providerId &&
+            preference.health?.state === "browser_sign_in_required",
+        ) ?? false;
+      const tick = async () => {
+        timer = null;
+        if (stopped || remaining <= 0 || !stillWaiting()) {
+          return;
+        }
+        remaining -= 1;
+        await checkProvider(item);
+        if (!stopped && remaining > 0 && stillWaiting()) {
+          timer = window.setTimeout(
+            () => void tick(),
+            PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+          );
+        }
+      };
+      providerSignInFollowUpRef.current = {
+        providerId,
+        stop: () => {
+          stopped = true;
+          if (timer !== null) {
+            window.clearTimeout(timer);
+          }
+        },
+      };
+      timer = window.setTimeout(
+        () => void tick(),
+        PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+      );
+    },
+    [checkProvider, runCompanion],
+  );
+  useEffect(() => () => providerSignInFollowUpRef.current?.stop(), []);
+
   const updateProviderDisplay = useCallback(
     (
       next:
@@ -4003,6 +4078,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     pendingCheckIds: pendingProviderCheckIds,
     pendingPreferenceIds,
     onCheck: checkProvider,
+    onOpenSignIn: openProviderSignIn,
     onDisplayChange: updateProviderDisplay,
     onPreferenceChange: updateProviderPreference,
   };
@@ -4518,6 +4594,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void installTheme();
           }}
           onProviderCheck={(provider) => void checkProvider(provider)}
+          onProviderOpenSignIn={(provider) => void openProviderSignIn(provider)}
           onProviderToggle={(provider, enabled) =>
             void updateProviderPreference(provider, enabled)
           }

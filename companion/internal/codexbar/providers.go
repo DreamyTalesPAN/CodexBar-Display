@@ -135,8 +135,11 @@ func silentProbePayload(setting ProviderSetting, runErr error) map[string]any {
 type ProviderHealthState string
 
 const (
-	ProviderHealthHealthy       ProviderHealthState = "healthy"
-	ProviderHealthAuthRequired  ProviderHealthState = "auth_required"
+	ProviderHealthHealthy      ProviderHealthState = "healthy"
+	ProviderHealthAuthRequired ProviderHealthState = "auth_required"
+	// ProviderHealthBrowserSignIn: signed in to the tool, but the usage
+	// endpoint only answers a browser session. See ProviderBrowserSignInRequired.
+	ProviderHealthBrowserSignIn ProviderHealthState = "browser_sign_in_required"
 	ProviderHealthSetupRequired ProviderHealthState = "setup_required"
 	ProviderHealthNoUsage       ProviderHealthState = "no_usage_available"
 	ProviderHealthUnavailable   ProviderHealthState = "unavailable"
@@ -511,6 +514,9 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
 			state = classifyProviderHealth(reported)
+			if state == ProviderHealthAuthRequired && classifyProviderErrorFor(id, reported) == ProviderBrowserSignInRequired {
+				state = ProviderHealthBrowserSignIn
+			}
 		} else if !providerPayloadHasUsage(payload) {
 			state = ProviderHealthNoUsage
 		}

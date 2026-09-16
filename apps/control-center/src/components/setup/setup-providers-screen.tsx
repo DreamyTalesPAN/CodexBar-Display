@@ -30,6 +30,7 @@ type SetupProvidersScreenProps = {
   onCheckAgain: (provider: ProviderItem) => void;
   onContinue: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  onOpenSignIn?: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** The completion this step asked for has not answered yet. */
   continuing?: boolean;
@@ -49,6 +50,7 @@ export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
+  onOpenSignIn?: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
@@ -67,6 +69,7 @@ type ProviderListProps = {
 export function ProviderList({
   className,
   onCheckAgain,
+  onOpenSignIn,
   onToggle,
   pendingCheckIds,
   pendingPreferenceIds,
@@ -114,6 +117,11 @@ export function ProviderList({
             label={provider.label}
             detail={provider.health.message}
             onCheckAgain={() => onCheckAgain(provider)}
+            onOpenSignIn={
+              onOpenSignIn && provider.health.signInUrl
+                ? () => onOpenSignIn(provider)
+                : undefined
+            }
             onToggle={(enabled) => onToggle(provider, enabled)}
             reportedMessage={provider.health.reported}
             saving={pendingPreferenceIds.has(provider.id)}
@@ -157,6 +165,7 @@ export function SetupProvidersScreen({
   onCheckAgain,
   onContinue,
   onCreateSupportReport,
+  onOpenSignIn,
   onToggle,
   continuing = false,
   loading = false,
@@ -186,6 +195,7 @@ export function SetupProvidersScreen({
       <ProviderList
         className="mt-4"
         onCheckAgain={onCheckAgain}
+        onOpenSignIn={onOpenSignIn}
         onToggle={onToggle}
         pendingCheckIds={pendingCheckIds}
         pendingPreferenceIds={pendingPreferenceIds}

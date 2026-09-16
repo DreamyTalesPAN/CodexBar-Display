@@ -80,6 +80,9 @@ type preferenceHealth struct {
 	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
 	CheckedAt     string `json:"checkedAt,omitempty"`
 	NextAction    string `json:"nextAction,omitempty"`
+	// SignInURL is the browser page that satisfies a browser_sign_in_required
+	// state; the shell opens it in the default browser.
+	SignInURL string `json:"signInUrl,omitempty"`
 	// What the usage service itself said, with its home path redacted. Empty
 	// only when it said nothing, so the screen falls back to generic Detail.
 	Reported string `json:"reported,omitempty"`
@@ -230,6 +233,8 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 		return codexbar.ProviderHealthHealthy
 	case codexbar.ProviderAuthRequired:
 		return codexbar.ProviderHealthAuthRequired
+	case codexbar.ProviderBrowserSignInRequired:
+		return codexbar.ProviderHealthBrowserSignIn
 	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
 		return codexbar.ProviderHealthSetupRequired
 	case codexbar.ProviderNoUsageAvailable:
@@ -643,6 +648,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		reported := reportedProviderMessage(setting.Reported)
 		checkedAt := ""
 		nextAction := ""
+		signInURL := ""
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
@@ -688,6 +694,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
+		if state == string(codexbar.ProviderHealthBrowserSignIn) {
+			signInURL = codexbar.ProviderSignInURL(setting.ID)
+		}
 		items = append(items, preferenceDescriptor{
 			ID:             providerPreferenceID(setting.ID),
 			Section:        "providers",
@@ -709,6 +718,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				LastSuccessAt: lastSuccess[setting.ID],
 				CheckedAt:     checkedAt,
 				NextAction:    nextAction,
+				SignInURL:     signInURL,
 			},
 		})
 	}
@@ -727,7 +737,7 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 		return true
 	}
 	switch setting.Health {
-	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
+	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthBrowserSignIn, codexbar.ProviderHealthSetupRequired,
 		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
 		return false
 	default:
@@ -749,6 +759,8 @@ func providerReadinessHealthState(status string) string {
 		return "healthy"
 	case codexbar.ProviderAuthRequired:
 		return "auth_required"
+	case codexbar.ProviderBrowserSignInRequired:
+		return "browser_sign_in_required"
 	case codexbar.ProviderPermissionRequired:
 		return "permission_required"
 	case codexbar.ProviderNoUsageAvailable:
@@ -772,6 +784,8 @@ func providerReadinessMessage(status string) string {
 		return "Usage data is available."
 	case codexbar.ProviderAuthRequired:
 		return "This provider needs an active sign-in."
+	case codexbar.ProviderBrowserSignInRequired:
+		return "This provider needs a signed-in session in your browser."
 	case codexbar.ProviderPermissionRequired:
 		return "macOS blocked access required by this provider."
 	case codexbar.ProviderNoUsageAvailable:
@@ -793,6 +807,8 @@ func providerReadinessNextAction(status string) string {
 		return ""
 	case codexbar.ProviderAuthRequired:
 		return "Open provider setup, sign in again, then check this provider."
+	case codexbar.ProviderBrowserSignInRequired:
+		return "Sign in to this provider in your browser, close the browser, then check this provider."
 	case codexbar.ProviderPermissionRequired:
 		return "Allow the required macOS access, then check this provider."
 	case codexbar.ProviderNoUsageAvailable:
@@ -824,6 +840,8 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Provider is working."
 	case codexbar.ProviderHealthAuthRequired:
 		return "Sign in again for this provider."
+	case codexbar.ProviderHealthBrowserSignIn:
+		return "Sign in to this provider in your browser, then check again."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
 	case codexbar.ProviderHealthNoUsage:

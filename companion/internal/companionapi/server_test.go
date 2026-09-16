@@ -3221,7 +3221,7 @@ func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: "setup_required"}) {
 		t.Fatal("setup_required with no diagnosed provider must keep waiting")
 	}
-	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
+	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderBrowserSignInRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
 		setup := codexbar.ProviderSetup{
 			Status:    "setup_required",
 			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},

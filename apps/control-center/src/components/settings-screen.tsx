@@ -298,6 +298,11 @@ export function SettingsScreen({
         ) : null}
         <ProviderList
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
+          onOpenSignIn={
+            providerPicker.onOpenSignIn
+              ? (provider) => void providerPicker.onOpenSignIn?.(provider)
+              : undefined
+          }
           onToggle={(provider, enabled) =>
             void providerPicker.onPreferenceChange(provider, enabled)
           }

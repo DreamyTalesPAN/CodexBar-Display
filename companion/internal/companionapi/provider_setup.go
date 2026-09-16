@@ -3,11 +3,13 @@ package companionapi
 import (
 	"context"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/openurl"
 )
 
 const providerSetupCacheTTL = 30 * time.Second
@@ -268,6 +270,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 
 func providerSetupFailureMustWin(status string) bool {
 	return status == codexbar.ProviderAuthRequired ||
+		status == codexbar.ProviderBrowserSignInRequired ||
 		status == codexbar.ProviderNotConfigured ||
 		status == codexbar.ProviderPermissionRequired ||
 		status == codexbar.ProviderConfigError
@@ -392,6 +395,33 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		s.wakeDisplayStream()
 	}
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+}
+
+// openProviderSignInFn opens a URL in the customer's default browser. Tests
+// replace it; production goes through the OS handler without a shell.
+var openProviderSignInFn = func(url string) error {
+	name, args := openurl.Command(url)
+	return exec.Command(name, args...).Start()
+}
+
+// handleProviderSignIn opens the provider's browser sign-in page. Only the
+// pages the Companion itself lists are ever opened, so the request carries a
+// provider id, never a URL.
+func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	url := codexbar.ProviderSignInURL(providerID)
+	if url == "" {
+		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no browser sign-in page.", "Sign in to the provider's app, then check again.")
+		return
+	}
+	if err := openProviderSignInFn(url); err != nil {
+		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "url": url})
 }
 
 func (s *Server) currentProviderRevision(providerID string) uint64 {

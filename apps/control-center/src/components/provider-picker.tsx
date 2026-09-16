@@ -23,6 +23,8 @@ export type ProviderPickerProps = {
   pendingCheckIds: Set<string>;
   pendingPreferenceIds: Set<string>;
   onCheck: (item: PreferenceDescriptor) => void | Promise<void>;
+  /** Opens the provider's browser sign-in page through the companion. */
+  onOpenSignIn?: (item: PreferenceDescriptor) => void | Promise<void>;
   onDisplayChange: (
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
     providerId: string,

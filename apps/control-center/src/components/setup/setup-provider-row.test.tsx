@@ -103,6 +103,38 @@ describe("SetupProviderRow", () => {
     expect(html.match(/data-slot="button"/g)).toHaveLength(1);
   });
 
+  // Claude on Windows: Claude Code is signed in, but Anthropic refuses the
+  // OAuth usage endpoint for third parties and no claude.ai cookies exist.
+  // "Sign in again" would send the customer in a circle, so the row names the
+  // browser session and offers to open the page when the shell can.
+  it("offers the browser sign-in page when the provider needs a browser session", () => {
+    const html = render({
+      detail: "Claude usage needs a signed-in claude.ai session in your browser.",
+      health: "browser_sign_in_required",
+      label: "Claude",
+      onOpenSignIn: vi.fn(),
+      reportedMessage:
+        "Claude usage failed from all configured sources. Web: No cookies available",
+    });
+
+    expect(html).toContain("claude.ai session in your browser");
+    expect(html).not.toContain("failed from all configured sources");
+    expect(html).toContain("lucide-external-link");
+    expect(html).toContain('aria-label="Open Claude sign-in in your browser"');
+    expect(html).toContain('aria-label="Check Claude again"');
+    expect(html).toContain('role="switch"');
+  });
+
+  it("falls back to a re-check when no sign-in page can be opened", () => {
+    const html = render({ health: "browser_sign_in_required" });
+
+    expect(html).toContain(
+      "Sign in to Claude Code in your browser, then check again",
+    );
+    expect(html).not.toContain("lucide-external-link");
+    expect(html).toContain('aria-label="Check Claude Code again"');
+  });
+
   it("offers a re-check after a timed out check", () => {
     const html = render({ health: "timeout" });
 
@@ -156,6 +188,7 @@ describe("SetupProviderRow", () => {
   it("always offers the switch, whatever the provider reports", () => {
     for (const health of [
       "auth_required",
+      "browser_sign_in_required",
       "setup_required",
       "permission_required",
       "timeout",
