@@ -2,11 +2,20 @@ import {describe,it,expect} from 'vitest';
 import {applyAIThemeLayout, layoutContext, type AIThemeLayoutPlan} from './ai-theme-layout';
 import {createBlankThemeSpec} from './theme-studio';
 import {createThemeStudioEditorState,themeStudioEditorReducer,type ThemeStudioDocument} from '@/components/theme-studio/theme-studio-editor-state';
+import {textPrimitiveNaturalWidth} from '@/components/theme-studio/editor-geometry';
 
 const before:ThemeStudioDocument={packName:'Office cat',usage:'live',assets:{'/themes/u/cat.cba':{contentType:'text/plain',encoding:'text',data:'unchanged-sprite'}},spec:{...createBlankThemeSpec(),primitives:[{type:'sprite',assetPath:'/themes/u/cat.cba',x:20,y:30,width:32,height:32},{type:'text',x:12,y:140,text:'SESSION',color:'#FFFFFF',fontSize:2}]}};
 const add={action:'add',index:-1,kind:'text',x:12,y:224,fontSize:1,color:'#FFFFFF',reading:'usageSlot1Reset'} as const;
 const plan=(edits:AIThemeLayoutPlan['edits']):AIThemeLayoutPlan=>({mode:'layout',notes:'Added reset countdown',edits});
 describe('AI native layout edits',()=>{
+ it('widens a clipped text box when the AI assigns longer content',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives.push({type:'text',x:12,y:200,width:30,text:'12:00',color:'#FFFFFF',fontSize:1});
+  const next=applyAIThemeLayout(doc,plan([{action:'update',index:2,kind:'text',reading:'usageSlot1Reset'}]));
+  const label=next.spec.primitives[2];
+  expect(label.width).toBeGreaterThan(30);
+  expect(label.width).toBe(textPrimitiveNaturalWidth(label));
+ });
  it('clears old provider/usage owners when the AI changes a bar reading',()=>{
   const doc=structuredClone(before);
   doc.spec.primitives.push({type:'progress',x:12,y:204,width:216,height:13,color:'#0055AA',binding:'providerSlot1Percent',providerSlot:1,usageIndex:0});

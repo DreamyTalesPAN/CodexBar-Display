@@ -3750,6 +3750,17 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
   and this approval record.
 
+## 2026-09-16 — AI text edits widen the label box
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ae040f25` found that an AI edit giving a narrow label longer text, a
+  longer reading or a bigger font kept the old width and clipped the value.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  label the AI changes shows its full new text, exactly like a label edited by
+  hand.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
 ## 2026-09-16 — Imported pictures with the same file name keep both pictures
 
 - User approval: Same push approval for PR #422; the exact-head Codex review

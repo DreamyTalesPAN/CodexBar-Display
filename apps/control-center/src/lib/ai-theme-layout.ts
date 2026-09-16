@@ -1,6 +1,6 @@
 import {cloneDocument,type ThemeStudioDocument} from '@/components/theme-studio/theme-studio-editor-state';
 import {LIVE_READINGS,setReading,usageSectionIndices} from '@/components/theme-studio/design-controls';
-import {primitiveBounds} from '@/components/theme-studio/editor-geometry';
+import {primitiveBounds,textPrimitiveNaturalWidth} from '@/components/theme-studio/editor-geometry';
 import type {ThemeStudioPrimitive} from './theme-studio';
 import {isCompanionSprite} from './ai-theme';
 import {setAIAnimationSpeed} from './ai-theme-document';
@@ -78,6 +78,9 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       }else setReading(p,edit.reading);
     }
     if(p.type==='text'&&!p.text&&!p.binding) return fail();
+    // Text widths are clipping boxes; grow them like the manual controls do so
+    // a longer label, reading or font size is never cut off.
+    if(p.type==='text'&&p.width&&(edit.text!=null||edit.reading!=null||edit.fontSize!=null)) p.width=Math.max(p.width,textPrimitiveNaturalWidth(p));
     if(p.type!=='text'&&(!p.width||!p.height)) return fail();
     const bounds=primitiveBounds({...p,x:0,y:0});
     if(p.x<0||p.y<0||p.x+bounds.width>240||p.y+bounds.height>240) return fail();
