@@ -201,6 +201,12 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 	if !providerProbePerProvider {
 		return runProviderCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, statusArgs...)...)
 	}
+	// Each probe gets its own timeout budget (#437): under the caller's
+	// shared deadline (25 s in the background health refresh) a slow first
+	// provider would leave the next one an almost spent context and report
+	// it unavailable although it is healthy. Values such as the config path
+	// are kept; every CLI call still runs under its own timeout.
+	probeCtx := context.WithoutCancel(ctx)
 	joined := make([]json.RawMessage, 0, len(settings))
 	var lastErr error
 	for i := range settings {
@@ -208,7 +214,7 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 			continue
 		}
 		args := append([]string{"usage", "--json", "--provider", settings[i].ID}, statusArgs...)
-		out, runErr := runProviderCommandFn(ctx, timeout, bin, args...)
+		out, runErr := runProviderCommandFn(probeCtx, timeout, bin, args...)
 		if runErr != nil {
 			lastErr = runErr
 		}

@@ -1604,6 +1604,12 @@ func migrateLegacyWindowsTask(home, label string) error {
 	if _, err := os.Stat(legacyConfig); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
+	// The central claim in runService asks only the new label; the task
+	// retired here runs under the legacy label and may be mid firmware
+	// update, so its own hold is claimed before it is uninstalled.
+	if err := claimRuntimeUpdateHold(home, runtimepaths.LegacyDisplayStreamLaunchAgentLabel); err != nil {
+		return err
+	}
 	if err := legacyWindowsTaskManagerFn(home).Uninstall(context.Background()); err != nil {
 		return fmt.Errorf("retire legacy background task: %w", err)
 	}

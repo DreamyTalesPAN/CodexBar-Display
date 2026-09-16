@@ -239,6 +239,45 @@ func TestRunUsageAllEnabledKeepsSilentProviderVisibleOnWindows(t *testing.T) {
 	}
 }
 
+// The background health refresh hands runProviderHealthProbe a shared 25 s
+// deadline. On Windows the probes run one after another with 18 s each, so
+// the second provider must not inherit the almost spent parent deadline.
+func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var deadlines []bool
+	runProviderCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		_, hasDeadline := ctx.Deadline()
+		deadlines = append(deadlines, hasDeadline)
+		return []byte(`[{"provider":"` + args[3] + `","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
+	}
+	parent, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	settings := []ProviderSetting{
+		{ID: "codex", Label: "Codex", Enabled: true},
+		{ID: "claude", Label: "Claude", Enabled: true},
+	}
+	raw, err := runProviderHealthProbe(parent, 18*time.Second, "codexbar", settings)
+	if err != nil {
+		t.Fatalf("health probe: %v", err)
+	}
+	health := parseProviderHealth(raw)
+	if health["codex"].health != ProviderHealthHealthy || health["claude"].health != ProviderHealthHealthy {
+		t.Fatalf("both providers must be healthy, got %#v", health)
+	}
+	if len(deadlines) != 2 {
+		t.Fatalf("expected one probe per enabled provider, got %d", len(deadlines))
+	}
+	for i, hasDeadline := range deadlines {
+		if hasDeadline {
+			t.Fatalf("probe %d ran under the shared refresh deadline", i)
+		}
+	}
+}
+
 // Win-CodexBar 0.56.8 rejects "config disable --provider claude"; the provider
 // is a positional argument there.
 func TestSetProviderEnabledUsesPositionalProviderOnWindows(t *testing.T) {
