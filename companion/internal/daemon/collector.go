@@ -687,6 +687,16 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			// configured. A missing history must not create a usage provider.
 			continue
 		}
+		if !exists && c.inventoryKnown {
+			if _, enabled := c.inventoryEnabled[key]; !enabled {
+				// A provider the customer switched off keeps its local token
+				// history, and cost --provider all still reports it. The
+				// authoritative inventory just removed its snapshot; recreating
+				// one here would show the disabled provider again through the
+				// API and on the device. History only enriches enabled providers.
+				continue
+			}
+		}
 		if !exists {
 			snapshot = providerSnapshot{
 				Provider: key,

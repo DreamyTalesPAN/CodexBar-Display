@@ -5,6 +5,11 @@
 ; the relaunched shell re-registers it with the new version anyway.
 ; Task Scheduler reports "stopped" slightly before the process is gone, so
 ; both hooks kill what is left and give Windows a moment to release the files.
+; Only this install's Companion is killed: a codexbar-display.exe running from
+; anywhere else was never asked for the update hold and may be mid device
+; write, so an image-name kill would be the same interruption again.
+
+!define VIBETV_KILL_INSTALLED_COMPANION `nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -Command "Get-Process codexbar-display -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like \"$INSTDIR\*\" } | Stop-Process -Force"'`
 
 !macro NSIS_HOOK_PREINSTALL
   ; An installer launched by hand (not by the shell's updater, which claims
@@ -20,7 +25,7 @@
       Abort
   install_runtime_done:
   nsExec::ExecToLog 'taskkill /F /IM VibeTVControlCenter.exe'
-  nsExec::ExecToLog 'taskkill /F /IM codexbar-display.exe'
+  ${VIBETV_KILL_INSTALLED_COMPANION}
   Sleep 1500
 !macroend
 
@@ -38,7 +43,7 @@
       MessageBox MB_OK|MB_ICONEXCLAMATION "A VibeTV update or theme install is still running. Wait for it to finish, then uninstall VibeTV Control Center again." /SD IDOK
       Abort
   uninstall_runtime_done:
-  nsExec::ExecToLog 'taskkill /F /IM codexbar-display.exe'
+  ${VIBETV_KILL_INSTALLED_COMPANION}
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "VibeTV Control Center"
   Sleep 1500
 !macroend

@@ -4100,6 +4100,46 @@ func TestProviderCollectorPrunesDisabledProviderFromAuthoritativeInventory(t *te
 	}
 }
 
+// A switched-off provider keeps its local token history and cost --provider
+// all still reports it; the token pass must not resurrect the snapshot the
+// authoritative inventory just removed.
+func TestProviderCollectorTokenHistoryDoesNotRecreateDisabledProvider(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 9, 16, 9, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: true},
+				{ID: "cursor", Enabled: false},
+			}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex":  {SessionTokens: 10, WeekTokens: 20, TotalTokens: 30, UpdatedAt: now},
+				"cursor": {SessionTokens: 5, WeekTokens: 6, TotalTokens: 7, UpdatedAt: now},
+			}, true
+		},
+	}
+	collector.collectOnce(context.Background())
+	collector.collectTokenStatsOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 || frames[0].Provider != "codex" {
+		t.Fatalf("token history recreated a disabled provider: %#v", frames)
+	}
+	if frames[0].Frame.TotalTokens != 30 {
+		t.Fatalf("enabled provider lost its token history: %#v", frames[0].Frame)
+	}
+}
+
 func TestProviderCollectorDoesNotPruneWhenInventoryRefreshFails(t *testing.T) {
 	prepareFastTestEnv(t)
 
