@@ -547,19 +547,38 @@ fn check_for_updates(app: AppHandle) {
             let updater = app.updater().map_err(|error| format!("updater unavailable: {error}"))?;
             let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
             let Some(update) = update else {
-                return Ok(None);
+                return Ok(UpdateOutcome::UpToDate);
             };
+            // Installing replaces the Companion binary and restarts its task
+            // while a firmware update or theme install may be writing to the
+            // device. Claim the runtime first, exactly like repair-codexbar.
+            let hold = tauri::async_runtime::spawn_blocking(claim_update_hold)
+                .await
+                .map_err(|error| format!("update hold check failed: {error}"))?;
+            if let UpdateHold::UpdateRunning = hold {
+                return Ok(UpdateOutcome::Busy);
+            }
             log(&format!("installing update {}", update.version));
-            update
+            if let Err(error) = update
                 .download_and_install(|_, _| {}, || {})
                 .await
-                .map_err(|error| format!("update failed: {error}"))?;
-            Ok::<Option<String>, String>(Some(update.version))
+            {
+                // Nothing was replaced; give the runtime back to device jobs.
+                let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+                return Err(format!("update failed: {error}"));
+            }
+            Ok::<UpdateOutcome, String>(UpdateOutcome::Installed)
         }
         .await;
         match result {
-            Ok(Some(_)) => {}
-            Ok(None) => show_message("VibeTV Control Center is up to date."),
+            Ok(UpdateOutcome::Installed) => {}
+            Ok(UpdateOutcome::UpToDate) => show_message("VibeTV Control Center is up to date."),
+            Ok(UpdateOutcome::Busy) => {
+                log("update deferred: a firmware update or theme install owns the runtime");
+                show_message(
+                    "The update was not installed because a VibeTV update or theme install is running. Try again when it has finished.",
+                );
+            }
             Err(error) => {
                 log(&error);
                 show_message(
@@ -568,6 +587,12 @@ fn check_for_updates(app: AppHandle) {
             }
         }
     });
+}
+
+enum UpdateOutcome {
+    Installed,
+    UpToDate,
+    Busy,
 }
 
 // Native message box: works while the webview is hidden or still loading.
