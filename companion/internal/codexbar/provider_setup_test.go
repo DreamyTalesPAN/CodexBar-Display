@@ -401,6 +401,38 @@ func TestProviderReadinessClassifiesRateLimitAsWaitAndRetry(t *testing.T) {
 	}
 }
 
+// A sign-in failure may name the data it wanted to read. Telling that customer
+// to wait hides the sign-in they must repair, so the bare noun must not be
+// mistaken for throttling.
+func TestProviderReadinessKeepsAuthFailuresThatMentionRateLimitData(t *testing.T) {
+	for _, detail := range []string{
+		"Codex connection failed: codex account authentication required to read rate limits",
+		"no cookies in session while reading rate limit data",
+	} {
+		if got := classifyProviderError(detail); got != ProviderAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderAuthRequired, got)
+		}
+	}
+}
+
+// A provider-scoped probe answers through CodexBar's own stand-in when the
+// usage call itself fails. Losing the rate limit there told the customer their
+// account exposes no usage instead of asking them to wait.
+func TestExactProviderReadinessKeepsRateLimitFromStandIn(t *testing.T) {
+	got := exactProviderReadinessFromOutput(
+		"claude",
+		nil,
+		errors.New("usage request failed: too many requests"),
+		nil,
+	)
+	if got.Status != ProviderRateLimited {
+		t.Fatalf("exact probe dropped the rate limit: %+v", got)
+	}
+	if got.ID != "claude" {
+		t.Fatalf("exact probe must answer for the requested provider: %+v", got)
+	}
+}
+
 func TestProviderReadinessClassifiesTimeoutWithoutSecrets(t *testing.T) {
 	got := providerReadinessFromOutput(nil, context.DeadlineExceeded, context.DeadlineExceeded)
 	if len(got) != 1 || got[0].Status != ProviderTimeout || strings.Contains(got[0].Detail, "deadline") {

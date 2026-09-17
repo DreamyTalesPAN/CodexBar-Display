@@ -4547,3 +4547,29 @@ issue scope, or release permission never implies UI permission.
   approval record.
 - Scope: Approval covers this fix and pushing the PR branch. No release, no
   firmware flash for the customer, and no Fable credit display is included.
+
+## 2026-09-17 — Codex review follow-up for #448
+
+- User approval: Marcus approved the two visible results above with "ja" and
+  asked for the fix to be carried through. The automated Codex review on PR
+  #449 then found that the same approved results were not actually reached on
+  every path; repairing those paths is part of delivering what he approved and
+  changes no promise made to him.
+- Approved customer-visible result: Unchanged from the entry above, now also
+  reached where it previously was not. A theme written with the compact tokens
+  `{us1r}` or `{pv1r}` collapses to `Reset unavailable` like the long token
+  names, so devices on those themes stop showing the doubled sentence. A
+  provider-scoped check that answers with a rate limit keeps telling the
+  customer to wait instead of claiming the account exposes no usage. A sign-in
+  failure that merely names rate-limit data still asks the customer to sign in
+  rather than to wait.
+- Evidence: The new native test fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'` when the
+  compact-alias rule is removed and passes with it; 148/148 native renderer
+  tests pass. The companion codexbar and companionapi packages pass uncached
+  with the two new regression tests. No hardware test is claimed.
+- Approved files: The compact-alias rule in `theme_spec_renderer_core.h`, the
+  throttling matcher and stand-in translation in `provider_setup.go`, their
+  regression tests, and this approval record.
+- Scope: Corrections to the already approved fix only. No new customer-visible
+  behavior, no release, and no firmware flash is included.

@@ -593,6 +593,39 @@ void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
   TEST_ASSERT_EQUAL_STRING("Session Reset unavailable", sink.commands[3].text.c_str());
 }
 
+// The compact aliases bind the same countdown as the long names; a theme that
+// writes {us1r} or {pv1r} must collapse identically or the doubled sentence
+// survives on exactly the devices whose themes use the short form.
+void testIdleCountdownCollapsesForCompactResetAliases() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1Percent = 0;
+  frame.usageSlot1ResetSecs = 0;
+  frame.usageSlot1Available = true;
+  frame.providerSlots[0].label = "Claude";
+  frame.providerSlots[0].percent = 0;
+  frame.providerSlots[0].resetSecs = 0;
+  frame.providerSlots[0].available = true;
+  frame.providerSlots[1].label = "Codex";
+  frame.providerSlots[1].percent = 40;
+  frame.providerSlots[1].resetSecs = 3 * 3600;
+  frame.providerSlots[1].available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-reset-short","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {us1r}"},
+        {"t":"tx","x":0,"y":20,"v":"Resets in {pv1r}"},
+        {"t":"tx","x":0,"y":40,"v":"Resets in {pv2r}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Resets in 3h 0m", sink.commands[3].text.c_str());
+}
+
 void testUsageWindowOwnershipHidesCompleteMissingLane() {
   const char* spec = R"JSON({
     "v":1,
@@ -3543,6 +3576,7 @@ int main() {
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
+  RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testTokenTotalsRenderCompactAndTruncated);
   RUN_TEST(testProviderSlotBindingsRenderLabelAndFormattedReset);
