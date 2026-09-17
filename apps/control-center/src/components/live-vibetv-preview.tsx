@@ -1438,17 +1438,93 @@ export function renderTextPrimitive(
     return boundValue(binding, frame);
   }
   const raw = primitive.text || primitive.v || "";
-  // RenderTextTemplate replaces the whole template for an expired root
-  // countdown instead of substituting in place, so the surrounding literal
-  // text disappears. Only the root tokens do this — {usage.N.reset}, {us1r}
-  // and {pv1r} substitute inline, and the device really does render
-  // "Reset in Reset unavailable" for those.
+  // RenderTextTemplate replaces the whole template for an expired countdown
+  // instead of substituting in place, so the surrounding literal text
+  // disappears. This covers the root tokens and, since the idle-session fix,
+  // any template whose only substitution is an unavailable slot countdown:
+  // shipped themes hard-code "Resets in {usageSlot1Reset}", and substituting
+  // in place produced "Resets in Reset unavailable" on a customer's screen.
   if (frame.resetSecs <= 0 && /\{reset\}|\{resetCountdown\}|\{r\}/.test(raw)) {
+    return RESET_UNAVAILABLE;
+  }
+  if (templateIsOnlyUnavailableCountdown(raw, frame)) {
     return RESET_UNAVAILABLE;
   }
   return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
+}
+
+// Mirrors TemplateIsOnlyUnavailableCountdown in theme_spec_renderer_core.h.
+// A template that also substitutes a label or a percentage still carries
+// information, so it keeps its in-place substitution; an unavailable window
+// renders empty rather than as the unavailable text, so it is left alone too.
+function templateIsOnlyUnavailableCountdown(
+  raw: string,
+  frame: FrameData,
+): boolean {
+  const tokens = raw.match(/\{([a-zA-Z0-9_.-]+)\}/g);
+  if (!tokens || tokens.length === 0) {
+    return false;
+  }
+  let sawUnavailableCountdown = false;
+  for (const token of tokens) {
+    const key = token.slice(1, -1);
+    const slot = slotCountdownFor(key, frame);
+    if (!slot) {
+      return false;
+    }
+    if (!slot.available || slot.resetSecs > 0) {
+      return false;
+    }
+    sawUnavailableCountdown = true;
+  }
+  return sawUnavailableCountdown;
+}
+
+function slotCountdownFor(
+  key: string,
+  frame: FrameData,
+): { available: boolean; resetSecs: number } | undefined {
+  const usageMatch = /^usage\.(\d+)\.reset$/.exec(key);
+  if (usageMatch) {
+    const window = frame.usageWindows[Number(usageMatch[1])];
+    return window
+      ? { available: window.available, resetSecs: window.resetSecs }
+      : undefined;
+  }
+  switch (key) {
+    case "usageSlot1Reset":
+    case "us1r":
+      return {
+        available: frame.usageSlot1Available,
+        resetSecs: frame.usageSlot1ResetSecs,
+      };
+    case "usageSlot2Reset":
+    case "us2r":
+      return {
+        available: frame.usageSlot2Available,
+        resetSecs: frame.usageSlot2ResetSecs,
+      };
+    case "providerSlot1Reset":
+    case "pv1r":
+      return frame.providerSlots[0]
+        ? {
+            available: frame.providerSlots[0].available,
+            resetSecs: frame.providerSlots[0].resetSecs,
+          }
+        : undefined;
+    case "providerSlot2Reset":
+    case "pv2r":
+      return frame.providerSlots[1]
+        ? {
+            available: frame.providerSlots[1].available,
+            resetSecs: frame.providerSlots[1].resetSecs,
+          }
+        : undefined;
+    default:
+      return undefined;
+  }
 }
 
 // Mirrors the firmware's FormatTokenCount digit for digit (truncated

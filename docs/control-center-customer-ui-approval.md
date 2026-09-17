@@ -3904,3 +3904,63 @@ issue scope, or release permission never implies UI permission.
 - Scope: Test fixtures, focused test coverage, shell syntax failure detection,
   and checking the currently catalogued screensaver archive. No additional
   product, provider, firmware, installation, or release change is included.
+
+## 2026-09-17 — Idle reset text and rate-limited provider check (#448)
+
+- User approval: Marcus forwarded customer Bernd's report that his new VibeTV
+  shows `Resets in Reset unavailable` on the Claude theme at 0 % session usage,
+  and that the Claude provider check failed repeatedly during setup with
+  cookie, timeout, and too-many-requests errors. After both visible results
+  were presented for review, Marcus approved them with "ja".
+- Approved customer-visible result: A usage slot whose countdown is unknown no
+  longer produces a doubled sentence. A line whose only substituted value is
+  that countdown collapses to `Reset unavailable` instead of
+  `Resets in Reset unavailable`. Slots with a real deadline keep rendering the
+  full sentence, for example `Resets in 4d 0h`, and lines that also carry a
+  label or percentage keep substituting in place. During setup, a provider that
+  answers with a rate limit now reports "Claude is limiting usage checks right
+  now." with "Wait a few minutes, then check again. Nothing needs to be fixed."
+  instead of the previous "The usage service could not read this provider." and
+  "Repair the usage service." No theme design, provider selection flow, or
+  unrelated UI is changed.
+- Evidence: The new native ThemeSpec renderer test reproduces the customer
+  string exactly; with the fix disabled it fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'`. 147/147
+  native renderer tests, 541/541 Control Center tests, the companion codexbar,
+  companionapi, and protocol packages, customer-copy, customer-docs,
+  frame-render-policy, and theme-pack checks pass. The ESP8266 cross build is
+  left to CI because the xtensa toolchain cannot run on this Mac, and no
+  hardware test with an idle Claude session is claimed.
+- Approved files: The renderer rule in `theme_spec_renderer_core.h`, its mirror
+  in `live-vibetv-preview.tsx`, the rate-limit status in
+  `setup-provider-row.tsx` and `control-center-types.ts`, the companion
+  provider-setup and preferences mapping, their regression tests, and this
+  approval record.
+- Scope: Approval covers this fix and pushing the PR branch. No release, no
+  firmware flash for the customer, and no Fable credit display is included.
+
+## 2026-09-17 — Codex review follow-up for #448
+
+- User approval: Marcus approved the two visible results above with "ja" and
+  asked for the fix to be carried through. The automated Codex review on PR
+  #449 then found that the same approved results were not actually reached on
+  every path; repairing those paths is part of delivering what he approved and
+  changes no promise made to him.
+- Approved customer-visible result: Unchanged from the entry above, now also
+  reached where it previously was not. A theme written with the compact tokens
+  `{us1r}` or `{pv1r}` collapses to `Reset unavailable` like the long token
+  names, so devices on those themes stop showing the doubled sentence. A
+  provider-scoped check that answers with a rate limit keeps telling the
+  customer to wait instead of claiming the account exposes no usage. A sign-in
+  failure that merely names rate-limit data still asks the customer to sign in
+  rather than to wait.
+- Evidence: The new native test fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'` when the
+  compact-alias rule is removed and passes with it; 148/148 native renderer
+  tests pass. The companion codexbar and companionapi packages pass uncached
+  with the two new regression tests. No hardware test is claimed.
+- Approved files: The compact-alias rule in `theme_spec_renderer_core.h`, the
+  throttling matcher and stand-in translation in `provider_setup.go`, their
+  regression tests, and this approval record.
+- Scope: Corrections to the already approved fix only. No new customer-visible
+  behavior, no release, and no firmware flash is included.
