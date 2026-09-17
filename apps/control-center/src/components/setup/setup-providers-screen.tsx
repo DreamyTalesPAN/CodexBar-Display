@@ -116,6 +116,7 @@ export function ProviderList({
             key={provider.id}
             label={provider.label}
             detail={provider.health.message}
+            nextAction={provider.health.nextAction}
             onCheckAgain={() => onCheckAgain(provider)}
             onOpenSignIn={
               onOpenSignIn && provider.health.signInUrl

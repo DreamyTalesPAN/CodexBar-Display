@@ -106,18 +106,22 @@ describe("SetupProviderRow", () => {
   // Claude on Windows: Claude Code is signed in, but Anthropic refuses the
   // OAuth usage endpoint for third parties and no claude.ai cookies exist.
   // "Sign in again" would send the customer in a circle, so the row names the
-  // browser session and offers to open the page when the shell can.
+  // browser session, says to close the browser again (Windows keeps the cookie
+  // store locked while it runs) and offers to open the page when the shell can.
   it("offers the browser sign-in page when the provider needs a browser session", () => {
     const html = render({
       detail: "Claude usage needs a signed-in claude.ai session in your browser.",
       health: "browser_sign_in_required",
       label: "Claude",
+      nextAction:
+        "Sign in to claude.ai in your browser, close the browser, then check again.",
       onOpenSignIn: vi.fn(),
       reportedMessage:
         "Claude usage failed from all configured sources. Web: No cookies available",
     });
 
     expect(html).toContain("claude.ai session in your browser");
+    expect(html).toContain("close the browser, then check again");
     expect(html).not.toContain("failed from all configured sources");
     expect(html).toContain("lucide-external-link");
     expect(html).toContain('aria-label="Open Claude sign-in in your browser"');
@@ -129,7 +133,7 @@ describe("SetupProviderRow", () => {
     const html = render({ health: "browser_sign_in_required" });
 
     expect(html).toContain(
-      "Sign in to Claude Code in your browser, then check again",
+      "Sign in to Claude Code in your browser, close the browser, then check again",
     );
     expect(html).not.toContain("lucide-external-link");
     expect(html).toContain('aria-label="Check Claude Code again"');

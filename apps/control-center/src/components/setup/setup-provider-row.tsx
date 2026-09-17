@@ -83,6 +83,13 @@ type SetupProviderRowProps = {
   /** The generic detail attached to this health result. */
   detail?: string;
   /**
+   * The companion's next action for this health result. Rendered for
+   * "browser_sign_in_required", where the required step (sign in, close the
+   * browser so its cookie store becomes readable, check again) is not in the
+   * detail.
+   */
+  nextAction?: string;
+  /**
    * What the usage service itself said about this provider, already redacted.
    * It is the only per-provider guidance that exists, so it replaces our own
    * wording wherever it says something the customer can act on.
@@ -112,6 +119,7 @@ export function SetupProviderRow({
   enabled,
   health,
   label,
+  nextAction,
   onCheckAgain,
   onOpenSignIn,
   onToggle,
@@ -138,7 +146,7 @@ export function SetupProviderRow({
     variant === "sign_in"
       ? `Sign in to ${label}`
       : variant === "browser_sign_in"
-        ? `Sign in to ${label} in your browser, then check again`
+        ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
         ? "Allow access in macOS"
         : variant === "no_usage"
@@ -148,11 +156,12 @@ export function SetupProviderRow({
             : variant === "stale"
               ? "Live usage is unavailable"
             : "Check timed out";
-  // The browser sign-in row shows our own guidance: CodexBar's sentence
-  // there is the three-source failure list, which names the wrong fix.
+  // The browser sign-in row shows the companion's guidance: CodexBar's
+  // sentence there is the three-source failure list, which names the wrong
+  // fix, and the detail alone omits that the browser must be closed again.
   const guidance =
     variant === "browser_sign_in"
-      ? detail || fallbackMessage
+      ? [detail, nextAction].filter(Boolean).join(" ") || fallbackMessage
       : reportedMessage || detail || fallbackMessage;
 
   return (
