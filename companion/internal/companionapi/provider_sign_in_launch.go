@@ -131,6 +131,14 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+// providerSignInFeatureEnabledFor reports whether goos gets the shortened
+// provider list and the sign-in button. Both are Windows launch decisions:
+// the Mac app keeps CodexBar's full provider inventory and the rows it
+// already shows today.
+func providerSignInFeatureEnabledFor(goos string) bool {
+	return goos == "windows"
+}
+
 // launchProviderSignInFn carries out a plan. Tests replace it.
 var launchProviderSignInFn = func(plan providerSignInPlan) error {
 	switch plan.Action {

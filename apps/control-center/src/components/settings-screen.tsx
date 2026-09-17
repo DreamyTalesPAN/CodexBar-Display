@@ -94,9 +94,14 @@ export function SettingsScreen({
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
 
-  const providers = offeredProviders(
-    (providerPicker.items || []).filter(isProviderItem),
-  );
+  // The shortened list and the sign-in button ship together as one Windows
+  // launch decision, and the companion only hands down the sign-in action
+  // there. Without it this is the Mac app, which keeps CodexBar's full
+  // provider inventory exactly as it is today.
+  const allProviders = (providerPicker.items || []).filter(isProviderItem);
+  const providers = providerPicker.onOpenSignIn
+    ? offeredProviders(allProviders)
+    : allProviders;
   // Manual pins the device to exactly one provider, so it may only offer ones
   // that can actually produce a reading. Offering every switched-on provider,
   // as the design board's wording does, lets a customer pin VibeTV to a

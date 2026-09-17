@@ -45,6 +45,8 @@ export type CompanionInfo = {
   features?: {
     themeInstallEnabled?: boolean;
     macAppSelfUpdateEnabled?: boolean;
+    /** Windows-only: the shortened provider list and the sign-in button. */
+    providerSignInEnabled?: boolean;
   };
 };
 

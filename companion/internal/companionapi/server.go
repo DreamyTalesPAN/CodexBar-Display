@@ -703,6 +703,11 @@ type companionRuntimeInfo struct {
 type companionFeatures struct {
 	ThemeInstallEnabled     bool `json:"themeInstallEnabled"`
 	MacAppSelfUpdateEnabled bool `json:"macAppSelfUpdateEnabled"`
+	// ProviderSignInEnabled and the shortened provider list are Windows-only
+	// launch decisions. The Mac app keeps CodexBar's full provider inventory
+	// and its existing rows, so the app must be told which platform it runs
+	// on rather than deciding from the user agent.
+	ProviderSignInEnabled bool `json:"providerSignInEnabled"`
 }
 
 type companionReleaseInfo struct {
@@ -2316,6 +2321,7 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 		Features: companionFeatures{
 			ThemeInstallEnabled:     themeInstallEnabled(),
 			MacAppSelfUpdateEnabled: s.allowMacAppSelfUpdate,
+			ProviderSignInEnabled:   providerSignInFeatureEnabledFor(runtime.GOOS),
 		},
 	}
 }

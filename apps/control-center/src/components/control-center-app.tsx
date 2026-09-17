@@ -4075,6 +4075,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     providerSelectionSetup?.providerSelectionComplete &&
     hasEnteredControlCenter,
   );
+  // Windows launches with the four providers it was checked against and with
+  // the sign-in button; the Mac app keeps CodexBar's full provider inventory
+  // and its existing rows exactly as they are today.
+  const providerSignInEnabled =
+    companionInfo?.features?.providerSignInEnabled === true;
   const providerPickerProps = {
     display: providerDisplay,
     displayError: providerDisplayError,
@@ -4084,7 +4089,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     pendingCheckIds: pendingProviderCheckIds,
     pendingPreferenceIds,
     onCheck: checkProvider,
-    onOpenSignIn: openProviderSignIn,
+    onOpenSignIn: providerSignInEnabled ? openProviderSignIn : undefined,
     onDisplayChange: updateProviderDisplay,
     onPreferenceChange: updateProviderPreference,
   };
@@ -4396,9 +4401,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const setupOwnsScreen =
     !hasEnteredControlCenter && (setupStep !== "live" || !setupFinished);
 
-  const setupProviders = offeredProviders(
-    (providerPreferences || []).filter(isProviderItem),
-  );
+  const allSetupProviders = (providerPreferences || []).filter(isProviderItem);
+  const setupProviders = providerSignInEnabled
+    ? offeredProviders(allSetupProviders)
+    : allSetupProviders;
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
   // and into the Manual list, where pinning to it produced a blank device.
@@ -4602,7 +4608,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void installTheme();
           }}
           onProviderCheck={(provider) => void checkProvider(provider)}
-          onProviderOpenSignIn={(provider) => void openProviderSignIn(provider)}
+          onProviderOpenSignIn={
+            providerSignInEnabled
+              ? (provider) => void openProviderSignIn(provider)
+              : undefined
+          }
           onProviderToggle={(provider, enabled) =>
             void updateProviderPreference(provider, enabled)
           }

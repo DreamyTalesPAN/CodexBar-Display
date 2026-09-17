@@ -450,6 +450,10 @@ async function main() {
     }
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      await testMacAppKeepsEveryProviderAndNoSignInButton(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderWriteWinsOverOlderPreferenceRead(
         browser,
         appContext.appUrl,
@@ -865,6 +869,10 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+    await testMacAppKeepsEveryProviderAndNoSignInButton(
+      browser,
+      appContext.appUrl,
+    );
     await testProviderWriteWinsOverOlderPreferenceRead(
       browser,
       appContext.appUrl,
@@ -6255,6 +6263,71 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   await page.close();
 }
 
+// The Mac app must be untouched by the Windows launch decision: a companion
+// without the sign-in feature keeps every provider CodexBar reports and shows
+// no sign-in button, exactly as the shipped Mac app does today.
+async function testMacAppKeepsEveryProviderAndNoSignInButton(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+      providerSignInEnabled: false,
+    },
+    preferencesResponse: {
+      ok: true,
+      items: [
+        {
+          id: "codexbar.providers.claude.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Claude",
+          providerId: "claude",
+          description: "Usage from Claude.",
+          value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
+          writable: true,
+          health: {
+            state: "auth_required",
+            service: "outage",
+            message: "Sign in again for this provider.",
+            reported: "Claude connection failed: authentication required.",
+          },
+        },
+        disabledProviderPreferenceFixture("gemini", "Gemini"),
+        disabledProviderPreferenceFixture("copilot", "GitHub Copilot"),
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Settings");
+  const panel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
+  for (const kept of ["Gemini", "GitHub Copilot"]) {
+    await panel.getByText(kept, { exact: true }).waitFor({ timeout: 10_000 });
+  }
+  assert(
+    (await panel.getByRole("button", { name: "Sign in to Claude" }).count()) ===
+      0,
+    "the Mac app must not grow a sign-in button",
+  );
+  // The row still says what is wrong and still offers the re-check it has today.
+  await panel
+    .getByRole("button", { name: "Check Claude again" })
+    .first()
+    .waitFor({ timeout: 10_000 });
+
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
 async function testProviderWriteWinsOverOlderPreferenceRead(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const requests = [];
@@ -10441,6 +10514,9 @@ async function routeCompanionOnline(
     companionFeatures = {
       themeInstallEnabled: true,
       macAppSelfUpdateEnabled: false,
+      // The Windows shell is what ships the shortened provider list and the
+      // sign-in button. Flows that check either one run as that shell.
+      providerSignInEnabled: true,
     },
     companionVersion = "1.0.32",
     companionApp,

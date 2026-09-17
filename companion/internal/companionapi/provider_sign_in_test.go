@@ -14,6 +14,20 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
+// The shortened provider list and the sign-in button are Windows-only launch
+// decisions. The Mac app must keep CodexBar's full provider inventory and the
+// rows it shows today, so the flag the app reads stays off there.
+func TestProviderSignInFeatureIsWindowsOnly(t *testing.T) {
+	if !providerSignInFeatureEnabledFor("windows") {
+		t.Fatal("Windows must switch the provider sign-in feature on")
+	}
+	for _, goos := range []string{"darwin", "linux"} {
+		if providerSignInFeatureEnabledFor(goos) {
+			t.Fatalf("%s must keep the provider sign-in feature off", goos)
+		}
+	}
+}
+
 // A browser-sign-in diagnosis from CodexBar wins: only the page it named opens,
 // never the tool's own login.
 func TestProviderSignInOpensOnlyThePageCodexBarNamed(t *testing.T) {
