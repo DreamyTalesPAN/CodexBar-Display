@@ -557,6 +557,42 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
 }
 
+// A customer received a VibeTV showing "Resets in Reset unavailable" on the
+// Claude Creature theme: Session at 0% with no active Claude session, so
+// Anthropic sent no session deadline, and the theme's hard-coded "Resets in "
+// prefix stood in front of the unavailable text. The line has to collapse to
+// the unavailable text, and a template that still substitutes real values must
+// keep its prefix.
+void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
+  FrameData frame;
+  frame.label = "Claude";
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1Percent = 0;
+  frame.usageSlot1ResetSecs = 0;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2Percent = 32;
+  frame.usageSlot2ResetSecs = 4 * 24 * 3600;
+  frame.usageSlot2Available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"},
+        {"t":"tx","x":0,"y":20,"v":"Resets in {usageSlot2Reset}"},
+        {"t":"tx","x":0,"y":40,"v":"{usageSlot1Label} {usageSlot1Reset}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  // The idle session line collapses instead of reading "Resets in Reset unavailable".
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+  // A window that does have a deadline is untouched.
+  TEST_ASSERT_EQUAL_STRING("Resets in 4d 0h", sink.commands[2].text.c_str());
+  // A template carrying another real value keeps substituting in place.
+  TEST_ASSERT_EQUAL_STRING("Session Reset unavailable", sink.commands[3].text.c_str());
+}
+
 void testUsageWindowOwnershipHidesCompleteMissingLane() {
   const char* spec = R"JSON({
     "v":1,
@@ -3506,6 +3542,7 @@ int main() {
   RUN_TEST(testConsumeFrameLineTracksTokenTotalPresence);
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testTokenTotalsRenderCompactAndTruncated);
   RUN_TEST(testProviderSlotBindingsRenderLabelAndFormattedReset);

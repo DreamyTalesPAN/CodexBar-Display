@@ -4513,3 +4513,37 @@ issue scope, or release permission never implies UI permission.
 - User approval: Same explicitly approved recovery behavior above; review regression coverage only extends the sequence leading into it.
 - Approved customer-visible result: A stale selection of a disconnected cable device does not hide WiFi devices found by the next scan. Explicit WiFi recovery returns to the existing device picker, and another identity still requires its own Connect action.
 - Scope: Clear the stale candidate filter in the existing WiFi recovery branch and test the failed-cable-to-WiFi sequence. No new controls, copy, merge, or release.
+
+## 2026-09-17 — Idle reset text and rate-limited provider check (#448)
+
+- User approval: Marcus forwarded customer Bernd's report that his new VibeTV
+  shows `Resets in Reset unavailable` on the Claude theme at 0 % session usage,
+  and that the Claude provider check failed repeatedly during setup with
+  cookie, timeout, and too-many-requests errors. After both visible results
+  were presented for review, Marcus approved them with "ja".
+- Approved customer-visible result: A usage slot whose countdown is unknown no
+  longer produces a doubled sentence. A line whose only substituted value is
+  that countdown collapses to `Reset unavailable` instead of
+  `Resets in Reset unavailable`. Slots with a real deadline keep rendering the
+  full sentence, for example `Resets in 4d 0h`, and lines that also carry a
+  label or percentage keep substituting in place. During setup, a provider that
+  answers with a rate limit now reports "Claude is limiting usage checks right
+  now." with "Wait a few minutes, then check again. Nothing needs to be fixed."
+  instead of the previous "The usage service could not read this provider." and
+  "Repair the usage service." No theme design, provider selection flow, or
+  unrelated UI is changed.
+- Evidence: The new native ThemeSpec renderer test reproduces the customer
+  string exactly; with the fix disabled it fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'`. 147/147
+  native renderer tests, 541/541 Control Center tests, the companion codexbar,
+  companionapi, and protocol packages, customer-copy, customer-docs,
+  frame-render-policy, and theme-pack checks pass. The ESP8266 cross build is
+  left to CI because the xtensa toolchain cannot run on this Mac, and no
+  hardware test with an idle Claude session is claimed.
+- Approved files: The renderer rule in `theme_spec_renderer_core.h`, its mirror
+  in `live-vibetv-preview.tsx`, the rate-limit status in
+  `setup-provider-row.tsx` and `control-center-types.ts`, the companion
+  provider-setup and preferences mapping, their regression tests, and this
+  approval record.
+- Scope: Approval covers this fix and pushing the PR branch. No release, no
+  firmware flash for the customer, and no Fable credit display is included.
