@@ -138,9 +138,11 @@ const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // Sign-in follow-up: the Windows CLI needs ~20 s per exact Claude check, so
-// checks are spaced out and stop after a few minutes if nobody signs in.
+// checks are spaced out and stop three minutes after the page opened if
+// nobody signs in. The window is wall-clock, not a check count: probe
+// duration must not stretch it.
 const PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS = 15_000;
-const PROVIDER_SIGN_IN_FOLLOW_UP_CHECKS = 12;
+const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -3093,7 +3095,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       providerSignInFollowUpRef.current?.stop();
       let stopped = false;
-      let remaining = PROVIDER_SIGN_IN_FOLLOW_UP_CHECKS;
+      const deadline = Date.now() + PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS;
       let timer: number | null = null;
       const stillWaiting = () =>
         providerPreferencesRef.current?.some(
@@ -3103,12 +3105,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ) ?? false;
       const tick = async () => {
         timer = null;
-        if (stopped || remaining <= 0 || !stillWaiting()) {
+        if (stopped || Date.now() >= deadline || !stillWaiting()) {
           return;
         }
-        remaining -= 1;
         await checkProvider(item);
-        if (!stopped && remaining > 0 && stillWaiting()) {
+        if (!stopped && Date.now() < deadline && stillWaiting()) {
           timer = window.setTimeout(
             () => void tick(),
             PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
