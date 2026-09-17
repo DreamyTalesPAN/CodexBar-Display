@@ -881,9 +881,16 @@ inline bool TemplateIsOnlyUnavailableCountdown(const char* raw, const FrameData&
 
     const int providerSlotIndex = ProviderSlotBindingIndex(key);
     const int usageSlotIndex = UsageWindowBindingIndex(key);
+    // The compact aliases carry no "Reset" substring, so UsageWindowField
+    // reads them as "percent". BoundValue matches them by name; this probe
+    // has to do the same or {us1r} keeps rendering the doubled sentence on
+    // the device while the Control Center preview already collapses it.
+    const bool isShortReset =
+        std::strcmp(key, "us1r") == 0 || std::strcmp(key, "us2r") == 0 ||
+        std::strcmp(key, "pv1r") == 0 || std::strcmp(key, "pv2r") == 0;
     const bool isCountdown =
-        (providerSlotIndex >= 0 && std::strcmp(UsageWindowField(key), "reset") == 0) ||
-        (usageSlotIndex >= 0 && std::strcmp(UsageWindowField(key), "reset") == 0);
+        ((providerSlotIndex >= 0 || usageSlotIndex >= 0) &&
+         (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0));
     if (!isCountdown) {
       // Any other substitution carries its own information.
       return false;

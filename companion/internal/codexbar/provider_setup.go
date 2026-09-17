@@ -389,8 +389,13 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 		if provider.ID == providerID {
 			return provider
 		}
-		if provider.ID == "codexbar" && provider.Status == ProviderTimeout {
-			return providerResult(providerID, ProviderTimeout)
+		// The stand-in explains why the whole usage call failed, so an
+		// engine-level verdict about the requested provider survives the
+		// translation. Dropping a rate limit here made the row claim the
+		// account exposes no usage instead of asking the customer to wait.
+		if provider.ID == "codexbar" &&
+			(provider.Status == ProviderTimeout || provider.Status == ProviderRateLimited) {
+			return providerResult(providerID, provider.Status)
 		}
 	}
 	return providerResult(providerID, ProviderNoUsageAvailable)
@@ -555,9 +560,14 @@ func classifyProviderError(detail string) string {
 	// endpoint that refused ("usage endpoint is rate limited") while the
 	// sign-in it used is still valid. Classifying it as auth_required would
 	// send the customer to re-authenticate something that already works.
-	case strings.Contains(lower, "rate limit"), strings.Contains(lower, "ratelimited"),
-		strings.Contains(lower, "rate-limited"), strings.Contains(lower, "too many requests"),
-		strings.Contains(lower, "429"):
+	//
+	// Only actual throttling wording counts. A sign-in failure can name the
+	// data it wanted ("authentication required to read rate limits"); telling
+	// that customer to wait would hide the sign-in they must repair, so the
+	// bare noun "rate limits" must not match.
+	case strings.Contains(lower, "rate limited"), strings.Contains(lower, "ratelimited"),
+		strings.Contains(lower, "rate-limited"), strings.Contains(lower, "rate limit exceeded"),
+		strings.Contains(lower, "too many requests"), strings.Contains(lower, "429"):
 		return ProviderRateLimited
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
 		return ProviderTimeout
