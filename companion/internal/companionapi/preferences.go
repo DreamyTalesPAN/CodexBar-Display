@@ -700,8 +700,16 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		}
 		if state != string(codexbar.ProviderHealthBrowserSignIn) {
 			signInURL = ""
-		} else if signInURL == "" {
-			signInURL = setting.SignInURL
+		} else {
+			if signInURL == "" {
+				signInURL = setting.SignInURL
+			}
+			// The background scan carries no exact-check next action; the
+			// close-the-browser step is the one that makes the re-check work
+			// on Windows, so it must reach the row from this path too.
+			if nextAction == "" {
+				nextAction = providerReadinessNextAction(codexbar.ProviderBrowserSignInRequired)
+			}
 		}
 		items = append(items, preferenceDescriptor{
 			ID:             providerPreferenceID(setting.ID),
@@ -847,7 +855,7 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 	case codexbar.ProviderHealthAuthRequired:
 		return "Sign in again for this provider."
 	case codexbar.ProviderHealthBrowserSignIn:
-		return "Sign in to this provider in your browser, then check again."
+		return "Sign in to this provider in your browser, close the browser, then check again."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
 	case codexbar.ProviderHealthNoUsage:

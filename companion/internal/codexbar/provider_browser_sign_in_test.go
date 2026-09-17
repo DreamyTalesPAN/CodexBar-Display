@@ -56,4 +56,9 @@ func TestBrowserSignInStaysNarrow(t *testing.T) {
 	if got := classifyProviderErrorFor("codex", windowsClaudeOAuthRefused); got != ProviderAuthRequired {
 		t.Fatalf("codex must stay auth_required: %s", got)
 	}
+	// CodexBar's marker beats incidental wording in the summary around it.
+	mixed := "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: request timed out; CLI: permission denied [claude:browser-sign-in-required https://claude.ai/login]"
+	if got := classifyProviderErrorFor("claude", mixed); got != ProviderBrowserSignInRequired {
+		t.Fatalf("marker must win over timeout/permission wording, got %s", got)
+	}
 }

@@ -658,14 +658,16 @@ func browserSignInPage(id, detail string) string {
 }
 
 // classifyProviderErrorFor maps CodexBar's browser-session marker to
-// ProviderBrowserSignInRequired. The tool itself is logged in in that case;
-// telling the customer to "sign in again" would send them in a circle.
+// ProviderBrowserSignInRequired. The marker is CodexBar's own diagnosis, so
+// it wins over whatever the English summary around it happens to mention
+// (a timed-out source, a permission word). The tool itself is logged in in
+// that case; telling the customer to "sign in again" would send them in a
+// circle.
 func classifyProviderErrorFor(id, detail string) string {
-	status := classifyProviderError(detail)
-	if status == ProviderAuthRequired && browserSignInPage(id, detail) != "" {
+	if browserSignInPage(id, detail) != "" {
 		return ProviderBrowserSignInRequired
 	}
-	return status
+	return classifyProviderError(detail)
 }
 
 func providerResult(id, status string) ProviderReadiness {

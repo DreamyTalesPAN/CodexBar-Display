@@ -520,9 +520,9 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
 			state = classifyProviderHealth(reported)
-			if state == ProviderHealthAuthRequired && classifyProviderErrorFor(id, reported) == ProviderBrowserSignInRequired {
+			if page := browserSignInPage(id, reported); page != "" {
 				state = ProviderHealthBrowserSignIn
-				signInURL = browserSignInPage(id, reported)
+				signInURL = page
 			}
 		} else if !providerPayloadHasUsage(payload) {
 			state = ProviderHealthNoUsage
