@@ -99,7 +99,10 @@ import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
-import { setupProviderCanDisplay } from "./setup/setup-providers-screen";
+import {
+  offeredProviders,
+  setupProviderCanDisplay,
+} from "./setup/setup-providers-screen";
 import {
   deriveSetupStep,
   setupDeviceIsUsable,
@@ -3064,10 +3067,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [refreshProviderPreferences, runCompanion],
   );
 
-  // After the browser sign-in page opens, keep asking for this provider's
-  // exact check until the row leaves "browser_sign_in_required" or the
-  // window runs out. The customer signs in in another window; without this
-  // the row only moves when they come back and press check again.
+  // After the sign-in starts (browser page, CLI login or app), keep asking
+  // for this provider's exact check until the row leaves its sign-in state or
+  // the window runs out. The customer signs in in another window; without
+  // this the row only moves when they come back and press check again.
   const providerSignInFollowUpRef = useRef<{
     providerId: string;
     stop: () => void;
@@ -3088,7 +3091,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setProviderPreferencesError(
           normalizeCaughtError(
             error,
-            `The ${item.label} sign-in page could not be opened.`,
+            `The ${item.label} sign-in could not be started.`,
           ),
         );
         return;
@@ -3101,7 +3104,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerPreferencesRef.current?.some(
           (preference) =>
             preference.providerId?.trim().toLowerCase() === providerId &&
-            preference.health?.state === "browser_sign_in_required",
+            (preference.health?.state === "browser_sign_in_required" ||
+              preference.health?.state === "auth_required" ||
+              preference.health?.state === "setup_required"),
         ) ?? false;
       const tick = async () => {
         timer = null;
@@ -4391,7 +4396,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const setupOwnsScreen =
     !hasEnteredControlCenter && (setupStep !== "live" || !setupFinished);
 
-  const setupProviders = (providerPreferences || []).filter(isProviderItem);
+  const setupProviders = offeredProviders(
+    (providerPreferences || []).filter(isProviderItem),
+  );
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
   // and into the Manual list, where pinning to it produced a blank device.

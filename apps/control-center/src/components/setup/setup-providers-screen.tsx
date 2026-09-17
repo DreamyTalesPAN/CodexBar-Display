@@ -47,6 +47,35 @@ type SetupProvidersScreenProps = {
 const PROVIDER_PAGE_SIZE = 10;
 export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
 
+/**
+ * The providers VibeTV offers. CodexBar's inventory is 65 deep; VibeTV
+ * launches with the four it has been checked against, and the rest stay in
+ * CodexBar's own settings untouched (their on/off values are not rewritten).
+ * Applied where the app hands its provider list to setup and Settings, so the
+ * list itself stays generic.
+ */
+export const OFFERED_PROVIDER_IDS = ["codex", "claude", "cursor", "antigravity"];
+
+export function offeredProviders<T extends { providerId: string }>(
+  providers: T[],
+): T[] {
+  return providers.filter((provider) =>
+    OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase()),
+  );
+}
+
+/** Health states in which the row offers to start the provider's sign-in. */
+export function setupProviderOffersSignIn(
+  provider: Pick<ProviderItem, "health">,
+): boolean {
+  const { state, signInUrl } = provider.health;
+  return (
+    state === "auth_required" ||
+    state === "setup_required" ||
+    (state === "browser_sign_in_required" && Boolean(signInUrl))
+  );
+}
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
@@ -119,7 +148,7 @@ export function ProviderList({
             nextAction={provider.health.nextAction}
             onCheckAgain={() => onCheckAgain(provider)}
             onOpenSignIn={
-              onOpenSignIn && provider.health.signInUrl
+              onOpenSignIn && setupProviderOffersSignIn(provider)
                 ? () => onOpenSignIn(provider)
                 : undefined
             }

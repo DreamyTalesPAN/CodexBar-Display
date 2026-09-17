@@ -53,43 +53,49 @@ describe("SetupProviderRow", () => {
     expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
   });
 
-  // Without a verbatim CodexBar message, the exact check's generic detail is
-  // still honest guidance and the app offers no invented provider destination.
-  it("uses the generic provider detail when CodexBar reported no text", () => {
+  // A signed-out tool gets one sentence and, when the shell can start the
+  // sign-in, one button that does. CodexBar's developer text ("auth.json not
+  // found. Run codex login") is never the row's sentence.
+  it("offers to start the sign-in for a provider that is not signed in", () => {
     for (const health of ["auth_required", "setup_required"]) {
       const html = render({
         detail: "This provider needs an active sign-in.",
         health,
+        onOpenSignIn: vi.fn(),
+        reportedMessage:
+          "Provider not installed: Codex auth.json not found. Run codex login in the terminal to sign in.",
       });
 
-      expect(html).toContain("This provider needs an active sign-in.");
+      expect(html).toContain("Claude Code is not signed in on this computer");
+      expect(html).not.toContain("auth.json");
+      expect(html).toContain("Sign in to Claude Code");
+      expect(html).toContain("lucide-log-in");
+      expect(html).toContain(
+        'aria-label="Copy provider message for Claude Code"',
+      );
       expect(html).toContain('aria-label="Check Claude Code again"');
       expect(html).not.toContain('aria-label="Open CodexBar"');
-      expect(html).not.toContain("Copy provider message");
-      expect(html).not.toContain("lucide-external-link");
-      expect(html.match(/data-slot="button"/g)).toHaveLength(1);
+      expect(html.match(/data-slot="button"/g)).toHaveLength(3);
     }
   });
 
-  // CodexBar owns provider guidance. The row repeats its answer exactly and
-  // offers only Copy and Retry without guessing where this provider signs in.
-  it("shows CodexBar's reported message with only Copy and Retry", () => {
+  // Without a shell that can start the sign-in, the row keeps its sentence
+  // and offers Copy and Retry only.
+  it("falls back to Copy and Retry when no sign-in can be started", () => {
     const html = render({
       health: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
     });
 
-    expect(html).toContain(
-      "Codex connection failed: codex account authentication required to read rate limits",
-    );
+    expect(html).toContain("Claude Code is not signed in on this computer");
+    expect(html).not.toContain("Codex connection failed");
     expect(html).toContain(
       'aria-label="Copy provider message for Claude Code"',
     );
     expect(html).toContain('aria-label="Check Claude Code again"');
     expect(html).not.toContain('aria-label="Open CodexBar"');
-    expect(html).not.toContain('aria-label="Sign in to Claude Code"');
-    expect(html).not.toContain("lucide-external-link");
+    expect(html).not.toContain("lucide-log-in");
     expect(html.match(/data-slot="button"/g)).toHaveLength(2);
   });
 

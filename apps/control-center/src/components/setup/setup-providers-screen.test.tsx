@@ -11,10 +11,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PreferenceHealthState } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
+  OFFERED_PROVIDER_IDS,
   PROVIDER_LOADING_LOG_INTERVAL_MS,
   SetupProvidersScreen,
+  offeredProviders,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
+  setupProviderOffersSignIn,
 } from "./setup-providers-screen";
 
 afterEach(() => {
@@ -82,6 +85,63 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
+  // VibeTV launches with the four providers it has been checked against. The
+  // rest of CodexBar's inventory keeps its saved values but is not offered.
+  it("offers only Codex, Claude, Cursor and Antigravity", () => {
+    expect(OFFERED_PROVIDER_IDS).toEqual([
+      "codex",
+      "claude",
+      "cursor",
+      "antigravity",
+    ]);
+    const offered = offeredProviders([
+      claude,
+      copilot,
+      provider({ health: "healthy", label: "Codex", providerId: "Codex" }),
+      provider({ health: "disabled", label: "Cursor", providerId: "cursor" }),
+      provider({ health: "disabled", label: "Gemini", providerId: "gemini" }),
+      provider({
+        health: "disabled",
+        label: "Antigravity",
+        providerId: "antigravity",
+      }),
+    ]);
+    expect(offered.map((item) => item.label)).toEqual([
+      "Claude Code",
+      "Codex",
+      "Cursor",
+      "Antigravity",
+    ]);
+  });
+
+  // The sign-in action belongs to a signed-out tool and to a browser
+  // sign-in with a page to open; a healthy or timed-out row has none.
+  it("offers the sign-in action only where a sign-in can be started", () => {
+    expect(setupProviderOffersSignIn(copilot)).toBe(true);
+    expect(
+      setupProviderOffersSignIn(
+        provider({ health: "setup_required", label: "X", providerId: "x" }),
+      ),
+    ).toBe(true);
+    expect(setupProviderOffersSignIn(claude)).toBe(false);
+    expect(
+      setupProviderOffersSignIn(
+        provider({ health: "timeout", label: "X", providerId: "x" }),
+      ),
+    ).toBe(false);
+    const browser = provider({
+      health: "browser_sign_in_required",
+      label: "X",
+      providerId: "x",
+    });
+    expect(setupProviderOffersSignIn(browser)).toBe(false);
+    expect(
+      setupProviderOffersSignIn({
+        health: { ...browser.health, signInUrl: "https://claude.ai/login" },
+      }),
+    ).toBe(true);
+  });
+
   it("shows the approved loading state until the provider list is ready", () => {
     const html = render({ loading: true, providers: [] });
 

@@ -3,7 +3,9 @@ package companionapi
 import (
 	"context"
 	"net/http"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -407,24 +409,40 @@ var openProviderSignInFn = func(url string) error {
 	return exec.Command(name, args...).Run()
 }
 
-// handleProviderSignIn opens the provider's browser sign-in page. Only the
-// page CodexBar named for this provider's current browser_sign_in_required
-// state is ever opened, so the request carries a provider id, never a URL.
+// handleProviderSignIn starts the sign-in for one provider. When CodexBar
+// named a browser page for the provider's current browser_sign_in_required
+// state, only that page opens. Otherwise the provider's own tool signs in:
+// its CLI login in a visible terminal, its app, or -- when neither is
+// installed -- its official install page. The request carries a provider id,
+// never a URL or a path.
 func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
-	url := s.providerSignInURL(providerID)
-	if url == "" {
-		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no browser sign-in page.", "Sign in to the provider's app, then check again.")
+	if url := s.providerSignInURL(providerID); url != "" {
+		if err := openProviderSignInFn(url); err != nil {
+			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": providerSignInActionBrowser, "url": url})
 		return
 	}
-	if err := openProviderSignInFn(url); err != nil {
-		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
+	home, _ := os.UserHomeDir()
+	plan, ok := planProviderSignIn(providerID, runtime.GOOS, home, exec.LookPath, fileExists)
+	if !ok {
+		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no sign-in VibeTV can start.", "Sign in to the provider's app, then check again.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "url": url})
+	if err := launchProviderSignInFn(plan); err != nil {
+		nextAction := "Sign in to the provider's app, then check again."
+		if plan.URL != "" {
+			nextAction = "Open " + plan.URL + " in your browser, then check again."
+		}
+		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The sign-in could not be started.", nextAction)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": plan.Action, "url": plan.URL})
 }
 
 // providerSignInURL is the page CodexBar named in this provider's latest

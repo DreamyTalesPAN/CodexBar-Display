@@ -2,8 +2,11 @@ package companionapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,8 +14,8 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
-// The Companion keeps no sign-in table: it opens only the page CodexBar named
-// in the provider's current browser-sign-in diagnosis.
+// A browser-sign-in diagnosis from CodexBar wins: only the page it named opens,
+// never the tool's own login.
 func TestProviderSignInOpensOnlyThePageCodexBarNamed(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	original := openProviderSignInFn
@@ -22,11 +25,18 @@ func TestProviderSignInOpensOnlyThePageCodexBarNamed(t *testing.T) {
 		opened = append(opened, url)
 		return nil
 	}
+	originalLaunch := launchProviderSignInFn
+	defer func() { launchProviderSignInFn = originalLaunch }()
+	var launched []providerSignInPlan
+	launchProviderSignInFn = func(plan providerSignInPlan) error {
+		launched = append(launched, plan)
+		return nil
+	}
 
 	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=claude", nil))
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=copilot", nil))
 	if rec.Code != http.StatusNotFound || len(opened) != 0 {
-		t.Fatalf("without a diagnosis nothing may open: status=%d opened=%v", rec.Code, opened)
+		t.Fatalf("a provider without a diagnosis or a plan opens nothing: status=%d opened=%v", rec.Code, opened)
 	}
 
 	server.providerReadinessMu.Lock()
@@ -57,8 +67,8 @@ func TestProviderSignInOpensOnlyThePageCodexBarNamed(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=codex", nil))
-	if rec.Code != http.StatusNotFound || len(opened) != 1 {
-		t.Fatalf("a provider without a page must not open anything: status=%d opened=%v", rec.Code, opened)
+	if rec.Code != http.StatusOK || len(opened) != 1 || len(launched) != 1 {
+		t.Fatalf("a signed-out tool starts its own sign-in, not a browser page: status=%d opened=%v launched=%v", rec.Code, opened, launched)
 	}
 
 	// The background health scan is the other source of the page.
@@ -83,3 +93,64 @@ func TestProviderSignInOpensOnlyThePageCodexBarNamed(t *testing.T) {
 		t.Fatalf("GET must not open a browser: status=%d opened=%v", rec.Code, opened)
 	}
 }
+
+// The plan for a signed-out tool: its CLI login when the CLI is installed
+// (PATH first, then the known install location), its app when only that is
+// installed, and the official install page when nothing is.
+func TestPlanProviderSignIn(t *testing.T) {
+	none := func(string) (string, error) { return "", errNotFound }
+	onPath := func(name string) (string, error) {
+		if name == "codex" {
+			return "/path/codex", nil
+		}
+		return "", errNotFound
+	}
+	exists := func(paths ...string) func(string) bool {
+		return func(path string) bool {
+			for _, candidate := range paths {
+				if candidate == path {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	home := filepath.Join("home", "erwin")
+	windowsCodex := filepath.Join(home, "AppData", "Local", "Programs", "codex", "codex.exe")
+	windowsClaude := filepath.Join(home, ".local", "bin", "claude.exe")
+	windowsCursor := filepath.Join(home, "AppData", "Local", "Programs", "cursor", "Cursor.exe")
+
+	plan, ok := planProviderSignIn("codex", "windows", home, onPath, exists())
+	if !ok || plan.Action != providerSignInActionCLILogin || plan.Path != "/path/codex" || strings.Join(plan.Args, " ") != "login" {
+		t.Fatalf("codex on PATH: %#v ok=%v", plan, ok)
+	}
+	plan, _ = planProviderSignIn("codex", "windows", home, none, exists(windowsCodex))
+	if plan.Action != providerSignInActionCLILogin || plan.Path != windowsCodex {
+		t.Fatalf("codex at its install location: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("claude", "windows", home, none, exists(windowsClaude))
+	if plan.Action != providerSignInActionCLILogin || plan.Path != windowsClaude || strings.Join(plan.Args, " ") != "auth login" {
+		t.Fatalf("claude at its install location: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("claude", "windows", home, none, exists())
+	if plan.Action != providerSignInActionDownload || plan.URL != "https://docs.anthropic.com/en/docs/claude-code/setup" {
+		t.Fatalf("claude missing: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("cursor", "windows", home, none, exists(windowsCursor))
+	if plan.Action != providerSignInActionApp || plan.Path != windowsCursor {
+		t.Fatalf("cursor installed: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("antigravity", "windows", home, none, exists())
+	if plan.Action != providerSignInActionDownload || plan.URL != "https://antigravity.google/download" {
+		t.Fatalf("antigravity missing: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("cursor", "darwin", "/Users/x", none, exists("/Applications/Cursor.app"))
+	if plan.Action != providerSignInActionApp || plan.Path != "/Applications/Cursor.app" {
+		t.Fatalf("cursor on macOS: %#v", plan)
+	}
+	if _, ok := planProviderSignIn("copilot", "windows", home, none, exists()); ok {
+		t.Fatal("copilot has no plan")
+	}
+}
+
+var errNotFound = errors.New("not found")

@@ -12,3 +12,12 @@ func Hide(cmd *exec.Cmd) *exec.Cmd {
 	hide(cmd)
 	return cmd
 }
+
+// NewConsole marks cmd so that it starts in a console window of its own on
+// Windows. The Companion has no console to hand down, so a CLI that must talk
+// to the customer (a login that prints a URL and a code) needs a fresh one.
+// It is a no-op on other platforms.
+func NewConsole(cmd *exec.Cmd) *exec.Cmd {
+	newConsole(cmd)
+	return cmd
+}

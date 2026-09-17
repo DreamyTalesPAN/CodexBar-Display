@@ -215,18 +215,21 @@ describe("SettingsScreen standby controls", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,
       items: [
-        provider("openai", "OpenAI", false),
+        provider("antigravity", "Antigravity", false),
         provider("claude", "Claude Code", true),
         provider("cursor", "Cursor", false),
         provider("codex", "Codex", true),
+        // Not offered: stays in CodexBar's settings, never on this page.
+        provider("openai", "OpenAI", true),
       ],
     });
     const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
-    const positions = ["Claude Code", "Codex", "OpenAI", "Cursor"].map(
+    const positions = ["Claude Code", "Codex", "Antigravity", "Cursor"].map(
       (label) => providerSection.indexOf(`>${label}</`),
     );
 
     expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(providerSection).not.toContain(">OpenAI</");
     expect(positions).toEqual(
       [...positions].sort((left, right) => left - right),
     );

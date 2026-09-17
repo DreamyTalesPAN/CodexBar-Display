@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -97,9 +97,10 @@ type SetupProviderRowProps = {
   reportedMessage?: string;
   onCheckAgain: () => void;
   /**
-   * Opens the provider's browser sign-in page through the companion. Only
-   * rendered for "browser_sign_in_required"; absent when the shell has no
-   * page to open.
+   * Starts the provider's sign-in through the companion: the browser page
+   * for "browser_sign_in_required", the tool's own login (or its install
+   * page) for "auth_required" and "setup_required". Absent when the shell
+   * has nothing to start.
    */
   onOpenSignIn?: () => void;
   onToggle: (enabled: boolean) => void;
@@ -144,7 +145,7 @@ export function SetupProviderRow({
   ) : null;
   const fallbackMessage =
     variant === "sign_in"
-      ? `Sign in to ${label}`
+      ? `${label} is not signed in on this computer`
       : variant === "browser_sign_in"
         ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
@@ -156,13 +157,17 @@ export function SetupProviderRow({
             : variant === "stale"
               ? "Live usage is unavailable"
             : "Check timed out";
-  // The browser sign-in row shows the companion's guidance: CodexBar's
-  // sentence there is the three-source failure list, which names the wrong
-  // fix, and the detail alone omits that the browser must be closed again.
+  // The two sign-in rows show our own sentence, not CodexBar's: its text is
+  // a source-by-source failure list ("auth.json not found. Run codex login",
+  // "failed from all configured sources") written for developers, and for
+  // the browser case it names the wrong fix. CodexBar's sentence stays
+  // behind the copy action for support.
   const guidance =
     variant === "browser_sign_in"
       ? [detail, nextAction].filter(Boolean).join(" ") || fallbackMessage
-      : reportedMessage || detail || fallbackMessage;
+      : variant === "sign_in"
+        ? fallbackMessage
+        : reportedMessage || detail || fallbackMessage;
 
   return (
     <Item
@@ -186,6 +191,18 @@ export function SetupProviderRow({
                 label={`Open ${label} sign-in in your browser`}
                 onClick={onOpenSignIn}
               />
+            ) : null}
+            {variant === "sign_in" && onOpenSignIn ? (
+              <Button
+                className="rounded-full"
+                onClick={onOpenSignIn}
+                size="sm"
+                type="button"
+                variant="default"
+              >
+                <LogIn aria-hidden />
+                <span>{`Sign in to ${label}`}</span>
+              </Button>
             ) : null}
             {variant === "stale" ? null : checking ? (
               <>
