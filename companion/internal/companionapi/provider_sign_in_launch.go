@@ -1,6 +1,7 @@
 package companionapi
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -143,17 +144,19 @@ var launchProviderSignInFn = func(plan providerSignInPlan) error {
 	}
 }
 
-// startCLILoginInTerminal starts the tool's login in a terminal window the
-// customer can see: the login prints a URL and a code, and the tool opens the
-// browser itself. The Companion has no window of its own to show that in.
+// startCLILoginInTerminal starts the tool's login. On Windows it runs without
+// a console window: a black terminal box the customer cannot close looks
+// broken in a packaged app. The login prints its browser URL on stdout or
+// stderr and normally opens the browser itself; we watch the output and open
+// the URL ourselves if the browser did not come up on its own.
 func startCLILoginInTerminal(goos, path string, args []string) error {
 	switch goos {
 	case "windows":
-		// cmd.exe /k keeps the window open once the login finished so the
-		// customer can read its last line. Start, not Run: the login waits
-		// for the browser and the request must answer now.
-		cmdArgs := append([]string{"/k", path}, args...)
-		cmd := childproc.NewConsole(exec.Command("cmd.exe", cmdArgs...))
+		cmd := childproc.Hide(exec.Command(path, args...))
+		// The login keeps printing while it waits for the browser, so its
+		// output must go somewhere; a full pipe buffer would stall it.
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
 		if err := cmd.Start(); err != nil {
 			return err
 		}
