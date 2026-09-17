@@ -398,10 +398,12 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 }
 
 // openProviderSignInFn opens a URL in the customer's default browser. Tests
-// replace it; production goes through the OS handler without a shell.
+// replace it; production goes through the OS handler without a shell. The
+// handler returns as soon as the browser took the URL, so Run is fine here
+// and reaps the child (Start alone would leak a handle per click).
 var openProviderSignInFn = func(url string) error {
 	name, args := openurl.Command(url)
-	return exec.Command(name, args...).Start()
+	return exec.Command(name, args...).Run()
 }
 
 // handleProviderSignIn opens the provider's browser sign-in page. Only the

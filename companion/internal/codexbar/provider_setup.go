@@ -646,23 +646,23 @@ func classifyProviderError(detail string) string {
 	}
 }
 
-// classifyProviderErrorFor adds the one per-provider case the generic text
-// match cannot see: Claude's OAuth usage endpoint answering "rate limited"
-// while no browser cookies were available. That is not a missing sign-in --
-// Claude Code is logged in -- but a missing claude.ai browser session, and
-// telling the customer to "sign in again" sends them in a circle.
+// browserSignInMarker is the stable token the bundled Win-CodexBar (VibeTV
+// fork) appends to the Claude failure summary when the OAuth usage endpoint
+// refused the request while no claude.ai browser cookies were readable and
+// the CLI probe failed too. CodexBar owns that diagnosis; the Companion only
+// recognises the token and never derives it from the English summary.
+const browserSignInMarker = "[claude:browser-sign-in-required]"
+
+// classifyProviderErrorFor maps CodexBar's browser-session marker to
+// ProviderBrowserSignInRequired for providers with a listed sign-in page.
+// Claude Code is logged in in that case; telling the customer to "sign in
+// again" would send them in a circle.
 func classifyProviderErrorFor(id, detail string) string {
 	status := classifyProviderError(detail)
 	if status != ProviderAuthRequired || ProviderSignInURL(id) == "" {
 		return status
 	}
-	lower := strings.ToLower(detail)
-	oauthRefused := strings.Contains(lower, "oauth") &&
-		(strings.Contains(lower, "rate limit") || strings.Contains(lower, "429"))
-	noBrowserSession := strings.Contains(lower, "no cookies") ||
-		strings.Contains(lower, "cookies available") ||
-		strings.Contains(lower, "session cookie")
-	if oauthRefused && noBrowserSession {
+	if strings.Contains(detail, browserSignInMarker) {
 		return ProviderBrowserSignInRequired
 	}
 	return status

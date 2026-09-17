@@ -5,11 +5,12 @@ import (
 	"testing"
 )
 
-// Win-CodexBar's exact sentence when Anthropic rate-limits the OAuth usage
-// endpoint and no claude.ai browser cookies are readable. Claude Code is
-// signed in on that machine, so "sign in again" would send the customer in a
-// circle; the row must ask for the browser session instead.
-const windowsClaudeOAuthRefused = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Parse error: Claude CLI did not return usage data"
+// Win-CodexBar's failure summary when Anthropic rate-limits the OAuth usage
+// endpoint and no claude.ai browser cookies are readable; the bundled CLI
+// appends its browser-session marker. Claude Code is signed in on that
+// machine, so "sign in again" would send the customer in a circle; the row
+// must ask for the browser session instead.
+const windowsClaudeOAuthRefused = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Parse error: Claude CLI did not return usage data [claude:browser-sign-in-required]"
 
 func TestClaudeOAuthRefusedWithoutCookiesNeedsBrowserSignIn(t *testing.T) {
 	providers := providerReadinessFromOutput([]byte(`[{"provider":"claude","error":"`+windowsClaudeOAuthRefused+`"}]`), nil, nil)
@@ -37,6 +38,8 @@ func TestBrowserSignInStaysNarrow(t *testing.T) {
 		"Web: No cookies available for web API; OAuth: not logged in": ProviderAuthRequired,
 		// Rate limited alone, cookies were readable: the web path may recover.
 		"OAuth error: Claude OAuth usage endpoint is rate limited": ProviderAuthRequired,
+		// The English summary alone, without CodexBar's marker, is not enough.
+		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited.": ProviderAuthRequired,
 	}
 	for detail, want := range cases {
 		if got := classifyProviderErrorFor("claude", detail); got != want {
