@@ -49,7 +49,7 @@ Companion for everything it needs.
   uninstall. The Companion's Windows sidecars are `codexbar-display.exe` (Go,
   built in CI) and `codexbar-cli.exe` (the unmodified pinned Win-CodexBar
   console CLI downloaded by `scripts/fetch-win-codexbar.ps1`, currently the
-  VibeTV fork release `v0.60.3-vibetv.2` with the Windows Claude probe fixes;
+  VibeTV fork release `v0.60.3-vibetv.3` with the Windows Claude probe fixes;
   licence in `windows/THIRD_PARTY`). The Companion finds the CLI next to its own exe;
   `CODEXBAR_BIN` is not set.
 

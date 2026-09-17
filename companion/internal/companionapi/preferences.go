@@ -462,6 +462,7 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 				settings[i].Health = cached.Health
 				settings[i].Service = cached.Service
 				settings[i].Reported = cached.Reported
+				settings[i].SignInURL = cached.SignInURL
 			}
 		}
 	}
@@ -479,6 +480,7 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 			s.providerPreferences.cached[i].Health = codexbar.ProviderHealthChecking
 			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
 			s.providerPreferences.cached[i].Reported = ""
+			s.providerPreferences.cached[i].SignInURL = ""
 		}
 		settings = append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
 	}
@@ -516,6 +518,7 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 			s.providerPreferences.cached[i].Health = current.Health
 			s.providerPreferences.cached[i].Service = current.Service
 			s.providerPreferences.cached[i].Reported = current.Reported
+			s.providerPreferences.cached[i].SignInURL = current.SignInURL
 		}
 		s.providerPreferences.at = s.currentTime().UTC()
 	}()
@@ -681,6 +684,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			reported = reportedProviderMessage(readiness.Reported)
 			checkedAt = readiness.CheckedAt.UTC().Format(time.RFC3339)
 			nextAction = providerReadinessNextAction(readiness.Status)
+			signInURL = readiness.SignInURL
 		} else if _, ready := freshSuccess[setting.ID]; ready && providerCanUseUsageEvidence(setting) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
@@ -694,8 +698,10 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
-		if state == string(codexbar.ProviderHealthBrowserSignIn) {
-			signInURL = codexbar.ProviderSignInURL(setting.ID)
+		if state != string(codexbar.ProviderHealthBrowserSignIn) {
+			signInURL = ""
+		} else if signInURL == "" {
+			signInURL = setting.SignInURL
 		}
 		items = append(items, preferenceDescriptor{
 			ID:             providerPreferenceID(setting.ID),

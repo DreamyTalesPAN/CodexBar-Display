@@ -21,7 +21,7 @@ GUI app is already running, preserving its existing reuse exception.
 
 ## Known dependency gaps (also recorded in issue #415)
 
-Win-CodexBar 0.60.3 (pinned as the VibeTV fork release `v0.60.3-vibetv.2`)
+Win-CodexBar 0.60.3 (pinned as the VibeTV fork release `v0.60.3-vibetv.3`)
 still lacks two Mac CLI options. The Companion works
 around both on Windows only (`runtime.GOOS == "windows"`); the Mac path is
 unchanged. CI's contract test fails as soon as upstream adds either option,

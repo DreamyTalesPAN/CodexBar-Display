@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -35,17 +36,6 @@ const (
 	ProviderNotConfigured         = "not_configured"
 )
 
-// providerSignInURLs are the browser sign-in pages whose session cookies the
-// usage service can read for a provider that needs a browser sign-in.
-var providerSignInURLs = map[string]string{
-	"claude": "https://claude.ai/login",
-}
-
-// ProviderSignInURL returns the browser sign-in page for a provider, or "".
-func ProviderSignInURL(id string) string {
-	return providerSignInURLs[strings.ToLower(strings.TrimSpace(id))]
-}
-
 type configPathContextKey struct{}
 
 type EngineReadiness struct {
@@ -67,7 +57,8 @@ type ProviderReadiness struct {
 	Detail      string `json:"detail,omitempty"`
 	NextAction  string `json:"nextAction,omitempty"`
 	// SignInURL is the browser page the customer signs in on when Status is
-	// ProviderBrowserSignInRequired.
+	// ProviderBrowserSignInRequired. CodexBar names it in its marker; the
+	// Companion keeps no sign-in table of its own.
 	SignInURL string `json:"signInUrl,omitempty"`
 	// Reported is CodexBar's own provider error sentence. It stays internal so
 	// raw account paths, addresses and credentials never escape through
@@ -563,7 +554,7 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 		} else if !providerPayloadHasUsage(payload) {
 			status = ProviderNoUsageAvailable
 		}
-		provider := providerResult(id, status)
+		provider := providerResultWithSignIn(id, status, browserSignInPage(id, reported))
 		provider.Reported = reported
 		provider.Source = safeProviderSource(firstString(payload, "source"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
@@ -647,28 +638,41 @@ func classifyProviderError(detail string) string {
 }
 
 // browserSignInMarker is the stable token the bundled Win-CodexBar (VibeTV
-// fork) appends to the Claude failure summary when the OAuth usage endpoint
-// refused the request while no claude.ai browser cookies were readable and
-// the CLI probe failed too. CodexBar owns that diagnosis; the Companion only
-// recognises the token and never derives it from the English summary.
-const browserSignInMarker = "[claude:browser-sign-in-required]"
+// fork) appends to a provider failure summary when the usage endpoint only
+// answers a browser session: `[<provider>:browser-sign-in-required <url>]`.
+// CodexBar owns that diagnosis and the page that resolves it; the Companion
+// only recognises the token and never derives either from the English
+// summary or from a table of its own.
+var browserSignInMarker = regexp.MustCompile(`\[([a-z0-9._-]+):browser-sign-in-required (https://[^\s\]]+)\]`)
+
+// browserSignInPage returns the sign-in page CodexBar named for this provider,
+// or "" when the summary carries no marker for it.
+func browserSignInPage(id, detail string) string {
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, match := range browserSignInMarker.FindAllStringSubmatch(detail, -1) {
+		if match[1] == id {
+			return match[2]
+		}
+	}
+	return ""
+}
 
 // classifyProviderErrorFor maps CodexBar's browser-session marker to
-// ProviderBrowserSignInRequired for providers with a listed sign-in page.
-// Claude Code is logged in in that case; telling the customer to "sign in
-// again" would send them in a circle.
+// ProviderBrowserSignInRequired. The tool itself is logged in in that case;
+// telling the customer to "sign in again" would send them in a circle.
 func classifyProviderErrorFor(id, detail string) string {
 	status := classifyProviderError(detail)
-	if status != ProviderAuthRequired || ProviderSignInURL(id) == "" {
-		return status
-	}
-	if strings.Contains(detail, browserSignInMarker) {
+	if status == ProviderAuthRequired && browserSignInPage(id, detail) != "" {
 		return ProviderBrowserSignInRequired
 	}
 	return status
 }
 
 func providerResult(id, status string) ProviderReadiness {
+	return providerResultWithSignIn(id, status, "")
+}
+
+func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	label := humanLabel(id)
 	if id == "codexbar" {
 		label = "Usage service"
@@ -681,9 +685,10 @@ func providerResult(id, status string) ProviderReadiness {
 		result.Detail = "This provider needs an active sign-in."
 		result.NextAction = "Sign in to this provider, then check again."
 	case ProviderBrowserSignInRequired:
-		result.Detail = label + " usage needs a signed-in " + providerSignInHost(id) + " session in your browser."
-		result.NextAction = "Sign in to " + providerSignInHost(id) + " in your browser, close the browser, then check again."
-		result.SignInURL = ProviderSignInURL(id)
+		host := signInHost(signInURL)
+		result.Detail = label + " usage needs a signed-in " + host + " session in your browser."
+		result.NextAction = "Sign in to " + host + " in your browser, close the browser, then check again."
+		result.SignInURL = signInURL
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
 		result.NextAction = "Allow the requested macOS permission, then check again."
@@ -706,11 +711,13 @@ func providerResult(id, status string) ProviderReadiness {
 	return result
 }
 
-func providerSignInHost(id string) string {
-	url := ProviderSignInURL(id)
-	url = strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
+func signInHost(url string) string {
+	url = strings.TrimPrefix(url, "https://")
 	if i := strings.Index(url, "/"); i >= 0 {
 		url = url[:i]
+	}
+	if url == "" {
+		return "provider"
 	}
 	return url
 }

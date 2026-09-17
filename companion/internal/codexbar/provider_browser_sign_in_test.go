@@ -10,7 +10,7 @@ import (
 // appends its browser-session marker. Claude Code is signed in on that
 // machine, so "sign in again" would send the customer in a circle; the row
 // must ask for the browser session instead.
-const windowsClaudeOAuthRefused = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Parse error: Claude CLI did not return usage data [claude:browser-sign-in-required]"
+const windowsClaudeOAuthRefused = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Parse error: Claude CLI did not return usage data [claude:browser-sign-in-required https://claude.ai/login]"
 
 func TestClaudeOAuthRefusedWithoutCookiesNeedsBrowserSignIn(t *testing.T) {
 	providers := providerReadinessFromOutput([]byte(`[{"provider":"claude","error":"`+windowsClaudeOAuthRefused+`"}]`), nil, nil)
@@ -29,6 +29,9 @@ func TestClaudeOAuthRefusedWithoutCookiesNeedsBrowserSignIn(t *testing.T) {
 	if health["claude"].health != ProviderHealthBrowserSignIn {
 		t.Fatalf("background health must agree: %#v", health["claude"])
 	}
+	if health["claude"].signInURL != "https://claude.ai/login" {
+		t.Fatalf("background health must carry the page: %#v", health["claude"])
+	}
 }
 
 func TestBrowserSignInStaysNarrow(t *testing.T) {
@@ -40,13 +43,16 @@ func TestBrowserSignInStaysNarrow(t *testing.T) {
 		"OAuth error: Claude OAuth usage endpoint is rate limited": ProviderAuthRequired,
 		// The English summary alone, without CodexBar's marker, is not enough.
 		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited.": ProviderAuthRequired,
+		// A marker without a page, or with a page that is not https, is ignored.
+		"OAuth error: not logged in [claude:browser-sign-in-required]":                        ProviderAuthRequired,
+		"OAuth error: not logged in [claude:browser-sign-in-required http://claude.ai/login]": ProviderAuthRequired,
 	}
 	for detail, want := range cases {
 		if got := classifyProviderErrorFor("claude", detail); got != want {
 			t.Fatalf("%q: got %s want %s", detail, got, want)
 		}
 	}
-	// Providers without a listed sign-in page never get the new state.
+	// The marker names its provider; another provider's summary never inherits it.
 	if got := classifyProviderErrorFor("codex", windowsClaudeOAuthRefused); got != ProviderAuthRequired {
 		t.Fatalf("codex must stay auth_required: %s", got)
 	}

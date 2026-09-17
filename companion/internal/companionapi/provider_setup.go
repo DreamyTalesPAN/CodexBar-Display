@@ -28,6 +28,7 @@ type providerReadinessRecord struct {
 	Status    string
 	Detail    string
 	Reported  string
+	SignInURL string
 	CheckedAt time.Time
 }
 
@@ -407,14 +408,14 @@ var openProviderSignInFn = func(url string) error {
 }
 
 // handleProviderSignIn opens the provider's browser sign-in page. Only the
-// pages the Companion itself lists are ever opened, so the request carries a
-// provider id, never a URL.
+// page CodexBar named for this provider's current browser_sign_in_required
+// state is ever opened, so the request carries a provider id, never a URL.
 func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
-	url := codexbar.ProviderSignInURL(providerID)
+	url := s.providerSignInURL(providerID)
 	if url == "" {
 		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no browser sign-in page.", "Sign in to the provider's app, then check again.")
 		return
@@ -424,6 +425,24 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "url": url})
+}
+
+// providerSignInURL is the page CodexBar named in this provider's latest
+// browser-sign-in diagnosis: the exact check first, then the background
+// health scan. Empty when neither currently says the provider needs one.
+func (s *Server) providerSignInURL(providerID string) string {
+	if record, ok := s.providerReadinessFor(providerID); ok &&
+		record.Status == codexbar.ProviderBrowserSignInRequired && record.SignInURL != "" {
+		return record.SignInURL
+	}
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	for _, setting := range s.providerPreferences.cached {
+		if strings.EqualFold(setting.ID, providerID) && setting.Health == codexbar.ProviderHealthBrowserSignIn {
+			return setting.SignInURL
+		}
+	}
+	return ""
 }
 
 func (s *Server) currentProviderRevision(providerID string) uint64 {
@@ -454,6 +473,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 		Status:    exactReadiness.Status,
 		Detail:    exactReadiness.Detail,
 		Reported:  exactReadiness.Reported,
+		SignInURL: exactReadiness.SignInURL,
 		CheckedAt: checkedAt,
 	}
 
@@ -477,6 +497,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 			s.providerPreferences.cached[i].Health = providerHealthFromReadiness(exactReadiness.Status)
 			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
 			s.providerPreferences.cached[i].Reported = record.Reported
+			s.providerPreferences.cached[i].SignInURL = record.SignInURL
 			s.providerPreferences.at = s.currentTime().UTC()
 		}
 		break
