@@ -3,10 +3,12 @@ Third-party software bundled with the Windows VibeTV Control Center
 
 codexbar-cli.exe
 ----------------
-Taken unmodified from the pinned Win-CodexBar release installer
-(https://github.com/nesszer/Win-CodexBar, version and SHA-256 pinned in
-scripts/fetch-win-codexbar.ps1). Win-CodexBar is a fork of CodexBar by
-Peter Steinberger (https://github.com/steipete/CodexBar).
+Taken unmodified from the pinned Win-CodexBar console CLI release (release
+tag and SHA-256 pinned in scripts/fetch-win-codexbar.ps1). Currently the
+VibeTV fork https://github.com/marcus7989/Win-CodexBar (branch vibetv,
+Windows Claude probe fixes on top of upstream v0.60.3) of
+https://github.com/nesszer/Win-CodexBar, which is itself a fork of CodexBar
+by Peter Steinberger (https://github.com/steipete/CodexBar).
 
 MIT License
 
@@ -29,4 +31,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
