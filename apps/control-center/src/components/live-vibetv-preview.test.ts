@@ -423,23 +423,52 @@ describe("dynamic usage slot preview", () => {
     );
   });
 
-  // Pins the asymmetry so nobody "tidies" it later: RenderTextTemplate probes
-  // only the root tokens, so slot tokens really do substitute in place on the
-  // device and leave the surrounding text standing.
-  it("substitutes slot countdown tokens in place, like the firmware", () => {
-    const expired = buildFrameData("2026-07-24T10:30:00Z", {
+  // A customer received a VibeTV reading "Resets in Reset unavailable": an idle
+  // Claude session carries no deadline, and the shipped theme hard-codes the
+  // "Resets in " prefix. A line whose only substitution is an unavailable
+  // countdown collapses to the unavailable text on the device, so the preview
+  // has to collapse it too.
+  it("collapses a line whose only value is an unavailable countdown", () => {
+    const idle = buildFrameData("2026-07-24T10:30:00Z", {
       v: 2,
-      provider: "codex",
-      label: "Codex",
+      provider: "claude",
+      label: "Claude",
       resetSecs: 0,
-      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+      usageSlots: [{ id: "session", label: "Session", percent: 0, resetSecs: 0 }],
     });
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {usage.0.reset}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {usage.0.reset}" }, idle),
+    ).toBe("Reset unavailable");
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {us1r}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {us1r}" }, idle),
+    ).toBe("Reset unavailable");
+  });
+
+  // The collapse is limited to countdown-only templates. A line that also
+  // substitutes a label or a percentage still carries information, so it keeps
+  // substituting in place exactly as the firmware does.
+  it("keeps substituting in place when the line carries another real value", () => {
+    const idle = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 0,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+        ],
+      },
+      new Date("2026-07-24T10:30:00Z"),
+    );
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{us1l} {us1r}" }, idle),
+    ).toBe("Session Reset unavailable");
+    // A window that does have a deadline is untouched.
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {us2r}" }, idle),
+    ).toBe("Resets in 4d 0h");
   });
 
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {

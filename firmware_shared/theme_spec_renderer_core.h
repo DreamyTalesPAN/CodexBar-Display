@@ -848,6 +848,72 @@ inline void AppendText(char* out, size_t outSize, size_t& outLen, const char* te
   }
 }
 
+// True when a template's only substitution is an unavailable countdown.
+//
+// Shipped themes hard-code the prose around the countdown ("Resets in {us1r}",
+// "Reset in {usageSlot1Reset}"). Substituting the unavailable text in place
+// rendered "Resets in Reset unavailable" on a customer's screen: a doubled,
+// self-contradicting line that reads like a defect. The whole template
+// collapses to the unavailable text instead, exactly as the root {reset} token
+// has always behaved, so the surrounding prose cannot contradict it.
+//
+// Only the countdown tokens are probed. A template that also substitutes a
+// label or a percentage still carries information worth rendering, so it keeps
+// its in-place substitution.
+inline bool TemplateIsOnlyUnavailableCountdown(const char* raw, const FrameData& frame) {
+  raw = SafeText(raw);
+  bool sawUnavailableCountdown = false;
+  for (size_t i = 0; raw[i] != '\0';) {
+    if (raw[i] != '{') {
+      ++i;
+      continue;
+    }
+    const char* close = std::strchr(raw + i + 1, '}');
+    if (close == nullptr) {
+      break;
+    }
+    char key[32] = {0};
+    const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
+    if (keyLen == 0 || keyLen >= sizeof(key)) {
+      return false;
+    }
+    std::memcpy(key, raw + i + 1, keyLen);
+
+    const int providerSlotIndex = ProviderSlotBindingIndex(key);
+    const int usageSlotIndex = UsageWindowBindingIndex(key);
+    const bool isCountdown =
+        (providerSlotIndex >= 0 && std::strcmp(UsageWindowField(key), "reset") == 0) ||
+        (usageSlotIndex >= 0 && std::strcmp(UsageWindowField(key), "reset") == 0);
+    if (!isCountdown) {
+      // Any other substitution carries its own information.
+      return false;
+    }
+
+    int64_t resetSecs = 0;
+    bool available = false;
+    if (providerSlotIndex >= 0) {
+      const UsageWindowData& slot = frame.providerSlots[providerSlotIndex];
+      resetSecs = slot.resetSecs;
+      available = slot.available;
+    } else {
+      const UsageWindowData window = BoundUsageWindowFor(frame, key, usageSlotIndex);
+      resetSecs = window.resetSecs;
+      available = window.available;
+    }
+    // An unavailable window renders empty, not as the unavailable text, and
+    // collapsing the line would hide prose the theme wants standing.
+    if (!available) {
+      return false;
+    }
+    if (resetSecs > 0) {
+      return false;
+    }
+    sawUnavailableCountdown = true;
+    i += keyLen + 2;
+  }
+  return sawUnavailableCountdown;
+}
+
 inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -859,6 +925,11 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
       (std::strstr(raw, "{reset}") != nullptr ||
        std::strstr(raw, "{resetCountdown}") != nullptr ||
        std::strstr(raw, "{r}") != nullptr)) {
+    std::snprintf(out, outSize, "Reset unavailable");
+    return;
+  }
+
+  if (TemplateIsOnlyUnavailableCountdown(raw, frame)) {
     std::snprintf(out, outSize, "Reset unavailable");
     return;
   }

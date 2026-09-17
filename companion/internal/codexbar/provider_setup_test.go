@@ -374,6 +374,33 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	}
 }
 
+// Anthropic answers 429 while a customer is connecting Claude during setup.
+// That is not a fault they can repair: the sign-in works and the usage service
+// is healthy, so it must not be classified as an auth or engine failure and
+// must not advise repairing anything.
+func TestProviderReadinessClassifiesRateLimitAsWaitAndRetry(t *testing.T) {
+	for _, detail := range []string{
+		"Claude CLI usage endpoint is rate limited right now. Please try again later.",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderError(detail); got != ProviderRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderRateLimited, got)
+		}
+	}
+
+	result := providerResult("claude", ProviderRateLimited)
+	advice := strings.ToLower(result.Detail + " " + result.NextAction)
+	for _, wrong := range []string{"repair", "sign in", "permission"} {
+		if strings.Contains(advice, wrong) {
+			t.Fatalf("rate-limit copy should not mention %q: %+v", wrong, result)
+		}
+	}
+	if !strings.Contains(advice, "wait") {
+		t.Fatalf("rate-limit copy should tell the customer to wait: %+v", result)
+	}
+}
+
 func TestProviderReadinessClassifiesTimeoutWithoutSecrets(t *testing.T) {
 	got := providerReadinessFromOutput(nil, context.DeadlineExceeded, context.DeadlineExceeded)
 	if len(got) != 1 || got[0].Status != ProviderTimeout || strings.Contains(got[0].Detail, "deadline") {
