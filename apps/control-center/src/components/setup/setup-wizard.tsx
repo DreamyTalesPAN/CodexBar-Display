@@ -459,10 +459,18 @@ export function SetupWizard(props: SetupWizardProps) {
           />
         ) : null}
         <SetupFirmwareUpdateFailedDialog
+          attentionMessage={
+            connect.failure?.kind === "firmware-attention"
+              ? connect.failure.description
+              : undefined
+          }
           onCreateSupportReport={() => void onCreateSupportReport()}
           onOpenChange={(open) => !open && connect.dismissFailure()}
           onRetry={connect.retry}
-          open={connect.failure?.kind === "firmware-update"}
+          open={
+            connect.failure?.kind === "firmware-update" ||
+            connect.failure?.kind === "firmware-attention"
+          }
         />
         {/*
           Last. A failed firmware check landing on top of "Finish AI setup on

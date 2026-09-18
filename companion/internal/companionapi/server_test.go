@@ -8675,7 +8675,9 @@ func TestFirmwareUpdateWithoutProviderCompletesWithoutRenderProof(t *testing.T) 
 		case "/hello":
 			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-no-provider","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
 		case "/health":
-			_, _ = w.Write([]byte(`{"ok":true}`))
+			// A real health response establishes that the same stored theme
+			// survived OTA; missing metadata must not silently prove success.
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy.json","renderOk":true}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}

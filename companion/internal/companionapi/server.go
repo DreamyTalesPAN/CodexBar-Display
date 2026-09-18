@@ -581,8 +581,12 @@ type firmwareUpdateJob struct {
 	Result      *firmwareUpdateResult `json:"result,omitempty"`
 	Warnings    []string              `json:"warnings,omitempty"`
 	Error       *apiError             `json:"error,omitempty"`
-	target      string
-	firmware    string
+
+	target                         string
+	firmware                       string
+	themeSetupRequiredBeforeUpdate bool
+	themePathBeforeUpdate          string
+	themeActiveBeforeUpdate        bool
 }
 
 type firmwareUpdateJobResponse struct {
@@ -4989,8 +4993,41 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), firmwareUpdateJobTime)
 		defer cancel()
+		// Only a positively unconfigured device may skip render verification.
+		// Remember this before OTA: a theme lost during the update is a failure,
+		// and an unavailable/older health response is not proof of first setup.
+		probeCtx, cancelProbe := context.WithTimeout(ctx, 3*time.Second)
+		var before deviceHealth
+		// Only this maintenance-owned request bypasses doJSON's OTA exclusion;
+		// ordinary status probes must remain blocked throughout the baseline.
+		probeReq, probeErr := http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint(cfg.DeviceTarget, "/health"), nil)
+		if probeErr == nil {
+			applyDeviceToken(probeReq, cfg.DeviceToken)
+			probeErr = s.do(probeReq, &before)
+		}
+		cancelProbe()
+		if probeErr == nil && before.OK {
+			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+				job.themeSetupRequiredBeforeUpdate = firmwareThemeSetupRequired(before)
+				job.themePathBeforeUpdate, job.themeActiveBeforeUpdate = firmwareUpdateLiveThemeState(before)
+			})
+		}
+		if s.client != nil {
+			s.client.CloseIdleConnections()
+		}
 		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
-		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
+		// A probe that passed the exclusion before this job started may still
+		// own or await the HTTP gate, even when our three-second baseline timed
+		// out. Drain it and hold the gate across the child-process OTA.
+		err := probeErr
+		if probeReq != nil {
+			var release func()
+			release, err = transportlayer.AcquireDeviceHTTPGate(ctx, probeReq.URL)
+			if err == nil {
+				err = s.updateFirmware(ctx, s.home, cfg, req, writer)
+				release()
+			}
+		}
 		s.firmwareUpdateActive.Store(false)
 		resumeStream()
 
@@ -5122,9 +5159,28 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
-	if streamAwaitingProvider {
+	// Missing usage may defer a picture, but must not hide a theme lost by OTA.
+	liveThemePath, liveThemeActive := firmwareUpdateLiveThemeState(health)
+	if snapshot.themePathBeforeUpdate != "" && liveThemePath == "" {
+		s.setFirmwareUpdateStage(jobID, "verifying_render")
+		return firmwareAttentionOutcome("render"), "Firmware is current, but the stored theme could not be verified.", nil
+	}
+	themeSetupRequired := snapshot.themeSetupRequiredBeforeUpdate && firmwareThemeSetupRequired(health)
+	storedThemeUnchanged := snapshot.themePathBeforeUpdate != "" &&
+		snapshot.themePathBeforeUpdate == liveThemePath &&
+		snapshot.themeActiveBeforeUpdate == liveThemeActive &&
+		strings.TrimSpace(health.Display.ThemeSpec.RenderError) == "" &&
+		(health.Display.ThemeSpec.RenderOK == nil || *health.Display.ThemeSpec.RenderOK)
+	if streamAwaitingProvider && !themeSetupRequired && !storedThemeUnchanged {
+		s.setFirmwareUpdateStage(jobID, "verifying_render")
+		return firmwareAttentionOutcome("render"), "Firmware is current, but the stored theme could not be verified.", nil
+	}
+	if streamAwaitingProvider || themeSetupRequired {
 		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 			result.RenderSkipped = "provider_setup_required"
+			if themeSetupRequired {
+				result.RenderSkipped = "theme_setup_required"
+			}
 		})
 		if snapshot.Outcome == "already_current" {
 			return "already_current", "", nil
@@ -5149,6 +5205,26 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return "already_current", "", nil
 	}
 	return "updated", "", nil
+}
+
+// Standby and screensaver preview display a separate slot. Compare the live slot,
+// which firmware restores on reboot, not the picture currently on screen.
+func firmwareUpdateLiveThemeState(health deviceHealth) (string, bool) {
+	if health.Standby != nil {
+		path := strings.TrimSpace(health.Standby.LiveThemePath)
+		if path != "" || health.Standby.Active {
+			return path, path != ""
+		}
+	}
+	return strings.TrimSpace(health.Display.ThemeSpec.Path), health.Display.ThemeSpec.Active
+}
+
+func firmwareThemeSetupRequired(health deviceHealth) bool {
+	spec := health.Display.ThemeSpec
+	return health.OK && health.Display.ActiveTheme == "theme-missing" &&
+		(health.Standby == nil || (!health.Standby.Active && strings.TrimSpace(health.Standby.LiveThemePath) == "")) &&
+		!spec.Active && strings.TrimSpace(spec.Path) == "" &&
+		strings.TrimSpace(spec.Hash) == "" && strings.TrimSpace(spec.RenderError) == ""
 }
 
 // repairParkedDisplayAfterFirmwareUpdate verifies the picture after an update

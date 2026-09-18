@@ -3914,3 +3914,47 @@ issue scope, or release permission never implies UI permission.
 - User approval: This restores the standing instruction Marcus gave on 2026-09-17, that this release must not change the Mac app at all ("alles in diesem Release darf eigentlich die komplette Mac-App nicht ändern"), after the review found that a signed-out row on macOS had started showing the new Windows sentence.
 - Approved customer-visible result: Our shorter sentence "<Provider> is not signed in on this computer" appears only on a row that also carries the "Sign in to <Provider>" button. Every row without that button, which is every row on macOS, keeps the usage service's own message with the existing copy and "Check again" actions exactly as it shows today.
 - Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` and `setup-provider-row.test.tsx` on PR #447. Verified by the full control-center customer flow run, which still shows the Windows sentence and button on the rows that have the sign-in action. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-14 — Firmware update completion and first-theme onboarding (#445)
+
+- User approval: Marcus tested the installed candidate from PR #445 at
+  `e3d628bd4cae7c6349c499d43047356891a05def`, confirmed "ok hat geklappt",
+  repeated the fresh setup, and then explicitly requested "ne nur den
+  getstetet firmware fix mergen". His approval is limited to the tested
+  firmware-update behavior; the separate provider-readiness checking problem
+  observed during the repeated test remains open and is not covered here.
+- Approved customer-visible result: Firmware updates stop waiting when their
+  actual result is known. Successful updates continue first-time setup even
+  when the device has no theme yet. A result requiring attention ends the
+  busy state and shows the existing support/report recovery instead of
+  waiting until a misleading timeout or starting a second firmware upload.
+  Existing theme-loss and render failures remain actionable. No provider
+  selection behavior, theme design, or unrelated UI is changed.
+- Evidence: The signed candidate 9999.0.99 (run 34848902448) replaced the old
+  Mac App through its customer update flow. Device 16201042 updated from
+  1.0.41 to the candidate and reported firmware, health, stream, and render
+  verification complete; its stored Clippy theme was restored automatically.
+  Marcus then tested first-theme onboarding using the same PR App after
+  firmware 1.0.41, empty theme assets, WLAN reset, and clean Mac state were
+  established. The app reached provider selection on firmware 1.0.42;
+  the separately observed provider-check refusal is not claimed fixed.
+- Approved files: The firmware polling and setup changes in
+  `control-center-app.tsx`, `setup-connect.ts`, `setup-firmware-dialogs.tsx`,
+  `setup-wizard.tsx`, their regression tests, and `test-customer-flows.mjs`.
+- Scope: Approval to merge this firmware fix only. No production release,
+  new firmware flash, provider fix, or additional feature is authorized.
+
+## 2026-09-14 — Repair the blocking test checks for #445
+
+- User approval: Marcus explicitly requested "Und ja behebe vorher die
+  Probleme" after the repeated CI failure and broken local static test were
+  reported. This authorizes repairing those checks, not the provider issue.
+- Approved customer-visible result: No new customer-visible change. The
+  firmware onboarding behavior tested and approved above remains unchanged.
+  The browser fixture now returns the Companion's actual device-not-found
+  API response instead of simulating loss of the Companion connection.
+  The same assertions still require setup to stay incomplete until device
+  confirmation and prohibit a second theme installation.
+- Scope: Test fixtures, focused test coverage, shell syntax failure detection,
+  and checking the currently catalogued screensaver archive. No additional
+  product, provider, firmware, installation, or release change is included.
