@@ -221,6 +221,8 @@ def validate_publish_scope(
         "firmware-manifest.json",
         f"firmware-manifest-v{version}.json",
         f"checksums-v{version}.txt",
+        "latest-windows.json",
+        f"VibeTV-Control-Center-Setup-v{version}.exe",
     }
     missing = sorted(required_names - published_names)
     if missing:
@@ -276,6 +278,36 @@ def validate_publish_scope(
     release_prefix = (
         f"https://github.com/{repository}/releases/download/v{version}/"
     )
+    windows_installer_name = f"VibeTV-Control-Center-Setup-v{version}.exe"
+    windows_installers = [
+        item
+        for item in published
+        if item["name"] == windows_installer_name
+        and item["role"] == "windows-installer"
+    ]
+    if len(windows_installers) != 1:
+        fail("candidate publish scope must identify one Windows installer")
+    windows_manifests = [
+        item
+        for item in published
+        if item["name"] == "latest-windows.json"
+        and item["role"] == "windows-update-manifest"
+    ]
+    if len(windows_manifests) != 1:
+        fail("candidate publish scope must identify one Windows update manifest")
+    windows_manifest = read_json(
+        safe_artifact(candidate_dir, windows_manifests[0]["path"]),
+        "Windows update manifest",
+    )
+    if windows_manifest.get("version") != version:
+        fail("Windows update manifest version must match the release version")
+    windows_platform = windows_manifest.get("platforms", {}).get("windows-x86_64")
+    if not isinstance(windows_platform, dict):
+        fail("Windows update manifest must describe the windows-x86_64 platform")
+    if windows_platform.get("url") != release_prefix + windows_installer_name:
+        fail("Windows update manifest URL is not the exact release asset URL")
+    if not str(windows_platform.get("signature", "")).strip():
+        fail("Windows update manifest must contain an updater signature")
     appcast_items = [
         item
         for item in published

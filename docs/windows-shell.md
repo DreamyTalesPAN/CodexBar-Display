@@ -84,6 +84,17 @@ Without the `TAURI_SIGNING_PRIVATE_KEY` secret CI signs the updater
 manifest with a throwaway key: the installer works, but no released shell
 would accept it as an update.
 
+Release (`build-windows` job in `vibetv-release-candidate.yml`): the same
+steps, but built from the exact reviewed `main` SHA and stamped with the
+release version instead of the CI candidate version. It signs the updater
+manifest with the real `TAURI_SIGNING_PRIVATE_KEY` secret, whose public half
+is pinned in `tauri.conf.json`, and fails when that secret is missing rather
+than falling back to a throwaway key. It publishes
+`VibeTV-Control-Center-Setup-v<version>.exe` and `latest-windows.json` as
+part of the immutable candidate publish set, so the publish gate and the
+byte-identical public asset verification cover them like the Mac assets. CI
+never sees the release key, because it also builds unreviewed pull requests.
+
 Local cross-build from macOS: `brew install nsis llvm`, `cargo install
 cargo-xwin tauri-cli`, `rustup target add x86_64-pc-windows-msvc`, place both
 sidecars in `windows/src-tauri/binaries/` as
@@ -138,11 +149,6 @@ needed.
 
 - Authenticode: `bundle.windows.signCommand` is unset until the certificate
   from #217 exists; installers are unsigned and SmartScreen warns.
-- Release signing: the updater public key in `tauri.conf.json` belongs to a
-  private key kept outside the repository; add it as the
-  `TAURI_SIGNING_PRIVATE_KEY` GitHub secret before the first Windows release.
-  The release workflow does not yet build or publish the Windows installer and
-  `latest-windows.json`.
 - Pinned-CLI validation (`validate-codexbar`) is a stub outside macOS; the
   Windows CLI is trusted by the installer SHA-256 pin only.
 - Not proven in the VM: ARM64 hosts, Cable transport, a real N→N+1 update

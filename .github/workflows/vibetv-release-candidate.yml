@@ -148,8 +148,118 @@ jobs:
           path: tmp/vibetv-rc
           retention-days: 30
 
+  build-windows:
+    needs: resolve-baselines
+    if: >-
+      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == github.repository_owner || github.actor == 'marcus7989')
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+      - name: Build the Control Center UI bundled into the Companion
+        shell: pwsh
+        run: |
+          Push-Location apps/control-center
+          npm ci
+          npm run build:local
+          Pop-Location
+          $static = "companion/internal/companionapi/controlcenter_static"
+          if (Test-Path $static) { Remove-Item -Recurse -Force $static }
+          New-Item -ItemType Directory -Path $static | Out-Null
+          Copy-Item -Recurse -Path "apps/control-center/out-local/*" -Destination $static
+      - name: "Build the Companion sidecar (no console window: the Scheduled Task runs it interactively)"
+        working-directory: companion
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          VIBETV_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:VIBETV_VERSION -replace '^v', ''
+          go build -trimpath -ldflags "-s -w -H=windowsgui -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=$version -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=$env:GITHUB_SHA" -o ../windows/src-tauri/binaries/codexbar-display-x86_64-pc-windows-msvc.exe ./cmd/codexbar-display
+      - name: Extract the pinned CodexBar CLI sidecar
+        shell: pwsh
+        run: ./scripts/fetch-win-codexbar.ps1 -Destination "$env:RUNNER_TEMP/win-codexbar"
+      - name: Stage the CodexBar CLI sidecar
+        shell: pwsh
+        run: Copy-Item $env:CODEXBAR_CONTRACT_BIN windows/src-tauri/binaries/codexbar-cli-x86_64-pc-windows-msvc.exe
+      - name: Build and sign the release NSIS installer
+        working-directory: windows/src-tauri
+        env:
+          VIBETV_BUILD: ${{ github.run_id }}
+          VIBETV_VERSION: ${{ inputs.version }}
+          # The updater signature the released shell verifies against the
+          # public key pinned in tauri.conf.json. Unlike CI, this workflow only
+          # ever builds the reviewed main SHA, so the release key is safe here.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            throw "TAURI_SIGNING_PRIVATE_KEY is required: without it no released shell can accept the update."
+          }
+          $version = $env:VIBETV_VERSION -replace '^v', ''
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$') {
+            throw "version must be SemVer"
+          }
+          cargo install tauri-cli --version "^2" --locked
+          Set-Content -Path "$env:RUNNER_TEMP/release-version.json" -Value (@{ version = $version } | ConvertTo-Json -Compress)
+          cargo tauri build --bundles nsis --config "$env:RUNNER_TEMP/release-version.json"
+      - name: Stage the Windows publish set
+        shell: pwsh
+        env:
+          VIBETV_VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $version = $env:VIBETV_VERSION -replace '^v', ''
+          $bundle = "windows/src-tauri/target/release/bundle/nsis"
+          $installer = Get-ChildItem -Path $bundle -Filter *.exe | Select-Object -First 1
+          $signature = Get-ChildItem -Path $bundle -Filter *.exe.sig | Select-Object -First 1
+          if (-not $installer -or -not $signature) {
+            throw "the NSIS build produced no installer or no updater signature"
+          }
+          $asset = "VibeTV-Control-Center-Setup-v$version.exe"
+          New-Item -ItemType Directory -Force -Path tmp/vibetv-rc-windows | Out-Null
+          Copy-Item $installer.FullName "tmp/vibetv-rc-windows/$asset"
+          # The Updates tab fetches this manifest from the latest release and
+          # verifies the signature against the pinned public key before it runs
+          # the installer in passive mode.
+          $manifest = [ordered]@{
+            version = $version
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{
+              "windows-x86_64" = [ordered]@{
+                signature = (Get-Content $signature.FullName -Raw).Trim()
+                url = "https://github.com/$env:REPOSITORY/releases/download/v$version/$asset"
+              }
+            }
+          }
+          Set-Content -Path tmp/vibetv-rc-windows/latest-windows.json -Encoding utf8 -Value ($manifest | ConvertTo-Json -Depth 5)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-rc-windows-${{ github.run_id }}
+          path: tmp/vibetv-rc-windows
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+
   sign-and-package:
-    needs: build-main
+    needs: [build-main, build-windows]
     runs-on: macos-15
     timeout-minutes: 70
     steps:
@@ -161,6 +271,10 @@ jobs:
         with:
           name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
           path: tmp/vibetv-rc
+      - uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-rc-windows-${{ github.run_id }}
+          path: tmp/vibetv-rc-windows
       - run: ./scripts/extract-vibetv-candidate-app.sh --archive tmp/vibetv-rc/app.tar.gz --output dist/macos
       - name: Sign and notarize immutable release candidate
         env:
@@ -191,6 +305,30 @@ jobs:
           # signed helper as the test companion (same step as the merge gate).
           cp 'dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display' tmp/vibetv-rc/test/codexbar-display
           cp dist/macos/VibeTV-Control-Center.dmg tmp/vibetv-rc/publish/macos/VibeTV-Control-Center.dmg
+          # The Windows installer and its updater manifest were built and
+          # signed from the same main SHA; they join the immutable publish set
+          # before the checksums are frozen, so the publish gate and the
+          # byte-identical public verification cover them too.
+          mkdir -p tmp/vibetv-rc/publish/windows
+          cp tmp/vibetv-rc-windows/latest-windows.json tmp/vibetv-rc/publish/windows/latest-windows.json
+          cp tmp/vibetv-rc-windows/VibeTV-Control-Center-Setup-v${version}.exe "tmp/vibetv-rc/publish/windows/VibeTV-Control-Center-Setup-v${version}.exe"
+          python3 - "$version" "$REPOSITORY" tmp/vibetv-rc/publish/windows <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          version, repository, root = sys.argv[1:]
+          root = Path(root)
+          asset = f"VibeTV-Control-Center-Setup-v{version}.exe"
+          manifest = json.loads((root / "latest-windows.json").read_text(encoding="utf-8"))
+          platform = manifest["platforms"]["windows-x86_64"]
+          expected = f"https://github.com/{repository}/releases/download/v{version}/{asset}"
+          if manifest["version"] != version or platform["url"] != expected:
+              raise SystemExit("latest-windows.json does not describe this release asset")
+          if not platform["signature"].strip():
+              raise SystemExit("latest-windows.json has no updater signature")
+          if not (root / asset).is_file():
+              raise SystemExit("the Windows installer asset is missing")
+          print("windows publish set ok", hashlib.sha256((root / asset).read_bytes()).hexdigest())
+          PY
           printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/" -o tmp/vibetv-rc/publish/macos/appcast.xml tmp/vibetv-rc/publish/macos
           (cd tmp/vibetv-rc/publish && find . -type f ! -name "checksums-*" -print0 | sort -z | xargs -0 shasum -a 256 > "checksums-v${version}.txt")
           (cd tmp/vibetv-rc/publish && shasum -a 256 -c "checksums-v${version}.txt")
@@ -203,7 +341,7 @@ jobs:
           for path in files:
               if not path.is_file(): continue
               relative = path.relative_to(root).as_posix()
-              role = "firmware" if "/firmware/" in relative and relative.endswith((".bin", ".gz")) else "firmware-manifest" if "firmware-manifest" in relative else "signed-dmg" if relative.endswith(".dmg") else "sparkle-appcast" if relative.endswith("appcast.xml") else "notarization-evidence" if relative.endswith("notarization-log.json") else "installer" if relative.endswith(".sh") else "companion-arch" if "/companion/" in relative else "checksums" if "checksums-" in relative else "virtual-vibetv" if relative.endswith("virtual-vibetv") else "companion"
+              role = "firmware" if "/firmware/" in relative and relative.endswith((".bin", ".gz")) else "firmware-manifest" if "firmware-manifest" in relative else "signed-dmg" if relative.endswith(".dmg") else "sparkle-appcast" if relative.endswith("appcast.xml") else "windows-installer" if relative.endswith(".exe") else "windows-update-manifest" if relative.endswith("latest-windows.json") else "notarization-evidence" if relative.endswith("notarization-log.json") else "installer" if relative.endswith(".sh") else "companion-arch" if "/companion/" in relative else "checksums" if "checksums-" in relative else "virtual-vibetv" if relative.endswith("virtual-vibetv") else "companion"
               artifacts.append({"name": path.name, "path": relative, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "role": role, "publish": relative.startswith("publish/")})
           with open(output, "w", encoding="utf-8") as destination:
               json.dump({

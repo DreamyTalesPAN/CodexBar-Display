@@ -16,7 +16,9 @@
     "publish/checksums-v1.2.3.txt": "fixture checksums\n",
     "test/codexbar-display": "fixture test-only universal companion\n",
     "test/virtual-vibetv": "fixture virtual VibeTV\n",
-    "test/notarization-log.json": "{\"status\":\"Accepted\",\"issues\":[]}\n"
+    "test/notarization-log.json": "{\"status\":\"Accepted\",\"issues\":[]}\n",
+    "publish/VibeTV-Control-Center-Setup-v1.2.3.exe": "windows installer bytes\n",
+    "publish/latest-windows.json": "{\"version\":\"1.2.3\",\"pub_date\":\"2026-01-01T00:00:00Z\",\"platforms\":{\"windows-x86_64\":{\"signature\":\"dW50cnVzdGVkIGNvbW1lbnQ6IHRlc3Qgc2lnbmF0dXJl\",\"url\":\"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.2.3/VibeTV-Control-Center-Setup-v1.2.3.exe\"}}}\n"
   },
   "candidateManifest": {
     "schemaVersion": 1,
@@ -116,6 +118,20 @@
         "sha256": "",
         "role": "notarization-evidence",
         "publish": false
+      },
+      {
+        "name": "VibeTV-Control-Center-Setup-v1.2.3.exe",
+        "path": "publish/VibeTV-Control-Center-Setup-v1.2.3.exe",
+        "sha256": "",
+        "role": "windows-installer",
+        "publish": true
+      },
+      {
+        "name": "latest-windows.json",
+        "path": "publish/latest-windows.json",
+        "sha256": "",
+        "role": "windows-update-manifest",
+        "publish": true
       }
     ],
     "virtualGate": {
