@@ -57,7 +57,12 @@ export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
  * Applied where the app hands its provider list to setup and Settings, so the
  * list itself stays generic.
  */
-export const OFFERED_PROVIDER_IDS = ["codex", "claude", "cursor", "antigravity"];
+export const OFFERED_PROVIDER_IDS = [
+  "codex",
+  "claude",
+  "cursor",
+  "antigravity",
+];
 
 /**
  * A provider the customer already switched on stays visible even when it is
@@ -76,16 +81,29 @@ export function offeredProviders<
   );
 }
 
-/** Health states in which the row offers to start the provider's sign-in. */
+/**
+ * Health states in which the row offers to start the provider's sign-in.
+ *
+ * The offered four are the ones the Companion knows how to sign in. A
+ * provider that is only listed because the customer had switched it on has no
+ * sign-in the Companion can start, so offering the button there would give
+ * the customer an action that can only fail. Those rows keep the switch and
+ * "Check again", and the provider's own message says what to do.
+ */
 export function setupProviderOffersSignIn(
-  provider: Pick<ProviderItem, "health">,
+  provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
   const { state, signInUrl } = provider.health;
-  return (
-    state === "auth_required" ||
-    state === "setup_required" ||
-    (state === "browser_sign_in_required" && Boolean(signInUrl))
-  );
+  if (state === "browser_sign_in_required") {
+    // CodexBar named the page itself, so this works for any provider.
+    return Boolean(signInUrl);
+  }
+  if (
+    !OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
+  ) {
+    return false;
+  }
+  return state === "auth_required" || state === "setup_required";
 }
 
 type ProviderListProps = {
@@ -287,8 +305,7 @@ function SetupProvidersLoadingScreen({
     ...Array.from({ length: stillCheckingCount }, (_, index) => ({
       id: `still-checking-${index + 1}`,
       text: "still checking, hang tight",
-      tone:
-        index < stillCheckingCount - 1 ? ("done" as const) : undefined,
+      tone: index < stillCheckingCount - 1 ? ("done" as const) : undefined,
     })),
   ];
 
@@ -359,9 +376,7 @@ export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
 }
 
 /** Keep CodexBar's order inside the on and off groups. */
-function setupProvidersEnabledFirst(
-  providers: ProviderItem[],
-): ProviderItem[] {
+function setupProvidersEnabledFirst(providers: ProviderItem[]): ProviderItem[] {
   return [
     ...providers.filter((provider) => provider.value === true),
     ...providers.filter((provider) => provider.value !== true),

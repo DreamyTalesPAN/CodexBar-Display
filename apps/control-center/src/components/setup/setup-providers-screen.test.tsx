@@ -141,29 +141,52 @@ describe("SetupProvidersScreen", () => {
     expect(offered.map((item) => item.label)).toEqual(["Codex", "Gemini"]);
   });
 
-  // The sign-in action belongs to a signed-out tool and to a browser
-  // sign-in with a page to open; a healthy or timed-out row has none.
+  // The sign-in action belongs to one of the four signed-out tools the
+  // Companion can start, and to a browser sign-in with a page to open; a
+  // healthy or timed-out row has none.
   it("offers the sign-in action only where a sign-in can be started", () => {
-    expect(setupProviderOffersSignIn(copilot)).toBe(true);
     expect(
       setupProviderOffersSignIn(
-        provider({ health: "setup_required", label: "X", providerId: "x" }),
+        provider({
+          health: "auth_required",
+          label: "Codex",
+          providerId: "codex",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      setupProviderOffersSignIn(
+        provider({
+          health: "setup_required",
+          label: "Cursor",
+          providerId: "cursor",
+        }),
       ),
     ).toBe(true);
     expect(setupProviderOffersSignIn(claude)).toBe(false);
     expect(
       setupProviderOffersSignIn(
-        provider({ health: "timeout", label: "X", providerId: "x" }),
+        provider({ health: "timeout", label: "Codex", providerId: "codex" }),
+      ),
+    ).toBe(false);
+    // Only listed because the customer had switched it on: the Companion has
+    // no sign-in it could start for this provider, so a button here would
+    // only ever fail.
+    expect(
+      setupProviderOffersSignIn(
+        provider({ health: "auth_required", label: "OpenAI", providerId: "openai" }),
       ),
     ).toBe(false);
     const browser = provider({
       health: "browser_sign_in_required",
-      label: "X",
-      providerId: "x",
+      label: "OpenAI",
+      providerId: "openai",
     });
     expect(setupProviderOffersSignIn(browser)).toBe(false);
+    // A page CodexBar named itself works for any provider.
     expect(
       setupProviderOffersSignIn({
+        providerId: browser.providerId,
         health: { ...browser.health, signInUrl: "https://claude.ai/login" },
       }),
     ).toBe(true);
