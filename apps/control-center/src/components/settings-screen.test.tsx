@@ -220,17 +220,24 @@ describe("SettingsScreen standby controls", () => {
         provider("claude", "Claude Code", true),
         provider("cursor", "Cursor", false),
         provider("codex", "Codex", true),
-        // Not offered on Windows: stays in CodexBar's settings, never here.
+        // Switched on but outside the offered four: it keeps its row so the
+        // customer can still turn it off, and it sorts with the enabled group.
         provider("openai", "OpenAI", true),
+        // Off and outside the offered four: Windows does not offer it here.
+        provider("gemini", "Gemini", false),
       ],
     });
     const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
-    const positions = ["Claude Code", "Codex", "Antigravity", "Cursor"].map(
-      (label) => providerSection.indexOf(`>${label}</`),
-    );
+    const positions = [
+      "Claude Code",
+      "Codex",
+      "OpenAI",
+      "Antigravity",
+      "Cursor",
+    ].map((label) => providerSection.indexOf(`>${label}</`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
-    expect(providerSection).not.toContain(">OpenAI</");
+    expect(providerSection).not.toContain(">Gemini</");
     expect(positions).toEqual(
       [...positions].sort((left, right) => left - right),
     );

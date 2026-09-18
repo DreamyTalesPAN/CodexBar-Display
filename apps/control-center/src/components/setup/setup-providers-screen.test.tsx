@@ -99,7 +99,12 @@ describe("SetupProvidersScreen", () => {
       copilot,
       provider({ health: "healthy", label: "Codex", providerId: "Codex" }),
       provider({ health: "disabled", label: "Cursor", providerId: "cursor" }),
-      provider({ health: "disabled", label: "Gemini", providerId: "gemini" }),
+      provider({
+        health: "disabled",
+        label: "Gemini",
+        providerId: "gemini",
+        value: false,
+      }),
       provider({
         health: "disabled",
         label: "Antigravity",
@@ -112,6 +117,28 @@ describe("SetupProvidersScreen", () => {
       "Cursor",
       "Antigravity",
     ]);
+  });
+
+  // Hiding a provider the customer already switched on would leave its switch
+  // on with no row to turn it off, and the Companion then refuses an Automatic
+  // display that omits it. An enabled provider therefore stays visible.
+  it("keeps an enabled provider outside the offered four visible", () => {
+    const offered = offeredProviders([
+      provider({ health: "healthy", label: "Codex", providerId: "codex" }),
+      provider({
+        health: "healthy",
+        label: "Gemini",
+        providerId: "gemini",
+        value: true,
+      }),
+      provider({
+        health: "disabled",
+        label: "Copilot",
+        providerId: "copilot",
+        value: false,
+      }),
+    ]);
+    expect(offered.map((item) => item.label)).toEqual(["Codex", "Gemini"]);
   });
 
   // The sign-in action belongs to a signed-out tool and to a browser

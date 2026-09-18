@@ -1,6 +1,9 @@
 "use client";
 
-import type { SupportDiagnostics } from "../control-center-types";
+import type {
+  PreferenceValue,
+  SupportDiagnostics,
+} from "../control-center-types";
 import { Search, SearchX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -56,11 +59,20 @@ export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
  */
 export const OFFERED_PROVIDER_IDS = ["codex", "claude", "cursor", "antigravity"];
 
-export function offeredProviders<T extends { providerId: string }>(
-  providers: T[],
-): T[] {
-  return providers.filter((provider) =>
-    OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase()),
+/**
+ * A provider the customer already switched on stays visible even when it is
+ * outside the offered four. Hiding an enabled provider leaves its switch on
+ * with no row to turn it off, and the Companion then refuses an Automatic
+ * display that omits it (`provider_display_incomplete`), which strands the
+ * customer on a step they cannot complete.
+ */
+export function offeredProviders<
+  T extends { providerId: string; value?: PreferenceValue },
+>(providers: T[]): T[] {
+  return providers.filter(
+    (provider) =>
+      OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase()) ||
+      provider.value === true,
   );
 }
 
