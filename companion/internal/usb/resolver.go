@@ -89,7 +89,7 @@ func DiscoverVibeTVs() ([]CableDevice, error) {
 	if err != nil {
 		return nil, err
 	}
-	return discoverVibeTVs(ports, defaultSender.DeviceHello, runtime.GOOS)
+	return discoverVibeTVs(ports, defaultSender.DeviceHelloForDiscovery, runtime.GOOS)
 }
 
 func discoverVibeTVs(
@@ -99,6 +99,8 @@ func discoverVibeTVs(
 ) ([]CableDevice, error) {
 	devices := make([]CableDevice, 0)
 	foreignDeviceAnswered := false
+	legacyCableFirmwareAnswered := false
+	legacyCableFirmwareVersion := ""
 	seen := make(map[string]struct{})
 	for _, port := range cableSerialCandidates(ports, goos) {
 		hello, err := readHello(port)
@@ -109,6 +111,15 @@ func discoverVibeTVs(
 		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
 			!isSupportedCableBoard(hello.Board) {
 			foreignDeviceAnswered = true
+			continue
+		}
+		if hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
+			strings.TrimSpace(hello.DeviceID) == "" &&
+			strings.EqualFold(hello.Capabilities.Transport.Active, "usb") {
+			legacyCableFirmwareAnswered = true
+			if legacyCableFirmwareVersion == "" {
+				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
+			}
 			continue
 		}
 		mode := strings.ToLower(strings.TrimSpace(hello.Capabilities.Transport.Mode))
@@ -135,6 +146,22 @@ func discoverVibeTVs(
 			"",
 			"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
 			errors.New("a non-VibeTV serial device answered hello"),
+		)
+	}
+	if len(devices) == 0 && legacyCableFirmwareAnswered {
+		detail := "VibeTV answered over Cable without a deviceId"
+		if legacyCableFirmwareVersion != "" {
+			detail = fmt.Sprintf(
+				"VibeTV firmware %s answered over Cable without a deviceId",
+				legacyCableFirmwareVersion,
+			)
+		}
+		return nil, wrapTransportError(
+			errcode.TransportCableFirmwareTooOld,
+			"discover-vibetvs",
+			"",
+			"Update VibeTV over WiFi first, then reconnect the Cable.",
+			errors.New(detail),
 		)
 	}
 	return devices, nil
@@ -236,6 +263,8 @@ func resolveVibeTVCandidatesForControl(
 ) (string, error) {
 	matches := make([]string, 0, 1)
 	foreignDeviceAnswered := false
+	legacyCableFirmwareAnswered := false
+	legacyCableFirmwareVersion := ""
 	for _, candidate := range candidates {
 		hello, err := readHello(candidate)
 		if err != nil {
@@ -246,6 +275,18 @@ func resolveVibeTVCandidatesForControl(
 		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
 			!isSupportedCableBoard(hello.Board) {
 			foreignDeviceAnswered = true
+		}
+		// A supported VibeTV that answers over Cable without a deviceId is
+		// running firmware from before the Cable identity contract. It is a
+		// genuine VibeTV, so report it as upgradable instead of silently
+		// ignoring it.
+		if hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
+			strings.TrimSpace(hello.DeviceID) == "" &&
+			strings.EqualFold(hello.Capabilities.Transport.Active, "usb") {
+			legacyCableFirmwareAnswered = true
+			if legacyCableFirmwareVersion == "" {
+				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
+			}
 		}
 		if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) ||
 			hello.DeviceID == "" ||
@@ -270,6 +311,22 @@ func resolveVibeTVCandidatesForControl(
 				explicit,
 				"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
 				errors.New("a non-VibeTV serial device answered hello"),
+			)
+		}
+		if legacyCableFirmwareAnswered {
+			detail := "VibeTV answered over Cable without a deviceId"
+			if legacyCableFirmwareVersion != "" {
+				detail = fmt.Sprintf(
+					"VibeTV firmware %s answered over Cable without a deviceId",
+					legacyCableFirmwareVersion,
+				)
+			}
+			return "", wrapTransportError(
+				errcode.TransportCableFirmwareTooOld,
+				"resolve-vibetv",
+				explicit,
+				"Update VibeTV over WiFi first, then reconnect the Cable.",
+				errors.New(detail),
 			)
 		}
 		detail := "no matching Cable VibeTV answered hello"

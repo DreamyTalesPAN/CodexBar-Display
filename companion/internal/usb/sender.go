@@ -129,6 +129,22 @@ func cloneDeviceHello(hello protocol.DeviceHello) protocol.DeviceHello {
 }
 
 func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
+	return s.deviceHelloWithin(path, s.helloWindow)
+}
+
+// DeviceHelloForDiscovery answers the narrow question "is a VibeTV on this
+// port" with a short window. Discovery must stay inside the customer-visible
+// search budget even when a shipped device without Cable support never
+// answers, so it cannot use the boot-tolerant control window.
+func (s *Sender) DeviceHelloForDiscovery(path string) (protocol.DeviceHello, error) {
+	window := s.helloWindow
+	if helloDiscoveryWindow < window {
+		window = helloDiscoveryWindow
+	}
+	return s.deviceHelloWithin(path, window)
+}
+
+func (s *Sender) deviceHelloWithin(path string, window time.Duration) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -137,7 +153,7 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	}
 	// A USB path can be reused by another device, and transport state can
 	// change without reopening the port. Only a fresh hello proves identity.
-	s.captureHelloAfterOpenLocked()
+	s.captureHelloAfterOpenLockedWithin(window)
 
 	if !s.helloSeen {
 		s.closeCurrentLocked()
@@ -198,11 +214,15 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 }
 
 func (s *Sender) captureHelloAfterOpenLocked() {
+	s.captureHelloAfterOpenLockedWithin(s.helloWindow)
+}
+
+func (s *Sender) captureHelloAfterOpenLockedWithin(window time.Duration) {
 	_ = s.port.ResetInputBuffer()
 	s.sleep(s.settleDuration)
 	// Opening a supplier USB adapter can reset a WiFi-mode device. Re-send
 	// hello on the same port while it boots; an early request can be lost.
-	deadline := time.Now().Add(s.helloWindow)
+	deadline := time.Now().Add(window)
 	var hello protocol.DeviceHello
 	seen := false
 	for time.Now().Before(deadline) {

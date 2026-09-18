@@ -3262,9 +3262,12 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if explicitTarget == "" {
-		if cableErr != nil && errcode.Of(cableErr) == errcode.TransportForeignDevice && len(devices) == 0 {
-			writeCableResolutionError(w, cableErr)
-			return
+		if cableErr != nil && len(devices) == 0 {
+			switch errcode.Of(cableErr) {
+			case errcode.TransportForeignDevice, errcode.TransportCableFirmwareTooOld:
+				writeCableResolutionError(w, cableErr)
+				return
+			}
 		}
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()
@@ -4750,8 +4753,10 @@ func writeCableResolutionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "multiple_cable_devices", "More than one VibeTV is connected by Cable.", "Leave only the VibeTV you want connected, then try again.")
 	case errcode.TransportForeignDevice:
 		writeError(w, http.StatusConflict, "foreign_serial_device", "The connected USB device is not a VibeTV.", "Disconnect it and connect VibeTV with a data-capable Cable.")
+	case errcode.TransportCableFirmwareTooOld:
+		writeError(w, http.StatusConflict, "cable_firmware_too_old", "Your VibeTV needs a firmware update before it can use USB-C.", "Connect VibeTV to WiFi, install the update, then reconnect the cable.")
 	default:
-		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Your cable may only supply power, or your VibeTV may not support USB-C data connections. Try a USB-C data cable or connect via WiFi instead.")
+		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Set up VibeTV over WiFi and install the latest firmware — USB-C setup needs newer firmware than shipped units have. If it is already up to date, check that your cable carries data, not just power.")
 	}
 }
 
