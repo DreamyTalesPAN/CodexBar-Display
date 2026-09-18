@@ -318,8 +318,8 @@ class PublishGateFixtureTests(unittest.TestCase):
                     "checksums",
                     True,
                 ),
-                "VibeTV-Control-Center-Setup-v1.2.3.exe": (
-                    "publish/VibeTV-Control-Center-Setup-v1.2.3.exe",
+                "VibeTV-Control-Center-Setup.exe": (
+                    "publish/VibeTV-Control-Center-Setup.exe",
                     "windows-installer",
                     True,
                 ),
@@ -433,7 +433,7 @@ class PublishGateFixtureTests(unittest.TestCase):
             "publish/latest-windows.json",
             '{"version":"1.2.3","platforms":{"windows-x86_64":{"signature":"   ",'
             '"url":"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/'
-            'download/v1.2.3/VibeTV-Control-Center-Setup-v1.2.3.exe"}}}\n',
+            'download/v1.2.3/VibeTV-Control-Center-Setup.exe"}}}\n',
         )
         result = self._run()
         self.assertNotEqual(result.returncode, 0)

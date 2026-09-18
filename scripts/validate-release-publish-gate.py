@@ -222,7 +222,7 @@ def validate_publish_scope(
         f"firmware-manifest-v{version}.json",
         f"checksums-v{version}.txt",
         "latest-windows.json",
-        f"VibeTV-Control-Center-Setup-v{version}.exe",
+        "VibeTV-Control-Center-Setup.exe",
     }
     missing = sorted(required_names - published_names)
     if missing:
@@ -278,7 +278,7 @@ def validate_publish_scope(
     release_prefix = (
         f"https://github.com/{repository}/releases/download/v{version}/"
     )
-    windows_installer_name = f"VibeTV-Control-Center-Setup-v{version}.exe"
+    windows_installer_name = "VibeTV-Control-Center-Setup.exe"
     windows_installers = [
         item
         for item in published

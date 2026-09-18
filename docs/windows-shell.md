@@ -90,7 +90,7 @@ release version instead of the CI candidate version. It signs the updater
 manifest with the real `TAURI_SIGNING_PRIVATE_KEY` secret, whose public half
 is pinned in `tauri.conf.json`, and fails when that secret is missing rather
 than falling back to a throwaway key. It publishes
-`VibeTV-Control-Center-Setup-v<version>.exe` and `latest-windows.json` as
+`VibeTV-Control-Center-Setup.exe` and `latest-windows.json` as
 part of the immutable candidate publish set, so the publish gate and the
 byte-identical public asset verification cover them like the Mac assets. CI
 never sees the release key, because it also builds unreviewed pull requests.
