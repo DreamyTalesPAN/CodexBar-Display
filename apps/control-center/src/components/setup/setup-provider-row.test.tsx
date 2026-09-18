@@ -34,6 +34,36 @@ describe("SetupProviderRow", () => {
     expect(html).not.toContain("Open CodexBar");
   });
 
+  // Windows can start a provider's sign-in; the Mac app cannot, and its rows
+  // must stay as they are. The button therefore follows the shell action, not
+  // the health alone, and never replaces the popup opener or the re-check.
+  it("offers to start the sign-in only when the shell can start one", () => {
+    for (const health of ["auth_required", "setup_required"]) {
+      const html = render({ health, onOpenSignIn: vi.fn() });
+      expect(html).toContain("Sign in to Claude Code");
+      expect(html).toContain("lucide-log-in");
+      expect(html).toContain('aria-label="Show provider message for Claude Code"');
+      expect(html).toContain('aria-label="Check Claude Code again"');
+    }
+    expect(render({ health: "auth_required" })).not.toContain("lucide-log-in");
+  });
+
+  // Claude on Windows is signed in to the tool, but its usage endpoint only
+  // answers a browser session, so this row opens that page instead.
+  it("offers the browser sign-in page when the provider needs a browser session", () => {
+    const html = render({
+      health: "browser_sign_in_required",
+      onOpenSignIn: vi.fn(),
+    });
+    expect(html).toContain("lucide-external-link");
+    expect(html).toContain('aria-label="Open Claude Code sign-in in your browser"');
+    expect(html).toContain('aria-label="Check Claude Code again"');
+    expect(html).toContain('role="switch"');
+    expect(render({ health: "browser_sign_in_required" })).not.toContain(
+      "lucide-external-link",
+    );
+  });
+
   it("replaces retry with a spinner while the exact check runs", () => {
     for (const health of ["checking", "unavailable", "no_usage_available", "service_outage"]) {
       const html = render({ checking: true, health });

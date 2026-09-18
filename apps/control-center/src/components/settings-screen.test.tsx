@@ -240,22 +240,51 @@ describe("SettingsScreen standby controls", () => {
   it("keeps enabled providers first in Settings without reordering either group", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,
+      onOpenSignIn: vi.fn(),
       items: [
-        provider("openai", "OpenAI", false),
+        provider("antigravity", "Antigravity", false),
         provider("claude", "Claude Code", true),
         provider("cursor", "Cursor", false),
         provider("codex", "Codex", true),
+        // Switched on but outside the offered four: it keeps its row so the
+        // customer can still turn it off, and it sorts with the enabled group.
+        provider("openai", "OpenAI", true),
+        // Off and outside the offered four: Windows does not offer it here.
+        provider("gemini", "Gemini", false),
       ],
     });
     const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
-    const positions = ["Claude Code", "Codex", "OpenAI", "Cursor"].map(
-      (label) => providerSection.indexOf(`>${label}</`),
-    );
+    const positions = [
+      "Claude Code",
+      "Codex",
+      "OpenAI",
+      "Antigravity",
+      "Cursor",
+    ].map((label) => providerSection.indexOf(`>${label}</`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(providerSection).not.toContain(">Gemini</");
     expect(positions).toEqual(
       [...positions].sort((left, right) => left - right),
     );
+  });
+
+  // The Mac app is unchanged by the Windows launch decision: without the
+  // companion's sign-in action every provider CodexBar reports stays on the
+  // page, including the ones Windows does not offer yet.
+  it("keeps every provider in Settings on a companion without the sign-in action", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      items: [
+        provider("claude", "Claude Code", true),
+        provider("openai", "OpenAI", true),
+        provider("gemini", "Gemini", false),
+      ],
+    });
+    const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
+
+    expect(providerSection).toContain(">OpenAI</");
+    expect(providerSection).toContain(">Gemini</");
   });
 
   it("leaves the display mode cards usable when no write is in flight", () => {

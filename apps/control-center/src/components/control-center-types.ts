@@ -45,12 +45,15 @@ export type CompanionInfo = {
   features?: {
     themeInstallEnabled?: boolean;
     macAppSelfUpdateEnabled?: boolean;
+    /** Windows-only: the shortened provider list and the sign-in button. */
+    providerSignInEnabled?: boolean;
   };
 };
 
 export type ProviderReadinessStatus =
   | "ready"
   | "auth_required"
+  | "browser_sign_in_required"
   | "permission_required"
   | "no_usage_available"
   | "timeout"
@@ -470,6 +473,7 @@ export type UsageRefreshInfo = {
 export type PreferenceHealthState =
   | "healthy"
   | "auth_required"
+  | "browser_sign_in_required"
   | "setup_required"
   | "stale"
   | "service_outage"
@@ -522,6 +526,11 @@ export type PreferenceDescriptor = {
     lastSuccessAt?: string;
     checkedAt?: string;
     nextAction?: string;
+    /**
+     * The browser page that satisfies "browser_sign_in_required". The
+     * companion opens it; the UI only shows that it exists.
+     */
+    signInUrl?: string;
   };
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { TriangleAlert, RefreshCw } from "lucide-react";
+import { ExternalLink, LogIn, RefreshCw, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
 
 export type SetupProviderRowVariant =
+  | "browser_sign_in"
   | "checking"
   | "no_usage"
   | "outage"
@@ -51,6 +52,10 @@ export function setupProviderRowVariant(
     case "auth_required":
     case "setup_required":
       return "sign_in";
+    // Signed in to the tool, but the usage endpoint only answers a browser
+    // session (Claude on Windows). The row offers to open that page.
+    case "browser_sign_in_required":
+      return "browser_sign_in";
     case "permission_required":
       return "permission";
     case "no_usage_available":
@@ -76,6 +81,13 @@ type SetupProviderRowProps = {
   label: string;
   onShowIssue: () => void;
   onCheckAgain: () => void;
+  /**
+   * Starts the provider's sign-in through the companion: the browser page
+   * for "browser_sign_in_required", the tool's own login (or its install
+   * page) for "auth_required" and "setup_required". Absent when the shell
+   * has nothing to start.
+   */
+  onOpenSignIn?: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -94,6 +106,7 @@ export function SetupProviderRow({
   label,
   onCheckAgain,
   onShowIssue,
+  onOpenSignIn,
   onToggle,
   saving = false,
 }: SetupProviderRowProps) {
@@ -126,6 +139,25 @@ export function SetupProviderRow({
               label={`Show provider message for ${label}`}
               onClick={onShowIssue}
             />
+            {variant === "browser_sign_in" && onOpenSignIn ? (
+              <SetupProviderRowAction
+                icon={ExternalLink}
+                label={`Open ${label} sign-in in your browser`}
+                onClick={onOpenSignIn}
+              />
+            ) : null}
+            {variant === "sign_in" && onOpenSignIn ? (
+              <Button
+                className="rounded-full"
+                onClick={onOpenSignIn}
+                size="sm"
+                type="button"
+                variant="default"
+              >
+                <LogIn aria-hidden />
+                <span>{`Sign in to ${label}`}</span>
+              </Button>
+            ) : null}
             {variant === "stale" ? null : checking ? (
               <>
                 <span className="sr-only">Checking {label}…</span>
@@ -167,6 +199,8 @@ export function setupProviderIssueMessage({
   const fallbackMessage =
     variant === "sign_in"
       ? `Sign in to ${label}`
+      : variant === "browser_sign_in"
+        ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
         ? "Allow access in macOS"
         : variant === "no_usage"

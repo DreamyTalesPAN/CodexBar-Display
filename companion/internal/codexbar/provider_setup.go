@@ -8,23 +8,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 const (
-	ProviderReady              = "ready"
-	ProviderAuthRequired       = "auth_required"
-	ProviderPermissionRequired = "permission_required"
-	ProviderNoUsageAvailable   = "no_usage_available"
-	ProviderTimeout            = "timeout"
-	ProviderConfigError        = "config_error"
-	ProviderEngineError        = "engine_error"
-	ProviderNotConfigured      = "not_configured"
+	ProviderReady        = "ready"
+	ProviderAuthRequired = "auth_required"
+	// ProviderBrowserSignInRequired: the provider's own login is present but
+	// its usage endpoint refuses third-party callers, so the only working
+	// source is a signed-in browser session. Claude on Windows reports this
+	// when Anthropic rate-limits the OAuth usage endpoint and no claude.ai
+	// cookies are readable.
+	ProviderBrowserSignInRequired = "browser_sign_in_required"
+	ProviderPermissionRequired    = "permission_required"
+	ProviderNoUsageAvailable      = "no_usage_available"
+	ProviderTimeout               = "timeout"
+	ProviderConfigError           = "config_error"
+	ProviderEngineError           = "engine_error"
+	ProviderNotConfigured         = "not_configured"
 )
 
 type configPathContextKey struct{}
@@ -47,6 +56,10 @@ type ProviderReadiness struct {
 	CollectedAt string `json:"collectedAt,omitempty"`
 	Detail      string `json:"detail,omitempty"`
 	NextAction  string `json:"nextAction,omitempty"`
+	// SignInURL is the browser page the customer signs in on when Status is
+	// ProviderBrowserSignInRequired. CodexBar names it in its marker; the
+	// Companion keeps no sign-in table of its own.
+	SignInURL string `json:"signInUrl,omitempty"`
 	// Reported is CodexBar's own provider error sentence. It stays internal so
 	// raw account paths, addresses and credentials never escape through
 	// /v1/status or retry responses; the preferences adapter redacts it before
@@ -68,10 +81,16 @@ var configBootstrapMu sync.Mutex
 const ()
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
-// none exists, CodexBar itself renders and validates its current default config
-// into a private path outside ~/.config. VibeTV never owns the provider
-// inventory or its defaults.
+// none exists on macOS, CodexBar renders and validates its default config.
+// Windows first-run selection is explicitly opt-in; all other settings and the
+// provider inventory remain owned by CodexBar.
 func EnsureConfig(home string) (string, error) {
+	if runtime.GOOS == "windows" {
+		// Win-CodexBar 0.56.8 ignores CODEXBAR_CONFIG and has no
+		// "config validate --format json"; it only reads
+		// %APPDATA%\CodexBar\settings.json (#415). Use its own location.
+		return ensureWindowsConfigDir()
+	}
 	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
 		return ensureConfigFile(explicit)
 	}
@@ -92,6 +111,39 @@ func EnsureConfig(home string) (string, error) {
 		}
 	}
 	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
+}
+
+// ensureWindowsConfigDir preserves existing settings verbatim. Only a missing
+// file receives an empty provider selection; Win-CodexBar 0.56.8 fills omitted
+// settings with its own defaults. Publish the complete seed without replacing
+// a config another process may have created during startup.
+func ensureWindowsConfigDir() (string, error) {
+	appData := strings.TrimSpace(os.Getenv("APPDATA"))
+	if appData == "" {
+		return "", errors.New("APPDATA is not set")
+	}
+	dir := filepath.Join(appData, "CodexBar")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create CodexBar config directory: %w", err)
+	}
+	path := filepath.Join(dir, "settings.json")
+	probe, err := os.CreateTemp(dir, ".vibetv-write-check-*")
+	if err != nil {
+		return path, fmt.Errorf("CodexBar config directory is not writable: %w", err)
+	}
+	probePath := probe.Name()
+	defer os.Remove(probePath)
+	if _, err := probe.WriteString("{\"enabled_providers\":[]}\n"); err != nil {
+		_ = probe.Close()
+		return path, fmt.Errorf("stage CodexBar provider selection: %w", err)
+	}
+	if err := probe.Close(); err != nil {
+		return path, fmt.Errorf("close CodexBar provider selection: %w", err)
+	}
+	if err := os.Link(probePath, path); err != nil && !errors.Is(err, os.ErrExist) {
+		return path, fmt.Errorf("initialize CodexBar provider selection: %w", err)
+	}
+	return path, nil
 }
 
 func ensureConfigFile(path string) (string, error) {
@@ -196,7 +248,7 @@ func runConfigBootstrapCommand(
 	configPath string,
 	args ...string,
 ) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, bin, args...))
 	cmd.Env = environmentWithConfig(configPath)
 	return cmd.Output()
 }
@@ -224,16 +276,21 @@ func writableConfig(path string) error {
 	return nil
 }
 
-func commandEnvironment(configPath string) []string {
+func commandEnvironment(configPath string) ([]string, error) {
 	path := strings.TrimSpace(configPath)
-	if path == "" {
+	if path == "" || runtime.GOOS == "windows" {
 		var err error
 		path, err = EnsureConfig("")
 		if err != nil || path == "" {
-			return environmentWithConfig("")
+			// Windows ignores CODEXBAR_CONFIG. Never launch it with implicit
+			// enabled providers when first-run initialization failed.
+			if runtime.GOOS == "windows" && err != nil {
+				return nil, err
+			}
+			return environmentWithConfig(""), nil
 		}
 	}
-	return environmentWithConfig(path)
+	return environmentWithConfig(path), nil
 }
 
 func environmentWithConfig(configPath string) []string {
@@ -315,14 +372,28 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()
-	args := []string{"usage", "--json", "--web-timeout", "8"}
+	// Windows probes every switched-on provider one by one with its own 18 s
+	// budget (runUsageAllEnabled), so a shared ceiling -- the 20 s here or
+	// the 25 s the setup handlers put on ctx -- would hand the second
+	// provider an almost spent context and report it unavailable. The
+	// aggregate path therefore drops every inherited deadline while keeping
+	// the caller's cancellation; each CLI call still carries its own
+	// timeout, so the total stays bounded by inventory + 18 s per provider.
+	aggregateCtx := probeCtx
+	if providerProbePerProvider {
+		var stop context.CancelFunc
+		aggregateCtx, stop = withoutDeadline(configuredCtx)
+		defer stop()
+	}
 	var exactSetting *ProviderSetting
+	var out []byte
+	var commandErr error
 	if exactProvider != "" {
 		if !validProviderID(exactProvider) {
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		inventoryRaw, inventoryErr := runUsageCommandFn(probeCtx, 5*time.Second, bin, "config", "providers", "--json")
+		inventoryRaw, inventoryErr := runUsageCommandFn(probeCtx, 5*time.Second, bin, providerInventoryArgs()...)
 		inventory, parseErr := parseProviderSettings(inventoryRaw)
 		if inventoryErr != nil || parseErr != nil {
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderConfigError)}
@@ -338,17 +409,18 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		args = []string{
+		out, commandErr = runUsageCommandFn(probeCtx, 18*time.Second, bin,
 			"usage", "--json",
 			"--provider", exactProvider,
 			"--source", "auto",
 			"--web-timeout", "8",
-		}
+		)
+	} else {
+		out, commandErr = runUsageAllEnabled(aggregateCtx, 18*time.Second, bin, "--web-timeout", "8")
 	}
-	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, args...)
 	if exactProvider == "" {
-		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
-		result.Providers = providersWithSwitchState(probeCtx, bin, result.Providers)
+		result.Providers = providerReadinessFromOutput(out, commandErr, aggregateCtx.Err())
+		result.Providers = providersWithSwitchState(aggregateCtx, bin, result.Providers)
 	} else {
 		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())
 		provider.Label = exactSetting.Label
@@ -409,7 +481,7 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 			return providers
 		}
 	}
-	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, "config", "providers", "--json")
+	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
 		return providers
@@ -478,11 +550,11 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 		reported := ""
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
-			status = classifyProviderError(reported)
+			status = classifyProviderErrorFor(id, reported)
 		} else if !providerPayloadHasUsage(payload) {
 			status = ProviderNoUsageAvailable
 		}
-		provider := providerResult(id, status)
+		provider := providerResultWithSignIn(id, status, browserSignInPage(id, reported))
 		provider.Reported = reported
 		provider.Source = safeProviderSource(firstString(payload, "source"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
@@ -548,9 +620,13 @@ func classifyProviderError(detail string) string {
 		return ProviderTimeout
 	case strings.Contains(lower, "permission"), strings.Contains(lower, "not permitted"), strings.Contains(lower, "access denied"), strings.Contains(lower, "keychain") && (strings.Contains(lower, "denied") || strings.Contains(lower, "locked") || strings.Contains(lower, "not allowed")):
 		return ProviderPermissionRequired
+	// Sign-in wording wins over the generic "config" match: Win-CodexBar
+	// reports "failed from all configured sources ... OAuth ... credentials".
+	case strings.Contains(lower, "login"), strings.Contains(lower, "log in"), strings.Contains(lower, "logged in"), strings.Contains(lower, "sign in"), strings.Contains(lower, "session"), strings.Contains(lower, "cookie"), strings.Contains(lower, "credential"), strings.Contains(lower, "authentication"), strings.Contains(lower, "unauthorized"), strings.Contains(lower, "oauth"), strings.Contains(lower, "api key"), strings.Contains(lower, "token found"):
+		return ProviderAuthRequired
 	case strings.Contains(lower, ".config"), strings.Contains(lower, "config"), strings.Contains(lower, "read-only file system"), strings.Contains(lower, "save"):
 		return ProviderConfigError
-	case strings.Contains(lower, "login"), strings.Contains(lower, "log in"), strings.Contains(lower, "logged in"), strings.Contains(lower, "sign in"), strings.Contains(lower, "session"), strings.Contains(lower, "cookie"), strings.Contains(lower, "credential"), strings.Contains(lower, "authentication"), strings.Contains(lower, "unauthorized"), strings.Contains(lower, "oauth"), strings.Contains(lower, "api key"), strings.Contains(lower, "token found"), strings.Contains(lower, "keychain"):
+	case strings.Contains(lower, "keychain"):
 		return ProviderAuthRequired
 	case strings.Contains(lower, "free tier"), strings.Contains(lower, "free plan"), strings.Contains(lower, "subscription required"), strings.Contains(lower, "account does not expose usage"), strings.Contains(lower, "usage") && (strings.Contains(lower, "unavailable") || strings.Contains(lower, "not available") || strings.Contains(lower, "unsupported")):
 		return ProviderNoUsageAvailable
@@ -561,7 +637,44 @@ func classifyProviderError(detail string) string {
 	}
 }
 
+// browserSignInMarker is the stable token the bundled Win-CodexBar (VibeTV
+// fork) appends to a provider failure summary when the usage endpoint only
+// answers a browser session: `[<provider>:browser-sign-in-required <url>]`.
+// CodexBar owns that diagnosis and the page that resolves it; the Companion
+// only recognises the token and never derives either from the English
+// summary or from a table of its own.
+var browserSignInMarker = regexp.MustCompile(`\[([a-z0-9._-]+):browser-sign-in-required (https://[^\s\]]+)\]`)
+
+// browserSignInPage returns the sign-in page CodexBar named for this provider,
+// or "" when the summary carries no marker for it.
+func browserSignInPage(id, detail string) string {
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, match := range browserSignInMarker.FindAllStringSubmatch(detail, -1) {
+		if match[1] == id {
+			return match[2]
+		}
+	}
+	return ""
+}
+
+// classifyProviderErrorFor maps CodexBar's browser-session marker to
+// ProviderBrowserSignInRequired. The marker is CodexBar's own diagnosis, so
+// it wins over whatever the English summary around it happens to mention
+// (a timed-out source, a permission word). The tool itself is logged in in
+// that case; telling the customer to "sign in again" would send them in a
+// circle.
+func classifyProviderErrorFor(id, detail string) string {
+	if browserSignInPage(id, detail) != "" {
+		return ProviderBrowserSignInRequired
+	}
+	return classifyProviderError(detail)
+}
+
 func providerResult(id, status string) ProviderReadiness {
+	return providerResultWithSignIn(id, status, "")
+}
+
+func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	label := humanLabel(id)
 	if id == "codexbar" {
 		label = "Usage service"
@@ -573,6 +686,11 @@ func providerResult(id, status string) ProviderReadiness {
 	case ProviderAuthRequired:
 		result.Detail = "This provider needs an active sign-in."
 		result.NextAction = "Sign in to this provider, then check again."
+	case ProviderBrowserSignInRequired:
+		host := signInHost(signInURL)
+		result.Detail = label + " usage needs a signed-in " + host + " session in your browser."
+		result.NextAction = "Sign in to " + host + " in your browser, close the browser, then check again."
+		result.SignInURL = signInURL
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
 		result.NextAction = "Allow the requested macOS permission, then check again."
@@ -593,6 +711,17 @@ func providerResult(id, status string) ProviderReadiness {
 		result.NextAction = "Check this provider, then try again."
 	}
 	return result
+}
+
+func signInHost(url string) string {
+	url = strings.TrimPrefix(url, "https://")
+	if i := strings.Index(url, "/"); i >= 0 {
+		url = url[:i]
+	}
+	if url == "" {
+		return "provider"
+	}
+	return url
 }
 
 func BinarySource(bin string) string {

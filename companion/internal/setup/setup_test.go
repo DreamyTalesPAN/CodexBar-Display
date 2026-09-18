@@ -12,8 +12,10 @@ import (
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/openurl"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
@@ -86,6 +88,8 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 	findCount := 0
 
 	err := runWithDeps(context.Background(), Options{Transport: "usb"}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader("2\n"),
 		stdout: &stdout,
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -97,6 +101,9 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 			return home, nil
 		},
 		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbmodem101", "/dev/cu.usbserial42"}, nil
+		},
 		resolvePort: func(port string) (string, error) {
 			return "/dev/cu.usbserial42", nil
 		},
@@ -153,7 +160,7 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		t.Fatalf("expected launchctl bootstrap call, got %#v", calls)
 	}
 
-	installedBinary := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
+	installedBinary := runtimepaths.Path(home, "bin", "codexbar-display")
 	installedData, readErr := os.ReadFile(installedBinary)
 	if readErr != nil {
 		t.Fatalf("read installed binary: %v", readErr)
@@ -189,6 +196,8 @@ func TestRunWithDepsNeverPersistsExplicitSetupPort(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -246,6 +255,8 @@ func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -317,6 +328,8 @@ func TestRunWithDepsPersistsWiFiTargetAndTokenInRuntimeConfig(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &stdout,
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -384,6 +397,8 @@ func TestRunWithDepsConfiguresDiscoveryOnlyWiFiLaunchAgent(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -441,6 +456,8 @@ func TestRunWithDepsDiscoversWiFiIPWithoutConfiguredHostname(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &stdout,
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -518,6 +535,8 @@ func TestRunWithDepsWritesRuntimeThemeConfig(t *testing.T) {
 		SkipFlash: true,
 		Theme:     "crt",
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -570,6 +589,8 @@ func TestRunWithDepsWritesDefaultMiniThemeConfigWhenUnset(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -624,6 +645,8 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -638,6 +661,7 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 			}
 			return "", errors.New("no matching Cable VibeTV answered hello")
 		},
+		readDeviceHello: func(string) (protocol.DeviceHello, error) { return protocol.DeviceHello{}, errors.New("not VibeTV") },
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -735,6 +759,8 @@ func TestRunWithDepsKeepsExistingThemeWhenUnset(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -795,6 +821,8 @@ func TestRunWithDepsPersistsWiFiTargetInRuntimeConfig(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -860,6 +888,8 @@ func TestRunWithDepsContinuesWhenSkipFlashAndProbeFails(t *testing.T) {
 		SkipFlash: true,
 		Theme:     "mini",
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &stdout,
 		executablePath: func() (string, error) {
 			return execPath, nil
@@ -901,6 +931,8 @@ func TestRunWithDepsContinuesWhenSkipFlashAndProbeFails(t *testing.T) {
 
 func TestRunWithDepsFailsPreflightWhenLaunchctlMissing(t *testing.T) {
 	err := runWithDeps(context.Background(), Options{SkipFlash: true, AssumeYes: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		lookPath: func(file string) (string, error) {
 			if file == "launchctl" {
@@ -933,6 +965,8 @@ func TestRunWithDepsFailsPreflightWhenLaunchctlMissing(t *testing.T) {
 
 func TestRunWithDepsFailsPreflightWhenPlatformIOMissingForUSBFlash(t *testing.T) {
 	err := runWithDeps(context.Background(), Options{Transport: "usb", AssumeYes: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		lookPath: func(file string) (string, error) {
 			switch file {
@@ -969,7 +1003,10 @@ func TestRunWithDepsFailsPreflightWhenPlatformIOMissingForUSBFlash(t *testing.T)
 
 func TestRunWithDepsFailsWithRecoveryWhenCodexbarInstallNotPossible(t *testing.T) {
 	var calls []commandCall
+	opener, openerArgs := openurl.Command(codexbarInstallURL)
 	err := runWithDeps(context.Background(), Options{SkipFlash: true, AssumeYes: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return mustCreateExecutable(t), nil
@@ -985,8 +1022,8 @@ func TestRunWithDepsFailsWithRecoveryWhenCodexbarInstallNotPossible(t *testing.T
 			return "", errors.New("missing")
 		},
 		lookPath: func(file string) (string, error) {
-			if file == "launchctl" || file == "open" {
-				return "/usr/bin/open", nil
+			if file == "launchctl" || file == opener {
+				return file, nil
 			}
 			return "", errors.New("not found")
 		},
@@ -1010,13 +1047,15 @@ func TestRunWithDepsFailsWithRecoveryWhenCodexbarInstallNotPossible(t *testing.T
 	if !strings.Contains(msg, "brew install --cask "+codexbarBrewCask) {
 		t.Fatalf("expected brew recovery hint, got %q", msg)
 	}
-	if !commandSeen(calls, "open", []string{codexbarInstallURL}) {
+	if !commandSeen(calls, opener, openerArgs) {
 		t.Fatalf("expected setup to open CodexBar install page, got %#v", calls)
 	}
 }
 
 func TestRunWithDepsRejectsAmbiguousIdentityResolution(t *testing.T) {
 	err := runWithDeps(context.Background(), Options{Transport: "usb", SkipFlash: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader("9\n"),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return mustCreateExecutable(t), nil
@@ -1028,7 +1067,8 @@ func TestRunWithDepsRejectsAmbiguousIdentityResolution(t *testing.T) {
 		resolvePort: func(string) (string, error) {
 			return "", errors.New("multiple matching VibeTVs")
 		},
-		probePort: func(string) error { return nil },
+		readDeviceHello: setupUSBHello,
+		probePort:       func(string) error { return nil },
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1048,7 +1088,7 @@ func TestRunWithDepsRejectsAmbiguousIdentityResolution(t *testing.T) {
 		},
 	})
 	if err == nil {
-		t.Fatalf("expected invalid port selection error")
+		t.Fatalf("expected ambiguous port selection error")
 	}
 	if !strings.Contains(err.Error(), "multiple matching VibeTVs") {
 		t.Fatalf("expected identity ambiguity message, got %q", err.Error())
@@ -1066,6 +1106,8 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
 	err := runWithDeps(context.Background(), Options{Transport: "usb", AssumeYes: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1076,9 +1118,13 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid:         func() int { return 501 },
-		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem101", nil },
-		probePort:   func(string) error { return nil },
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbmodem101"}, nil
+		},
+		readDeviceHello: setupUSBHello,
+		resolvePort:     func(string) (string, error) { return "/dev/cu.usbmodem101", nil },
+		probePort:       func(string) error { return nil },
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1105,7 +1151,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 	if !strings.Contains(msg, "flash-firmware") {
 		t.Fatalf("expected flash-firmware step error, got %q", msg)
 	}
-	if !strings.Contains(msg, "launchctl bootout") {
+	if !strings.Contains(msg, "codexbar-display service stop") {
 		t.Fatalf("expected launchctl recovery hint, got %q", msg)
 	}
 	if !strings.Contains(msg, "/dev/cu.usbmodem101") {
@@ -1126,6 +1172,8 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 	printAttempts := 0
 
 	err := runWithDeps(context.Background(), Options{Transport: "usb", AssumeYes: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1140,6 +1188,9 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 		resolvePort:     func(string) (string, error) { return "/dev/cu.usbmodem101", nil },
 		probePort:       func(string) error { return nil },
 		readDeviceHello: setupCableHello,
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbmodem101"}, nil
+		},
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1258,6 +1309,8 @@ func TestRunWithDepsRetriesLaunchAgentBootstrapRace(t *testing.T) {
 	bootstrapAttempts := 0
 
 	err := runWithDeps(context.Background(), Options{Transport: "usb", Port: "/dev/cu.usbserial10", AssumeYes: true, SkipFlash: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1327,6 +1380,8 @@ func TestRunWithDepsFallsBackToKickstartWhenLaunchAgentAlreadyLoaded(t *testing.
 	kickstartCalled := false
 
 	err := runWithDeps(context.Background(), Options{Transport: "usb", Port: "/dev/cu.usbserial10", AssumeYes: true, SkipFlash: true}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1388,6 +1443,8 @@ func TestRunWithDepsStopsLaunchAgentBeforeSerialProbe(t *testing.T) {
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		executablePath: func() (string, error) {
 			return mustCreateExecutable(t), nil
@@ -1453,6 +1510,8 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 		Port:      "/dev/cu.usbserial10",
 		AssumeYes: true,
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1547,6 +1606,8 @@ func TestRunWithDepsUsesReleaseUpgradeForEsp8266FirmwareEnvironment(t *testing.T
 		AssumeYes:   true,
 		FirmwareEnv: "esp8266_smalltv_st7789",
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1617,6 +1678,8 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 		ValidateOnly: true,
 		FirmwareEnv:  "esp8266_smalltv_st7789",
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1627,9 +1690,13 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid:         func() int { return 501 },
-		resolvePort: func(string) (string, error) { return "/dev/cu.usbserial42", nil },
-		probePort:   func(string) error { return nil },
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbserial42"}, nil
+		},
+		readDeviceHello: setupCableHello,
+		resolvePort:     func(string) (string, error) { return "/dev/cu.usbserial42", nil },
+		probePort:       func(string) error { return nil },
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1655,7 +1722,7 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 	if len(calls) > 0 {
 		t.Fatalf("expected no side-effect commands in validate-only mode, got %#v", calls)
 	}
-	installPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
+	installPath := runtimepaths.Path(home, "bin", "codexbar-display")
 	if _, err := os.Stat(installPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected no installed binary in validate-only mode, err=%v", err)
 	}
@@ -1680,6 +1747,8 @@ func TestRunWithDepsDryRunSkipsApplyingChanges(t *testing.T) {
 		FirmwareEnv: "esp8266_smalltv_st7789",
 		Theme:       "crt",
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil
@@ -1690,9 +1759,13 @@ func TestRunWithDepsDryRunSkipsApplyingChanges(t *testing.T) {
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid:         func() int { return 501 },
-		resolvePort: func(p string) (string, error) { return p, nil },
-		probePort:   func(string) error { return nil },
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbserial42"}, nil
+		},
+		readDeviceHello: setupCableHello,
+		resolvePort:     func(p string) (string, error) { return p, nil },
+		probePort:       func(string) error { return nil },
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1861,6 +1934,8 @@ func TestRunWithDepsFailsWhenDetectedBoardMismatchesFirmwareEnvironment(t *testi
 		SkipFlash:   true,
 		FirmwareEnv: "esp8266_smalltv_st7789",
 	}, deps{
+		goos:   "darwin",
+		stdin:  strings.NewReader(""),
 		stdout: &bytes.Buffer{},
 		cwd: func() (string, error) {
 			return filepath.Join(repo, "companion"), nil

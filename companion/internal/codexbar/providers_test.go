@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,6 +68,7 @@ func TestParseProviderHealthClassifiesSafeStatesAndService(t *testing.T) {
 }
 
 func TestFetchProviderSettingsUsesStatusEvenAfterNonzeroExit(t *testing.T) {
+	skipMacCLIContract(t)
 	withProviderCommandTestBinary(t, "0.46.0")
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
@@ -106,9 +108,301 @@ func TestFetchProviderInventoryDoesNotRunHealthProbe(t *testing.T) {
 	if len(settings) != 2 || !settings[0].Enabled || settings[1].Enabled {
 		t.Fatalf("unexpected inventory: %#v", settings)
 	}
-	want := [][]string{{"config", "providers", "--json"}}
+	want := [][]string{providerInventoryArgs()}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("inventory added a slow health probe: got %v want %v", calls, want)
+	}
+}
+
+// Win-CodexBar 0.56.8 answers "usage --json --status" for Claude only, so a
+// signed-in Codex would stay "checking" forever and block the provider step.
+// The Windows probe must ask each switched-on provider one by one.
+func TestFetchProviderSettingsProbesEachEnabledProviderOnWindows(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.56.8")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var calls [][]string
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		switch {
+		case reflect.DeepEqual(args, providerInventoryArgs()):
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":true},
+				{"provider":"cursor","displayName":"Cursor","enabled":false}
+			]`), nil
+		case reflect.DeepEqual(args, []string{"usage", "--json", "--provider", "codex", "--status", "--web-timeout", "8"}):
+			return []byte(`[{"provider":"codex","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
+		case reflect.DeepEqual(args, []string{"usage", "--json", "--provider", "claude", "--status", "--web-timeout", "8"}):
+			return []byte(`[{"provider":"claude","error":{"message":"Provider not installed: Claude CLI not found"}}]`), errors.New("exit 1")
+		}
+		t.Fatalf("unexpected call %v", args)
+		return nil, nil
+	}
+
+	settings, err := FetchProviderSettings(context.Background())
+	if err != nil {
+		t.Fatalf("fetch settings: %v", err)
+	}
+	byID := map[string]ProviderSetting{}
+	for _, setting := range settings {
+		byID[setting.ID] = setting
+	}
+	if byID["codex"].Health != ProviderHealthHealthy {
+		t.Fatalf("codex must be healthy after its own probe, got %#v", byID["codex"])
+	}
+	if byID["claude"].Health != ProviderHealthSetupRequired {
+		t.Fatalf("claude must report setup_required, got %#v", byID["claude"])
+	}
+	if byID["cursor"].Health != ProviderHealthChecking {
+		t.Fatalf("a switched-off provider must not be probed, got %#v", byID["cursor"])
+	}
+	if len(calls) != 3 {
+		t.Fatalf("expected inventory + one probe per enabled provider, got %v", calls)
+	}
+}
+
+// One enabled provider answers, the other probe times out without JSON. The
+// silent provider must become "unavailable", not stay "checking" forever.
+func TestFetchProviderSettingsReportsSilentProbeAsUnavailableOnWindows(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.56.8")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		switch {
+		case reflect.DeepEqual(args, providerInventoryArgs()):
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":true}
+			]`), nil
+		case reflect.DeepEqual(args, []string{"usage", "--json", "--provider", "codex", "--status", "--web-timeout", "8"}):
+			return []byte(`[{"provider":"codex","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
+		default:
+			return nil, errors.New("signal: killed")
+		}
+	}
+
+	settings, err := FetchProviderSettings(context.Background())
+	if err != nil {
+		t.Fatalf("fetch settings: %v", err)
+	}
+	byID := map[string]ProviderSetting{}
+	for _, setting := range settings {
+		byID[setting.ID] = setting
+	}
+	if byID["codex"].Health != ProviderHealthHealthy {
+		t.Fatalf("codex must stay healthy, got %#v", byID["codex"])
+	}
+	if byID["claude"].Health != ProviderHealthUnavailable || !strings.Contains(byID["claude"].Reported, "signal: killed") {
+		t.Fatalf("a silent probe must be reported as unavailable, got %#v", byID["claude"])
+	}
+}
+
+// Usage join on Windows: a switched-on provider whose probe returned no JSON
+// appears as an unavailable provider in the joined answer instead of vanishing.
+func TestRunUsageAllEnabledKeepsSilentProviderVisibleOnWindows(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		switch {
+		case reflect.DeepEqual(args, providerInventoryArgs()):
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
+		case len(args) >= 4 && args[3] == "codex":
+			return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":8}}}]`), nil
+		default:
+			return []byte("dashboard data not found"), errors.New("exit status 1")
+		}
+	}
+
+	raw, err := runUsageAllEnabled(context.Background(), time.Second, "codexbar", "--web-timeout", "8")
+	if err != nil {
+		t.Fatalf("usage join: %v", err)
+	}
+	frames, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parse joined usage: %v", err)
+	}
+	if len(frames) != 2 || frames[0].Provider != "codex" || frames[1].Provider != "claude" {
+		t.Fatalf("expected both enabled providers, got %#v", frames)
+	}
+	if frames[0].Frame.UsageUnavailable || !frames[1].Frame.UsageUnavailable {
+		t.Fatalf("silent probe must be unavailable, healthy one not: %#v", frames)
+	}
+}
+
+// The collector hands runUsageAllEnabled its 300 s default timeout. One
+// hanging provider CLI must not hold every provider after it for that long,
+// so each sequential usage probe is capped like the health join.
+func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	var timeouts []time.Duration
+	runUsageCommandFn = func(_ context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
+		if reflect.DeepEqual(args, providerInventoryArgs()) {
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
+		}
+		timeouts = append(timeouts, timeout)
+		return []byte(`[{"provider":"` + args[3] + `","usage":{"primary":{"usedPercent":8}}}]`), nil
+	}
+	if _, err := runUsageAllEnabled(context.Background(), 300*time.Second, "codexbar", "--web-timeout", "8"); err != nil {
+		t.Fatalf("usage join: %v", err)
+	}
+	if len(timeouts) != 2 {
+		t.Fatalf("expected one probe per enabled provider, got %d", len(timeouts))
+	}
+	for i, timeout := range timeouts {
+		if timeout != perProviderProbeTimeout {
+			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
+		}
+	}
+}
+
+// The background health refresh hands runProviderHealthProbe a shared 25 s
+// deadline. On Windows the probes run one after another with 18 s each, so
+// the second provider must not inherit the almost spent parent deadline.
+func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var deadlines []bool
+	var timeouts []time.Duration
+	runProviderCommandFn = func(ctx context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
+		_, hasDeadline := ctx.Deadline()
+		deadlines = append(deadlines, hasDeadline)
+		timeouts = append(timeouts, timeout)
+		return []byte(`[{"provider":"` + args[3] + `","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
+	}
+	parent, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	settings := []ProviderSetting{
+		{ID: "codex", Label: "Codex", Enabled: true},
+		{ID: "claude", Label: "Claude", Enabled: true},
+	}
+	raw, err := runProviderHealthProbe(parent, 300*time.Second, "codexbar", settings)
+	if err != nil {
+		t.Fatalf("health probe: %v", err)
+	}
+	health := parseProviderHealth(raw)
+	if health["codex"].health != ProviderHealthHealthy || health["claude"].health != ProviderHealthHealthy {
+		t.Fatalf("both providers must be healthy, got %#v", health)
+	}
+	if len(deadlines) != 2 {
+		t.Fatalf("expected one probe per enabled provider, got %d", len(deadlines))
+	}
+	for i, hasDeadline := range deadlines {
+		if hasDeadline {
+			t.Fatalf("probe %d ran under the shared refresh deadline", i)
+		}
+	}
+	// Without the shared deadline the collector's 300 s timeout must not
+	// become the per-probe budget; a hanging CLI is capped per provider.
+	for i, timeout := range timeouts {
+		if timeout != perProviderProbeTimeout {
+			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
+		}
+	}
+}
+
+// Dropping the shared deadline must not drop the caller's cancellation: a
+// disconnected client or a shutting-down Companion still ends the sequential
+// Windows probes instead of leaving them running for minutes.
+func TestRunProviderHealthProbeStopsWhenCallerCancels(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	parent, cancel := context.WithCancel(context.Background())
+	var cancelled []bool
+	runProviderCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		// Record before cancelling: the forwarded cancellation is
+		// asynchronous and may reach ctx before this probe returns.
+		cancelled = append(cancelled, ctx.Err() != nil)
+		if args[3] == "codex" {
+			cancel()
+			<-ctx.Done()
+		}
+		return nil, ctx.Err()
+	}
+	settings := []ProviderSetting{
+		{ID: "codex", Label: "Codex", Enabled: true},
+		{ID: "claude", Label: "Claude", Enabled: true},
+	}
+	raw, err := runProviderHealthProbe(parent, perProviderProbeTimeout, "codexbar", settings)
+	if len(cancelled) != 1 || cancelled[0] {
+		t.Fatalf("no probe must start after the caller cancelled, got %v", cancelled)
+	}
+	// The answer already collected is kept; only claude was never asked.
+	if err != nil {
+		t.Fatalf("partial answer must be returned, got %v", err)
+	}
+	if health := parseProviderHealth(raw); len(health) != 1 || health["codex"].health != ProviderHealthUnavailable {
+		t.Fatalf("expected only the probed provider in the answer, got %#v", health)
+	}
+}
+
+// The caller's expired deadline is exactly the shared budget the detached
+// context exists to escape; only explicit cancellation may cut probes short.
+func TestWithoutDeadlineForwardsCancelButNotDeadline(t *testing.T) {
+	expired, cancelExpired := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancelExpired()
+	<-expired.Done()
+	detached, stop := withoutDeadline(expired)
+	defer stop()
+	time.Sleep(20 * time.Millisecond)
+	if detached.Err() != nil {
+		t.Fatalf("expired parent deadline must not cancel the detached probes: %v", detached.Err())
+	}
+
+	parent, cancel := context.WithCancel(context.Background())
+	detached, stop = withoutDeadline(parent)
+	defer stop()
+	cancel()
+	select {
+	case <-detached.Done():
+	case <-time.After(time.Second):
+		t.Fatal("explicit cancellation must reach the detached probes")
+	}
+}
+
+// Win-CodexBar 0.56.8 rejects "config disable --provider claude"; the provider
+// is a positional argument there.
+func TestSetProviderEnabledUsesPositionalProviderOnWindows(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.56.8")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var calls [][]string
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		if args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
+		}
+		return []byte(""), nil
+	}
+
+	if err := SetProviderEnabled(context.Background(), "claude", false); err != nil {
+		t.Fatalf("disable provider: %v", err)
+	}
+	want := []string{"config", "disable", "claude"}
+	if !reflect.DeepEqual(calls[len(calls)-1], want) {
+		t.Fatalf("unexpected write args: got %v want %v", calls[len(calls)-1], want)
 	}
 }
 
@@ -122,6 +416,9 @@ func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 
 func TestSetProviderEnabledUsesExactProcessArguments(t *testing.T) {
 	withProviderCommandTestBinary(t, "0.46.0")
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = false
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
 	var calls [][]string

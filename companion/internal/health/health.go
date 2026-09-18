@@ -3,30 +3,36 @@ package health
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 )
 
 const (
-	launchAgentLabel    = "com.codexbar-display.daemon"
-	legacyOutLog        = "/tmp/codexbar-display-daemon.out.log"
-	legacyErrLog        = "/tmp/codexbar-display-daemon.err.log"
-	defaultOutLogName   = "daemon.out.log"
-	defaultErrLogName   = "daemon.err.log"
-	appSupportLogSubdir = "Library/Application Support/codexbar-display/logs"
+	launchAgentLabel  = "com.codexbar-display.daemon"
+	legacyOutLog      = "/tmp/codexbar-display-daemon.out.log"
+	legacyErrLog      = "/tmp/codexbar-display-daemon.err.log"
+	defaultOutLogName = "daemon.out.log"
+	defaultErrLogName = "daemon.err.log"
 )
 
 type deps struct {
+	goos                  string
+	serviceManager        service.Manager
 	stdout                io.Writer
 	uid                   func() int
 	launchAgentLabel      string
@@ -38,6 +44,9 @@ type deps struct {
 }
 
 func (d deps) withDefaults() deps {
+	if d.goos == "" {
+		d.goos = runtime.GOOS
+	}
 	if d.stdout == nil {
 		d.stdout = os.Stdout
 	}
@@ -50,8 +59,18 @@ func (d deps) withDefaults() deps {
 	if d.homeDir == nil {
 		d.homeDir = os.UserHomeDir
 	}
-	if d.runCommand == nil {
-		d.runCommand = runSystemCommand
+	if d.serviceManager == nil {
+		if d.goos == "windows" {
+			if d.runCommand == nil {
+				d.runCommand = runSystemCommand
+			}
+			home, _ := d.homeDir()
+			d.serviceManager = service.NewWindows(service.WindowsRuntimeLabel(home), home, d.runCommand)
+		} else if d.runCommand == nil {
+			d.serviceManager = service.New(d.launchAgentLabel, "", false)
+		} else {
+			d.serviceManager = service.NewDarwin(d.launchAgentLabel, "", d.uid(), false, d.runCommand)
+		}
 	}
 	if d.readCableCapabilities == nil {
 		d.readCableCapabilities = func() (protocol.DeviceCapabilities, error) {
@@ -88,9 +107,8 @@ func Run(ctx context.Context, runtimeLabel string, readCableCapabilities func() 
 func runWithDeps(ctx context.Context, d deps) error {
 	d = d.withDefaults()
 
-	service := fmt.Sprintf("gui/%d/%s", d.uid(), d.launchAgentLabel)
-	launchctlOut, launchctlErr := d.runCommand(ctx, "launchctl", "print", service)
-	state, pid := parseLaunchctlStatus(launchctlOut)
+	status, launchctlErr := d.serviceManager.Status(ctx)
+	state, pid := status.State, status.PID
 	if state == "" {
 		state = "unknown"
 	}
@@ -108,12 +126,16 @@ func runWithDeps(ctx context.Context, d deps) error {
 	}
 
 	fmt.Fprintln(d.stdout, "codexbar-display health")
-	fmt.Fprintf(d.stdout, "launchagent: %s", state)
+	name := "launchagent"
+	if d.goos == "windows" {
+		name = "scheduled task"
+	}
+	fmt.Fprintf(d.stdout, "%s: %s", name, state)
 	if pid != "" {
 		fmt.Fprintf(d.stdout, " pid=%s", pid)
 	}
 	if launchctlErr != nil {
-		fmt.Fprintf(d.stdout, " (launchctl error: %v)", launchctlErr)
+		fmt.Fprintf(d.stdout, " (service error: %v)", launchctlErr)
 	}
 	fmt.Fprintln(d.stdout)
 
@@ -125,6 +147,9 @@ func runWithDeps(ctx context.Context, d deps) error {
 			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
 		}
 	} else {
+		// Ask the runtime for the Cable device it already owns instead of
+		// probing the serial port here. That works on every platform and
+		// avoids fighting the service for the exclusive serial handle.
 		caps, statusErr := d.readCableCapabilities()
 		fmt.Fprintln(d.stdout, "transport: usb")
 		if statusErr != nil {
@@ -158,11 +183,14 @@ func runWithDeps(ctx context.Context, d deps) error {
 		fmt.Fprintf(d.stdout, "last error: %s %s\n", formatTimestamp(lastError.Timestamp), strings.TrimSpace(lastError.Line))
 	}
 
+	if d.goos == "windows" {
+		return launchctlErr
+	}
 	return nil
 }
 
 func runSystemCommand(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, name, args...))
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
@@ -172,7 +200,7 @@ func daemonLogPath(d deps, name, fallback string) string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return fallback
 	}
-	return filepath.Join(home, appSupportLogSubdir, name)
+	return runtimepaths.Path(home, "logs", name)
 }
 
 func readLaunchAgentConfig(d deps) launchAgentConfig {
@@ -192,6 +220,17 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 		return config
 	}
 	path := filepath.Join(home, "Library", "LaunchAgents", d.launchAgentLabel+".plist")
+	if d.goos == "windows" {
+		data, err := d.readFile(service.TaskConfigPath(home, service.WindowsRuntimeLabel(home)))
+		if err != nil {
+			return launchAgentConfig{}
+		}
+		var config service.TaskConfig
+		if json.Unmarshal(data, &config) != nil {
+			return launchAgentConfig{}
+		}
+		return parseServiceArguments(config.Arguments)
+	}
 	data, err := d.readFile(path)
 	if err != nil {
 		return launchAgentConfig{}
@@ -201,6 +240,10 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 
 func parseLaunchAgentConfig(data []byte) launchAgentConfig {
 	args := plistStringValues(data)
+	return parseServiceArguments(args)
+}
+
+func parseServiceArguments(args []string) launchAgentConfig {
 	config := launchAgentConfig{}
 	for i, arg := range args {
 		switch strings.TrimSpace(arg) {

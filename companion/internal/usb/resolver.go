@@ -48,6 +48,27 @@ func ResolvePort(explicit string) (string, error) {
 			errors.New("an explicit serial port is required for recovery"),
 		)
 	}
+	// A COM name is a serial identifier, not a filesystem path, so it can only
+	// be confirmed by enumeration. Stat'ing it always fails and would take
+	// explicit firmware recovery away from every Windows customer.
+	if isCOMPortName(explicit) {
+		ports, err := ListPorts()
+		if err != nil {
+			return "", err
+		}
+		for _, port := range ports {
+			if samePort(explicit, port) {
+				return port, nil
+			}
+		}
+		return "", wrapTransportError(
+			errcode.TransportSerialPortNotFound,
+			"resolve-explicit-port",
+			explicit,
+			"List serial ports and pass an available port via --port.",
+			errors.New("serial port not found"),
+		)
+	}
 	if _, err := os.Stat(explicit); err != nil {
 		return "", wrapTransportError(
 			errcode.TransportSerialPortNotFound,
@@ -58,6 +79,19 @@ func ResolvePort(explicit string) (string, error) {
 		)
 	}
 	return explicit, nil
+}
+
+func isCOMPortName(value string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(value)), "COM")
+}
+
+// samePort compares serial identifiers. COM names are case-insensitive; Unix
+// device paths are exact.
+func samePort(a, b string) bool {
+	if isCOMPortName(a) && isCOMPortName(b) {
+		return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+	}
+	return strings.TrimSpace(a) == strings.TrimSpace(b)
 }
 
 // ResolveVibeTVPort resolves a Cable device by its protocol identity. Port

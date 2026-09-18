@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VibeTV Control Center",
+  "version": "0.0.0",
+  "identifier": "shop.vibetv.control-center",
+  "mainBinaryName": "VibeTVControlCenter",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "windows": [],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "tooltip": "VibeTV Control Center"
+    },
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "icon": ["icons/icon.ico"],
+    "externalBin": ["binaries/codexbar-display", "binaries/codexbar-cli"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "nsis/hooks.nsh"
+      },
+      "signCommand": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1MjlDMEJEODJGOTEwNzIKUldSeUVQbUN2Y0FwSlNPRnpnZmV1Yk5EZlJXSnhVUzh6cXFCRFdBRmcyY3VYMklkM2JVY3A2dFQK",
+      "endpoints": [
+        "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/latest-windows.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
+
