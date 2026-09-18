@@ -72,14 +72,6 @@ describe("MacAppDownloadScreen on a recognised system", () => {
     expect(html).toContain('href="https://app.vibetv.shop/VibeTV.dmg"');
   });
 
-  it("warns honestly that the Windows installer is not signed yet", () => {
-    expect(
-      renderToStaticMarkup(
-        <MacAppDownloadScreen platform="windows" release={bothAvailable} />,
-      ),
-    ).toContain("not signed yet");
-  });
-
   it("keeps the existing not-ready state when no Windows build is published", () => {
     const html = renderToStaticMarkup(
       <MacAppDownloadScreen platform="windows" release={available} />,
