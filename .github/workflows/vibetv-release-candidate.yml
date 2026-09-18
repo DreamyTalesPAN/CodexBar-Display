@@ -156,6 +156,12 @@ jobs:
       (github.actor == github.repository_owner || github.actor == 'marcus7989')
     runs-on: windows-latest
     timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      # Azure Artifact Signing authenticates through OIDC federation on main,
+      # so the job mints its own short-lived token and no client secret exists.
+      id-token: write
     env:
       CGO_ENABLED: '0'
     steps:
@@ -199,11 +205,30 @@ jobs:
       - name: Stage the CodexBar CLI sidecar
         shell: pwsh
         run: Copy-Item $env:CODEXBAR_CONTRACT_BIN windows/src-tauri/binaries/codexbar-cli-x86_64-pc-windows-msvc.exe
+      - name: Sign in to Azure for Artifact Signing
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_SIGNING_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SIGNING_SUBSCRIPTION_ID }}
+      - name: Install the Microsoft signing CLI
+        shell: pwsh
+        run: |
+          # The package is still shipped as prerelease only.
+          dotnet tool install --global sign --prerelease
+          if ($LASTEXITCODE -ne 0) { throw "could not install the signing CLI" }
       - name: Build and sign the release NSIS installer
         working-directory: windows/src-tauri
         env:
           VIBETV_BUILD: ${{ github.run_id }}
           VIBETV_VERSION: ${{ inputs.version }}
+          VIBETV_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          VIBETV_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          VIBETV_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          # azure/login only primes the Azure CLI session; DefaultAzureCredential
+          # inside the signing CLI still needs to be pointed at the same identity.
+          AZURE_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
           # The updater signature the released shell verifies against the
           # public key pinned in tauri.conf.json. Unlike CI, this workflow only
           # ever builds the reviewed main SHA, so the release key is safe here.
@@ -213,12 +238,32 @@ jobs:
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
             throw "TAURI_SIGNING_PRIVATE_KEY is required: without it no released shell can accept the update."
           }
+          foreach ($name in @('VIBETV_SIGNING_ENDPOINT', 'VIBETV_SIGNING_ACCOUNT', 'VIBETV_SIGNING_PROFILE')) {
+            if (-not (Get-Item -Path "env:$name" -ErrorAction SilentlyContinue).Value) {
+              throw "$name is required: a released installer must carry an Authenticode signature."
+            }
+          }
           $version = $env:VIBETV_VERSION -replace '^v', ''
           if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$') {
             throw "version must be SemVer"
           }
           cargo install tauri-cli --version "^2" --locked
-          Set-Content -Path "$env:RUNNER_TEMP/release-version.json" -Value (@{ version = $version } | ConvertTo-Json -Compress)
+          # Authenticode signing happens through the bundler, not afterwards:
+          # Tauri derives the updater signature from the finished installer, so
+          # signing it later would invalidate that signature and every installed
+          # shell would reject the update. Keeping signCommand out of the
+          # committed config also keeps local and CI builds working without the
+          # Azure CLI.
+          $signScript = (Resolve-Path "$env:GITHUB_WORKSPACE/scripts/sign-windows-artifact.ps1").Path -replace '\\', '/'
+          $releaseConfig = [ordered]@{
+            version = $version
+            bundle = [ordered]@{
+              windows = [ordered]@{
+                signCommand = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$signScript`" `"%1`""
+              }
+            }
+          }
+          Set-Content -Path "$env:RUNNER_TEMP/release-version.json" -Value ($releaseConfig | ConvertTo-Json -Depth 6 -Compress)
           cargo tauri build --bundles nsis --config "$env:RUNNER_TEMP/release-version.json"
       - name: Stage the Windows publish set
         shell: pwsh
@@ -233,6 +278,18 @@ jobs:
           if (-not $installer -or -not $signature) {
             throw "the NSIS build produced no installer or no updater signature"
           }
+          # Prove the Authenticode signature really landed. Tauri does not fail
+          # the build when signCommand leaves the file untouched, so without this
+          # check an unsigned installer would ship and SmartScreen would warn
+          # every customer.
+          $authenticode = Get-AuthenticodeSignature -FilePath $installer.FullName
+          if ($authenticode.Status -ne 'Valid') {
+            throw "the installer is not validly signed (status: $($authenticode.Status))"
+          }
+          if ($authenticode.SignerCertificate.Subject -notmatch 'DreamyTales') {
+            throw "the installer was signed by an unexpected certificate: $($authenticode.SignerCertificate.Subject)"
+          }
+          Write-Host "Authenticode signer: $($authenticode.SignerCertificate.Subject)"
           # The same unversioned name the Mac DMG uses, so the download page
           # can link to releases/latest/download/<asset> without knowing the
           # version. The release tag already identifies the version.
