@@ -215,13 +215,15 @@ func TestDashboardServeSupervisorAllowsStartupFailuresBeforeReady(t *testing.T) 
 func TestDashboardServeSupervisorRestartsReadyChildAfterConsecutiveHealthFailures(t *testing.T) {
 	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
 	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
-	checks := 0
-	var checksMu sync.Mutex
+	// The mocked health answers are tied to the child having reported itself,
+	// not to a check count. Counting checks turned the first child unhealthy
+	// after roughly 40ms, which is less than the time Windows needs to start a
+	// process at all: the supervisor then killed each child before it could
+	// write its record and the test saw one record forever. Staying healthy
+	// until a child has reported keeps the intent -- a child that was ready and
+	// then goes unhealthy is replaced -- without racing the process start.
 	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(req *http.Request) (*http.Response, error) {
-		checksMu.Lock()
-		defer checksMu.Unlock()
-		checks++
-		if checks > 1 {
+		if info, err := os.Stat(recordPath); err == nil && info.Size() > 0 {
 			return nil, errors.New("health unavailable")
 		}
 		return &http.Response{
