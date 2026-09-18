@@ -151,9 +151,14 @@ needed.
   Signing (certificate profile `vibetv-public-trust`, account
   `vibetv-signing`). `signCommand` is injected by the release job rather than
   committed to `tauri.conf.json`, so local and CI builds still work without the
-  Azure CLI; those builds stay unsigned. The job verifies the resulting
-  signature with `Get-AuthenticodeSignature` and fails the release if it is
-  missing or issued to an unexpected subject. Not yet proven on a real run.
+  Azure CLI; those builds stay unsigned. Two constraints are easy to trip over:
+  Tauri spawns `signCommand` without a shell and splits it on spaces, so the
+  program must be a space-free absolute path (the `sign` dotnet global tool
+  qualifies, a `pwsh` wrapper does not), and every binary it signs must be
+  writable, which the extracted CodexBar CLI is not until the job clears its
+  read-only flag. The job verifies the resulting signature with
+  `Get-AuthenticodeSignature` and fails the release if it is missing or issued
+  to an unexpected subject.
 - Pinned-CLI validation (`validate-codexbar`) is a stub outside macOS; the
   Windows CLI is trusted by the installer SHA-256 pin only.
 - Not proven in the VM: ARM64 hosts, Cable transport, a real N→N+1 update

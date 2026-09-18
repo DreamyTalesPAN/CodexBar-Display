@@ -205,6 +205,15 @@ jobs:
       - name: Stage the CodexBar CLI sidecar
         shell: pwsh
         run: Copy-Item $env:CODEXBAR_CONTRACT_BIN windows/src-tauri/binaries/codexbar-cli-x86_64-pc-windows-msvc.exe
+      - name: Make the sidecars writable so signing can rewrite them
+        shell: pwsh
+        # The extracted CodexBar CLI keeps the read-only flag from its archive.
+        # Tauri reports that as the misleading "failed to run <tool>" instead of
+        # a permission error, so clear it before signing touches the binaries.
+        run: |
+          Get-ChildItem windows/src-tauri/binaries -Filter *.exe | ForEach-Object {
+            Set-ItemProperty -Path $_.FullName -Name IsReadOnly -Value $false
+          }
       - name: Sign in to Azure for Artifact Signing
         uses: azure/login@v2
         with:
@@ -254,12 +263,41 @@ jobs:
           # shell would reject the update. Keeping signCommand out of the
           # committed config also keeps local and CI builds working without the
           # Azure CLI.
-          $signScript = (Resolve-Path "$env:GITHUB_WORKSPACE/scripts/sign-windows-artifact.ps1").Path -replace '\\', '/'
+          # Tauri spawns signCommand as a raw process without a shell and splits
+          # it on spaces, so the program must be an absolute path that contains
+          # none. The dotnet global tool qualifies; a pwsh wrapper does not,
+          # because pwsh.exe lives under "C:\Program Files".
+          $signExe = (Get-Command sign -ErrorAction Stop).Source -replace '\\', '/'
+          if ($signExe -match ' ') {
+            throw "the signing CLI path contains a space, which Tauri cannot invoke: $signExe"
+          }
+          # Microsoft is renaming this subcommand from trusted-signing to
+          # artifact-signing, and both spellings are in the wild. Ask the
+          # installed CLI which one it knows instead of pinning a guess.
+          $signHelp = (& sign code --help 2>&1 | Out-String)
+          if ($signHelp -match 'artifact-signing') {
+            $signVerb = 'artifact-signing'
+          } elseif ($signHelp -match 'trusted-signing') {
+            $signVerb = 'trusted-signing'
+          } else {
+            throw "the signing CLI exposes neither artifact-signing nor trusted-signing."
+          }
+          # Azure Artifact Signing issues certificates that expire within hours,
+          # so an RFC 3161 timestamp is what keeps the signature valid after the
+          # release.
+          $signArgs = @(
+            "code", $signVerb,
+            "--$signVerb-endpoint", $env:VIBETV_SIGNING_ENDPOINT,
+            "--$signVerb-account", $env:VIBETV_SIGNING_ACCOUNT,
+            "--$signVerb-certificate-profile", $env:VIBETV_SIGNING_PROFILE,
+            "--timestamp-url", "http://timestamp.acs.microsoft.com",
+            "--verbosity", "information"
+          ) -join ' '
           $releaseConfig = [ordered]@{
             version = $version
             bundle = [ordered]@{
               windows = [ordered]@{
-                signCommand = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$signScript`" `"%1`""
+                signCommand = "$signExe $signArgs %1"
               }
             }
           }
