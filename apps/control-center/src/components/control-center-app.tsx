@@ -132,7 +132,13 @@ import { startUsageSurfacePolling } from "./usage-surface-polling";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
-const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
+// The Mac App bounds the search itself: cable discovery, then a 30s WiFi
+// window (deviceSearchWindow in companionapi) plus a settling pass. Measured
+// 38s with a shipped device attached by cable. Aborting at 40s raced that
+// bound and reported "took too long" for a search that was about to succeed,
+// so keep the client above the server budget and let the server decide when
+// the search is over.
+const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 90_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
