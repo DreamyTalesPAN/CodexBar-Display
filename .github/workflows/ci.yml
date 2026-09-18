@@ -90,17 +90,17 @@ jobs:
         env:
           VIBETV_BUILD: ${{ github.run_number }}
           VIBETV_VERSION: 9999.0.${{ github.run_number }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: |
           cargo install tauri-cli --version "^2" --locked
-          # The updater manifest must be signed even for a CI-only artifact.
-          # Without the release key, sign with a throwaway key: installable,
-          # but no released shell will ever accept it as an update.
-          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
-            cargo tauri signer generate --ci -w "$env:RUNNER_TEMP/ci-only.key"
-            $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:RUNNER_TEMP/ci-only.key" -Raw
-          }
+          # The updater manifest must be signed even for a CI-only artifact,
+          # so sign it with a throwaway key generated for this run: the
+          # installer works, but no released shell will ever accept it as an
+          # update. The release signing key is never exposed here, because
+          # this workflow also builds unreviewed pull-request revisions and
+          # any build step could read it.
+          cargo tauri signer generate --ci -w "$env:RUNNER_TEMP/ci-only.key"
+          $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:RUNNER_TEMP/ci-only.key" -Raw
           # The shell reports this version to the Companion; it must match
           # the sidecar build above.
           Set-Content -Path "$env:RUNNER_TEMP/ci-version.json" -Value (@{ version = $env:VIBETV_VERSION } | ConvertTo-Json -Compress)
