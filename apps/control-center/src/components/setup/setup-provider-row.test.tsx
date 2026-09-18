@@ -79,17 +79,22 @@ describe("SetupProviderRow", () => {
     }
   });
 
-  // Without a shell that can start the sign-in, the row keeps its sentence
-  // and offers Copy and Retry only.
-  it("falls back to Copy and Retry when no sign-in can be started", () => {
+  // Without a shell that can start the sign-in -- the Mac app, and any
+  // provider VibeTV cannot sign in -- the row stays exactly as it is today:
+  // the usage service's own sentence with Copy and Retry. Our shorter
+  // sentence belongs to the button, and with no button it would only take the
+  // customer's information away.
+  it("keeps the provider's own message when no sign-in can be started", () => {
     const html = render({
       health: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
     });
 
-    expect(html).toContain("Claude Code is not signed in on this computer");
-    expect(html).not.toContain("Codex connection failed");
+    expect(html).toContain(
+      "Codex connection failed: codex account authentication required to read rate limits",
+    );
+    expect(html).not.toContain("is not signed in on this computer");
     expect(html).toContain(
       'aria-label="Copy provider message for Claude Code"',
     );

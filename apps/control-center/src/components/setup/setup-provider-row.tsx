@@ -162,8 +162,14 @@ export function SetupProviderRow({
   // "failed from all configured sources") written for developers, and for
   // the browser case it names the wrong fix. CodexBar's sentence stays
   // behind the copy action for support.
-  const guidance =
-    variant === "browser_sign_in"
+  //
+  // Our sentence only replaces it where the row can also start the sign-in.
+  // Without that action the sentence has no next step, and on macOS, where
+  // this whole feature is off, replacing it would change the Mac app's own
+  // rows -- which this release must not do.
+  const guidance = !onOpenSignIn
+    ? reportedMessage || detail || fallbackMessage
+    : variant === "browser_sign_in"
       ? [detail, nextAction].filter(Boolean).join(" ") || fallbackMessage
       : variant === "sign_in"
         ? fallbackMessage
