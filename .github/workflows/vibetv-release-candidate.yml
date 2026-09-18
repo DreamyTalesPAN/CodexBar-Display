@@ -233,7 +233,10 @@ jobs:
           if (-not $installer -or -not $signature) {
             throw "the NSIS build produced no installer or no updater signature"
           }
-          $asset = "VibeTV-Control-Center-Setup-v$version.exe"
+          # The same unversioned name the Mac DMG uses, so the download page
+          # can link to releases/latest/download/<asset> without knowing the
+          # version. The release tag already identifies the version.
+          $asset = "VibeTV-Control-Center-Setup.exe"
           New-Item -ItemType Directory -Force -Path tmp/vibetv-rc-windows | Out-Null
           Copy-Item $installer.FullName "tmp/vibetv-rc-windows/$asset"
           # The Updates tab fetches this manifest from the latest release and
@@ -311,13 +314,13 @@ jobs:
           # byte-identical public verification cover them too.
           mkdir -p tmp/vibetv-rc/publish/windows
           cp tmp/vibetv-rc-windows/latest-windows.json tmp/vibetv-rc/publish/windows/latest-windows.json
-          cp tmp/vibetv-rc-windows/VibeTV-Control-Center-Setup-v${version}.exe "tmp/vibetv-rc/publish/windows/VibeTV-Control-Center-Setup-v${version}.exe"
+          cp tmp/vibetv-rc-windows/VibeTV-Control-Center-Setup.exe tmp/vibetv-rc/publish/windows/VibeTV-Control-Center-Setup.exe
           python3 - "$version" "$REPOSITORY" tmp/vibetv-rc/publish/windows <<'PY'
           import hashlib, json, sys
           from pathlib import Path
           version, repository, root = sys.argv[1:]
           root = Path(root)
-          asset = f"VibeTV-Control-Center-Setup-v{version}.exe"
+          asset = "VibeTV-Control-Center-Setup.exe"
           manifest = json.loads((root / "latest-windows.json").read_text(encoding="utf-8"))
           platform = manifest["platforms"]["windows-x86_64"]
           expected = f"https://github.com/{repository}/releases/download/v{version}/{asset}"
