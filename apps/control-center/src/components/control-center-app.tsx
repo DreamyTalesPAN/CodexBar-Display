@@ -94,6 +94,10 @@ import {
   startProviderPreferencesPolling,
 } from "./provider-preferences-polling";
 import { isProviderItem } from "./provider-picker";
+import {
+  detectCustomerPlatformFromBrowser,
+  type CustomerPlatform,
+} from "@/lib/customer-platform";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
@@ -337,6 +341,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     getRuntimeSurfaceServerSnapshot,
   );
   const hostedSetup = runtimeSurface === "hosted-setup";
+  // Read the same way as the runtime surface: the server cannot know the
+  // customer's system, so it renders "unknown" and the browser corrects it on
+  // the first client pass instead of hydrating a mismatched screen.
+  const customerPlatform = useSyncExternalStore(
+    subscribeRuntimeSurface,
+    detectCustomerPlatformFromBrowser,
+    getCustomerPlatformServerSnapshot,
+  );
   const [companionStatus, setCompanionStatus] =
     useState<CompanionStatus>("unknown");
   const [initialCompanionCheckComplete, setInitialCompanionCheckComplete] =
@@ -4554,6 +4566,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return (
         <MacAppDownloadScreen
           onCreateSupportReport={loadSupportDiagnostics}
+          platform={customerPlatform}
           release={companionRelease}
         />
       );
@@ -4856,6 +4869,10 @@ function getRuntimeSurfaceSnapshot(): RuntimeSurface {
 }
 
 function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
+  return "unknown";
+}
+
+function getCustomerPlatformServerSnapshot(): CustomerPlatform {
   return "unknown";
 }
 
