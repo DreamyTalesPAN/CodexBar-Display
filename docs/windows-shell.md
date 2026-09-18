@@ -147,9 +147,14 @@ needed.
 
 ## Open
 
-- Authenticode: `bundle.windows.signCommand` is unset until the certificate
-  from #217 exists; installers are unsigned and SmartScreen warns.
+- Authenticode: the release workflow signs the installer through Azure Artifact
+  Signing (certificate profile `vibetv-public-trust`, account
+  `vibetv-signing`). `signCommand` is injected by the release job rather than
+  committed to `tauri.conf.json`, so local and CI builds still work without the
+  Azure CLI; those builds stay unsigned. The job verifies the resulting
+  signature with `Get-AuthenticodeSignature` and fails the release if it is
+  missing or issued to an unexpected subject. Not yet proven on a real run.
 - Pinned-CLI validation (`validate-codexbar`) is a stub outside macOS; the
   Windows CLI is trusted by the installer SHA-256 pin only.
 - Not proven in the VM: ARM64 hosts, Cable transport, a real N→N+1 update
-  (needs a published release), Authenticode.
+  (needs a published release).
