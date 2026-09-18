@@ -1,0 +1,392 @@
+[
+  {
+    "defaultEnabled": true,
+    "displayName": "Codex",
+    "enabled": true,
+    "provider": "codex"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "OpenAI",
+    "enabled": false,
+    "provider": "openai"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Azure OpenAI",
+    "enabled": false,
+    "provider": "azureopenai"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Claude",
+    "enabled": true,
+    "provider": "claude"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "ClinePass",
+    "enabled": false,
+    "provider": "clinepass"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Cursor",
+    "enabled": false,
+    "provider": "cursor"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "OpenCode",
+    "enabled": false,
+    "provider": "opencode"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "OpenCode Go",
+    "enabled": false,
+    "provider": "opencodego"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Alibaba",
+    "enabled": false,
+    "provider": "alibaba"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Alibaba Token Plan",
+    "enabled": false,
+    "provider": "alibabatokenplan"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Qwen Cloud",
+    "enabled": false,
+    "provider": "qwencloud"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Droid",
+    "enabled": false,
+    "provider": "factory"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Gemini",
+    "enabled": false,
+    "provider": "gemini"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Antigravity",
+    "enabled": false,
+    "provider": "antigravity"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Copilot",
+    "enabled": false,
+    "provider": "copilot"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Devin",
+    "enabled": false,
+    "provider": "devin"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "z.ai",
+    "enabled": false,
+    "provider": "zai"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "MiniMax",
+    "enabled": false,
+    "provider": "minimax"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Manus",
+    "enabled": false,
+    "provider": "manus"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Kimi",
+    "enabled": false,
+    "provider": "kimi"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Kilo",
+    "enabled": false,
+    "provider": "kilo"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Kiro",
+    "enabled": false,
+    "provider": "kiro"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Vertex AI",
+    "enabled": false,
+    "provider": "vertexai"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Augment",
+    "enabled": false,
+    "provider": "augment"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "JetBrains AI",
+    "enabled": false,
+    "provider": "jetbrains"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Moonshot / Kimi API",
+    "enabled": false,
+    "provider": "moonshot"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Amp",
+    "enabled": false,
+    "provider": "amp"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "T3 Chat",
+    "enabled": false,
+    "provider": "t3chat"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Ollama",
+    "enabled": false,
+    "provider": "ollama"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Synthetic",
+    "enabled": false,
+    "provider": "synthetic"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Warp",
+    "enabled": false,
+    "provider": "warp"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "OpenRouter",
+    "enabled": false,
+    "provider": "openrouter"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "ElevenLabs",
+    "enabled": false,
+    "provider": "elevenlabs"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Windsurf",
+    "enabled": false,
+    "provider": "windsurf"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Zed",
+    "enabled": false,
+    "provider": "zed"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Perplexity",
+    "enabled": false,
+    "provider": "perplexity"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Xiaomi MiMo",
+    "enabled": false,
+    "provider": "mimo"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Doubao",
+    "enabled": false,
+    "provider": "doubao"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Sakana AI",
+    "enabled": false,
+    "provider": "sakana"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Abacus AI",
+    "enabled": false,
+    "provider": "abacus"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Mistral",
+    "enabled": false,
+    "provider": "mistral"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "DeepSeek",
+    "enabled": false,
+    "provider": "deepseek"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "DeepInfra",
+    "enabled": false,
+    "provider": "deepinfra"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Codebuff",
+    "enabled": false,
+    "provider": "codebuff"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Crof",
+    "enabled": false,
+    "provider": "crof"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Venice",
+    "enabled": false,
+    "provider": "venice"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Command Code",
+    "enabled": false,
+    "provider": "commandcode"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Qoder",
+    "enabled": false,
+    "provider": "qoder"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "StepFun",
+    "enabled": false,
+    "provider": "stepfun"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "AWS Bedrock",
+    "enabled": false,
+    "provider": "bedrock"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Grok",
+    "enabled": false,
+    "provider": "grok"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Groq",
+    "enabled": false,
+    "provider": "groq"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "LLM Proxy",
+    "enabled": false,
+    "provider": "llmproxy"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "LiteLLM",
+    "enabled": false,
+    "provider": "litellm"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Deepgram",
+    "enabled": false,
+    "provider": "deepgram"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Poe",
+    "enabled": false,
+    "provider": "poe"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Chutes",
+    "enabled": false,
+    "provider": "chutes"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Neuralwatt",
+    "enabled": false,
+    "provider": "neuralwatt"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "ClawRouter",
+    "enabled": false,
+    "provider": "clawrouter"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "LongCat",
+    "enabled": false,
+    "provider": "longcat"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "sub2api",
+    "enabled": false,
+    "provider": "sub2api"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Wayfinder",
+    "enabled": false,
+    "provider": "wayfinder"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "ZenMux",
+    "enabled": false,
+    "provider": "zenmux"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "ai&",
+    "enabled": false,
+    "provider": "aiand"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "ZoomMate",
+    "enabled": false,
+    "provider": "zoommate"
+  }
+]

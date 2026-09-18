@@ -12,6 +12,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
 func TestParsePinnedPortFromLaunchAgentPlist(t *testing.T) {
@@ -357,14 +358,14 @@ func TestDoctorUSBStillRejectsAmbiguousUnpinnedPorts(t *testing.T) {
 	doctorListPortsFn = func() ([]string, error) {
 		return []string{"/dev/cu.usbserial-1", "/dev/cu.usbserial-2"}, nil
 	}
-	doctorResolvePortFn = func(string) (string, error) { return "/dev/cu.usbserial-1", nil }
-	doctorProbePortFn = func(string) error { return nil }
+	doctorResolvePortFn = func(string) (string, error) { return "", usb.ErrAmbiguousPorts }
+	doctorProbePortFn = func(string) error { t.Fatal("must not probe an ambiguous selection"); return nil }
 	doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{}, errors.New("must not reach device hello")
 	}
 
 	err := runDoctorTransportChecks(doctorRuntimeConfig{configured: true, transport: "usb"})
-	if err == nil || !strings.Contains(err.Error(), "2 serial ports detected") {
+	if !errors.Is(err, usb.ErrAmbiguousPorts) {
 		t.Fatalf("expected USB ambiguity error, got %v", err)
 	}
 }

@@ -3,11 +3,15 @@ package companionapi
 import (
 	"context"
 	"net/http"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/openurl"
 )
 
 const providerSetupCacheTTL = 30 * time.Second
@@ -26,6 +30,7 @@ type providerReadinessRecord struct {
 	Status    string
 	Detail    string
 	Reported  string
+	SignInURL string
 	CheckedAt time.Time
 }
 
@@ -268,6 +273,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 
 func providerSetupFailureMustWin(status string) bool {
 	return status == codexbar.ProviderAuthRequired ||
+		status == codexbar.ProviderBrowserSignInRequired ||
 		status == codexbar.ProviderNotConfigured ||
 		status == codexbar.ProviderPermissionRequired ||
 		status == codexbar.ProviderConfigError
@@ -394,6 +400,77 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
 }
 
+// openProviderSignInFn opens a URL in the customer's default browser. Tests
+// replace it; production goes through the OS handler without a shell. The
+// handler returns as soon as the browser took the URL, so Run is fine here
+// and reaps the child (Start alone would leak a handle per click).
+var openProviderSignInFn = func(url string) error {
+	name, args := openurl.Command(url)
+	return exec.Command(name, args...).Run()
+}
+
+// handleProviderSignIn starts the sign-in for one provider. When CodexBar
+// named a browser page for the provider's current browser_sign_in_required
+// state, only that page opens. Otherwise the provider's own tool signs in:
+// its CLI login in a visible terminal, its app, or -- when neither is
+// installed -- its official install page. The request carries a provider id,
+// never a URL or a path.
+func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	if url := s.providerSignInURL(providerID); url != "" {
+		if err := openProviderSignInFn(url); err != nil {
+			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": providerSignInActionBrowser, "url": url})
+		return
+	}
+	home, _ := os.UserHomeDir()
+	plan, ok := planProviderSignIn(providerID, runtime.GOOS, home, exec.LookPath, fileExists)
+	if !ok {
+		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no sign-in VibeTV can start.", "Sign in to the provider's app, then check again.")
+		return
+	}
+	if err := launchProviderSignInFn(plan); err != nil {
+		nextAction := "Sign in to the provider's app, then check again."
+		if plan.URL != "" {
+			nextAction = "Open " + plan.URL + " in your browser, then check again."
+		}
+		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The sign-in could not be started.", nextAction)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": plan.Action, "url": plan.URL})
+}
+
+// providerSignInURL is the page CodexBar named in this provider's latest
+// browser-sign-in diagnosis: the exact check first, then the background
+// health scan. Empty when neither currently says the provider needs one.
+//
+// The exact record is only trusted while the row is still showing it. Rows
+// drop a record older than providerReadinessFreshness, so without the same
+// limit a stale browser page kept opening for a provider that had since moved
+// on to a signed-out tool, and the customer's row action did something other
+// than what the row said.
+func (s *Server) providerSignInURL(providerID string) string {
+	record, ok := s.providerReadinessFor(providerID)
+	if age := s.currentTime().Sub(record.CheckedAt); ok && !record.CheckedAt.IsZero() &&
+		age >= 0 && age <= providerReadinessFreshness &&
+		record.Status == codexbar.ProviderBrowserSignInRequired && record.SignInURL != "" {
+		return record.SignInURL
+	}
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	for _, setting := range s.providerPreferences.cached {
+		if strings.EqualFold(setting.ID, providerID) && setting.Health == codexbar.ProviderHealthBrowserSignIn {
+			return setting.SignInURL
+		}
+	}
+	return ""
+}
+
 func (s *Server) currentProviderRevision(providerID string) uint64 {
 	s.providerPreferences.mu.Lock()
 	defer s.providerPreferences.mu.Unlock()
@@ -422,6 +499,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 		Status:    exactReadiness.Status,
 		Detail:    exactReadiness.Detail,
 		Reported:  exactReadiness.Reported,
+		SignInURL: exactReadiness.SignInURL,
 		CheckedAt: checkedAt,
 	}
 
@@ -445,6 +523,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 			s.providerPreferences.cached[i].Health = providerHealthFromReadiness(exactReadiness.Status)
 			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
 			s.providerPreferences.cached[i].Reported = record.Reported
+			s.providerPreferences.cached[i].SignInURL = record.SignInURL
 			s.providerPreferences.at = s.currentTime().UTC()
 		}
 		break

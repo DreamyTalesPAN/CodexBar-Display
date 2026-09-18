@@ -53,27 +53,38 @@ describe("SetupProviderRow", () => {
     expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
   });
 
-  // Without a verbatim CodexBar message, the exact check's generic detail is
-  // still honest guidance and the app offers no invented provider destination.
-  it("uses the generic provider detail when CodexBar reported no text", () => {
+  // A signed-out tool gets one sentence and, when the shell can start the
+  // sign-in, one button that does. CodexBar's developer text ("auth.json not
+  // found. Run codex login") is never the row's sentence.
+  it("offers to start the sign-in for a provider that is not signed in", () => {
     for (const health of ["auth_required", "setup_required"]) {
       const html = render({
         detail: "This provider needs an active sign-in.",
         health,
+        onOpenSignIn: vi.fn(),
+        reportedMessage:
+          "Provider not installed: Codex auth.json not found. Run codex login in the terminal to sign in.",
       });
 
-      expect(html).toContain("This provider needs an active sign-in.");
+      expect(html).toContain("Claude Code is not signed in on this computer");
+      expect(html).not.toContain("auth.json");
+      expect(html).toContain("Sign in to Claude Code");
+      expect(html).toContain("lucide-log-in");
+      expect(html).toContain(
+        'aria-label="Copy provider message for Claude Code"',
+      );
       expect(html).toContain('aria-label="Check Claude Code again"');
       expect(html).not.toContain('aria-label="Open CodexBar"');
-      expect(html).not.toContain("Copy provider message");
-      expect(html).not.toContain("lucide-external-link");
-      expect(html.match(/data-slot="button"/g)).toHaveLength(1);
+      expect(html.match(/data-slot="button"/g)).toHaveLength(3);
     }
   });
 
-  // CodexBar owns provider guidance. The row repeats its answer exactly and
-  // offers only Copy and Retry without guessing where this provider signs in.
-  it("shows CodexBar's reported message with only Copy and Retry", () => {
+  // Without a shell that can start the sign-in -- the Mac app, and any
+  // provider VibeTV cannot sign in -- the row stays exactly as it is today:
+  // the usage service's own sentence with Copy and Retry. Our shorter
+  // sentence belongs to the button, and with no button it would only take the
+  // customer's information away.
+  it("keeps the provider's own message when no sign-in can be started", () => {
     const html = render({
       health: "auth_required",
       reportedMessage:
@@ -83,13 +94,13 @@ describe("SetupProviderRow", () => {
     expect(html).toContain(
       "Codex connection failed: codex account authentication required to read rate limits",
     );
+    expect(html).not.toContain("is not signed in on this computer");
     expect(html).toContain(
       'aria-label="Copy provider message for Claude Code"',
     );
     expect(html).toContain('aria-label="Check Claude Code again"');
     expect(html).not.toContain('aria-label="Open CodexBar"');
-    expect(html).not.toContain('aria-label="Sign in to Claude Code"');
-    expect(html).not.toContain("lucide-external-link");
+    expect(html).not.toContain("lucide-log-in");
     expect(html.match(/data-slot="button"/g)).toHaveLength(2);
   });
 
@@ -101,6 +112,42 @@ describe("SetupProviderRow", () => {
     expect(html).not.toContain('aria-label="Open CodexBar"');
     expect(html).not.toContain("Full Disk Access settings");
     expect(html.match(/data-slot="button"/g)).toHaveLength(1);
+  });
+
+  // Claude on Windows: Claude Code is signed in, but Anthropic refuses the
+  // OAuth usage endpoint for third parties and no claude.ai cookies exist.
+  // "Sign in again" would send the customer in a circle, so the row names the
+  // browser session, says to close the browser again (Windows keeps the cookie
+  // store locked while it runs) and offers to open the page when the shell can.
+  it("offers the browser sign-in page when the provider needs a browser session", () => {
+    const html = render({
+      detail: "Claude usage needs a signed-in claude.ai session in your browser.",
+      health: "browser_sign_in_required",
+      label: "Claude",
+      nextAction:
+        "Sign in to claude.ai in your browser, close the browser, then check again.",
+      onOpenSignIn: vi.fn(),
+      reportedMessage:
+        "Claude usage failed from all configured sources. Web: No cookies available",
+    });
+
+    expect(html).toContain("claude.ai session in your browser");
+    expect(html).toContain("close the browser, then check again");
+    expect(html).not.toContain("failed from all configured sources");
+    expect(html).toContain("lucide-external-link");
+    expect(html).toContain('aria-label="Open Claude sign-in in your browser"');
+    expect(html).toContain('aria-label="Check Claude again"');
+    expect(html).toContain('role="switch"');
+  });
+
+  it("falls back to a re-check when no sign-in page can be opened", () => {
+    const html = render({ health: "browser_sign_in_required" });
+
+    expect(html).toContain(
+      "Sign in to Claude Code in your browser, close the browser, then check again",
+    );
+    expect(html).not.toContain("lucide-external-link");
+    expect(html).toContain('aria-label="Check Claude Code again"');
   });
 
   it("offers a re-check after a timed out check", () => {
@@ -156,6 +203,7 @@ describe("SetupProviderRow", () => {
   it("always offers the switch, whatever the provider reports", () => {
     for (const health of [
       "auth_required",
+      "browser_sign_in_required",
       "setup_required",
       "permission_required",
       "timeout",

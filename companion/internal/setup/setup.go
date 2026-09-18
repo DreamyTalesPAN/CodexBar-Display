@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/xml"
@@ -12,15 +11,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/openurl"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
@@ -60,6 +63,7 @@ func DefaultWiFiTarget() string {
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
 
 type deps struct {
+	goos            string
 	stdin           io.Reader
 	stdout          io.Writer
 	cwd             func() (string, error)
@@ -75,9 +79,14 @@ type deps struct {
 	lookPath        func(string) (string, error)
 	runCommand      commandRunner
 	isInteractive   func() bool
+	serviceForHome  func(string) service.Manager
 }
 
 func (d deps) withDefaults() deps {
+	if d.goos == "" {
+		d.goos = runtime.GOOS
+	}
+	injectedRunner := d.runCommand != nil
 	if d.stdin == nil {
 		d.stdin = os.Stdin
 	}
@@ -127,6 +136,21 @@ func (d deps) withDefaults() deps {
 	}
 	if d.isInteractive == nil {
 		d.isInteractive = stdinIsInteractive
+	}
+	if d.serviceForHome == nil {
+		d.serviceForHome = func(home string) service.Manager {
+			if d.goos == "windows" {
+				return service.NewWindows(launchAgentLabel, home, func(ctx context.Context, name string, args ...string) (string, error) {
+					return d.runCommand(ctx, "", name, args...)
+				})
+			}
+			if injectedRunner {
+				return service.NewDarwin(launchAgentLabel, home, d.uid(), false, func(ctx context.Context, name string, args ...string) (string, error) {
+					return d.runCommand(ctx, "", name, args...)
+				})
+			}
+			return service.New(launchAgentLabel, home, false)
+		}
 	}
 	return d
 }
@@ -240,7 +264,7 @@ func Run(ctx context.Context, opts Options) error {
 	return runWithDeps(ctx, opts, deps{})
 }
 
-func runWithDeps(ctx context.Context, opts Options, d deps) error {
+func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 	d = d.withDefaults()
 
 	fmt.Fprintln(d.stdout, "codexbar-display setup")
@@ -295,6 +319,47 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return err
 	}
 	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
+	registrationAttempted := false
+
+	if !opts.ValidateOnly && !opts.DryRun {
+		if d.goos == "windows" {
+			serviceHome, err := d.homeDir()
+			if err != nil {
+				return &StepError{Step: "resolve-home", Err: err}
+			}
+			manager := d.serviceForHome(serviceHome)
+			previous, err := manager.Status(ctx)
+			if err != nil {
+				return &StepError{Step: "service-status", Err: err}
+			}
+			defer func() {
+				if resultErr == nil || (!previous.Enabled && !registrationAttempted) {
+					return
+				}
+				usb.CloseDefaultSender()
+				// Recovery must still work when setup was cancelled.
+				recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+				defer cancel()
+				var err error
+				switch {
+				case previous.Enabled:
+					err = manager.Start(recoveryCtx)
+				case previous.State == "not-loaded":
+					err = manager.Uninstall(recoveryCtx)
+				default:
+					err = manager.Stop(recoveryCtx, true)
+				}
+				if err != nil {
+					resultErr = errors.Join(resultErr, fmt.Errorf("restore previous background service: %w", err))
+				}
+			}()
+			if err := manager.Stop(ctx, true); err != nil {
+				return &StepError{Step: "stop-service", Err: err, Hint: "stop the VibeTV task before replacing the installed executable"}
+			}
+		} else {
+			stopLaunchAgentBestEffort(ctx, d)
+		}
+	}
 
 	port := ""
 	if transportName == "usb" {
@@ -303,10 +368,6 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 			return err
 		}
 		fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
-	}
-
-	if !opts.ValidateOnly && !opts.DryRun {
-		stopLaunchAgentBestEffort(ctx, d)
 	}
 
 	// Avoid probe-close contention on the flash path; upload itself is the authoritative serial check.
@@ -410,9 +471,12 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 
 	if opts.DryRun {
-		installPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
+		installPath := runtimepaths.Path(home, "bin", CompanionBinaryName(d.goos))
 		plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-		backupDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "backups")
+		if d.goos == "windows" {
+			plistPath = service.TaskConfigPath(home, launchAgentLabel)
+		}
+		backupDir := runtimepaths.Path(home, "backups")
 		fmt.Fprintf(d.stdout, "Dry-run: would install companion binary to %s\n", installPath)
 		fmt.Fprintf(d.stdout, "Dry-run: would ensure backup dir %s\n", backupDir)
 		if strings.TrimSpace(opts.Theme) != "" {
@@ -425,13 +489,20 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		} else {
 			fmt.Fprintln(d.stdout, "Dry-run: would configure LaunchAgent in auto-detect mode")
 		}
-		fmt.Fprintf(d.stdout, "Dry-run: would write LaunchAgent plist %s\n", plistPath)
+		fmt.Fprintf(d.stdout, "Dry-run: would write background service configuration %s\n", plistPath)
 		fmt.Fprintln(d.stdout, "Dry-run complete. No changes applied.")
 		return nil
 	}
 
+	// The nested upgrade restores its service on return. Quiesce it again
+	// before replacing the Windows executable or registering new arguments.
+	if d.goos == "windows" && transportName == "usb" && !opts.SkipFlash {
+		if err := d.serviceForHome(home).Stop(ctx, true); err != nil {
+			return &StepError{Step: "stop-service", Err: err, Hint: "stop the VibeTV task before replacing the installed executable"}
+		}
+	}
 	fmt.Fprintln(d.stdout, "Installing companion binary ...")
-	installPath, err := installBinary(execPath, home)
+	installPath, err := installBinaryForPlatform(execPath, home, d.goos)
 	if err != nil {
 		return &StepError{
 			Step: "install-binary",
@@ -477,7 +548,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		fmt.Fprintln(d.stdout, "Launch agent serial mode: auto-detect")
 	}
 
-	plistPath, err := writeLaunchAgentPlist(home, installPath, daemonTransport, daemonTarget, daemonPort)
+	plistPath, err := writeServiceConfig(home, installPath, daemonTransport, daemonTarget, daemonPort, d.goos)
 	if err != nil {
 		return &StepError{
 			Step: "write-launchagent",
@@ -486,12 +557,13 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 	}
 
-	fmt.Fprintln(d.stdout, "Starting launch agent ...")
+	fmt.Fprintln(d.stdout, "Starting background service ...")
+	registrationAttempted = true
 	if err := reloadLaunchAgent(ctx, d, plistPath); err != nil {
 		return err
 	}
 
-	fmt.Fprintln(d.stdout, "Launch agent: running")
+	fmt.Fprintln(d.stdout, "Background service: running")
 	fmt.Fprintln(d.stdout, "Setup complete.")
 	fmt.Fprintln(d.stdout, "Re-run `codexbar-display setup` anytime; it is safe and idempotent.")
 	return nil
@@ -505,7 +577,7 @@ func choosePort(opts Options, d deps) (string, error) {
 			return "", &StepError{
 				Step: "select-port",
 				Err:  err,
-				Hint: "run `ls /dev/cu.usb*` and pass an existing path via --port",
+				Hint: "list serial ports and pass an available port via --port",
 			}
 		}
 		return port, nil
@@ -519,41 +591,18 @@ func choosePort(opts Options, d deps) (string, error) {
 			Hint: "disconnect and reconnect the board, then rerun setup",
 		}
 	}
-	if len(ports) == 0 {
+	// Share hello-based identification with the runtime, including ambiguity checks.
+	// Release the discovery handle before the probe or firmware uploader opens it.
+	defer usb.CloseDefaultSender()
+	port, err := usb.SelectPort(ports, d.readDeviceHello)
+	if err != nil {
 		return "", &StepError{
-			Step: "list-ports",
-			Err:  errors.New("no serial ports found"),
-			Hint: "connect the board with a data-capable USB cable and run `ls /dev/cu.usb*`",
+			Step: "select-port",
+			Err:  err,
+			Hint: "connect one VibeTV, or select an explicit --port for firmware recovery",
 		}
 	}
-
-	sorted := sortPreferredPorts(ports)
-	if !containsUSBSerialPort(sorted) {
-		return "", &StepError{
-			Step: "list-ports",
-			Err:  errors.New("no usb serial ports found"),
-			Hint: "connect the board with a data-capable USB cable and run `ls /dev/cu.usb*`",
-		}
-	}
-	if len(sorted) == 1 {
-		return sorted[0], nil
-	}
-
-	if opts.AssumeYes || !d.isInteractive() {
-		fmt.Fprintf(d.stdout, "Multiple serial ports detected; choosing preferred port %s (--yes/non-interactive)\n", sorted[0])
-		return sorted[0], nil
-	}
-
-	return promptForPortSelection(d.stdin, d.stdout, sorted)
-}
-
-func containsUSBSerialPort(ports []string) bool {
-	for _, port := range ports {
-		if portRank(port) < 2 {
-			return true
-		}
-	}
-	return false
+	return port, nil
 }
 
 func normalizeSetupTransport(value string) string {
@@ -575,10 +624,11 @@ func normalizeSetupTarget(value string) string {
 
 func runDependencyPreflight(opts Options, transportName string, d deps) error {
 	if !opts.ValidateOnly && !opts.DryRun {
-		if err := requireSetupCommand(d, "launchctl",
-			"starts and restarts the VibeTV background service on macOS",
-			"run setup on macOS as your normal logged-in user, then rerun `codexbar-display setup`",
-		); err != nil {
+		command, why, action := "launchctl", "starts and restarts the VibeTV background service on macOS", "run setup on macOS as your normal logged-in user, then rerun `codexbar-display setup`"
+		if d.goos == "windows" {
+			command, why, action = "powershell.exe", "registers the per-user VibeTV logon task", "enable Windows PowerShell and run setup as your normal logged-in user (no administrator required)"
+		}
+		if err := requireSetupCommand(d, command, why, action); err != nil {
 			return err
 		}
 	}
@@ -611,6 +661,9 @@ func ensureCodexbar(ctx context.Context, d deps, allowInstall bool) (string, err
 	bin, err := d.findCodexbar()
 	if err == nil {
 		return bin, nil
+	}
+	if d.goos == "windows" {
+		return "", &StepError{Step: "codexbar-validate", Err: err, Hint: "install the Windows CodexBar CLI (codexbar.exe), add it to PATH, and rerun setup"}
 	}
 	if !allowInstall {
 		return "", &StepError{
@@ -655,87 +708,11 @@ func ensureCodexbar(ctx context.Context, d deps, allowInstall bool) (string, err
 }
 
 func openCodexbarInstallPage(ctx context.Context, d deps) {
-	if _, err := d.lookPath("open"); err != nil {
+	name, args := openurl.Command(codexbarInstallURL)
+	if _, err := d.lookPath(name); err != nil {
 		return
 	}
-	_, _ = d.runCommand(ctx, "", "open", codexbarInstallURL)
-}
-
-func sortPreferredPorts(ports []string) []string {
-	seen := make(map[string]struct{}, len(ports))
-	clean := make([]string, 0, len(ports))
-	for _, p := range ports {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if _, ok := seen[p]; ok {
-			continue
-		}
-		seen[p] = struct{}{}
-		clean = append(clean, p)
-	}
-
-	sort.Slice(clean, func(i, j int) bool {
-		pi := clean[i]
-		pj := clean[j]
-		ri := portRank(pi)
-		rj := portRank(pj)
-		if ri != rj {
-			return ri < rj
-		}
-		return pi < pj
-	})
-	return clean
-}
-
-func portRank(port string) int {
-	switch {
-	case strings.Contains(port, "usbmodem"):
-		return 0
-	case strings.Contains(port, "usbserial"):
-		return 1
-	default:
-		return 2
-	}
-}
-
-func promptForPortSelection(stdin io.Reader, stdout io.Writer, ports []string) (string, error) {
-	fmt.Fprintln(stdout, "Multiple serial ports detected:")
-	for idx, port := range ports {
-		suffix := ""
-		if idx == 0 {
-			suffix = " (recommended)"
-		}
-		fmt.Fprintf(stdout, "  %d) %s%s\n", idx+1, port, suffix)
-	}
-	fmt.Fprintf(stdout, "Select a port [1-%d] (Enter=1): ", len(ports))
-
-	reader := bufio.NewReader(stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", &StepError{
-			Step: "select-port",
-			Err:  err,
-			Hint: "rerun setup with --yes to auto-select the recommended port",
-		}
-	}
-
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return ports[0], nil
-	}
-
-	selected, convErr := strconv.Atoi(trimmed)
-	if convErr != nil || selected < 1 || selected > len(ports) {
-		return "", &StepError{
-			Step: "select-port",
-			Err:  fmt.Errorf("invalid selection %q", trimmed),
-			Hint: "rerun setup and enter a number from the list, or use --yes",
-		}
-	}
-
-	return ports[selected-1], nil
+	_, _ = d.runCommand(ctx, "", name, args...)
 }
 
 func locateRepository(d deps) (string, error) {
@@ -793,8 +770,7 @@ func flashFirmware(ctx context.Context, d deps, executablePath, port, firmwareEn
 		}
 	}
 
-	service := launchServiceTarget(d.uid())
-	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
+	_ = d.serviceForHome("").Stop(ctx, false)
 
 	output, err := d.runCommand(ctx, "", executablePath, "upgrade", "--port", port, "--firmware-env", firmwareEnv)
 	if err != nil {
@@ -835,7 +811,7 @@ func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
 func flashRecoveryHint(output, port string, uid int) string {
 	lower := strings.ToLower(output)
 	if strings.Contains(lower, "failed to connect") || strings.Contains(lower, "could not open") || strings.Contains(lower, "resource busy") {
-		return fmt.Sprintf("ensure no process holds %s, run `launchctl bootout %s 2>/dev/null || true`, then rerun setup", port, launchServiceTarget(uid))
+		return fmt.Sprintf("ensure no process holds %s, run `codexbar-display service stop`, then rerun setup", port)
 	}
 	return "check USB cable/device, then retry setup or pass an explicit --port"
 }
@@ -853,13 +829,26 @@ func containsString(all []string, target string) bool {
 	return false
 }
 
-func installBinary(sourcePath, home string) (string, error) {
-	targetDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin")
+// CompanionBinaryName is shared by installation, snapshot and rollback paths.
+func CompanionBinaryName(goos string) string {
+	if goos == "windows" {
+		return "codexbar-display.exe"
+	}
+	return "codexbar-display"
+}
+
+func installBinaryForPlatform(sourcePath, home, goos string) (string, error) {
+	targetDir := runtimepaths.Path(home, "bin")
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return "", err
 	}
 
-	targetPath := filepath.Join(targetDir, "codexbar-display")
+	targetPath := filepath.Join(targetDir, CompanionBinaryName(goos))
+	if source, err := os.Stat(sourcePath); err == nil {
+		if target, err := os.Stat(targetPath); err == nil && os.SameFile(source, target) {
+			return targetPath, nil
+		}
+	}
 	if err := copyFileAtomic(sourcePath, targetPath, 0o755); err != nil {
 		return "", err
 	}
@@ -910,7 +899,7 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 	if err := os.MkdirAll(launchAgentDir, 0o755); err != nil {
 		return "", err
 	}
-	logDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs")
+	logDir := runtimepaths.Path(home, "logs")
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return "", err
 	}
@@ -927,8 +916,20 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 	return plistPath, nil
 }
 
-func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string) []byte {
-	args := []string{binaryPath, "daemon", "--interval", daemonIntervalForSetupTransport(transportName), "--api-addr", defaultCompanionAPIAddr}
+func writeServiceConfig(home, binaryPath, transportName, target, port, goos string) (string, error) {
+	if goos == "windows" {
+		args := daemonArguments(transportName, target, port)
+		if normalizeSetupTransport(transportName) == "usb" {
+			args = append(args, "--transport", "usb")
+		}
+		args = append(args, "--last-good-max-age", defaultLastGoodMaxAge)
+		return service.WriteTaskConfig(home, launchAgentLabel, service.TaskConfig{Executable: binaryPath, Arguments: args})
+	}
+	return writeLaunchAgentPlist(home, binaryPath, transportName, target, port)
+}
+
+func daemonArguments(transportName, target, port string) []string {
+	args := []string{"daemon", "--interval", daemonIntervalForSetupTransport(transportName), "--api-addr", defaultCompanionAPIAddr}
 	if normalizeSetupTransport(transportName) == "wifi" {
 		args = append(args, "--transport", "wifi")
 		if normalizedTarget := normalizeSetupTarget(target); normalizedTarget != "" {
@@ -937,7 +938,12 @@ func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string
 	} else if strings.TrimSpace(port) != "" {
 		args = append(args, "--port", strings.TrimSpace(port))
 	}
-	logDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs")
+	return args
+}
+
+func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string) []byte {
+	args := append([]string{binaryPath}, daemonArguments(transportName, target, port)...)
+	logDir := runtimepaths.Path(home, "logs")
 	outLog := filepath.Join(logDir, "daemon.out.log")
 	errLog := filepath.Join(logDir, "daemon.err.log")
 
@@ -1006,146 +1012,41 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 }
 
 func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
-	domain := fmt.Sprintf("gui/%d", d.uid())
-	service := launchServiceTarget(d.uid())
-
-	bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
-	_, _ = d.runCommand(ctx, "", "launchctl", "enable", service)
-
-	output, err := bootstrapLaunchAgentWithRetry(ctx, d, domain, service, plistPath, 3, 300*time.Millisecond)
+	home, err := d.homeDir()
 	if err != nil {
-		return &StepError{
-			Step:   "launchagent-bootstrap",
-			Err:    err,
-			Hint:   "check LaunchAgent plist path/permissions and rerun setup",
-			Output: tailLines(output, 20),
-		}
+		return err
 	}
-
-	output, err = d.runCommand(ctx, "", "launchctl", "kickstart", "-k", service)
-	if err != nil {
-		return &StepError{
-			Step:   "launchagent-kickstart",
-			Err:    err,
-			Hint:   "run `launchctl print " + service + "` and inspect ~/Library/Application Support/codexbar-display/logs/daemon.err.log",
-			Output: tailLines(output, 20),
-		}
+	manager := d.serviceForHome(home)
+	if err := manager.Install(ctx); err != nil {
+		return &StepError{Step: "launchagent-bootstrap", Err: err, Hint: "check LaunchAgent plist path/permissions and rerun setup"}
 	}
-
-	status, err := waitForLaunchAgentState(ctx, d, service, 10, 500*time.Millisecond)
-	if err != nil {
-		return &StepError{
-			Step:   "launchagent-verify",
-			Err:    err,
-			Hint:   "run `launchctl print " + service + "` manually to inspect state",
-			Output: tailLines(status, 20),
-		}
+	if err := manager.Start(ctx); err != nil {
+		return &StepError{Step: "launchagent-kickstart", Err: err, Hint: "inspect daemon.err.log and run codexbar-display service start"}
 	}
-	if !launchAgentStateHealthy(status) {
-		return &StepError{
-			Step:   "launchagent-verify",
-			Err:    errors.New("launch agent not in running/waiting state"),
-			Hint:   "inspect ~/Library/Application Support/codexbar-display/logs/daemon.err.log and run `launchctl kickstart -k " + service + "`",
-			Output: tailLines(status, 20),
-		}
-	}
-
-	return nil
-}
-
-func bootstrapLaunchAgentWithRetry(ctx context.Context, d deps, domain, service, plistPath string, attempts int, delay time.Duration) (string, error) {
-	if attempts <= 0 {
-		attempts = 1
-	}
-
-	var lastOutput string
+	var status service.Status
 	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		output, err := d.runCommand(ctx, "", "launchctl", "bootstrap", domain, plistPath)
+	for attempt := 0; attempt < 10; attempt++ {
+		current, err := manager.Status(ctx)
 		if err == nil {
-			return output, nil
-		}
-		lastOutput = output
-		lastErr = err
-
-		if launchAgentLoaded(ctx, d, service) {
-			return output, nil
-		}
-
-		if attempt < attempts {
-			bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
-			select {
-			case <-ctx.Done():
-				return lastOutput, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-	}
-
-	return lastOutput, lastErr
-}
-
-func launchAgentLoaded(ctx context.Context, d deps, service string) bool {
-	_, err := d.runCommand(ctx, "", "launchctl", "print", service)
-	return err == nil
-}
-
-func bootoutLaunchAgentBestEffort(ctx context.Context, d deps, domain, service, plistPath string) {
-	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
-	if strings.TrimSpace(plistPath) != "" {
-		_, _ = d.runCommand(ctx, "", "launchctl", "bootout", domain, plistPath)
-	}
-}
-
-func waitForLaunchAgentState(ctx context.Context, d deps, service string, attempts int, delay time.Duration) (string, error) {
-	if attempts <= 0 {
-		attempts = 1
-	}
-	if delay <= 0 {
-		delay = 500 * time.Millisecond
-	}
-
-	var lastStatus string
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		status, err := d.runCommand(ctx, "", "launchctl", "print", service)
-		if err == nil {
-			lastStatus = status
-			if launchAgentStateHealthy(status) {
-				return status, nil
+			status = current
+			if service.Healthy(current.State) {
+				return nil
 			}
 		} else {
 			lastErr = err
 		}
-
-		if i == attempts-1 {
-			break
-		}
-
-		select {
-		case <-ctx.Done():
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return lastStatus, ctxErr
+		if attempt < 9 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
 			}
-			return lastStatus, errors.New("setup context canceled")
-		case <-time.After(delay):
 		}
 	}
-
-	if lastErr != nil && strings.TrimSpace(lastStatus) == "" {
-		return lastStatus, lastErr
+	if lastErr == nil || status.Raw != "" {
+		lastErr = errors.New("launch agent not in running/waiting state")
 	}
-	return lastStatus, nil
-}
-
-func launchAgentStateHealthy(status string) bool {
-	return strings.Contains(status, "state = running") ||
-		strings.Contains(status, "state = waiting") ||
-		strings.Contains(status, "state = spawn scheduled")
-}
-
-func launchServiceTarget(uid int) string {
-	return fmt.Sprintf("gui/%d/%s", uid, launchAgentLabel)
+	return &StepError{Step: "launchagent-verify", Err: lastErr, Hint: "inspect daemon.err.log and run codexbar-display service status", Output: tailLines(status.Raw, 20)}
 }
 
 func tailLines(text string, maxLines int) string {
@@ -1160,7 +1061,7 @@ func tailLines(text string, maxLines int) string {
 }
 
 func runSystemCommand(ctx context.Context, dir string, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := childproc.Hide(exec.CommandContext(ctx, name, args...))
 	cmd.Dir = dir
 
 	var out bytes.Buffer
@@ -1172,17 +1073,12 @@ func runSystemCommand(ctx context.Context, dir string, name string, args ...stri
 }
 
 func stopLaunchAgentBestEffort(ctx context.Context, d deps) {
-	domain := fmt.Sprintf("gui/%d", d.uid())
-	service := launchServiceTarget(d.uid())
-	plistPath := ""
-	if home, err := d.homeDir(); err == nil {
-		plistPath = filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-	}
-	bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
+	home, _ := d.homeDir()
+	_ = d.serviceForHome(home).Uninstall(ctx)
 }
 
 func installRecoveryAssets(repoRoot, home string) (string, string, error) {
-	appSupportDir := filepath.Join(home, "Library", "Application Support", "codexbar-display")
+	appSupportDir := runtimepaths.Root(home)
 	backupDir := filepath.Join(appSupportDir, "backups")
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		return "", "", err

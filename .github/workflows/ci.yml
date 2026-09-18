@@ -11,6 +11,143 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  companion-windows:
+    runs-on: windows-latest
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - run: git config --global core.autocrlf false
+        working-directory: ${{ runner.temp }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+      - name: Test cold/warm start honesty (virtual VibeTV, Windows)
+        env:
+          VIBETV_COLDWARM_E2E: '1'
+        run: go test ./integration/coldwarm -run '^TestColdWarm$' -v -count=1 -timeout=10m
+
+  windows-shell:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows/src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+      - name: Build the Control Center UI bundled into the Companion
+        shell: pwsh
+        run: |
+          Push-Location apps/control-center
+          npm ci
+          npm run build:local
+          Pop-Location
+          $static = "companion/internal/companionapi/controlcenter_static"
+          if (Test-Path $static) { Remove-Item -Recurse -Force $static }
+          New-Item -ItemType Directory -Path $static | Out-Null
+          Copy-Item -Recurse -Path "apps/control-center/out-local/*" -Destination $static
+      - name: "Build the Companion sidecar (no console window: the Scheduled Task runs it interactively)"
+        working-directory: companion
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          # Same CI candidate identity as the merge gate: a real SemVer above
+          # every public release, so the Companion's update check never
+          # mistakes a CI build for an outdated 0.0.0 app.
+          VIBETV_VERSION: 9999.0.${{ github.run_number }}
+        run: |
+          go build -trimpath -ldflags "-s -w -H=windowsgui -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=$env:VIBETV_VERSION -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=$env:GITHUB_SHA" -o ../windows/src-tauri/binaries/codexbar-display-x86_64-pc-windows-msvc.exe ./cmd/codexbar-display
+      - name: Extract the pinned CodexBar CLI sidecar
+        shell: pwsh
+        run: ./scripts/fetch-win-codexbar.ps1 -Destination "$env:RUNNER_TEMP/win-codexbar"
+      - name: Stage the CodexBar CLI sidecar
+        # GITHUB_ENV values written by the previous step become visible here.
+        shell: pwsh
+        run: Copy-Item $env:CODEXBAR_CONTRACT_BIN windows/src-tauri/binaries/codexbar-cli-x86_64-pc-windows-msvc.exe
+      - name: Build the unsigned NSIS installer
+        working-directory: windows/src-tauri
+        env:
+          VIBETV_BUILD: ${{ github.run_number }}
+          VIBETV_VERSION: 9999.0.${{ github.run_number }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: |
+          cargo install tauri-cli --version "^2" --locked
+          # The updater manifest must be signed even for a CI-only artifact,
+          # so sign it with a throwaway key generated for this run: the
+          # installer works, but no released shell will ever accept it as an
+          # update. The release signing key is never exposed here, because
+          # this workflow also builds unreviewed pull-request revisions and
+          # any build step could read it.
+          cargo tauri signer generate --ci -w "$env:RUNNER_TEMP/ci-only.key"
+          $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:RUNNER_TEMP/ci-only.key" -Raw
+          # The shell reports this version to the Companion; it must match
+          # the sidecar build above.
+          Set-Content -Path "$env:RUNNER_TEMP/ci-version.json" -Value (@{ version = $env:VIBETV_VERSION } | ConvertTo-Json -Compress)
+          cargo tauri build --bundles nsis --config "$env:RUNNER_TEMP/ci-version.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibetv-control-center-windows
+          path: |
+            windows/src-tauri/target/release/bundle/nsis/*.exe
+            windows/src-tauri/target/release/bundle/nsis/*.sig
+          if-no-files-found: error
+
+  codexbar-release-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+      - name: Extract pinned macOS release
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          archive="$(./scripts/fetch-codexbar.sh)"
+          echo "CODEXBAR_CONTRACT_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          ditto -x -k "$archive" "$RUNNER_TEMP/codexbar-contract"
+          echo "CODEXBAR_CONTRACT_BIN=$RUNNER_TEMP/codexbar-contract/CodexBar.app/Contents/Helpers/CodexBarCLI" >> "$GITHUB_ENV"
+          echo "CODEXBAR_CONTRACT_VERSION=0.46.0" >> "$GITHUB_ENV"
+      - name: Extract hash-pinned Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/fetch-win-codexbar.ps1 -Destination "$env:RUNNER_TEMP/codexbar-contract"
+          'CODEXBAR_CONTRACT_KNOWN_GAPS=1' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Test recordings and the released CLI
+        working-directory: companion
+        run: go test ./internal/codexbar -run 'TestCLIFixtures|TestReleasedCLIContract|TestPreparePinnedCLIRelease' -v -count=1
+
   control-center-ui-review-gate:
     runs-on: ubuntu-latest
     steps:
@@ -89,12 +226,25 @@ jobs:
 
   macos-control-center-tests:
     runs-on: macos-latest
+    env:
+      CGO_ENABLED: '0'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Test macOS Control Center DMG prep
         run: ./scripts/test-macos-control-center-app-bundle.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+
+      - name: Test Companion on macOS
+        working-directory: companion
+        run: go test ./...
+
+      - name: Test cold/warm start honesty (virtual VibeTV, macOS)
+        run: ./scripts/test-companion-coldwarm-e2e.sh
 
       - name: Test hosted VibeTV gate contracts on macOS
         run: ./scripts/test-vibetv-hosted-gates.sh
@@ -280,6 +430,9 @@ jobs:
     name: CODEX CI
     if: always()
     needs:
+      - companion-windows
+      - windows-shell
+      - codexbar-release-contract
       - control-center-ui-review-gate
       - companion-tests
       - macos-control-center-tests

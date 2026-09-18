@@ -2621,6 +2621,34 @@ func TestUsageTreatsExplicitZeroCostAsTokenResult(t *testing.T) {
 	}
 }
 
+// Win-CodexBar reports a complete scan without any usage as knownZero with
+// no daily rows and no timestamp. That is a result, not "history unavailable".
+func TestUsageKeepsKnownZeroTokenHistory(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used"},
+				Meta:        codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{KnownZero: true}},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Providers) != 1 || got.Providers[0].Cost == nil || !got.Providers[0].Cost.KnownZero {
+		t.Fatalf("known-zero history must reach the UI as a cost result, got %s", rec.Body.String())
+	}
+}
+
 func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 12, 30, 0, 0, time.UTC)
@@ -2794,8 +2822,9 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
 		t.Fatalf("unexpected frame identity: %+v", got.Frame)
 	}
-	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
-		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	// "secondary" is the weekly lane; the session lane stays unavailable.
+	if got.Frame.Session != 0 || got.Frame.Weekly != 75 || got.Frame.ResetSec != 490812 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
@@ -2836,8 +2865,9 @@ func TestDisplayFrameLatestUsesUsageSlotsWhenUsageWindowsPlaceholder(t *testing.
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
-		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	// "secondary" is the weekly lane; the session lane stays unavailable.
+	if got.Frame.Session != 0 || got.Frame.Weekly != 75 || got.Frame.ResetSec != 490812 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("expected usageSlots to drive legacy preview values, got %+v", got.Frame)
 	}
 	if len(got.Frame.UsageWindows) != 2 ||
@@ -2875,7 +2905,7 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	}
 
 	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
-	wantService := fmt.Sprintf("gui/%d/shop.vibetv.control-center.runtime", os.Getuid())
+	wantService := "shop.vibetv.control-center.runtime"
 	if gotService != wantService {
 		t.Fatalf("expected launchctl service %q, got %q", wantService, gotService)
 	}
@@ -3191,7 +3221,7 @@ func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: "setup_required"}) {
 		t.Fatal("setup_required with no diagnosed provider must keep waiting")
 	}
-	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
+	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderBrowserSignInRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
 		setup := codexbar.ProviderSetup{
 			Status:    "setup_required",
 			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
@@ -3215,14 +3245,26 @@ func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
 	target := "http://192.0.2.10"
 	stream := displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
 
-	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
-		t.Fatal("a cold provider cache must not settle the wait")
-	}
-	server.providerSetupCache = codexbar.ProviderSetup{
+	// Reading a cold cache also starts the background refresh, and that refresh
+	// writes whatever the probe reports into the same cache this test seeds
+	// below. On a slow runner its write lands after the seed and replaces it,
+	// which failed a correct wait. Letting the probe report the same
+	// unconfigured provider makes the refresh harmless whenever it runs.
+	unconfigured := codexbar.ProviderSetup{
 		Status:    "setup_required",
 		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
 	}
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return unconfigured
+	}
+
+	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("a cold provider cache must not settle the wait")
+	}
+	server.providerSetupMu.Lock()
+	server.providerSetupCache = unconfigured
 	server.providerSetupCachedAt = time.Now()
+	server.providerSetupMu.Unlock()
 	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("an unconfigured provider must settle the wait")
 	}

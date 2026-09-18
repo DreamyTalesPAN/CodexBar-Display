@@ -460,6 +460,10 @@ async function main() {
     }
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      await testMacAppKeepsEveryProviderAndNoSignInButton(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderWriteWinsOverOlderPreferenceRead(
         browser,
         appContext.appUrl,
@@ -876,6 +880,10 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+    await testMacAppKeepsEveryProviderAndNoSignInButton(
+      browser,
+      appContext.appUrl,
+    );
     await testProviderWriteWinsOverOlderPreferenceRead(
       browser,
       appContext.appUrl,
@@ -2196,8 +2204,11 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
+      // The row's own sentence; CodexBar's text stays behind Copy.
+      rowText: "Codex is not signed in on this computer",
       rowActions: [
         "Copy provider message for Codex",
+        "Sign in to Codex",
         "Check Codex again",
       ],
     },
@@ -2240,8 +2251,10 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       expected: "No usable AI provider is configured yet.",
       healthState: "setup_required",
       reportedMessage: "No available fetch strategy for codex.",
+      rowText: "Codex is not signed in on this computer",
       rowActions: [
         "Copy provider message for Codex",
+        "Sign in to Codex",
         "Check Codex again",
       ],
     },
@@ -2367,9 +2380,17 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
     await page
-      .getByText(fixture.reportedMessage, { exact: true })
+      .getByText(fixture.rowText || fixture.reportedMessage, { exact: true })
       .first()
       .waitFor({ timeout: 10_000 });
+    if (fixture.rowText) {
+      assert(
+        (await page
+          .getByText(fixture.reportedMessage, { exact: true })
+          .count()) === 0,
+        `${fixture.status} must not show CodexBar's developer text on the row`,
+      );
+    }
     for (const action of fixture.rowActions) {
       await page
         .getByRole("button", { name: action })
@@ -6150,7 +6171,7 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     preferencePatchDelayMs: 200,
-    preferencePatchFailureIds: ["codexbar.providers.gemini.enabled"],
+    preferencePatchFailureIds: ["codexbar.providers.antigravity.enabled"],
     preferencesResponse: {
       ok: true,
       items: [
@@ -6175,13 +6196,13 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           },
         },
         {
-          id: "codexbar.providers.copilot.enabled",
+          id: "codexbar.providers.cursor.enabled",
           section: "providers",
           owner: "codexbar",
           type: "boolean",
-          label: "GitHub Copilot",
-          providerId: "copilot",
-          description: "Usage from GitHub Copilot.",
+          label: "Cursor",
+          providerId: "cursor",
+          description: "Usage from Cursor.",
           value: false,
           effectiveValue: false,
           allowsDefault: false,
@@ -6194,7 +6215,9 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
             message: "Provider is off.",
           },
         },
-        disabledProviderPreferenceFixture("cursor", "Cursor"),
+        disabledProviderPreferenceFixture("antigravity", "Antigravity"),
+        // Not offered by VibeTV: they stay in CodexBar's settings, off this page.
+        disabledProviderPreferenceFixture("copilot", "GitHub Copilot"),
         disabledProviderPreferenceFixture("gemini", "Gemini"),
         disabledProviderPreferenceFixture("opencode", "OpenCode"),
         {
@@ -6236,14 +6259,12 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
   await panel
-    .getByText(
-      "Claude connection failed: authentication required to read usage.",
-      { exact: true },
-    )
+    .getByText("Claude is not signed in on this computer", { exact: true })
     .first()
     .waitFor({ timeout: 10_000 });
   for (const action of [
     "Copy provider message for Claude",
+    "Sign in to Claude",
     "Check Claude again",
   ]) {
     await panel
@@ -6252,60 +6273,132 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
   }
   await panel
-    .getByText("GitHub Copilot", { exact: true })
+    .getByText("Cursor", { exact: true })
     .waitFor({ timeout: 10_000 });
 
-  // The list is flat now, as it is in the wizard: every provider is present
-  // and search is the way through them.
-  await panel.getByText("Gemini", { exact: true }).waitFor({ timeout: 10_000 });
-  await panel.getByText("OpenCode", { exact: true }).waitFor({ timeout: 10_000 });
+  // The list is flat, as it is in the wizard, and holds only the providers
+  // VibeTV offers. The rest of CodexBar's inventory never reaches the page.
+  await panel
+    .getByText("Antigravity", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  for (const notOffered of ["GitHub Copilot", "Gemini", "OpenCode"]) {
+    assert(
+      (await panel.getByText(notOffered, { exact: true }).count()) === 0,
+      `${notOffered} is not offered by VibeTV and must not be listed`,
+    );
+  }
 
   const search = panel.getByLabel("Search providers");
-  await search.fill("opencode");
-  await panel.getByText("OpenCode", { exact: true }).waitFor();
+  await search.fill("antigravity");
+  await panel.getByText("Antigravity", { exact: true }).waitFor();
   await search.fill("codex");
   assert(
     (await panel.getByText("Codex", { exact: true }).count()) === 1 &&
       (await panel.getByText("Claude", { exact: true }).count()) === 0 &&
-      (await panel.getByText("GitHub Copilot", { exact: true }).count()) === 0,
+      (await panel.getByText("Cursor", { exact: true }).count()) === 0,
     "provider search must use provider identity, not the shared descriptor prefix",
   );
-  await search.fill("Copilot");
+  await search.fill("Cursor");
   assert(
     (await panel.getByText("Codex", { exact: true }).count()) === 0,
     "provider search should filter the list",
   );
   await search.fill("");
 
-  const copilot = panel.getByRole("switch", { name: "GitHub Copilot" });
-  await copilot.click();
-  assert(await copilot.isDisabled(), "changed provider should be pending");
-  const gemini = panel.getByRole("switch", { name: "Gemini" });
+  const cursor = panel.getByRole("switch", { name: "Cursor" });
+  await cursor.click();
+  assert(await cursor.isDisabled(), "changed provider should be pending");
+  const antigravity = panel.getByRole("switch", { name: "Antigravity" });
   assert(
-    !(await gemini.isDisabled()),
+    !(await antigravity.isDisabled()),
     "unrelated provider should stay interactive",
   );
-  await copilot.waitFor({ state: "attached", timeout: 10_000 });
+  await cursor.waitFor({ state: "attached", timeout: 10_000 });
   await waitForCondition(
-    async () => !(await copilot.isDisabled()),
+    async () => !(await cursor.isDisabled()),
     "the provider write should settle",
   );
   assert(
-    await copilot.isChecked(),
+    await cursor.isChecked(),
     "changed provider should keep its new value after the save",
   );
 
-  await gemini.click();
+  await antigravity.click();
   await page
     .getByText("This provider could not be updated.")
     .waitFor({ timeout: 10_000 });
   assert(
-    !(await gemini.isChecked()),
+    !(await antigravity.isChecked()),
     "failed update must keep the previous value",
   );
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+// The Mac app must be untouched by the Windows launch decision: a companion
+// without the sign-in feature keeps every provider CodexBar reports and shows
+// no sign-in button, exactly as the shipped Mac app does today.
+async function testMacAppKeepsEveryProviderAndNoSignInButton(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+      providerSignInEnabled: false,
+    },
+    preferencesResponse: {
+      ok: true,
+      items: [
+        {
+          id: "codexbar.providers.claude.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Claude",
+          providerId: "claude",
+          description: "Usage from Claude.",
+          value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
+          writable: true,
+          health: {
+            state: "auth_required",
+            service: "outage",
+            message: "Sign in again for this provider.",
+            reported: "Claude connection failed: authentication required.",
+          },
+        },
+        disabledProviderPreferenceFixture("gemini", "Gemini"),
+        disabledProviderPreferenceFixture("copilot", "GitHub Copilot"),
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Settings");
+  const panel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
+  for (const kept of ["Gemini", "GitHub Copilot"]) {
+    await panel.getByText(kept, { exact: true }).waitFor({ timeout: 10_000 });
+  }
+  assert(
+    (await panel.getByRole("button", { name: "Sign in to Claude" }).count()) ===
+      0,
+    "the Mac app must not grow a sign-in button",
+  );
+  // The row still says what is wrong and still offers the re-check it has today.
+  await panel
+    .getByRole("button", { name: "Check Claude again" })
+    .first()
+    .waitFor({ timeout: 10_000 });
+
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -6397,7 +6490,7 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
       items: [
         providerPreferenceFixture("codex", "Codex"),
         disabledProviderPreferenceFixture("claude", "Claude"),
-        disabledProviderPreferenceFixture("gemini", "Gemini"),
+        disabledProviderPreferenceFixture("cursor", "Cursor"),
       ],
     },
     providerDisplay: {
@@ -6420,12 +6513,12 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   });
   await clickNavigation(page, "Settings");
   const claude = page.getByRole("switch", { name: "Claude" });
-  const gemini = page.getByRole("switch", { name: "Gemini" });
+  const cursor = page.getByRole("switch", { name: "Cursor" });
   await claude.click();
   await page
     .getByText("Display selection could not be saved.")
     .waitFor({ timeout: 10_000 });
-  await gemini.click();
+  await cursor.click();
   await waitForCondition(
     () => displayWrites.length >= 3,
     "the failed Automatic pool save was not retried",
@@ -6436,11 +6529,11 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   ).providerIds;
   assert(
     retriedProviderIds?.includes("claude") &&
-      retriedProviderIds?.includes("gemini"),
+      retriedProviderIds?.includes("cursor"),
     `the retried Automatic pool must keep every enabled provider, got ${displayWrites.at(-1)}`,
   );
   assert(await claude.isChecked(), "the confirmed provider must remain enabled");
-  assert(await gemini.isChecked(), "the second provider must remain enabled");
+  assert(await cursor.isChecked(), "the second provider must remain enabled");
   await page.close();
 }
 
@@ -6613,15 +6706,34 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
     15_000,
   );
 
+  // A signed-out tool gets a customer sentence and a button that starts its
+  // own sign-in; CodexBar's developer text stays behind the copy action.
   await providersScreen
-    .getByText(
-      "Claude connection failed: authentication required to read usage.",
-      { exact: true },
-    )
+    .getByText("Claude is not signed in on this computer", { exact: true })
     .waitFor({ timeout: 10_000 });
+  assert(
+    (await providersScreen
+      .getByText("Claude connection failed", { exact: false })
+      .count()) === 0,
+    "the provider row must not show CodexBar's developer text",
+  );
   await providersScreen
     .getByRole("button", { name: "Copy provider message for Claude" })
     .waitFor({ timeout: 10_000 });
+  const signInClaude = providersScreen.getByRole("button", {
+    name: "Sign in to Claude",
+  });
+  await signInClaude.waitFor({ timeout: 10_000 });
+  await signInClaude.click();
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/providers/sign-in" &&
+          request.method === "POST",
+      ),
+    "the sign-in button must start the provider's sign-in through the companion",
+  );
   assert(
     (await providersScreen
       .getByRole("button", { name: "Open CodexBar" })
@@ -10485,6 +10597,9 @@ async function routeCompanionOnline(
     companionFeatures = {
       themeInstallEnabled: true,
       macAppSelfUpdateEnabled: false,
+      // The Windows shell is what ships the shortened provider list and the
+      // sign-in button. Flows that check either one run as that shell.
+      providerSignInEnabled: true,
     },
     companionVersion = "1.0.32",
     companionApp,
@@ -10657,6 +10772,14 @@ async function routeCompanionOnline(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
+      });
+      return;
+    }
+    if (pathname === "/v1/providers/sign-in") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, action: "cli_login", url: "" }),
       });
       return;
     }

@@ -3861,6 +3861,60 @@ issue scope, or release permission never implies UI permission.
   acceptance gate and are not claimed here. This records local validation and
   approval to push the PR branch, not approval to merge, release, or sign.
 
+## 2026-09-09 — Windows token-history unavailable state
+
+- User approval: Marcus requested iterative VM QA and direct fixes: "Ja gut, dann kannst du ja jetzt selber iterativ testen, also QA machen und dann auch direkt fixen. Ja, leg mal los."
+- Approved customer-visible result: Fix the reported indefinitely loading token history. A completed scan without complete local history shows "Token history is unavailable" with the existing Refresh action, while available quota windows remain visible. Do not replace missing history with zero consumption. This records the implementation scope; final visual acceptance is still pending.
+
+### 2026-09-09 — Final Windows token-history visual acceptance
+
+- User approval: Marcus answered "ja" when asked whether the linked final Usage screenshot (`outputs/qa-9e4f4ab/usage-2.png` in the Windows QA workspace) was acceptable. The screenshot was captured from installed build `9e4f4ab6a85147aa119a1875b6d4eee1c20e2c0d` in the Windows VM.
+- Approved customer-visible result: The Usage screen displays "Token history is unavailable" and "Complete local token history is not available for every selected provider. Available usage limits are shown below." with the existing Refresh button. Available provider quota cards remain visible; incomplete token history is not represented as a complete zero or combined total. This supersedes the pending visual acceptance above.
+- Approved files: `apps/control-center/src/components/usage-screen.tsx` and `apps/control-center/src/components/usage-screen.test.tsx` at the reviewed build.
+- Scope: Approval of this visible result only; it does not approve unrelated Session-limit semantics, provider defaults, a push, merge, release, or hardware changes.
+
+## 2026-09-09 — Windows first-run provider selection is opt-in
+
+- User approval: Marcus answered "leg los" to the proposal that fresh Windows installations start with all providers off and the customer enables their provider, while existing settings remain unchanged.
+- Approved customer-visible result: No provider is preselected when Windows has no CodexBar settings yet. Customers enable their providers using the existing controls. Previously saved selections are preserved; unavailable credentials do not silently change a selection.
+- Scope: Windows configuration bootstrap and its regression coverage, using the existing UI. No provider-specific detection, authentication changes, macOS default changes, push, merge, release, or hardware changes are approved by this entry.
+
+## 2026-09-17 — Windows Claude browser sign-in row
+
+- User approval: Marcus answered "Ja trag das so ein" to the described provider row for the case where Claude on Windows needs a signed-in claude.ai browser session (Claude Code is signed in, but Anthropic refuses the OAuth usage endpoint and no browser cookies are readable). He asked to test it himself on the Windows laptop before the review round.
+- Approved customer-visible result: On the setup provider step (and the same row in Settings), a provider whose usage service reports a browser sign-in shows the guidance "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again." with an "Open Claude sign-in in your browser" action next to the existing "Check again" action and the on/off switch. Opening the page starts automatic re-checks every 15 seconds for at most three minutes, until the row leaves the browser-sign-in state. No other row state, copy, or control changes.
+- Scope: Files `apps/control-center/src/components/setup/setup-provider-row.tsx`, `setup-provider-row.test.tsx`, `setup-providers-screen.tsx`, `setup-wizard.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, and `control-center-types.ts` on PR #447. The sign-in page and the diagnosis come from the bundled usage service (VibeTV Win-CodexBar fork); the app keeps no provider table. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-17 — Sign-in button for a signed-out provider, and the four offered providers
+
+- User approval: Marcus tested the fresh-customer journey on the Windows laptop with Codex and Claude signed out, saw the usage service's developer text ("Provider not installed: Codex auth.json not found. Run codex login…", "Claude usage failed from all configured sources…") and asked for a customer-facing sentence with a button that starts the sign-in ("noch geiler wäre, wenn irgendwie ein Button da wäre … Sign In … da klick ich drauf und dann am liebsten öffnet sich dann schon irgendwie ein Login-Screen"), and to offer only Codex, Claude, Antigravity and Cursor for the start ("ich will für den start auch erstmal nur codex claude antigravity und cursor anbieten"). He answered "leg los" to the described implementation.
+- Approved customer-visible result: On the setup provider step and in Settings, a provider whose tool is not signed in (`auth_required`, `setup_required`) shows "<Provider> is not signed in on this computer" with a "Sign in to <Provider>" button, the existing copy action (which still copies the usage service's own message) and "Check again". Pressing the button starts the provider's own sign-in through the Companion: `codex login` or `claude auth login` in a visible terminal window (the tool opens the browser itself), the Cursor or Antigravity app when installed, or the official install page when nothing is installed. Afterwards the row re-checks itself every 15 seconds for at most three minutes, as it already did after the browser sign-in page. The provider list in setup and Settings shows only Codex, Claude, Cursor and Antigravity; other providers keep their saved values in the usage service but are not listed.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx`, `setup-providers-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs`, and the Companion's `/v1/providers/sign-in` (`companion/internal/companionapi/provider_sign_in_launch.go`, `provider_setup.go`, `childproc`). This approves the visible result and the push to the PR branch after Marcus's own laptop test only, not merge, release, or signing.
+
+## 2026-09-17 — The Mac app stays exactly as it is today
+
+- User approval: After testing the sign-in flow on the Windows laptop, Marcus asked what a Mac test would mean and then instructed that this release must not change the Mac app at all, including its available providers: "alles in diesem Release darf eigentlich die komplette Mac-App nicht ändern, auch nicht die verfügbaren Provider. Also die Mac-App muss genauso wie sie heute ist weiter funktionieren." He then chose to keep the whole feature Windows-only: "Nein, lass das alles strikt unter Windows."
+- Approved customer-visible result: The shortened provider list (Codex, Claude, Cursor, Antigravity) and the "Sign in to <Provider>" button are shown only by the Windows shell. On macOS the setup provider step and Settings keep every provider the usage service reports and keep exactly the rows, copy and actions they show today; a signed-out provider there still shows the usage service's own message with the existing copy and "Check again" actions and no sign-in button. The Companion decides this from the platform it runs on and reports it as `companion.features.providerSignInEnabled`; the app never infers it from the user agent.
+- Scope: `companion/internal/companionapi/server.go`, `provider_sign_in_launch.go` and their tests, `apps/control-center/src/components/control-center-app.tsx`, `control-center-types.ts`, `settings-screen.tsx`, `settings-screen.test.tsx` and `apps/control-center/scripts/test-customer-flows.mjs` on PR #447. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — A provider the customer switched on keeps its row on Windows
+
+- User approval: After the review of PR #447 reported that the shortened Windows list can hide a provider the customer had already switched on, Marcus was shown the customer consequence (the hidden provider keeps its switch on, the Automatic display is then refused as incomplete, and the customer cannot reach the next step or switch that provider off) and answered "ja mach wie du es empfiehlst".
+- Approved customer-visible result: On Windows, the provider list in setup and Settings shows Codex, Claude, Cursor and Antigravity, plus any other provider that is currently switched on, so every switched-on provider always has a row with its on/off switch. Once the customer switches such a provider off it leaves the list. Nothing else changes: no new copy, control, row state or ordering, and switched-off providers outside the four stay unlisted as approved on 2026-09-17.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` and the tests `setup-providers-screen.test.tsx` and `settings-screen.test.tsx` on PR #447. This follows the setup-flow rule that every provider row keeps its on/off switch, because a provider that cannot be switched off cannot be kept off the display. macOS is untouched: it does not shorten the list at all. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — No sign-in button where no sign-in can be started
+
+- User approval: Marcus approved working through the review findings on his own judgement ("ja mach wie du es empfiehlst"). The review then showed that the entry above had created a button that can only fail, and this is the narrow correction of that same approved result.
+- Approved customer-visible result: A provider that is listed only because the customer had switched it on shows its switch, its own message and "Check again", but no "Sign in to <Provider>" button, because VibeTV has no sign-in it could start for it. The four offered providers keep the button exactly as approved on 2026-09-17, and any provider whose usage service names a browser sign-in page keeps its button too.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` and `setup-providers-screen.test.tsx` on PR #447. macOS is untouched: it shows no sign-in button at all. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — The Mac keeps the provider's own message on a signed-out row
+
+- User approval: This restores the standing instruction Marcus gave on 2026-09-17, that this release must not change the Mac app at all ("alles in diesem Release darf eigentlich die komplette Mac-App nicht ändern"), after the review found that a signed-out row on macOS had started showing the new Windows sentence.
+- Approved customer-visible result: Our shorter sentence "<Provider> is not signed in on this computer" appears only on a row that also carries the "Sign in to <Provider>" button. Every row without that button, which is every row on macOS, keeps the usage service's own message with the existing copy and "Check again" actions exactly as it shows today.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` and `setup-provider-row.test.tsx` on PR #447. Verified by the full control-center customer flow run, which still shows the Windows sentence and button on the rows that have the sign-in action. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
 ## 2026-09-14 — Firmware update completion and first-theme onboarding (#445)
 
 - User approval: Marcus tested the installed candidate from PR #445 at

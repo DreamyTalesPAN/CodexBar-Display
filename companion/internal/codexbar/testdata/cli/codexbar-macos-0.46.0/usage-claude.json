@@ -1,0 +1,68 @@
+[
+  {
+    "pace": {
+      "primary": {
+        "deltaPercent": -14,
+        "expectedUsedPercent": 60,
+        "stage": "farBehind",
+        "summary": "14% in reserve | Expected 60% used | Lasts until reset",
+        "willLastToReset": true
+      },
+      "secondary": {
+        "deltaPercent": 9,
+        "etaSeconds": 289960,
+        "expectedUsedPercent": 16,
+        "stage": "ahead",
+        "summary": "9% in deficit | Expected 16% used | Runs out in 3d 8h",
+        "willLastToReset": false
+      }
+    },
+    "provider": "claude",
+    "source": "web",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "accountOrganization": "redacted@example.com's Organization",
+      "extraRateWindows": [
+        {
+          "id": "claude-weekly-scoped-fable",
+          "title": "Fable only",
+          "window": {
+            "resetsAt": "2026-09-08T11:00:00Z",
+            "usedPercent": 38,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "accountOrganization": "redacted@example.com's Organization",
+        "loginMethod": "Claude Max 20x",
+        "providerID": "claude"
+      },
+      "loginMethod": "Claude Max 20x",
+      "primary": {
+        "resetDescription": "Sep 2 at 5:49PM",
+        "resetsAt": "2026-09-02T15:49:59Z",
+        "usedPercent": 46,
+        "windowMinutes": 300
+      },
+      "providerCost": {
+        "balance": 0,
+        "currencyCode": "EUR",
+        "limit": 100,
+        "period": "Monthly cap",
+        "updatedAt": "2026-09-02T13:50:51Z",
+        "used": 0
+      },
+      "secondary": {
+        "resetDescription": "Sep 8 at 12:59PM",
+        "resetsAt": "2026-09-08T10:59:59Z",
+        "usedPercent": 25,
+        "windowMinutes": 10080
+      },
+      "tertiary": null,
+      "updatedAt": "2026-09-02T13:50:52Z"
+    },
+    "version": "2.1.252"
+  }
+]

@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
 
 export type SetupProviderRowVariant =
+  | "browser_sign_in"
   | "checking"
   | "no_usage"
   | "outage"
@@ -52,6 +53,10 @@ export function setupProviderRowVariant(
     case "auth_required":
     case "setup_required":
       return "sign_in";
+    // Signed in to the tool, but the usage endpoint only answers a browser
+    // session (Claude on Windows). The row offers to open that page.
+    case "browser_sign_in_required":
+      return "browser_sign_in";
     case "permission_required":
       return "permission";
     case "no_usage_available":
@@ -78,12 +83,26 @@ type SetupProviderRowProps = {
   /** The generic detail attached to this health result. */
   detail?: string;
   /**
+   * The companion's next action for this health result. Rendered for
+   * "browser_sign_in_required", where the required step (sign in, close the
+   * browser so its cookie store becomes readable, check again) is not in the
+   * detail.
+   */
+  nextAction?: string;
+  /**
    * What the usage service itself said about this provider, already redacted.
    * It is the only per-provider guidance that exists, so it replaces our own
    * wording wherever it says something the customer can act on.
    */
   reportedMessage?: string;
   onCheckAgain: () => void;
+  /**
+   * Starts the provider's sign-in through the companion: the browser page
+   * for "browser_sign_in_required", the tool's own login (or its install
+   * page) for "auth_required" and "setup_required". Absent when the shell
+   * has nothing to start.
+   */
+  onOpenSignIn?: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -101,7 +120,9 @@ export function SetupProviderRow({
   enabled,
   health,
   label,
+  nextAction,
   onCheckAgain,
+  onOpenSignIn,
   onToggle,
   reportedMessage,
   saving = false,
@@ -124,7 +145,9 @@ export function SetupProviderRow({
   ) : null;
   const fallbackMessage =
     variant === "sign_in"
-      ? `Sign in to ${label}`
+      ? `${label} is not signed in on this computer`
+      : variant === "browser_sign_in"
+        ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
         ? "Allow access in macOS"
         : variant === "no_usage"
@@ -134,7 +157,23 @@ export function SetupProviderRow({
             : variant === "stale"
               ? "Live usage is unavailable"
             : "Check timed out";
-  const guidance = reportedMessage || detail || fallbackMessage;
+  // The two sign-in rows show our own sentence, not CodexBar's: its text is
+  // a source-by-source failure list ("auth.json not found. Run codex login",
+  // "failed from all configured sources") written for developers, and for
+  // the browser case it names the wrong fix. CodexBar's sentence stays
+  // behind the copy action for support.
+  //
+  // Our sentence only replaces it where the row can also start the sign-in.
+  // Without that action the sentence has no next step, and on macOS, where
+  // this whole feature is off, replacing it would change the Mac app's own
+  // rows -- which this release must not do.
+  const guidance = !onOpenSignIn
+    ? reportedMessage || detail || fallbackMessage
+    : variant === "browser_sign_in"
+      ? [detail, nextAction].filter(Boolean).join(" ") || fallbackMessage
+      : variant === "sign_in"
+        ? fallbackMessage
+        : reportedMessage || detail || fallbackMessage;
 
   return (
     <Item
@@ -152,6 +191,25 @@ export function SetupProviderRow({
           <>
             <SetupProviderRowMessage>{guidance}</SetupProviderRowMessage>
             {copyReportedMessage}
+            {variant === "browser_sign_in" && onOpenSignIn ? (
+              <SetupProviderRowAction
+                icon={ExternalLink}
+                label={`Open ${label} sign-in in your browser`}
+                onClick={onOpenSignIn}
+              />
+            ) : null}
+            {variant === "sign_in" && onOpenSignIn ? (
+              <Button
+                className="rounded-full"
+                onClick={onOpenSignIn}
+                size="sm"
+                type="button"
+                variant="default"
+              >
+                <LogIn aria-hidden />
+                <span>{`Sign in to ${label}`}</span>
+              </Button>
+            ) : null}
             {variant === "stale" ? null : checking ? (
               <>
                 <span className="sr-only">Checking {label}…</span>

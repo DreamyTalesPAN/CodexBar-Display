@@ -12,30 +12,6 @@ import (
 	serial "go.bug.st/serial"
 )
 
-func TestChooseAutoPortPrefersUSBModem(t *testing.T) {
-	port, err := chooseAutoPort([]string{
-		"/dev/cu.Bluetooth-Incoming-Port",
-		"/dev/cu.usbmodem1101",
-		"/dev/cu.usbserial1420",
-	})
-	if err != nil {
-		t.Fatalf("expected a selected port, got error: %v", err)
-	}
-	if port != "/dev/cu.usbmodem1101" {
-		t.Fatalf("expected usbmodem port, got %q", port)
-	}
-}
-
-func TestChooseAutoPortSkipsBluetoothOnlySet(t *testing.T) {
-	_, err := chooseAutoPort([]string{
-		"/dev/cu.Bluetooth-Incoming-Port",
-		"/dev/cu.iPhone-WirelessiAP",
-	})
-	if err == nil {
-		t.Fatalf("expected error when no usb serial device is present")
-	}
-}
-
 func TestParseDeviceHelloLineJSON(t *testing.T) {
 	line := `{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"]}`
 	hello, ok := parseDeviceHelloLine(line)

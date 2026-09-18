@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
@@ -78,11 +79,11 @@ func ClearThemeValue(raw string) bool {
 }
 
 func ConfigPath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", configFileName)
+	return runtimepaths.Path(home, configFileName)
 }
 
 func deviceSelectionJournalPath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", deviceSelectionJournalFileName)
+	return runtimepaths.Path(home, deviceSelectionJournalFileName)
 }
 
 func Load(home string) (Config, error) {
@@ -122,6 +123,9 @@ func RestrictPermissions(home string) error {
 		return errors.New("home directory is empty")
 	}
 	configPath := ConfigPath(home)
+	if configPath == "" {
+		return errors.New("user config directory is unavailable")
+	}
 	configDir := filepath.Dir(configPath)
 	return processPermissionMigrations.ensure(home, configPath, configDir)
 }

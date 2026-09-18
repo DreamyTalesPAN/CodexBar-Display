@@ -19,9 +19,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -29,6 +31,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -53,11 +56,17 @@ const (
 )
 
 var (
-	errFirmwareUploadRestartRequired                   = errors.New("VibeTV must restart before another firmware upload")
-	errFirmwareUploadMayHaveWritten                    = errors.New("firmware upload may have written data")
-	upgradeStopLaunchAgentFn                           = stopLaunchAgentBestEffort
-	upgradeRestartLaunchAgentFn                        = restartLaunchAgent
-	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
+	errFirmwareUploadRestartRequired = errors.New("VibeTV must restart before another firmware upload")
+	errFirmwareUploadMayHaveWritten  = errors.New("firmware upload may have written data")
+	upgradeStopLaunchAgentFn         = stopLaunchAgentBestEffort
+	upgradeRestartLaunchAgentFn      = restartLaunchAgent
+	rollbackRestartLaunchAgentFn     = restartLaunchAgent
+	rollbackStopTaskFn               = func(home string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		return service.New(label, home, false).Stop(ctx, true)
+	}
 	resolveSerialPortFn                                = usb.ResolvePort
 	readDeviceHelloFn                                  = usb.ReadDeviceHello
 	closeDefaultSenderFn                               = usb.CloseDefaultSender
@@ -305,14 +314,6 @@ func runUpgrade(args []string) (retErr error) {
 	}
 	selectedEnv = resolvedEnv
 
-	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
-	if err != nil {
-		return &commandError{
-			Op:   "resolve-port",
-			Code: errcode.UpgradeResolvePort,
-			Err:  err,
-		}
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return &commandError{
@@ -323,6 +324,14 @@ func runUpgrade(args []string) (retErr error) {
 	}
 	cleanupUpgradeLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
 	defer cleanupUpgradeLaunchAgent()
+
+	// Auto-discovery needs exclusive ownership, then the busy check and
+	// firmware uploader need that handle released again.
+	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
+	closeDefaultSenderFn()
+	if err != nil {
+		return &commandError{Op: "resolve-port", Code: errcode.UpgradeResolvePort, Err: err}
+	}
 
 	if err := ensureSerialPortNotBusyFn(resolvedPort); err != nil {
 		return &commandError{
@@ -1057,10 +1066,7 @@ func downloadReleaseFirmware(ctx context.Context, home, repo, releaseTag, versio
 	}
 
 	releaseDir := filepath.Join(
-		home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(home),
 		"releases",
 		"firmware",
 		sanitizePathToken(releaseTag),
@@ -1231,10 +1237,7 @@ func downloadManifestFirmwareArtifact(ctx context.Context, home string, manifest
 
 	version := normalizeReleaseVersion(artifact.FirmwareVersion)
 	releaseDir := filepath.Join(
-		home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(home),
 		"updates",
 		"firmware",
 		sanitizePathToken(version),
@@ -2127,7 +2130,7 @@ func flashReleaseFirmwareImage(ctx context.Context, port string, artifact releas
 	return nil
 }
 
-func runRollback(args []string) error {
+func runRollback(args []string) (resultErr error) {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port for firmware rollback (auto-detect when empty)")
 	image := fs.String("image", "", "firmware image path (default from last-known-good state)")
@@ -2154,6 +2157,7 @@ func runRollback(args []string) error {
 	if err != nil {
 		return &commandError{Op: "load-release-state", Code: errcode.RollbackStateLoad, Err: err}
 	}
+	recoverTask := false
 
 	if !*skipCompanion {
 		source := strings.TrimSpace(state.LastKnownGood.CompanionBinary)
@@ -2180,7 +2184,21 @@ func runRollback(args []string) error {
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
-		target := filepath.Join(targetDir, "codexbar-display")
+		target := filepath.Join(targetDir, setup.CompanionBinaryName(runtime.GOOS))
+		if runtime.GOOS == "windows" {
+			// Stop can partially succeed before failing, so arm recovery first.
+			recoverTask = true
+			defer func() {
+				if resultErr != nil && recoverTask {
+					if err := rollbackRestartLaunchAgentFn(home); err != nil {
+						resultErr = errors.Join(resultErr, &commandError{Op: "restart-background-service", Code: errcode.RollbackLaunchAgent, Err: err})
+					}
+				}
+			}()
+			if err := rollbackStopTaskFn(home); err != nil {
+				return &commandError{Op: "stop-background-service", Code: errcode.RollbackLaunchAgent, Err: err}
+			}
+		}
 		if err := copyRegularFileAtomic(source, target, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
@@ -2226,6 +2244,7 @@ func runRollback(args []string) error {
 	}
 
 	if !*skipCompanion || !*skipFirmware {
+		recoverTask = false // The explicit restart below owns success/failure now.
 		if err := rollbackRestartLaunchAgentFn(home); err != nil {
 			return &commandError{Op: "restart-launchagent", Code: errcode.RollbackLaunchAgent, Err: err}
 		}
@@ -2309,17 +2328,8 @@ func ensureSerialPortNotBusy(port string) error {
 }
 
 func stopLaunchAgentBestEffort() {
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
 	label := runtimepaths.DisplayStreamLaunchAgentLabel()
-	service := domain + "/" + label
-	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
-		// Bundled Control Center runtimes are registered through SMAppService (or
-		// the preview app) and must remain registered. Suspend the writer process
-		// while its child updater owns the VibeTV connection.
-		_, _ = exec.Command("launchctl", "kill", "SIGSTOP", service).CombinedOutput()
-		return
-	}
-	bootoutLaunchAgentBestEffort(domain, service, "")
+	_ = service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Stop(context.Background(), false)
 }
 
 func beginUpgradeLaunchAgentRecovery(home string, retErr *error) func() {
@@ -2338,7 +2348,10 @@ func wrapUpgradeLaunchAgentRecoveryError(existingErr error, home string) error {
 		return existingErr
 	}
 
-	const restartHint = "restart launch agent manually with `launchctl bootout/bootstrap/kickstart`"
+	restartHint := "restart background service with `codexbar-display service start`"
+	if runtime.GOOS != "windows" {
+		restartHint = "restart launch agent manually with `launchctl bootout/bootstrap/kickstart`"
+	}
 	hintWithDetails := fmt.Sprintf("%s (restart failure: %v)", restartHint, restartErr)
 	if existingErr == nil {
 		return &commandError{
@@ -2377,7 +2390,7 @@ func appendRecoveryHint(existing, extra string) string {
 }
 
 func releaseStatePath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", releaseStateFileName)
+	return runtimepaths.Path(home, releaseStateFileName)
 }
 
 func loadReleaseState(home string) (releaseState, error) {
@@ -2433,8 +2446,8 @@ func saveReleaseState(home string, state releaseState) error {
 }
 
 func snapshotInstalledCompanionBinary(home string) (string, string, error) {
-	supportDir := filepath.Join(home, "Library", "Application Support", "codexbar-display")
-	installed := filepath.Join(supportDir, "bin", "codexbar-display")
+	supportDir := runtimepaths.Root(home)
+	installed := filepath.Join(supportDir, "bin", setup.CompanionBinaryName(runtime.GOOS))
 	if !fileExists(installed) {
 		return "", "", nil
 	}
@@ -2446,7 +2459,7 @@ func snapshotInstalledCompanionBinary(home string) (string, string, error) {
 		return "", "", err
 	}
 
-	snapshotPath := filepath.Join(snapshotDir, "codexbar-display")
+	snapshotPath := filepath.Join(snapshotDir, setup.CompanionBinaryName(runtime.GOOS))
 	if err := copyRegularFileAtomic(installed, snapshotPath, 0o755); err != nil {
 		return "", "", err
 	}
@@ -2483,7 +2496,7 @@ func detectBinaryVersion(binPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binPath, "version", "--short")
+	cmd := childproc.Hide(exec.CommandContext(ctx, binPath, "version", "--short"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "unknown"
@@ -2534,82 +2547,33 @@ func copyRegularFileAtomic(sourcePath, targetPath string, mode os.FileMode) erro
 
 func restartLaunchAgent(home string) error {
 	label := runtimepaths.DisplayStreamLaunchAgentLabel()
-	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
-		domain := fmt.Sprintf("gui/%d", os.Getuid())
-		service := domain + "/" + label
-		resumeOut, resumeErr := exec.Command("launchctl", "kill", "SIGCONT", service).CombinedOutput()
-		if resumeErr == nil {
+	managed := label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	if runtime.GOOS == "windows" {
+		if _, err := os.Stat(service.TaskConfigPath(home, label)); errors.Is(err, os.ErrNotExist) {
 			return nil
+		} else if err != nil {
+			return err
 		}
-		kickOut, kickErr := exec.Command("launchctl", "kickstart", "-k", service).CombinedOutput()
-		if kickErr != nil {
-			return fmt.Errorf("resume runtime: %w (%s); kickstart: %v (%s)", resumeErr, strings.TrimSpace(string(resumeOut)), kickErr, strings.TrimSpace(string(kickOut)))
-		}
+	}
+	if runtime.GOOS != "windows" && !managed && !fileExists(service.PlistPath(home, label)) {
 		return nil
 	}
-
-	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
-	if !fileExists(plist) {
-		return nil
-	}
-
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/" + strings.TrimSuffix(launchAgentLabel, ".plist")
-	bootoutLaunchAgentBestEffort(domain, service, plist)
-	_, _ = exec.Command("launchctl", "enable", service).CombinedOutput()
-
-	if err := bootstrapLaunchAgentWithRetry(domain, service, plist, 3, 300*time.Millisecond); err != nil {
+	manager := service.New(label, home, managed)
+	ctx := context.Background()
+	if err := manager.Install(ctx); err != nil {
 		return err
 	}
-
-	kickOut, kickErr := exec.Command("launchctl", "kickstart", "-k", service).CombinedOutput()
-	if kickErr != nil {
-		return fmt.Errorf("kickstart launchagent: %w (%s)", kickErr, strings.TrimSpace(string(kickOut)))
-	}
-	return nil
-}
-
-func bootstrapLaunchAgentWithRetry(domain, service, plist string, attempts int, delay time.Duration) error {
-	if attempts <= 0 {
-		attempts = 1
-	}
-
-	var lastOut []byte
-	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		out, err := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
-		if err == nil {
-			return nil
-		}
-		lastOut = out
-		lastErr = err
-
-		if launchAgentLoaded(service) {
-			return nil
-		}
-
-		if attempt < attempts {
-			bootoutLaunchAgentBestEffort(domain, service, plist)
-			time.Sleep(delay)
-		}
-	}
-
-	return fmt.Errorf("bootstrap launchagent: %w (%s)", lastErr, strings.TrimSpace(string(lastOut)))
-}
-
-func launchAgentLoaded(service string) bool {
-	return exec.Command("launchctl", "print", service).Run() == nil
-}
-
-func bootoutLaunchAgentBestEffort(domain, service, plist string) {
-	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
-	if strings.TrimSpace(plist) != "" {
-		_, _ = exec.Command("launchctl", "bootout", domain, plist).CombinedOutput()
-	}
+	return manager.Start(ctx)
 }
 
 func startLaunchAgent(home string) error {
-	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
+	if runtime.GOOS == "windows" {
+		if _, err := service.ReadTaskConfig(home, runtimepaths.DisplayStreamLaunchAgentLabel()); err != nil {
+			return fmt.Errorf("read installed task configuration (rerun setup): %w", err)
+		}
+		return restartLaunchAgent(home)
+	}
+	plist := service.PlistPath(home, strings.TrimSuffix(launchAgentLabel, ".plist"))
 	if !fileExists(plist) {
 		return fmt.Errorf("launchagent plist not found: %s", plist)
 	}
@@ -2617,84 +2581,22 @@ func startLaunchAgent(home string) error {
 }
 
 func stopLaunchAgent(disable bool) error {
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/" + strings.TrimSuffix(launchAgentLabel, ".plist")
-
-	bootoutOut, bootoutErr := exec.Command("launchctl", "bootout", service).CombinedOutput()
-	if bootoutErr != nil {
-		trimmed := strings.TrimSpace(string(bootoutOut))
-		if trimmed != "" &&
-			!strings.Contains(strings.ToLower(trimmed), "could not find service") &&
-			!strings.Contains(strings.ToLower(trimmed), "service is disabled") {
-			return fmt.Errorf("bootout launchagent: %w (%s)", bootoutErr, trimmed)
-		}
-	}
-	if disable {
-		disableOut, disableErr := exec.Command("launchctl", "disable", service).CombinedOutput()
-		if disableErr != nil {
-			trimmed := strings.TrimSpace(string(disableOut))
-			if trimmed != "" && !strings.Contains(strings.ToLower(trimmed), "already disabled") {
-				return fmt.Errorf("disable launchagent: %w (%s)", disableErr, trimmed)
-			}
-		}
-	}
-	return nil
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	return service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Stop(context.Background(), disable)
 }
 
-type launchAgentStatus struct {
-	Enabled bool
-	State   string
-	PID     string
-}
+type launchAgentStatus = service.Status
 
 func queryLaunchAgentStatus() (launchAgentStatus, error) {
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	serviceName := strings.TrimSuffix(launchAgentLabel, ".plist")
-	service := domain + "/" + serviceName
-
-	status := launchAgentStatus{
-		Enabled: true,
-		State:   "not-loaded",
-	}
-
-	disabledOut, disabledErr := exec.Command("launchctl", "print-disabled", domain).CombinedOutput()
-	if disabledErr == nil {
-		if strings.Contains(string(disabledOut), fmt.Sprintf("\"%s\" => disabled", serviceName)) {
-			status.Enabled = false
-		}
-	}
-
-	printOut, printErr := exec.Command("launchctl", "print", service).CombinedOutput()
-	trimmed := strings.TrimSpace(string(printOut))
-	if printErr != nil {
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	status, err := service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Status(context.Background())
+	if err != nil {
+		trimmed := strings.TrimSpace(status.Raw)
 		lower := strings.ToLower(trimmed)
-		if strings.Contains(lower, "could not find service") || strings.Contains(lower, "not found") || trimmed == "" {
+		if runtime.GOOS != "windows" && !errors.Is(err, service.ErrUnsupported) && (strings.Contains(lower, "could not find service") || strings.Contains(lower, "not found") || trimmed == "") {
 			return status, nil
 		}
-		return launchAgentStatus{}, fmt.Errorf("inspect launchagent: %w (%s)", printErr, trimmed)
+		return status, fmt.Errorf("inspect background service: %w (%s)", err, trimmed)
 	}
-
-	state, pid := parseLaunchctlServiceStatus(trimmed)
-	if state != "" {
-		status.State = state
-	}
-	status.PID = pid
 	return status, nil
-}
-
-func parseLaunchctlServiceStatus(output string) (state, pid string) {
-	lines := strings.Split(output, "\n")
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "state =") {
-			state = strings.TrimSpace(strings.TrimPrefix(line, "state ="))
-		}
-		if strings.HasPrefix(line, "pid =") {
-			candidate := strings.TrimSpace(strings.TrimPrefix(line, "pid ="))
-			if _, err := strconv.Atoi(candidate); err == nil {
-				pid = candidate
-			}
-		}
-	}
-	return state, pid
 }
