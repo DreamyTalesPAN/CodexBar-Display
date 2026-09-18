@@ -226,6 +226,45 @@ jobs:
           # The package is still shipped as prerelease only.
           dotnet tool install --global sign --prerelease
           if ($LASTEXITCODE -ne 0) { throw "could not install the signing CLI" }
+      - name: Prove signing works before the long build
+        shell: pwsh
+        env:
+          VIBETV_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          VIBETV_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          VIBETV_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
+        # Tauri swallows the signing tool's output and only reports "failed to
+        # run <tool>", which hides the actual cause behind a five-minute build.
+        # Signing a throwaway copy first surfaces the real error immediately.
+        run: |
+          $probe = "$env:RUNNER_TEMP/sign-probe.exe"
+          Copy-Item windows/src-tauri/binaries/codexbar-display-x86_64-pc-windows-msvc.exe $probe
+          Set-ItemProperty -Path $probe -Name IsReadOnly -Value $false
+          $signHelp = (& sign code --help 2>&1 | Out-String)
+          if ($signHelp -match 'artifact-signing') {
+            $verb = 'artifact-signing'
+          } elseif ($signHelp -match 'trusted-signing') {
+            $verb = 'trusted-signing'
+          } else {
+            throw "the signing CLI exposes neither artifact-signing nor trusted-signing."
+          }
+          "resolved signing subcommand: $verb" | Write-Host
+          & sign code $verb `
+            "--$verb-endpoint" $env:VIBETV_SIGNING_ENDPOINT `
+            "--$verb-account" $env:VIBETV_SIGNING_ACCOUNT `
+            "--$verb-certificate-profile" $env:VIBETV_SIGNING_PROFILE `
+            --timestamp-url "http://timestamp.acs.microsoft.com" `
+            --verbosity information `
+            $probe
+          if ($LASTEXITCODE -ne 0) {
+            throw "the signing CLI rejected a probe file (exit $LASTEXITCODE); see the output above."
+          }
+          $probeSignature = Get-AuthenticodeSignature -FilePath $probe
+          if ($probeSignature.Status -ne 'Valid') {
+            throw "the probe file is not validly signed (status: $($probeSignature.Status))."
+          }
+          "probe signed by: $($probeSignature.SignerCertificate.Subject)" | Write-Host
       - name: Build and sign the release NSIS installer
         working-directory: windows/src-tauri
         env:
