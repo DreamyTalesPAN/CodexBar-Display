@@ -3245,14 +3245,26 @@ func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
 	target := "http://192.0.2.10"
 	stream := displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
 
-	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
-		t.Fatal("a cold provider cache must not settle the wait")
-	}
-	server.providerSetupCache = codexbar.ProviderSetup{
+	// Reading a cold cache also starts the background refresh, and that refresh
+	// writes whatever the probe reports into the same cache this test seeds
+	// below. On a slow runner its write lands after the seed and replaces it,
+	// which failed a correct wait. Letting the probe report the same
+	// unconfigured provider makes the refresh harmless whenever it runs.
+	unconfigured := codexbar.ProviderSetup{
 		Status:    "setup_required",
 		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
 	}
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return unconfigured
+	}
+
+	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("a cold provider cache must not settle the wait")
+	}
+	server.providerSetupMu.Lock()
+	server.providerSetupCache = unconfigured
 	server.providerSetupCachedAt = time.Now()
+	server.providerSetupMu.Unlock()
 	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("an unconfigured provider must settle the wait")
 	}

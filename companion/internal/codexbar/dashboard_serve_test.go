@@ -24,6 +24,14 @@ type dashboardServeHelperRecord struct {
 	PID      int      `json:"pid"`
 }
 
+// Every wait here observes work the supervisor does in its own goroutines,
+// each step costing a real child process start. Three seconds is enough on a
+// developer Mac but not on the shared Windows runner, where starting the test
+// binary again is far slower: a restart test then reported one child instead
+// of two and failed a correct supervisor. The generous budget only decides how
+// long a broken supervisor takes to fail, never whether a healthy one passes.
+const dashboardServeTestWait = 30 * time.Second
+
 type dashboardServeRoundTripper func(*http.Request) (*http.Response, error)
 
 func (fn dashboardServeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -271,7 +279,7 @@ func TestDashboardServeSupervisorHealthSuccessResetsFailureCount(t *testing.T) {
 	}()
 
 	waitForDashboardServeRecords(t, recordPath, 1)
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(dashboardServeTestWait)
 	for time.Now().Before(deadline) {
 		checksMu.Lock()
 		completed := checks >= len(responses)
@@ -393,7 +401,7 @@ func helperExit(format string, args ...any) {
 
 func waitForDashboardServeHealthy(t *testing.T, supervisor *DashboardServeSupervisor) DashboardServeInfo {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(dashboardServeTestWait)
 	for time.Now().Before(deadline) {
 		info := supervisor.Info()
 		if info.Running && info.Healthy {
@@ -407,7 +415,7 @@ func waitForDashboardServeHealthy(t *testing.T, supervisor *DashboardServeSuperv
 
 func waitForDashboardServeRecords(t *testing.T, path string, want int) []dashboardServeHelperRecord {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(dashboardServeTestWait)
 	for time.Now().Before(deadline) {
 		records := readDashboardServeRecords(t, path)
 		if len(records) >= want {
