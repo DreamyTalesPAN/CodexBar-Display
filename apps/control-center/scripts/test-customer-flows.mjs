@@ -686,6 +686,10 @@ async function main() {
       appContext.appUrl,
       { expectDmg: true },
     );
+    await testHostedEntryOnWindowsOffersTheWindowsApp(
+      browser,
+      appContext.appUrl,
+    );
     await testLocalFreshAppSearchesBeforeWifiSetup(browser, appContext.appUrl);
     await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
       browser,
@@ -3569,6 +3573,10 @@ async function testHostedEntryShowsMacAppDownload(
   const page = await browser.newPage({ viewport });
   const installRequests = [];
   const companionRequests = [];
+  // These checks are about the Mac customer's page. CI runs on Linux, where
+  // the page would correctly refuse to claim either system, so the Mac is
+  // stated explicitly instead of inherited from the runner.
+  await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionMissing(page, installRequests, (pathname) => {
     companionRequests.push(pathname);
@@ -3652,6 +3660,88 @@ async function testHostedThemeEntryShowsMacAppDownload(
   });
 }
 
+/**
+ * Make the page see a Mac the way a real Mac customer's browser reports one,
+ * through both the modern platform hint and the user agent.
+ */
+async function pretendCustomerIsOnAMac(page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      get: () =>
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    });
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      get: () => ({ platform: "macOS" }),
+    });
+  });
+}
+
+async function pretendCustomerIsOnWindows(page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      get: () =>
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    });
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      get: () => ({ platform: "Windows" }),
+    });
+  });
+}
+
+/**
+ * A Windows customer opening the address the VibeTV printed. No release
+ * publishes a Windows installer yet, so the honest result is the existing
+ * not-ready state for Windows plus the quiet way over to the Mac download --
+ * never a dead link and never the Mac's DMG steps.
+ */
+async function testHostedEntryOnWindowsOffersTheWindowsApp(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await pretendCustomerIsOnWindows(page);
+  await routeHostedAppThroughLocalNext(page, appUrl);
+  await routeCompanionMissing(page, installRequests);
+
+  await page.goto("https://app.vibetv.shop/", {
+    waitUntil: "domcontentloaded",
+  });
+  await setupScreen(page, "Download VibeTV Control Center").waitFor({
+    timeout: 10_000,
+  });
+
+  const windowsDownload = page.getByRole("button", {
+    name: "Download for Windows",
+  });
+  await windowsDownload.waitFor({ timeout: 10_000 });
+  assert(
+    await windowsDownload.isDisabled(),
+    "An unpublished Windows installer must stay disabled instead of linking nowhere",
+  );
+  await page
+    .getByText("Open the downloaded installer.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Open the downloaded DMG.", { exact: true }).count()) ===
+      0,
+    "A Windows customer must not be given the Mac's DMG steps",
+  );
+  const macEscapeHatch = page.getByRole("link", {
+    name: "Using a Mac? Download for macOS",
+  });
+  await macEscapeHatch.waitFor({ timeout: 10_000 });
+  assert(
+    assetName(await macEscapeHatch.getAttribute("href")) ===
+      "VibeTV-Control-Center.dmg",
+    "The quiet Mac link must point at the verified DMG",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
 async function testHostedPriorVisitStillShowsMacAppDownload(
   browser,
   appUrl,
@@ -3666,6 +3756,7 @@ async function testHostedPriorVisitStillShowsMacAppDownload(
       "1",
     );
   });
+  await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionMissing(page, installRequests, (pathname) => {
     companionRequests.push(pathname);
@@ -10306,6 +10397,7 @@ async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
 async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   let page = await browser.newPage({ viewport });
   const setupInstallRequests = [];
+  await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionMissing(page, setupInstallRequests);
 
