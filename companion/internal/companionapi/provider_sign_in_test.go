@@ -108,6 +108,50 @@ func TestProviderSignInOpensOnlyThePageCodexBarNamed(t *testing.T) {
 	}
 }
 
+// A row drops a diagnosis older than providerReadinessFreshness, so the
+// button must drop it too. Otherwise a provider that has since become a
+// signed-out tool still opened the old browser page, and pressing the row's
+// own action did something other than what the row said.
+func TestProviderSignInIgnoresAnExpiredBrowserDiagnosis(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	original := openProviderSignInFn
+	defer func() { openProviderSignInFn = original }()
+	var opened []string
+	openProviderSignInFn = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+	originalLaunch := launchProviderSignInFn
+	defer func() { launchProviderSignInFn = originalLaunch }()
+	var launched []providerSignInPlan
+	launchProviderSignInFn = func(plan providerSignInPlan) error {
+		launched = append(launched, plan)
+		return nil
+	}
+
+	server.providerReadinessMu.Lock()
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"claude": {
+			Status:    codexbar.ProviderBrowserSignInRequired,
+			SignInURL: "https://claude.ai/login",
+			CheckedAt: time.Now().Add(-providerReadinessFreshness - time.Minute),
+		},
+	}
+	server.providerReadinessMu.Unlock()
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=claude", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(opened) != 0 {
+		t.Fatalf("an expired browser diagnosis must not open its page, opened=%v", opened)
+	}
+	if len(launched) != 1 {
+		t.Fatalf("expected the tool's own sign-in instead, launched=%v", launched)
+	}
+}
+
 // The plan for a signed-out tool: its CLI login when the CLI is installed
 // (PATH first, then the known install location), its app when only that is
 // installed, and the official install page when nothing is.

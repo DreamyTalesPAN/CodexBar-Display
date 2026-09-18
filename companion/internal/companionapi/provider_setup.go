@@ -448,8 +448,16 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 // providerSignInURL is the page CodexBar named in this provider's latest
 // browser-sign-in diagnosis: the exact check first, then the background
 // health scan. Empty when neither currently says the provider needs one.
+//
+// The exact record is only trusted while the row is still showing it. Rows
+// drop a record older than providerReadinessFreshness, so without the same
+// limit a stale browser page kept opening for a provider that had since moved
+// on to a signed-out tool, and the customer's row action did something other
+// than what the row said.
 func (s *Server) providerSignInURL(providerID string) string {
-	if record, ok := s.providerReadinessFor(providerID); ok &&
+	record, ok := s.providerReadinessFor(providerID)
+	if age := s.currentTime().Sub(record.CheckedAt); ok && !record.CheckedAt.IsZero() &&
+		age >= 0 && age <= providerReadinessFreshness &&
 		record.Status == codexbar.ProviderBrowserSignInRequired && record.SignInURL != "" {
 		return record.SignInURL
 	}
