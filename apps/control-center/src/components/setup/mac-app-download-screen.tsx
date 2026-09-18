@@ -25,13 +25,6 @@ const WINDOWS_INSTALL_STEPS = [
   "Open VibeTV Control Center from the Start menu.",
 ];
 
-/**
- * The Windows installer is not code-signed yet, so Windows shows a publisher
- * warning. Saying that here is cheaper for the customer than a support ticket.
- */
-const WINDOWS_UNSIGNED_NOTE =
-  "Windows may warn that the publisher is unknown, because this installer is not signed yet. Choose More info, then Run anyway.";
-
 type MacAppDownloadScreenProps = {
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   /**
@@ -68,9 +61,6 @@ export function MacAppDownloadScreen({
           label="Download for Windows"
         />
         <InstallSteps steps={WINDOWS_INSTALL_STEPS} />
-        <p className="mt-3 text-left text-sm text-muted-foreground">
-          {WINDOWS_UNSIGNED_NOTE}
-        </p>
         <QuietAlternative
           href={downloadUrl}
           label="Using a Mac? Download for macOS"
