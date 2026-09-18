@@ -28,7 +28,7 @@ Before building anything, check once per chat whether the remote branch is ahead
 - Missing, unavailable, stale, or synthetic data must stay visibly unavailable. Never invent windows, percentages, reset times, or readiness.
 - Diagnose usage bugs end to end before editing: bundled CodexBar output -> collector -> persisted snapshot -> Companion API -> Control Center -> VibeTV frame.
 - Fix usage bugs in this order: remove the conflicting local rule, remove a duplicate data path, reuse the existing central owner, and only then add code.
-- Windows exception (bundled Win-CodexBar 0.56.8, issue #415): the CLI has no all-enabled `usage --json` and no credential-consent command, so the per-provider usage/health join in `companion/internal/codexbar/providers.go` and the Claude credential flag in `companion/internal/codexbar/claude_credentials.go` are a time-boxed adapter fork. Remove them as soon as upstream CodexBar ships an all-enabled usage command or a consent command; do not extend them with new provider semantics.
+- Windows exception (bundled Win-CodexBar 0.60.3, VibeTV fork release pinned in `scripts/fetch-win-codexbar.ps1`, issue #415): the CLI has no all-enabled `usage --json` and no credential-consent command, so the per-provider usage/health join in `companion/internal/codexbar/providers.go` and the Claude credential flag in `companion/internal/codexbar/claude_credentials.go` are a time-boxed adapter fork. Remove them as soon as upstream CodexBar ships an all-enabled usage command or a consent command; do not extend them with new provider semantics. The fork pin itself is temporary: return to nesszer/Win-CodexBar once the Claude probe patches land upstream.
 
 ## Customer Rehearsal (Cold And Warm Start)
 

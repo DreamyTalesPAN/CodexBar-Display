@@ -1,6 +1,9 @@
 "use client";
 
-import type { SupportDiagnostics } from "../control-center-types";
+import type {
+  PreferenceValue,
+  SupportDiagnostics,
+} from "../control-center-types";
 import { Search, SearchX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -30,6 +33,7 @@ type SetupProvidersScreenProps = {
   onCheckAgain: (provider: ProviderItem) => void;
   onContinue: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  onOpenSignIn?: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** The completion this step asked for has not answered yet. */
   continuing?: boolean;
@@ -46,9 +50,66 @@ type SetupProvidersScreenProps = {
 const PROVIDER_PAGE_SIZE = 10;
 export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
 
+/**
+ * The providers VibeTV offers. CodexBar's inventory is 65 deep; VibeTV
+ * launches with the four it has been checked against, and the rest stay in
+ * CodexBar's own settings untouched (their on/off values are not rewritten).
+ * Applied where the app hands its provider list to setup and Settings, so the
+ * list itself stays generic.
+ */
+export const OFFERED_PROVIDER_IDS = [
+  "codex",
+  "claude",
+  "cursor",
+  "antigravity",
+];
+
+/**
+ * A provider the customer already switched on stays visible even when it is
+ * outside the offered four. Hiding an enabled provider leaves its switch on
+ * with no row to turn it off, and the Companion then refuses an Automatic
+ * display that omits it (`provider_display_incomplete`), which strands the
+ * customer on a step they cannot complete.
+ */
+export function offeredProviders<
+  T extends { providerId: string; value?: PreferenceValue },
+>(providers: T[]): T[] {
+  return providers.filter(
+    (provider) =>
+      OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase()) ||
+      provider.value === true,
+  );
+}
+
+/**
+ * Health states in which the row offers to start the provider's sign-in.
+ *
+ * The offered four are the ones the Companion knows how to sign in. A
+ * provider that is only listed because the customer had switched it on has no
+ * sign-in the Companion can start, so offering the button there would give
+ * the customer an action that can only fail. Those rows keep the switch and
+ * "Check again", and the provider's own message says what to do.
+ */
+export function setupProviderOffersSignIn(
+  provider: Pick<ProviderItem, "health" | "providerId">,
+): boolean {
+  const { state, signInUrl } = provider.health;
+  if (state === "browser_sign_in_required") {
+    // CodexBar named the page itself, so this works for any provider.
+    return Boolean(signInUrl);
+  }
+  if (
+    !OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
+  ) {
+    return false;
+  }
+  return state === "auth_required" || state === "setup_required";
+}
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
+  onOpenSignIn?: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
@@ -67,6 +128,7 @@ type ProviderListProps = {
 export function ProviderList({
   className,
   onCheckAgain,
+  onOpenSignIn,
   onToggle,
   pendingCheckIds,
   pendingPreferenceIds,
@@ -113,7 +175,13 @@ export function ProviderList({
             key={provider.id}
             label={provider.label}
             detail={provider.health.message}
+            nextAction={provider.health.nextAction}
             onCheckAgain={() => onCheckAgain(provider)}
+            onOpenSignIn={
+              onOpenSignIn && setupProviderOffersSignIn(provider)
+                ? () => onOpenSignIn(provider)
+                : undefined
+            }
             onToggle={(enabled) => onToggle(provider, enabled)}
             reportedMessage={provider.health.reported}
             saving={pendingPreferenceIds.has(provider.id)}
@@ -157,6 +225,7 @@ export function SetupProvidersScreen({
   onCheckAgain,
   onContinue,
   onCreateSupportReport,
+  onOpenSignIn,
   onToggle,
   continuing = false,
   loading = false,
@@ -186,6 +255,7 @@ export function SetupProvidersScreen({
       <ProviderList
         className="mt-4"
         onCheckAgain={onCheckAgain}
+        onOpenSignIn={onOpenSignIn}
         onToggle={onToggle}
         pendingCheckIds={pendingCheckIds}
         pendingPreferenceIds={pendingPreferenceIds}
@@ -235,8 +305,7 @@ function SetupProvidersLoadingScreen({
     ...Array.from({ length: stillCheckingCount }, (_, index) => ({
       id: `still-checking-${index + 1}`,
       text: "still checking, hang tight",
-      tone:
-        index < stillCheckingCount - 1 ? ("done" as const) : undefined,
+      tone: index < stillCheckingCount - 1 ? ("done" as const) : undefined,
     })),
   ];
 
@@ -307,9 +376,7 @@ export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
 }
 
 /** Keep CodexBar's order inside the on and off groups. */
-function setupProvidersEnabledFirst(
-  providers: ProviderItem[],
-): ProviderItem[] {
+function setupProvidersEnabledFirst(providers: ProviderItem[]): ProviderItem[] {
   return [
     ...providers.filter((provider) => provider.value === true),
     ...providers.filter((provider) => provider.value !== true),

@@ -24,6 +24,14 @@ type dashboardServeHelperRecord struct {
 	PID      int      `json:"pid"`
 }
 
+// Every wait here observes work the supervisor does in its own goroutines,
+// each step costing a real child process start. Three seconds is enough on a
+// developer Mac but not on the shared Windows runner, where starting the test
+// binary again is far slower: a restart test then reported one child instead
+// of two and failed a correct supervisor. The generous budget only decides how
+// long a broken supervisor takes to fail, never whether a healthy one passes.
+const dashboardServeTestWait = 30 * time.Second
+
 type dashboardServeRoundTripper func(*http.Request) (*http.Response, error)
 
 func (fn dashboardServeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -207,13 +215,15 @@ func TestDashboardServeSupervisorAllowsStartupFailuresBeforeReady(t *testing.T) 
 func TestDashboardServeSupervisorRestartsReadyChildAfterConsecutiveHealthFailures(t *testing.T) {
 	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
 	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
-	checks := 0
-	var checksMu sync.Mutex
+	// The mocked health answers are tied to the child having reported itself,
+	// not to a check count. Counting checks turned the first child unhealthy
+	// after roughly 40ms, which is less than the time Windows needs to start a
+	// process at all: the supervisor then killed each child before it could
+	// write its record and the test saw one record forever. Staying healthy
+	// until a child has reported keeps the intent -- a child that was ready and
+	// then goes unhealthy is replaced -- without racing the process start.
 	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(req *http.Request) (*http.Response, error) {
-		checksMu.Lock()
-		defer checksMu.Unlock()
-		checks++
-		if checks > 1 {
+		if info, err := os.Stat(recordPath); err == nil && info.Size() > 0 {
 			return nil, errors.New("health unavailable")
 		}
 		return &http.Response{
@@ -271,7 +281,7 @@ func TestDashboardServeSupervisorHealthSuccessResetsFailureCount(t *testing.T) {
 	}()
 
 	waitForDashboardServeRecords(t, recordPath, 1)
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(dashboardServeTestWait)
 	for time.Now().Before(deadline) {
 		checksMu.Lock()
 		completed := checks >= len(responses)
@@ -393,7 +403,7 @@ func helperExit(format string, args ...any) {
 
 func waitForDashboardServeHealthy(t *testing.T, supervisor *DashboardServeSupervisor) DashboardServeInfo {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(dashboardServeTestWait)
 	for time.Now().Before(deadline) {
 		info := supervisor.Info()
 		if info.Running && info.Healthy {
@@ -407,7 +417,7 @@ func waitForDashboardServeHealthy(t *testing.T, supervisor *DashboardServeSuperv
 
 func waitForDashboardServeRecords(t *testing.T, path string, want int) []dashboardServeHelperRecord {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(dashboardServeTestWait)
 	for time.Now().Before(deadline) {
 		records := readDashboardServeRecords(t, path)
 		if len(records) >= want {
