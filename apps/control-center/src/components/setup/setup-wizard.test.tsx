@@ -516,6 +516,83 @@ function shownStep(): string {
 }
 
 describe("SetupWizard: direct connection", () => {
+  it("releases a vanished cable selection before choosing a different discovered WiFi device", async () => {
+    const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" };
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" };
+    const connect = vi.fn().mockRejectedValueOnce({ message: "Cable disconnected" }).mockResolvedValue({ firmware: "1.0.43" });
+    const props = baseProps({
+      step: "device", connectionMode: "", connectionModeChoiceRequired: true,
+      activeDeviceId: cable.deviceId,
+      deviceSearchState: "multiple", deviceCandidates: [cable, wifi],
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("radio", { name: /cable-device/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+    rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} deviceCandidates={[wifi]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Set up WiFi with your phone/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /wifi-device/ }));
+    expect(connect).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(connect).toHaveBeenLastCalledWith(wifi));
+    expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+  });
+
+  it.each([1, 2])("recovers saved Cable through an explicit choice among %i discovered WiFi devices without provisioning", async (count) => {
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "known-device", transport: "wifi" };
+    const connect = vi.fn().mockResolvedValue({ firmware: "1.0.43" });
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      activeDeviceId: wifi.deviceId,
+      deviceSearchState: "multiple",
+      deviceCandidates: [wifi, ...(count === 2 ? [{ ...wifi, target: "http://192.168.1.43", deviceId: "other-device" }] : [])],
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    render(<SetupWizard {...props} />);
+    expect(connect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ }));
+    if (count === 2) {
+      expect(connect).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByRole("radio", { name: /known-device/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    }
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(wifi));
+    expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+    expect(props.onSearchDevices).not.toHaveBeenCalled();
+  });
+
+  it("connects the discovered cable only after the customer chooses recovery from saved WiFi", async () => {
+    const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "known-device", transport: "cable" };
+    const connect = vi.fn().mockResolvedValue({ firmware: "1.0.43" });
+    const props = baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple", deviceCandidates: [cable],
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    render(<SetupWizard {...props} />);
+    expect(connect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Use the cable/ }));
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+    expect(props.onSearchDevices).not.toHaveBeenCalled();
+  });
+
+  it.each(["wifi", "cable"] as const)("offers recovery when a completed scan only finds the alternative to saved %s", (savedMode) => {
+    const alternative = savedMode === "wifi" ? "cable" : "wifi";
+    const props = baseProps({
+      step: "device", connectionMode: savedMode, connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: alternative === "cable" ? "cable://vibetv" : "http://192.168.1.42", deviceId: "known-device", transport: alternative }],
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
+    expect(props.connectSteps.connect).not.toHaveBeenCalled();
+    expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+  });
+
   it.each([1, 2])("connects the selected WiFi device without switching any of %i Cable devices", async (cableCount) => {
     const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "cable-a", transport: "cable" };
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-b", transport: "wifi" };

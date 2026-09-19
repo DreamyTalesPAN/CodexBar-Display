@@ -336,7 +336,9 @@ export function SetupWizard(props: SetupWizardProps) {
 
   const searchFailed =
     connectionDecision.kind === "not-found" &&
-    deviceSearchState === "not-found" &&
+    // A completed combined scan may find only the other transport. That is
+    // still no result for the saved mode, not a search that is still running.
+    (deviceSearchState === "not-found" || deviceSearchState === "multiple") &&
     !notFoundDismissed && !wifiError;
   // "idle" is before the first scan was started, so like "searching" it has no
   // result to report. Claiming a count there told the customer none were found
@@ -406,6 +408,9 @@ export function SetupWizard(props: SetupWizardProps) {
       setWiFiError(null);
       setPreferredTransport(transport);
       setSelectedTarget(null);
+      if (connectionCandidates.length === 0) {
+        setConnectionDeviceId(null);
+      }
       if (transport === "cable") {
         setWiFiSetup(null);
         if (
@@ -418,6 +423,13 @@ export function SetupWizard(props: SetupWizardProps) {
       const cable = connectionCandidates.find(
         (candidate) => candidate.transport === "cable" && candidateKey(candidate) === preselected,
       ) || connectionCandidates.find((candidate) => candidate.transport === "cable");
+      // An already discovered WiFi device needs selection, not provisioning
+      // through a cable that is no longer connected. Keep the normal picker
+      // (and its identity check) responsible for choosing the device.
+      if (!cable && deviceCandidates.some((candidate) => candidate.transport === "wifi")) {
+        setWiFiSetup(null);
+        return;
+      }
       setWiFiSetup({
         phase: "selecting",
         deviceId: cable?.deviceId,
