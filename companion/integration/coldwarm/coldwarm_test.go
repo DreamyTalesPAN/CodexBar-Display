@@ -26,6 +26,12 @@ type deviceStatus struct {
 	Connected       bool   `json:"connected"`
 	Ready           bool   `json:"ready"`
 	ConnectionState string `json:"connectionState"`
+	Stream          struct {
+		ErrorCode string `json:"errorCode"`
+	} `json:"stream"`
+	Health struct {
+		RenderKind string `json:"renderKind"`
+	} `json:"health"`
 }
 
 // TestColdWarm runs actual daemon processes and the protocol-faithful virtual
@@ -34,6 +40,15 @@ func TestColdWarm(t *testing.T) {
 	if os.Getenv("VIBETV_COLDWARM_E2E") != "1" {
 		t.Skip("set VIBETV_COLDWARM_E2E=1 to run the process-level simulation")
 	}
+	for _, mode := range []string{"signed_in", "signed_out"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			runColdWarm(t, mode == "signed_out")
+		})
+	}
+}
+
+func runColdWarm(t *testing.T, signedOut bool) {
 	work := filepath.Join(t.TempDir(), "simulation with spaces")
 	if err := os.Mkdir(work, 0700); err != nil {
 		t.Fatal(err)
@@ -99,6 +114,9 @@ func TestColdWarm(t *testing.T) {
 		"XDG_CONFIG_HOME="+configHome, "CODEXBAR_CONFIG="+filepath.Join(work, "codexbar.json"),
 		"CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL=com.vibetv.simulation."+strconv.Itoa(os.Getpid()),
 		"CODEXBAR_BIN="+mock)
+	if signedOut {
+		env = append(env, "VIBETV_SIMULATION_SIGNED_OUT=1")
+	}
 	var daemon *exec.Cmd
 	var daemonDone chan error
 	var lease string
@@ -174,7 +192,7 @@ func TestColdWarm(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Like the shell simulation, start with a stored theme. A reachable
+		// Start with a stored theme. A reachable
 		// device without a theme correctly remains setup_required, not ready.
 		var asset bytes.Buffer
 		form := multipart.NewWriter(&asset)
@@ -240,7 +258,13 @@ func TestColdWarm(t *testing.T) {
 	connected := func(d deviceStatus) bool { return d.Connected }
 	framesBefore := 0
 	ready := func(d deviceStatus) bool {
-		return d.Connected && d.Ready && d.ConnectionState == "ready" && device.Snapshot().FramesAccepted > framesBefore
+		if !d.Connected || device.Snapshot().FramesAccepted <= framesBefore {
+			return false
+		}
+		if signedOut {
+			return !d.Ready && d.Stream.ErrorCode == "provider_setup_required" && d.Health.RenderKind == "status"
+		}
+		return d.Ready && d.ConnectionState == "ready"
 	}
 	assertFrame := func(previous int) {
 		t.Helper()
@@ -257,9 +281,9 @@ func TestColdWarm(t *testing.T) {
 	waitFor("S2a device ON / connected", 30*time.Second, connected, false)
 	waitFor("S2b device ON / ready", 60*time.Second, ready, false)
 	assertFrame(0)
+	stopRuntime()
 	frames := device.Snapshot().FramesAccepted
 	framesBefore = frames
-	stopRuntime()
 	startRuntime()
 	waitFor("S3a warm daemon restart / connected", 30*time.Second, connected, false)
 	waitFor("S3b warm daemon restart / ready", 60*time.Second, ready, false)
