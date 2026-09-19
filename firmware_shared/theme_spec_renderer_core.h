@@ -1,7 +1,5 @@
 #pragma once
 
-#include "agent_activity.h"
-
 #include <ArduinoJson.h>
 
 #include <cstdint>
@@ -1174,7 +1172,7 @@ inline const char* CompiledStateAssetPathFor(
     }
   }
   const char* activity = frame.activity == nullptr ? "" : frame.activity;
-  if (agentactivity::IsWorking(activity) &&
+  if (std::strcmp(activity, "coding") == 0 &&
       primitive.codingAssetPath != nullptr &&
       primitive.codingAssetPath[0] != '\0') {
     return primitive.codingAssetPath;

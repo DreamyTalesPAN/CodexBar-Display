@@ -78,8 +78,8 @@ writer disappearance must clear active animation within the device's bound.
    shutdown, recovery and source discovery. Reuse original upstream adapters.
 5. [x] Add one supervised Companion integration and remove the conflicting old
    activity inference from the authoritative display path.
-6. [x] Expose the same status through Companion API, Control Center and frames;
-   update compatible theme/firmware handling without breaking older themes.
+6. [ ] Expose the same status through Companion API and frames (implemented);
+   design and implement customer presentation after the independent design pass.
 7. [ ] Bundle helper/runtime in Mac and Windows app builds and normal updates.
 8. [ ] Run the matrix below; open/update the one PR as a draft until gates pass.
 
@@ -120,7 +120,31 @@ operation and risk and obtain the specific confirmation required by AGENTS.md.
 Prepare the runnable test first; do not use that final boundary to delay local
 implementation or checks. No main merge, tag or release is authorized here.
 
-## Implementation evidence, 2026-09-19
+## Presentation reset, 2026-09-19
+
+At the user's request, the issue #172 Control Center presentation, its browser
+wiring/types and UI-specific tests were removed. The new lifecycle-to-animation
+mapping was also removed from both browser and firmware renderers. The #427
+setup/usage/provider UI and its main-integration fixes remain intact.
+
+The engine, managed observation hooks, session semantics, Companion API,
+packaging and device protocol/expiry remain implemented. Full-phase transport
+is not a finished visual treatment: existing renderers again recognize only
+their previous `coding` asset condition. Customer presentation and device
+animation behavior must be designed and tested before release. The independent
+brief is `agent-lifecycle-design-brief.md`; it prescribes no UI placement.
+Earlier screenshots and presentation test results are historical evidence,
+not the current UI or approval. The earlier presentation approval request is
+superseded by this reset.
+
+Rollback validation: 677 Control Center unit tests, TypeScript, customer-copy
+guard, the customer browser smoke suite and 150 native firmware renderer/core
+tests pass. Source comparison against `013eff6e` confirms the prior frontend
+components are restored (apart from an existing trailing-whitespace cleanup);
+only #427 provider-dialog test corrections remain in the browser test runner.
+No device writes were performed.
+
+## Implementation evidence before presentation reset, 2026-09-19
 
 - Main integration preserves Windows provider sign-in, the current serial
   discovery deadline and alternative-transport recovery. #427 owns theme-first

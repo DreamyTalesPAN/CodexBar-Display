@@ -1,0 +1,28 @@
+# Prompt für Claude Design
+
+Entwirf mit frischem Blick eine verständliche Produkterfahrung für das neue Agent-Lifecycle-Feature von VibeTV. VibeTV ist ein kleines physisches Schreibtischdisplay mit einer begleitenden Anwendung für macOS und Windows. Menschen sollen während ihrer Arbeit erkennen können, welche ihrer lokalen KI-Agents beschäftigt sind, welche ihre Aufmerksamkeit brauchen und welche fertig sind. Mehrere Agents und Aufgaben können gleichzeitig laufen.
+
+Entwickle Informationsarchitektur, Interaktionen, visuelle Sprache und Produkttexte eigenständig aus diesem Bedarf. Berücksichtige die bestehende VibeTV-Marke und das vorhandene Designsystem. Die folgenden Angaben beschreiben technische Fähigkeiten und Grenzen; sie legen keine Gestaltung fest. Verwende englische Produkttexte und erkläre deine Entscheidungen auf Deutsch.
+
+## Technische Grundlage
+
+- Ein lokal mitgelieferter Hintergrundprozess auf Basis eines gepinnten Clawd-Forks beobachtet native Agent-Ereignisse und lokale Logs. Clawd übernimmt die Erkennung und Bedeutung der Zustände. VibeTV erhält einen einheitlichen, versionierten Datenvertrag und erfindet selbst keine Agent-Zustände.
+- Verbrauch, Limits und Anmeldung bleiben eine getrennte Funktion von CodexBar. Ein Agent-Client und ein Anbieter für Nutzungslimits sind nicht automatisch dasselbe. Aktivität darf weder aus Verbrauchsänderungen abgeleitet werden noch eigenmächtig die gewählte Verbrauchsquelle wechseln.
+- Der Vertrag unterscheidet zwölf Zustände: `idle` (keine laufende Arbeit), `working` (Arbeit läuft), `thinking` (explizit gemeldetes Nachdenken), `tool_use` (Tool wird ausgeführt), `compacting` (Kontext wird komprimiert), `waiting_for_permission` (Freigabe erforderlich), `waiting_for_answer` (konkrete Frage offen), `waiting_for_review` (Prüfung oder Entscheidung erforderlich), `done` (Aufgabe gerade beendet), `error` (beobachteter Fehler), `stale` (nicht mehr ausreichend aktueller Zustand) und `unavailable` (keine verlässliche Aussage möglich).
+- Nicht jeder Client liefert jeden Zustand. Insbesondere ist explizites `thinking` derzeit für keinen Client verifiziert. Gröbere, belegte Aussagen sind erlaubt; erfundene Genauigkeit ist es nicht. `idle` bedeutet nicht, dass eine konkrete Frage beantwortet werden muss. `done` wird nur begrenzt gehalten und darf nach einem Neustart nicht erneut als neues Ereignis erscheinen. Tool-Fehler können von einem Fehler der gesamten Aufgabe unterschieden werden.
+- Sitzungen bleiben unabhängig, auch beim gleichen Client oder Projekt. Verfügbar sind stabile pseudonyme Sitzungskennungen, die Agent-Quelle, der Zustand, Beobachtungszeitpunkte und gegebenenfalls eine Beziehung zwischen Haupt- und Unteragent. Projektnamen, Aufgabentitel, Prompts, Antworten, Befehle, Transkripte und Dateipfade gehören nicht zum exportierten Datenumfang.
+- Die Funktionsfähigkeit der Erkennung und der Zustand einer Aufgabe sind getrennte Informationen. Längere Stille allein macht eine arbeitende Sitzung nicht untätig. Ausfall der Erkennung darf nicht wie zuverlässig laufende Arbeit wirken.
+
+## Verbindungen und Handlungen
+
+- Codex wird automatisch über lokale Logs beobachtet. Für Claude Code, Gemini CLI, Copilot CLI, Qwen Code, Qoder, QoderWork, QwenWork und Antigravity CLI gibt es eine technische Anbindung über installierbare Beobachtungs-Hooks. Aktivierung und Deaktivierung sind möglich; bestehende fremde Hooks und Freigaberegeln bleiben erhalten. Bereits laufende Agent-Sitzungen müssen gegebenenfalls neu gestartet werden.
+- Der Vertrag unterscheidet automatische, aktivierte, deaktivierte, blockierte und nicht unterstützte Anbindungen. Unterstützung wird aus den gemeldeten Fähigkeiten abgeleitet. Weitere im Upstream registrierte Clients sind noch keine nutzbaren Integrationen.
+- Das Feature beobachtet ausschließlich. Es kann keine Freigabe erteilen oder ablehnen, keine Frage beantworten, keinen Review abschließen und keine Agent-Aufgabe starten oder stoppen. Diese Handlungen bleiben in der ursprünglichen Agent-Anwendung. Automatisches Öffnen der richtigen Sitzung ist nicht zugesichert.
+- Engine und Runtime werden mit der VibeTV-Anwendung ausgeliefert und über deren normalen Updateweg aktualisiert. Bereits aktivierte Hooks werden auf die neue Version angepasst. Es soll keinen separaten Installations- oder Updateprozess für Kunden geben.
+- Das technische Ziel umfasst macOS und Windows. Reale Codex- und Claude-Sitzungen wurden auf diesem Mac geprüft; native Windows-Abnahme und die Abnahme weiterer Clients stehen aus. Behaupte keine vollständig geprüfte Unterstützung aller Clients oder Zustände.
+
+## Designauftrag
+
+Entwickle ein zusammenhängendes Konzept, das auch bei vielen gleichzeitigen Sitzungen verständlich bleibt. Zeige anhand konkreter Entwürfe: erster Kontakt mit dem Feature, Aktivierung einer Anbindung, keine beobachtete Sitzung, mehrere parallele Aufgaben mit Unteragents, laufende Arbeit, erforderliche Freigabe/Antwort/Prüfung, Abschluss, Fehler sowie veraltete oder fehlende Daten. Berücksichtige eingeschränkte Fähigkeiten einzelner Clients, fehlgeschlagene Konfiguration und den Platz eines kleinen physischen Displays. Wähle Priorisierung und Verhalten bei konkurrierenden Zuständen bewusst; kennzeichne dafür nötige neue Backend-Fähigkeiten als Vorschlag.
+
+Begründe deine empfohlene Lösung, liefere ausgearbeitete visuelle Entwürfe und beschreibe Interaktionen, Zustandsübergänge, Barrierefreiheit und Verhalten bei schmaler Darstellung. Status darf nicht allein durch Farbe verständlich sein. Benenne offene Produktentscheidungen und trenne belegte technische Möglichkeiten von zusätzlichen Ideen. Beginne mit der Gestaltung; ändere die technische Implementierung nicht.

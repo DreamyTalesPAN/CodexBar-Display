@@ -2553,24 +2553,6 @@ void testAgentActivityExpiresWithoutChangingUsage() {
   TEST_ASSERT_EQUAL_STRING("tool_use", state.current.activity.c_str());
 }
 
-void testAllActiveAgentPhasesUseLegacyCodingAssets() {
-  const char* spec = R"JSON({"themeSpecVersion":1,"themeId":"agent-test","themeRev":1,"primitives":[{"type":"gif","x":0,"y":0,"width":10,"height":10,"stateAssets":{"idle":"/idle.gif","coding":"/coding.gif"}}]})JSON";
-  for (const char* phase : {"working", "thinking", "tool_use", "compacting"}) {
-    FrameData frame = testFrame();
-    frame.activity = phase;
-    RecordingSink sink;
-    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-    TEST_ASSERT_EQUAL_STRING("/coding.gif", sink.commands[1].assetPath.c_str());
-  }
-  for (const char* phase : {"waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "unavailable"}) {
-    FrameData frame = testFrame();
-    frame.activity = phase;
-    RecordingSink sink;
-    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-    TEST_ASSERT_EQUAL_STRING("/idle.gif", sink.commands[1].assetPath.c_str());
-  }
-}
-
 void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3617,7 +3599,6 @@ int main() {
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testAgentActivityExpiresWithoutChangingUsage);
-  RUN_TEST(testAllActiveAgentPhasesUseLegacyCodingAssets);
   RUN_TEST(testUsageProgressIgnoresTokenHistoryExpiryAndRestore);
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
   RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
