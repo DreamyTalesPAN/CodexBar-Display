@@ -96,6 +96,25 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
+  it("keeps an acknowledged sign-in issue dismissed while sign-in and background checks run", () => {
+    const failed = provider({ providerId: "claude", label: "Claude", health: "auth_required", message: "Sign in required." });
+    const onOpenSignIn = vi.fn();
+    const props = { usage, providers: [failed], onOpenSignIn,
+      onCheckAgain: vi.fn(), onToggle: vi.fn(), onContinue: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+    expect(onOpenSignIn).toHaveBeenCalledWith(failed);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["claude"])} />);
+    rerender(<SetupProvidersScreen {...props} providers={[{ ...failed }]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const changed = { ...failed, health: { ...failed.health, message: "A new sign-in failure." } };
+    rerender(<SetupProvidersScreen {...props} providers={[changed]} />);
+    expect(within(screen.getByRole("dialog")).getByText("A new sign-in failure.")).toBeTruthy();
+  });
+
   it("shows one provider popup, keeps dismissal across polls, and reopens after retry", () => {
     const onCheckAgain = vi.fn();
     const onToggle = vi.fn();

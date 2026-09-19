@@ -4471,3 +4471,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: This adds no new visible result. It is the test coverage for the screen Marcus approved above with "Okay, das klingt sehr gut", after CI showed that the existing hosted-download flow checks only passed by accident of the runner's own operating system.
 - Approved customer-visible result: Unchanged from the entry above. The customer flow run now states the customer's system explicitly instead of inheriting it from the machine running the test, so the Mac checks really check the Mac screen, and a new check covers the Windows screen: the disabled "Download for Windows" button while no installer is published, the Windows install steps instead of the DMG steps, and the quiet "Using a Mac? Download for macOS" link pointing at the verified DMG.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. No product code, copy, control or state changes with this entry. Verified by a full local `npm run test:customer-flows` run. This approves the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-19 — Fix the recurring Claude sign-in dialog in PR #407
+
+- User approval: After the remaining Claude-dialog UI failure was reported, Marcus explicitly requested "Ok kannst du den Fehler noch Fixen?". This entry records that narrow bug-fix request.
+- Approved customer-visible result: Starting provider sign-in does not immediately reopen the same error message the customer already acknowledged. New or changed errors still appear, and an explicit Check again can show the result again. Existing labels, layout, sign-in requests, and background checks are unchanged.
+- Scope: Remove the dismissal reset from the shared provider list's sign-in handler and add regression coverage. PR-branch fix only; no merge, release, installation, or device operation.

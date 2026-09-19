@@ -226,7 +226,6 @@ export function ProviderList({
             onOpenSignIn={
               onOpenSignIn && setupProviderOffersSignIn(provider)
                 ? () => {
-                    resetIssue(provider);
                     onOpenSignIn(provider);
                   }
                 : undefined
