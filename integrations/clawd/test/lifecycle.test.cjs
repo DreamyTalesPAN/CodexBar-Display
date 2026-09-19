@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {observe, project} = require('../src/lifecycle.cjs');
 const row = (event, state='working', extra={}) => {
- const session={agentId:'claude-code', state, ...extra};
+ const session={agentId:'claude-code', state, awaitingInputSinceStop:event==='Stop'||event==='event_msg:task_complete', ...extra};
  observe(session, null, event, state, {}, 1000);
  return session;
 };
@@ -23,13 +23,13 @@ test('permission, question and review stay distinct across notifications',()=>{
 test('completion is bounded and duplicate Stop cannot replay it',()=>{
  let session=row('Stop','attention');
  assert.equal(project('s',session,{now:1001,doneMs:1000}).phase,'done');
- const previous=session;session={agentId:'claude-code',state:'attention'};
+ const previous=session;session={agentId:'claude-code',state:'attention',awaitingInputSinceStop:true};
  observe(session,previous,'Stop','attention',{},5000);
  assert.equal(project('s',session,{now:5000,doneMs:1000}).phase,'idle');
  assert.equal(session.observation.completedAt,1000);
 });
 test('historical completion is never replayed on restart',()=>{
- const session={agentId:'codex',state:'attention'};
+ const session={agentId:'codex',state:'attention',awaitingInputSinceStop:true};
  observe(session,null,'event_msg:task_complete','attention',{recapOccurredAt:500,recapSuppressed:true},1000);
  assert.equal(project('s',session,{now:1000}).phase,'idle');
 });
@@ -45,4 +45,19 @@ test('export strips private fields and hashes source identifiers',()=>{
 test('missing and future evidence cannot imply working',()=>{
  assert.equal(project('s',{agentId:'codex',state:'working'},{now:1000}).phase,'unavailable');
  assert.equal(project('s',row('PreToolUse'),{now:0}).phase,'unavailable');
+});
+
+test('upstream completion gate owns acceptance, including delayed promotion',()=>{
+ const session=row('Stop','working',{awaitingInputSinceStop:false});
+ assert.equal(project('s',session,{now:2000}).phase,'working');
+ assert.equal(project('s',session,{now:2000}).completionId,undefined);
+ session.awaitingInputSinceStop=true;
+ assert.equal(project('s',session,{now:3000}).phase,'done');
+});
+test('quiet live agent remains active, dead agent cannot stay working',()=>{
+ const session=row('PreToolUse','working',{agentPid:123,pidReachable:true});
+ assert.equal(project('s',session,{now:900000,isProcessAlive:()=>true}).phase,'tool_use');
+ assert.equal(project('s',session,{now:1001,isProcessAlive:()=>false}).phase,'unavailable');
+ session.sourcePid=456;session.agentPid=null;
+ assert.equal(project('s',session,{now:900000,isProcessAlive:()=>true}).phase,'stale');
 });

@@ -154,4 +154,3 @@ function PreviewBar({ percent }: { percent: number | null }) {
     </span>
   );
 }
-

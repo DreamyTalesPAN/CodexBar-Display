@@ -573,6 +573,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	server, err := companionapi.New(companionapi.Options{
 		DisplayStreamRunning: workerRunning.Load,
 		AgentSnapshot:        engine.Snapshot,
+		ConfigureAgent:       engine.Configure,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
@@ -1012,6 +1013,7 @@ type doctorRuntimeConfig struct {
 	target      string
 	probeTarget string
 	authReady   bool
+	port        string
 }
 
 func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
@@ -1113,6 +1115,8 @@ func doctorTaskRuntimeConfig(home, label string, args []string) (doctorRuntimeCo
 			config.transport = args[i+1]
 		case "--target":
 			config.target = args[i+1]
+		case "--port":
+			config.port = args[i+1]
 		}
 	}
 	config.authReady = config.transport != "wifi"

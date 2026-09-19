@@ -6,6 +6,8 @@ import io
 import json
 import pathlib
 import shutil
+import subprocess
+import tempfile
 import tarfile
 import urllib.request
 import zipfile
@@ -48,7 +50,7 @@ def prepare_source():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--platform', choices=LOCK['node']['artifacts'])
+    parser.add_argument('--platform', choices=[*LOCK['node']['artifacts'], 'darwin-universal'])
     parser.add_argument('--output', type=pathlib.Path)
     args = parser.parse_args()
     if bool(args.platform) != bool(args.output):
@@ -60,23 +62,39 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     # Build into a caller-owned staging directory; the normal app updater owns
     # installation and atomic replacement of the containing application.
-    for name in ('src', 'upstream'):
-        shutil.copytree(ROOT / name, output / name, dirs_exist_ok=True)
-    for name in ('upstream.lock.json', 'NOTICE.md', 'prepare.py'):
+    for name in ('src', 'test', 'upstream'):
+        if (output / name).exists():
+            shutil.rmtree(output / name)
+        shutil.copytree(ROOT / name, output / name)
+    # Full corresponding upstream source, including files not used at runtime.
+    shutil.copyfile(ROOT / '.cache' / LOCK['clawd']['archiveSha256'], output / 'clawd-source.tar.gz')
+    for name in ('upstream.lock.json', 'NOTICE.md', 'prepare.py', 'node.entitlements'):
         shutil.copyfile(ROOT / name, output / name)
-    artifact = LOCK['node']['artifacts'][args.platform]
-    data = download('https://nodejs.org/dist/v' + LOCK['node']['version'] + '/' + artifact['file'], artifact['sha256'])
-    folder = artifact['file'].removesuffix('.tar.gz').removesuffix('.zip')
-    if args.platform.startswith('win'):
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            binary = archive.read(folder + '/node.exe')
-            license_text = archive.read(folder + '/LICENSE')
-        name = 'node.exe'
-    else:
-        with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-            binary = archive.extractfile(folder + '/bin/node').read()
-            license_text = archive.extractfile(folder + '/LICENSE').read()
-        name = 'node'
+    platforms = ['darwin-arm64', 'darwin-x64'] if args.platform == 'darwin-universal' else [args.platform]
+    binaries = []
+    for platform in platforms:
+        artifact = LOCK['node']['artifacts'][platform]
+        data = download('https://nodejs.org/dist/v' + LOCK['node']['version'] + '/' + artifact['file'], artifact['sha256'])
+        folder = artifact['file'].removesuffix('.tar.gz').removesuffix('.zip')
+        if platform.startswith('win'):
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                binary = archive.read(folder + '/node.exe')
+                license_text = archive.read(folder + '/LICENSE')
+            name = 'node.exe'
+        else:
+            with tarfile.open(fileobj=io.BytesIO(data)) as archive:
+                binary = archive.extractfile(folder + '/bin/node').read()
+                license_text = archive.extractfile(folder + '/LICENSE').read()
+            name = 'node'
+        binaries.append(binary)
+    if len(binaries) == 2:
+        with tempfile.TemporaryDirectory(prefix='vibetv-node-') as work:
+            paths = [pathlib.Path(work) / arch for arch in ('arm64', 'x64')]
+            for target, data in zip(paths, binaries):
+                target.write_bytes(data)
+            universal = pathlib.Path(work) / 'node'
+            subprocess.run(['lipo', '-create', *map(str, paths), '-output', str(universal)], check=True)
+            binary = universal.read_bytes()
     (output / name).write_bytes(binary)
     (output / name).chmod(0o755)
     (output / 'NODE-LICENSE').write_bytes(license_text)

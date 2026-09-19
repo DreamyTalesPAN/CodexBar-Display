@@ -1688,12 +1688,12 @@ func TestRunWithDepsBootstrapsStickyProviderFromPersistedLastGood(t *testing.T) 
 func TestActivityUsesOnlyEngineEvenWhenQuotaChanges(t *testing.T) {
 	for _, phase := range []string{"working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "idle", "unavailable"} {
 		state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return agentstatus.Snapshot{Health: "ready", Phase: phase} }}
-		frame, _ := applySelectionActivity(protocol.Frame{Activity: "coding"}, codexbar.SelectionDecision{ActivitySignalReason: codexbar.SelectionReasonUsageDelta}, state, time.Now())
+		frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, state)
 		if frame.Activity != phase {
 			t.Fatalf("got %s want %s", frame.Activity, phase)
 		}
 	}
-	frame, _ := applySelectionActivity(protocol.Frame{Activity: "coding"}, codexbar.SelectionDecision{ActivitySignalReason: codexbar.SelectionReasonUsageDelta}, &runtimeState{}, time.Now())
+	frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, &runtimeState{})
 	if frame.Activity != "unavailable" {
 		t.Fatal("quota inferred activity")
 	}
@@ -6810,5 +6810,26 @@ func TestDisplaySelectionWakeDoesNotWaitForCollectionOrInterval(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("provider selection waited for collection or the periodic interval")
+	}
+}
+
+func TestDeviceActivityNegotiatesOldFirmwareWithoutChangingSource(t *testing.T) {
+	for _, phase := range []string{"working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "idle", "unavailable"} {
+		original := protocol.Frame{Activity: phase}
+		modern := protocol.CapabilitiesFromHello(protocol.DeviceHello{Features: []string{protocol.FeatureAgentActivityV1}})
+		if got := applyDeviceActivity(original, modern); got.Activity != phase {
+			t.Fatalf("lost full state: %+v", got)
+		}
+		want := "idle"
+		switch phase {
+		case "working", "thinking", "tool_use", "compacting":
+			want = "coding"
+		}
+		if got := applyDeviceActivity(original, protocol.DeviceCapabilities{}); got.Activity != want {
+			t.Fatalf("legacy state %s: got %s want %s", phase, got.Activity, want)
+		}
+		if original.Activity != phase {
+			t.Fatal("wire conversion mutated snapshot")
+		}
 	}
 }

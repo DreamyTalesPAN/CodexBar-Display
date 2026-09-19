@@ -12,8 +12,10 @@ async function main() {
  const runtimeDir=process.argv[2];
  if(!runtimeDir||!path.isAbsolute(runtimeDir)) throw Error('runtime-directory-required');
  fs.mkdirSync(runtimeDir,{recursive:true,mode:0o700});
+ const integrationOptions={runtimeDir,directory:path.resolve(__dirname,'..')};
+ require('./integrations.cjs').refreshConfigured(integrationOptions);
  const token=randomBytes(32).toString('hex');
- const engine=await createEngine({token,codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
+ const engine=await createEngine({token,integrationOptions,codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
  const endpoint=path.join(runtimeDir,'endpoint.json');
  const temp=endpoint+'.'+process.pid+'.tmp';
  fs.writeFileSync(temp,JSON.stringify({schemaVersion:1,url:engine.url,token}),{mode:0o600});

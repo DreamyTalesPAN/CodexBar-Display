@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -1627,6 +1628,9 @@ func TestParseProviderPayloadBuildsOrderedUsageWindows(t *testing.T) {
 }
 
 func TestSetUsageBarsShowUsedUsesCodexBarPreferenceAndReadback(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS defaults contract; Windows covered by native secure-settings tests")
+	}
 	dir := t.TempDir()
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")

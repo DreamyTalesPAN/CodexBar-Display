@@ -24,6 +24,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
@@ -788,7 +789,22 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		t.Fatalf("accepted firmware update must retain the serial port: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
 	}
 	server.updateFirmwareUpdateJob(job.ID, func(job *firmwareUpdateJob) { job.Phase = "complete" })
+
+	rec = search()
+	if rec.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("Cable discovery must resume after update completion: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	}
+
+	// WiFi and Cable now run concurrently, so the Cable goroutine may own
+	// this mutex during the WiFi probe. Test WiFi alone to distinguish that
+	// legitimate ownership from an accidental lock around WiFi discovery.
+	server.discoverCableDevices = nil
+	wifiProbed := false
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	server.localNetworkAvailable = func() bool {
+		wifiProbed = true
+		defer cancel()
 		if !server.firmwareUpdateStartMu.TryLock() {
 			t.Error("WiFi discovery must not delay firmware update start")
 		} else {
@@ -796,9 +812,9 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		}
 		return false
 	}
-	rec = search()
-	if rec.Code != http.StatusOK || calls != 1 {
-		t.Fatalf("Cable discovery must resume after update completion: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	server.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)).WithContext(ctx))
+	if !wifiProbed {
+		t.Fatal("WiFi ownership assertion was not exercised")
 	}
 }
 
@@ -13744,5 +13760,51 @@ func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
 	}
 	if got := refusals(); got != 2 {
 		t.Fatalf("a refused theme-install hold must be counted too, got %d", got)
+	}
+}
+
+func TestStatusCarriesAuthoritativeAgentSnapshotWithoutDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	for _, phase := range []string{"unavailable", "waiting_for_permission", "done"} {
+		server.agentSnapshot = func() agentstatus.Snapshot {
+			return agentstatus.Snapshot{SchemaVersion: 1, Health: "ready", Phase: phase}
+		}
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if json.Unmarshal(response.Body.Bytes(), &got) != nil || got.Agents.Phase != phase {
+			t.Fatalf("snapshot lost: %s", response.Body.String())
+		}
+	}
+	server.agentSnapshot = nil
+	if server.agents().Phase != "unavailable" {
+		t.Fatal("missing helper became idle")
+	}
+}
+
+func TestAgentIntegrationRequiresExplicitChoiceAndReturnsEngineState(t *testing.T) {
+	s := newTestServer(t, runtimeconfig.Config{})
+	calls := 0
+	s.configureAgent = func(_ context.Context, source string, enabled bool) (agentstatus.Snapshot, error) {
+		calls++
+		if source != "claude-code" || !enabled {
+			t.Fatal("wrong source choice")
+		}
+		return agentstatus.Snapshot{SchemaVersion: 1, Health: "ready", Phase: "idle", Sessions: []agentstatus.Session{}, Sources: []agentstatus.Source{}}, nil
+	}
+	for _, body := range []string{`{}`, `{"source":"claude-code"}`, `{"source":"claude-code","enabled":"yes"}`, `{"source":"claude-code","enabled":true,"command":"approve"}`, `{"source":"claude-code","enabled":true} {}`} {
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/agents/integrations", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid choice accepted: %s", body)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("invalid request reached engine")
+	}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/agents/integrations", strings.NewReader(`{"source":"claude-code","enabled":true}`)))
+	if response.Code != http.StatusOK || calls != 1 || !strings.Contains(response.Body.String(), `"agents"`) {
+		t.Fatalf("%d %s", response.Code, response.Body.String())
 	}
 }

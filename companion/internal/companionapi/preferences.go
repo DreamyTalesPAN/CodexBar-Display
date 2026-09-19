@@ -912,7 +912,7 @@ func (usageDisplayPreferenceAdapter) Section() string     { return "display" }
 func (usageDisplayPreferenceAdapter) Owns(id string) bool { return id == usageDisplayPreferenceID }
 func (usageDisplayPreferenceAdapter) List(context.Context) ([]preferenceDescriptor, error) {
 	value := codexbar.UsageBarsShowUsed()
-	return []preferenceDescriptor{{ID: usageDisplayPreferenceID, Section: "display", Owner: "codexbar", Type: preferenceTypeBoolean, Label: "Show usage as", Value: value, EffectiveValue: value, Writable: true, WriteStrategy: "codexbar-defaults", Availability: preferenceAvailability{State: "available"}}}, nil
+	return []preferenceDescriptor{{ID: usageDisplayPreferenceID, Section: "display", Owner: "codexbar", Type: preferenceTypeBoolean, Label: "Show usage as", Value: value, EffectiveValue: value, Writable: true, WriteStrategy: "codexbar-preference", Availability: preferenceAvailability{State: "available"}}}, nil
 }
 func (a usageDisplayPreferenceAdapter) Write(ctx context.Context, id string, value any) (preferenceDescriptor, error) {
 	if !a.Owns(id) {

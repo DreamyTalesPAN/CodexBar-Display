@@ -827,3 +827,11 @@ export function automaticPoolForEnabledProviders(
   }
   return { mode: "automatic", providerIds };
 }
+
+export type AgentSnapshot = {
+  schemaVersion: number;
+  health: string;
+  phase: string;
+  sessions: { id: string; parentId?: string; source: string; phase: string; reason: string; observedAt: number; errorKind?: string }[];
+  sources: { id: string; name: string; capabilityLevel: string; connection?: string; explicitThinking: boolean }[];
+};

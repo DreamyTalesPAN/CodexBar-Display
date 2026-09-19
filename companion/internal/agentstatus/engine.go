@@ -4,15 +4,20 @@ package agentstatus
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +26,7 @@ import (
 
 type Session struct {
 	ID           string `json:"id"`
+	ParentID     string `json:"parentId,omitempty"`
 	Source       string `json:"source"`
 	Phase        string `json:"phase"`
 	Reason       string `json:"reason"`
@@ -34,6 +40,7 @@ type Source struct {
 	Transport        string `json:"transport"`
 	CapabilityLevel  string `json:"capabilityLevel"`
 	ExplicitThinking bool   `json:"explicitThinking"`
+	Connection       string `json:"connection"`
 }
 type Snapshot struct {
 	SchemaVersion    int       `json:"schemaVersion"`
@@ -68,13 +75,13 @@ func decode(data []byte, now time.Time) (Snapshot, error) {
 	}
 	seen := map[string]bool{}
 	for _, row := range s.Sessions {
-		if !idPattern.MatchString(row.ID) || seen[row.ID] || !sourcePattern.MatchString(row.Source) || !ValidPhase(row.Phase) || len(row.Reason) > 64 || len(row.ErrorKind) > 16 || row.ObservedAt > s.GeneratedAt || row.ObservedAt < 0 || (row.CompletionID != "" && !idPattern.MatchString(row.CompletionID)) {
+		if (row.ParentID != "" && !idPattern.MatchString(row.ParentID)) || !idPattern.MatchString(row.ID) || seen[row.ID] || !sourcePattern.MatchString(row.Source) || !ValidPhase(row.Phase) || len(row.Reason) > 64 || len(row.ErrorKind) > 16 || row.ObservedAt > s.GeneratedAt || row.ObservedAt < 0 || (row.CompletionID != "" && !idPattern.MatchString(row.CompletionID)) {
 			return s, errors.New("invalid engine session")
 		}
 		seen[row.ID] = true
 	}
 	for _, source := range s.Sources {
-		if !sourcePattern.MatchString(source.ID) || len(source.Name) > 80 || len(source.Transport) > 32 || len(source.CapabilityLevel) > 32 {
+		if !sourcePattern.MatchString(source.ID) || len(source.Name) > 80 || len(source.Transport) > 32 || len(source.CapabilityLevel) > 32 || len(source.Connection) > 24 {
 			return s, errors.New("invalid engine source")
 		}
 	}
@@ -82,15 +89,16 @@ func decode(data []byte, now time.Time) (Snapshot, error) {
 }
 
 type Engine struct {
-	mu       sync.RWMutex
-	value    Snapshot
-	received time.Time
-	wake     func()
+	mu         sync.RWMutex
+	value      Snapshot
+	received   time.Time
+	wake       func()
+	runtimeDir string
 }
 
 func (e *Engine) accept(value Snapshot, now time.Time) {
 	e.mu.Lock()
-	changed := e.value.Phase != value.Phase || e.value.Health != value.Health || len(e.value.Sessions) != len(value.Sessions)
+	changed := e.value.Phase != value.Phase || e.value.Health != value.Health || !slices.Equal(e.value.Sessions, value.Sessions) || !slices.Equal(e.value.Sources, value.Sources)
 	e.value = value
 	e.received = now
 	e.mu.Unlock()
@@ -114,7 +122,7 @@ func (e *Engine) snapshotAt(now time.Time) Snapshot {
 	return s
 }
 
-// BundledDirectory has the same relative layout in Mac Resources/bin and the
+// BundledDirectory has the same relative layout in Mac Contents/Helpers and the
 // Windows installation folder. The normal app updater replaces the whole unit.
 func BundledDirectory() string {
 	executable, err := os.Executable()
@@ -124,7 +132,7 @@ func BundledDirectory() string {
 	return filepath.Join(filepath.Dir(executable), "agent-engine")
 }
 func Start(ctx context.Context, directory, runtimeDir string, wake func()) *Engine {
-	e := &Engine{wake: wake}
+	e := &Engine{wake: wake, runtimeDir: runtimeDir}
 	e.unavailable("starting")
 	go func() {
 		for ctx.Err() == nil {
@@ -143,6 +151,8 @@ func Start(ctx context.Context, directory, runtimeDir string, wake func()) *Engi
 	return e
 }
 func (e *Engine) run(ctx context.Context, directory, runtimeDir string) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	binary := "node"
 	if runtime.GOOS == "windows" {
 		binary = "node.exe"
@@ -161,6 +171,9 @@ func (e *Engine) run(ctx context.Context, directory, runtimeDir string) {
 	if cmd.Start() != nil {
 		return
 	}
+	// A live process with no heartbeats must be restarted, too.
+	watchdog := time.AfterFunc(15*time.Second, cancel)
+	defer watchdog.Stop()
 	defer cmd.Wait()
 	defer cmd.Process.Kill()
 	reader := bufio.NewScanner(stdout)
@@ -170,6 +183,58 @@ func (e *Engine) run(ctx context.Context, directory, runtimeDir string) {
 		if err != nil {
 			return
 		}
+		watchdog.Reset(15 * time.Second)
 		e.accept(value, time.Now())
 	}
+}
+
+// Configure forwards an explicit user choice to Clawd. Source-specific paths,
+// settings formats and hook ownership stay entirely inside the engine.
+func (e *Engine) Configure(ctx context.Context, source string, enabled bool) (Snapshot, error) {
+	if !sourcePattern.MatchString(source) {
+		return Snapshot{}, errors.New("invalid agent source")
+	}
+	data, err := os.ReadFile(filepath.Join(e.runtimeDir, "endpoint.json"))
+	if err != nil {
+		return Snapshot{}, err
+	}
+	var endpoint struct {
+		URL   string `json:"url"`
+		Token string `json:"token"`
+	}
+	if len(data) > 4096 || json.Unmarshal(data, &endpoint) != nil {
+		return Snapshot{}, errors.New("invalid engine endpoint")
+	}
+	parsed, err := url.Parse(endpoint.URL)
+	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.User != nil || len(endpoint.Token) != 64 || strings.Trim(endpoint.Token, "abcdef0123456789") != "" {
+		return Snapshot{}, errors.New("invalid engine endpoint")
+	}
+	payload, _ := json.Marshal(map[string]any{"source": source, "enabled": enabled})
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.Scheme+"://"+parsed.Host+"/integrations", bytes.NewReader(payload))
+	if err != nil {
+		return Snapshot{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+endpoint.Token)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	defer client.CloseIdleConnections()
+	response, err := client.Do(req)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return Snapshot{}, errors.New("agent integration could not be saved")
+	}
+	data, err = io.ReadAll(io.LimitReader(response.Body, 65537))
+	if err != nil {
+		return Snapshot{}, err
+	}
+	value, err := decode(data, time.Now())
+	if err == nil {
+		e.accept(value, time.Now())
+	}
+	return value, err
 }

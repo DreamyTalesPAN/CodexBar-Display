@@ -155,3 +155,29 @@ func TestSetProviderEnabledGrantsClaudeCredentialsOnWindowsOnly(t *testing.T) {
 		t.Fatal("Claude must stay disabled in CodexBar when the consent flag cannot be written")
 	}
 }
+
+func TestUsageDisplayPreservesSecureSettingsAndConsent(t *testing.T) {
+	for _, secured := range []bool{false, true} {
+		data := []byte(`{"show_as_used":true,"claude_allow_reading_claude_code_credentials":false,"future":{"keep":1}}`)
+		if secured {
+			protected, _ := reversibleCodec.protect(data)
+			data, _ = json.Marshal(map[string]any{"format": "codexbar.secure-file", "version": 1, "payload": base64.StdEncoding.EncodeToString(protected)})
+		}
+		for _, value := range []bool{false, true} {
+			var err error
+			data, err = updateWindowsSettings(data, reversibleCodec, func(settings map[string]json.RawMessage) { settings["show_as_used"], _ = json.Marshal(value) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings, envelope, err := decodeWindowsSettings(data, reversibleCodec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got bool
+			_ = json.Unmarshal(settings["show_as_used"], &got)
+			if got != value || (envelope != nil) != secured || string(settings[claudeCredentialsFlag]) != "false" || string(settings["future"]) != `{"keep":1}` {
+				t.Fatalf("display write changed other settings: %s", data)
+			}
+		}
+	}
+}

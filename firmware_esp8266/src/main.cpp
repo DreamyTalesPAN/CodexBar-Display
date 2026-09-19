@@ -36,9 +36,9 @@
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 const char kThemeFeatureJSON[] =
-    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-health-v1\"]";
+    "[\"agent-activity-v1\",\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-health-v1\"]";
 #else
-const char kThemeFeatureJSON[] = "[]";
+const char kThemeFeatureJSON[] = "[\"agent-activity-v1\"]";
 #endif
 
 namespace {
@@ -1486,7 +1486,7 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
           ? (setupMode ? "setup" : "station")
           : "off";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-  config.featuresJSON = "[]";
+  config.featuresJSON = "[\"agent-activity-v1\"]";
 #else
   config.featuresJSON = kThemeFeatureJSON;
 #endif
@@ -4431,6 +4431,10 @@ void loop() {
   const unsigned long loopStartUs = micros();
   bool rendered = false;
   unsigned long renderDurationUs = 0;
+  if (codexbar_display::core::ExpireAgentActivity(runtimeCtx.runtime, millis())) {
+    runtimeCtx.screenDirty = true;
+  }
+
 
   if (pendingHttpRender) {
     const codexbar_display::core::SerialConsumeEvent event = pendingHttpRenderEvent;

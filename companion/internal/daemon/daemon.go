@@ -341,6 +341,10 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
+	// Refresh the activity lease independently of the usage collector cadence.
+	if opts.AgentSnapshot != nil && opts.Interval > 5*time.Second {
+		opts.Interval = 5 * time.Second
+	}
 	deps.beginDeviceWrite = opts.BeginDeviceWrite
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
@@ -1238,7 +1242,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
 	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
-	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
+	result.frame, result.activityDetail = applyAgentActivity(result.frame, state)
 	return result
 }
 
@@ -1383,7 +1387,7 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 
 // The Clawd snapshot is the sole activity owner. Quota deltas and collection
 // timestamps remain usage facts and cannot keep an agent marked as working.
-func applySelectionActivity(frame protocol.Frame, _ codexbar.SelectionDecision, state *runtimeState, _ time.Time) (protocol.Frame, string) {
+func applyAgentActivity(frame protocol.Frame, state *runtimeState) (protocol.Frame, string) {
 	frame.Activity = "unavailable"
 	if state != nil && state.agentSnapshot != nil {
 		snapshot := state.agentSnapshot()
@@ -1394,11 +1398,25 @@ func applySelectionActivity(frame protocol.Frame, _ codexbar.SelectionDecision, 
 	return frame, "activity=" + frame.Activity + " source=clawd"
 }
 
+// Older firmware understands only coding/idle. Negotiate the wire value while
+// the API retains the full lifecycle; new firmware also enforces the 15s lease.
+func applyDeviceActivity(frame protocol.Frame, caps protocol.DeviceCapabilities) protocol.Frame {
+	if !caps.SupportsAgentActivityV1 {
+		switch frame.Activity {
+		case "working", "thinking", "tool_use", "compacting", "coding":
+			frame.Activity = "coding"
+		default:
+			frame.Activity = "idle"
+		}
+	}
+	return frame
+}
+
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
-	frame, result.activityDetail = applySelectionActivity(frame, codexbar.SelectionDecision{}, state, deps.now())
+	frame, result.activityDetail = applyAgentActivity(frame, state)
 	if !result.usageFresh && result.failureErr == nil && state.agentSnapshot == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {
@@ -1408,6 +1426,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
+	frame = applyDeviceActivity(frame, caps)
 	if !caps.SupportsProviderSlotsV1 {
 		// Firmware without provider-slots-v1 would carry these rows as dead
 		// wire bytes against its frame budget.

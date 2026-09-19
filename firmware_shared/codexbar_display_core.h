@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "agent_activity.h"
 #include <ArduinoJson.h>
 #include <cstdio>
 #include <cstring>
@@ -1453,6 +1454,15 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
 #endif
 }
 
+// Only the new explicit lifecycle contract uses this lease. Older Companions
+// send coding/idle at a slower cadence and retain their compatibility behavior.
+inline bool ExpireAgentActivity(RuntimeState& state, unsigned long nowMillis) {
+  if (!state.hasFrame || !agentactivity::HasLease(state.current.activity.c_str()) ||
+      nowMillis - state.resetBaseMillis < 15000UL) return false;
+  state.current.activity = "unavailable";
+  return true;
+}
+
 inline bool ConsumeFrameLine(
     RuntimeState& runtimeState,
     const char* line,
@@ -1478,7 +1488,7 @@ inline bool ConsumeFrameLine(
   // Read the activity verdict after the fallback above, so a frame that
   // carries `activity` is taken at its word and a frame that omits it still
   // resolves to the inferred value. An error frame reports nothing.
-  outEvent.reportsWorking = !next.hasError && next.activity == "coding";
+  outEvent.reportsWorking = !next.hasError && agentactivity::IsWorking(next.activity.c_str());
 
   outEvent.hadFrame = runtimeState.hasFrame;
   const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);

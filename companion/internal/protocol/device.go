@@ -3,6 +3,7 @@ package protocol
 import "strings"
 
 const (
+	FeatureAgentActivityV1  = "agent-activity-v1"
 	FeatureTheme            = "theme"
 	FeatureThemeSpecV1      = "theme-spec-v1"
 	FeatureUsageSlotsV1     = "usage-slots-v1"
@@ -198,6 +199,7 @@ type DeviceCapabilities struct {
 	Board                      string
 	Firmware                   string
 	Features                   []string
+	SupportsAgentActivityV1    bool
 	SupportsTheme              bool
 	SupportsThemeSpecV1        bool
 	SupportsUsageSlotsV1       bool
@@ -270,6 +272,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		Board:                      h.Board,
 		Firmware:                   h.Firmware,
 		Features:                   append([]string(nil), h.Features...),
+		SupportsAgentActivityV1:    h.HasFeature(FeatureAgentActivityV1),
 		SupportsTheme:              supportsTheme,
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
 		SupportsUsageSlotsV1:       supportsUsageSlotsV1,

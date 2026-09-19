@@ -16,7 +16,7 @@ plan, not a declaration that the unchecked gates pass.
 
 Published baseline inspected: v1.0.58. The preliminary windows-integration merge
 is superseded by the shared main implementation. Mac CodexBar 0.56.8 is inherited
-from #427; Windows keeps main's pinned Win-CodexBar 0.60.3-vibetv.1.
+from #427; Windows keeps main's pinned Win-CodexBar 0.60.3-vibetv.3.
 
 The single PR must describe inherited dependency commits separately. Reconcile
 against the final merged predecessor heads before calling it merge-ready.
@@ -73,12 +73,12 @@ writer disappearance must clear active animation within the device's bound.
 
 1. [x] Select Clawd and record source-backed feasibility/native evidence.
 2. [x] Update #172, finish platform-base integration, record conflicts/resolutions.
-3. [ ] Define executable schema/fixtures and capability matrix before wiring UI.
+3. [x] Define executable schema/fixtures and capability matrix before wiring UI.
 4. [ ] Package the observation engine; harden ingress, lifecycle continuity,
    shutdown, recovery and source discovery. Reuse original upstream adapters.
-5. [ ] Add one supervised Companion integration and remove the conflicting old
+5. [x] Add one supervised Companion integration and remove the conflicting old
    activity inference from the authoritative display path.
-6. [ ] Expose the same status through Companion API, Control Center and frames;
+6. [x] Expose the same status through Companion API, Control Center and frames;
    update compatible theme/firmware handling without breaking older themes.
 7. [ ] Bundle helper/runtime in Mac and Windows app builds and normal updates.
 8. [ ] Run the matrix below; open/update the one PR as a draft until gates pass.
@@ -126,9 +126,46 @@ implementation or checks. No main merge, tag or release is authorized here.
   discovery deadline and alternative-transport recovery. #427 owns theme-first
   setup, usage mode and inline provider guidance. Removed duplicate brightness
   controls and retained local Back navigation required by the new step order.
-- 677 Control Center unit tests pass after integration; TypeScript passes.
-- Pinned headless engine and Go supervision exist; packaging, production hook
-  installation, UI and device delivery remain in progress.
-- Packaged runtime observed this machine's live Codex session transition to
-  tool_use and then idle after interruption; shutdown removed its endpoint file.
-  This does not establish native Windows, Claude installer or physical proof.
+- 682 Control Center unit tests, TypeScript and customer-copy checks pass.
+  Desktop/mobile lifecycle browser flow passes (two independent sessions,
+  explicit connect/disconnect, collector-loss clears displayed work).
+- 66 engine tests pass. Eight original hook builders have an owned installer:
+  Claude Code, Gemini CLI, Copilot CLI, Qwen Code, Qoder, QoderWork, QwenWork,
+  Antigravity CLI. Codex logs are automatic. Three additional pure builders
+  (Codex, Kimi, ZCode) are fixture-covered but not all have managed installers.
+  See `agent-lifecycle-capabilities.md`; the other upstream registrations are
+  deliberately not advertised as installed integrations.
+- Packaged runtime observed a real Claude print-mode Read task with the actual
+  installer-generated settings: idle -> working -> tool_use -> working ->
+  unavailable during Clawd's deferred finalization -> done. The final state is
+  retained briefly after CLI exit. The same helper observed this running Codex
+  session. Both exited cleanly and removed the authenticated endpoint file.
+  Interactive runs with these generated hooks also verified native Write
+  approval/denial, AskUserQuestion, plan review/cancellation and late child completion without resetting
+  the parent. Manual denial omits both the normal failure callback and the
+  tool ID on PermissionRequest; exact transcript correlation now settles it.
+  No global agent settings were changed. See `agent-lifecycle-native-validation.md`.
+- Go tests, focused race tests and Windows cross-compilation cover the
+  transport; the full Go suite is green. Process tests exercise invalid-output restart, the silent-child
+  watchdog and cancellation. A real packaged Companion observed the running
+  Codex session, cleared activity after helper SIGKILL, restarted automatically
+  and reaped the helper on shutdown.
+  The #427 used/remaining setting now reads and writes Win-CodexBar's existing
+  `show_as_used` field using the existing secure-file/DPAPI adapter. Plain and
+  encrypted-fixture preservation tests pass; native DPAPI tests await CI.
+- 151 native firmware tests and both ESP8266/ESP32 builds pass. New activity
+  expires on the device after 15 seconds without frames, and legacy coding
+  assets are reused for working/thinking/tool_use/compacting. Preview matches.
+  The new `agent-activity-v1` capability negotiates full phases; old firmware
+  retains `coding`/`idle` and does not claim the new writer-loss lease.
+- Bundle build paths now include the pinned runtime and complete corresponding
+  source on Mac/Windows. A universal Node binary was built and ad-hoc signed
+  with JIT entitlement, then executed on this ARM Mac. Bundle contract passes.
+  Already enabled hooks refresh during startup using the new bundle and the
+  upstream version-compatible event list. Migration/removal fixtures preserve
+  foreign hooks and permissions. No signed update or native Windows
+  installation has been rehearsed here.
+- Remaining release gates: native Windows execution/installer, installed native
+  interrupted tools, sleep/resume and hook-wait recovery cases, signed cold/warm update,
+  exact visible UI approval, real device Cable/WiFi transitions and exact-SHA
+  CI/review. No hardware writes, merges or releases were performed.

@@ -412,6 +412,9 @@ func UsageBarsShowUsed() bool {
 	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
 		return showUsed
 	}
+	if runtime.GOOS == "windows" {
+		return windowsUsageBarsShowUsed()
+	}
 	if runtime.GOOS != "darwin" {
 		return true
 	}
@@ -431,6 +434,9 @@ func UsageBarsShowUsed() bool {
 
 // SetUsageBarsShowUsed writes the same preference read by CodexBar and the stream.
 func SetUsageBarsShowUsed(ctx context.Context, showUsed bool) error {
+	if runtime.GOOS == "windows" {
+		return setWindowsUsageBarsShowUsed(showUsed)
+	}
 	value := "false"
 	if showUsed {
 		value = "true"

@@ -1,7 +1,13 @@
 package agentstatus
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,5 +49,61 @@ func TestSnapshotCopiesSlices(t *testing.T) {
 	first.Sessions[0].Phase = "error"
 	if e.snapshotAt(now).Sessions[0].Phase != "working" {
 		t.Fatal("shared mutable state")
+	}
+}
+
+func TestSessionChangesWakeWithUnchangedAggregate(t *testing.T) {
+	now := time.Now()
+	wakes := 0
+	e := &Engine{wake: func() { wakes++ }}
+	s := validSnapshot(now)
+	e.accept(s, now)
+	s.GeneratedAt++
+	e.accept(s, now)
+	if wakes != 1 {
+		t.Fatal("heartbeat triggered redundant render", wakes)
+	}
+	changed := s
+	changed.Sessions = append([]Session{}, s.Sessions...)
+	changed.Sessions[0].Phase = "waiting_for_answer"
+	e.accept(changed, now)
+	if wakes != 2 {
+		t.Fatal("session transition failed to wake", wakes)
+	}
+}
+
+func TestConfigureUsesAuthenticatedLocalEngineAndReturnsItsSnapshot(t *testing.T) {
+	token := strings.Repeat("a", 64)
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.URL.Path != "/integrations" || r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer "+token {
+			t.Error("invalid engine request")
+		}
+		var payload struct {
+			Source  string
+			Enabled bool
+		}
+		if json.NewDecoder(r.Body).Decode(&payload) != nil || payload.Source != "claude-code" || !payload.Enabled {
+			t.Error("wrong choice")
+		}
+		_ = json.NewEncoder(w).Encode(validSnapshot(time.Now()))
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	data, _ := json.Marshal(map[string]string{"url": server.URL, "token": token})
+	if err := os.WriteFile(filepath.Join(dir, "endpoint.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine := &Engine{runtimeDir: dir}
+	got, err := engine.Configure(context.Background(), "claude-code", true)
+	if err != nil || !called || got.Phase != "working" || engine.Snapshot().Health != "ready" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	// A tampered discovery file must never leak the bearer token off-machine.
+	data, _ = json.Marshal(map[string]string{"url": "https://example.invalid", "token": token})
+	_ = os.WriteFile(filepath.Join(dir, "endpoint.json"), data, 0600)
+	if _, err := engine.Configure(context.Background(), "claude-code", true); err == nil {
+		t.Fatal("external endpoint accepted")
 	}
 }

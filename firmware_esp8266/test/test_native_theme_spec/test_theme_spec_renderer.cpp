@@ -2538,6 +2538,39 @@ void testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass() {
   TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", codingAnimatedSink.commands[0].assetPath.c_str());
 }
 
+void testAgentActivityExpiresWithoutChangingUsage() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* frame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"activity":"tool_use"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 1000, event));
+  TEST_ASSERT_TRUE(event.reportsWorking);
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 15999));
+  TEST_ASSERT_TRUE(codexbar_display::core::ExpireAgentActivity(state, 16000));
+  TEST_ASSERT_EQUAL_STRING("unavailable", state.current.activity.c_str());
+  TEST_ASSERT_EQUAL_INT(10, state.current.session);
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 17000));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 18000, event));
+  TEST_ASSERT_EQUAL_STRING("tool_use", state.current.activity.c_str());
+}
+
+void testAllActiveAgentPhasesUseLegacyCodingAssets() {
+  const char* spec = R"JSON({"themeSpecVersion":1,"themeId":"agent-test","themeRev":1,"primitives":[{"type":"gif","x":0,"y":0,"width":10,"height":10,"stateAssets":{"idle":"/idle.gif","coding":"/coding.gif"}}]})JSON";
+  for (const char* phase : {"working", "thinking", "tool_use", "compacting"}) {
+    FrameData frame = testFrame();
+    frame.activity = phase;
+    RecordingSink sink;
+    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+    TEST_ASSERT_EQUAL_STRING("/coding.gif", sink.commands[1].assetPath.c_str());
+  }
+  for (const char* phase : {"waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "unavailable"}) {
+    FrameData frame = testFrame();
+    frame.activity = phase;
+    RecordingSink sink;
+    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+    TEST_ASSERT_EQUAL_STRING("/idle.gif", sink.commands[1].assetPath.c_str());
+  }
+}
+
 void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3583,6 +3616,8 @@ int main() {
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testAgentActivityExpiresWithoutChangingUsage);
+  RUN_TEST(testAllActiveAgentPhasesUseLegacyCodingAssets);
   RUN_TEST(testUsageProgressIgnoresTokenHistoryExpiryAndRestore);
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
   RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);

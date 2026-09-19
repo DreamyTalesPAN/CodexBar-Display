@@ -75,7 +75,7 @@ void emitDeviceHello() {
   transportConfig.boardId = CODEXBAR_DISPLAY_BOARD_ID;
   transportConfig.deviceId = deviceID;
   transportConfig.firmwareVersion = CODEXBAR_DISPLAY_FW_VERSION;
-  transportConfig.featuresJSON = "[]";
+  transportConfig.featuresJSON = "[\"agent-activity-v1\"]";
   transportConfig.capabilitiesJSON =
       "{\"display\":{\"widthPx\":170,\"heightPx\":320,\"colorDepthBits\":16},"
       "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
@@ -102,6 +102,10 @@ void loop() {
   const unsigned long loopStartUs = micros();
   bool rendered = false;
   unsigned long renderDurationUs = 0;
+  if (codexbar_display::core::ExpireAgentActivity(runtimeCtx.runtime, millis())) {
+    runtimeCtx.screenDirty = true;
+  }
+
 
   String serialLine;
   if (codexbar_display::app::ReadSerialLine(runtimeCtx, serialLine)) {

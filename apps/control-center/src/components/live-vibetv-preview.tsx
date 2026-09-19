@@ -1686,7 +1686,7 @@ function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
     return providerAssets[provider];
   }
   const stateAssets = primitive.stateAssets || primitive.sa || {};
-  if (frame.activity === "coding" && stateAssets.coding) {
+  if (["coding", "working", "thinking", "tool_use", "compacting"].includes(frame.activity || "") && stateAssets.coding) {
     return stateAssets.coding;
   }
   return stateAssets.idle || primitive.assetPath || primitive.a || "";

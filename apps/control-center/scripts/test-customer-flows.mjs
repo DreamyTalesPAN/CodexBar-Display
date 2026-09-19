@@ -394,6 +394,11 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (process.argv.includes("--agent-activity")) {
+      await testAgentActivity(browser, appContext.appUrl);
+      console.log("agent lifecycle customer flow passed");
+      return;
+    }
     if (process.argv.includes("--firmware-onboarding")) {
       await testFirmwareOnboardingTerminalStates(browser, appContext.appUrl);
       await testFirmwareAttentionDoesNotOfferSecondFlash(browser, appContext.appUrl);
@@ -2539,15 +2544,14 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
-    const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
+    const providerDialog = page.getByRole("listitem").filter({ has: page.getByRole("switch", { name: "Codex", exact: true }) });
     await providerDialog.getByText(fixture.reportedMessage, { exact: true })
       .waitFor({ timeout: 10_000 });
     await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
       .waitFor({ timeout: 10_000 });
-    await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
     assert(
-      (await page.getByText(fixture.reportedMessage, { exact: true }).count()) === 0,
-      `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
+      (await providerDialog.getByText(fixture.reportedMessage, { exact: true }).count()) === 1,
+      `${fixture.status} must keep the reported message on its provider row`,
     );
     for (const action of fixture.rowActions) {
       await page
@@ -7039,7 +7043,6 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     (request) =>
       request.path === "/v1/preferences" && request.method === "GET",
   ).length;
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
   await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
   await waitForCondition(
@@ -7051,7 +7054,6 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     "navigation must start the stale read used by the provider-check race",
   );
 
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
   await checkAgain.click();
   await waitForCondition(
     () =>
@@ -7263,7 +7265,6 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   // Switching the only healthy provider off closes the shared descriptor
   // gate, and switching it back on opens it again.
-  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
   const codexSwitch = providersScreen.getByRole("switch", { name: "Codex" });
   await codexSwitch.click();
   await waitForCondition(
@@ -11125,6 +11126,7 @@ async function routeCompanionOnline(
     installationMode = "dmg",
     legacyCompanionRelease = false,
     device = companionDevice,
+    agentSnapshot = () => undefined,
     onDiscover,
     onPair,
     onRepair,
@@ -11976,6 +11978,7 @@ async function routeCompanionOnline(
             companionRuntime,
           ),
           device: currentDevice,
+          agents: agentSnapshot(),
           providerSetup: currentProviderSetup,
           setup: {
             providerSelectionRequired: true,
@@ -12056,6 +12059,7 @@ async function routeCompanionOnline(
           ),
           providerSetup: currentProviderSetup,
           setup: currentProviderSelectionSetup,
+          agents: agentSnapshot(),
           device: responseDevice,
           connectionMode: responseDevice?.capabilities?.transport?.mode || "",
           connectionModeChoiceRequired,
@@ -13389,6 +13393,42 @@ async function testThemeThenUsageChoice(browser, appUrl) {
     if (migrationScreenshotDir) { await choices.scrollIntoViewIfNeeded(); await page.screenshot({ animations: "disabled", path: join(migrationScreenshotDir, "settings-usage-clippy.png") }); }
     await choices.getByRole("button", { name: /Used/ }).click();
     await waitForCondition(() => requests.some((request) => request.path === "/v1/preferences/codexbar.usageBarsShowUsed" && request.method === "PATCH" && JSON.parse(request.body).value === true), "Settings saves Used");
+    await page.close();
+  }
+}
+
+async function testAgentActivity(browser, appUrl) {
+  for (const size of [desktopViewport, viewport]) {
+    const page = await newCustomerPage(browser, appUrl, {viewport:size});
+    let snapshot = {
+      schemaVersion:1,health:"ready",phase:"waiting_for_answer",
+      sources:[{id:"codex",name:"Codex",connection:"automatic",capabilityLevel:"log-observed",explicitThinking:false},
+        {id:"claude-code",name:"Claude Code",connection:"disconnected",capabilityLevel:"hook-adapter",explicitThinking:false}],
+      sessions:[{id:"12345678aaaaaaaaaaaaaaaaaaaaaaaa",source:"codex",phase:"waiting_for_answer",reason:"explicit-interaction",observedAt:Date.now()},
+        {id:"87654321aaaaaaaaaaaaaaaaaaaaaaaa",source:"claude-code",phase:"tool_use",reason:"accepted-event",observedAt:Date.now()}],
+    };
+    const writes=[];
+    await routeCompanionOnline(page, [], ()=>{}, {agentSnapshot:()=>snapshot});
+    await page.route("**/v1/agents/integrations",async route=>{
+      const body=route.request().postDataJSON();writes.push(body);
+      snapshot={...snapshot,sources:snapshot.sources.map(source=>source.id===body.source?{...source,connection:body.enabled?"connected":"disconnected"}:source)};
+      await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ok:true,agents:snapshot})});
+    });
+    await page.goto(appUrl,{waitUntil:"domcontentloaded"});
+    await clickNavigation(page,"Overview");
+    await page.getByText("Needs your answer",{exact:true}).waitFor();
+    await page.getByText("Using a tool",{exact:true}).waitFor();
+    await page.getByText("Connected agents",{exact:true}).click();
+    await page.getByRole("button",{name:"Connect Claude Code",exact:true}).click();
+    await page.getByRole("button",{name:"Disconnect Claude Code",exact:true}).waitFor();
+    assert(writes.length===1 && writes[0].source==="claude-code" && writes[0].enabled===true,"explicit agent connection not saved");
+    await page.getByRole("button",{name:"Disconnect Claude Code",exact:true}).click();
+    await page.getByRole("button",{name:"Connect Claude Code",exact:true}).waitFor();
+    await page.getByText("Agent activity",{exact:true}).scrollIntoViewIfNeeded();
+    await page.screenshot({path:join(tmpdir(),`CODEX-172-agent-activity-${size.width}.png`),fullPage:true});
+    snapshot={...snapshot,health:"unavailable"};
+    await page.getByText("Status unavailable",{exact:true}).waitFor({timeout:15000});
+    assert(await page.getByText("Needs your answer",{exact:true}).count()===0,"stale engine sessions remained visible");
     await page.close();
   }
 }
