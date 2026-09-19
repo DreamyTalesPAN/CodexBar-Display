@@ -4501,3 +4501,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Marcus answered "Ja" to the explicit proposal to show the existing reconnection dialog instead of searching indefinitely, with "Use the cable", WiFi setup, and retry, and no automatic connection-mode switch.
 - Approved customer-visible result: When a completed device search finds only a device on the other transport, the saved connection mode shows the existing device-not-found recovery dialog. The customer can explicitly choose the available cable connection, configure WiFi, or search again. Existing dialog copy and layout are unchanged; no connection is made automatically.
 - Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its regression tests, and this approval record. This approves the recovery behavior and fix preparation only, not a main-branch merge, release workflow, or publication.
+
+### 2026-09-19 — Complete the same explicit recovery for discovered WiFi
+
+- User approval: Covered by Marcus's "Ja" to the existing recovery dialog and no automatic transport switch above. This closes the reverse-direction recovery gap identified in review, without adding controls or changing copy.
+- Approved customer-visible result: After the customer chooses WiFi recovery, an already discovered WiFi device follows the existing device-selection path instead of trying to provision an absent cable device. Multiple devices still require selection; no device connects before the recovery action.
+- Scope: The same setup-wizard handler and regression tests only. No merge, release workflow, or publication.

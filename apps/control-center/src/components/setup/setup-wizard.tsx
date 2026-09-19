@@ -420,6 +420,13 @@ export function SetupWizard(props: SetupWizardProps) {
       const cable = connectionCandidates.find(
         (candidate) => candidate.transport === "cable" && candidateKey(candidate) === preselected,
       ) || connectionCandidates.find((candidate) => candidate.transport === "cable");
+      // An already discovered WiFi device needs selection, not provisioning
+      // through a cable that is no longer connected. Keep the normal picker
+      // (and its identity check) responsible for choosing the device.
+      if (!cable && connectionCandidates.some((candidate) => candidate.transport === "wifi")) {
+        setWiFiSetup(null);
+        return;
+      }
       setWiFiSetup({
         phase: "selecting",
         deviceId: cable?.deviceId,
