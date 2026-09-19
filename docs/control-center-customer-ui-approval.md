@@ -4483,3 +4483,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: After the remaining Claude-dialog UI failure was reported, Marcus explicitly requested "Ok kannst du den Fehler noch Fixen?". This entry records that narrow bug-fix request.
 - Approved customer-visible result: Starting provider sign-in does not immediately reopen the same error message the customer already acknowledged. New or changed errors still appear, and an explicit Check again can show the result again. Existing labels, layout, sign-in requests, and background checks are unchanged.
 - Scope: Remove the dismissal reset from the shared provider list's sign-in handler and add regression coverage. PR-branch fix only; no merge, release, installation, or device operation.
+
+### 2026-09-19 — Preserve the approved Windows copy when integrating main
+
+- User approval: The Windows-copy removal is covered by Paul's explicit approval recorded above for PR #462; the Claude-dialog correction is covered by Marcus's bug-fix request above. This integration introduces no further visible result.
+- Approved customer-visible result: Retain both approved outcomes: the Windows download omits the obsolete unsigned-publisher warning, and starting sign-in leaves an acknowledged provider error dismissed. The shared approval-log conflict is resolved without dropping either record.
+- Scope: Integrate main commit `e5529c23` into PR #407 and retain its existing copy/test deletion unchanged. No merge into main, release, installation, or device operation.
