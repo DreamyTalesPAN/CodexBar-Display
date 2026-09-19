@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
-
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
 const (
@@ -31,14 +31,16 @@ const (
 )
 
 type deps struct {
-	goos           string
-	serviceManager service.Manager
-	stdout         io.Writer
-	uid            func() int
-	homeDir        func() (string, error)
-	runCommand     func(context.Context, string, ...string) (string, error)
-	resolvePort    func(string) (string, error)
-	readFile       func(string) ([]byte, error)
+	goos                  string
+	serviceManager        service.Manager
+	stdout                io.Writer
+	uid                   func() int
+	launchAgentLabel      string
+	homeDir               func() (string, error)
+	runCommand            func(context.Context, string, ...string) (string, error)
+	readCableCapabilities func() (protocol.DeviceCapabilities, error)
+	loadRuntimeConfig     func(string) (runtimeconfig.Config, error)
+	readFile              func(string) ([]byte, error)
 }
 
 func (d deps) withDefaults() deps {
@@ -51,6 +53,9 @@ func (d deps) withDefaults() deps {
 	if d.uid == nil {
 		d.uid = os.Getuid
 	}
+	if strings.TrimSpace(d.launchAgentLabel) == "" {
+		d.launchAgentLabel = launchAgentLabel
+	}
 	if d.homeDir == nil {
 		d.homeDir = os.UserHomeDir
 	}
@@ -62,13 +67,18 @@ func (d deps) withDefaults() deps {
 			home, _ := d.homeDir()
 			d.serviceManager = service.NewWindows(service.WindowsRuntimeLabel(home), home, d.runCommand)
 		} else if d.runCommand == nil {
-			d.serviceManager = service.New(launchAgentLabel, "", false)
+			d.serviceManager = service.New(d.launchAgentLabel, "", false)
 		} else {
-			d.serviceManager = service.NewDarwin(launchAgentLabel, "", d.uid(), false, d.runCommand)
+			d.serviceManager = service.NewDarwin(d.launchAgentLabel, "", d.uid(), false, d.runCommand)
 		}
 	}
-	if d.resolvePort == nil {
-		d.resolvePort = usb.ResolvePort
+	if d.readCableCapabilities == nil {
+		d.readCableCapabilities = func() (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{}, fmt.Errorf("running Companion Cable status reader is required")
+		}
+	}
+	if d.loadRuntimeConfig == nil {
+		d.loadRuntimeConfig = runtimeconfig.Load
 	}
 	if d.readFile == nil {
 		d.readFile = os.ReadFile
@@ -87,8 +97,11 @@ type launchAgentConfig struct {
 	Port      string
 }
 
-func Run(ctx context.Context) error {
-	return runWithDeps(ctx, deps{})
+func Run(ctx context.Context, runtimeLabel string, readCableCapabilities func() (protocol.DeviceCapabilities, error)) error {
+	return runWithDeps(ctx, deps{
+		launchAgentLabel:      runtimeLabel,
+		readCableCapabilities: readCableCapabilities,
+	})
 }
 
 func runWithDeps(ctx context.Context, d deps) error {
@@ -134,23 +147,15 @@ func runWithDeps(ctx context.Context, d deps) error {
 			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
 		}
 	} else {
+		// Ask the runtime for the Cable device it already owns instead of
+		// probing the serial port here. That works on every platform and
+		// avoids fighting the service for the exclusive serial handle.
+		caps, statusErr := d.readCableCapabilities()
 		fmt.Fprintln(d.stdout, "transport: usb")
-		if d.goos == "windows" && launchctlErr == nil && service.Healthy(status.State) {
-			// The scheduled task owns an exclusive serial handle. Configuration
-			// and historical log output are not proof of a live device probe.
-			if config.Port != "" {
-				fmt.Fprintf(d.stdout, "configured port: %s (owned by scheduled task; not probed)\n", config.Port)
-			} else {
-				fmt.Fprintln(d.stdout, "port selection: automatic (owned by scheduled task; not probed)")
-			}
+		if statusErr != nil {
+			fmt.Fprintf(d.stdout, "Cable device: unavailable (%v)\n", statusErr)
 		} else {
-			detectedPort, portErr := d.resolvePort("")
-			usb.CloseDefaultSender()
-			if portErr != nil {
-				fmt.Fprintf(d.stdout, "detected port: unavailable (%v)\n", portErr)
-			} else {
-				fmt.Fprintf(d.stdout, "detected port: %s\n", detectedPort)
-			}
+			fmt.Fprintf(d.stdout, "Cable device: %s board=%s firmware=%s\n", caps.DeviceID, caps.Board, caps.Firmware)
 		}
 	}
 
@@ -206,7 +211,15 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return launchAgentConfig{}
 	}
-	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	if cfg, err := d.loadRuntimeConfig(home); err == nil &&
+		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "" || strings.TrimSpace(cfg.DeviceTarget) != "") {
+		config := launchAgentConfig{Transport: runtimeconfig.ActiveTransport(cfg)}
+		if config.Transport == "wifi" {
+			config.Target = strings.TrimSpace(cfg.DeviceTarget)
+		}
+		return config
+	}
+	path := filepath.Join(home, "Library", "LaunchAgents", d.launchAgentLabel+".plist")
 	if d.goos == "windows" {
 		data, err := d.readFile(service.TaskConfigPath(home, service.WindowsRuntimeLabel(home)))
 		if err != nil {

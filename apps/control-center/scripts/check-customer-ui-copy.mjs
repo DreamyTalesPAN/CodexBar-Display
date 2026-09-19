@@ -20,6 +20,8 @@ const approvedCustomerCopy = new Set([
   "Open the downloaded DMG.",
   "Drag VibeTV Control Center to Applications and wait for the copy to finish.",
   "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",
+  "WiFi password",
+  "Enter your WiFi password.",
 ]);
 
 const forbiddenPatterns = [

@@ -1,245 +1,114 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { SetupProviderRow } from "./setup-provider-row";
+import { SetupProviderRow, setupProviderIssueMessage } from "./setup-provider-row";
 
 function render(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
   return renderToStaticMarkup(
-    <SetupProviderRow
-      enabled
-      health="healthy"
-      label="Claude Code"
-      onCheckAgain={vi.fn()}
-      onToggle={vi.fn()}
-      {...props}
-    />,
+    <SetupProviderRow enabled health="healthy" label="Claude Code"
+      onCheckAgain={vi.fn()} onToggle={vi.fn()} onShowIssue={vi.fn()} {...props} />,
   );
 }
 
 describe("SetupProviderRow", () => {
-  it("shows a ready provider as a switch that is on", () => {
-    const html = render();
-
-    expect(html).toContain('role="switch"');
-    expect(html).toContain('aria-checked="true"');
-    expect(html).not.toContain("lucide-chevron-right");
+  it("shows ready and disabled providers without an error action", () => {
+    expect(render()).toContain('aria-checked="true"');
+    const off = render({ enabled: false, health: "auth_required" });
+    expect(off).toContain('aria-checked="false"');
+    expect(off).not.toContain("Show provider message");
   });
 
-  it("shows an available but unused provider as a switch that is off", () => {
-    const html = render({ enabled: false });
+  it.each(["checking", "auth_required", "setup_required", "permission_required", "timeout",
+    "no_usage_available", "service_outage", "unavailable", "config_error", "engine_error", "stale"])(
+    "keeps the switch usable for %s", (health) => {
+      const html = render({ health });
+      expect(html).toContain('role="switch"');
+      expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
+    },
+  );
 
-    expect(html).toContain('aria-checked="false"');
+  it("keeps error text in the popup and offers its opener plus retry", () => {
+    const html = render({ health: "auth_required" });
+    expect(html).toContain('aria-label="Show provider message for Claude Code"');
+    expect(html).toContain('aria-label="Check Claude Code again"');
+    expect(html).not.toContain("Sign in to Claude Code");
+    expect(html).not.toContain("Open CodexBar");
   });
 
-  it("keeps a provider that already produced a reading switchable", () => {
-    expect(render({ health: "disabled" })).toContain('role="switch"');
-    const stale = render({
-      detail: "Live usage is unavailable. Showing the last saved reading.",
-      health: "stale",
-    });
-    expect(stale).toContain('role="switch"');
-    expect(stale).toContain(
-      "Live usage is unavailable. Showing the last saved reading.",
-    );
-    expect(stale).not.toContain('aria-label="Check Claude Code again"');
-  });
-
-  // A check that is slow or stuck must not hold the customer on the step: the
-  // switch is the way past it, and the running check keeps its spinner.
-  it("keeps the switch usable while the provider is being checked", () => {
-    const html = render({ health: "checking" });
-
-    expect(html).toContain("lucide-loader-circle");
-    expect(html).toContain('role="switch"');
-    expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
-  });
-
-  // A signed-out tool gets one sentence and, when the shell can start the
-  // sign-in, one button that does. CodexBar's developer text ("auth.json not
-  // found. Run codex login") is never the row's sentence.
-  it("offers to start the sign-in for a provider that is not signed in", () => {
+  // Windows can start a provider's sign-in; the Mac app cannot, and its rows
+  // must stay as they are. The button therefore follows the shell action, not
+  // the health alone, and never replaces the popup opener or the re-check.
+  it("offers to start the sign-in only when the shell can start one", () => {
     for (const health of ["auth_required", "setup_required"]) {
-      const html = render({
-        detail: "This provider needs an active sign-in.",
-        health,
-        onOpenSignIn: vi.fn(),
-        reportedMessage:
-          "Provider not installed: Codex auth.json not found. Run codex login in the terminal to sign in.",
-      });
-
-      expect(html).toContain("Claude Code is not signed in on this computer");
-      expect(html).not.toContain("auth.json");
+      const html = render({ health, onOpenSignIn: vi.fn() });
       expect(html).toContain("Sign in to Claude Code");
       expect(html).toContain("lucide-log-in");
-      expect(html).toContain(
-        'aria-label="Copy provider message for Claude Code"',
-      );
+      expect(html).toContain('aria-label="Show provider message for Claude Code"');
       expect(html).toContain('aria-label="Check Claude Code again"');
-      expect(html).not.toContain('aria-label="Open CodexBar"');
-      expect(html.match(/data-slot="button"/g)).toHaveLength(3);
     }
+    expect(render({ health: "auth_required" })).not.toContain("lucide-log-in");
   });
 
-  // Without a shell that can start the sign-in -- the Mac app, and any
-  // provider VibeTV cannot sign in -- the row stays exactly as it is today:
-  // the usage service's own sentence with Copy and Retry. Our shorter
-  // sentence belongs to the button, and with no button it would only take the
-  // customer's information away.
-  it("keeps the provider's own message when no sign-in can be started", () => {
-    const html = render({
-      health: "auth_required",
-      reportedMessage:
-        "Codex connection failed: codex account authentication required to read rate limits",
-    });
-
-    expect(html).toContain(
-      "Codex connection failed: codex account authentication required to read rate limits",
-    );
-    expect(html).not.toContain("is not signed in on this computer");
-    expect(html).toContain(
-      'aria-label="Copy provider message for Claude Code"',
-    );
-    expect(html).toContain('aria-label="Check Claude Code again"');
-    expect(html).not.toContain('aria-label="Open CodexBar"');
-    expect(html).not.toContain("lucide-log-in");
-    expect(html.match(/data-slot="button"/g)).toHaveLength(2);
-  });
-
-  it("hands a missing permission to CodexBar without sniffing its text", () => {
-    const html = render({ health: "permission_required" });
-
-    expect(html).toContain("Allow access in macOS");
-    expect(html).toContain('aria-label="Check Claude Code again"');
-    expect(html).not.toContain('aria-label="Open CodexBar"');
-    expect(html).not.toContain("Full Disk Access settings");
-    expect(html.match(/data-slot="button"/g)).toHaveLength(1);
-  });
-
-  // Claude on Windows: Claude Code is signed in, but Anthropic refuses the
-  // OAuth usage endpoint for third parties and no claude.ai cookies exist.
-  // "Sign in again" would send the customer in a circle, so the row names the
-  // browser session, says to close the browser again (Windows keeps the cookie
-  // store locked while it runs) and offers to open the page when the shell can.
+  // Claude on Windows is signed in to the tool, but its usage endpoint only
+  // answers a browser session, so this row opens that page instead.
   it("offers the browser sign-in page when the provider needs a browser session", () => {
     const html = render({
-      detail: "Claude usage needs a signed-in claude.ai session in your browser.",
       health: "browser_sign_in_required",
-      label: "Claude",
-      nextAction:
-        "Sign in to claude.ai in your browser, close the browser, then check again.",
       onOpenSignIn: vi.fn(),
-      reportedMessage:
-        "Claude usage failed from all configured sources. Web: No cookies available",
     });
-
-    expect(html).toContain("claude.ai session in your browser");
-    expect(html).toContain("close the browser, then check again");
-    expect(html).not.toContain("failed from all configured sources");
     expect(html).toContain("lucide-external-link");
-    expect(html).toContain('aria-label="Open Claude sign-in in your browser"');
-    expect(html).toContain('aria-label="Check Claude again"');
+    expect(html).toContain('aria-label="Open Claude Code sign-in in your browser"');
+    expect(html).toContain('aria-label="Check Claude Code again"');
     expect(html).toContain('role="switch"');
-  });
-
-  it("falls back to a re-check when no sign-in page can be opened", () => {
-    const html = render({ health: "browser_sign_in_required" });
-
-    expect(html).toContain(
-      "Sign in to Claude Code in your browser, close the browser, then check again",
+    expect(render({ health: "browser_sign_in_required" })).not.toContain(
+      "lucide-external-link",
     );
-    expect(html).not.toContain("lucide-external-link");
-    expect(html).toContain('aria-label="Check Claude Code again"');
   });
 
-  it("offers a re-check after a timed out check", () => {
-    const html = render({ health: "timeout" });
-
-    expect(html).toContain("Check timed out");
-    expect(html).toContain("lucide-refresh-cw");
-    expect(html).toContain('aria-label="Check Claude Code again"');
-  });
-
-  // Nothing else is left to offer for a state the design does not draw, and a
-  // row with no control at all would strand the customer.
-  it("offers a re-check for every state the design does not name", () => {
-    for (const health of ["unavailable", "?"]) {
-      expect(render({ health })).toContain("Check timed out");
-    }
-  });
-
-  // Dimmed because it cannot be used right now, but not inert: the account can
-  // gain usage, and the companion's own next action is to use the provider once
-  // and check again. A customer whose only provider said this had nothing to
-  // press -- Continue asks for a provider that is ready, and switching it off
-  // leaves none.
-  it("dims a provider whose account has no usage, and still lets it be checked", () => {
-    const html = render({ health: "no_usage_available" });
-
-    expect(html).toContain("No usage data on this account");
-    expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).toContain('aria-label="Check Claude Code again"');
-  });
-
-  // "Try again later" with nothing to try again with is the same dead end.
-  it("dims a provider in a service outage, and still lets it be checked", () => {
-    const html = render({ health: "service_outage" });
-
-    expect(html).toContain("Service outage — try again later");
-    expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).toContain('aria-label="Check Claude Code again"');
-  });
-
-  it("says a check is running on those rows too", () => {
-    for (const health of ["no_usage_available", "service_outage"] as const) {
+  it("replaces retry with a spinner while the exact check runs", () => {
+    for (const health of ["checking", "unavailable", "no_usage_available", "service_outage"]) {
       const html = render({ checking: true, health });
-
-      expect(html).toContain("Checking");
+      expect(html).toContain("lucide-loader-circle");
       expect(html).not.toContain('aria-label="Check Claude Code again"');
     }
   });
 
-  // The health decides what help to offer, never whether the provider may be
-  // switched off. A provider the customer cannot switch off is one they cannot
-  // keep off the display.
-  it("always offers the switch, whatever the provider reports", () => {
-    for (const health of [
-      "auth_required",
-      "browser_sign_in_required",
-      "setup_required",
-      "permission_required",
-      "timeout",
-      "no_usage_available",
-      "service_outage",
-      "unavailable",
-      "config_error",
-      "engine_error",
-    ]) {
-      expect(render({ health })).toContain('role="switch"');
-      expect(render({ health, enabled: false })).toContain(
-        'aria-checked="false"',
-      );
-    }
-  });
-
-  // Pressing it again only enqueues a second probe of the same provider, so the
-  // running request replaces the action until it answers.
-  it("says a check is running instead of offering to start another", () => {
-    const html = render({ checking: true, health: "unavailable" });
-
-    expect(html).toContain("Checking");
+  it("retains the bounded stale-reading presentation and switch", () => {
+    const html = render({ health: "stale" });
+    expect(html).toContain('aria-label="Show provider message for Claude Code"');
     expect(html).not.toContain('aria-label="Check Claude Code again"');
-    // Rule 3: whatever the provider reports, the switch stays.
-    expect(html).toContain('role="switch"');
   });
-  // A provider row must never stop the Companion. Engine recovery remains an
-  // automatic app-level concern; this row can only ask CodexBar to check again.
-  it("offers a re-check instead of a per-provider usage-service repair", () => {
-    for (const health of ["config_error", "engine_error"] as const) {
-      const html = render({ health });
 
-      expect(html).toContain("Check timed out");
-      expect(html).not.toContain("Repair the usage service");
-      expect(html).toContain('aria-label="Check Claude Code again"');
-      expect(html).toContain('role="switch"');
-    }
+  it.each(["no_usage_available", "service_outage"])("dims unusable %s without disabling it", (health) => {
+    const html = render({ health });
+    expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
+    expect(html).toContain('aria-label="Check Claude Code again"');
+  });
+});
+
+describe("provider popup guidance", () => {
+  it("preserves the exact reported message before generic detail", () => {
+    const reportedMessage = "Codex connection failed: account authentication required to read rate limits";
+    expect(setupProviderIssueMessage({ health: "auth_required", label: "Codex",
+      detail: "Sign in required", reportedMessage })).toBe(reportedMessage);
+    expect(setupProviderIssueMessage({ health: "auth_required", label: "Codex",
+      detail: "This provider needs an active sign-in." })).toBe("This provider needs an active sign-in.");
+  });
+
+  it.each([
+    ["auth_required", "Sign in to Claude Code"],
+    ["permission_required", "Allow access in macOS"],
+    ["no_usage_available", "No usage data on this account"],
+    ["service_outage", "Service outage — try again later"],
+    ["stale", "Live usage is unavailable"],
+    ["timeout", "Check timed out"],
+    ["config_error", "Check timed out"],
+    ["engine_error", "Check timed out"],
+    ["?", "Check timed out"],
+  ])("retains the existing generic guidance for %s", (health, message) => {
+    expect(setupProviderIssueMessage({ health, label: "Claude Code" })).toBe(message);
+  });
+
+  it.each(["healthy", "checking", "disabled"])("does not turn %s into an error", (health) => {
+    expect(setupProviderIssueMessage({ health, label: "Codex" })).toBeNull();
   });
 });

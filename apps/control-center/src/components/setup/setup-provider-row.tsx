@@ -1,8 +1,7 @@
 "use client";
 
-import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
+import { ExternalLink, LogIn, RefreshCw, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -80,21 +79,7 @@ type SetupProviderRowProps = {
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
-  /** The generic detail attached to this health result. */
-  detail?: string;
-  /**
-   * The companion's next action for this health result. Rendered for
-   * "browser_sign_in_required", where the required step (sign in, close the
-   * browser so its cookie store becomes readable, check again) is not in the
-   * detail.
-   */
-  nextAction?: string;
-  /**
-   * What the usage service itself said about this provider, already redacted.
-   * It is the only per-provider guidance that exists, so it replaces our own
-   * wording wherever it says something the customer can act on.
-   */
-  reportedMessage?: string;
+  onShowIssue: () => void;
   onCheckAgain: () => void;
   /**
    * Starts the provider's sign-in through the companion: the browser page
@@ -116,18 +101,16 @@ type SetupProviderRowProps = {
 
 export function SetupProviderRow({
   checking = false,
-  detail,
   enabled,
   health,
   label,
-  nextAction,
   onCheckAgain,
+  onShowIssue,
   onOpenSignIn,
   onToggle,
-  reportedMessage,
   saving = false,
 }: SetupProviderRowProps) {
-  const variant = setupProviderRowVariant(health);
+  const variant = enabled ? setupProviderRowVariant(health) : "toggle";
   const unusable = variant === "no_usage" || variant === "outage";
   const checkAgain = (
     <SetupProviderRowAction
@@ -136,44 +119,6 @@ export function SetupProviderRow({
       onClick={onCheckAgain}
     />
   );
-  const copyReportedMessage = reportedMessage ? (
-    <SetupProviderRowAction
-      icon={Copy}
-      label={`Copy provider message for ${label}`}
-      onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
-    />
-  ) : null;
-  const fallbackMessage =
-    variant === "sign_in"
-      ? `${label} is not signed in on this computer`
-      : variant === "browser_sign_in"
-        ? `Sign in to ${label} in your browser, close the browser, then check again`
-      : variant === "permission"
-        ? "Allow access in macOS"
-        : variant === "no_usage"
-          ? "No usage data on this account"
-          : variant === "outage"
-            ? "Service outage — try again later"
-            : variant === "stale"
-              ? "Live usage is unavailable"
-            : "Check timed out";
-  // The two sign-in rows show our own sentence, not CodexBar's: its text is
-  // a source-by-source failure list ("auth.json not found. Run codex login",
-  // "failed from all configured sources") written for developers, and for
-  // the browser case it names the wrong fix. CodexBar's sentence stays
-  // behind the copy action for support.
-  //
-  // Our sentence only replaces it where the row can also start the sign-in.
-  // Without that action the sentence has no next step, and on macOS, where
-  // this whole feature is off, replacing it would change the Mac app's own
-  // rows -- which this release must not do.
-  const guidance = !onOpenSignIn
-    ? reportedMessage || detail || fallbackMessage
-    : variant === "browser_sign_in"
-      ? [detail, nextAction].filter(Boolean).join(" ") || fallbackMessage
-      : variant === "sign_in"
-        ? fallbackMessage
-        : reportedMessage || detail || fallbackMessage;
 
   return (
     <Item
@@ -189,8 +134,11 @@ export function SetupProviderRow({
           <Spinner />
         ) : variant === "toggle" ? null : (
           <>
-            <SetupProviderRowMessage>{guidance}</SetupProviderRowMessage>
-            {copyReportedMessage}
+            <SetupProviderRowAction
+              icon={TriangleAlert}
+              label={`Show provider message for ${label}`}
+              onClick={onShowIssue}
+            />
             {variant === "browser_sign_in" && onOpenSignIn ? (
               <SetupProviderRowAction
                 icon={ExternalLink}
@@ -237,8 +185,32 @@ export function SetupProviderRow({
   );
 }
 
-function SetupProviderRowMessage({ children }: { children: ReactNode }) {
-  return <span className="text-sm text-muted-foreground">{children}</span>;
+/** Keep CodexBar's exact guidance in the shared popup, without provider rules. */
+export function setupProviderIssueMessage({
+  health, label, detail, reportedMessage,
+}: {
+  health: PreferenceHealthState;
+  label: string;
+  detail?: string;
+  reportedMessage?: string;
+}): string | null {
+  const variant = setupProviderRowVariant(health);
+  if (variant === "toggle" || variant === "checking") return null;
+  const fallbackMessage =
+    variant === "sign_in"
+      ? `Sign in to ${label}`
+      : variant === "browser_sign_in"
+        ? `Sign in to ${label} in your browser, close the browser, then check again`
+      : variant === "permission"
+        ? "Allow access in macOS"
+        : variant === "no_usage"
+          ? "No usage data on this account"
+          : variant === "outage"
+            ? "Service outage — try again later"
+            : variant === "stale"
+              ? "Live usage is unavailable"
+            : "Check timed out";
+  return reportedMessage || detail || fallbackMessage;
 }
 
 function SetupProviderRowAction({

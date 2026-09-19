@@ -27,7 +27,7 @@ cd companion
 ../codexbar-display service start
 ../codexbar-display doctor
 ../codexbar-display version
-../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
+../codexbar-display upgrade --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 ../codexbar-display rollback --port /dev/cu.usbserial-10
 ```
 
@@ -151,7 +151,7 @@ cd companion
 
 Useful flags:
 - `--skip-flash`: install/update runtime only
-- `--pin-port`: pin LaunchAgent to one explicit serial path (recommended when multiple USB serial devices are present)
+- `--port <path>`: limit this setup/recovery action to one candidate; the path is never persisted
 - `--firmware-env <env>`: select PlatformIO environment
 - `--theme <classic|crt|mini|none>`: persist runtime theme override in companion config
 - `--validate-only`: run setup prerequisite checks only
@@ -176,11 +176,12 @@ During setup, runtime assets are installed to:
 
 ## Upgrade (No Re-Setup)
 
-Use `upgrade` for N -> N+1 updates with preflight:
+Use `upgrade` for N -> N+1 updates with preflight. Pass the actual device port
+listed by `ls /dev/cu.usb*`; the port below is an example:
 
 ```bash
 cd companion
-../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
+../codexbar-display upgrade --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 ```
 
 Preflight includes:
@@ -192,7 +193,7 @@ Optional guard override:
 
 ```bash
 # experimental fallback path
-../codexbar-display upgrade \
+../codexbar-display upgrade --port /dev/cu.usbserial-10 \
   --firmware-env lilygo_t_display_s3 \
   --target-firmware-version <x.y.z>
 ```
@@ -200,7 +201,7 @@ Optional guard override:
 If you need to bypass guard (not recommended):
 
 ```bash
-../codexbar-display upgrade --skip-version-guard
+../codexbar-display upgrade --port /dev/cu.usbserial-10 --skip-version-guard
 ```
 
 ## Rollback (Last-Known-Good)
@@ -218,7 +219,7 @@ Wrapper scripts:
 
 ```bash
 cd /path/to/CodexBar-Display
-./scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
+./scripts/upgrade-with-preflight.sh --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 ./scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```
 
@@ -249,7 +250,7 @@ Per device:
 
 During normal operation the display uses explicit support states:
 - `Starting`: boot is running before WiFi mode is known.
-- `SETUP WIFI` with `VibeTV-Setup` and the setup IP: setup AP is active; customer should join the setup WiFi and open the shown address.
+- `Download Mac App` with `app.vibetv.shop`: fresh setup is waiting for the Mac App; the open `VibeTV-Setup` AP runs in the background. Older firmware may show `SETUP WIFI` and the setup IP.
 - `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
 - `WiFi connected!` with `Now go to:` and `app.vibetv.shop`: WiFi is connected and the device gives the customer the hosted Control Center URL.
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
@@ -260,15 +261,16 @@ During normal operation the display uses explicit support states:
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
 - `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
-Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open `192.168.4.1` in a browser.
+Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, current firmware must show `Download Mac App` and `app.vibetv.shop`. Verify the open `VibeTV-Setup` AP independently.
 
-The setup screen tells the customer to join the open `VibeTV-Setup` access
-point manually and open `192.168.4.1`.
+The Mac App guides Cable or WiFi setup. When WiFi provisioning is needed
+without USB data, it tells the customer to join `VibeTV-Setup` on a phone and
+open `192.168.4.1`.
 
 Smoke checklist for #53:
 - Boot device and confirm the first screen says `Starting`.
-- Clear WiFi and confirm the setup AP screen shows `VibeTV-Setup` and the setup
-  IP without a QR code.
+- Clear WiFi and confirm `Download Mac App` / `app.vibetv.shop` on the display
+  and the open `VibeTV-Setup` network in a separate WiFi scan.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
 - After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
@@ -353,14 +355,14 @@ cd companion
 
 `health` reports in one output:
 - LaunchAgent state + PID
-- auto-detected serial port
+- identity-resolved Cable device and its current serial port
 - last successful `sent frame` timestamp + port
 - last runtime error (if any)
 
 `doctor` runtime checks are transport-aware:
 - active runtime service and configured transport
-- WiFi: configured target, local Mac App health, and read-only device reachability; USB/serial affinity is not applicable
-- USB: board/protocol/theme capability contract, serial probe, and LaunchAgent port affinity safety (fails when multiple serial ports are present and daemon is unpinned)
+- WiFi: configured target, local Mac App health, and read-only device reachability
+- USB: identity-matched board/protocol/theme capability contract and serial probe; unrelated port names are ignored
 - no active runtime: clear setup-required result without treating unrelated serial inventory as fatal
 
 Runtime error logs use:

@@ -39,6 +39,7 @@ uint32_t cbaFrameBufferCapacityPixels = 0;
 unsigned long cbaBufferAllocationFailures = 0;
 unsigned long cbaLastPushDurationUs = 0;
 const char* lastThemeSpecRenderError = "";
+const char* lastAnimatedSpriteError = "";
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -635,6 +636,7 @@ bool prepareAnimatedSpriteBuffer(
     }
     if (replacement == nullptr) {
       cbaBufferAllocationFailures += 1;
+      lastAnimatedSpriteError = "low_heap_cba_buffer";
       return false;
     }
     delete[] cbaFrameBuffer;
@@ -683,6 +685,7 @@ void pushCompletedAnimatedSpriteFrame(
   }
   cache.frameReadyToPush = false;
   cbaCompletedFrames += 1;
+  lastAnimatedSpriteError = "";
   cbaLastFrameDurationMs = millis() - cache.frameStartedAtMs;
   const unsigned long frameDelayMs = ThemeSpecRuntimePolicy::CbaFrameDelayMs(cache.fps);
   cache.nextFrameAtMs = frameDelayMs > 0 ? cache.frameStartedAtMs + frameDelayMs : 0;
@@ -816,13 +819,17 @@ void drawSpriteAsset(
       }
     } else if (line == "CBA1") {
       if (mode != SpriteRenderMode::StaticOnly && animatedCache != nullptr) {
-        (void)drawAnimatedSpriteAsset(
+        if (!drawAnimatedSpriteAsset(
             *animatedCache,
             file,
             targetWidth,
             targetHeight,
             hasClearColor,
-            clearColor);
+            clearColor)) {
+          if (lastAnimatedSpriteError[0] == '\0') {
+            lastAnimatedSpriteError = "cba_render_failed";
+          }
+        }
       }
     }
   }
@@ -837,6 +844,7 @@ void drawSpriteAsset(
 }
 
 void resetAnimatedSpriteCaches() {
+  lastAnimatedSpriteError = "";
   cbaRenderJobInProgress = false;
   cbaFrameBufferOwner = nullptr;
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {
@@ -1352,11 +1360,11 @@ bool CurrentThemeSpecRenderedSuccessfully() {
 }
 
 bool ThemeSpecRenderOk() {
-  return lastThemeSpecRenderOk;
+  return lastThemeSpecRenderOk && lastAnimatedSpriteError[0] == '\0';
 }
 
 const char* ThemeSpecRenderError() {
-  return lastThemeSpecRenderError;
+  return lastAnimatedSpriteError[0] != '\0' ? lastAnimatedSpriteError : lastThemeSpecRenderError;
 }
 
 unsigned long ThemeSpecRenderFailures() {

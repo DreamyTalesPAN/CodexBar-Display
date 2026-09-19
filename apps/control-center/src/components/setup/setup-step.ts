@@ -37,36 +37,15 @@ export type SetupStepInput = {
   themeSetupRequired: boolean;
 };
 
-/**
- * Whether the wizard can move past the device step.
- *
- * `ready` needs a rendered usage frame, which may arrive well after pairing,
- * the firmware check, and even the provider inventory. While provider setup is
- * still open, the successful connection is therefore the whole gate: waiting
- * for a frame or a particular provider status strands the customer here.
- *
- * Only while the provider selection is still outstanding. Letting it through
- * afterwards would carry a customer whose provider has just died past the
- * remaining steps and tell them their VibeTV is live.
- */
+/** The connection step ends on a verified connection; the live step owns readiness. */
 export function setupDeviceIsUsable(input: {
   deviceConnected: boolean;
   hasActiveDevice: boolean;
   hasEnteredControlCenter: boolean;
   connectionRecoveryRequired: boolean;
-  displayRemediationRequired: boolean;
-  providerSelectionRequired: boolean;
-  providerSetupCompletedThisSession: boolean;
-  themeSetupRequired: boolean;
-  ready: boolean;
 }): boolean {
   return (
-    input.ready ||
-    ((input.providerSelectionRequired ||
-      input.providerSetupCompletedThisSession ||
-      input.displayRemediationRequired ||
-      input.themeSetupRequired) &&
-      input.deviceConnected) ||
+    input.deviceConnected ||
     (input.hasEnteredControlCenter &&
       input.hasActiveDevice &&
       !input.connectionRecoveryRequired)
@@ -125,60 +104,6 @@ export function setupIdentityIsKnown(
   );
 }
 
-/**
- * Whether this Mac has been through setup before, on evidence that survives a
- * restart.
- *
- * Entering the Control Center is otherwise proved by the first renderable frame,
- * which is right for someone who has just walked through the wizard and wrong
- * for someone coming back: a VibeTV that is connected but not yet drawing has
- * not sent one, and the wizard took the window back from a customer whose setup
- * the companion had recorded as finished -- onto "looking for your VibeTV", in
- * front of a VibeTV that was connected the whole time.
- *
- * The provider choice and the display choice are both persisted by the
- * companion, so they answer offline. The theme is not, and
- * `deviceCompletedThemeSetup` is false precisely when the VibeTV is
- * unreachable -- keying on it would do nothing in the case this exists for.
- * `themeSetupRequired` is the safe direction: it is false when there is no
- * device to ask, and true whenever a reachable one still needs its theme, which
- * keeps that step.
- *
- * `providerSetupCompletedThisSession` is what holds a first setup: it is set
- * the moment Continue on the provider step succeeds, so from there to the
- * closing step this stays false and the frame requirement is untouched.
- *
- * `hasActiveDevice` and `connectionRecoveryRequired` are the two that are about
- * the VibeTV rather than the choices, and they draw the same line
- * `setupDeviceIsUsable` draws for a customer who is already inside. Without the
- * first, a Mac that has never paired anything -- or is choosing between two it
- * has just found -- would be carried past the device step by a provider choice
- * that was made for a VibeTV it does not have. Without the second, a VibeTV
- * that has lost its pairing would be carried past the one screen with the
- * Connect button on it. Both are read from the device the recovery gate has
- * accepted, and that gate does not accept a disconnected snapshot at startup:
- * a known VibeTV that is switched off when the app starts therefore still
- * opens on the device step, where the recovery picker and the automatic
- * reconnect live.
- */
-export function setupWasCompletedBefore(input: {
-  hasActiveDevice: boolean;
-  connectionRecoveryRequired: boolean;
-  providerSelectionComplete: boolean;
-  displayConfigured: boolean;
-  providerSetupCompletedThisSession: boolean;
-  themeSetupRequired: boolean;
-}): boolean {
-  return (
-    input.hasActiveDevice &&
-    !input.connectionRecoveryRequired &&
-    input.providerSelectionComplete &&
-    input.displayConfigured &&
-    !input.providerSetupCompletedThisSession &&
-    !input.themeSetupRequired
-  );
-}
-
 /** The provider screen owns the first inventory wait and its retry dialog. */
 export function setupProviderInventoryIsLoading(
   providerSelectionRequired: boolean,
@@ -232,6 +157,8 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
  */
 export function previousSetupStep(step: SetupStep): SetupStep | null {
   switch (step) {
+    case "live":
+      return "theme";
     case "providers":
       return "device";
     case "display":

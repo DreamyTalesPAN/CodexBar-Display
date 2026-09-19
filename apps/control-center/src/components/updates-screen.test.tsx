@@ -1,6 +1,15 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UpdatesScreen } from "./updates-screen";
+
+afterEach(cleanup);
+
+function renderMarkup(element: ReactElement) {
+  render(element);
+  return document.body.innerHTML;
+}
 
 // Regression tests for the 2026-08-06 field observation: after a FAILED
 // firmware update (job result.firmware=99.0.779, phase=error) the Updates
@@ -9,8 +18,34 @@ import { UpdatesScreen } from "./updates-screen";
 // states. The installed version must come from device truth, never from the
 // update job result.
 describe("UpdatesScreen VibeTV update card", () => {
+  it("keeps an update error dismissed across polls and opens the next failed attempt", () => {
+    const retry = vi.fn();
+    const report = vi.fn();
+    const props = {
+      companionStatus: "online" as const,
+      companionRelease: { checkedAt: "2026-09-10T10:00:00Z", status: "available" as const, updateAvailable: false, message: "Mac App is up to date." },
+      device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" },
+      firmwareUpdate: { checkedAt: "2026-09-10T10:00:00Z", status: "update_available" as const, updateAvailable: true, latestFirmware: "1.0.40" },
+      onInstallUpdate: retry,
+      onCreateReport: report,
+      updateStatus: { phase: "error" as const, startedAt: "2026-09-10T10:01:00Z", error: "Update was not installed.", logs: [] },
+    };
+    const view = render(<UpdatesScreen {...props} />);
+    expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    expect(report).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    view.rerender(<UpdatesScreen {...props} updateStatus={{ ...props.updateStatus }} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    view.rerender(<UpdatesScreen {...props} updateStatus={{ ...props.updateStatus, startedAt: "2026-09-10T10:02:00Z" }} />);
+    expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
   it("tells the customer to wait during the update-owned reboot", () => {
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -44,7 +79,7 @@ describe("UpdatesScreen VibeTV update card", () => {
 
   it("shows the device-truth installed firmware after a failed update, never the job result", () => {
     // DO NOT weaken this test.
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -85,7 +120,7 @@ describe("UpdatesScreen VibeTV update card", () => {
 
   it("never shows an Update available badge together with Update complete when installed matches available", () => {
     // DO NOT weaken this test.
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -122,7 +157,7 @@ describe("UpdatesScreen VibeTV update card", () => {
   // DIFFERENT release has to surface it.
   it("shows a newly discovered release after an earlier completed update", () => {
     // DO NOT weaken this test.
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -161,7 +196,7 @@ describe("UpdatesScreen VibeTV update card", () => {
   // was told to power-cycle for an update that no longer existed.
   it("drops a finished update failure once the firmware check says nothing is pending", () => {
     // DO NOT weaken this test.
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -200,7 +235,7 @@ describe("UpdatesScreen VibeTV update card", () => {
   // update, so the failure details and recovery action must survive it.
   it("keeps a finished update failure when the fresh firmware check itself failed", () => {
     // DO NOT weaken this test.
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -237,7 +272,7 @@ describe("UpdatesScreen VibeTV update card", () => {
   // because there the power-cycle advice is the customer's next step.
   it("keeps a finished update failure while the firmware update is still pending", () => {
     // DO NOT weaken this test.
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         companionStatus="online"
         device={{
@@ -270,6 +305,37 @@ describe("UpdatesScreen VibeTV update card", () => {
 
     expect(html).toContain("Update failed");
   });
+
+  it("shows Cable reconnect recovery with a manual retry button", () => {
+    const html = renderMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" }}
+        firmwareUpdate={{
+          checkedAt: "2026-08-27T10:00:00Z",
+          installedFirmware: "1.0.40",
+          latestFirmware: "1.0.41",
+          updateAvailable: true,
+          status: "update_available",
+        }}
+        onCreateReport={() => undefined}
+        onInstallUpdate={() => undefined}
+        updateStatus={{
+          phase: "error",
+          stage: "uploading",
+          startedAt: "2026-08-27T10:00:00Z",
+          finishedAt: "2026-08-27T10:01:00Z",
+          retryAllowed: true,
+          error: "Reconnect VibeTV with a data-capable Cable, wait for it to start, then try the update once.",
+          logs: [],
+        }}
+      />,
+    );
+
+    expect(html).toContain("Reconnect VibeTV with a data-capable Cable");
+    expect(html).toContain("Try again");
+    expect(html).toContain("Create report");
+  });
 });
 
 // The mixed state (new firmware + old Mac App) renders slot-bound theme
@@ -297,7 +363,7 @@ describe("UpdatesScreen Mac-App-first gate", () => {
 
   it("keeps the firmware update locked while the Mac App release check is unresolved", () => {
     // DO NOT weaken this test.
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         {...firmwareUpdateAvailableProps}
         companionRelease={null}
@@ -311,7 +377,7 @@ describe("UpdatesScreen Mac-App-first gate", () => {
   });
 
   it("offers the firmware update once the resolved check reports the Mac App as current", () => {
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <UpdatesScreen
         {...firmwareUpdateAvailableProps}
         companionRelease={{

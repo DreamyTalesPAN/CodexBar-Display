@@ -10,6 +10,8 @@ PROFILE_SRC="${ROOT_DIR}/firmware_esp8266/tests/animated_gif_profile_test.cpp"
 PROFILE_OUT="${ROOT_DIR}/tmp/animated_gif_profile_test"
 PARITY_SRC="${ROOT_DIR}/firmware_esp8266/tests/animated_gif_parity_test.cpp"
 PARITY_OUT="${ROOT_DIR}/tmp/animated_gif_parity_test"
+TRANSFER_SRC="${ROOT_DIR}/firmware_esp8266/tests/cable_transfer_core_test.cpp"
+TRANSFER_OUT="${ROOT_DIR}/tmp/cable_transfer_core_test"
 CXX_BIN="${CXX:-c++}"
 
 bundled_theme=""
@@ -30,6 +32,9 @@ mkdir -p "${ROOT_DIR}/tmp"
   "${ROOT_DIR}/firmware_esp8266/src/renderer_esp8266.cpp" \
   "${ROOT_DIR}/firmware_esp8266/platformio.ini" \
   "${ROOT_DIR}/firmware_shared/theme_spec_renderer_core.h"
+
+"${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${TRANSFER_SRC}" -o "${TRANSFER_OUT}"
+"${TRANSFER_OUT}"
 
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic \
   "${VALIDATOR_SRC}" \

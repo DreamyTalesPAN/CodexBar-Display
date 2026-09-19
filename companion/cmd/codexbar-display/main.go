@@ -52,9 +52,7 @@ var openControlCenterStartLaunchAgentFn = startLaunchAgent
 var openControlCenterOpenURLFn = openURL
 var openControlCenterHTTPClient = &http.Client{}
 var doctorListPortsFn = usb.ListPorts
-var doctorResolvePortFn = usb.ResolvePort
-var doctorProbePortFn = usb.ProbePort
-var doctorReadDeviceHelloFn = usb.ReadDeviceHello
+var doctorReadCableCapabilitiesFn = readLocalCableCapabilities
 var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
 	client := &http.Client{
 		Timeout:   5 * time.Second,
@@ -103,7 +101,10 @@ func main() {
 	case "doctor":
 		err = runDoctor()
 	case "health":
-		err = health.Run(context.Background())
+		expectedOwner := healthRuntimeOwner()
+		err = health.Run(context.Background(), expectedOwner, func() (protocol.DeviceCapabilities, error) {
+			return readLocalCableCapabilities(expectedOwner)
+		})
 	case "open-control-center":
 		err = runOpenControlCenter(args[1:])
 	case "service":
@@ -150,6 +151,15 @@ func main() {
 	}
 }
 
+func healthRuntimeOwner() string {
+	if cfg, err := readDoctorRuntimeConfig(); err == nil && cfg.configured {
+		if label := strings.TrimSpace(cfg.label); label != "" {
+			return label
+		}
+	}
+	return runtimepaths.DisplayStreamLaunchAgentLabel()
+}
+
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
 	fmt.Println("  codexbar-display api [--addr 127.0.0.1:47832] [--dev-origin http://localhost:3000]")
@@ -169,7 +179,7 @@ func printUsage() {
 	fmt.Printf("  codexbar-display theme-pack catalog [--catalog %s]\n", defaultThemeCatalogURL)
 	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n]")
 	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n] | --catalog url --theme theme-id) [--target http://<device-ip>] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities] [--verbose]")
-	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
+	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
 func launchedFromAppBundle() bool {
@@ -342,7 +352,7 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 
 func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "legacy option; Cable runtime always resolves by device identity")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", "", "WiFi target base URL, for example http://192.168.178.163")
 	interval := fs.Duration("interval", 0, "poll interval")
@@ -581,6 +591,9 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.RenderWake = renderWake
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused
 	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
+	if !daemonOpts.Once {
+		daemonOpts.Dashboard = codexbar.StartDashboardServe(ctx, logf)
+	}
 
 	errc := make(chan error, 1)
 	go func() {
@@ -909,6 +922,9 @@ func superviseDisplayWorker(ctx context.Context, opts daemon.Options, run displa
 				return
 			}
 			logf("VibeTV display worker exited; restarting in %s\n", displayWorkerRestartDelay)
+		} else if errors.Is(err, daemon.ErrConnectionModeChanged) {
+			logf("VibeTV connection mode changed; restarting display worker now\n")
+			continue
 		} else {
 			logf("VibeTV display worker stopped; restarting in %s: %v\n", displayWorkerRestartDelay, err)
 		}
@@ -1023,14 +1039,20 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 			if err != nil {
 				return doctorRuntimeConfig{}, err
 			}
-			probeTarget := doctorWiFiProbeTarget(cfg.DeviceTarget, cfg, false)
+			transportName := doctorTransportForRuntimeConfig(cfg)
+			target := ""
+			probeTarget := ""
+			if transportName == "wifi" {
+				target = cfg.DeviceTarget
+				probeTarget = doctorWiFiProbeTarget(target, cfg, false)
+			}
 			return doctorRuntimeConfig{
 				configured:  true,
 				label:       label,
-				transport:   "wifi",
-				target:      cfg.DeviceTarget,
+				transport:   transportName,
+				target:      target,
 				probeTarget: probeTarget,
-				authReady:   deviceTokenFromCommandTarget(probeTarget) != "",
+				authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
 			}, nil
 		}
 	}
@@ -1069,8 +1091,11 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		target:      target,
 		probeTarget: probeTarget,
 		authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
-		port:        parseLaunchAgentArgument(plist, "--port"),
 	}, nil
+}
+
+func doctorTransportForRuntimeConfig(cfg runtimeconfig.Config) string {
+	return runtimeconfig.ActiveTransport(cfg)
 }
 
 func doctorTaskRuntimeConfig(home, label string, args []string) (doctorRuntimeConfig, error) {
@@ -1183,7 +1208,7 @@ func runDoctorTransportChecks(config doctorRuntimeConfig) error {
 				fmt.Printf("  %s\n", port)
 			}
 		}
-		return runDoctorUSBRuntimeChecks(config, ports)
+		return runDoctorUSBRuntimeChecks(config)
 	default:
 		return fmt.Errorf("runtime setup required: unsupported active transport %q", config.transport)
 	}
@@ -1196,66 +1221,26 @@ func printDoctorRuntimeDefaults() {
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
 }
 
-func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, _ []string) (resultErr error) {
-	if config.usbOwner != nil {
-		defer func() {
-			closeDefaultSenderFn()
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := config.usbOwner.Start(ctx); err != nil {
-				resultErr = errors.Join(resultErr, fmt.Errorf("restart USB background task after doctor: %w", err))
-			}
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := config.usbOwner.Stop(ctx, false); err != nil {
-			return fmt.Errorf("stop USB background task for doctor: %w", err)
-		}
-	}
+// The doctor asks the running Companion for the Cable state instead of opening
+// the serial port itself. That keeps it correct on every platform: the running
+// worker owns the port, so a second open would either be refused or force the
+// background task to be stopped and restarted around the check.
+func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig) error {
 	printDoctorRuntimeDefaults()
-	port, err := doctorResolvePortFn(config.port)
-	closeDefaultSenderFn()
+	caps, err := doctorReadCableCapabilitiesFn(config.label)
 	if err != nil {
-		fmt.Printf("  serial resolve: failed (%v)\n", err)
-		return fmt.Errorf("runtime serial resolve failed: %w", err)
+		fmt.Printf("  Companion Cable status: failed (%v)\n", err)
+		return fmt.Errorf("runtime Companion Cable status failed: %w", err)
 	}
-	fmt.Printf("  serial resolve: ok (%s)\n", port)
-
-	if err := doctorProbePortFn(port); err != nil {
-		if errcode.Of(err) == errcode.TransportSerialCloseTimeout {
-			fmt.Printf("  serial probe: warning (%v)\n", err)
-		} else {
-			fmt.Printf("  serial probe: failed (%v)\n", err)
-			return fmt.Errorf("runtime serial probe failed: %w", err)
-		}
-	} else {
-		fmt.Printf("  serial probe: ok (%s)\n", port)
-	}
-
-	pinnedPort := config.port
-	// ResolvePort already checked explicit availability or unique VibeTV hello
-	// identity. Raw enumeration includes unrelated devices and can omit aliases.
-	if pinnedPort == "" {
-		fmt.Println("  launchagent port affinity: auto-detect")
-	} else {
-		fmt.Printf("  launchagent port affinity: pinned (%s)\n", pinnedPort)
-	}
-
-	hello, err := doctorReadDeviceHelloFn(port)
-	closeDefaultSenderFn()
-	if err != nil {
-		fmt.Printf("  device hello: warning (%v)\n", err)
-		fmt.Println("  warning: capability handshake unavailable; runtime will use optimistic theme send fallback")
-		return nil
-	}
-
-	return reportDoctorCapabilities("device hello", protocol.CapabilitiesFromHello(hello))
+	fmt.Println("  Companion Cable status: ok")
+	fmt.Println("  Cable identity: resolved by running Companion")
+	return reportDoctorCapabilities("Cable device", caps)
 }
 
 func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 	printDoctorRuntimeDefaults()
 	target := strings.TrimSpace(config.target)
-	fmt.Println("  launchagent port affinity: not applicable (active transport is WiFi)")
+	fmt.Println("  Cable identity: not applicable (active transport is WiFi)")
 	if target == "" {
 		fmt.Println("  WiFi device target: unavailable (connect VibeTV in Control Center)")
 		return errors.New("runtime WiFi target unavailable: connect VibeTV in Control Center")
@@ -1330,6 +1315,10 @@ func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) er
 }
 
 func checkDoctorCompanionHealth(expectedOwner string) error {
+	return checkDoctorCompanionHealthOrigins(doctorCompanionOrigins(), expectedOwner)
+}
+
+func doctorCompanionOrigins() []string {
 	defaultOrigin := "http://" + companionapi.DefaultAddr
 	origins := []string{defaultOrigin}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -1342,7 +1331,95 @@ func checkDoctorCompanionHealth(expectedOwner string) error {
 			}
 		}
 	}
-	return checkDoctorCompanionHealthOrigins(origins, expectedOwner)
+	return origins
+}
+
+func readLocalCableCapabilities(expectedOwner string) (protocol.DeviceCapabilities, error) {
+	return readLocalCableCapabilitiesOrigins(doctorCompanionOrigins(), expectedOwner)
+}
+
+func readLocalCableCapabilitiesOrigins(origins []string, expectedOwner string) (protocol.DeviceCapabilities, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	var lastErr error
+	for _, origin := range origins {
+		response, err := client.Get(strings.TrimRight(origin, "/") + "/v1/status")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var result struct {
+			OK        bool `json:"ok"`
+			Companion struct {
+				Runtime struct {
+					ListenerOwner string `json:"listenerOwner"`
+				} `json:"runtime"`
+			} `json:"companion"`
+			Device struct {
+				DeviceID     string                    `json:"deviceId"`
+				Connected    bool                      `json:"connected"`
+				NetworkMode  string                    `json:"networkMode"`
+				Board        string                    `json:"board"`
+				Firmware     string                    `json:"firmware"`
+				Capabilities *protocol.CapabilityBlock `json:"capabilities"`
+			} `json:"device"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d", response.StatusCode)
+			continue
+		}
+		if decodeErr != nil {
+			lastErr = decodeErr
+			continue
+		}
+		if !result.OK {
+			lastErr = errors.New("companion status reported not ok")
+			continue
+		}
+		owner := strings.TrimSpace(result.Companion.Runtime.ListenerOwner)
+		if owner == "" && expectedOwner != "" && expectedOwner != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+			lastErr = errors.New("companion status did not identify its listener owner")
+			continue
+		}
+		if owner != "" && expectedOwner != "" && owner != expectedOwner {
+			lastErr = fmt.Errorf("companion status belongs to %q, expected %q", owner, expectedOwner)
+			continue
+		}
+		if !result.Device.Connected {
+			lastErr = errors.New("companion status reported Cable disconnected")
+			continue
+		}
+		if result.Device.Capabilities == nil {
+			lastErr = errors.New("companion status did not provide Cable capabilities")
+			continue
+		}
+		caps := protocol.CapabilitiesFromHello(protocol.DeviceHello{
+			Kind:         "hello",
+			DeviceID:     result.Device.DeviceID,
+			NetworkMode:  result.Device.NetworkMode,
+			Board:        result.Device.Board,
+			Firmware:     result.Device.Firmware,
+			Capabilities: *result.Device.Capabilities,
+		})
+		if strings.TrimSpace(caps.DeviceID) == "" {
+			lastErr = errors.New("companion status did not provide a Cable device identity")
+			continue
+		}
+		if !caps.Known {
+			lastErr = errors.New("companion status reported unknown Cable capabilities")
+			continue
+		}
+		if !strings.EqualFold(caps.ActiveTransport, "usb") || !strings.EqualFold(caps.ConnectionMode, "cable") {
+			lastErr = fmt.Errorf("companion status reported transport active=%q mode=%q", caps.ActiveTransport, caps.ConnectionMode)
+			continue
+		}
+		return caps, nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("companion status unavailable")
+	}
+	return protocol.DeviceCapabilities{}, lastErr
 }
 
 func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) error {
@@ -1452,12 +1529,11 @@ func forEachOwnedRuntimeOrigin(origins []string, expectedOwner string, then func
 
 func runSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
-	transportName := fs.String("transport", setup.DefaultTransport(), "device transport for LaunchAgent: wifi|usb")
+	port := fs.String("port", "", "optional serial candidate path (identity-resolved when empty)")
+	transportName := fs.String("transport", setup.DefaultSetupTransport(), "device transport for LaunchAgent: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://192.168.1.42")
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
-	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "release firmware environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini|none (empty keeps existing setting, defaults new installs to mini)")
 	validateOnly := fs.Bool("validate-only", false, "validate setup prerequisites only; do not change system state")
@@ -1467,16 +1543,15 @@ func runSetup(args []string) error {
 	}
 
 	return setup.Run(context.Background(), setup.Options{
-		Port:          strings.TrimSpace(*port),
-		Transport:     strings.TrimSpace(*transportName),
-		Target:        strings.TrimSpace(*target),
-		AssumeYes:     *yes,
-		SkipFlash:     *skipFlash,
-		PinDaemonPort: *pinPort,
-		FirmwareEnv:   strings.TrimSpace(*firmwareEnv),
-		Theme:         strings.TrimSpace(*theme),
-		ValidateOnly:  *validateOnly,
-		DryRun:        *dryRun,
+		Port:         strings.TrimSpace(*port),
+		Transport:    strings.TrimSpace(*transportName),
+		Target:       strings.TrimSpace(*target),
+		AssumeYes:    *yes,
+		SkipFlash:    *skipFlash,
+		FirmwareEnv:  strings.TrimSpace(*firmwareEnv),
+		Theme:        strings.TrimSpace(*theme),
+		ValidateOnly: *validateOnly,
+		DryRun:       *dryRun,
 	})
 }
 
@@ -1623,7 +1698,7 @@ func migrateLegacyWindowsTask(home, label string) error {
 func runThemeValidate(args []string) error {
 	fs := flag.NewFlagSet("theme-validate", flag.ContinueOnError)
 	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "optional serial candidate path (identity-resolved when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://192.168.1.42")
 	allowUnknown := fs.Bool(
@@ -1669,7 +1744,7 @@ func runThemeValidate(args []string) error {
 func runThemeApply(args []string) error {
 	fs := flag.NewFlagSet("theme-apply", flag.ContinueOnError)
 	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "optional serial candidate path (identity-resolved when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://192.168.1.42")
 	allowUnknown := fs.Bool(
@@ -2140,7 +2215,7 @@ func fallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
 
 func runRestoreKnownGood(args []string) error {
 	fs := flag.NewFlagSet("restore-known-good", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "required explicit serial recovery port")
 	image := fs.String("image", "", "backup image path (auto-select newest known-good backup when empty)")
 	baud := fs.Int("baud", 460800, "esptool serial baud rate")
 	scriptPath := fs.String("script-path", "", "path to esp8266-restore.sh (auto-detect when empty)")
@@ -2452,23 +2527,6 @@ func fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
-}
-
-func containsPort(ports []string, target string) bool {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return false
-	}
-	for _, port := range ports {
-		if strings.TrimSpace(port) == target {
-			return true
-		}
-	}
-	return false
-}
-
-func parsePinnedPortFromLaunchAgentPlist(plist string) string {
-	return parseLaunchAgentArgument(plist, "--port")
 }
 
 func parseLaunchAgentArgument(plist, name string) string {

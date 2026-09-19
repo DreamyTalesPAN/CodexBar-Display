@@ -2,25 +2,23 @@ package setup
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
 func setupUSBHello(string) (protocol.DeviceHello, error) {
 	return protocol.DeviceHello{Kind: "hello", Board: "esp8266-smalltv-st7789"}, nil
 }
 
-func TestChoosePortIdentifiesCOMAmongUnrelatedPorts(t *testing.T) {
+// choosePort no longer enumerates and ranks port names: the usb package
+// resolves a VibeTV by its protocol identity and returns exactly one port, or
+// an error naming why. These tests now assert that contract at the setup
+// boundary; the identity rules themselves live in internal/usb.
+func TestChoosePortReturnsTheIdentifiedPort(t *testing.T) {
 	got, err := choosePort(Options{AssumeYes: true}, deps{
-		listPorts: func() ([]string, error) { return []string{"/dev/cu.usbmodem-other", "COM17"}, nil },
-		readDeviceHello: func(port string) (protocol.DeviceHello, error) {
-			if port == "COM17" {
-				return setupUSBHello(port)
-			}
-			return protocol.DeviceHello{Kind: "hello", Board: "other"}, nil
-		},
+		resolvePort: func(string) (string, error) { return "COM17", nil },
 	})
 	if err != nil || got != "COM17" {
 		t.Fatalf("got %q, %v", got, err)
@@ -28,14 +26,14 @@ func TestChoosePortIdentifiesCOMAmongUnrelatedPorts(t *testing.T) {
 }
 
 func TestChoosePortFailsAmbiguityRegardlessOfInteraction(t *testing.T) {
+	ambiguous := errors.New("multiple matching VibeTVs: COM3, COM7")
 	for _, yes := range []bool{false, true} {
 		for _, interactive := range []bool{false, true} {
 			got, err := choosePort(Options{AssumeYes: yes}, deps{
-				listPorts:       func() ([]string, error) { return []string{"COM3", "COM7"}, nil },
-				readDeviceHello: setupUSBHello,
-				isInteractive:   func() bool { return interactive },
+				resolvePort:   func(string) (string, error) { return "", ambiguous },
+				isInteractive: func() bool { return interactive },
 			})
-			if got != "" || !errors.Is(err, usb.ErrAmbiguousPorts) {
+			if got != "" || err == nil || !strings.Contains(err.Error(), "multiple matching VibeTVs") {
 				t.Fatalf("yes=%v interactive=%v: %q, %v", yes, interactive, got, err)
 			}
 		}
@@ -43,9 +41,14 @@ func TestChoosePortFailsAmbiguityRegardlessOfInteraction(t *testing.T) {
 }
 
 func TestChooseExplicitRecoveryPortSkipsHelloSelection(t *testing.T) {
+	// An explicit port on the flash path is the operator's recovery target, so
+	// it goes to the recovery resolver and must not require a hello.
 	got, err := choosePort(Options{Port: " COM17 "}, deps{
-		resolvePort: func(port string) (string, error) { return port, nil },
-		listPorts:   func() ([]string, error) { t.Fatal("must not auto-select an explicit recovery port"); return nil, nil },
+		resolveRecoveryPort: func(port string) (string, error) { return port, nil },
+		resolvePort: func(string) (string, error) {
+			t.Fatal("explicit recovery port must not go through identity resolution")
+			return "", nil
+		},
 		readDeviceHello: func(string) (protocol.DeviceHello, error) {
 			t.Fatal("recovery must not require hello")
 			return protocol.DeviceHello{}, nil

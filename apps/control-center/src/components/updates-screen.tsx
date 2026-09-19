@@ -5,7 +5,7 @@ import {
   Monitor,
   RefreshCw,
   ShieldCheck,
-  X,
+  TriangleAlert,
 } from "lucide-react";
 import {
   Alert,
@@ -33,13 +33,14 @@ import {
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { CompanionInfo } from "./control-center-types";
+import { SetupDialog } from "./setup/setup-dialog";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
 
@@ -275,6 +276,7 @@ export function UpdatesScreen({
           ) : null}
           {visibleUpdateStatus ? (
             <InlineUpdateProgress
+              key={visibleUpdateStatus.startedAt}
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
               onRetry={
@@ -442,27 +444,45 @@ function InlineUpdateProgress({
   onRetry?: () => void;
   status: FirmwareUpdateStatus;
 }) {
-  const failed = status.phase === "error";
+  const [errorDismissed, setErrorDismissed] = useState(false);
+  if (status.phase === "error") {
+    if (errorDismissed) return null;
+    const reportAction = {
+      label: "Create report",
+      busy: creatingReport,
+      disabled: !onCreateReport,
+      onSelect: () => onCreateReport?.(),
+    };
+    return (
+      <SetupDialog
+        description={status.error || "Update was not installed."}
+        icon={TriangleAlert}
+        onOpenChange={(open) => setErrorDismissed(!open)}
+        open
+        primaryAction={status.retryAllowed !== false ? {
+          label: "Try again", disabled: !onRetry, onSelect: () => onRetry?.(),
+        } : reportAction}
+        secondaryAction={status.retryAllowed !== false ? reportAction : undefined}
+        title="Update failed"
+      />
+    );
+  }
   const complete = status.phase === "complete";
   const attention = status.phase === "attention";
   const restarting =
     status.phase === "installing" &&
     (status.stage === "rebooting" || status.stage === "rediscovering");
   const progress = clampUpdateProgress(
-    failed || complete || attention ? 100 : status.progress,
+    complete || attention ? 100 : status.progress,
   );
-  const title = failed
-    ? "Update failed"
-    : attention
+  const title = attention
       ? "Firmware current — attention needed"
     : complete
       ? "Update complete"
       : restarting
         ? "VibeTV is restarting"
       : "Updating VibeTV";
-  const detail = failed
-    ? status.error || "Update was not installed."
-    : attention
+  const detail = attention
       ? status.message ||
         "The firmware is current, but the connection or picture still needs repair."
     : complete
@@ -477,21 +497,17 @@ function InlineUpdateProgress({
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
       <Progress value={progress} />
-      <Alert variant={failed ? "destructive" : "default"}>
-        {failed ? (
-          <X aria-hidden />
-        ) : complete || attention ? (
+      <Alert>
+        {complete || attention ? (
           <ShieldCheck aria-hidden />
         ) : (
           <RefreshCw className="animate-spin" aria-hidden />
         )}
         <AlertTitle>{title}</AlertTitle>
         <AlertDescription>{detail}</AlertDescription>
-        {failed || attention ? (
+        {attention ? (
           <AlertAction className="flex gap-2">
-            {(failed && status.retryAllowed !== false) ||
-            (attention &&
-              status.outcome === "firmware_current_theme_attention") ? (
+            {status.outcome === "firmware_current_theme_attention" ? (
               <Button
                 disabled={!onRetry}
                 onClick={onRetry}

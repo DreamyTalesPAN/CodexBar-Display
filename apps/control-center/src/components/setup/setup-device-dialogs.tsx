@@ -1,7 +1,16 @@
 "use client";
 
-import { CircleAlert, WifiOff } from "lucide-react";
+import { Cable, CircleAlert, Wifi } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -112,21 +121,24 @@ type NotFoundDialogProps = {
   onEnterAddressManually: () => void;
   onOpenChange: (open: boolean) => void;
   onScanAgain: () => void;
+  onUseCable: () => void;
+  onSetUpWiFi: () => void;
   open: boolean;
 };
 
-/** 02c — nothing answered on this WiFi. */
+/** 02c — neither Cable nor WiFi discovery found a VibeTV. */
 export function SetupDeviceNotFoundDialog({
   busy = false,
   onEnterAddressManually,
   onOpenChange,
   onScanAgain,
+  onUseCable,
+  onSetUpWiFi,
   open,
 }: NotFoundDialogProps) {
   return (
     <SetupDialog
-      description="Connect it to your WiFi, then scan again."
-      icon={WifiOff}
+      description="Pick the way that fits your desk, then scan again."
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ busy, label: "Scan again", onSelect: onScanAgain }}
@@ -136,17 +148,111 @@ export function SetupDeviceNotFoundDialog({
       }}
       title="We couldn't find your VibeTV"
     >
-      <ol className="grid list-decimal gap-2 pl-5 text-left text-sm text-muted-foreground">
-        <li>Plug in your VibeTV and wait for the VibeTV-Setup network.</li>
-        <li>
-          On your phone, join the WiFi network <strong>VibeTV-Setup</strong>.
-        </li>
-        <li>
-          Open <strong>192.168.4.1</strong> and choose your home WiFi.
-        </li>
-        <li>Wait until the screen says WiFi connected.</li>
-      </ol>
+      <ItemGroup className="gap-1">
+        <Item asChild>
+          <button
+            className="text-left"
+            disabled={busy}
+            onClick={onUseCable}
+            type="button"
+          >
+            <ItemMedia variant="icon">
+              <Cable />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>Use the cable</ItemTitle>
+              <ItemDescription>
+                Plug VibeTV into your Mac with the cable that came with it.
+              </ItemDescription>
+            </ItemContent>
+          </button>
+        </Item>
+        <Item asChild>
+          <button
+            className="text-left"
+            disabled={busy}
+            onClick={onSetUpWiFi}
+            type="button"
+          >
+            <ItemMedia variant="icon">
+              <Wifi />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>Set up WiFi with your phone</ItemTitle>
+              <ItemDescription>Four steps, no cable needed.</ItemDescription>
+            </ItemContent>
+          </button>
+        </Item>
+      </ItemGroup>
     </SetupDialog>
+  );
+}
+
+/** The phone path stays a dismissible dialog while discovery continues. */
+export function SetupWiFiPhoneDialog({
+  onEnterAddressManually,
+  onScanAgain,
+  scanning = false,
+}: {
+  onEnterAddressManually: () => void;
+  onScanAgain: () => void;
+  scanning?: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} type="button" variant="link">
+        Set up WiFi with your phone
+      </Button>
+      <SetupDialog
+        description="Set it up with your phone — VibeTV opens its own network for that."
+        icon={Wifi}
+        tone="neutral"
+        onOpenChange={setOpen}
+        open={open}
+        primaryAction={{
+          busy: scanning,
+          label: "Scan again",
+          onSelect: onScanAgain,
+        }}
+        secondaryAction={{
+          label: "Enter IP manually",
+          onSelect: () => {
+            setOpen(false);
+            onEnterAddressManually();
+          },
+        }}
+        title="Connect to WiFi"
+      >
+        <ol className="flex flex-col gap-4 text-left text-sm leading-relaxed">
+          {[
+            <>
+              Plug VibeTV into power and wait for the{" "}
+              <strong>VibeTV-Setup</strong> network.
+            </>,
+            <>
+              On your phone, join the WiFi network <strong>VibeTV-Setup</strong>
+              .
+            </>,
+            <>
+              Open <strong className="font-mono">192.168.4.1</strong> and choose
+              your home WiFi.
+            </>,
+            <>Wait until VibeTV says “WiFi connected”, then scan again here.</>,
+          ].map((step, index) => (
+            <li className="flex items-start gap-3" key={index}>
+              <span
+                aria-hidden
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground"
+              >
+                {index + 1}
+              </span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      </SetupDialog>
+    </>
   );
 }
 

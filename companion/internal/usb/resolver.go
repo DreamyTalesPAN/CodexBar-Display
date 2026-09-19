@@ -1,17 +1,22 @@
 package usb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	serial "go.bug.st/serial"
 )
+
+const vibeTVBoardID = "esp8266-smalltv-st7789"
+const lilygoVibeTVBoardID = "esp32-lilygo-t-display-s3"
 
 type systemDiscoverer struct{}
 
@@ -35,129 +40,392 @@ func ListPorts() ([]string, error) {
 }
 
 func ResolvePort(explicit string) (string, error) {
-	s := defaultSender
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	explicit = strings.TrimSpace(explicit)
-	// A live handle is authoritative until a write fails or it is closed.
-	if s.port != nil && (samePort(explicit, s.path) || (explicit == "" && isVibeTVHello(s.hello))) {
-		return s.path, nil
+	if explicit == "" {
+		return "", wrapTransportError(
+			errcode.TransportSerialPortNotFound,
+			"resolve-explicit-port",
+			"",
+			"Pass the exact recovery port from `ls /dev/cu.usb*`.",
+			errors.New("an explicit serial port is required for recovery"),
+		)
 	}
-	// Explicit Unix paths may be stable symlinks omitted by enumeration.
-	// COM identifiers still require enumeration rather than filesystem checks.
-	if explicit != "" && runtime.GOOS != "windows" {
-		if _, err := os.Stat(explicit); err == nil {
-			return explicit, nil
+	// A COM name is a serial identifier, not a filesystem path, so it can only
+	// be confirmed by enumeration. Stat'ing it always fails and would take
+	// explicit firmware recovery away from every Windows customer.
+	if isCOMPortName(explicit) {
+		ports, err := ListPorts()
+		if err != nil {
+			return "", err
 		}
-	}
-	ports, err := ListPorts()
-	if err != nil {
-		return "", err
-	}
-	if explicit != "" {
-		// Explicit ports retain recovery access to boards with no working hello.
-		// COM names are serial identifiers, not filesystem paths.
 		for _, port := range ports {
 			if samePort(explicit, port) {
 				return port, nil
 			}
 		}
-		return "", wrapTransportError(errcode.TransportSerialPortNotFound, "resolve-explicit-port", explicit,
-			"List serial ports and pass an available port via --port.", errors.New("serial port not found"))
+		return "", wrapTransportError(
+			errcode.TransportSerialPortNotFound,
+			"resolve-explicit-port",
+			explicit,
+			"List serial ports and pass an available port via --port.",
+			errors.New("serial port not found"),
+		)
 	}
-	port, err := SelectPort(ports, s.deviceHelloLocked)
+	if _, err := os.Stat(explicit); err != nil {
+		return "", wrapTransportError(
+			errcode.TransportSerialPortNotFound,
+			"resolve-explicit-port",
+			explicit,
+			"Run `ls /dev/cu.usb*` and pass an existing port path.",
+			err,
+		)
+	}
+	return explicit, nil
+}
+
+func isCOMPortName(value string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(value)), "COM")
+}
+
+// samePort compares serial identifiers. COM names are case-insensitive; Unix
+// device paths are exact.
+func samePort(a, b string) bool {
+	if isCOMPortName(a) && isCOMPortName(b) {
+		return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+	}
+	return strings.TrimSpace(a) == strings.TrimSpace(b)
+}
+
+// ResolveVibeTVPort resolves a Cable device by its protocol identity. Port
+// names are only candidates: they are never remembered, ranked, or treated as
+// identity.
+func ResolveVibeTVPort(explicit, expectedDeviceID string) (string, error) {
+	return defaultSender.ResolvePort(explicit, expectedDeviceID)
+}
+
+// ResolveVibeTVControlPort resolves a supported VibeTV that is physically
+// connected over USB. Unlike ResolveVibeTVPort, it also accepts a device whose
+// selected connection mode is WiFi so the control API can switch it to Cable.
+func ResolveVibeTVControlPort(explicit, expectedDeviceID string) (string, error) {
+	return defaultSender.ResolveControlPort(explicit, expectedDeviceID)
+}
+
+// CableDevice is an identity-confirmed VibeTV found on a serial port. Port is
+// transport plumbing only and must never be persisted or shown as identity.
+type CableDevice struct {
+	Port  string
+	Hello protocol.DeviceHello
+}
+
+// DiscoverVibeTVs returns every Cable-capable VibeTV that answers hello. A
+// foreign serial device is reported only when no VibeTV answered, so it cannot
+// enter the selectable device list or hide valid VibeTVs.
+func DiscoverVibeTVs(ctx context.Context) ([]CableDevice, error) {
+	ctx, cancel := context.WithTimeout(ctx, helloReadWindow)
+	defer cancel()
+	ports, err := ListPorts()
 	if err != nil {
-		s.closeCurrentLocked()
-		return "", err
+		return nil, err
 	}
-	// The scan may have closed the selected port while checking later candidates.
-	// Restore and verify it once; subsequent frames reuse this handle and hello.
-	hello, err := s.deviceHelloLocked(port)
-	if err != nil || !isVibeTVHello(hello) {
-		s.closeCurrentLocked()
+	// Keep the active worker's serial ownership stable during the scan. Each
+	// other port gets an independent sender, so silent adapters cannot consume
+	// consecutive boot windows or reset the connected device repeatedly.
+	for !defaultSender.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	defer defaultSender.mu.Unlock()
+	activePath := defaultSender.path
+	hasActivePort := defaultSender.port != nil
+	return discoverVibeTVs(ports, func(path string) (protocol.DeviceHello, error) {
+		if samePort(path, activePath) && hasActivePort {
+			return defaultSender.deviceHelloLocked(ctx, path, defaultSender.helloWindow)
+		}
+		sender := NewSender()
+		defer sender.Close()
+		return sender.deviceHelloLocked(ctx, path, sender.helloWindow)
+	}, runtime.GOOS)
+}
+
+func discoverVibeTVs(
+	ports []string,
+	readHello func(string) (protocol.DeviceHello, error),
+	goos string,
+) ([]CableDevice, error) {
+	devices := make([]CableDevice, 0)
+	foreignDeviceAnswered := false
+	legacyCableFirmwareAnswered := false
+	legacyCableFirmwareVersion := ""
+	seen := make(map[string]struct{})
+	type probeResult struct {
+		port  string
+		hello protocol.DeviceHello
+		err   error
+	}
+	candidates := cableSerialCandidates(ports, goos)
+	results := make(chan probeResult, len(candidates))
+	for _, port := range candidates {
+		go func() {
+			hello, err := readHello(port)
+			results <- probeResult{port, hello, err}
+		}()
+	}
+	for range candidates {
+		result := <-results
+		port, hello, err := result.port, result.hello, result.err
+		if err != nil {
+			continue
+		}
+		hello = hello.Normalize()
+		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
+			!isSupportedCableBoard(hello.Board) {
+			foreignDeviceAnswered = true
+			continue
+		}
+		if hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
+			strings.TrimSpace(hello.DeviceID) == "" &&
+			strings.EqualFold(hello.Capabilities.Transport.Active, "usb") {
+			legacyCableFirmwareAnswered = true
+			if legacyCableFirmwareVersion == "" {
+				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
+			}
+			continue
+		}
+		mode := strings.ToLower(strings.TrimSpace(hello.Capabilities.Transport.Mode))
+		if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) ||
+			strings.TrimSpace(hello.DeviceID) == "" ||
+			!strings.EqualFold(hello.Capabilities.Transport.Active, "usb") ||
+			(mode != "cable" && mode != "wifi" && mode != "legacy-wifi-only") {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(hello.DeviceID))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		devices = append(devices, CableDevice{Port: port, Hello: hello})
+	}
+	sort.Slice(devices, func(i, j int) bool {
+		return strings.ToLower(devices[i].Hello.DeviceID) < strings.ToLower(devices[j].Hello.DeviceID)
+	})
+	if len(devices) == 0 && foreignDeviceAnswered {
+		return nil, wrapTransportError(
+			errcode.TransportForeignDevice,
+			"discover-vibetvs",
+			"",
+			"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
+			errors.New("a non-VibeTV serial device answered hello"),
+		)
+	}
+	if len(devices) == 0 && legacyCableFirmwareAnswered {
+		detail := "VibeTV answered over Cable without a deviceId"
+		if legacyCableFirmwareVersion != "" {
+			detail = fmt.Sprintf(
+				"VibeTV firmware %s answered over Cable without a deviceId",
+				legacyCableFirmwareVersion,
+			)
+		}
+		return nil, wrapTransportError(
+			errcode.TransportCableFirmwareTooOld,
+			"discover-vibetvs",
+			"",
+			"Update VibeTV over WiFi first, then reconnect the Cable.",
+			errors.New(detail),
+		)
+	}
+	return devices, nil
+}
+
+func resolveVibeTVPort(
+	explicit,
+	expectedDeviceID string,
+	readHello func(string) (protocol.DeviceHello, error),
+) (string, error) {
+	return resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, false)
+}
+
+func resolveVibeTVPortForControl(
+	explicit,
+	expectedDeviceID string,
+	readHello func(string) (protocol.DeviceHello, error),
+	allowWiFiMode bool,
+) (string, error) {
+	explicit = strings.TrimSpace(explicit)
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if readHello == nil {
+		return "", errors.New("device hello reader is required")
+	}
+
+	var candidates []string
+	if explicit != "" {
+		resolved, err := ResolvePort(explicit)
 		if err != nil {
 			return "", err
 		}
-		return "", fmt.Errorf("selected serial port %s no longer identifies as VibeTV", port)
+		candidates = []string{resolved}
+	} else {
+		ports, err := ListPorts()
+		if err != nil {
+			return "", err
+		}
+		candidates = cableSerialCandidates(ports, runtime.GOOS)
 	}
-	return port, nil
-}
-
-var ErrAmbiguousPorts = errors.New("multiple VibeTV serial devices found")
-
-// SelectPort identifies exactly one VibeTV using hello, never its port name.
-// The caller owns the reader's serial handle and must close it before flashing.
-func SelectPort(ports []string, readHello func(string) (protocol.DeviceHello, error)) (string, error) {
-	// Darwin enumerates dial-in and callout names for the same device. Prefer
-	// the exact callout alias: opening its tty twin can wait for carrier detect.
-	calloutPorts := make(map[string]bool)
-	for _, p := range ports {
-		p = strings.TrimSpace(p)
-		if strings.HasPrefix(p, "/dev/cu.") {
-			calloutPorts[p] = true
-		}
-	}
-	seen := make(map[string]bool)
-	var matches []string
-	for _, p := range ports {
-		p = strings.TrimSpace(p)
-		if strings.HasPrefix(p, "/dev/tty.") && calloutPorts["/dev/cu."+strings.TrimPrefix(p, "/dev/tty.")] {
-			continue
-		}
-		key := p
-		if strings.HasPrefix(strings.ToUpper(p), "COM") {
-			key = strings.ToUpper(p)
-		}
-		if p == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-		hello, err := readHello(p)
-		if err == nil && isVibeTVHello(hello) {
-			matches = append(matches, p)
-		}
-	}
-	if len(seen) == 0 {
+	if len(candidates) == 0 {
 		return "", wrapTransportError(
-			errcode.TransportNoSerialPorts,
-			"choose-auto-port",
+			errcode.TransportNoUSBSerialPorts,
+			"resolve-vibetv",
 			"",
-			"Connect a board with USB data cable, then rerun command.",
-			errors.New("no serial ports found"),
+			"Connect VibeTV with a data-capable Cable and retry.",
+			errors.New("no USB serial candidates found"),
 		)
 	}
 
-	if len(matches) == 1 {
-		return matches[0], nil
-	}
-	if len(matches) > 1 {
-		return "", fmt.Errorf("%w: %s; select one explicitly with --port", ErrAmbiguousPorts, strings.Join(matches, ", "))
-	}
-
-	return "", wrapTransportError(
-		errcode.TransportNoUSBSerialPorts,
-		"choose-auto-port",
-		"",
-		"Connect a VibeTV with a USB data cable, or use --port for explicit firmware recovery.",
-		errors.New("no VibeTV serial device identified by hello"),
+	return resolveVibeTVCandidatesForControl(
+		candidates,
+		explicit,
+		expectedDeviceID,
+		readHello,
+		allowWiFiMode,
 	)
 }
 
-func samePort(a, b string) bool {
-	if strings.HasPrefix(strings.ToUpper(a), "COM") && strings.HasPrefix(strings.ToUpper(b), "COM") {
-		return strings.EqualFold(a, b)
+func cableSerialCandidates(ports []string, goos string) []string {
+	candidates := make([]string, 0, len(ports))
+	for _, candidate := range ports {
+		candidate = strings.TrimSpace(candidate)
+		lower := strings.ToLower(candidate)
+		if candidate == "" || (!strings.Contains(lower, "usb") && !(goos == "windows" && isCOMPortName(candidate))) {
+			continue
+		}
+		// macOS exposes one USB-UART twice. /dev/cu.* is the callout endpoint
+		// intended for initiating a connection; /dev/tty.* is its waiting alias,
+		// not a second physical VibeTV.
+		if goos == "darwin" && strings.HasPrefix(lower, "/dev/tty.") {
+			continue
+		}
+		candidates = append(candidates, candidate)
 	}
-	return a == b
+	return candidates
 }
 
-func isVibeTVHello(hello protocol.DeviceHello) bool {
-	hello = hello.Normalize()
-	if hello.Kind != "hello" {
-		return false
+func resolveVibeTVCandidates(
+	candidates []string,
+	explicit,
+	expectedDeviceID string,
+	readHello func(string) (protocol.DeviceHello, error),
+) (string, error) {
+	return resolveVibeTVCandidatesForControl(
+		candidates,
+		explicit,
+		expectedDeviceID,
+		readHello,
+		false,
+	)
+}
+
+func resolveVibeTVCandidatesForControl(
+	candidates []string,
+	explicit,
+	expectedDeviceID string,
+	readHello func(string) (protocol.DeviceHello, error),
+	allowWiFiMode bool,
+) (string, error) {
+	matches := make([]string, 0, 1)
+	foreignDeviceAnswered := false
+	legacyCableFirmwareAnswered := false
+	legacyCableFirmwareVersion := ""
+	for _, candidate := range candidates {
+		hello, err := readHello(candidate)
+		if err != nil {
+			continue
+		}
+		hello = hello.Normalize()
+		mode := hello.Capabilities.Transport.Mode
+		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
+			!isSupportedCableBoard(hello.Board) {
+			foreignDeviceAnswered = true
+		}
+		// A supported VibeTV that answers over Cable without a deviceId is
+		// running firmware from before the Cable identity contract. It is a
+		// genuine VibeTV, so report it as upgradable instead of silently
+		// ignoring it.
+		if hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
+			strings.TrimSpace(hello.DeviceID) == "" &&
+			strings.EqualFold(hello.Capabilities.Transport.Active, "usb") {
+			legacyCableFirmwareAnswered = true
+			if legacyCableFirmwareVersion == "" {
+				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
+			}
+		}
+		if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) ||
+			hello.DeviceID == "" ||
+			hello.Capabilities.Transport.Active != "usb" ||
+			(mode != "cable" && (!allowWiFiMode || (mode != "wifi" && mode != "legacy-wifi-only"))) {
+			continue
+		}
+		if expectedDeviceID != "" && !strings.EqualFold(hello.DeviceID, expectedDeviceID) {
+			continue
+		}
+		matches = append(matches, candidate)
 	}
-	switch hello.Board {
-	case "esp8266-smalltv-st7789", "esp32-lilygo-t-display-s3":
+
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		if foreignDeviceAnswered {
+			return "", wrapTransportError(
+				errcode.TransportForeignDevice,
+				"resolve-vibetv",
+				explicit,
+				"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
+				errors.New("a non-VibeTV serial device answered hello"),
+			)
+		}
+		if legacyCableFirmwareAnswered {
+			detail := "VibeTV answered over Cable without a deviceId"
+			if legacyCableFirmwareVersion != "" {
+				detail = fmt.Sprintf(
+					"VibeTV firmware %s answered over Cable without a deviceId",
+					legacyCableFirmwareVersion,
+				)
+			}
+			return "", wrapTransportError(
+				errcode.TransportCableFirmwareTooOld,
+				"resolve-vibetv",
+				explicit,
+				"Update VibeTV over WiFi first, then reconnect the Cable.",
+				errors.New(detail),
+			)
+		}
+		detail := "no matching Cable VibeTV answered hello"
+		if expectedDeviceID != "" {
+			detail = fmt.Sprintf("VibeTV deviceId %q was not found", expectedDeviceID)
+		}
+		return "", wrapTransportError(
+			errcode.TransportNoMatchingDevice,
+			"resolve-vibetv",
+			explicit,
+			"Connect the expected VibeTV by Cable and retry. Foreign serial devices are ignored.",
+			errors.New(detail),
+		)
+	default:
+		return "", wrapTransportError(
+			errcode.TransportMultipleDevices,
+			"resolve-vibetv",
+			"",
+			"Leave exactly one matching VibeTV connected and retry.",
+			fmt.Errorf("multiple matching VibeTVs: %s", strings.Join(matches, ", ")),
+		)
+	}
+}
+
+func isSupportedCableBoard(board string) bool {
+	switch strings.ToLower(strings.TrimSpace(board)) {
+	case vibeTVBoardID, lilygoVibeTVBoardID:
 		return true
 	default:
 		return false

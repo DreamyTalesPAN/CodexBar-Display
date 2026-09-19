@@ -11,9 +11,7 @@
       <string>codexbar-display</string>
       <string>daemon</string>
       <string>--transport</string>
-      <string>wifi</string>
-      <string>--interval</string>
-      <string>30s</string>
+      <string>usb</string>
       <string>--api-addr</string>
       <string>127.0.0.1:47832</string>
       <string>--api-dev-origin</string>

@@ -470,11 +470,10 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	s.providerPreferences.at = now
 	s.cacheProviderInventory(settings)
 	if inventoryOnly && s.startProviderHealthRefreshLocked() {
-		// The inventory copied the previous health only to avoid an empty row.
-		// Once its replacement is running, expose that wait instead of letting
-		// the copied result look current and stop the browser poll.
+		// A background refresh is not a new health result. Keep the previous
+		// answer until it finishes; the provider screen keeps polling meanwhile.
 		for i := range s.providerPreferences.cached {
-			if !s.providerPreferences.cached[i].Enabled {
+			if !s.providerPreferences.cached[i].Enabled || s.providerPreferences.cached[i].Health != "" {
 				continue
 			}
 			s.providerPreferences.cached[i].Health = codexbar.ProviderHealthChecking
@@ -503,7 +502,16 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		s.providerPreferences.mu.Lock()
 		defer s.providerPreferences.mu.Unlock()
 		s.providerPreferences.healthRefresh = false
-		if err != nil || revision != s.providerPreferences.revision {
+		if revision != s.providerPreferences.revision {
+			return
+		}
+		if err != nil {
+			for i := range s.providerPreferences.cached {
+				setting := &s.providerPreferences.cached[i]
+				if setting.Enabled && (setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
+					setting.Health = codexbar.ProviderHealthUnavailable
+				}
+			}
 			return
 		}
 		healthByID := make(map[string]codexbar.ProviderSetting, len(settings))
@@ -652,6 +660,12 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		checkedAt := ""
 		nextAction := ""
 		signInURL := ""
+		// A running check only speaks for the provider when nothing else does.
+		// A fresh exact readiness is other evidence, exactly like a fresh usage
+		// reading, so resolve it before deciding to hold the row at "checking".
+		readiness, hasReadiness := s.providerReadinessFor(setting.ID)
+		readinessApplies := hasReadiness &&
+			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now)
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
@@ -662,10 +676,11 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			if reported != "" {
 				reported = message + " " + reported
 			}
-		} else if _, fresh := freshSuccess[setting.ID]; setting.Health == codexbar.ProviderHealthChecking && !fresh {
+		} else if _, fresh := freshSuccess[setting.ID]; setting.Health == codexbar.ProviderHealthChecking &&
+			!fresh && !readinessApplies {
 			// A check is running and nothing else speaks for the provider. A
-			// fresh collector reading does: the device is showing it right now,
-			// so the row falls through to the exact-readiness and usage
+			// fresh collector reading or a fresh exact readiness does: the
+			// provider was just confirmed, so the row falls through to that
 			// evidence below instead of closing Continue for the length of the
 			// check. The Windows CLI takes twenty seconds per health pass, and
 			// the setup step polls while a row is checking, so on that machine
@@ -674,8 +689,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = string(codexbar.ProviderHealthChecking)
 			message = providerHealthMessage(codexbar.ProviderHealthChecking)
 			reported = ""
-		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
-			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
+		} else if readinessApplies {
 			state = providerReadinessHealthState(readiness.Status)
 			message = strings.TrimSpace(readiness.Detail)
 			if message == "" {

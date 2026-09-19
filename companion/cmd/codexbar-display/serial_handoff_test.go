@@ -1,53 +1,16 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"testing"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 )
 
-type doctorUSBTask struct {
-	service.Manager
-	stopped, restarted bool
-	stopErr, startErr  error
-}
-
-func (m *doctorUSBTask) Stop(_ context.Context, disable bool) error {
-	if disable {
-		return errors.New("doctor must not disable logon")
-	}
-	m.stopped = true
-	return m.stopErr
-}
-func (m *doctorUSBTask) Start(context.Context) error { m.restarted = true; return m.startErr }
-
-func TestDoctorQuiescesUSBTaskAndRestartsAfterProbeFailure(t *testing.T) {
-	for _, stopFailure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "probe-error", true: "stop-error"}[stopFailure], func(t *testing.T) {
-			resolve, closeSender := doctorResolvePortFn, closeDefaultSenderFn
-			t.Cleanup(func() { doctorResolvePortFn, closeDefaultSenderFn = resolve, closeSender })
-			owner := &doctorUSBTask{startErr: errors.New("restart failed")}
-			if stopFailure {
-				owner.stopErr = errors.New("stop failed")
-			}
-			closed := false
-			closeDefaultSenderFn = func() { closed = true }
-			doctorResolvePortFn = func(string) (string, error) {
-				if !owner.stopped || stopFailure {
-					t.Fatal("probe while task still owns USB")
-				}
-				return "", errors.New("probe failed")
-			}
-			err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{usbOwner: owner}, nil)
-			if !owner.restarted || !closed || !errors.Is(err, owner.startErr) {
-				t.Fatalf("restarted=%t closed=%t err=%v", owner.restarted, closed, err)
-			}
-		})
-	}
-}
+// Doctor no longer opens the serial port itself: it asks the running Companion
+// for the Cable identity that Companion already owns. The three tests that
+// covered quiescing the service and releasing doctor's own probe/hello handles
+// described that removed probe path, so they were dropped with it. The
+// remaining handoff tests below still guard the commands that do open the port.
+// Doctor's own behaviour is covered by main_doctor_test.go.
 
 func TestUpgradeStopsWorkerBeforeDiscoveryAndReleasesBeforeBusyCheck(t *testing.T) {
 	resolve, busy, stop, restart, closeSender := resolveSerialPortFn, ensureSerialPortNotBusyFn, upgradeStopLaunchAgentFn, upgradeRestartLaunchAgentFn, closeDefaultSenderFn
@@ -83,52 +46,6 @@ func TestUpgradeStopsWorkerBeforeDiscoveryAndReleasesBeforeBusyCheck(t *testing.
 	}
 	if !restarted {
 		t.Fatal("worker was not restored after failed preflight")
-	}
-}
-
-func TestDoctorReleasesDiscoveryBeforeProbeAndHelloOnReturn(t *testing.T) {
-	resolve, probe, hello, closeSender := doctorResolvePortFn, doctorProbePortFn, doctorReadDeviceHelloFn, closeDefaultSenderFn
-	t.Cleanup(func() {
-		doctorResolvePortFn, doctorProbePortFn, doctorReadDeviceHelloFn, closeDefaultSenderFn = resolve, probe, hello, closeSender
-	})
-	held := false
-	doctorResolvePortFn = func(string) (string, error) { held = true; return "COM17", nil }
-	closeDefaultSenderFn = func() { held = false }
-	doctorProbePortFn = func(string) error {
-		if held {
-			t.Fatal("probe opens the discovery-owned port a second time")
-		}
-		return nil
-	}
-	doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
-		held = true
-		return protocol.DeviceHello{}, errors.New("no hello")
-	}
-	if err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{port: "COM17"}, []string{"COM17"}); err != nil {
-		t.Fatal(err)
-	}
-	if held {
-		t.Fatal("doctor left its hello handle open")
-	}
-}
-
-func TestDoctorTrustsValidatedResolverWithOtherSerialDevices(t *testing.T) {
-	for _, pinned := range []string{"", "com17", "/dev/vibetv-link"} {
-		t.Run(pinned, func(t *testing.T) {
-			resolve, probe, hello, closeSender := doctorResolvePortFn, doctorProbePortFn, doctorReadDeviceHelloFn, closeDefaultSenderFn
-			t.Cleanup(func() {
-				doctorResolvePortFn, doctorProbePortFn, doctorReadDeviceHelloFn, closeDefaultSenderFn = resolve, probe, hello, closeSender
-			})
-			doctorResolvePortFn = func(string) (string, error) { return "COM17", nil }
-			doctorProbePortFn = func(string) error { return nil }
-			doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
-				return protocol.DeviceHello{}, errors.New("no capabilities")
-			}
-			closeDefaultSenderFn = func() {}
-			if err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{port: pinned}, []string{"COM17", "COM99"}); err != nil {
-				t.Fatal(err)
-			}
-		})
 	}
 }
 

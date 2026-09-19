@@ -50,6 +50,7 @@ type ControlCenterShellProps = {
   children: ReactNode;
   device: DeviceInfo | null;
   disabledTabs?: ActiveTab[];
+  hiddenTabs?: ActiveTab[];
   headerAction?: ReactNode;
   updateAvailable?: boolean;
 };
@@ -94,6 +95,7 @@ export function ControlCenterShell({
   onTabChange,
   children,
   disabledTabs = [],
+  hiddenTabs = [],
   headerAction,
   updateAvailable = false,
 }: ControlCenterShellProps) {
@@ -125,6 +127,7 @@ export function ControlCenterShell({
               activeTab={activeTab}
               activeAppearanceSection={activeAppearanceSection}
               isTabDisabled={isTabDisabled}
+              hiddenTabs={hiddenTabs}
               onAppearanceSectionChange={onAppearanceSectionChange}
               onTabChange={onTabChange}
               updateAvailable={updateAvailable}
@@ -184,6 +187,7 @@ function ControlCenterNavigation({
   activeTab,
   activeAppearanceSection,
   isTabDisabled,
+  hiddenTabs,
   onAppearanceSectionChange,
   onTabChange,
   updateAvailable,
@@ -191,18 +195,22 @@ function ControlCenterNavigation({
   activeTab: ActiveTab;
   activeAppearanceSection: AppearanceSection;
   isTabDisabled: (tab: ActiveTab) => boolean;
+  hiddenTabs: ActiveTab[];
   onAppearanceSectionChange?: (section: AppearanceSection) => void;
   onTabChange: (tab: ActiveTab) => void;
   updateAvailable: boolean;
 }) {
   const { isMobile } = useSidebar();
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) => !hiddenTabs.includes(item.id),
+  );
 
   return (
     <SidebarGroup className="p-3 group-data-[collapsible=icon]:p-2">
       <SidebarGroupContent>
         <nav aria-label={isMobile ? "Control Center mobile" : "Control Center"}>
           <SidebarMenu className="gap-1">
-            {NAV_ITEMS.map((item) => {
+            {visibleNavItems.map((item) => {
               const appearance = item.id === "theme-library";
               const disabled = isTabDisabled(item.id);
               const menuItem = (
