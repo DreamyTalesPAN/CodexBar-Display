@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,28 +133,27 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	return s.deviceHelloWithin(path, s.helloWindow)
 }
 
-// DeviceHelloForDiscovery answers the narrow question "is a VibeTV on this
-// port" with a short window. Discovery must stay inside the customer-visible
-// search budget even when a shipped device without Cable support never
-// answers, so it cannot use the boot-tolerant control window.
+// Discovery uses the boot-tolerant window too: WiFi startup can delay hello.
 func (s *Sender) DeviceHelloForDiscovery(path string) (protocol.DeviceHello, error) {
-	window := s.helloWindow
-	if helloDiscoveryWindow < window {
-		window = helloDiscoveryWindow
-	}
-	return s.deviceHelloWithin(path, window)
+	return s.deviceHelloWithin(path, s.helloWindow)
 }
 
 func (s *Sender) deviceHelloWithin(path string, window time.Duration) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.deviceHelloLocked(context.Background(), path, window)
+}
 
+func (s *Sender) deviceHelloLocked(ctx context.Context, path string, window time.Duration) (protocol.DeviceHello, error) {
+	if err := ctx.Err(); err != nil {
+		return protocol.DeviceHello{}, err
+	}
 	if _, err := s.ensurePort(path); err != nil {
 		return protocol.DeviceHello{}, err
 	}
 	// A USB path can be reused by another device, and transport state can
 	// change without reopening the port. Only a fresh hello proves identity.
-	s.captureHelloAfterOpenLockedWithin(window)
+	s.captureHelloAfterOpenLockedContext(ctx, window)
 
 	if !s.helloSeen {
 		s.closeCurrentLocked()
@@ -218,14 +218,21 @@ func (s *Sender) captureHelloAfterOpenLocked() {
 }
 
 func (s *Sender) captureHelloAfterOpenLockedWithin(window time.Duration) {
+	s.captureHelloAfterOpenLockedContext(context.Background(), window)
+}
+
+func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window time.Duration) {
 	_ = s.port.ResetInputBuffer()
 	s.sleep(s.settleDuration)
 	// Opening a supplier USB adapter can reset a WiFi-mode device. Re-send
 	// hello on the same port while it boots; an early request can be lost.
 	deadline := time.Now().Add(window)
+	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+		deadline = limit
+	}
 	var hello protocol.DeviceHello
 	seen := false
-	for time.Now().Before(deadline) {
+	for ctx.Err() == nil && time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if err := writeWithTimeout(s.port, helloRequestLine, min(s.writeTimeout, remaining)); err != nil {
 			break

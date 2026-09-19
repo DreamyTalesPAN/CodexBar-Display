@@ -21,11 +21,6 @@ const (
 	// join measured 21.8 seconds until setup answered hello. Keep one port
 	// open through that boot, with a bounded reserve for initialization.
 	helloReadWindow      = 30 * time.Second
-	// Discovery only asks whether a VibeTV is on this port. A device with
-	// Cable firmware answers within milliseconds, so a shipped device that
-	// predates Cable support must not hold the customer-visible search open
-	// for the full boot-tolerant window above.
-	helloDiscoveryWindow = 3 * time.Second
 	wifiScanReadWindow   = 12 * time.Second
 	helloReadStepTimeout = 80 * time.Millisecond
 	helloReadBufferBytes = 2048

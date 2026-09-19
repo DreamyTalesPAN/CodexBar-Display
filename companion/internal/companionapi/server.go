@@ -203,7 +203,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
-	discoverCableDevices   func() ([]usb.CableDevice, error)
+	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
 	refreshCableHello      func() (protocol.DeviceHello, bool)
@@ -3234,6 +3234,9 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	explicitTarget := strings.TrimSpace(req.Target)
 	var cableDevices []usb.CableDevice
 	var cableErr error
+	searchCtx, cancelSearch := context.WithTimeout(r.Context(), deviceSearchWindow)
+	defer cancelSearch()
+	var devices []deviceSearchEntry
 	if explicitTarget == "" && !cfg.WiFiTransitionPending() && s.discoverCableDevices != nil {
 		s.firmwareUpdateStartMu.Lock()
 		if _, running := s.activeFirmwareUpdateJob(); running {
@@ -3241,16 +3244,22 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then search again.")
 			return
 		}
-		cableDevices, cableErr = s.discoverCableDevices()
+		// LAN and serial discovery share one deadline. Otherwise a silent
+		// adapter consumes the budget before WiFi devices are even probed.
+		lanDone := make(chan struct{})
+		cableFound := make(chan struct{})
+		go func() {
+			defer close(lanDone)
+			devices, err = s.searchDevicesUntilCable(searchCtx, cfg, explicitTarget, cableFound)
+		}()
+		cableDevices, cableErr = s.discoverCableDevices(searchCtx)
 		s.firmwareUpdateStartMu.Unlock()
-	}
-	var devices []deviceSearchEntry
-	if len(cableDevices) > 0 {
-		// Cable already answers. Include one WiFi sweep without waiting for a
-		// WiFi-only recovery window or letting network errors hide Cable.
-		devices, err = s.searchDevicesOnce(r.Context(), cfg, "")
+		if len(cableDevices) > 0 {
+			close(cableFound)
+		}
+		<-lanDone
 	} else {
-		devices, err = s.searchDevices(r.Context(), cfg, explicitTarget)
+		devices, err = s.searchDevices(searchCtx, cfg, explicitTarget)
 	}
 	if err != nil && len(cableDevices) == 0 {
 		var invalidTarget *invalidTargetError
@@ -7782,6 +7791,10 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 }
 
 func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
+	return s.searchDevicesUntilCable(ctx, cfg, explicitTarget, nil)
+}
+
+func (s *Server) searchDevicesUntilCable(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string, cableFound <-chan struct{}) ([]deviceSearchEntry, error) {
 	explicitTarget = strings.TrimSpace(explicitTarget)
 	if explicitTarget != "" {
 		normalized, err := normalizeExplicitDeviceTarget(explicitTarget)
@@ -7814,6 +7827,13 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 				foundKnown = true
 			}
 		}
+		// A Cable answer settles discovery after at least one complete LAN
+		// sweep; do not cancel that sweep and lose selectable WiFi devices.
+		select {
+		case <-cableFound:
+			return sortedDeviceSearchEntries(byIdentity), nil
+		default:
+		}
 		// A clean customer install has no saved identity to prefer, so settle one
 		// additional full scan after the first result and merge both snapshots.
 		// Recovery with a saved identity keeps returning as soon as that known
@@ -7829,6 +7849,8 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 		}
 		select {
 		case <-searchCtx.Done():
+			return sortedDeviceSearchEntries(byIdentity), nil
+		case <-cableFound:
 			return sortedDeviceSearchEntries(byIdentity), nil
 		case <-time.After(repairDiscoveryRetryGap):
 		}

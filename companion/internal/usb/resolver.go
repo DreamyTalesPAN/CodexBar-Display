@@ -1,12 +1,14 @@
 package usb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -118,12 +120,34 @@ type CableDevice struct {
 // DiscoverVibeTVs returns every Cable-capable VibeTV that answers hello. A
 // foreign serial device is reported only when no VibeTV answered, so it cannot
 // enter the selectable device list or hide valid VibeTVs.
-func DiscoverVibeTVs() ([]CableDevice, error) {
+func DiscoverVibeTVs(ctx context.Context) ([]CableDevice, error) {
+	ctx, cancel := context.WithTimeout(ctx, helloReadWindow)
+	defer cancel()
 	ports, err := ListPorts()
 	if err != nil {
 		return nil, err
 	}
-	return discoverVibeTVs(ports, defaultSender.DeviceHelloForDiscovery, runtime.GOOS)
+	// Keep the active worker's serial ownership stable during the scan. Each
+	// other port gets an independent sender, so silent adapters cannot consume
+	// consecutive boot windows or reset the connected device repeatedly.
+	for !defaultSender.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	defer defaultSender.mu.Unlock()
+	activePath := defaultSender.path
+	hasActivePort := defaultSender.port != nil
+	return discoverVibeTVs(ports, func(path string) (protocol.DeviceHello, error) {
+		if samePort(path, activePath) && hasActivePort {
+			return defaultSender.deviceHelloLocked(ctx, path, defaultSender.helloWindow)
+		}
+		sender := NewSender()
+		defer sender.Close()
+		return sender.deviceHelloLocked(ctx, path, sender.helloWindow)
+	}, runtime.GOOS)
 }
 
 func discoverVibeTVs(
@@ -136,8 +160,22 @@ func discoverVibeTVs(
 	legacyCableFirmwareAnswered := false
 	legacyCableFirmwareVersion := ""
 	seen := make(map[string]struct{})
-	for _, port := range cableSerialCandidates(ports, goos) {
-		hello, err := readHello(port)
+	type probeResult struct {
+		port  string
+		hello protocol.DeviceHello
+		err   error
+	}
+	candidates := cableSerialCandidates(ports, goos)
+	results := make(chan probeResult, len(candidates))
+	for _, port := range candidates {
+		go func() {
+			hello, err := readHello(port)
+			results <- probeResult{port, hello, err}
+		}()
+	}
+	for range candidates {
+		result := <-results
+		port, hello, err := result.port, result.hello, result.err
 		if err != nil {
 			continue
 		}
