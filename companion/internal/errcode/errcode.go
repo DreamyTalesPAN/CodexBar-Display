@@ -12,6 +12,7 @@ const (
 	TransportNoUSBSerialPorts   Code = "transport/no-usb-serial-ports"
 	TransportNoMatchingDevice   Code = "transport/no-matching-vibetv"
 	TransportForeignDevice      Code = "transport/foreign-serial-device"
+	TransportCableFirmwareTooOld Code = "transport/cable-firmware-too-old"
 	TransportMultipleDevices    Code = "transport/multiple-vibetvs"
 	TransportSerialOpen         Code = "transport/serial-open"
 	TransportSerialWrite        Code = "transport/serial-write"
@@ -111,6 +112,8 @@ func DefaultRecovery(code Code) string {
 		return "Connect the expected VibeTV by Cable and retry. Foreign serial devices are ignored."
 	case TransportForeignDevice:
 		return "Disconnect the other serial device and connect VibeTV with a data-capable Cable."
+	case TransportCableFirmwareTooOld:
+		return "Update VibeTV over WiFi first, then reconnect the Cable."
 	case TransportMultipleDevices:
 		return "Leave exactly one matching VibeTV connected and retry."
 	case TransportSerialOpen:

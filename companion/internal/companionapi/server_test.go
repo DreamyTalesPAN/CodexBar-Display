@@ -690,6 +690,34 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchProbesLANWhileCableBoots(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	lanStarted := make(chan struct{}, 1)
+	server.localNetworkAvailable = func() bool {
+		select {
+		case lanStarted <- struct{}{}:
+		default:
+		}
+		return false
+	}
+	server.discoverCableDevices = func(ctx context.Context) ([]usb.CableDevice, error) {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > deviceSearchWindow {
+			t.Error("Cable discovery lacks the common search deadline")
+		}
+		select {
+		case <-lanStarted:
+		case <-time.After(time.Second):
+			t.Error("LAN discovery waited behind Cable startup")
+		}
+		return []usb.CableDevice{{Port: "COM3", Hello: cableHelloForTest("cable-a")}}, nil
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) {
 	wifi := newCountedSelectableDeviceServer(t, "wifi-known", nil, nil)
 	defer wifi.Close()
@@ -702,7 +730,7 @@ func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) 
 	freshHello := cableHelloForTest("cable-a")
 	freshHello.NetworkMode = "setup"
 	freshHello.Capabilities.Transport.Mode = "wifi"
-	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 		return []usb.CableDevice{
 			{Port: "/dev/cu.usbserial-a", Hello: freshHello},
 			{Port: "/dev/cu.usbserial-b", Hello: cableHelloForTest("cable-b")},
@@ -741,7 +769,7 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.localNetworkAvailable = func() bool { return false }
 	calls := 0
-	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 		calls++
 		if server.firmwareUpdateStartMu.TryLock() {
 			server.firmwareUpdateStartMu.Unlock()
@@ -781,16 +809,13 @@ func TestDeviceSearchKeepsCableWhenWiFiUnavailable(t *testing.T) {
 			server.defaultWiFiTarget = func() string { return "" }
 			server.subnetTargets = func() []string { return []string{"http://192.0.2.10"} }
 			cableChecked := false
-			server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 				cableChecked = true
 				return []usb.CableDevice{{Hello: cableHelloForTest("cable-a")}}, nil
 			}
 			server.localNetworkAvailable = func() bool { return scenario != "offline" }
 			probes := 0
 			server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
-				if !cableChecked {
-					t.Error("WiFi probe started before Cable discovery")
-				}
 				probes++
 				if scenario == "denied" {
 					return nil, syscall.EACCES
@@ -801,7 +826,7 @@ func TestDeviceSearchKeepsCableWhenWiFiUnavailable(t *testing.T) {
 			defer cancel()
 			rec := httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)).WithContext(ctx))
-			if rec.Code != http.StatusOK || ctx.Err() != nil || probes > 1 {
+			if !cableChecked || rec.Code != http.StatusOK || ctx.Err() != nil || probes > 1 {
 				t.Fatalf("Cable search waited for or failed on WiFi: status=%d context=%v probes=%d body=%s", rec.Code, ctx.Err(), probes, rec.Body.String())
 			}
 			var response struct {
@@ -1044,7 +1069,7 @@ func TestDeviceSearchSkipsUSBDuringWiFiTransition(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		DeviceID: "switching-device", DeviceTarget: device.URL, CableAutoBindDisabled: true,
 	})
-	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 		t.Error("automatic discovery opened USB while WiFi was joining")
 		return nil, nil
 	}
@@ -3848,7 +3873,7 @@ func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: "setup_required"}) {
 		t.Fatal("setup_required with no diagnosed provider must keep waiting")
 	}
-	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
+	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderBrowserSignInRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
 		setup := codexbar.ProviderSetup{
 			Status:    "setup_required",
 			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
@@ -3872,23 +3897,26 @@ func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
 	target := "http://192.0.2.10"
 	stream := displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
 
-	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
-		return codexbar.ProviderSetup{
-			Status:    "setup_required",
-			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
-		}
+	// Reading a cold cache also starts the background refresh, and that refresh
+	// writes whatever the probe reports into the same cache this test seeds
+	// below. On a slow runner its write lands after the seed and replaces it,
+	// which failed a correct wait. Letting the probe report the same
+	// unconfigured provider makes the refresh harmless whenever it runs.
+	unconfigured := codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
 	}
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return unconfigured
+	}
+
 	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("a cold provider cache must not settle the wait")
 	}
-	// Wait for the real cache owner instead of racing the cold-cache refresh.
-	deadline := time.Now().Add(time.Second)
-	for server.providerSetupRefresh.Load() && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if server.providerSetupRefresh.Load() {
-		t.Fatal("provider setup refresh did not finish")
-	}
+	server.providerSetupMu.Lock()
+	server.providerSetupCache = unconfigured
+	server.providerSetupCachedAt = time.Now()
+	server.providerSetupMu.Unlock()
 	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("an unconfigured provider must settle the wait")
 	}
@@ -12295,7 +12323,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.currentCableHello = func() (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{}, false
 	}
-	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 		return nil, nil
 	}
 	server.resetCableSender = func() {}

@@ -60,6 +60,7 @@ type providerCollector struct {
 	persistInterval       time.Duration
 	wake                  <-chan struct{}
 	afterWakeCollect      func()
+	afterFirstCollect     func()
 
 	warmupUntil time.Time
 
@@ -296,6 +297,16 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	// returns without one, so nothing is written to a device that is not there.
 
 	now := c.now()
+	if !c.firstCollectState(now).settled && c.afterFirstCollect != nil {
+		defer func() {
+			// Publish the first definitive answer immediately, including an
+			// honest no-provider result. The display may be sleeping after
+			// warm-up and must not wait a full transport interval to see it.
+			if parent.Err() == nil && c.firstCollectState(c.now()).settled {
+				c.afterFirstCollect()
+			}
+		}()
+	}
 	c.beginFirstCollect(now)
 	ctx := parent
 	cancel := func() {}

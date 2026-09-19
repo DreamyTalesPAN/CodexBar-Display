@@ -13,6 +13,12 @@ import (
 const usage = `[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":42,"windowMinutes":10080}}}]`
 
 func main() {
+	usageResponse := usage
+	var providerError any
+	if os.Getenv("VIBETV_SIMULATION_SIGNED_OUT") == "1" {
+		usageResponse = `[{"provider":"codex","error":{"code":"auth_required","message":"Sign in required"}}]`
+		providerError = map[string]string{"code": "auth_required", "message": "Sign in required"}
+	}
 	args := os.Args[1:]
 	if len(args) == 0 {
 		os.Exit(2)
@@ -30,7 +36,7 @@ func main() {
 		}
 		mux := http.NewServeMux()
 		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{}`) })
-		mux.HandleFunc("/usage", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, usage) })
+		mux.HandleFunc("/usage", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, usageResponse) })
 		mux.HandleFunc("/dashboard/v1/snapshot", func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("Authorization") != "Bearer "+os.Getenv("CODEXBAR_DASHBOARD_TOKEN") {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -41,7 +47,7 @@ func main() {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"schemaVersion": 1, "generatedAt": now.Format(time.RFC3339), "staleAfterSeconds": 180,
 				"providers": []any{map[string]any{
-					"id": "codex", "name": "Codex", "error": nil, "updatedAt": now.Format(time.RFC3339),
+					"id": "codex", "name": "Codex", "error": providerError, "updatedAt": now.Format(time.RFC3339),
 					"windows": []any{map[string]any{"kind": "weekly", "label": "Weekly", "usedPercent": 42,
 						"resetAt": now.Add(72 * time.Hour).Format(time.RFC3339)}},
 				}},
@@ -66,7 +72,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "usage":
-		fmt.Println(usage)
+		fmt.Println(usageResponse)
 	case "config":
 		if len(args) < 2 {
 			os.Exit(2)

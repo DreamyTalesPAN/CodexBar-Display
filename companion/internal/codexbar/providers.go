@@ -135,8 +135,11 @@ func silentProbePayload(setting ProviderSetting, runErr error) map[string]any {
 type ProviderHealthState string
 
 const (
-	ProviderHealthHealthy       ProviderHealthState = "healthy"
-	ProviderHealthAuthRequired  ProviderHealthState = "auth_required"
+	ProviderHealthHealthy      ProviderHealthState = "healthy"
+	ProviderHealthAuthRequired ProviderHealthState = "auth_required"
+	// ProviderHealthBrowserSignIn: signed in to the tool, but the usage
+	// endpoint only answers a browser session. See ProviderBrowserSignInRequired.
+	ProviderHealthBrowserSignIn ProviderHealthState = "browser_sign_in_required"
 	ProviderHealthSetupRequired ProviderHealthState = "setup_required"
 	ProviderHealthUnsupported   ProviderHealthState = "unsupported"
 	ProviderHealthNoUsage       ProviderHealthState = "no_usage_available"
@@ -168,6 +171,9 @@ type ProviderSetting struct {
 	// companionapi.reportedProviderMessage is the one place that redacts it
 	// before it reaches a screen.
 	Reported string
+	// SignInURL is the browser page CodexBar named for a
+	// ProviderHealthBrowserSignIn provider; empty otherwise.
+	SignInURL string
 }
 
 type ProviderSettingsErrorKind string
@@ -218,6 +224,7 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 			settings[i].Health = current.health
 			settings[i].Service = current.service
 			settings[i].Reported = current.reported
+			settings[i].SignInURL = current.signInURL
 		} else if healthErr != nil {
 			settings[i].Health = ProviderHealthUnavailable
 		}
@@ -487,9 +494,10 @@ func validProviderID(id string) bool {
 }
 
 type providerHealth struct {
-	health   ProviderHealthState
-	service  ProviderServiceState
-	reported string
+	health    ProviderHealthState
+	service   ProviderServiceState
+	reported  string
+	signInURL string
 }
 
 func parseProviderHealth(raw []byte) map[string]providerHealth {
@@ -509,16 +517,22 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 		}
 		state := ProviderHealthHealthy
 		reported := ""
+		signInURL := ""
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
 			state = classifyProviderHealth(reported)
+			if page := browserSignInPage(id, reported); page != "" {
+				state = ProviderHealthBrowserSignIn
+				signInURL = page
+			}
 		} else if !providerPayloadHasUsage(payload) {
 			state = ProviderHealthNoUsage
 		}
 		result[id] = providerHealth{
-			health:   state,
-			service:  classifyProviderService(firstStringAtPaths(payload, "status.indicator")),
-			reported: reported,
+			health:    state,
+			service:   classifyProviderService(firstStringAtPaths(payload, "status.indicator")),
+			reported:  reported,
+			signInURL: signInURL,
 		}
 	}
 	return result

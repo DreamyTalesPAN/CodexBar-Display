@@ -470,6 +470,10 @@ async function main() {
     if (providerSettingsOnly) {
       await testSettingsStayCustomerOnly(browser, appContext.appUrl);
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      await testMacAppKeepsEveryProviderAndNoSignInButton(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderWriteWinsOverOlderPreferenceRead(
         browser,
         appContext.appUrl,
@@ -494,6 +498,7 @@ async function main() {
       await testThemeThenUsageChoice(browser, appContext.appUrl);
       await testSingleProviderSkipsDisplayMode(browser, appContext.appUrl);
       await testReconnectReachesProvidersWithoutFreshUsage(browser, appContext.appUrl);
+      await testProviderReadinessCustomerStates(browser, appContext.appUrl);
       console.log("control-center provider settings test passed");
       return;
     }
@@ -730,6 +735,10 @@ async function main() {
       appContext.appUrl,
       { expectDmg: true },
     );
+    await testHostedEntryOnWindowsOffersTheWindowsApp(
+      browser,
+      appContext.appUrl,
+    );
     await testLocalFreshAppSearchesBeforeWifiSetup(browser, appContext.appUrl);
     await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
       browser,
@@ -934,6 +943,10 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+    await testMacAppKeepsEveryProviderAndNoSignInButton(
+      browser,
+      appContext.appUrl,
+    );
     await testProviderWriteWinsOverOlderPreferenceRead(
       browser,
       appContext.appUrl,
@@ -2360,7 +2373,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
       rowActions: [
-        "Copy provider message for Codex",
+        "Sign in to Codex",
         "Check Codex again",
       ],
     },
@@ -2372,7 +2385,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
       rowActions: [
-        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2383,7 +2395,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "no_usage_available",
       reportedMessage: "No usage data is available for this Codex account.",
       rowActions: [
-        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2394,7 +2405,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
       rowActions: [
-        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2404,7 +2414,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "setup_required",
       reportedMessage: "No available fetch strategy for codex.",
       rowActions: [
-        "Copy provider message for Codex",
+        "Sign in to Codex",
         "Check Codex again",
       ],
     },
@@ -2529,10 +2539,16 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
-    await page
-      .getByText(fixture.reportedMessage, { exact: true })
-      .first()
+    const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
+    await providerDialog.getByText(fixture.reportedMessage, { exact: true })
       .waitFor({ timeout: 10_000 });
+    await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
+      .waitFor({ timeout: 10_000 });
+    await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+    assert(
+      (await page.getByText(fixture.reportedMessage, { exact: true }).count()) === 0,
+      `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
+    );
     for (const action of fixture.rowActions) {
       await page
         .getByRole("button", { name: action })
@@ -3712,6 +3728,10 @@ async function testHostedEntryShowsMacAppDownload(
   const page = await browser.newPage({ viewport });
   const installRequests = [];
   const companionRequests = [];
+  // These checks are about the Mac customer's page. CI runs on Linux, where
+  // the page would correctly refuse to claim either system, so the Mac is
+  // stated explicitly instead of inherited from the runner.
+  await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionMissing(page, installRequests, (pathname) => {
     companionRequests.push(pathname);
@@ -3798,6 +3818,88 @@ async function testHostedThemeEntryShowsMacAppDownload(
   });
 }
 
+/**
+ * Make the page see a Mac the way a real Mac customer's browser reports one,
+ * through both the modern platform hint and the user agent.
+ */
+async function pretendCustomerIsOnAMac(page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      get: () =>
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    });
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      get: () => ({ platform: "macOS" }),
+    });
+  });
+}
+
+async function pretendCustomerIsOnWindows(page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      get: () =>
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    });
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      get: () => ({ platform: "Windows" }),
+    });
+  });
+}
+
+/**
+ * A Windows customer opening the address the VibeTV printed. No release
+ * publishes a Windows installer yet, so the honest result is the existing
+ * not-ready state for Windows plus the quiet way over to the Mac download --
+ * never a dead link and never the Mac's DMG steps.
+ */
+async function testHostedEntryOnWindowsOffersTheWindowsApp(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await pretendCustomerIsOnWindows(page);
+  await routeHostedAppThroughLocalNext(page, appUrl);
+  await routeCompanionMissing(page, installRequests);
+
+  await page.goto("https://app.vibetv.shop/", {
+    waitUntil: "domcontentloaded",
+  });
+  await setupScreen(page, "Download VibeTV Control Center").waitFor({
+    timeout: 10_000,
+  });
+
+  const windowsDownload = page.getByRole("button", {
+    name: "Download for Windows",
+  });
+  await windowsDownload.waitFor({ timeout: 10_000 });
+  assert(
+    await windowsDownload.isDisabled(),
+    "An unpublished Windows installer must stay disabled instead of linking nowhere",
+  );
+  await page
+    .getByText("Open the downloaded installer.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Open the downloaded DMG.", { exact: true }).count()) ===
+      0,
+    "A Windows customer must not be given the Mac's DMG steps",
+  );
+  const macEscapeHatch = page.getByRole("link", {
+    name: "Using a Mac? Download for macOS",
+  });
+  await macEscapeHatch.waitFor({ timeout: 10_000 });
+  assert(
+    assetName(await macEscapeHatch.getAttribute("href")) ===
+      "VibeTV-Control-Center.dmg",
+    "The quiet Mac link must point at the verified DMG",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
 async function testHostedPriorVisitStillShowsMacAppDownload(
   browser,
   appUrl,
@@ -3812,6 +3914,7 @@ async function testHostedPriorVisitStillShowsMacAppDownload(
       "1",
     );
   });
+  await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionMissing(page, installRequests, (pathname) => {
     companionRequests.push(pathname);
@@ -6538,7 +6641,7 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     preferencePatchDelayMs: 200,
-    preferencePatchFailureIds: ["codexbar.providers.gemini.enabled"],
+    preferencePatchFailureIds: ["codexbar.providers.antigravity.enabled"],
     preferencesResponse: {
       ok: true,
       items: [
@@ -6563,13 +6666,13 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           },
         },
         {
-          id: "codexbar.providers.copilot.enabled",
+          id: "codexbar.providers.cursor.enabled",
           section: "providers",
           owner: "codexbar",
           type: "boolean",
-          label: "GitHub Copilot",
-          providerId: "copilot",
-          description: "Usage from GitHub Copilot.",
+          label: "Cursor",
+          providerId: "cursor",
+          description: "Usage from Cursor.",
           value: false,
           effectiveValue: false,
           allowsDefault: false,
@@ -6582,7 +6685,9 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
             message: "Provider is off.",
           },
         },
-        disabledProviderPreferenceFixture("cursor", "Cursor"),
+        disabledProviderPreferenceFixture("antigravity", "Antigravity"),
+        // Not offered by VibeTV: they stay in CodexBar's settings, off this page.
+        disabledProviderPreferenceFixture("copilot", "GitHub Copilot"),
         disabledProviderPreferenceFixture("gemini", "Gemini"),
         disabledProviderPreferenceFixture("opencode", "OpenCode"),
         {
@@ -6627,61 +6732,134 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
   await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
   await panel.getByRole("button", { name: "Check Claude again" }).waitFor();
+  await panel.getByRole("button", { name: "Sign in to Claude" }).waitFor({ timeout: 10_000 });
   await panel
-    .getByText("GitHub Copilot", { exact: true })
+    .getByText("Cursor", { exact: true })
     .waitFor({ timeout: 10_000 });
 
-  // The list is flat now, as it is in the wizard: every provider is present
-  // and search is the way through them.
-  await panel.getByText("Gemini", { exact: true }).waitFor({ timeout: 10_000 });
-  await panel.getByText("OpenCode", { exact: true }).waitFor({ timeout: 10_000 });
+  // The list is flat, as it is in the wizard, and holds only the providers
+  // VibeTV offers. The rest of CodexBar's inventory never reaches the page.
+  await panel
+    .getByText("Antigravity", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  for (const notOffered of ["GitHub Copilot", "Gemini", "OpenCode"]) {
+    assert(
+      (await panel.getByText(notOffered, { exact: true }).count()) === 0,
+      `${notOffered} is not offered by VibeTV and must not be listed`,
+    );
+  }
 
   const search = panel.getByLabel("Search providers");
-  await search.fill("opencode");
-  await panel.getByText("OpenCode", { exact: true }).waitFor();
+  await search.fill("antigravity");
+  await panel.getByText("Antigravity", { exact: true }).waitFor();
   await search.fill("codex");
   assert(
     (await panel.getByText("Codex", { exact: true }).count()) === 1 &&
       (await panel.getByText("Claude", { exact: true }).count()) === 0 &&
-      (await panel.getByText("GitHub Copilot", { exact: true }).count()) === 0,
+      (await panel.getByText("Cursor", { exact: true }).count()) === 0,
     "provider search must use provider identity, not the shared descriptor prefix",
   );
-  await search.fill("Copilot");
+  await search.fill("Cursor");
   assert(
     (await panel.getByText("Codex", { exact: true }).count()) === 0,
     "provider search should filter the list",
   );
   await search.fill("");
 
-  const copilot = panel.getByRole("switch", { name: "GitHub Copilot" });
-  await copilot.click();
-  assert(await copilot.isDisabled(), "changed provider should be pending");
-  const gemini = panel.getByRole("switch", { name: "Gemini" });
+  const cursor = panel.getByRole("switch", { name: "Cursor" });
+  await cursor.click();
+  assert(await cursor.isDisabled(), "changed provider should be pending");
+  const antigravity = panel.getByRole("switch", { name: "Antigravity" });
   assert(
-    !(await gemini.isDisabled()),
+    !(await antigravity.isDisabled()),
     "unrelated provider should stay interactive",
   );
-  await copilot.waitFor({ state: "attached", timeout: 10_000 });
+  await cursor.waitFor({ state: "attached", timeout: 10_000 });
   await waitForCondition(
-    async () => !(await copilot.isDisabled()),
+    async () => !(await cursor.isDisabled()),
     "the provider write should settle",
   );
   assert(
-    await copilot.isChecked(),
+    await cursor.isChecked(),
     "changed provider should keep its new value after the save",
   );
 
-  await gemini.click();
+  await antigravity.click();
   await page
     .getByText("This provider could not be updated.")
     .waitFor({ timeout: 10_000 });
   assert(
-    !(await gemini.isChecked()),
+    !(await antigravity.isChecked()),
     "failed update must keep the previous value",
   );
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+// The Mac app must be untouched by the Windows launch decision: a companion
+// without the sign-in feature keeps every provider CodexBar reports and shows
+// no sign-in button, exactly as the shipped Mac app does today.
+async function testMacAppKeepsEveryProviderAndNoSignInButton(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+      providerSignInEnabled: false,
+    },
+    preferencesResponse: {
+      ok: true,
+      items: [
+        {
+          id: "codexbar.providers.claude.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Claude",
+          providerId: "claude",
+          description: "Usage from Claude.",
+          value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
+          writable: true,
+          health: {
+            state: "auth_required",
+            service: "outage",
+            message: "Sign in again for this provider.",
+            reported: "Claude connection failed: authentication required.",
+          },
+        },
+        disabledProviderPreferenceFixture("gemini", "Gemini"),
+        disabledProviderPreferenceFixture("copilot", "GitHub Copilot"),
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Settings");
+  const panel = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
+  for (const kept of ["Gemini", "GitHub Copilot"]) {
+    await panel.getByText(kept, { exact: true }).waitFor({ timeout: 10_000 });
+  }
+  assert(
+    (await panel.getByRole("button", { name: "Sign in to Claude" }).count()) ===
+      0,
+    "the Mac app must not grow a sign-in button",
+  );
+  // The row still says what is wrong and still offers the re-check it has today.
+  await panel
+    .getByRole("button", { name: "Check Claude again" })
+    .first()
+    .waitFor({ timeout: 10_000 });
+
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -6773,7 +6951,7 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
       items: [
         providerPreferenceFixture("codex", "Codex"),
         disabledProviderPreferenceFixture("claude", "Claude"),
-        disabledProviderPreferenceFixture("gemini", "Gemini"),
+        disabledProviderPreferenceFixture("cursor", "Cursor"),
       ],
     },
     providerDisplay: {
@@ -6796,17 +6974,17 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   });
   await clickNavigation(page, "Settings");
   const claude = page.getByRole("switch", { name: "Claude" });
-  const gemini = page.getByRole("switch", { name: "Gemini" });
+  const cursor = page.getByRole("switch", { name: "Cursor" });
   await claude.click();
   await page
     .getByText("Display selection could not be saved.")
     .waitFor({ timeout: 10_000 });
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
-  await gemini.click();
+  await cursor.click();
   await waitForCondition(
     () => {
       const providerIds = JSON.parse(displayWrites.at(-1) || "{}").providerIds;
-      return displayWrites.length >= 3 && providerIds?.includes("gemini");
+      return displayWrites.length >= 3 && providerIds?.includes("cursor");
     },
     "the failed Automatic pool save was not retried",
     15_000,
@@ -6816,11 +6994,11 @@ async function testProviderPoolRetriesAfterFailedWrite(browser, appUrl) {
   ).providerIds;
   assert(
     retriedProviderIds?.includes("claude") &&
-      retriedProviderIds?.includes("gemini"),
+      retriedProviderIds?.includes("cursor"),
     `the retried Automatic pool must keep every enabled provider, got ${displayWrites.at(-1)}`,
   );
   assert(await claude.isChecked(), "the confirmed provider must remain enabled");
-  assert(await gemini.isChecked(), "the second provider must remain enabled");
+  assert(await cursor.isChecked(), "the second provider must remain enabled");
   await page.close();
 }
 
@@ -6861,6 +7039,7 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     (request) =>
       request.path === "/v1/preferences" && request.method === "GET",
   ).length;
+  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
   await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
   await waitForCondition(
@@ -6872,6 +7051,7 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     "navigation must start the stale read used by the provider-check race",
   );
 
+  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
   await checkAgain.click();
   await waitForCondition(
     () =>
@@ -7019,6 +7199,22 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   const providerDialog = page.getByRole("listitem").filter({ has: page.getByRole("switch", { name: "Claude", exact: true }) });
   await providerDialog.getByText("Claude connection failed: authentication required to read usage.", { exact: true }).waitFor();
   await providerDialog.getByRole("button", { name: "Copy provider message for Claude" }).waitFor();
+  // The shell that can start a sign-in offers that button on the row; pressing
+  // it must reach the companion.
+  const signInClaude = providersScreen.getByRole("button", {
+    name: "Sign in to Claude",
+  });
+  await signInClaude.waitFor({ timeout: 10_000 });
+  await signInClaude.click();
+  await waitForCondition(
+    () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/providers/sign-in" &&
+          request.method === "POST",
+      ),
+    "the sign-in button must start the provider's sign-in through the companion",
+  );
   assert(
     (await providersScreen
       .getByRole("button", { name: "Open CodexBar" })
@@ -7067,6 +7263,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   // Switching the only healthy provider off closes the shared descriptor
   // gate, and switching it back on opens it again.
+  await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
   const codexSwitch = providersScreen.getByRole("switch", { name: "Codex" });
   await codexSwitch.click();
   await waitForCondition(
@@ -10623,6 +10820,7 @@ async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
 async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   let page = await browser.newPage({ viewport });
   const setupInstallRequests = [];
+  await pretendCustomerIsOnAMac(page);
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionMissing(page, setupInstallRequests);
 
@@ -10917,6 +11115,9 @@ async function routeCompanionOnline(
     companionFeatures = {
       themeInstallEnabled: true,
       macAppSelfUpdateEnabled: false,
+      // The Windows shell is what ships the shortened provider list and the
+      // sign-in button. Flows that check either one run as that shell.
+      providerSignInEnabled: true,
     },
     companionVersion = "1.0.32",
     companionApp,
@@ -11091,6 +11292,14 @@ async function routeCompanionOnline(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
+      });
+      return;
+    }
+    if (pathname === "/v1/providers/sign-in") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, action: "cli_login", url: "" }),
       });
       return;
     }

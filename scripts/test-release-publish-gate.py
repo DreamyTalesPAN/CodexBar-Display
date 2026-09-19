@@ -318,6 +318,16 @@ class PublishGateFixtureTests(unittest.TestCase):
                     "checksums",
                     True,
                 ),
+                "VibeTV-Control-Center-Setup.exe": (
+                    "publish/VibeTV-Control-Center-Setup.exe",
+                    "windows-installer",
+                    True,
+                ),
+                "latest-windows.json": (
+                    "publish/latest-windows.json",
+                    "windows-update-manifest",
+                    True,
+                ),
                 "codexbar-display": (
                     "test/codexbar-display",
                     "test-companion",
@@ -405,6 +415,29 @@ class PublishGateFixtureTests(unittest.TestCase):
         result = self._run()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("appcast enclosure URL", result.stderr)
+
+    @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
+    def test_rejects_windows_update_manifest_for_another_asset(self) -> None:
+        self._replace_asset_and_rebind(
+            "publish/latest-windows.json",
+            '{"version":"1.2.3","platforms":{"windows-x86_64":'
+            '{"signature":"c2ln","url":"https://example.com/other.exe"}}}\n',
+        )
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Windows update manifest URL", result.stderr)
+
+    @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
+    def test_rejects_unsigned_windows_update_manifest(self) -> None:
+        self._replace_asset_and_rebind(
+            "publish/latest-windows.json",
+            '{"version":"1.2.3","platforms":{"windows-x86_64":{"signature":"   ",'
+            '"url":"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/'
+            'download/v1.2.3/VibeTV-Control-Center-Setup.exe"}}}\n',
+        )
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("updater signature", result.stderr)
 
     @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
     def test_rejects_wrong_firmware_manifest_url(self) -> None:

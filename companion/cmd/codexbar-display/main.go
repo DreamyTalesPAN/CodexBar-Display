@@ -1226,6 +1226,10 @@ func printDoctorRuntimeDefaults() {
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
 }
 
+// The doctor asks the running Companion for the Cable state instead of opening
+// the serial port itself. That keeps it correct on every platform: the running
+// worker owns the port, so a second open would either be refused or force the
+// background task to be stopped and restarted around the check.
 func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig) error {
 	printDoctorRuntimeDefaults()
 	caps, err := doctorReadCableCapabilitiesFn(config.label)

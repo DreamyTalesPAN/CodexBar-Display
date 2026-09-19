@@ -6,11 +6,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 func TestParseLaunchAgentArgument(t *testing.T) {
@@ -102,13 +104,16 @@ func TestDoctorLaunchAgentStateMustBeActive(t *testing.T) {
 }
 
 func TestHealthRuntimeOwnerUsesRunningBundledRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("LaunchAgent ownership is specific to the macOS runtime; Windows uses Scheduled Tasks")
+	}
 	for _, want := range []string{
 		"shop.vibetv.control-center.runtime",
 		"shop.vibetv.control-center.preview-runtime",
 	} {
 		t.Run(want, func(t *testing.T) {
 			restoreDoctorTestDeps(t)
-			t.Setenv("HOME", t.TempDir())
+			testenv.Home(t, t.TempDir())
 			doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
 				if label == want {
 					return []byte("state = running"), nil

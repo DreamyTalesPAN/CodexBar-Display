@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -176,6 +177,33 @@ func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
 	}
 }
 
+func TestFetchDashboardProvidersDoesNotProbeDisabledMacProviders(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar defaults to Claude, not the configured provider set")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[]}`))
+		case dashboardUsagePath:
+			// CodexBar 0.46.0 treats an explicit provider=all as every
+			// supported provider, even when the customer disabled them all.
+			if r.URL.RawQuery != "" {
+				http.Error(w, "disabled providers were requested", http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+	if err != nil || len(providers) != 0 {
+		t.Fatalf("an empty enabled set must settle without probing disabled providers: providers=%+v err=%v", providers, err)
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -188,8 +216,12 @@ func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server
 		_, _ = w.Write([]byte(snapshot))
 	})
 	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.Query().Get("provider") != "all" {
-			http.Error(w, "usage requires bearer and all providers", http.StatusUnauthorized)
+		wantQuery := ""
+		if runtime.GOOS == "windows" {
+			wantQuery = "provider=all"
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.RawQuery != wantQuery {
+			http.Error(w, "usage requires bearer and platform provider selection", http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

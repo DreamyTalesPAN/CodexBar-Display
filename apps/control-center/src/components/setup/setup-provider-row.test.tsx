@@ -16,6 +16,37 @@ function render(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
 }
 
 describe("SetupProviderRow", () => {
+  // Windows can start a provider's sign-in; the Mac app cannot, and its rows
+  // must stay as they are. The button therefore follows the shell action, not
+  // the health alone, and never replaces the inline notice or the re-check.
+  it("offers to start the sign-in only when the shell can start one", () => {
+    for (const health of ["auth_required", "setup_required"]) {
+      const html = render({ health, onOpenSignIn: vi.fn() });
+      expect(html).toContain("Sign in to Claude Code");
+      expect(html).toContain("lucide-log-in");
+      expect(html).toContain('data-slot="provider-notice"');
+      expect(html).toContain('aria-label="Check Claude Code again"');
+    }
+    expect(render({ health: "auth_required" })).not.toContain("lucide-log-in");
+  });
+
+  // Claude on Windows is signed in to the tool, but its usage endpoint only
+  // answers a browser session, so this row opens that page instead.
+  it("offers the browser sign-in page when the provider needs a browser session", () => {
+    const html = render({
+      health: "browser_sign_in_required",
+      onOpenSignIn: vi.fn(),
+    });
+    expect(html).toContain("lucide-external-link");
+    expect(html).toContain('aria-label="Open Claude Code sign-in in your browser"');
+    expect(html).toContain('aria-label="Check Claude Code again"');
+    expect(html).toContain('role="switch"');
+    expect(render({ health: "browser_sign_in_required" })).not.toContain(
+      "lucide-external-link",
+    );
+  });
+
+
   it("shows a ready provider as a switch that is on", () => {
     const html = render();
 

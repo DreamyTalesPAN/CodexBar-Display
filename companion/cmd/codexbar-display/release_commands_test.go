@@ -1043,7 +1043,7 @@ func prepareCableFirmwareUpdateTest(t *testing.T) (string, string, *string) {
 	t.Helper()
 	pinNoOtherRuntimeWriter(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	previousResolve := resolveCableFirmwarePortFn
 	previousRead := readCableFirmwareHelloFn
 	previousTransfer := transferCableFirmwareFn
@@ -2859,15 +2859,7 @@ func TestRunRollbackValidatesFirmwarePortBeforeRestoringCompanion(t *testing.T) 
 		resolveSerialPortFn, loadReleaseStateFn = previousResolve, previousLoad
 		runRestoreKnownGoodCommandFn, rollbackRestartLaunchAgentFn = previousRestore, previousRestart
 	})
-	t.Setenv("HOME", t.TempDir())
-	support, err := runtimeSupportDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(support, "bin", "codexbar-display")
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	_, target := installedBinaryFixture(t)
 	source := filepath.Join(t.TempDir(), "known-good")
 	for path, contents := range map[string]string{target: "current", source: "previous"} {
 		if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {

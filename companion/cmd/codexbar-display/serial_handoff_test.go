@@ -1,40 +1,16 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"testing"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 )
 
-type doctorUSBTask struct {
-	service.Manager
-	stopped, restarted bool
-	stopErr, startErr  error
-}
-
-func (m *doctorUSBTask) Stop(_ context.Context, disable bool) error {
-	if disable {
-		return errors.New("doctor must not disable logon")
-	}
-	m.stopped = true
-	return m.stopErr
-}
-func (m *doctorUSBTask) Start(context.Context) error { m.restarted = true; return m.startErr }
-
-func TestDoctorUsesRunningCompanionWithoutStoppingTask(t *testing.T) {
-	read := doctorReadCableCapabilitiesFn
-	t.Cleanup(func() { doctorReadCableCapabilitiesFn = read })
-	owner := &doctorUSBTask{}
-	want := errors.New("Companion unavailable")
-	doctorReadCableCapabilitiesFn = func(string) (protocol.DeviceCapabilities, error) { return protocol.DeviceCapabilities{}, want }
-	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{usbOwner: owner})
-	if err == nil || owner.stopped || owner.restarted {
-		t.Fatalf("doctor mutated task: %+v err=%v", owner, err)
-	}
-}
+// Doctor no longer opens the serial port itself: it asks the running Companion
+// for the Cable identity that Companion already owns. The three tests that
+// covered quiescing the service and releasing doctor's own probe/hello handles
+// described that removed probe path, so they were dropped with it. The
+// remaining handoff tests below still guard the commands that do open the port.
+// Doctor's own behaviour is covered by main_doctor_test.go.
 
 func TestUpgradeStopsWorkerBeforeDiscoveryAndReleasesBeforeBusyCheck(t *testing.T) {
 	resolve, busy, stop, restart, closeSender := resolveSerialPortFn, ensureSerialPortNotBusyFn, upgradeStopLaunchAgentFn, upgradeRestartLaunchAgentFn, closeDefaultSenderFn

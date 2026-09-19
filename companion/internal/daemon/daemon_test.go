@@ -62,7 +62,7 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 
 func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable"}); err != nil {
 		t.Fatalf("save runtime config: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
 
 func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
 		DeviceToken:  "pair-token",
@@ -88,7 +88,7 @@ func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
 
 func TestConfiguredConnectionModeKeepsPendingWiFiTransitionOnCableWorker(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{
 		DeviceTarget:          "http://192.168.178.72",
 		DeviceToken:           "pair-token",
@@ -6680,6 +6680,99 @@ func TestRunWithDepsStopsOwnedDashboardOnTransportChange(t *testing.T) {
 	})
 	if !errors.Is(err, ErrConnectionModeChanged) || dashboardCtx == nil || !errors.Is(dashboardCtx.Err(), context.Canceled) {
 		t.Fatalf("owned serve survived worker exit: worker=%v dashboard=%v", err, dashboardCtx)
+	}
+}
+
+func TestProviderCollectorFirstSettledCollectionWakesOnce(t *testing.T) {
+	for _, noProviders := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noProviders=%t", noProviders), func(t *testing.T) {
+			prepareFastTestEnv(t)
+			now := time.Now()
+			wakes := 0
+			collector := &providerCollector{
+				now:               func() time.Time { return now },
+				logf:              func(string, ...any) {},
+				providers:         make(map[string]providerSnapshot),
+				snapshotMaxAge:    time.Hour,
+				afterFirstCollect: func() { wakes++ },
+				fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+					return nil, errors.New("dashboard serve unavailable")
+				},
+			}
+			collector.collectOnce(context.Background())
+			if wakes != 0 {
+				t.Fatal("transient startup failure woke the display")
+			}
+			collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+				if noProviders {
+					return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorNoProviders, Err: errors.New("no providers")}
+				}
+				return []codexbar.ParsedFrame{testParsedFrame("codex", 10, 20, 3600)}, nil
+			}
+			collector.collectOnce(context.Background())
+			if wakes != 1 {
+				t.Fatalf("first definitive answer must wake display once, got %d", wakes)
+			}
+			collector.collectOnce(context.Background())
+			if wakes != 1 {
+				t.Fatalf("later periodic collection changed render cadence: wakes=%d", wakes)
+			}
+		})
+	}
+}
+
+func TestFirstCollectionWakesDisplayWithoutWaitingForInterval(t *testing.T) {
+	for _, manualWake := range []bool{false, true} {
+		t.Run(fmt.Sprintf("manualWake=%t", manualWake), func(t *testing.T) {
+			prepareFastTestEnv(t)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			warming := make(chan struct{}, 1)
+			sent := make(chan []byte, 1)
+			var wake <-chan struct{}
+			if manualWake {
+				wake = make(chan struct{})
+			}
+			err := runWithDeps(ctx, Options{Interval: time.Hour, Wake: wake}, runtimeDeps{
+				resolvePort:    func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+				startDashboard: func(context.Context, func(string, ...any)) codexbar.DashboardServe { return nil },
+				fetchProvider: func(context.Context, string) (codexbar.ParsedFrame, error) {
+					return codexbar.ParsedFrame{}, errors.New("unexpected single-provider fetch")
+				},
+				fetchProviders: func(ctx context.Context) ([]codexbar.ParsedFrame, error) {
+					select {
+					case <-warming:
+						return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorNoProviders, Err: errors.New("no providers")}
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				},
+				fetchInventory:  func(context.Context) ([]codexbar.ProviderSetting, error) { return nil, nil },
+				fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) { return nil, false },
+				after:           func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+				logf: func(format string, args ...any) {
+					if strings.Contains(format, "reason=collector-warming") {
+						signalWake(warming)
+					}
+				},
+				sendLine: func(_ string, line []byte) error {
+					sent <- append([]byte(nil), line...)
+					cancel()
+					return nil
+				},
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("first collection did not wake the sleeping display: %v", err)
+			}
+			select {
+			case line := <-sent:
+				if frame := decodeFrameLine(t, line); frame.Error != string(runtimeErrorNoProviders) {
+					t.Fatalf("expected honest no-provider frame, got %+v", frame)
+				}
+			default:
+				t.Fatal("no frame after first collection settled")
+			}
+		})
 	}
 }
 

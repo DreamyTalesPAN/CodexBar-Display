@@ -206,7 +206,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
-	discoverCableDevices   func() ([]usb.CableDevice, error)
+	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
 	refreshCableHello      func() (protocol.DeviceHello, bool)
@@ -735,6 +735,11 @@ type companionRuntimeInfo struct {
 type companionFeatures struct {
 	ThemeInstallEnabled     bool `json:"themeInstallEnabled"`
 	MacAppSelfUpdateEnabled bool `json:"macAppSelfUpdateEnabled"`
+	// ProviderSignInEnabled and the shortened provider list are Windows-only
+	// launch decisions. The Mac app keeps CodexBar's full provider inventory
+	// and its existing rows, so the app must be told which platform it runs
+	// on rather than deciding from the user agent.
+	ProviderSignInEnabled bool `json:"providerSignInEnabled"`
 }
 
 type companionReleaseInfo struct {
@@ -1003,12 +1008,12 @@ func New(opts Options) (*Server, error) {
 		streamStatus: func(ctx context.Context, target string) displayStreamInfo {
 			return inspectDisplayStreamAfterRunning(ctx, target, time.Time{}, opts.DisplayStreamRunning)
 		},
-		displayStreamRunning:  opts.DisplayStreamRunning,
 		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
 		pauseDisplayStream:    opts.PauseDisplayStream,
 		wakeDisplayStream:     opts.WakeDisplayStream,
 		renderDisplayStream:   opts.RenderDisplayStream,
+		displayStreamRunning:  opts.DisplayStreamRunning,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
 		pairRetryGap:          defaultPairRetryGap,
@@ -1090,6 +1095,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
+	mux.HandleFunc("/v1/providers/sign-in", s.handleProviderSignIn)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
@@ -2571,6 +2577,7 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 		Features: companionFeatures{
 			ThemeInstallEnabled:     themeInstallEnabled(),
 			MacAppSelfUpdateEnabled: s.allowMacAppSelfUpdate,
+			ProviderSignInEnabled:   providerSignInFeatureEnabledFor(runtime.GOOS),
 		},
 	}
 }
@@ -3232,6 +3239,9 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	explicitTarget := strings.TrimSpace(req.Target)
 	var cableDevices []usb.CableDevice
 	var cableErr error
+	searchCtx, cancelSearch := context.WithTimeout(r.Context(), deviceSearchWindow)
+	defer cancelSearch()
+	var devices []deviceSearchEntry
 	if explicitTarget == "" && !cfg.WiFiTransitionPending() && s.discoverCableDevices != nil {
 		s.firmwareUpdateStartMu.Lock()
 		if _, running := s.activeFirmwareUpdateJob(); running {
@@ -3239,16 +3249,22 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then search again.")
 			return
 		}
-		cableDevices, cableErr = s.discoverCableDevices()
+		// LAN and serial discovery share one deadline. Otherwise a silent
+		// adapter consumes the budget before WiFi devices are even probed.
+		lanDone := make(chan struct{})
+		cableFound := make(chan struct{})
+		go func() {
+			defer close(lanDone)
+			devices, err = s.searchDevicesUntilCable(searchCtx, cfg, explicitTarget, cableFound)
+		}()
+		cableDevices, cableErr = s.discoverCableDevices(searchCtx)
 		s.firmwareUpdateStartMu.Unlock()
-	}
-	var devices []deviceSearchEntry
-	if len(cableDevices) > 0 {
-		// Cable already answers. Include one WiFi sweep without waiting for a
-		// WiFi-only recovery window or letting network errors hide Cable.
-		devices, err = s.searchDevicesOnce(r.Context(), cfg, "")
+		if len(cableDevices) > 0 {
+			close(cableFound)
+		}
+		<-lanDone
 	} else {
-		devices, err = s.searchDevices(r.Context(), cfg, explicitTarget)
+		devices, err = s.searchDevices(searchCtx, cfg, explicitTarget)
 	}
 	if err != nil && len(cableDevices) == 0 {
 		var invalidTarget *invalidTargetError
@@ -3280,9 +3296,12 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if explicitTarget == "" {
-		if cableErr != nil && errcode.Of(cableErr) == errcode.TransportForeignDevice && len(devices) == 0 {
-			writeCableResolutionError(w, cableErr)
-			return
+		if cableErr != nil && len(devices) == 0 {
+			switch errcode.Of(cableErr) {
+			case errcode.TransportForeignDevice, errcode.TransportCableFirmwareTooOld:
+				writeCableResolutionError(w, cableErr)
+				return
+			}
 		}
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()
@@ -4768,8 +4787,10 @@ func writeCableResolutionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "multiple_cable_devices", "More than one VibeTV is connected by Cable.", "Leave only the VibeTV you want connected, then try again.")
 	case errcode.TransportForeignDevice:
 		writeError(w, http.StatusConflict, "foreign_serial_device", "The connected USB device is not a VibeTV.", "Disconnect it and connect VibeTV with a data-capable Cable.")
+	case errcode.TransportCableFirmwareTooOld:
+		writeError(w, http.StatusConflict, "cable_firmware_too_old", "Your VibeTV needs a firmware update before it can use USB-C.", "Connect VibeTV to WiFi, install the update, then reconnect the cable.")
 	default:
-		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Your cable may only supply power, or your VibeTV may not support USB-C data connections. Try a USB-C data cable or connect via WiFi instead.")
+		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Set up VibeTV over WiFi and install the latest firmware — USB-C setup needs newer firmware than shipped units have. If it is already up to date, check that your cable carries data, not just power.")
 	}
 }
 
@@ -7775,6 +7796,10 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 }
 
 func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
+	return s.searchDevicesUntilCable(ctx, cfg, explicitTarget, nil)
+}
+
+func (s *Server) searchDevicesUntilCable(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string, cableFound <-chan struct{}) ([]deviceSearchEntry, error) {
 	explicitTarget = strings.TrimSpace(explicitTarget)
 	if explicitTarget != "" {
 		normalized, err := normalizeExplicitDeviceTarget(explicitTarget)
@@ -7807,6 +7832,13 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 				foundKnown = true
 			}
 		}
+		// A Cable answer settles discovery after at least one complete LAN
+		// sweep; do not cancel that sweep and lose selectable WiFi devices.
+		select {
+		case <-cableFound:
+			return sortedDeviceSearchEntries(byIdentity), nil
+		default:
+		}
 		// A clean customer install has no saved identity to prefer, so settle one
 		// additional full scan after the first result and merge both snapshots.
 		// Recovery with a saved identity keeps returning as soon as that known
@@ -7822,6 +7854,8 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 		}
 		select {
 		case <-searchCtx.Done():
+			return sortedDeviceSearchEntries(byIdentity), nil
+		case <-cableFound:
 			return sortedDeviceSearchEntries(byIdentity), nil
 		case <-time.After(repairDiscoveryRetryGap):
 		}

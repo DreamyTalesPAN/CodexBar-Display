@@ -7,10 +7,23 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 )
 
 type discoverFunc func() ([]string, error)
+
+func (f discoverFunc) Discover() ([]string, error) { return f() }
+
+// ResolvePort is the explicit firmware-recovery path. It deliberately does not
+// require a hello, because recovery exists for boards whose current firmware
+// cannot answer one. Identity-based selection lives in ResolveVibeTVPort and is
+// covered by usb_test.go.
+
+func TestResolvePortRequiresAnExplicitTarget(t *testing.T) {
+	if _, err := ResolvePort("  "); errcode.Of(err) != errcode.TransportSerialPortNotFound {
+		t.Fatalf("accepted an empty recovery target: %v", err)
+	}
+}
 
 func TestExplicitUnixPathBypassesDiscovery(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -26,10 +39,13 @@ func TestExplicitUnixPathBypassesDiscovery(t *testing.T) {
 	if got, err := ResolvePort(path); err != nil || got != path {
 		t.Fatalf("path=%q err=%v", got, err)
 	}
+	if _, err := ResolvePort(filepath.Join(t.TempDir(), "absent")); err == nil {
+		t.Fatal("accepted an absent device path")
+	}
 }
 
-func (f discoverFunc) Discover() ([]string, error) { return f() }
-
+// A COM name is a serial identifier, not a filesystem path. Stat'ing it always
+// fails, so Windows recovery has to confirm it by enumeration instead.
 func TestResolveExplicitCOMRecoveryWithoutHelloOrStat(t *testing.T) {
 	oldDiscoverer := defaultDiscoverer
 	t.Cleanup(func() { defaultDiscoverer = oldDiscoverer })
@@ -53,19 +69,12 @@ func TestResolvePortPropagatesDiscoveryFailure(t *testing.T) {
 	}
 }
 
-// The old board-only selector is superseded by #407's device identity contract.
-func TestCOMDiscoveryRequiresIdentityAndRejectsAmbiguity(t *testing.T) {
-	devices, err := discoverVibeTVs([]string{"COM3", "COM7", "Bluetooth"}, func(port string) (protocol.DeviceHello, error) {
-		if port == "COM3" {
-			return cableHello("device-a"), nil
-		}
-		return protocol.DeviceHello{Kind: "hello", Board: vibeTVBoardID}, nil
-	}, "windows")
-	if err != nil || len(devices) != 1 || devices[0].Port != "COM3" {
-		t.Fatalf("devices=%+v err=%v", devices, err)
+func TestSamePortComparesCOMNamesCaseInsensitively(t *testing.T) {
+	if !samePort(" com17 ", "COM17") || samePort("COM17", "COM7") {
+		t.Fatal("COM comparison is not case-insensitive and exact")
 	}
-	_, err = resolveVibeTVCandidates([]string{"COM3", "COM7"}, "", "", func(port string) (protocol.DeviceHello, error) { return cableHello(port), nil })
-	if err == nil {
-		t.Fatal("accepted ambiguous identities")
+	if !samePort("/dev/cu.usbserial42", "/dev/cu.usbserial42") ||
+		samePort("/dev/cu.usbserial42", "/dev/CU.usbserial42") {
+		t.Fatal("Unix device paths must compare exactly")
 	}
 }

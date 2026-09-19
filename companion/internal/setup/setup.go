@@ -68,12 +68,13 @@ type commandRunner func(ctx context.Context, dir string, name string, args ...st
 
 type deps struct {
 	goos                string
-	serviceForHome      func(string) service.Manager
+	stdin               io.Reader
 	stdout              io.Writer
 	cwd                 func() (string, error)
 	executablePath      func() (string, error)
 	homeDir             func() (string, error)
 	uid                 func() int
+	listPorts           func() ([]string, error)
 	resolvePort         func(string) (string, error)
 	resolveRecoveryPort func(string) (string, error)
 	probePort           func(string) error
@@ -83,6 +84,8 @@ type deps struct {
 	findCodexbar        func() (string, error)
 	lookPath            func(string) (string, error)
 	runCommand          commandRunner
+	isInteractive       func() bool
+	serviceForHome      func(string) service.Manager
 }
 
 func (d deps) withDefaults() deps {
@@ -90,6 +93,9 @@ func (d deps) withDefaults() deps {
 		d.goos = runtime.GOOS
 	}
 	injectedRunner := d.runCommand != nil
+	if d.stdin == nil {
+		d.stdin = os.Stdin
+	}
 	if d.stdout == nil {
 		d.stdout = os.Stdout
 	}
@@ -138,6 +144,9 @@ func (d deps) withDefaults() deps {
 	}
 	if d.runCommand == nil {
 		d.runCommand = runSystemCommand
+	}
+	if d.isInteractive == nil {
+		d.isInteractive = stdinIsInteractive
 	}
 	if d.serviceForHome == nil {
 		d.serviceForHome = func(home string) service.Manager {
@@ -338,37 +347,10 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 	previousLaunchAgentPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	restorePreviousLaunchAgent := false
 	replacementRuntimeCommitted := false
+	registrationAttempted := false
 	var previousLaunchAgent []byte
 	var previousRuntimeConfig runtimeconfig.Config
-	if d.goos != "windows" && !opts.ValidateOnly && !opts.DryRun {
-		_, statErr := os.Stat(previousLaunchAgentPath)
-		if statErr == nil {
-			status, statusErr := d.serviceForHome(home).Status(ctx)
-			restorePreviousLaunchAgent = statusErr == nil && status.State != "not-loaded"
-		}
-		if restorePreviousLaunchAgent {
-			previousLaunchAgent, err = os.ReadFile(previousLaunchAgentPath)
-			if err == nil {
-				previousRuntimeConfig, err = runtimeconfig.Load(home)
-			}
-			if err != nil {
-				return fmt.Errorf("snapshot existing runtime: %w", err)
-			}
-		}
-		stopLaunchAgentBestEffort(ctx, d)
-	}
-	if restorePreviousLaunchAgent {
-		defer func() {
-			if !replacementRuntimeCommitted {
-				_ = runtimeconfig.Save(home, previousRuntimeConfig)
-				_ = writeFileAtomic(previousLaunchAgentPath, previousLaunchAgent, 0o644)
-				_ = reloadLaunchAgent(ctx, d, previousLaunchAgentPath)
-			}
-		}()
-	}
-	registrationAttempted := false
-
-	if d.goos == "windows" && !opts.ValidateOnly && !opts.DryRun {
+	if !opts.ValidateOnly && !opts.DryRun {
 		if d.goos == "windows" {
 			serviceHome, err := d.homeDir()
 			if err != nil {
@@ -403,7 +385,36 @@ func runWithDeps(ctx context.Context, opts Options, d deps) (resultErr error) {
 			if err := manager.Stop(ctx, true); err != nil {
 				return &StepError{Step: "stop-service", Err: err, Hint: "stop the VibeTV task before replacing the installed executable"}
 			}
+		} else {
+			// macOS keeps the LaunchAgent snapshot so a failed replacement
+			// restores the exact runtime the customer had before setup ran.
+			// main replaced the direct launchctl probe with the shared service
+			// manager, so the snapshot decision uses that same source now.
+			if _, statErr := os.Stat(previousLaunchAgentPath); statErr == nil {
+				if status, statusErr := d.serviceForHome(home).Status(ctx); statusErr == nil {
+					restorePreviousLaunchAgent = status.Enabled || service.Healthy(status.State)
+				}
+			}
+			if restorePreviousLaunchAgent {
+				previousLaunchAgent, err = os.ReadFile(previousLaunchAgentPath)
+				if err == nil {
+					previousRuntimeConfig, err = runtimeconfig.Load(home)
+				}
+				if err != nil {
+					return fmt.Errorf("snapshot existing runtime: %w", err)
+				}
+			}
+			stopLaunchAgentBestEffort(ctx, d)
 		}
+	}
+	if restorePreviousLaunchAgent {
+		defer func() {
+			if !replacementRuntimeCommitted {
+				_ = runtimeconfig.Save(home, previousRuntimeConfig)
+				_ = writeFileAtomic(previousLaunchAgentPath, previousLaunchAgent, 0o644)
+				_ = reloadLaunchAgent(ctx, d, previousLaunchAgentPath)
+			}
+		}()
 	}
 
 	port := ""
@@ -1152,6 +1163,14 @@ func runSystemCommand(ctx context.Context, dir string, name string, args ...stri
 func stopLaunchAgentBestEffort(ctx context.Context, d deps) {
 	home, _ := d.homeDir()
 	_ = d.serviceForHome(home).Uninstall(ctx)
+}
+
+func stdinIsInteractive() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
 func installRecoveryAssets(repoRoot, home string) (string, string, error) {

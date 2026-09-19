@@ -18,7 +18,6 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
-
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 )
@@ -148,6 +147,9 @@ func runWithDeps(ctx context.Context, d deps) error {
 			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
 		}
 	} else {
+		// Ask the runtime for the Cable device it already owns instead of
+		// probing the serial port here. That works on every platform and
+		// avoids fighting the service for the exclusive serial handle.
 		caps, statusErr := d.readCableCapabilities()
 		fmt.Fprintln(d.stdout, "transport: usb")
 		if statusErr != nil {

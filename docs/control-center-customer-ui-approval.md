@@ -4356,6 +4356,60 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Selecting another Cable VibeTV waits for a frame acknowledged by that device; the previous device's cached picture cannot admit setup. The existing Back control on the final preview returns to the existing theme selection, allowing replacement of a custom theme whose local preview was lost after purging the Mac. Installation errors retain the normal retry flow; successful installation still requires a valid preview before admission. No automatic theme or firmware write is added.
 - Validation: New regressions cover foreign/missing/matching Cable frame identities in status, the frame endpoint and preview admission. The browser flow starts with an irretrievable custom theme, returns to the catalog, installs a theme once and enters Control Center only after its preview renders. The existing parent-owned theme-choice state handles recovery.
 
+## 2026-09-09 — Windows token-history unavailable state
+
+- User approval: Marcus requested iterative VM QA and direct fixes: "Ja gut, dann kannst du ja jetzt selber iterativ testen, also QA machen und dann auch direkt fixen. Ja, leg mal los."
+- Approved customer-visible result: Fix the reported indefinitely loading token history. A completed scan without complete local history shows "Token history is unavailable" with the existing Refresh action, while available quota windows remain visible. Do not replace missing history with zero consumption. This records the implementation scope; final visual acceptance is still pending.
+
+### 2026-09-09 — Final Windows token-history visual acceptance
+
+- User approval: Marcus answered "ja" when asked whether the linked final Usage screenshot (`outputs/qa-9e4f4ab/usage-2.png` in the Windows QA workspace) was acceptable. The screenshot was captured from installed build `9e4f4ab6a85147aa119a1875b6d4eee1c20e2c0d` in the Windows VM.
+- Approved customer-visible result: The Usage screen displays "Token history is unavailable" and "Complete local token history is not available for every selected provider. Available usage limits are shown below." with the existing Refresh button. Available provider quota cards remain visible; incomplete token history is not represented as a complete zero or combined total. This supersedes the pending visual acceptance above.
+- Approved files: `apps/control-center/src/components/usage-screen.tsx` and `apps/control-center/src/components/usage-screen.test.tsx` at the reviewed build.
+- Scope: Approval of this visible result only; it does not approve unrelated Session-limit semantics, provider defaults, a push, merge, release, or hardware changes.
+
+## 2026-09-09 — Windows first-run provider selection is opt-in
+
+- User approval: Marcus answered "leg los" to the proposal that fresh Windows installations start with all providers off and the customer enables their provider, while existing settings remain unchanged.
+- Approved customer-visible result: No provider is preselected when Windows has no CodexBar settings yet. Customers enable their providers using the existing controls. Previously saved selections are preserved; unavailable credentials do not silently change a selection.
+- Scope: Windows configuration bootstrap and its regression coverage, using the existing UI. No provider-specific detection, authentication changes, macOS default changes, push, merge, release, or hardware changes are approved by this entry.
+
+## 2026-09-17 — Windows Claude browser sign-in row
+
+- User approval: Marcus answered "Ja trag das so ein" to the described provider row for the case where Claude on Windows needs a signed-in claude.ai browser session (Claude Code is signed in, but Anthropic refuses the OAuth usage endpoint and no browser cookies are readable). He asked to test it himself on the Windows laptop before the review round.
+- Approved customer-visible result: On the setup provider step (and the same row in Settings), a provider whose usage service reports a browser sign-in shows the guidance "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again." with an "Open Claude sign-in in your browser" action next to the existing "Check again" action and the on/off switch. Opening the page starts automatic re-checks every 15 seconds for at most three minutes, until the row leaves the browser-sign-in state. No other row state, copy, or control changes.
+- Scope: Files `apps/control-center/src/components/setup/setup-provider-row.tsx`, `setup-provider-row.test.tsx`, `setup-providers-screen.tsx`, `setup-wizard.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, and `control-center-types.ts` on PR #447. The sign-in page and the diagnosis come from the bundled usage service (VibeTV Win-CodexBar fork); the app keeps no provider table. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-17 — Sign-in button for a signed-out provider, and the four offered providers
+
+- User approval: Marcus tested the fresh-customer journey on the Windows laptop with Codex and Claude signed out, saw the usage service's developer text ("Provider not installed: Codex auth.json not found. Run codex login…", "Claude usage failed from all configured sources…") and asked for a customer-facing sentence with a button that starts the sign-in ("noch geiler wäre, wenn irgendwie ein Button da wäre … Sign In … da klick ich drauf und dann am liebsten öffnet sich dann schon irgendwie ein Login-Screen"), and to offer only Codex, Claude, Antigravity and Cursor for the start ("ich will für den start auch erstmal nur codex claude antigravity und cursor anbieten"). He answered "leg los" to the described implementation.
+- Approved customer-visible result: On the setup provider step and in Settings, a provider whose tool is not signed in (`auth_required`, `setup_required`) shows "<Provider> is not signed in on this computer" with a "Sign in to <Provider>" button, the existing copy action (which still copies the usage service's own message) and "Check again". Pressing the button starts the provider's own sign-in through the Companion: `codex login` or `claude auth login` in a visible terminal window (the tool opens the browser itself), the Cursor or Antigravity app when installed, or the official install page when nothing is installed. Afterwards the row re-checks itself every 15 seconds for at most three minutes, as it already did after the browser sign-in page. The provider list in setup and Settings shows only Codex, Claude, Cursor and Antigravity; other providers keep their saved values in the usage service but are not listed.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx`, `setup-providers-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs`, and the Companion's `/v1/providers/sign-in` (`companion/internal/companionapi/provider_sign_in_launch.go`, `provider_setup.go`, `childproc`). This approves the visible result and the push to the PR branch after Marcus's own laptop test only, not merge, release, or signing.
+
+## 2026-09-17 — The Mac app stays exactly as it is today
+
+- User approval: After testing the sign-in flow on the Windows laptop, Marcus asked what a Mac test would mean and then instructed that this release must not change the Mac app at all, including its available providers: "alles in diesem Release darf eigentlich die komplette Mac-App nicht ändern, auch nicht die verfügbaren Provider. Also die Mac-App muss genauso wie sie heute ist weiter funktionieren." He then chose to keep the whole feature Windows-only: "Nein, lass das alles strikt unter Windows."
+- Approved customer-visible result: The shortened provider list (Codex, Claude, Cursor, Antigravity) and the "Sign in to <Provider>" button are shown only by the Windows shell. On macOS the setup provider step and Settings keep every provider the usage service reports and keep exactly the rows, copy and actions they show today; a signed-out provider there still shows the usage service's own message with the existing copy and "Check again" actions and no sign-in button. The Companion decides this from the platform it runs on and reports it as `companion.features.providerSignInEnabled`; the app never infers it from the user agent.
+- Scope: `companion/internal/companionapi/server.go`, `provider_sign_in_launch.go` and their tests, `apps/control-center/src/components/control-center-app.tsx`, `control-center-types.ts`, `settings-screen.tsx`, `settings-screen.test.tsx` and `apps/control-center/scripts/test-customer-flows.mjs` on PR #447. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — A provider the customer switched on keeps its row on Windows
+
+- User approval: After the review of PR #447 reported that the shortened Windows list can hide a provider the customer had already switched on, Marcus was shown the customer consequence (the hidden provider keeps its switch on, the Automatic display is then refused as incomplete, and the customer cannot reach the next step or switch that provider off) and answered "ja mach wie du es empfiehlst".
+- Approved customer-visible result: On Windows, the provider list in setup and Settings shows Codex, Claude, Cursor and Antigravity, plus any other provider that is currently switched on, so every switched-on provider always has a row with its on/off switch. Once the customer switches such a provider off it leaves the list. Nothing else changes: no new copy, control, row state or ordering, and switched-off providers outside the four stay unlisted as approved on 2026-09-17.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` and the tests `setup-providers-screen.test.tsx` and `settings-screen.test.tsx` on PR #447. This follows the setup-flow rule that every provider row keeps its on/off switch, because a provider that cannot be switched off cannot be kept off the display. macOS is untouched: it does not shorten the list at all. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — No sign-in button where no sign-in can be started
+
+- User approval: Marcus approved working through the review findings on his own judgement ("ja mach wie du es empfiehlst"). The review then showed that the entry above had created a button that can only fail, and this is the narrow correction of that same approved result.
+- Approved customer-visible result: A provider that is listed only because the customer had switched it on shows its switch, its own message and "Check again", but no "Sign in to <Provider>" button, because VibeTV has no sign-in it could start for it. The four offered providers keep the button exactly as approved on 2026-09-17, and any provider whose usage service names a browser sign-in page keeps its button too.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` and `setup-providers-screen.test.tsx` on PR #447. macOS is untouched: it shows no sign-in button at all. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — The Mac keeps the provider's own message on a signed-out row
+
+- User approval: This restores the standing instruction Marcus gave on 2026-09-17, that this release must not change the Mac app at all ("alles in diesem Release darf eigentlich die komplette Mac-App nicht ändern"), after the review found that a signed-out row on macOS had started showing the new Windows sentence.
+- Approved customer-visible result: Our shorter sentence "<Provider> is not signed in on this computer" appears only on a row that also carries the "Sign in to <Provider>" button. Every row without that button, which is every row on macOS, keeps the usage service's own message with the existing copy and "Check again" actions exactly as it shows today.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` and `setup-provider-row.test.tsx` on PR #447. Verified by the full control-center customer flow run, which still shows the Windows sentence and button on the rows that have the sign-in action. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
 ## 2026-09-14 — Firmware update completion and first-theme onboarding (#445)
 
 - User approval: Marcus tested the installed candidate from PR #445 at
@@ -4523,18 +4577,65 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-09 — Windows token-history unavailable state
 
-- User approval: Marcus requested iterative VM QA and direct fixes: "Ja gut, dann kannst du ja jetzt selber iterativ testen, also QA machen und dann auch direkt fixen. Ja, leg mal los."
-- Approved customer-visible result: Fix the reported indefinitely loading token history. A completed scan without complete local history shows "Token history is unavailable" with the existing Refresh action, while available quota windows remain visible. Do not replace missing history with zero consumption. This records the implementation scope; final visual acceptance is still pending.
+## 2026-09-15 — Merge the firmware onboarding fix from main into PR #407
 
-### 2026-09-09 — Final Windows token-history visual acceptance
+- User approval: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
+- Approved customer-visible result: Preserve the required matching live preview before leaving the wizard while retaining main's completed firmware-update and attention handling. Fresh devices without an installed theme can continue setup after a verified firmware update; loss of an existing theme remains visible. Cable reads its baseline over USB and WiFi over HTTP, then both apply the same existing theme-verification rule. Attention never starts another automatic firmware upload.
+- Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.
 
-- User approval: Marcus answered "ja" when asked whether the linked final Usage screenshot (`outputs/qa-9e4f4ab/usage-2.png` in the Windows QA workspace) was acceptable. The screenshot was captured from installed build `9e4f4ab6a85147aa119a1875b6d4eee1c20e2c0d` in the Windows VM.
-- Approved customer-visible result: The Usage screen displays "Token history is unavailable" and "Complete local token history is not available for every selected provider. Available usage limits are shown below." with the existing Refresh button. Available provider quota cards remain visible; incomplete token history is not represented as a complete zero or combined total. This supersedes the pending visual acceptance above.
-- Approved files: `apps/control-center/src/components/usage-screen.tsx` and `apps/control-center/src/components/usage-screen.test.tsx` at the reviewed build.
-- Scope: Approval of this visible result only; it does not approve unrelated Session-limit semantics, provider defaults, a push, merge, release, or hardware changes.
+## 2026-09-18 — app.vibetv.shop offers the download for the system the customer is on
 
-## 2026-09-09 — Windows first-run provider selection is opt-in
+- User approval: Marcus was shown the exact screen sketch for the hosted download page — "Welcome to / VIBETV CONTROL CENTER / Get the app, then it takes you through the rest.", one large "Download for Windows" button for the recognised system, the numbered install steps below it, and a quiet text link "Using a Mac? Download for macOS" — and answered "Okay, das klingt sehr gut".
+- Approved customer-visible result: The hosted setup page at app.vibetv.shop recognises the customer's system and offers one primary download for it. On macOS nothing changes at all: the same "Get the Mac App, then it takes you through the rest." subtitle, the same single "Download" button for the verified DMG, the same three DMG install steps, and the same "The signed download is not ready yet. Please try again later." state when no DMG is published. On Windows the page shows a single "Download for Windows" button for the verified installer, the steps "Open the downloaded installer.", "Confirm the installation and wait for it to finish.", "Open VibeTV Control Center from the Start menu.", an honest note that Windows may warn about an unknown publisher because the installer is not signed yet, and a quiet text link "Using a Mac? Download for macOS". When no Windows installer is published, the Windows button shows the existing disabled "not ready yet" state instead of a dead link. When the browser reports no usable system, the page offers macOS and, only if it is actually published, Windows.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, `apps/control-center/src/lib/customer-platform.ts`, `apps/control-center/src/lib/companion-release.ts`, `apps/control-center/src/app/api/companion/latest/route.ts`, `apps/control-center/src/components/control-center-app.tsx` and their tests. The Windows installer goes through the same GitHub asset verification as the DMG and stays behind its own feature flag `CONTROL_CENTER_ENABLE_WINDOWS_APP_SETUP_DOWNLOAD`. The Mac path, its copy and its behaviour are unchanged and covered by regression tests. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
 
 - User approval: Marcus answered "leg los" to the proposal that fresh Windows installations start with all providers off and the customer enables their provider, while existing settings remain unchanged.
 - Approved customer-visible result: No provider is preselected when Windows has no CodexBar settings yet. Customers enable their providers using the existing controls. Previously saved selections are preserved; unavailable credentials do not silently change a selection.
 - Scope: Windows configuration bootstrap and its regression coverage, using the existing UI. No provider-specific detection, authentication changes, macOS default changes, push, merge, release, or hardware changes are approved by this entry.
+### 2026-09-18 — Customer flow coverage for the same download page
+
+- User approval: This adds no new visible result. It is the test coverage for the screen Marcus approved above with "Okay, das klingt sehr gut", after CI showed that the existing hosted-download flow checks only passed by accident of the runner's own operating system.
+- Approved customer-visible result: Unchanged from the entry above. The customer flow run now states the customer's system explicitly instead of inheriting it from the machine running the test, so the Mac checks really check the Mac screen, and a new check covers the Windows screen: the disabled "Download for Windows" button while no installer is published, the Windows install steps instead of the DMG steps, and the quiet "Using a Mac? Download for macOS" link pointing at the verified DMG.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. No product code, copy, control or state changes with this entry. Verified by a full local `npm run test:customer-flows` run. This approves the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — The Windows download no longer announces an unknown publisher
+
+- User approval: After the Windows download was switched live on app.vibetv.shop, the rendered Windows screen still carried the note "Windows may warn that the publisher is unknown, because this installer is not signed yet. Choose More info, then Run anyway." The installer in v1.0.58 is signed — the shipped `VibeTV-Control-Center-Setup.exe` carries an Authenticode certificate table naming `O=DreamyTales GmbH, CN=DreamyTales GmbH` (issuer `Microsoft ID Verified CS AOC CA 03`, Azure Trusted Signing) — so the note is no longer true. Paul was shown the live screen and the signature evidence and answered "ja, nimm den Absatz raus und mach den PR".
+- Approved customer-visible result: On the Windows download screen the paragraph about an unknown publisher is gone. Everything else on that screen is unchanged: the same "Get the app, then it takes you through the rest." subtitle, the same single "Download for Windows" button for the verified installer, the same three install steps, and the same quiet "Using a Mac? Download for macOS" link. The macOS screen, the unknown-system screen, and the disabled "not ready yet" state are untouched.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx` and its test, plus this approval record. No copy, control, state, flag, or release behaviour changes beyond removing the paragraph. The removed regression test asserted the false claim and is deleted rather than inverted. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-19 — Fix the recurring Claude sign-in dialog in PR #407
+
+- User approval: After the remaining Claude-dialog UI failure was reported, Marcus explicitly requested "Ok kannst du den Fehler noch Fixen?". This entry records that narrow bug-fix request.
+- Approved customer-visible result: Starting provider sign-in does not immediately reopen the same error message the customer already acknowledged. New or changed errors still appear, and an explicit Check again can show the result again. Existing labels, layout, sign-in requests, and background checks are unchanged.
+- Scope: Remove the dismissal reset from the shared provider list's sign-in handler and add regression coverage. PR-branch fix only; no merge, release, installation, or device operation.
+
+### 2026-09-19 — Preserve the approved Windows copy when integrating main
+
+- User approval: The Windows-copy removal is covered by Paul's explicit approval recorded above for PR #462; the Claude-dialog correction is covered by Marcus's bug-fix request above. This integration introduces no further visible result.
+- Approved customer-visible result: Retain both approved outcomes: the Windows download omits the obsolete unsigned-publisher warning, and starting sign-in leaves an acknowledged provider error dismissed. The shared approval-log conflict is resolved without dropping either record.
+- Scope: Integrate main commit `e5529c23` into PR #407 and retain its existing copy/test deletion unchanged. No merge into main, release, installation, or device operation.
+
+### 2026-09-19 — Provider dialog regression coverage
+
+- User approval: Covered by the Claude-dialog bug-fix request above; this is test-only follow-up, with no additional visible change.
+- Approved customer-visible result: Unchanged. Provider errors show their original message and copy action in the existing dismissible dialog; sign-in and retry remain on the provider row after dismissal.
+- Scope: Update the stale provider-readiness browser assertions that still expected inline error text, and include those cases in the focused provider-settings suite. No production behavior changes.
+
+## 2026-09-19 — Recover when only the other connection mode is found
+
+- User approval: Marcus answered "Ja" to the explicit proposal to show the existing reconnection dialog instead of searching indefinitely, with "Use the cable", WiFi setup, and retry, and no automatic connection-mode switch.
+- Approved customer-visible result: When a completed device search finds only a device on the other transport, the saved connection mode shows the existing device-not-found recovery dialog. The customer can explicitly choose the available cable connection, configure WiFi, or search again. Existing dialog copy and layout are unchanged; no connection is made automatically.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its regression tests, and this approval record. This approves the recovery behavior and fix preparation only, not a main-branch merge, release workflow, or publication.
+
+### 2026-09-19 — Complete the same explicit recovery for discovered WiFi
+
+- User approval: Covered by Marcus's "Ja" to the existing recovery dialog and no automatic transport switch above. This closes the reverse-direction recovery gap identified in review, without adding controls or changing copy.
+- Approved customer-visible result: After the customer chooses WiFi recovery, an already discovered WiFi device follows the existing device-selection path instead of trying to provision an absent cable device. Multiple devices still require selection; no device connects before the recovery action.
+- Scope: The same setup-wizard handler and regression tests only. No merge, release workflow, or publication.
+
+### 2026-09-19 — Preserve recovery after a selected cable device disappears
+
+- User approval: Same explicitly approved recovery behavior above; review regression coverage only extends the sequence leading into it.
+- Approved customer-visible result: A stale selection of a disconnected cable device does not hide WiFi devices found by the next scan. Explicit WiFi recovery returns to the existing device picker, and another identity still requires its own Connect action.
+- Scope: Clear the stale candidate filter in the existing WiFi recovery branch and test the failed-cable-to-WiFi sequence. No new controls, copy, merge, or release.

@@ -93,12 +93,19 @@ import {
   startProviderPreferencesPolling,
 } from "./provider-preferences-polling";
 import { isProviderItem } from "./provider-picker";
+import {
+  detectCustomerPlatformFromBrowser,
+  type CustomerPlatform,
+} from "@/lib/customer-platform";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
-import { setupProviderCanDisplay } from "./setup/setup-providers-screen";
+import {
+  offeredProviders,
+  setupProviderCanDisplay,
+} from "./setup/setup-providers-screen";
 import {
   deriveSetupStep,
   setupDeviceIsUsable,
@@ -133,9 +140,21 @@ import { startUsageSurfacePolling } from "./usage-surface-polling";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
-const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
+// The Mac App bounds the search itself: cable discovery, then a 30s WiFi
+// window (deviceSearchWindow in companionapi) plus a settling pass. Measured
+// 38s with a shipped device attached by cable. Aborting at 40s raced that
+// bound and reported "took too long" for a search that was about to succeed,
+// so keep the client above the server budget and let the server decide when
+// the search is over.
+const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 90_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
+// Sign-in follow-up: the Windows CLI needs ~20 s per exact Claude check, so
+// checks are spaced out and stop three minutes after the page opened if
+// nobody signs in. The window is wall-clock, not a check count: probe
+// duration must not stretch it.
+const PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS = 15_000;
+const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -363,6 +382,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     getRuntimeSurfaceServerSnapshot,
   );
   const hostedSetup = runtimeSurface === "hosted-setup";
+  // Read the same way as the runtime surface: the server cannot know the
+  // customer's system, so it renders "unknown" and the browser corrects it on
+  // the first client pass instead of hydrating a mismatched screen.
+  const customerPlatform = useSyncExternalStore(
+    subscribeRuntimeSurface,
+    detectCustomerPlatformFromBrowser,
+    getCustomerPlatformServerSnapshot,
+  );
   const [companionStatus, setCompanionStatus] =
     useState<CompanionStatus>("unknown");
   const [initialCompanionCheckComplete, setInitialCompanionCheckComplete] =
@@ -3233,6 +3260,78 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [refreshProviderPreferences, runCompanion],
   );
 
+  // After the sign-in starts (browser page, CLI login or app), keep asking
+  // for this provider's exact check until the row leaves its sign-in state or
+  // the window runs out. The customer signs in in another window; without
+  // this the row only moves when they come back and press check again.
+  const providerSignInFollowUpRef = useRef<{
+    providerId: string;
+    stop: () => void;
+  } | null>(null);
+  const openProviderSignIn = useCallback(
+    async (item: PreferenceDescriptor) => {
+      const providerId = item.providerId?.trim().toLowerCase();
+      if (!providerId) {
+        return;
+      }
+      try {
+        await runCompanion(
+          `/v1/providers/sign-in?provider=${encodeURIComponent(providerId)}`,
+          { method: "POST" },
+        );
+        setProviderPreferencesError(null);
+      } catch (error) {
+        setProviderPreferencesError(
+          normalizeCaughtError(
+            error,
+            `The ${item.label} sign-in could not be started.`,
+          ),
+        );
+        return;
+      }
+      providerSignInFollowUpRef.current?.stop();
+      let stopped = false;
+      const deadline = Date.now() + PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS;
+      let timer: number | null = null;
+      const stillWaiting = () =>
+        providerPreferencesRef.current?.some(
+          (preference) =>
+            preference.providerId?.trim().toLowerCase() === providerId &&
+            (preference.health?.state === "browser_sign_in_required" ||
+              preference.health?.state === "auth_required" ||
+              preference.health?.state === "setup_required"),
+        ) ?? false;
+      const tick = async () => {
+        timer = null;
+        if (stopped || Date.now() >= deadline || !stillWaiting()) {
+          return;
+        }
+        await checkProvider(item);
+        if (!stopped && Date.now() < deadline && stillWaiting()) {
+          timer = window.setTimeout(
+            () => void tick(),
+            PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+          );
+        }
+      };
+      providerSignInFollowUpRef.current = {
+        providerId,
+        stop: () => {
+          stopped = true;
+          if (timer !== null) {
+            window.clearTimeout(timer);
+          }
+        },
+      };
+      timer = window.setTimeout(
+        () => void tick(),
+        PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS,
+      );
+    },
+    [checkProvider, runCompanion],
+  );
+  useEffect(() => () => providerSignInFollowUpRef.current?.stop(), []);
+
   const updateProviderDisplay = useCallback(
     (
       next:
@@ -4138,6 +4237,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
+  // Windows launches with the four providers it was checked against and with
+  // the sign-in button; the Mac app keeps CodexBar's full provider inventory
+  // and its existing rows exactly as they are today.
+  const providerSignInEnabled =
+    companionInfo?.features?.providerSignInEnabled === true;
   const providerPickerProps = {
     usage,
     display: providerDisplay,
@@ -4148,6 +4252,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     pendingCheckIds: pendingProviderCheckIds,
     pendingPreferenceIds,
     onCheck: checkProvider,
+    onOpenSignIn: providerSignInEnabled ? openProviderSignIn : undefined,
     onDisplayChange: updateProviderDisplay,
     onPreferenceChange: updateProviderPreference,
   };
@@ -4452,7 +4557,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // device unready; that is install progress, not a new customer setup.
   const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
 
-  const setupProviders = (providerPreferences || []).filter(isProviderItem);
+  const allSetupProviders = (providerPreferences || []).filter(isProviderItem);
+  const setupProviders = providerSignInEnabled
+    ? offeredProviders(allSetupProviders)
+    : allSetupProviders;
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
   // and into the Manual list, where pinning to it produced a blank device.
@@ -4613,6 +4721,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return (
         <MacAppDownloadScreen
           onCreateSupportReport={loadSupportDiagnostics}
+          platform={customerPlatform}
           release={companionRelease}
         />
       );
@@ -4705,6 +4814,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             return installTheme();
           }}
           onProviderCheck={(provider) => void checkProvider(provider)}
+          onProviderOpenSignIn={
+            providerSignInEnabled
+              ? (provider) => void openProviderSignIn(provider)
+              : undefined
+          }
           onProviderToggle={(provider, enabled) =>
             void updateProviderPreference(provider, enabled)
           }
@@ -4971,6 +5085,10 @@ function getRuntimeSurfaceSnapshot(): RuntimeSurface {
 }
 
 function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
+  return "unknown";
+}
+
+function getCustomerPlatformServerSnapshot(): CustomerPlatform {
   return "unknown";
 }
 

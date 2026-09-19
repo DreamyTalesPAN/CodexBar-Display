@@ -9,12 +9,14 @@ plan, not a declaration that the unchecked gates pass.
 
 | Dependency | Exact inspected head | Treatment |
 | --- | --- | --- |
-| main | `4a178010ea459beb9f23e33206585b6eeda4db27` | Published-line baseline |
-| #407 Cable/WiFi | `b476931710256d20d83876beb19dc6ee1b4f360a` | First predecessor; already contained by #427 |
-| #427 setup/usage/provider notices | `47cabe4d565db942af49cad5225bb1e65b82426c` | Feature branch starts here; documented merge order #407 then #427 |
-| windows-integration (#434/#439 work) | `b4646a48c0e1ea40c02fc09a249f60df8cf2fe7b` | Integrate platform substrate into this branch; do not merge/release main |
-| #447 Claude browser authentication | `0c4f4e8f37e5c1d8ffef72de136ffebbe458a547` | Draft with failing gate; not a lifecycle dependency and not imported |
-| #422 Theme Studio prototype | `0335547dcacdde74ef46a86e43d8d3a1190111f0` | Design-only; no implementation dependency |
+| main | `db281000054c4b42c42f6d84b881565a2077de73` | Updated 2026-09-19; Windows support/signing, #407 and #447 are now merged |
+| #427 setup/usage/provider notices | `47cabe4d565db942af49cad5225bb1e65b82426c` | Still open; inherited dependency, reconciled with current main |
+| #407 Cable/WiFi | Final implementation on main | Use main's bounded parallel discovery, device identity and cross-transport recovery |
+| #447 Windows provider sign-in | Final implementation on main | Preserve Windows sign-in actions and inventory gating alongside #427 inline notices |
+
+Published baseline inspected: v1.0.58. The preliminary windows-integration merge
+is superseded by the shared main implementation. Mac CodexBar 0.56.8 is inherited
+from #427; Windows keeps main's pinned Win-CodexBar 0.60.3-vibetv.1.
 
 The single PR must describe inherited dependency commits separately. Reconcile
 against the final merged predecessor heads before calling it merge-ready.
@@ -70,7 +72,7 @@ writer disappearance must clear active animation within the device's bound.
 ## Implementation order
 
 1. [x] Select Clawd and record source-backed feasibility/native evidence.
-2. [ ] Update #172, finish platform-base integration, record conflicts/resolutions.
+2. [x] Update #172, finish platform-base integration, record conflicts/resolutions.
 3. [ ] Define executable schema/fixtures and capability matrix before wiring UI.
 4. [ ] Package the observation engine; harden ingress, lifecycle continuity,
    shutdown, recovery and source discovery. Reuse original upstream adapters.
@@ -117,3 +119,16 @@ Before an actual frame/theme/firmware write, name the discovered device, exact
 operation and risk and obtain the specific confirmation required by AGENTS.md.
 Prepare the runnable test first; do not use that final boundary to delay local
 implementation or checks. No main merge, tag or release is authorized here.
+
+## Implementation evidence, 2026-09-19
+
+- Main integration preserves Windows provider sign-in, the current serial
+  discovery deadline and alternative-transport recovery. #427 owns theme-first
+  setup, usage mode and inline provider guidance. Removed duplicate brightness
+  controls and retained local Back navigation required by the new step order.
+- 677 Control Center unit tests pass after integration; TypeScript passes.
+- Pinned headless engine and Go supervision exist; packaging, production hook
+  installation, UI and device delivery remain in progress.
+- Packaged runtime observed this machine's live Codex session transition to
+  tool_use and then idle after interruption; shutdown removed its endpoint file.
+  This does not establish native Windows, Claude installer or physical proof.

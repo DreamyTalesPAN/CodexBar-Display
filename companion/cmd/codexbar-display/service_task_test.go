@@ -24,7 +24,7 @@ func TestTaskDaemonNativeShellArguments(t *testing.T) {
 
 func TestDoctorTaskRuntimeConfigReadsUSBArguments(t *testing.T) {
 	config, err := doctorTaskRuntimeConfig(t.TempDir(), "test-only", []string{"daemon", "--transport", "usb", "--port", "COM12"})
-	if err != nil || !config.configured || config.transport != "usb" {
+	if err != nil || !config.configured || config.transport != "usb" || config.port != "COM12" {
 		t.Fatalf("config=%+v err=%v", config, err)
 	}
 }

@@ -99,21 +99,20 @@ if (status.get("ok") is not True or companion.get("status") != "ready"
 print(runtime["pid"])
 PY
 )"; then
-        break
+        # Status readiness and a sole listener must hold together. lsof is
+        # a process-table snapshot during startup, not an atomic readiness
+        # signal; allow transient children to exit within the same deadline.
+        listener_pids="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u || true)"
+        [[ "$listener_pids" != "$runtime_pid" ]] || return 0
       fi
     fi
     runtime_pid=""
     sleep 1
   done
-  [[ -n "$runtime_pid" ]] \
-    || die 'installed candidate app preparation and runtime did not become healthy on port 47832'
-  listener_pids="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
-  # Name the processes: without them this failure only says "not sole" and the
-  # next person has to re-run the whole gate to learn who else held the port.
-  if [[ "$listener_pids" != "$runtime_pid" ]]; then
+  if [[ -n "${listener_pids:-}" ]]; then
     ps -o pid=,lstart=,command= -p ${listener_pids//$'\n'/ } 2>/dev/null || true
-    die "installed candidate runtime is not the sole port-47832 listener (runtime ${runtime_pid}, listeners ${listener_pids//$'\n'/ })"
   fi
+  die 'installed candidate app preparation and runtime did not become healthy with sole port-47832 ownership'
 }
 
 # Drives one firmware update through the installed runtime's Companion API and
@@ -312,12 +311,19 @@ import json, sys
 state = json.load(open(sys.argv[1], encoding="utf-8"))
 expected_uploads = int(sys.argv[2])
 if state.get("updateUploads") != expected_uploads or state.get("violations") or state.get("framesAccepted", 0) < 1:
-    raise SystemExit("candidate companion did not complete multipart OTA/render/no-op sequence")
+    raise SystemExit("candidate companion did not complete firmware OTA/render/no-op sequence")
 # A candidate whose firmware matches the baseline uploads nothing -- the outcome
-# asserted above is already_current -- so there is no multipart OTA to find. Demanding
+# asserted above is already_current -- so there is no OTA upload to find. Demanding
 # one regardless fails every release that ships no new firmware.
-if expected_uploads and not any(event.get("path") == "/update/firmware" for event in state.get("events", [])):
-    raise SystemExit("candidate companion did not use multipart OTA")
+#
+# The upload path belongs to the candidate, not to this trusted script: public
+# firmware uses the Raw OTA endpoint on port 8081, while the Cable candidate
+# uploads multipart to /update/firmware. The gate checks out this script from
+# main and runs it against untrusted candidates, so pinning one path fails every
+# candidate that legitimately ships the other.
+ota_upload_paths = ("/update/firmware.raw", "/update/firmware")
+if expected_uploads and not any(event.get("path") in ota_upload_paths for event in state.get("events", [])):
+    raise SystemExit("candidate companion did not upload firmware over a supported OTA path")
 PY
 
 if [[ "$STATE" == clean_os ]]; then
@@ -327,5 +333,5 @@ fi
 screencapture -x "$OUTPUT/guest-${STATE}.png"
 python3 - "$OUTPUT/result.json" "$STATE" "$VERSION" <<'PY'
 import json, sys
-json.dump({"schemaVersion": 1, "state": sys.argv[2], "version": sys.argv[3], "status": "passed", "checks": ["signed-dmg", "installed-baseline-to-sparkle-update", "candidate-companion-multipart-ota-rediscovery-no-op", "candidate-daemon-render", "installed-runtime-port-47832"]}, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+json.dump({"schemaVersion": 1, "state": sys.argv[2], "version": sys.argv[3], "status": "passed", "checks": ["signed-dmg", "installed-baseline-to-sparkle-update", "candidate-companion-raw-ota-rediscovery-no-op", "candidate-daemon-render", "installed-runtime-port-47832"]}, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
 PY

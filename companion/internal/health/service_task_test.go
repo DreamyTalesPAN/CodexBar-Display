@@ -3,9 +3,10 @@ package health
 import (
 	"context"
 	"errors"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"strings"
 	"testing"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestWindowsHealthUsesManagerStateAndTaskArguments(t *testing.T) {
@@ -16,7 +17,7 @@ func TestWindowsHealthUsesManagerStateAndTaskArguments(t *testing.T) {
 		}
 		return nil, errors.New("no log")
 	}, readCableCapabilities: func() (protocol.DeviceCapabilities, error) {
-		t.Fatal("WiFi task queried USB")
+		t.Fatal("WiFi task queried the Cable device")
 		return protocol.DeviceCapabilities{}, nil
 	}})
 	if err != nil {
@@ -38,7 +39,10 @@ func TestWindowsHealthPropagatesSchedulerFailure(t *testing.T) {
 	}
 }
 
-func TestWindowsUSBHealthDoesNotProbeRunningOwner(t *testing.T) {
+// Health must never reopen the serial port the running service owns. Cable
+// health now asks the running Companion for the identity it already holds, so
+// the Windows scheduled-task ownership case is covered by that same path.
+func TestWindowsUSBHealthReadsIdentityFromRunningOwner(t *testing.T) {
 	for _, port := range []string{"COM12", ""} {
 		t.Run(port, func(t *testing.T) {
 			var out strings.Builder
@@ -52,16 +56,16 @@ func TestWindowsUSBHealthDoesNotProbeRunningOwner(t *testing.T) {
 					return nil, errors.New("no log")
 				},
 				readCableCapabilities: func() (protocol.DeviceCapabilities, error) {
-					return protocol.DeviceCapabilities{DeviceID: "bench-device"}, nil
+					return protocol.DeviceCapabilities{DeviceID: "16198591", Board: "smalltv-ultra", Firmware: "1.0.51"}, nil
 				},
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "Cable device: bench-device") {
+			if !strings.Contains(out.String(), "transport: usb") {
 				t.Fatal(out.String())
 			}
-			if strings.Contains(out.String(), "configured port:") {
+			if !strings.Contains(out.String(), "Cable device: 16198591 board=smalltv-ultra firmware=1.0.51") {
 				t.Fatal(out.String())
 			}
 		})

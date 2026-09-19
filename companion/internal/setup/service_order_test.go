@@ -74,8 +74,12 @@ func TestWindowsFailedRegistrationRestoresDisabledOrAbsentTask(t *testing.T) {
 					goos: "windows", stdout: io.Discard, homeDir: func() (string, error) { return home, nil },
 					executablePath: func() (string, error) { return source, nil }, findCodexbar: func() (string, error) { return "fixture", nil },
 					lookPath: func(name string) (string, error) { return name, nil }, resolvePort: func(port string) (string, error) { return port, nil },
+					resolveRecoveryPort: func(port string) (string, error) { return port, nil },
+					// Setup now reads the Cable identity after selecting the port,
+					// so registration is only reached with a VibeTV that answers.
 					probePort: func(string) error { return nil }, readDeviceHello: setupCableHello,
-					serviceForHome: func(string) service.Manager { return manager },
+					pairCableDevice: func(string, string) (string, error) { return "pair-token", nil },
+					serviceForHome:  func(string) service.Manager { return manager },
 				})
 				if err == nil || manager.installs != 1 || manager.enabled {
 					t.Fatalf("manager=%+v err=%v", manager, err)
@@ -130,13 +134,18 @@ func TestWindowsSetupStopsNestedUpgradeBeforeBinaryInstall(t *testing.T) {
 	manager := &nestedUpgradeManager{recoveryManager: recoveryManager{enabled: true}, stopAfterFlash: want}
 	err := runWithDeps(context.Background(), Options{Transport: "usb", Port: "COM12"}, deps{
 		goos: "windows", stdout: io.Discard,
-		homeDir:             func() (string, error) { return t.TempDir(), nil },
-		findCodexbar:        func() (string, error) { return "fixture", nil },
-		lookPath:            func(name string) (string, error) { return name, nil },
-		executablePath:      func() (string, error) { return "missing-companion.exe", nil },
+		homeDir:        func() (string, error) { return t.TempDir(), nil },
+		findCodexbar:   func() (string, error) { return "fixture", nil },
+		lookPath:       func(name string) (string, error) { return name, nil },
+		executablePath: func() (string, error) { return "missing-companion.exe", nil },
+		resolvePort:    func(port string) (string, error) { return port, nil },
+		// An explicit port on the flash path is the operator's recovery target.
 		resolveRecoveryPort: func(port string) (string, error) { return port, nil },
-		readDeviceHello:     setupCableHello,
-		serviceForHome:      func(string) service.Manager { return manager },
+		// The flashed VibeTV answers the Cable identity read, so the run still
+		// reaches the binary replacement this stop sentinel guards.
+		readDeviceHello: setupCableHello,
+		pairCableDevice: func(string, string) (string, error) { return "pair-token", nil },
+		serviceForHome:  func(string) service.Manager { return manager },
 		runCommand: func(_ context.Context, _ string, _ string, args ...string) (string, error) {
 			if len(args) > 0 && args[0] == "upgrade" {
 				manager.flashed = true
@@ -184,11 +193,11 @@ func TestWindowsSetupRestoresEnabledTaskOnFailure(t *testing.T) {
 				findCodexbar:   func() (string, error) { return "fixture", nil },
 				lookPath:       func(name string) (string, error) { return name, nil },
 				serviceForHome: func(string) service.Manager { return manager },
-				resolvePort: func(string) (string, error) {
+				listPorts: func() ([]string, error) {
 					if tc.cancelled {
 						cancel()
 					}
-					return "", errors.New("disconnected")
+					return nil, errors.New("disconnected")
 				},
 			})
 			if err == nil {

@@ -1,8 +1,8 @@
 "use client";
 
-import { Copy, RefreshCw } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
 
 export type SetupProviderRowVariant =
+  | "browser_sign_in"
   | "checking"
   | "unsupported"
   | "no_usage"
@@ -53,6 +54,10 @@ export function setupProviderRowVariant(
     case "auth_required":
     case "setup_required":
       return "sign_in";
+    // Signed in to the tool, but the usage endpoint only answers a browser
+    // session (Claude on Windows). The row offers to open that page.
+    case "browser_sign_in_required":
+      return "browser_sign_in";
     case "permission_required":
       return "permission";
     case "unsupported":
@@ -82,15 +87,16 @@ type SetupProviderRowProps = {
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
-  /** The generic detail attached to this health result. */
   detail?: string;
-  /**
-   * What the usage service itself said about this provider, already redacted.
-   * It is the only per-provider guidance that exists, so it replaces our own
-   * wording wherever it says something the customer can act on.
-   */
   reportedMessage?: string;
   onCheckAgain: () => void;
+  /**
+   * Starts the provider's sign-in through the companion: the browser page
+   * for "browser_sign_in_required", the tool's own login (or its install
+   * page) for "auth_required" and "setup_required". Absent when the shell
+   * has nothing to start.
+   */
+  onOpenSignIn?: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -106,13 +112,14 @@ export function SetupProviderRow({
   alternativeActions,
   unsupportedMessage,
   checking = false,
-  detail,
   enabled,
   health,
   label,
   onCheckAgain,
-  onToggle,
+  detail,
   reportedMessage,
+  onOpenSignIn,
+  onToggle,
   saving = false,
 }: SetupProviderRowProps) {
   const variant = enabled ? setupProviderRowVariant(health) : "toggle";
@@ -134,6 +141,8 @@ export function SetupProviderRow({
   const fallbackMessage =
     variant === "sign_in"
       ? `Sign in to ${label}`
+      : variant === "browser_sign_in"
+        ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
         ? "Allow access in macOS"
         : variant === "unsupported"
@@ -177,6 +186,25 @@ export function SetupProviderRow({
       </ItemContent>
       <ItemActions>
         {variant === "checking" ? <Spinner /> : null}
+            {variant === "browser_sign_in" && onOpenSignIn ? (
+              <SetupProviderRowAction
+                icon={ExternalLink}
+                label={`Open ${label} sign-in in your browser`}
+                onClick={onOpenSignIn}
+              />
+            ) : null}
+            {variant === "sign_in" && onOpenSignIn ? (
+              <Button
+                className="rounded-full"
+                onClick={onOpenSignIn}
+                size="sm"
+                type="button"
+                variant="default"
+              >
+                <LogIn aria-hidden />
+                <span>{`Sign in to ${label}`}</span>
+              </Button>
+            ) : null}
         <Switch
           aria-label={label}
           checked={enabled}
