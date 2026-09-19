@@ -367,7 +367,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 	var collectorWake <-chan struct{}
 	var wakeAfterCollect func()
-	if !syncCycleMode && opts.Wake != nil {
+	if !syncCycleMode {
 		collectorWakeCh := make(chan struct{}, 1)
 		cycleWakeCh := make(chan struct{}, 1)
 		go forwardWake(ctx, opts.Wake, collectorWakeCh)
@@ -474,6 +474,7 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	collector := newProviderCollector(deps, opts)
 	collector.wake = wake
 	collector.afterWakeCollect = afterWakeCollect
+	collector.afterFirstCollect = afterWakeCollect
 	collectorCtx, cancel := context.WithCancel(ctx)
 	collector.start(collectorCtx)
 	deps.logf("collector started transport=%s interval=%s timeout=%s providers=%s mode=fetch-all\n",
