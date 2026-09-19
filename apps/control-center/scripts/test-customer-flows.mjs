@@ -488,6 +488,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testProviderReadinessCustomerStates(browser, appContext.appUrl);
       console.log("control-center provider settings test passed");
       return;
     }
@@ -2339,10 +2340,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "auth_required",
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
-      // The row's own sentence; CodexBar's text stays behind Copy.
-      rowText: "Codex is not signed in on this computer",
       rowActions: [
-        "Copy provider message for Codex",
         "Sign in to Codex",
         "Check Codex again",
       ],
@@ -2355,7 +2353,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
       rowActions: [
-        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2366,7 +2363,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "no_usage_available",
       reportedMessage: "No usage data is available for this Codex account.",
       rowActions: [
-        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2377,7 +2373,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
       rowActions: [
-        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2386,9 +2381,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       expected: "No usable AI provider is configured yet.",
       healthState: "setup_required",
       reportedMessage: "No available fetch strategy for codex.",
-      rowText: "Codex is not signed in on this computer",
       rowActions: [
-        "Copy provider message for Codex",
         "Sign in to Codex",
         "Check Codex again",
       ],
@@ -2514,18 +2507,16 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
-    await page
-      .getByText(fixture.rowText || fixture.reportedMessage, { exact: true })
-      .first()
+    const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
+    await providerDialog.getByText(fixture.reportedMessage, { exact: true })
       .waitFor({ timeout: 10_000 });
-    if (fixture.rowText) {
-      assert(
-        (await page
-          .getByText(fixture.reportedMessage, { exact: true })
-          .count()) === 0,
-        `${fixture.status} must not show CodexBar's developer text on the row`,
-      );
-    }
+    await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
+      .waitFor({ timeout: 10_000 });
+    await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
+    assert(
+      (await page.getByText(fixture.reportedMessage, { exact: true }).count()) === 0,
+      `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
+    );
     for (const action of fixture.rowActions) {
       await page
         .getByRole("button", { name: action })

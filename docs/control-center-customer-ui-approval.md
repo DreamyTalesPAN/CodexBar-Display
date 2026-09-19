@@ -4489,3 +4489,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: The Windows-copy removal is covered by Paul's explicit approval recorded above for PR #462; the Claude-dialog correction is covered by Marcus's bug-fix request above. This integration introduces no further visible result.
 - Approved customer-visible result: Retain both approved outcomes: the Windows download omits the obsolete unsigned-publisher warning, and starting sign-in leaves an acknowledged provider error dismissed. The shared approval-log conflict is resolved without dropping either record.
 - Scope: Integrate main commit `e5529c23` into PR #407 and retain its existing copy/test deletion unchanged. No merge into main, release, installation, or device operation.
+
+### 2026-09-19 — Provider dialog regression coverage
+
+- User approval: Covered by the Claude-dialog bug-fix request above; this is test-only follow-up, with no additional visible change.
+- Approved customer-visible result: Unchanged. Provider errors show their original message and copy action in the existing dismissible dialog; sign-in and retry remain on the provider row after dismissal.
+- Scope: Update the stale provider-readiness browser assertions that still expected inline error text, and include those cases in the focused provider-settings suite. No production behavior changes.
