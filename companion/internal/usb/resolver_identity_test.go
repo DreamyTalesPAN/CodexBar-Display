@@ -196,3 +196,14 @@ func TestCableSerialCandidatesDropsMacOSTTYAliasOnly(t *testing.T) {
 		t.Fatalf("Linux ttyUSB candidate must remain available: %v", linux)
 	}
 }
+
+func TestDiscoverVibeTVsOnWindowsProbesCOMPorts(t *testing.T) {
+	devices, err := discoverVibeTVs([]string{"COM3", "com17", ""}, func(port string) (protocol.DeviceHello, error) {
+		hello := cableHello(port)
+		hello.Capabilities.Transport.Mode = "wifi"
+		return hello, nil
+	}, "windows")
+	if err != nil || len(devices) != 2 {
+		t.Fatalf("Windows COM devices must be discovered: devices=%v err=%v", devices, err)
+	}
+}

@@ -259,7 +259,7 @@ func cableSerialCandidates(ports []string, goos string) []string {
 	for _, candidate := range ports {
 		candidate = strings.TrimSpace(candidate)
 		lower := strings.ToLower(candidate)
-		if candidate == "" || !strings.Contains(lower, "usb") {
+		if candidate == "" || (!strings.Contains(lower, "usb") && !(goos == "windows" && isCOMPortName(candidate))) {
 			continue
 		}
 		// macOS exposes one USB-UART twice. /dev/cu.* is the callout endpoint
