@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -27,6 +28,7 @@ import (
 )
 
 type Options struct {
+	AgentSnapshot          func() agentstatus.Snapshot
 	Port                   string
 	Transport              string
 	Target                 string
@@ -45,31 +47,28 @@ type Options struct {
 
 const (
 	// Firmware allows ten minutes in setup AP mode, plus join/reboot time.
-	wifiTransitionQuietPeriod  = 11 * time.Minute
-	defaultInterval            = 2 * time.Second
-	defaultWiFiInterval        = 30 * time.Second
-	defaultCycleTimeout        = 180 * time.Second
-	startupFastPollWindow      = 2 * time.Minute
-	startupFastPollInterval    = 5 * time.Second
-	failureRetryInterval       = 5 * time.Second
-	lastGoodPersistInterval    = 1 * time.Minute
-	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
-	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
-	cycleTimeoutEnvVar         = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
-	collectorIntervalEnvVar    = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
-	activityPollEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
-	activityHoldEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
-	activityCodingMaxAgeEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_MAX_SECS"
-	activityIdleEvidenceEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE"
-	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
-	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
-	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
-	collectorWarmupEnvVar      = "CODEXBAR_DISPLAY_COLLECTOR_WARMUP_MAX_AGE"
-	defaultProviderMaxAge      = 10 * time.Minute
-	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
-	firmwareUpdateCheckGap     = 6 * time.Hour
-	firmwareManifestTimeout    = 5 * time.Second
+	wifiTransitionQuietPeriod = 11 * time.Minute
+	defaultInterval           = 2 * time.Second
+	defaultWiFiInterval       = 30 * time.Second
+	defaultCycleTimeout       = 180 * time.Second
+	startupFastPollWindow     = 2 * time.Minute
+	startupFastPollInterval   = 5 * time.Second
+	failureRetryInterval      = 5 * time.Second
+	lastGoodPersistInterval   = 1 * time.Minute
+	themeEnvVar               = "CODEXBAR_DISPLAY_THEME"
+	coldStartTimeoutEnvVar    = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
+	cycleTimeoutEnvVar        = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
+	collectorIntervalEnvVar   = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
+	activityPollEnvVar        = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
+	collectorTimeoutEnvVar    = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
+	collectorOrderEnvVar      = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
+	providerMaxAgeEnvVar      = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	collectorWarmupEnvVar     = "CODEXBAR_DISPLAY_COLLECTOR_WARMUP_MAX_AGE"
+	defaultProviderMaxAge     = 10 * time.Minute
+	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareManifestURL       = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
+	firmwareUpdateCheckGap    = 6 * time.Hour
+	firmwareManifestTimeout   = 5 * time.Second
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
@@ -242,27 +241,21 @@ func defaultRuntimeLogf(format string, args ...any) {
 }
 
 type runtimeState struct {
-	selector               *codexbar.ProviderSelector
-	lastGood               protocol.Frame
-	lastGoodAt             time.Time
-	hasLastGood            bool
-	lastPersistedGood      protocol.Frame
-	lastPersistedAt        time.Time
-	hasPersistedGood       bool
-	cliTheme               string
-	firmwareUpdate         protocol.UpdateState
-	hasFirmwareUpdate      bool
-	updateCheckedAt        time.Time
-	updateCheckedBoard     string
-	updateCheckedFirmware  string
-	lastActivityAt         time.Time
-	lastActivityObservedAt time.Time
-	lastIdleEvidenceAt     time.Time
-	idleEvidenceCount      int
-	lastCodingAt           time.Time
-	lastActivity           string
-	lastActivityCause      string
-	deviceTarget           string
+	agentSnapshot         func() agentstatus.Snapshot
+	selector              *codexbar.ProviderSelector
+	lastGood              protocol.Frame
+	lastGoodAt            time.Time
+	hasLastGood           bool
+	lastPersistedGood     protocol.Frame
+	lastPersistedAt       time.Time
+	hasPersistedGood      bool
+	cliTheme              string
+	firmwareUpdate        protocol.UpdateState
+	hasFirmwareUpdate     bool
+	updateCheckedAt       time.Time
+	updateCheckedBoard    string
+	updateCheckedFirmware string
+	deviceTarget          string
 }
 
 type cycleResult struct {
@@ -422,8 +415,9 @@ func signalWake(output chan<- struct{}) {
 
 func initializeRuntimeState(now time.Time, opts Options, deps runtimeDeps) *runtimeState {
 	state := &runtimeState{
-		selector: deps.newSelector(),
-		cliTheme: opts.Theme,
+		agentSnapshot: opts.AgentSnapshot,
+		selector:      deps.newSelector(),
+		cliTheme:      opts.Theme,
 	}
 	bootstrapStateFromPersistedLastGood(state, now, deps)
 	return state
@@ -1384,117 +1378,25 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 	return result
 }
 
-func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDecision, state *runtimeState, now time.Time) (protocol.Frame, string) {
-	if strings.TrimSpace(frame.Activity) != "" {
-		return frame, fmt.Sprintf("activity=explicit value=%s", frame.Activity)
-	}
-	if now.IsZero() {
-		now = time.Now()
-	}
-	if state == nil {
-		state = &runtimeState{}
-	}
-
-	collectedAt := decision.Selected.CollectedAt
-	if collectedAt.IsZero() {
-		collectedAt = now
-	}
-	activityObservedAt := decision.Selected.ActivityObservedAt
-	if activityObservedAt.IsZero() {
-		activityObservedAt = collectedAt
-	}
-	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state.lastCodingAt, now)
-	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
-		!activityObservedAt.IsZero() &&
-		activityObservedAt.Equal(state.lastActivityObservedAt) &&
-		state.lastActivity != "" &&
-		!codingExpired {
-		state.lastActivityAt = collectedAt
-		frame.Activity = state.lastActivity
-		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
-	}
-	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired {
-		frame.Activity = state.lastActivity
-		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
-	}
-
-	activity := "idle"
-	signalDetail := strings.TrimSpace(decision.ActivityDetail)
-	signalReason := decision.ActivitySignalReason
-	switch signalReason {
-	case codexbar.SelectionReasonUsageDelta:
-		activity = "coding"
-		state.lastCodingAt = now
-		state.lastIdleEvidenceAt = time.Time{}
-		state.idleEvidenceCount = 0
-	default:
-		if state.lastActivity == "coding" {
-			if codingMaxAgeExpired(state.lastCodingAt, now) {
-				state.lastIdleEvidenceAt = time.Time{}
-				state.idleEvidenceCount = 0
-				signalReason = "coding-max-age-expired"
-				signalDetail = fmt.Sprintf("last_delta_age=%s max=%s observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityCodingMaxAge(), activityObservedAt.Format(time.RFC3339))
-			} else {
-				if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
-					state.lastIdleEvidenceAt = activityObservedAt
-					state.idleEvidenceCount++
-				}
-				if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
-					activity = "coding"
-					signalReason = "coding-waiting-for-idle-evidence"
-					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
-				} else {
-					state.lastIdleEvidenceAt = time.Time{}
-					state.idleEvidenceCount = 0
-				}
-			}
+// The Clawd snapshot is the sole activity owner. Quota deltas and collection
+// timestamps remain usage facts and cannot keep an agent marked as working.
+func applySelectionActivity(frame protocol.Frame, _ codexbar.SelectionDecision, state *runtimeState, _ time.Time) (protocol.Frame, string) {
+	frame.Activity = "unavailable"
+	if state != nil && state.agentSnapshot != nil {
+		snapshot := state.agentSnapshot()
+		if snapshot.Health == "ready" && agentstatus.ValidPhase(snapshot.Phase) {
+			frame.Activity = snapshot.Phase
 		}
 	}
-
-	if signalDetail == "" {
-		signalDetail = string(signalReason)
-	}
-	if signalDetail == "" {
-		signalDetail = "no-usage-delta"
-	}
-	reason := string(signalReason)
-	if reason == "" {
-		reason = "no-usage-delta"
-	}
-
-	state.lastActivityAt = collectedAt
-	state.lastActivityObservedAt = activityObservedAt
-	state.lastActivity = activity
-	state.lastActivityCause = signalDetail
-	frame.Activity = activity
-	return frame, fmt.Sprintf("activity=%s reason=%s detail=%s", activity, reason, signalDetail)
-}
-
-func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
-	if lastCodingAt.IsZero() {
-		return false
-	}
-	if now.Before(lastCodingAt) {
-		return true
-	}
-	return now.Sub(lastCodingAt) <= activityHoldDuration()
-}
-
-func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
-	if lastCodingAt.IsZero() {
-		return false
-	}
-	if now.Before(lastCodingAt) {
-		return false
-	}
-	return now.Sub(lastCodingAt) > activityCodingMaxAge()
+	return frame, "activity=" + frame.Activity + " source=clawd"
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
-	if !result.usageFresh && result.failureErr == nil {
+	frame, result.activityDetail = applySelectionActivity(frame, codexbar.SelectionDecision{}, state, deps.now())
+	if !result.usageFresh && result.failureErr == nil && state.agentSnapshot == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {
 			deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
@@ -2183,64 +2085,6 @@ func activityPollInterval() time.Duration {
 		return max
 	}
 	return override
-}
-
-func activityHoldDuration() time.Duration {
-	const (
-		def = 180 * time.Second
-		min = 5 * time.Second
-		max = 600 * time.Second
-	)
-
-	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
-	if override < min {
-		return min
-	}
-	if override > max {
-		return max
-	}
-	return override
-}
-
-func activityCodingMaxAge() time.Duration {
-	const (
-		def = 5 * time.Minute
-		min = 30 * time.Second
-		max = 30 * time.Minute
-	)
-
-	override := parseSecondsEnv(activityCodingMaxAgeEnvVar, int(def.Seconds()))
-	if override < min {
-		return min
-	}
-	if override > max {
-		return max
-	}
-	return override
-}
-
-func activityIdleEvidenceRequired() int {
-	const (
-		def = 2
-		min = 1
-		max = 10
-	)
-
-	raw := strings.TrimSpace(os.Getenv(activityIdleEvidenceEnvVar))
-	if raw == "" {
-		return def
-	}
-	parsed, err := strconv.Atoi(raw)
-	if err != nil {
-		return def
-	}
-	if parsed < min {
-		return min
-	}
-	if parsed > max {
-		return max
-	}
-	return parsed
 }
 
 func cycleRunTimeout() time.Duration {

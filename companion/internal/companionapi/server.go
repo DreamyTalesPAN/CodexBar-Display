@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
@@ -178,6 +179,7 @@ var displayStreamLogKeys = []string{
 }
 
 type Options struct {
+	AgentSnapshot        func() agentstatus.Snapshot
 	Addr                 string
 	Home                 string
 	AllowedOrigins       []string
@@ -193,6 +195,7 @@ type Options struct {
 }
 
 type Server struct {
+	agentSnapshot          func() agentstatus.Snapshot
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
@@ -968,6 +971,7 @@ func New(opts Options) (*Server, error) {
 	}
 	server := &Server{
 		addr:                   addr,
+		agentSnapshot:          opts.AgentSnapshot,
 		home:                   home,
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
@@ -1076,6 +1080,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
+	mux.HandleFunc("/v1/agents", s.handleAgents)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
@@ -10252,4 +10257,16 @@ func uniqueStrings(values ...string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	value := agentstatus.Snapshot{SchemaVersion: 1, Health: "unavailable", Phase: "unavailable", Sessions: []agentstatus.Session{}, Sources: []agentstatus.Source{}}
+	if s.agentSnapshot != nil {
+		value = s.agentSnapshot()
+	}
+	writeJSON(w, http.StatusOK, value)
 }
