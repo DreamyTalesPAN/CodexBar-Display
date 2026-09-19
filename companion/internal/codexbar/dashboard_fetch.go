@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -32,7 +33,15 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	if err != nil {
 		return nil, err
 	}
-	usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+"?provider=all", strings.TrimSpace(info.Token))
+	// On macOS, omitting the override selects the configured enabled set,
+	// just like the dashboard. Explicit "all" probes disabled providers too.
+	// Win-CodexBar 0.60.3 instead defaults to Claude, so retain its all-provider
+	// join until it supports the enabled-set contract (see #415).
+	usagePath := dashboardUsagePath
+	if runtime.GOOS == "windows" {
+		usagePath += "?provider=all"
+	}
+	usageRaw, err := fetchDashboardJSON(ctx, endpoint+usagePath, strings.TrimSpace(info.Token))
 	if err != nil {
 		return nil, err
 	}
