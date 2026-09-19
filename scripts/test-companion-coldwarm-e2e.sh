@@ -2,7 +2,7 @@
 # End-to-end cold/warm start simulation against the protocol-faithful Virtual
 # VibeTV. Exercises the honest-reachability contract:
 #   S1 runtime cold start with the device powered off  -> reconnecting, never connected
-#   S2 device powers on                                -> connected + rendered theme quickly
+#   S2 device powers on                                -> connected + fresh rendered frame
 #   S3 runtime warm restart (device stays on)          -> recovers quickly
 #   S4 device power-cycle                              -> honest drop, fast recovery
 set -euo pipefail
@@ -13,7 +13,12 @@ API=127.0.0.1:47899
 DEV_PORT=47898
 DEV_ADDR="127.0.0.1:${DEV_PORT}"
 export HOME="$WORK/home"
-mkdir -p "$HOME/Library/Application Support/codexbar-display"
+export XDG_CONFIG_HOME="$WORK/home/.config"
+COMPANION_CONFIG_DIR="$WORK/home/Library/Application Support/codexbar-display"
+if [[ "$(uname -s)" == "Linux" ]]; then
+  COMPANION_CONFIG_DIR="$XDG_CONFIG_HOME/codexbar-display"
+fi
+mkdir -p "$COMPANION_CONFIG_DIR"
 
 cleanup() {
   [[ -n "${RUNTIME_PID:-}" ]] && kill "$RUNTIME_PID" 2>/dev/null || true
@@ -112,7 +117,7 @@ LCTL
 chmod +x "$WORK/bin/launchctl"
 export PATH="$WORK/bin:$PATH"
 
-cat > "$HOME/Library/Application Support/codexbar-display/config.json" <<CFG
+cat > "$COMPANION_CONFIG_DIR/config.json" <<CFG
 {
   "deviceTarget": "http://${DEV_ADDR}",
   "deviceToken": "virtual-pair-token",
@@ -131,9 +136,16 @@ status() { curl -s -m 3 "http://${API}/v1/status" 2>/dev/null || echo "{}"; }
 jqget() { python3 -c "import json,sys;d=json.load(sys.stdin);print(json.dumps({k:d.get('device',{}).get(k) for k in ['connected','ready','connectionState','active']}))" 2>/dev/null || echo "{}"; }
 
 # Transport recovery must not require provider authentication. Inspect the
-# theme evidence returned by the Companion, not just the virtual device's HTTP
-# listener: an active theme with a failed render must still fail this test.
-CONNECTED_THEME="d.get('connected') is True and (d.get('display') or {}).get('themeSpec', {}).get('active') is True and (d.get('display') or {}).get('themeSpec', {}).get('path') == '${THEME_PATH}' and (d.get('display') or {}).get('themeSpec', {}).get('renderOk') is True"
+# render evidence returned by the Companion, not just the HTTP listener.
+# Without signed-in providers the device renders its status screen instead of
+# the stored theme. Only the typed no-provider error permits that alternative.
+CONNECTED_RENDER="d.get('connected') is True and theme.get('path') == '${THEME_PATH}' and theme.get('renderOk') is True and (theme.get('active') is True or (d.get('ready') is False and stream.get('errorCode') == 'provider_setup_required' and health.get('renderKind') == 'status'))"
+
+wait_for_recovery() {
+  # Activation above is fixture setup, not worker evidence. Require a frame
+  # strictly newer than this scenario, including after a warm runtime restart.
+  wait_for 60 "$CONNECTED_RENDER and stream.get('running') is True and stream.get('lastTarget') == 'http://${DEV_ADDR}' and stream.get('lastSentAt', '') > '$SCENARIO_STARTED_AT'"
+}
 
 wait_for() { # wait_for <timeout-secs> <python-predicate over device dict>
   local deadline=$((SECONDS + $1)) predicate="$2" snap=""
@@ -143,6 +155,9 @@ wait_for() { # wait_for <timeout-secs> <python-predicate over device dict>
 import json,sys
 try: d=json.loads(sys.argv[1]).get('device') or {}
 except Exception: sys.exit(1)
+stream = d.get('stream') or {}
+theme = (d.get('display') or {}).get('themeSpec') or {}
+health = d.get('health') or {}
 sys.exit(0 if ($predicate) else 1)" "$snap"; then
       echo "$snap" | jqget
       return 0
@@ -187,20 +202,22 @@ print('S1 PASS: device off -> honest reconnecting, never connected  (+%ds)' % ($
 
 echo "== S2: device powers on (cold boot) =="
 T0=$SECONDS
+SCENARIO_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 start_device
 wait_for 30 "d.get('connected') is True" >/dev/null
 echo "S2a connected after $((SECONDS-T0))s"
-wait_for 60 "$CONNECTED_THEME" >/dev/null
-echo "S2 PASS: cold device boot -> connected+rendered theme after $((SECONDS-T0))s"
+wait_for_recovery >/dev/null
+echo "S2 PASS: cold device boot -> connected+fresh rendered frame after $((SECONDS-T0))s"
 
 echo "== S3: runtime warm restart (device stays on) =="
 kill "$RUNTIME_PID"; wait "$RUNTIME_PID" 2>/dev/null || true
 T0=$SECONDS
+SCENARIO_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 start_runtime
 wait_for 30 "d.get('connected') is True" >/dev/null
 echo "S3a connected after $((SECONDS-T0))s"
-wait_for 60 "$CONNECTED_THEME" >/dev/null
-echo "S3 PASS: runtime warm restart -> connected+rendered theme after $((SECONDS-T0))s"
+wait_for_recovery >/dev/null
+echo "S3 PASS: runtime warm restart -> connected+fresh rendered frame after $((SECONDS-T0))s"
 
 echo "== S4: device power-cycle =="
 kill "$DEVICE_PID"; wait "$DEVICE_PID" 2>/dev/null || true
@@ -209,10 +226,11 @@ T0=$SECONDS
 wait_for 150 "d.get('connected') is not True and d.get('ready') is not True" >/dev/null
 echo "S4a honest drop after $((SECONDS-T0))s (bounded by the 2min ready-age window)"
 T0=$SECONDS
+SCENARIO_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 start_device
 wait_for 30 "d.get('connected') is True" >/dev/null
 echo "S4b reconnected after $((SECONDS-T0))s"
-wait_for 60 "$CONNECTED_THEME" >/dev/null
+wait_for_recovery >/dev/null
 echo "S4 PASS: device power-cycle -> honest drop + recovery after $((SECONDS-T0))s"
 
 echo "ALL SCENARIOS PASS"

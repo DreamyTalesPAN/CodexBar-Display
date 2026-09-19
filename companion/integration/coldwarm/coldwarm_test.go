@@ -1,10 +1,12 @@
 package coldwarm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"os"
@@ -156,6 +158,8 @@ func TestColdWarm(t *testing.T) {
 		go func() { err := cmd.Wait(); _ = log.Close(); done <- err; close(done) }()
 	}
 	var device *virtualvibetv.RunningServer
+	client := &http.Client{Timeout: 3 * time.Second}
+	t.Cleanup(client.CloseIdleConnections)
 	t.Cleanup(func() {
 		if device != nil {
 			_ = device.Close()
@@ -170,9 +174,34 @@ func TestColdWarm(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Like the shell simulation, start with a stored theme. A reachable
+		// device without a theme correctly remains setup_required, not ready.
+		var asset bytes.Buffer
+		form := multipart.NewWriter(&asset)
+		part, err := form.CreateFormFile("asset", "cold-warm.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(part, "{}"); err != nil {
+			t.Fatal(err)
+		}
+		if err := form.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for _, request := range []struct{ path, contentType, body string }{
+			{"/assets?path=/themes/u/cold-warm.json&token=virtual-pair-token", form.FormDataContentType(), asset.String()},
+			{"/theme/active?token=virtual-pair-token", "application/json", `{"path":"/themes/u/cold-warm.json"}`},
+		} {
+			resp, err := client.Post(device.HTTPURL+request.path, request.contentType, strings.NewReader(request.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("seed stored theme %s: HTTP %d", request.path, resp.StatusCode)
+			}
+		}
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	t.Cleanup(client.CloseIdleConnections)
 	waitFor := func(label string, timeout time.Duration, predicate func(deviceStatus) bool, assertOffline bool) {
 		t.Helper()
 		started := time.Now()
@@ -209,7 +238,10 @@ func TestColdWarm(t *testing.T) {
 		t.Fatalf("%s timed out after %s; last status: %s", label, timeout, last)
 	}
 	connected := func(d deviceStatus) bool { return d.Connected }
-	ready := func(d deviceStatus) bool { return d.Connected && d.Ready && d.ConnectionState == "ready" }
+	framesBefore := 0
+	ready := func(d deviceStatus) bool {
+		return d.Connected && d.Ready && d.ConnectionState == "ready" && device.Snapshot().FramesAccepted > framesBefore
+	}
 	assertFrame := func(previous int) {
 		t.Helper()
 		snap := device.Snapshot()
@@ -226,6 +258,7 @@ func TestColdWarm(t *testing.T) {
 	waitFor("S2b device ON / ready", 60*time.Second, ready, false)
 	assertFrame(0)
 	frames := device.Snapshot().FramesAccepted
+	framesBefore = frames
 	stopRuntime()
 	startRuntime()
 	waitFor("S3a warm daemon restart / connected", 30*time.Second, connected, false)
@@ -236,6 +269,7 @@ func TestColdWarm(t *testing.T) {
 	}
 	device = nil
 	waitFor("S4a power OFF / honest drop", 150*time.Second, func(d deviceStatus) bool { return !d.Connected && !d.Ready }, false)
+	framesBefore = 0
 	startDevice()
 	waitFor("S4b power ON / connected", 30*time.Second, connected, false)
 	waitFor("S4c power ON / ready", 60*time.Second, ready, false)
