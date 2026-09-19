@@ -370,7 +370,9 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if !syncCycleMode {
 		collectorWakeCh := make(chan struct{}, 1)
 		cycleWakeCh := make(chan struct{}, 1)
-		go forwardWake(ctx, opts.Wake, collectorWakeCh)
+		if opts.Wake != nil {
+			go forwardWake(ctx, opts.Wake, collectorWakeCh)
+		}
 		collectorWake = collectorWakeCh
 		wakeAfterCollect = func() {
 			signalWake(cycleWakeCh)
