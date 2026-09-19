@@ -336,7 +336,9 @@ export function SetupWizard(props: SetupWizardProps) {
 
   const searchFailed =
     connectionDecision.kind === "not-found" &&
-    deviceSearchState === "not-found" &&
+    // A completed combined scan may find only the other transport. That is
+    // still no result for the saved mode, not a search that is still running.
+    (deviceSearchState === "not-found" || deviceSearchState === "multiple") &&
     !notFoundDismissed && !wifiError;
   // "idle" is before the first scan was started, so like "searching" it has no
   // result to report. Claiming a count there told the customer none were found

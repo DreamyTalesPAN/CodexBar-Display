@@ -4495,3 +4495,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by the Claude-dialog bug-fix request above; this is test-only follow-up, with no additional visible change.
 - Approved customer-visible result: Unchanged. Provider errors show their original message and copy action in the existing dismissible dialog; sign-in and retry remain on the provider row after dismissal.
 - Scope: Update the stale provider-readiness browser assertions that still expected inline error text, and include those cases in the focused provider-settings suite. No production behavior changes.
+
+## 2026-09-19 — Recover when only the other connection mode is found
+
+- User approval: Marcus answered "Ja" to the explicit proposal to show the existing reconnection dialog instead of searching indefinitely, with "Use the cable", WiFi setup, and retry, and no automatic connection-mode switch.
+- Approved customer-visible result: When a completed device search finds only a device on the other transport, the saved connection mode shows the existing device-not-found recovery dialog. The customer can explicitly choose the available cable connection, configure WiFi, or search again. Existing dialog copy and layout are unchanged; no connection is made automatically.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its regression tests, and this approval record. This approves the recovery behavior and fix preparation only, not a main-branch merge, release workflow, or publication.

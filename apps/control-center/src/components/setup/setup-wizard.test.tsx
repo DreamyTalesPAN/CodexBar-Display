@@ -516,6 +516,34 @@ function shownStep(): string {
 }
 
 describe("SetupWizard: direct connection", () => {
+  it("connects the discovered cable only after the customer chooses recovery from saved WiFi", async () => {
+    const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "known-device", transport: "cable" };
+    const connect = vi.fn().mockResolvedValue({ firmware: "1.0.43" });
+    const props = baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple", deviceCandidates: [cable],
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    render(<SetupWizard {...props} />);
+    expect(connect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Use the cable/ }));
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+    expect(props.onSearchDevices).not.toHaveBeenCalled();
+  });
+
+  it.each(["wifi", "cable"] as const)("offers recovery when a completed scan only finds the alternative to saved %s", (savedMode) => {
+    const alternative = savedMode === "wifi" ? "cable" : "wifi";
+    const props = baseProps({
+      step: "device", connectionMode: savedMode, connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: alternative === "cable" ? "cable://vibetv" : "http://192.168.1.42", deviceId: "known-device", transport: alternative }],
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
+    expect(props.connectSteps.connect).not.toHaveBeenCalled();
+    expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+  });
+
   it.each([1, 2])("connects the selected WiFi device without switching any of %i Cable devices", async (cableCount) => {
     const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "cable-a", transport: "cable" };
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-b", transport: "wifi" };
