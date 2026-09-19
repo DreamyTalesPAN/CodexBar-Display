@@ -516,6 +516,31 @@ function shownStep(): string {
 }
 
 describe("SetupWizard: direct connection", () => {
+  it("releases a vanished cable selection before choosing a different discovered WiFi device", async () => {
+    const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "cable-device", transport: "cable" };
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" };
+    const connect = vi.fn().mockRejectedValueOnce({ message: "Cable disconnected" }).mockResolvedValue({ firmware: "1.0.43" });
+    const props = baseProps({
+      step: "device", connectionMode: "", connectionModeChoiceRequired: true,
+      activeDeviceId: cable.deviceId,
+      deviceSearchState: "multiple", deviceCandidates: [cable, wifi],
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("radio", { name: /cable-device/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+    rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} deviceCandidates={[wifi]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Set up WiFi with your phone/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /wifi-device/ }));
+    expect(connect).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(connect).toHaveBeenLastCalledWith(wifi));
+    expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+  });
+
   it.each([1, 2])("recovers saved Cable through an explicit choice among %i discovered WiFi devices without provisioning", async (count) => {
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "known-device", transport: "wifi" };
     const connect = vi.fn().mockResolvedValue({ firmware: "1.0.43" });

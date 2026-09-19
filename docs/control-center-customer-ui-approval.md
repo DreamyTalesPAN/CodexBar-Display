@@ -4507,3 +4507,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by Marcus's "Ja" to the existing recovery dialog and no automatic transport switch above. This closes the reverse-direction recovery gap identified in review, without adding controls or changing copy.
 - Approved customer-visible result: After the customer chooses WiFi recovery, an already discovered WiFi device follows the existing device-selection path instead of trying to provision an absent cable device. Multiple devices still require selection; no device connects before the recovery action.
 - Scope: The same setup-wizard handler and regression tests only. No merge, release workflow, or publication.
+
+### 2026-09-19 — Preserve recovery after a selected cable device disappears
+
+- User approval: Same explicitly approved recovery behavior above; review regression coverage only extends the sequence leading into it.
+- Approved customer-visible result: A stale selection of a disconnected cable device does not hide WiFi devices found by the next scan. Explicit WiFi recovery returns to the existing device picker, and another identity still requires its own Connect action.
+- Scope: Clear the stale candidate filter in the existing WiFi recovery branch and test the failed-cable-to-WiFi sequence. No new controls, copy, merge, or release.

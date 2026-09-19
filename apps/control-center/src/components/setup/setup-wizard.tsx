@@ -408,6 +408,9 @@ export function SetupWizard(props: SetupWizardProps) {
       setWiFiError(null);
       setPreferredTransport(transport);
       setSelectedTarget(null);
+      if (connectionCandidates.length === 0) {
+        setConnectionDeviceId(null);
+      }
       if (transport === "cable") {
         setWiFiSetup(null);
         if (
@@ -423,7 +426,7 @@ export function SetupWizard(props: SetupWizardProps) {
       // An already discovered WiFi device needs selection, not provisioning
       // through a cable that is no longer connected. Keep the normal picker
       // (and its identity check) responsible for choosing the device.
-      if (!cable && connectionCandidates.some((candidate) => candidate.transport === "wifi")) {
+      if (!cable && deviceCandidates.some((candidate) => candidate.transport === "wifi")) {
         setWiFiSetup(null);
         return;
       }
