@@ -1011,6 +1011,7 @@ async function main() {
       appContext.appUrl,
     );
     await testOverviewWaitsForRealUsage(browser, appContext.appUrl);
+    await testAgentActivity(browser, appContext.appUrl);
     await testOverviewRejectsInvalidDisplayFrame(browser, appContext.appUrl);
     await testProviderReadinessCustomerStates(browser, appContext.appUrl);
     await testTransientFirstFrameStaysCustomerFriendly(

@@ -97,8 +97,11 @@ func TestConfigureUsesAuthenticatedLocalEngineAndReturnsItsSnapshot(t *testing.T
 	}
 	engine := &Engine{runtimeDir: dir}
 	got, err := engine.Configure(context.Background(), "claude-code", true)
-	if err != nil || !called || got.Phase != "working" || engine.Snapshot().Health != "ready" {
+	if err != nil || !called || got.Phase != "working" {
 		t.Fatalf("%+v %v", got, err)
+	}
+	if engine.Snapshot().Health == "ready" {
+		t.Fatal("command response replaced the authoritative observation stream")
 	}
 	// A tampered discovery file must never leak the bearer token off-machine.
 	data, _ = json.Marshal(map[string]string{"url": "https://example.invalid", "token": token})

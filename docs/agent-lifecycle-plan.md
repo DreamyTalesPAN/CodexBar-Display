@@ -128,7 +128,9 @@ implementation or checks. No main merge, tag or release is authorized here.
   controls and retained local Back navigation required by the new step order.
 - 682 Control Center unit tests, TypeScript and customer-copy checks pass.
   Desktop/mobile lifecycle browser flow passes (two independent sessions,
-  explicit connect/disconnect, collector-loss clears displayed work).
+  explicit connect/disconnect, collector-loss clears displayed work). The full
+  customer-flow suite also passes after reconciling #427's removed dialogs.
+  The new lifecycle case is part of that regular suite, not only its focused flag.
 - 66 engine tests pass. Eight original hook builders have an owned installer:
   Claude Code, Gemini CLI, Copilot CLI, Qwen Code, Qoder, QoderWork, QwenWork,
   Antigravity CLI. Codex logs are automatic. Three additional pure builders
@@ -146,7 +148,9 @@ implementation or checks. No main merge, tag or release is authorized here.
   tool ID on PermissionRequest; exact transcript correlation now settles it.
   No global agent settings were changed. See `agent-lifecycle-native-validation.md`.
 - Go tests, focused race tests and Windows cross-compilation cover the
-  transport; the full Go suite is green. Process tests exercise invalid-output restart, the silent-child
+  transport; the full Go suite is green. The inherited parallel-discovery
+  assertion now separates legitimate concurrent Cable ownership from WiFi
+  ownership and passes 20 consecutive runs. Process tests exercise invalid-output restart, the silent-child
   watchdog and cancellation. A real packaged Companion observed the running
   Codex session, cleared activity after helper SIGKILL, restarted automatically
   and reaped the helper on shutdown.

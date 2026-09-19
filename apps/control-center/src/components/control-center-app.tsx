@@ -1382,7 +1382,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
-        setAgents(payload.agents || null);
+      setAgents(payload.agents || null);
       applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
@@ -1944,7 +1944,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setActiveTab("overview");
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
-        setAgents(payload.agents || null);
+      setAgents(payload.agents || null);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(
         payload.setup || {
@@ -3407,11 +3407,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const configureAgent = useCallback(async (source: string, enabled: boolean) => {
-    const result = await runCompanion<{ agents: AgentSnapshot }>("/v1/agents/integrations", {
+    await runCompanion("/v1/agents/integrations", {
       method: "POST", body: JSON.stringify({ source, enabled }),
     });
-    setAgents(result.agents);
-  }, [runCompanion]);
+    await syncLocalStatus();
+  }, [runCompanion, syncLocalStatus]);
 
   const loadUsageMode = useCallback(async () => {
     const revision = ++usageModeRevision.current;

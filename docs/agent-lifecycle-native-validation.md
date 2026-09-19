@@ -47,3 +47,8 @@ This proves the engine/Companion path, not a physical display or real quota read
 Still open: native Windows installation and DPAPI execution, interrupted running tools, helper restart while a native question remains open,
 sleep/resume, other clients' native acceptance, signed upgrade/rollback,
 visible UI approval and separately approved Cable/WiFi device qualification.
+
+Read-only bench check at the end of this run: the installed Companion selected
+`virtual-vibetv-001` at a loopback address (not connected). A complete
+`POST /v1/device/search` returned no devices. No pairing, selection, firmware,
+theme or frame writes were attempted on physical hardware.

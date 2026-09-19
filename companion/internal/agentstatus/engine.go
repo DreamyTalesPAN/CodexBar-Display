@@ -232,9 +232,7 @@ func (e *Engine) Configure(ctx context.Context, source string, enabled bool) (Sn
 	if err != nil {
 		return Snapshot{}, err
 	}
-	value, err := decode(data, time.Now())
-	if err == nil {
-		e.accept(value, time.Now())
-	}
-	return value, err
+	// Only the supervised stream owns the current snapshot. A delayed command
+	// response must not overwrite a newer lifecycle event from that stream.
+	return decode(data, time.Now())
 }
