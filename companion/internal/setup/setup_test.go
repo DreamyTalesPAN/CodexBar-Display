@@ -706,6 +706,7 @@ func TestRunWithDepsRestoresPreviousRuntimeAfterCablePairingFailure(t *testing.T
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:           "darwin",
 		stdout:         &bytes.Buffer{},
 		executablePath: func() (string, error) { return execPath, nil },
 		homeDir:        func() (string, error) { return home, nil },
@@ -1247,6 +1248,7 @@ func TestRunWithDepsRestartsRuntimeAfterReplacementLaunchAgentFails(t *testing.T
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
+		goos:            "darwin",
 		stdout:          &bytes.Buffer{},
 		executablePath:  func() (string, error) { return execPath, nil },
 		homeDir:         func() (string, error) { return home, nil },
@@ -2034,6 +2036,7 @@ func TestCableSetupRejectsWiFiModeBeforePairingOrConfigWrite(t *testing.T) {
 			home := t.TempDir()
 			paired := false
 			err := runWithDeps(context.Background(), Options{Transport: "usb", AssumeYes: true, SkipFlash: skipFlash}, deps{
+				goos:   "darwin",
 				stdout: &bytes.Buffer{}, executablePath: func() (string, error) { return mustCreateExecutable(t), nil },
 				homeDir: func() (string, error) { return home, nil }, uid: func() int { return 501 },
 				resolvePort: func(string) (string, error) { return "/dev/cu.usbserial-test", nil },

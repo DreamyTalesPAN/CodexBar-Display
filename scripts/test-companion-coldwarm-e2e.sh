@@ -2,7 +2,7 @@
 # End-to-end cold/warm start simulation against the protocol-faithful Virtual
 # VibeTV. Exercises the honest-reachability contract:
 #   S1 runtime cold start with the device powered off  -> reconnecting, never connected
-#   S2 device powers on                                -> connected + ready quickly
+#   S2 device powers on                                -> connected + rendered theme quickly
 #   S3 runtime warm restart (device stays on)          -> recovers quickly
 #   S4 device power-cycle                              -> honest drop, fast recovery
 set -euo pipefail
@@ -130,6 +130,11 @@ printf '{}\n' > "$WORK/cold-warm-theme.json"
 status() { curl -s -m 3 "http://${API}/v1/status" 2>/dev/null || echo "{}"; }
 jqget() { python3 -c "import json,sys;d=json.load(sys.stdin);print(json.dumps({k:d.get('device',{}).get(k) for k in ['connected','ready','connectionState','active']}))" 2>/dev/null || echo "{}"; }
 
+# Transport recovery must not require provider authentication. Inspect the
+# theme evidence returned by the Companion, not just the virtual device's HTTP
+# listener: an active theme with a failed render must still fail this test.
+CONNECTED_THEME="d.get('connected') is True and (d.get('display') or {}).get('themeSpec', {}).get('active') is True and (d.get('display') or {}).get('themeSpec', {}).get('path') == '${THEME_PATH}' and (d.get('display') or {}).get('themeSpec', {}).get('renderOk') is True"
+
 wait_for() { # wait_for <timeout-secs> <python-predicate over device dict>
   local deadline=$((SECONDS + $1)) predicate="$2" snap=""
   while (( SECONDS < deadline )); do
@@ -185,8 +190,8 @@ T0=$SECONDS
 start_device
 wait_for 30 "d.get('connected') is True" >/dev/null
 echo "S2a connected after $((SECONDS-T0))s"
-wait_for 60 "d.get('ready') is True and d.get('connectionState') == 'ready'" >/dev/null
-echo "S2 PASS: cold device boot -> connected+ready after $((SECONDS-T0))s"
+wait_for 60 "$CONNECTED_THEME" >/dev/null
+echo "S2 PASS: cold device boot -> connected+rendered theme after $((SECONDS-T0))s"
 
 echo "== S3: runtime warm restart (device stays on) =="
 kill "$RUNTIME_PID"; wait "$RUNTIME_PID" 2>/dev/null || true
@@ -194,20 +199,20 @@ T0=$SECONDS
 start_runtime
 wait_for 30 "d.get('connected') is True" >/dev/null
 echo "S3a connected after $((SECONDS-T0))s"
-wait_for 60 "d.get('ready') is True" >/dev/null
-echo "S3 PASS: runtime warm restart -> connected+ready after $((SECONDS-T0))s"
+wait_for 60 "$CONNECTED_THEME" >/dev/null
+echo "S3 PASS: runtime warm restart -> connected+rendered theme after $((SECONDS-T0))s"
 
 echo "== S4: device power-cycle =="
 kill "$DEVICE_PID"; wait "$DEVICE_PID" 2>/dev/null || true
 T0=$SECONDS
 # Honesty bound: connected must drop within the ready-age window (2min) plus one poll.
-wait_for 150 "d.get('ready') is not True" >/dev/null
+wait_for 150 "d.get('connected') is not True and d.get('ready') is not True" >/dev/null
 echo "S4a honest drop after $((SECONDS-T0))s (bounded by the 2min ready-age window)"
 T0=$SECONDS
 start_device
 wait_for 30 "d.get('connected') is True" >/dev/null
 echo "S4b reconnected after $((SECONDS-T0))s"
-wait_for 60 "d.get('ready') is True" >/dev/null
+wait_for 60 "$CONNECTED_THEME" >/dev/null
 echo "S4 PASS: device power-cycle -> honest drop + recovery after $((SECONDS-T0))s"
 
 echo "ALL SCENARIOS PASS"

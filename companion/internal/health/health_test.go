@@ -149,6 +149,7 @@ func TestRunWithDepsUsesBundledRuntimeWiFiSelection(t *testing.T) {
 	cableCalled := false
 	printedService := ""
 	err := runWithDeps(context.Background(), deps{
+		goos:             "darwin",
 		stdout:           &output,
 		uid:              func() int { return 501 },
 		launchAgentLabel: "com.vibetv.preview.runtime",
@@ -188,6 +189,7 @@ func TestRunWithDepsReadsCableIdentityFromRunningCompanion(t *testing.T) {
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	var output strings.Builder
 	err := runWithDeps(context.Background(), deps{
+		goos:    "darwin",
 		stdout:  &output,
 		uid:     func() int { return 501 },
 		homeDir: func() (string, error) { return home, nil },
