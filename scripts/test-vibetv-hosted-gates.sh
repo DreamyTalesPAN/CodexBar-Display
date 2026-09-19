@@ -444,6 +444,7 @@ main() {
     'one-shot candidate daemon must not keep a companion API server alive'
 
   assert_safe_app_extractor
+  bash "$ROOT/scripts/test-vibetv-runtime-listener-wait.sh"
   printf 'PASS: hosted VibeTV merge and release-candidate gate contracts\n'
 }
 
