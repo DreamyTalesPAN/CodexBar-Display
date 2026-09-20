@@ -142,7 +142,7 @@ func (f Frame) Normalize() Frame {
 		f.ResetSec = 0
 	}
 	f.UsageWindows = normalizeUsageWindows(firstNonEmptyUsageWindows(f.UsageWindows, f.UsageSlots))
-	f = applyLegacyUsageProjection(f)
+	applyLegacyUsageProjection(&f)
 	if protocolVersion >= ProtocolVersionV2 {
 		f.UsageSlots = nil
 	} else {
@@ -279,9 +279,9 @@ func legacyUsageSlots(windows []UsageWindow) []UsageSlot {
 	return out
 }
 
-func applyLegacyUsageProjection(f Frame) Frame {
+func applyLegacyUsageProjection(f *Frame) {
 	if len(f.UsageWindows) == 0 {
-		return f
+		return
 	}
 	// The legacy lanes are named, not positional: a provider whose primary
 	// window is informational (Win-CodexBar's session notice) reports only
@@ -314,7 +314,6 @@ func applyLegacyUsageProjection(f Frame) Frame {
 	}
 	f.SessionUnavailable = !hasSession
 	f.WeeklyUnavailable = !hasWeekly
-	return f
 }
 
 func usageWindowByID(windows []UsageWindow, ids ...string) (UsageWindow, bool) {
