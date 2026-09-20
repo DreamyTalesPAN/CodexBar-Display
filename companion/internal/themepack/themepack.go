@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -120,6 +121,10 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 		case protocol.FeatureColorStopsV1:
 			if !caps.SupportsColorStopsV1 {
 				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureColorStopsV1)
+			}
+		case protocol.FeatureAgentThemeStatesV1:
+			if !caps.SupportsAgentThemeStatesV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureAgentThemeStatesV1)
 			}
 		case protocol.FeatureTextValignV1:
 			if !caps.SupportsTextValignV1 {
@@ -369,6 +374,10 @@ func loadFromReader(readFile func(string) ([]byte, error)) (*Pack, error) {
 		return nil, err
 	}
 
+	if themespec.UsesAgentThemeStates(spec) && !slices.Contains(manifest.RequiredCapabilities, protocol.FeatureAgentThemeStatesV1) {
+		return nil, errors.New("state assets require agent-theme-states-v1 in requiredCapabilities")
+	}
+
 	assets := make([]File, 0, len(manifest.Assets))
 	devicePaths := []string{themeSpecFile.Entry.Path}
 	seenDevicePaths := map[string]struct{}{themeSpecFile.Entry.Path: {}}
@@ -423,6 +432,7 @@ func validateManifestFields(manifest Manifest) error {
 			protocol.FeatureProviderSlotsV1,
 			protocol.FeatureProviderAssetsV1,
 			protocol.FeatureColorStopsV1,
+			protocol.FeatureAgentThemeStatesV1,
 			protocol.FeatureTextValignV1:
 		default:
 			return fmt.Errorf("required capability %q is unsupported", capability)

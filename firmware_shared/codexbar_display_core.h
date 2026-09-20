@@ -147,6 +147,8 @@ struct Frame {
   bool hasUsageMode = false;
   String usageMode;
   String activity;
+  String agentName;
+  bool animationsDisabled = false;
   // Pre-formatted Companion clock strings. Fallback only: the device clock
   // (firmware_shared/device_clock.h) owns {time}/{date} once SNTP answered, and
   // these strings are dropped as soon as they stop being current. Repainting
@@ -776,7 +778,10 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   return ((ThemeSpecUsesBinding(raw, "provider", "pr") || ThemeSpecUsesProviderAssets(raw)) &&
           previous.provider != next.provider) ||
          (usesLabel &&
-          (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
+          (previous.label != next.label || previous.agentName != next.agentName ||
+           (previous.activity != next.activity &&
+            (previous.agentName.length() > 0 || next.agentName.length() > 0)) ||
+           previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
@@ -815,7 +820,10 @@ inline uint32_t ThemeSpecLiveChangedFields(
   if (previous.provider != next.provider) {
     fields |= themespec::kThemeSpecFieldProvider;
   }
-  if (previous.label != next.label || previous.updateAvailable != next.updateAvailable) {
+  if (previous.label != next.label || previous.agentName != next.agentName ||
+      (previous.activity != next.activity &&
+       (previous.agentName.length() > 0 || next.agentName.length() > 0)) ||
+      previous.updateAvailable != next.updateAvailable) {
     fields |= themespec::kThemeSpecFieldLabel;
   }
   if (previous.session != next.session) {
@@ -1147,6 +1155,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     out.hasUsageMode = hasUsageMode;
     out.usageMode = usageMode;
     out.activity = activity;
+    out.agentName = String(doc["agentName"] | "");
+    if (out.agentName.length() > 40) out.agentName = "Agent";
+    out.animationsDisabled = doc["animationsDisabled"] | false;
     out.timeText = String(doc["time"] | "");
     out.dateText = String(doc["date"] | "");
     out.hasClockSchedule = hasClockSchedule;
@@ -1249,6 +1260,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
   out.activity = activity;
+  out.agentName = String(doc["agentName"] | "");
+  if (out.agentName.length() > 40) out.agentName = "Agent";
+  out.animationsDisabled = doc["animationsDisabled"] | false;
   out.clearThemeSpec = clearThemeSpec;
   out.hasThemeSpec = hasThemeSpec;
   out.themeSpecId = themeSpecId;
@@ -1288,7 +1302,9 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.totalTokens != next.totalTokens ||
                                      previous.hasUsageMode != next.hasUsageMode ||
                                      previous.usageMode != next.usageMode ||
-                                     previous.activity != next.activity;
+                                     previous.activity != next.activity ||
+                                     previous.agentName != next.agentName ||
+                                     previous.animationsDisabled != next.animationsDisabled;
   const bool themeIdentityChanged =
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
@@ -1457,7 +1473,8 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
 // Only the new explicit lifecycle contract uses this lease. Older Companions
 // send coding/idle at a slower cadence and retain their compatibility behavior.
 inline bool ExpireAgentActivity(RuntimeState& state, unsigned long nowMillis) {
-  if (!state.hasFrame || !agentactivity::HasLease(state.current.activity.c_str()) ||
+  const bool explicitIdle = state.current.agentName.length() > 0 && state.current.activity == "idle";
+  if (!state.hasFrame || (!explicitIdle && !agentactivity::HasLease(state.current.activity.c_str())) ||
       nowMillis - state.resetBaseMillis < 15000UL) return false;
   state.current.activity = "unavailable";
   return true;

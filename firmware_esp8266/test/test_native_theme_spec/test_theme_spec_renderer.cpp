@@ -2538,6 +2538,54 @@ void testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass() {
   TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", codingAnimatedSink.commands[0].assetPath.c_str());
 }
 
+void testAgentAnnouncementIsTwoHardPulses() {
+  codexbar_display::agentactivity::Announcement a;
+  TEST_ASSERT_FALSE(a.Update("idle", true, false, 1000));
+  TEST_ASSERT_TRUE(a.Update("working", true, false, 2000));
+  TEST_ASSERT_TRUE(a.Update("tool_use", true, false, 2199));
+  TEST_ASSERT_FALSE(a.Update("thinking", true, false, 2200));
+  TEST_ASSERT_FALSE(a.Update("working", true, false, 2349));
+  TEST_ASSERT_TRUE(a.Update("working", true, false, 2350));
+  TEST_ASSERT_TRUE(a.Update("working", true, false, 2549));
+  TEST_ASSERT_FALSE(a.Update("working", true, false, 2550));
+  TEST_ASSERT_FALSE(a.Update("working", true, false, 3000));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_permission", true, false, 4000));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", false, false, 4050));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, false, 4100));
+  TEST_ASSERT_FALSE(a.Update("done", true, true, 5000));
+  TEST_ASSERT_TRUE(a.Update("error", true, false, 6000));
+  TEST_ASSERT_FALSE(a.Update("unavailable", true, false, 6100));
+  TEST_ASSERT_FALSE(a.Update("idle", true, false, 6200));
+  a = {};
+  TEST_ASSERT_FALSE(a.Update("done", true, false, 0xFFFFFF00u));
+  TEST_ASSERT_TRUE(a.Update("error", true, false, 0xFFFFFFF0u));
+  TEST_ASSERT_FALSE(a.Update("error", true, false, 0x00000216u));
+}
+
+void testAgentStateAssetsAndStatusKeepUsageIndependent() {
+  const char* spec = R"JSON({"v":1,"id":"states","rev":1,"p":[
+    {"t":"sp","x":0,"y":30,"w":40,"h":40,"sa":{"idle":"/i.cbi","coding":"/w.cba","needs_you":"/n.cba","done":"/d.cbi","error":"/e.cba"}},
+    {"t":"tx","x":0,"y":0,"b":"l","c":"#FFFFFF"}]})JSON";
+  FrameData frame = testFrame();
+  frame.provider = "claude";
+  frame.label = "Claude";
+  frame.agentName = "Codex";
+  const char* phases[] = {"tool_use", "waiting_for_review", "done", "error", "idle", "stale"};
+  const char* assets[] = {"/w.cba", "/n.cba", "/d.cbi", "/e.cba", "/i.cbi", "/i.cbi"};
+  const char* labels[] = {"Codex is working", "Codex needs you", "Codex is done", "Codex hit an error", "Nothing running", "Agent status unavailable"};
+  for (size_t i = 0; i < 6; ++i) {
+    frame.activity = phases[i];
+    RecordingSink sink;
+    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+    TEST_ASSERT_EQUAL_STRING(assets[i], sink.commands[1].assetPath.c_str());
+    TEST_ASSERT_EQUAL_STRING(labels[i], codexbar_display::themespec::LabelText(frame));
+  }
+  frame.updateAvailable = true;
+  frame.showUpdateNotice = true;
+  frame.updateNotice = "Update available";
+  TEST_ASSERT_EQUAL_STRING("Update available", codexbar_display::themespec::LabelText(frame));
+}
+
 void testAgentActivityExpiresWithoutChangingUsage() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2551,6 +2599,17 @@ void testAgentActivityExpiresWithoutChangingUsage() {
   TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 17000));
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 18000, event));
   TEST_ASSERT_EQUAL_STRING("tool_use", state.current.activity.c_str());
+}
+
+void testObservedIdleExpiresButLegacyIdleDoesNot() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"claude","session":10,"activity":"idle","agentName":"Codex"})JSON", 1000, event));
+  TEST_ASSERT_TRUE(codexbar_display::core::ExpireAgentActivity(state, 16000));
+  TEST_ASSERT_EQUAL_STRING("unavailable", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 17000));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"claude","session":10,"activity":"idle"})JSON", 18000, event));
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 34000));
 }
 
 void testFrameActivityDefaultsToCodingWhenUsageChanges() {
@@ -3598,6 +3657,9 @@ int main() {
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testObservedIdleExpiresButLegacyIdleDoesNot);
+  RUN_TEST(testAgentAnnouncementIsTwoHardPulses);
+  RUN_TEST(testAgentStateAssetsAndStatusKeepUsageIndependent);
   RUN_TEST(testAgentActivityExpiresWithoutChangingUsage);
   RUN_TEST(testUsageProgressIgnoresTokenHistoryExpiryAndRestore);
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);

@@ -115,6 +115,8 @@ struct FirmwareUpdateOverlayPlacement {
 
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
+void TickThemeSpecAnnouncement();
+void ResetThemeSpecAnnouncement();
 bool ThemeSpecAnimationWorkPending();
 void MarkThemeSpecCountdownsRendered();
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);

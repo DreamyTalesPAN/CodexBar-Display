@@ -493,8 +493,9 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	missingProviderSlots := isMissingUsageCapabilityError(err, protocol.FeatureProviderSlotsV1)
 	missingProviderAssets := isMissingUsageCapabilityError(err, protocol.FeatureProviderAssetsV1)
 	missingColorStops := isMissingUsageCapabilityError(err, protocol.FeatureColorStopsV1)
+	missingAgentStates := isMissingUsageCapabilityError(err, protocol.FeatureAgentThemeStatesV1)
 	missingTextValign := isMissingUsageCapabilityError(err, protocol.FeatureTextValignV1)
-	if (!missingSlots || caps.SupportsUsageSlotsV1) &&
+	if (!missingAgentStates || caps.SupportsAgentThemeStatesV1) && (!missingSlots || caps.SupportsUsageSlotsV1) &&
 		(!missingWindows || caps.SupportsUsageWindowsV1) &&
 		(!missingProviderSlots || caps.SupportsProviderSlotsV1) &&
 		(!missingProviderAssets || caps.SupportsProviderAssetsV1) &&
@@ -509,6 +510,7 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	updatedCaps.SupportsProviderAssetsV1 = true
 	updatedCaps.SupportsColorStopsV1 = true
 	updatedCaps.SupportsTextValignV1 = true
+	updatedCaps.SupportsAgentThemeStatesV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 

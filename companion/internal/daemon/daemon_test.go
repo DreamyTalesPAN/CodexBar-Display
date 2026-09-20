@@ -6833,3 +6833,15 @@ func TestDeviceActivityNegotiatesOldFirmwareWithoutChangingSource(t *testing.T) 
 		}
 	}
 }
+
+func TestAgentPresentationNegotiatesIndependentlyOfActivity(t *testing.T) {
+	frame := protocol.Frame{Activity: "waiting_for_answer", AgentName: "Codex", AnimationsDisabled: true}
+	activityOnly := protocol.DeviceCapabilities{SupportsAgentActivityV1: true}
+	if got := applyDeviceActivity(frame, activityOnly); got.Activity != frame.Activity || got.AgentName != "" || got.AnimationsDisabled {
+		t.Fatalf("old firmware: %+v", got)
+	}
+	activityOnly.SupportsAgentThemeStatesV1 = true
+	if got := applyDeviceActivity(frame, activityOnly); got.AgentName != "Codex" || !got.AnimationsDisabled {
+		t.Fatalf("modern firmware: %+v", got)
+	}
+}

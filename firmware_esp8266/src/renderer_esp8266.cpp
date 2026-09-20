@@ -193,6 +193,7 @@ void RendererESP8266::DrawStatus(
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::GifCore().ReleaseMemory();
+  display::ResetThemeSpecAnnouncement();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
@@ -249,6 +250,7 @@ void RendererESP8266::DrawConnectedSetupInstructions(
     const String& fallbackIp) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  display::ResetThemeSpecAnnouncement();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
@@ -429,6 +431,7 @@ bool RendererESP8266::ClearFirmwareUpdateNoticeSurface(app::RuntimeContext& ctx)
 void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  display::TickThemeSpecAnnouncement();
   if (display::CurrentFrame().hasThemeSpec) {
     (void)display::TickThemeSpecGifs();
     return;

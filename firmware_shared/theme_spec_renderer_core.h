@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "agent_activity.h"
 #include <new>
 
 #include "usage_window_contract.h"
@@ -82,6 +83,7 @@ struct FrameData {
   bool weeklyUnavailable = false;
   const char* usageMode = "";
   const char* activity = "idle";
+  const char* agentName = "";
   const char* time = "";
   const char* date = "";
   int64_t sessionTokens = 0;
@@ -216,6 +218,9 @@ struct CompiledPrimitive {
   const char* assetPath = "";
   const char* idleAssetPath = nullptr;
   const char* codingAssetPath = nullptr;
+  const char* needsYouAssetPath = nullptr;
+  const char* doneAssetPath = nullptr;
+  const char* errorAssetPath = nullptr;
   uint8_t providerAssetStart = 0;
   uint8_t providerAssetCount = 0;
   const char* data = "";
@@ -257,6 +262,9 @@ inline bool CompiledThemeSpecReferencesAsset(
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const CompiledPrimitive& primitive = scene.primitives[i];
     if (std::strcmp(primitive.assetPath, assetPath) == 0 ||
+        (primitive.errorAssetPath && std::strcmp(primitive.errorAssetPath, assetPath) == 0) ||
+        (primitive.doneAssetPath && std::strcmp(primitive.doneAssetPath, assetPath) == 0) ||
+        (primitive.needsYouAssetPath && std::strcmp(primitive.needsYouAssetPath, assetPath) == 0) ||
         (primitive.idleAssetPath != nullptr &&
          std::strcmp(primitive.idleAssetPath, assetPath) == 0) ||
         (primitive.codingAssetPath != nullptr &&
@@ -535,6 +543,11 @@ inline const char* SafeText(const char* value) {
 inline const char* LabelText(const FrameData& frame) {
   if (frame.updateAvailable && frame.showUpdateNotice && SafeText(frame.updateNotice)[0] != '\0') {
     return SafeText(frame.updateNotice);
+  }
+  if (SafeText(frame.agentName)[0] != '\0') {
+    static char status[72];
+    agentactivity::StatusText(frame.activity, frame.agentName, status, sizeof(status));
+    return status;
   }
   return SafeText(frame.label);
 }
@@ -1142,6 +1155,9 @@ inline bool CountCompiledThemeSpecStorage(
       JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
       AddCompiledStringStorage(JsonStringOrNull(stateAssets["idle"]), plan.stringPoolCapacity);
       AddCompiledStringStorage(JsonStringOrNull(stateAssets["coding"]), plan.stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringOrNull(stateAssets["error"]), plan.stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringOrNull(stateAssets["done"]), plan.stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringOrNull(stateAssets["needs_you"]), plan.stringPoolCapacity);
       if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
         AddProviderAssetsStorage(
             JsonObjectFor(primitive, "providerAssets", "pa"),
@@ -1172,7 +1188,11 @@ inline const char* CompiledStateAssetPathFor(
     }
   }
   const char* activity = frame.activity == nullptr ? "" : frame.activity;
-  if (std::strcmp(activity, "coding") == 0 &&
+  const auto state = agentactivity::DisplayState(activity);
+  if (state == agentactivity::State::NeedsYou && primitive.needsYouAssetPath) return primitive.needsYouAssetPath;
+  if (state == agentactivity::State::Done && primitive.doneAssetPath) return primitive.doneAssetPath;
+  if (state == agentactivity::State::Error && primitive.errorAssetPath) return primitive.errorAssetPath;
+  if (state == agentactivity::State::Working &&
       primitive.codingAssetPath != nullptr &&
       primitive.codingAssetPath[0] != '\0') {
     return primitive.codingAssetPath;
@@ -1189,6 +1209,9 @@ inline bool CompiledPrimitiveHasAssetReference(
   if (primitive.assetPath != nullptr && primitive.assetPath[0] != '\0') {
     return true;
   }
+  if (primitive.needsYouAssetPath != nullptr) return true;
+  if (primitive.doneAssetPath != nullptr) return true;
+  if (primitive.errorAssetPath != nullptr) return true;
   if (primitive.idleAssetPath != nullptr && primitive.idleAssetPath[0] != '\0') {
     return true;
   }
@@ -1224,6 +1247,21 @@ inline const char* CopyCompiledString(CompiledThemeSpec& scene, const char* valu
 inline bool CompileStateAssets(CompiledThemeSpec& scene, JsonObjectConst stateAssets, CompiledPrimitive& out) {
   if (stateAssets.isNull()) {
     return true;
+  }
+  const char* needsYouAssetPath = JsonStringOrNull(stateAssets["needs_you"]);
+  if (needsYouAssetPath && needsYouAssetPath[0]) {
+    out.needsYouAssetPath = CopyCompiledString(scene, needsYouAssetPath);
+    if (!out.needsYouAssetPath) return false;
+  }
+  const char* doneAssetPath = JsonStringOrNull(stateAssets["done"]);
+  if (doneAssetPath && doneAssetPath[0]) {
+    out.doneAssetPath = CopyCompiledString(scene, doneAssetPath);
+    if (!out.doneAssetPath) return false;
+  }
+  const char* errorAssetPath = JsonStringOrNull(stateAssets["error"]);
+  if (errorAssetPath && errorAssetPath[0]) {
+    out.errorAssetPath = CopyCompiledString(scene, errorAssetPath);
+    if (!out.errorAssetPath) return false;
   }
   const char* idlePath = JsonStringOrNull(stateAssets["idle"]);
   const char* codingPath = JsonStringOrNull(stateAssets["coding"]);
@@ -1388,7 +1426,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
-    out.liveFields |= (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
+    out.liveFields |= (out.idleAssetPath || out.codingAssetPath || out.needsYouAssetPath || out.doneAssetPath || out.errorAssetPath) ? kThemeSpecFieldActivity : 0;
     hasAnimatedAssets = true;
     if (out.width <= 0 || out.height <= 0 ||
         out.width > kMaxThemeSpecGifWidth ||
@@ -1401,7 +1439,10 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
            initialPath[0] != '\0' &&
            AssetPathLooksGif(initialPath) &&
            (out.idleAssetPath == nullptr || AssetPathLooksGif(out.idleAssetPath)) &&
-           (out.codingAssetPath == nullptr || AssetPathLooksGif(out.codingAssetPath));
+           (out.codingAssetPath == nullptr || AssetPathLooksGif(out.codingAssetPath)) &&
+           (out.needsYouAssetPath == nullptr || AssetPathLooksGif(out.needsYouAssetPath)) &&
+           (out.doneAssetPath == nullptr || AssetPathLooksGif(out.doneAssetPath)) &&
+           (out.errorAssetPath == nullptr || AssetPathLooksGif(out.errorAssetPath));
   }
 
   if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
@@ -1422,7 +1463,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
-    out.liveFields |= (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
+    out.liveFields |= (out.idleAssetPath || out.codingAssetPath || out.needsYouAssetPath || out.doneAssetPath || out.errorAssetPath) ? kThemeSpecFieldActivity : 0;
     for (uint8_t i = 0; i < out.providerAssetCount; ++i) {
       const char* path = scene.providerAssets[out.providerAssetStart + i].path;
       if (AssetPathLooksAnimated(path)) {
@@ -1431,6 +1472,9 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
       }
     }
     hasAnimatedAssets = hasAnimatedAssets ||
+                        AssetPathLooksAnimated(out.needsYouAssetPath) ||
+                        AssetPathLooksAnimated(out.doneAssetPath) ||
+                        AssetPathLooksAnimated(out.errorAssetPath) ||
                         AssetPathLooksAnimated(out.assetPath) ||
                         AssetPathLooksAnimated(out.idleAssetPath) ||
                         AssetPathLooksAnimated(out.codingAssetPath);

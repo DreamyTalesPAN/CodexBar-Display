@@ -54,6 +54,27 @@ type Snapshot struct {
 	Sources          []Source  `json:"sources"`
 }
 
+// DisplayName labels only sources contributing to the engine's aggregate phase.
+// It does not choose a phase, quota provider, or session on the engine's behalf.
+func (s Snapshot) DisplayName() string {
+	sourceID := ""
+	for _, session := range s.Sessions {
+		if session.Phase != s.Phase {
+			continue
+		}
+		if sourceID != "" && sourceID != session.Source {
+			return "Agent"
+		}
+		sourceID = session.Source
+	}
+	for _, source := range s.Sources {
+		if source.ID == sourceID && strings.TrimSpace(source.Name) != "" && len(source.Name) <= 40 {
+			return strings.Join(strings.Fields(source.Name), " ")
+		}
+	}
+	return "Agent"
+}
+
 func ValidPhase(value string) bool {
 	switch value {
 	case "idle", "working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "unavailable":

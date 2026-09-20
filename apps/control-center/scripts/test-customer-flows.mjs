@@ -9871,7 +9871,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     companionVersion: "1.0.33",
     device: {
       ...companionDevice,
-      firmware: "1.0.40",
+      firmware: "1.0.42",
       display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } },
       capabilities: {
         ...companionDevice.capabilities,
@@ -9879,6 +9879,8 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
           supportsThemeSpecV1: true,
           supportsUsageSlotsV1: true,
           supportsStoredThemes: true,
+          supportsTextValignV1: true,
+          supportsAgentThemeStatesV1: true,
         },
       },
     },

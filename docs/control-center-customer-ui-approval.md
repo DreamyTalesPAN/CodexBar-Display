@@ -4639,3 +4639,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Same explicitly approved recovery behavior above; review regression coverage only extends the sequence leading into it.
 - Approved customer-visible result: A stale selection of a disconnected cable device does not hide WiFi devices found by the next scan. Explicit WiFi recovery returns to the existing device picker, and another identity still requires its own Connect action.
 - Scope: Clear the stale candidate filter in the existing WiFi recovery branch and test the failed-cable-to-WiFi sequence. No new controls, copy, merge, or release.
+
+
+## 2026-09-20 — Approved agent theme states and shared announcement
+
+- User approval: Paul approved the theme preview ("Top. Das so einarbeiten ins Claude Design."), explicitly specified the two full-theme inversions and existing status line, authorized integrating the bundles on the feature branch, and requested the updated Claude Creature sprites from the same design.
+- Approved customer-visible result: Existing theme label shows the actual agent (for example "Codex is working", "Codex needs you", "Codex is done", "Codex hit an error", or "Nothing running"). Themes use their approved state sprites; a missing sprite triggers two hard full-frame inversions at 0–200 and 350–550 ms. Nothing running stays quiet, disabling motion restores normal colors, and firmware notices retain priority. Mini uses the approved small props beside its eyes, Tiny Office uses the approved poses, and Creature uses the current Claude Design poses.
+- Scope: Theme bundles and their existing live/Theme Studio previews, shared device rendering, compatibility checks, and regression tests. This does not approve a new Control Center lifecycle page, hardware writes, main merge, or release.

@@ -266,6 +266,9 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if specUsesColorStops(spec) && !caps.SupportsColorStopsV1 {
 		return errors.New("device does not advertise color-stops-v1 support")
 	}
+	if UsesAgentThemeStates(spec) && !caps.SupportsAgentThemeStatesV1 {
+		return errors.New("device does not advertise agent-theme-states-v1 support")
+	}
 	if specUsesTextValign(spec) && !caps.SupportsTextValignV1 {
 		return errors.New("device does not advertise text-valign-v1 support")
 	}
@@ -803,8 +806,8 @@ func validateSpriteAssetReferences(p Primitive) error {
 		if !stateNamePattern.MatchString(state) {
 			return fmt.Errorf("stateAssets state %q must match [a-z0-9][a-z0-9_-]{0,31}", state)
 		}
-		if state != "idle" && state != "coding" {
-			return fmt.Errorf("stateAssets state %q is unsupported; use idle or coding", state)
+		if state != "idle" && state != "coding" && state != "needs_you" && state != "done" && state != "error" {
+			return fmt.Errorf("stateAssets state %q is unsupported; use idle, coding, needs_you, done or error", state)
 		}
 		if !isSafeThemeAssetPath(assetPath) {
 			return fmt.Errorf("stateAssets[%s] must be under /themes/", state)
@@ -975,6 +978,9 @@ func compiledThemeSpecStringBytes(spec Spec) int {
 			if primitive.StateAssets != nil {
 				addCompiledStringStorage(primitive.StateAssets["idle"], &stringBytes)
 				addCompiledStringStorage(primitive.StateAssets["coding"], &stringBytes)
+				addCompiledStringStorage(primitive.StateAssets["error"], &stringBytes)
+				addCompiledStringStorage(primitive.StateAssets["done"], &stringBytes)
+				addCompiledStringStorage(primitive.StateAssets["needs_you"], &stringBytes)
 			}
 			if primitive.Type == "gif" {
 				break
@@ -1124,6 +1130,18 @@ func containsString(values []string, candidate string) bool {
 	for _, value := range values {
 		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(candidate)) {
 			return true
+		}
+	}
+	return false
+}
+
+// UsesAgentThemeStates requires the versioned renderer, even without a manifest.
+func UsesAgentThemeStates(spec Spec) bool {
+	for _, p := range spec.Primitives {
+		for state := range p.StateAssets {
+			if state != "idle" && state != "coding" {
+				return true
+			}
 		}
 	}
 	return false

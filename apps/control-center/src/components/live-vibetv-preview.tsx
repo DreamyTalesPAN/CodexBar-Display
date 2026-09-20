@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { agentThemeState, agentStatusText } from "@/lib/agent-theme-state";
 import Image from "next/image";
+import { staticGif } from "@/lib/static-gif";
 import type { ReactNode } from "react";
 import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
 import {
@@ -83,6 +85,8 @@ type DisplayFrame = {
   usageSlots?: UsageSlotFrame[];
   providerSlots?: UsageSlotFrame[];
   activity?: string;
+  agentName?: string;
+  animationsDisabled?: boolean;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
@@ -191,6 +195,8 @@ export type FrameData = {
     available: boolean;
   }>;
   activity: string;
+  agentName?: string;
+  animationsDisabled?: boolean;
   sessionTokens: number;
   weekTokens: number;
   totalTokens: number;
@@ -619,6 +625,15 @@ function VibeTVCaseShell({ children }: { children: ReactNode }) {
   );
 }
 
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+function subscribeReducedMotion(changed: () => void) {
+  const media = window.matchMedia(reducedMotionQuery);
+  media.addEventListener("change", changed);
+  return () => media.removeEventListener("change", changed);
+}
+function reducedMotionSnapshot() { return window.matchMedia(reducedMotionQuery).matches; }
+function serverReducedMotionSnapshot() { return false; }
+
 function ThemeSpecSVG({
   animate = true,
   assets,
@@ -632,16 +647,47 @@ function ThemeSpecSVG({
   spec: ThemeSpec;
   themeId: string;
 }) {
+  const svgRef = useRef<SVGSVGElement>(null);
   const sprites = useMemo(() => decodeSpriteAssets(assets), [assets]);
   const primitives = spec.primitives || spec.p || [];
+  const state = agentThemeState(frame.activity);
+  const dedicated = primitives.some(p => {
+    const asset = (p.stateAssets || p.sa)?.[state];
+    return Boolean(asset && asset === activeAssetPath(p, frame));
+  });
+  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, reducedMotionSnapshot, serverReducedMotionSnapshot);
+  const motionEnabled = animate && !frame.animationsDisabled && !reducedMotion;
+  const hasAgentStatus = Boolean(frame.agentName);
+  const lastState = useRef({ state, themeId });
+  // A mount, provider rotation, usage refresh, or theme switch is no new event.
+  useEffect(() => {
+    const changed = lastState.current.themeId === themeId && lastState.current.state !== state;
+    lastState.current = { state, themeId };
+    const node = svgRef.current;
+    if (!node || !changed || !motionEnabled || !hasAgentStatus || dedicated || ["idle", "unavailable"].includes(state)) return;
+    const animation = node.animate([
+      { filter: "invert(1)", offset: 0, easing: "step-end" },
+      { filter: "invert(0)", offset: 200 / 550, easing: "step-end" },
+      { filter: "invert(1)", offset: 350 / 550, easing: "step-end" },
+      { filter: "invert(0)", offset: 1 },
+    ], { duration: 550 });
+    return () => animation.cancel();
+  }, [state, motionEnabled, dedicated, hasAgentStatus, themeId]);
+  const renderedFrame = frame.agentName ? { ...frame, label: agentStatusText(frame.activity, frame.agentName) } : frame;
   const animationFps = useMemo(
-    () => (animate ? maximumAnimatedSpriteFps(sprites) : 0),
-    [animate, sprites],
+    () => (motionEnabled ? maximumAnimatedSpriteFps(sprites) : 0),
+    [motionEnabled, sprites],
   );
   const animationTick = useAnimationTick(animationFps);
+  const renderedAssets = useMemo(() => motionEnabled ? assets : Object.fromEntries(
+    Object.entries(assets).map(([path, asset]) => [path,
+      asset.contentType === "image/gif" && asset.encoding === "base64"
+        ? { ...asset, data: staticGif(asset.data) } : asset]),
+  ), [assets, motionEnabled]);
   return (
     <svg
-      aria-label={themeSpecAriaLabel(themeId, frame)}
+      ref={svgRef}
+      aria-label={themeSpecAriaLabel(themeId, renderedFrame)}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -653,9 +699,9 @@ function ThemeSpecSVG({
       />
       {primitives.map((primitive, index) => (
         <ThemePrimitiveNode
-          assets={assets}
+          assets={renderedAssets}
           animationTick={animationTick}
-          frame={frame}
+          frame={renderedFrame}
           key={index}
           primitive={primitive}
           sprites={sprites}
@@ -1296,6 +1342,8 @@ export function buildFrameData(
         available: true,
       })),
     activity: displayFrame.activity || "idle",
+    agentName: displayFrame.agentName,
+    animationsDisabled: displayFrame.animationsDisabled,
     sessionTokens: displayFrame.sessionTokens ?? 0,
     hasTokenTotals:
       displayFrame.tokenTotalsKnown === true ||
@@ -1686,8 +1734,8 @@ function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
     return providerAssets[provider];
   }
   const stateAssets = primitive.stateAssets || primitive.sa || {};
-  if (frame.activity === "coding" && stateAssets.coding) {
-    return stateAssets.coding;
+  if (stateAssets[agentThemeState(frame.activity)]) {
+    return stateAssets[agentThemeState(frame.activity)];
   }
   return stateAssets.idle || primitive.assetPath || primitive.a || "";
 }

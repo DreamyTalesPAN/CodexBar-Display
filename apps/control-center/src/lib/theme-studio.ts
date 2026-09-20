@@ -598,6 +598,7 @@ function compiledThemeSpecStringBytes(
       stringBytes += compiledStringBytes(primitive.assetPath);
       stringBytes += compiledStringBytes(primitive.stateAssets?.idle);
       stringBytes += compiledStringBytes(primitive.stateAssets?.coding);
+      for (const state of ["needs_you", "done", "error"]) stringBytes += compiledStringBytes(primitive.stateAssets?.[state]);
       if (primitive.type === "sprite") {
         for (const [provider, assetPath] of Object.entries(
           primitive.providerAssets || {},
@@ -708,6 +709,7 @@ export function buildThemePack(
     ...(usesProviderAssets ? ["provider-assets-v1"] : []),
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
+    ...(themeStudioSpecUsesAgentStates(normalized) ? ["agent-theme-states-v1"] : []),
   ];
   const minFirmware =
     usesProviderAssets || usesColorStops || usesTextValign
@@ -1198,8 +1200,8 @@ function validateThemeAssetPaths(
     if (!STATE_NAME_RE.test(stateName)) {
       errors.push(`${prefix}: state name ${stateName} is not supported.`);
     }
-    if (stateName !== "idle" && stateName !== "coding") {
-      errors.push(`${prefix}: use idle or coding for state assets.`);
+    if (!["idle", "coding", "needs_you", "done", "error"].includes(stateName)) {
+      errors.push(`${prefix}: use idle, coding, needs_you, done or error for state assets.`);
     }
     validateThemeAssetPath(assetPath, prefix, errors);
   }
@@ -1928,4 +1930,8 @@ function colorStopsValue(
     result.push({ gte, color });
   }
   return result.sort((a, b) => b.gte - a.gte);
+}
+
+export function themeStudioSpecUsesAgentStates(spec: ThemeStudioSpec): boolean {
+  return spec.primitives.some(p => Object.keys(p.stateAssets || {}).some(key => !["idle", "coding"].includes(key)));
 }

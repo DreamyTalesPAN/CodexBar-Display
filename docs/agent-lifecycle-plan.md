@@ -197,3 +197,42 @@ No device writes were performed.
   interrupted tools, sleep/resume and hook-wait recovery cases, signed cold/warm update,
   exact visible UI approval, real device Cable/WiFi transitions and exact-SHA
   CI/review. No hardware writes, merges or releases were performed.
+
+## Theme implementation, 2026-09-20
+
+The approved device treatment is now implemented on this feature branch:
+central agent label, five-state asset selection, and exactly two full-panel
+inversions for states without custom assets. The new `agent-theme-states-v1`
+capability gates packs and wire fields. Mini 1.2.0, Tiny Office 0.7.0, Claude
+Creature 1.3.0, Synthwave 1.2.0, and Pixel Battery 1.17.0 are versioned together
+with the runtime. Battery/Synthwave and future themes reuse the shared fallback
+without per-theme announcement assets. Synthwave uses font 2 in its existing
+heading slot; Battery uses four more pixels of its empty right margin so the
+observed Claude Code error label fits.
+
+The separate Control Center lifecycle presentation removed above remains outside
+this theme implementation. Native Windows, signed update, and physical-device
+release evidence is still required; local builds cannot substitute for it.
+
+Local validation for this theme implementation:
+
+- 687 Control Center unit tests, TypeScript, lint (three pre-existing warnings),
+  customer-copy and UI review gates pass. Full customer browser flows and the
+  separate Theme Studio safety suite pass; the Studio fixture now advertises
+  the text-alignment and state capabilities of the firmware it simulates.
+- 153 native firmware tests and both ESP8266/ESP32 builds pass. Coverage includes
+  pulse boundaries and timer wrap, quiet activation/idle, dedicated assets,
+  animation-off, notice priority, and expiry of explicit idle observations.
+- 66 packaged engine tests, Go tests/vet/staticcheck, frame budget/soak checks,
+  virtual-device cold/warm and provider-less theme-install checks pass.
+- Theme source, ZIP and immutable-history checks pass. Original Office baseline
+  frames are reconstructed pixel-for-pixel; the Mini eyes GIF is unchanged.
+  The production preview was inspected in a browser with all five render packs,
+  including hard inversion steps, state changes, and animation-off.
+
+The next physical canary must check controller inversion polarity and two visible
+pulses, six-tile Office cadence/heap under WiFi load, sprite transitions, update
+notice priority, and writer-loss expiry over both Cable and WiFi. No connected
+VibeTV was written to. This remains a feature-branch candidate; publishing packs,
+merging main, and release actions are separate approvals. CI/review evidence is
+recorded on the PR for its exact pushed head.

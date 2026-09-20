@@ -100,6 +100,8 @@ type Frame struct {
 	// cannot tell a genuine all-zero history from an unavailable one.
 	TokenTotalsKnown      bool            `json:"tokenTotalsKnown,omitempty"`
 	Activity              string          `json:"activity,omitempty"`
+	AgentName             string          `json:"agentName,omitempty"`
+	AnimationsDisabled    bool            `json:"animationsDisabled,omitempty"`
 	Theme                 string          `json:"theme,omitempty"`
 	ThemeSpec             json.RawMessage `json:"themeSpec,omitempty"`
 	ConfirmClearThemeSpec bool            `json:"confirmClearThemeSpec,omitempty"`
@@ -177,6 +179,10 @@ func (f Frame) Normalize() Frame {
 		f.NextClockTransition = nil
 	}
 	f.Activity = normalizeActivity(f.Activity)
+	f.AgentName = strings.Join(strings.Fields(f.AgentName), " ")
+	if len(f.AgentName) > 40 {
+		f.AgentName = "Agent"
+	}
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
 		f.ThemeSpec = nil

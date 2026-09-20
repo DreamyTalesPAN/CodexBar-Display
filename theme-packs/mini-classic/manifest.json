@@ -3,16 +3,17 @@
   "schemaVersion": 1,
   "id": "mini-classic",
   "name": "Mini Classic",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "minFirmware": "1.0.40",
   "requiredCapabilities": [
-    "usage-slots-v1"
+    "usage-slots-v1",
+    "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/mini-cl-6-024b0e.json",
+    "path": "/themes/u/mini-cl-7-221c36.json",
     "file": "theme.json",
-    "bytes": 897,
-    "sha256": "abd55c4d79237626ff6d0b006d67aa1a90be2f32a6c831a3165fc7319f95788e",
+    "bytes": 1162,
+    "sha256": "221c367dc14770b5e50f485b2c07b838b8ed17291e44222719b61b6282b16038",
     "contentType": "application/json"
   },
   "assets": [
@@ -22,6 +23,41 @@
       "bytes": 20870,
       "sha256": "146563e7d7ce76589f50ea80977c1f8cb32a15468a4a9f3da4152c4de1b37230",
       "contentType": "image/gif"
+    },
+    {
+      "path": "/themes/u/mi-blank.cbi",
+      "file": "assets/mi-blank.cbi",
+      "bytes": 21,
+      "sha256": "fd1971f14e7d86f5eeea02d7c0bc9fc7aa019c1e83770a646d1cb998cb3bc04a",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/mi-working.cba",
+      "file": "assets/mi-working.cba",
+      "bytes": 6970,
+      "sha256": "7a33e570c17ffd5c2463c0220a23cbcd75a5caa3f092ed8cb8fecdab860ef5e6",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/mi-needs.cba",
+      "file": "assets/mi-needs.cba",
+      "bytes": 4759,
+      "sha256": "31226a8ef913d7bbb634fe774e6a3498ebc23f12471b7aa3b4e7efb30a0c7885",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/mi-finished.cba",
+      "file": "assets/mi-finished.cba",
+      "bytes": 5966,
+      "sha256": "20dbe9663c6fca1f71d330ac9d3b3f709e3d9ac6d83cd8f64154316e26dd3f54",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/mi-error.cba",
+      "file": "assets/mi-error.cba",
+      "bytes": 7719,
+      "sha256": "b878f6028ed1efecb4d53c28ccdc26309430ad53cef7cd26b52281783d30308f",
+      "contentType": "text/plain"
     }
   ]
 }

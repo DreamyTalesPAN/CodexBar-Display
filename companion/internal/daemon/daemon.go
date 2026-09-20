@@ -1389,10 +1389,12 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 // timestamps remain usage facts and cannot keep an agent marked as working.
 func applyAgentActivity(frame protocol.Frame, state *runtimeState) (protocol.Frame, string) {
 	frame.Activity = "unavailable"
+	frame.AgentName = "Agent"
 	if state != nil && state.agentSnapshot != nil {
 		snapshot := state.agentSnapshot()
 		if snapshot.Health == "ready" && agentstatus.ValidPhase(snapshot.Phase) {
 			frame.Activity = snapshot.Phase
+			frame.AgentName = snapshot.DisplayName()
 		}
 	}
 	return frame, "activity=" + frame.Activity + " source=clawd"
@@ -1401,6 +1403,10 @@ func applyAgentActivity(frame protocol.Frame, state *runtimeState) (protocol.Fra
 // Older firmware understands only coding/idle. Negotiate the wire value while
 // the API retains the full lifecycle; new firmware also enforces the 15s lease.
 func applyDeviceActivity(frame protocol.Frame, caps protocol.DeviceCapabilities) protocol.Frame {
+	if !caps.SupportsAgentThemeStatesV1 {
+		frame.AgentName = ""
+		frame.AnimationsDisabled = false
+	}
 	if !caps.SupportsAgentActivityV1 {
 		switch frame.Activity {
 		case "working", "thinking", "tool_use", "compacting", "coding":

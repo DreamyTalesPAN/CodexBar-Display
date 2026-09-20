@@ -110,3 +110,22 @@ func TestConfigureUsesAuthenticatedLocalEngineAndReturnsItsSnapshot(t *testing.T
 		t.Fatal("external endpoint accepted")
 	}
 }
+
+func TestDisplayNameFollowsObservedSourceNotQuota(t *testing.T) {
+	s := Snapshot{Phase: "working", Sources: []Source{{ID: "codex", Name: "Codex"}, {ID: "claude-code", Name: "Claude Code"}}, Sessions: []Session{{Source: "codex", Phase: "working"}, {Source: "claude-code", Phase: "idle"}}}
+	if got := s.DisplayName(); got != "Codex" {
+		t.Fatal(got)
+	}
+	s.Sessions[1].Phase = "working"
+	if got := s.DisplayName(); got != "Agent" {
+		t.Fatal(got)
+	}
+	s.Sessions = s.Sessions[1:]
+	if got := s.DisplayName(); got != "Claude Code" {
+		t.Fatal(got)
+	}
+	s.Sources = nil
+	if got := s.DisplayName(); got != "Agent" {
+		t.Fatal(got)
+	}
+}

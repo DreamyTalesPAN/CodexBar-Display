@@ -6,25 +6,25 @@ small: use the shared renderer, existing bindings, and a few well-designed asset
 
 ## Current Runtime and Approved Design Direction
 
-Reviewed against the repository on 2026-09-20. Keep these contracts separate:
+Implemented on the agent lifecycle feature branch; this is not yet a production
+release. Packs and runtime ship together after the release gates pass.
 
-| Area | Current implementation | Approved design direction |
-| --- | --- | --- |
-| Character activity | `stateAssets` / `sa` supports only `idle` and `coding`. | Design Working, Needs you, Finished, Error, and Nothing running. |
-| Live heading | `label` / `l` displays the provider name and firmware update notices. | Use this same line for agent status, preserving system-notice priority. |
-| Missing state asset | The renderer selects a supported state asset or its existing fallback path. | Announce an agent-state transition with the universal double-inversion effect below. |
+| Area | Runtime contract |
+| --- | --- |
+| Character activity | `stateAssets` / `sa`: `idle`, `coding`, `needs_you`, `done`, `error`. New keys require `agent-theme-states-v1`. |
+| Live heading | `label` / `l` shows the observed agent status when `agentName` is supplied; existing firmware-update notices keep priority. |
+| Missing state asset | One central, two-pulse full-display inversion on a grouped state transition; persistent status text. No per-theme flash settings. |
 
-The five-state lifecycle and double-inversion announcement are **approved design
-requirements, not shipped ThemeSpec fields or firmware features**. A Claude
-Design preview does not add runtime support. Do not put `working`, `needs_you`,
-`finished`, or `error` into a shipped `stateAssets` map, invent a capability name,
-or infer these states from usage changes. The current validator rejects state
-keys other than `idle` and `coding`.
+Wire phases stay precise: working/thinking/tool_use/compacting use `coding`;
+waiting_for_permission/waiting_for_answer/waiting_for_review use `needs_you`.
+`done`, `error`, and `idle` map directly. Unknown/stale observations show
+“Agent status unavailable” and do not announce. The quota provider never supplies
+the agent name. Older firmware receives its existing coding/idle contract and
+cannot install packs declaring the new capability.
 
-Lifecycle support must enter through a shared, versioned runtime contract before
-packs can depend on it. CodexBar continues to own provider usage and authentication
-semantics; themes consume supplied data and must not implement provider detection
-or turn missing activity into a fabricated state.
+Do not invent state keys such as `working` or `finished`. CodexBar continues to
+own provider usage/authentication; Clawd owns observed lifecycle facts. Themes
+consume those facts and must never infer activity from usage changes.
 
 ## Visual and Interaction Guidelines
 
@@ -144,7 +144,7 @@ Companion.
 - Give dynamic provider and usage-window text an explicit width and use `fit: "shrink"` (`ft: "shrink"` in compact specs). Set `fontSize` to the largest size the lane can hold vertically; firmware and previews then choose the largest integer size that also fits the live text horizontally.
 - After shrink changes size, use `valign` / `va` (`middle`/`center` or `bottom`) so the glyphs stay in the lane. Set `h` to the box (for example a 32px logo); omit `h` to use the max `fontSize` lane (`ApproxTextHeight`). Omit `va` or write `top` for today's top alignment. `y` is the top of that box. `va` is not compatible on older firmware (it keeps top alignment), so packs that emit `middle`/`center`/`bottom` must declare `text-valign-v1` and `minFirmware` 1.0.42. Write the exact tokens `top`, `middle`, `center`, or `bottom` — firmware does not lowercase aliases.
 - Keep units and suffixes in theme text. When current quota values are unavailable, session/weekly bindings become `??`, reset templates become `Reset unavailable`, and progress bindings keep their last numeric fill (or zero on a cold start).
-- Give every live theme exactly one `{label}` / `l` binding for the provider line. It carries the provider display name, and it is the firmware update-notice slot: when an update is available the firmware rotates that text through `Update available` and `Open VibeTV Mac App`, so do not reserve a separate bar for this. A live theme without a label binding instead gets a temporary 24px edge overlay, so keep at least one horizontal edge free of animated GIF/sprite primitives when possible.
+- Give every live theme exactly one `{label}` / `l` binding for the provider line. It carries the provider display name or observed agent status, and it is the firmware update-notice slot: when an update is available the firmware rotates that text through `Update available` and `Open VibeTV Mac App`, so do not reserve a separate bar for this. A live theme without a label binding instead gets a temporary 24px edge overlay, so keep at least one horizontal edge free of animated GIF/sprite primitives when possible.
 - Know the difference between the two bindings before choosing one. On the wire `provider` is the lowercased provider key (`codex`) and `label` is the display name (`Codex`), so `{provider}` on a provider line renders lowercase. Screensavers still use `{provider}`: the update notice must not take over the screensaver.
 - Keep all primitives that can change at runtime inside stable bounds. Text without a width is allowed, but the firmware treats it conservatively up to the right display edge for partial render safety.
 - Combine many small decorative rects into one sprite asset.
@@ -154,7 +154,7 @@ Companion.
 - Keep each CBI1/CBA1 palette between 1 and 26 colors. For detailed pixel art, use a deliberate, compact palette with nearby shadow and midtone steps instead of maximizing the color count.
 - Preserve an existing native pixel grid. For a high-resolution reference, downsample deliberately before nearest-neighbor upscaling; do not soften already-finished pixel art or round each RGB channel to coarse steps.
 - Compare the final reference and the Theme Studio render at the same scale. Strong black/bright jumps, repeated horizontal bands, or noisy checkerboard detail usually indicate a bad downscale or quantization step, not a ThemeSpec layout problem.
-- Use `stateAssets` for `idle` and `coding`; do not duplicate the whole theme just to change one character sprite.
+- Use `stateAssets` for `idle`, `coding`, `needs_you`, `done`, and `error`; do not duplicate the whole theme just to change one character sprite.
 - Use `providerAssets` / `pa` on sprite primitives when one pack must show different provider logos. Keys must be the lowercase wire `provider` value (`codex`, `claude`, `cursor`), not `{label}` display text. Always keep `a` as a valid fallback sprite. Packs that use `pa` declare `provider-assets-v1` and `minFirmware` 1.0.42.
 - Use `colorStops` / `cs` on progress primitives when fill should track remaining quota (for example green ≥75, yellow ≥50, orange ≥25, red ≥0). `gte` is remaining-style: firmware matches the bound percent as sent when `usageMode` is `remaining`, and `100 - percent` when `usageMode` is `used`, so warning colors stay red at low remaining / high used. Keep at most four stops. Always set solid `c` as the fallback for older firmware. Packs that use `cs` declare `color-stops-v1` and `minFirmware` 1.0.42.
 - Run `node scripts/build-theme-packs.mjs` after every pack change. It validates the source directory and generated ZIP, and regenerates the catalog and exact render pack.
@@ -365,7 +365,7 @@ Use one or two detailed sprite assets plus a small ThemeSpec:
 - `progress`: usage slot 2.
 - `text`: slot 2's supplied label and percentage.
 - optional `text`: reset time.
-- optional `sprite` with `stateAssets`: idle/coding character.
+- optional `sprite` with `stateAssets`: character poses for the five display states.
 
 This can look rich while keeping RAM pressure low.
 

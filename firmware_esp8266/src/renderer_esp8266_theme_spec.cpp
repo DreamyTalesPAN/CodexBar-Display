@@ -25,13 +25,16 @@ namespace {
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr unsigned long kThemeSpecAnimatedResumeTickMs = 1UL;
 constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
-constexpr int kAnimatedSpriteCacheSlots = 2;
+// Six bounded tiles cover a 240x108 scene without enlarging the shared buffer.
+constexpr int kAnimatedSpriteCacheSlots = 6;
 constexpr size_t kSpriteLineReserveBytes = 256;
 constexpr size_t kSpriteLineMaxBytes = 512;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
 unsigned long nextThemeSpecFullRenderRetryAtMs = 0;
 bool lastThemeSpecRenderOk = true;
 bool cbaRenderJobInProgress = false;
+agentactivity::Announcement announcement;
+bool announcementInverted = false;
 unsigned long cbaCompletedFrames = 0;
 unsigned long cbaLastFrameDurationMs = 0;
 uint16_t* cbaFrameBuffer = nullptr;
@@ -109,7 +112,10 @@ bool compiledThemeSpecHasCbaAssets(const themespec::CompiledThemeSpec& scene) {
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const themespec::CompiledPrimitive& primitive = scene.primitives[i];
     if (primitive.kind == themespec::PrimitiveKind::Sprite &&
-        (isCba(primitive.assetPath) ||
+        (isCba(primitive.needsYouAssetPath) ||
+         isCba(primitive.doneAssetPath) ||
+         isCba(primitive.errorAssetPath) ||
+         isCba(primitive.assetPath) ||
          isCba(primitive.idleAssetPath) ||
          isCba(primitive.codingAssetPath))) {
       return true;
@@ -216,6 +222,8 @@ bool ensureThemeSpecSceneCached(const String& raw) {
     return true;
   }
 
+  // Theme activation does not replay a status announcement.
+  ResetThemeSpecAnnouncement();
   // A changed theme must stop any previous GIF immediately. The decoder stays
   // released while the next theme is parsed and compiled; GifCore allocates it
   // lazily only after real playback has found a valid GIF header.
@@ -787,10 +795,15 @@ void drawSpriteAsset(
   }
   AnimatedSpriteCache* animatedCache = nullptr;
   if (mode == SpriteRenderMode::AnimatedOnly) {
+    if (!themespec::AssetPathLooksAnimated(assetPath)) return;
     if (clip.active) {
       return;
     }
     animatedCache = animatedSpriteCacheForPath(assetPath);
+    if (animatedCache != nullptr && cbaFrameBufferOwner != nullptr &&
+        cbaFrameBufferOwner != animatedCache) return;
+    if (animatedCache != nullptr && CurrentFrame().animationsDisabled &&
+        animatedCache->frameIndex >= 0 && !animatedCache->frameInProgress) return;
     if (animatedCache == nullptr ||
         !ThemeSpecRuntimePolicy::CbaWorkDue(
             false,
@@ -987,6 +1000,7 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
   void DrawGif(const themespec::GifCommand& cmd) override {
+    if (CurrentFrame().animationsDisabled && GifCore().StatusSnapshot().activePath == cmd.assetPath) return;
     GifPlaybackRequest request;
     request.assetPath = cmd.assetPath;
     request.x = cmd.x;
@@ -1122,6 +1136,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
+  frame.agentName = CurrentFrame().agentName.c_str();
   // The device clock owns {time}/{date}; the Companion string is only a
   // fallback and is dropped once it is no longer current.
   static char clockTimeText[deviceclock::kTimeTextSize];
@@ -1202,6 +1217,41 @@ bool DrawThemeSpecUsage() {
                                       : 0;
   MarkThemeSpecCountdownsRendered();
   return true;
+}
+
+void SetAnnouncementInverted(bool inverted) {
+  if (announcementInverted == inverted) return;
+  announcementInverted = inverted;
+  // Panel setup uses TFT_INVERSION_ON as its normal polarity.
+#ifdef TFT_INVERSION_ON
+  Tft().invertDisplay(!inverted);
+#else
+  Tft().invertDisplay(inverted);
+#endif
+}
+void ResetThemeSpecAnnouncement() {
+  announcement = {};
+  SetAnnouncementInverted(false);
+}
+void TickThemeSpecAnnouncement() {
+  const auto& frame = CurrentFrame();
+  const bool ready = frame.hasThemeSpec && !frame.hasError && currentThemeSpecRenderedSuccessfully();
+  bool dedicated = false;
+  const auto state = agentactivity::DisplayState(frame.activity.c_str());
+  if (ready) {
+    const auto frameData = currentThemeSpecFrameData();
+    for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
+      const auto& p = cachedThemeSpecScene.primitives[i];
+      const char* asset = state == agentactivity::State::Working ? p.codingAssetPath :
+          state == agentactivity::State::NeedsYou ? p.needsYouAssetPath :
+          state == agentactivity::State::Done ? p.doneAssetPath :
+          state == agentactivity::State::Error ? p.errorAssetPath : nullptr;
+      dedicated = dedicated || (asset && std::strcmp(asset,
+          themespec::CompiledStateAssetPathFor(cachedThemeSpecScene, p, frameData)) == 0);
+    }
+  }
+  const bool enabled = ready && !frame.animationsDisabled && frame.agentName.length() > 0;
+  SetAnnouncementInverted(announcement.Update(frame.activity.c_str(), enabled, dedicated, millis()));
 }
 
 bool TickThemeSpecGifs() {
@@ -1395,6 +1445,9 @@ namespace display {
 bool DrawThemeSpecUsage() {
   return false;
 }
+
+void ResetThemeSpecAnnouncement() {}
+void TickThemeSpecAnnouncement() {}
 
 bool TickThemeSpecGifs() {
   return false;

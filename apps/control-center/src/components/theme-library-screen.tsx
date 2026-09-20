@@ -1421,7 +1421,7 @@ function themeCapabilityBlocker(
       capability !== "provider-slots-v1" &&
       capability !== "provider-assets-v1" &&
       capability !== "color-stops-v1" &&
-      capability !== "text-valign-v1",
+      capability !== "text-valign-v1" && capability !== "agent-theme-states-v1",
   );
   if (unsupported.length > 0) {
     return {
@@ -1447,6 +1447,7 @@ function themeCapabilityBlocker(
     if (capability === "color-stops-v1") {
       return device.capabilities?.theme?.supportsColorStopsV1 !== true;
     }
+    if (capability === "agent-theme-states-v1") return device.capabilities?.theme?.supportsAgentThemeStatesV1 !== true;
     if (capability === "text-valign-v1") {
       return device.capabilities?.theme?.supportsTextValignV1 !== true;
     }

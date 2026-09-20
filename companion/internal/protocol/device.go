@@ -3,20 +3,21 @@ package protocol
 import "strings"
 
 const (
-	FeatureAgentActivityV1  = "agent-activity-v1"
-	FeatureTheme            = "theme"
-	FeatureThemeSpecV1      = "theme-spec-v1"
-	FeatureUsageSlotsV1     = "usage-slots-v1"
-	FeatureUsageWindowsV1   = "usage-windows-v1"
-	FeatureProviderSlotsV1  = "provider-slots-v1"
-	FeatureProviderAssetsV1 = "provider-assets-v1"
-	FeatureColorStopsV1     = "color-stops-v1"
-	FeatureTextValignV1     = "text-valign-v1"
-	DefaultMaxFrameBytes    = 512
-	DefaultMinBrightness    = 10
-	DefaultMaxBrightness    = 100
-	FeatureCableTransferV1  = "cable-transfer-v1"
-	FeatureCableHealthV1    = "cable-health-v1"
+	FeatureAgentActivityV1    = "agent-activity-v1"
+	FeatureAgentThemeStatesV1 = "agent-theme-states-v1"
+	FeatureTheme              = "theme"
+	FeatureThemeSpecV1        = "theme-spec-v1"
+	FeatureUsageSlotsV1       = "usage-slots-v1"
+	FeatureUsageWindowsV1     = "usage-windows-v1"
+	FeatureProviderSlotsV1    = "provider-slots-v1"
+	FeatureProviderAssetsV1   = "provider-assets-v1"
+	FeatureColorStopsV1       = "color-stops-v1"
+	FeatureTextValignV1       = "text-valign-v1"
+	DefaultMaxFrameBytes      = 512
+	DefaultMinBrightness      = 10
+	DefaultMaxBrightness      = 100
+	FeatureCableTransferV1    = "cable-transfer-v1"
+	FeatureCableHealthV1      = "cable-health-v1"
 )
 
 type DisplayBrightnessCapabilities struct {
@@ -43,28 +44,29 @@ type StandbyCapabilities struct {
 }
 
 type ThemeCapabilities struct {
-	SupportsThemeSpecV1      bool     `json:"supportsThemeSpecV1,omitempty"`
-	SupportsUsageSlotsV1     bool     `json:"supportsUsageSlotsV1,omitempty"`
-	SupportsUsageWindowsV1   bool     `json:"supportsUsageWindowsV1,omitempty"`
-	SupportsProviderSlotsV1  bool     `json:"supportsProviderSlotsV1,omitempty"`
-	SupportsProviderAssetsV1 bool     `json:"supportsProviderAssetsV1,omitempty"`
-	SupportsColorStopsV1     bool     `json:"supportsColorStopsV1,omitempty"`
-	SupportsTextValignV1     bool     `json:"supportsTextValignV1,omitempty"`
-	MaxUsageWindows          int      `json:"maxUsageWindows,omitempty"`
-	SupportsStoredThemes     bool     `json:"supportsStoredThemes,omitempty"`
-	MaxThemeSpecBytes        int      `json:"maxThemeSpecBytes,omitempty"`
-	MaxStoredThemeSpecBytes  int      `json:"maxStoredThemeSpecBytes,omitempty"`
-	MaxThemePrimitives       int      `json:"maxThemePrimitives,omitempty"`
-	MaxThemeGifAssets        int      `json:"maxThemeGifAssets,omitempty"`
-	MaxThemeGifBytes         int      `json:"maxThemeGifBytes,omitempty"`
-	MaxThemeGifWidth         int      `json:"maxThemeGifWidth,omitempty"`
-	MaxThemeGifHeight        int      `json:"maxThemeGifHeight,omitempty"`
-	MaxThemeGifPixels        int      `json:"maxThemeGifPixels,omitempty"`
-	MaxThemeGifLzwBits       int      `json:"maxThemeGifLzwBits,omitempty"`
-	SupportedPrimitiveTypes  []string `json:"supportedPrimitiveTypes,omitempty"`
-	BuiltinThemes            []string `json:"builtinThemes,omitempty"`
-	CachedThemeID            string   `json:"cachedThemeId,omitempty"`
-	CachedThemeRev           int      `json:"cachedThemeRev,omitempty"`
+	SupportsThemeSpecV1        bool     `json:"supportsThemeSpecV1,omitempty"`
+	SupportsUsageSlotsV1       bool     `json:"supportsUsageSlotsV1,omitempty"`
+	SupportsUsageWindowsV1     bool     `json:"supportsUsageWindowsV1,omitempty"`
+	SupportsProviderSlotsV1    bool     `json:"supportsProviderSlotsV1,omitempty"`
+	SupportsProviderAssetsV1   bool     `json:"supportsProviderAssetsV1,omitempty"`
+	SupportsColorStopsV1       bool     `json:"supportsColorStopsV1,omitempty"`
+	SupportsTextValignV1       bool     `json:"supportsTextValignV1,omitempty"`
+	SupportsAgentThemeStatesV1 bool     `json:"supportsAgentThemeStatesV1,omitempty"`
+	MaxUsageWindows            int      `json:"maxUsageWindows,omitempty"`
+	SupportsStoredThemes       bool     `json:"supportsStoredThemes,omitempty"`
+	MaxThemeSpecBytes          int      `json:"maxThemeSpecBytes,omitempty"`
+	MaxStoredThemeSpecBytes    int      `json:"maxStoredThemeSpecBytes,omitempty"`
+	MaxThemePrimitives         int      `json:"maxThemePrimitives,omitempty"`
+	MaxThemeGifAssets          int      `json:"maxThemeGifAssets,omitempty"`
+	MaxThemeGifBytes           int      `json:"maxThemeGifBytes,omitempty"`
+	MaxThemeGifWidth           int      `json:"maxThemeGifWidth,omitempty"`
+	MaxThemeGifHeight          int      `json:"maxThemeGifHeight,omitempty"`
+	MaxThemeGifPixels          int      `json:"maxThemeGifPixels,omitempty"`
+	MaxThemeGifLzwBits         int      `json:"maxThemeGifLzwBits,omitempty"`
+	SupportedPrimitiveTypes    []string `json:"supportedPrimitiveTypes,omitempty"`
+	BuiltinThemes              []string `json:"builtinThemes,omitempty"`
+	CachedThemeID              string   `json:"cachedThemeId,omitempty"`
+	CachedThemeRev             int      `json:"cachedThemeRev,omitempty"`
 }
 
 type TransportCapabilities struct {
@@ -199,6 +201,7 @@ type DeviceCapabilities struct {
 	Board                      string
 	Firmware                   string
 	Features                   []string
+	SupportsAgentThemeStatesV1 bool
 	SupportsAgentActivityV1    bool
 	SupportsTheme              bool
 	SupportsThemeSpecV1        bool
@@ -273,6 +276,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		Firmware:                   h.Firmware,
 		Features:                   append([]string(nil), h.Features...),
 		SupportsAgentActivityV1:    h.HasFeature(FeatureAgentActivityV1),
+		SupportsAgentThemeStatesV1: h.HasFeature(FeatureAgentThemeStatesV1) || h.Capabilities.Theme.SupportsAgentThemeStatesV1,
 		SupportsTheme:              supportsTheme,
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
 		SupportsUsageSlotsV1:       supportsUsageSlotsV1,

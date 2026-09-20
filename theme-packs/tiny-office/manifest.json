@@ -3,18 +3,19 @@
   "schemaVersion": 1,
   "id": "tiny-office",
   "name": "Tiny Office",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "minFirmware": "1.0.42",
   "usage": "live",
   "requiredCapabilities": [
     "usage-slots-v1",
-    "text-valign-v1"
+    "text-valign-v1",
+    "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/to-7-d7799cec.json",
+    "path": "/themes/u/to-8-0d46ed.json",
     "file": "theme.json",
-    "bytes": 1624,
-    "sha256": "d7799cec68ef4151e1d908155696922a4aee298539175d8cad8cdd1cfdd835d7",
+    "bytes": 2632,
+    "sha256": "0d46edd502ad9dfc66bf152689b2b2aef154fbc519d9f77ace61f6bee1e2509e",
     "contentType": "application/json"
   },
   "assets": [
@@ -26,31 +27,213 @@
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/to-i.cbi",
-      "file": "assets/to-i.cbi",
-      "bytes": 3653,
-      "sha256": "84ccc384ac6f328f2e4464e58644a6b2ea940d9ee619962e0ceb173f031253de",
+      "path": "/themes/u/to-i0.cbi",
+      "file": "assets/to-i0.cbi",
+      "bytes": 689,
+      "sha256": "edb06c658f8fbf0dd3faec5d3b503d570dae601e5d165da72460bf3b6dce26ff",
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/to-c.cbi",
-      "file": "assets/to-c.cbi",
-      "bytes": 3803,
-      "sha256": "3a6487c62a09479c837188331f29fdffae4379cd63170303e135a451953f7f53",
+      "path": "/themes/u/to-c0.cbi",
+      "file": "assets/to-c0.cbi",
+      "bytes": 807,
+      "sha256": "b32c8c2871bcfbf1cc438da5beec4fbf20529767a550a5b3b49f666d41b1f316",
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/to-ia.cba",
-      "file": "assets/to-ia.cba",
-      "bytes": 5898,
-      "sha256": "6138a88231b63e8d6e0636c04da99147f4e40126a03f8d1034db82cdfaa726c6",
+      "path": "/themes/u/to-n0.cba",
+      "file": "assets/to-n0.cba",
+      "bytes": 1664,
+      "sha256": "f3a262261c54014121a89f59669ec349b1dd4f914117edd87c9899304291d739",
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/to-ca.cba",
-      "file": "assets/to-ca.cba",
-      "bytes": 10779,
-      "sha256": "e271bd49852766752c4dc1d309fc2ce764125d45284ca3b27b80d3469a228248",
+      "path": "/themes/u/to-d0.cba",
+      "file": "assets/to-d0.cba",
+      "bytes": 2387,
+      "sha256": "d9572ec84589e230ea6ecd5590535802614c56135d0b025dd69aec81c5a04cc5",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-e0.cbi",
+      "file": "assets/to-e0.cbi",
+      "bytes": 719,
+      "sha256": "1a10d43e2664cde1ee0b2ff9b4eb4ff554b194ade8979782160d381800086419",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-i1.cba",
+      "file": "assets/to-i1.cba",
+      "bytes": 5206,
+      "sha256": "71afcb55ec1529d0d5d592d518d107c6406d488b481c34a420de8ec0b1eb90d4",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-c1.cba",
+      "file": "assets/to-c1.cba",
+      "bytes": 9635,
+      "sha256": "898479b089b0a3f5a29ede6b349f5606575cd7849279cb3b1307789d2cbd8ee0",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-n1.cba",
+      "file": "assets/to-n1.cba",
+      "bytes": 1440,
+      "sha256": "ff3a17c9caa41daaec8483f368f1bbbb0bca71719ced542ea422e7b69bfa70eb",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-d1.cba",
+      "file": "assets/to-d1.cba",
+      "bytes": 1582,
+      "sha256": "785b8834a4eefbd102acb0bfd59db5a9c2a2379585f4ec87ddf373686e8da1ed",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-e1.cba",
+      "file": "assets/to-e1.cba",
+      "bytes": 1921,
+      "sha256": "a2c3768519a3f9dee484fb0d6c08d93838a6cacd9436c4b7356b991f8e53c4e1",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-i2.cbi",
+      "file": "assets/to-i2.cbi",
+      "bytes": 627,
+      "sha256": "a5b3ec0c6ed2d588f8a93f824062c659b3b2b38b8dafed3f5e229a4543a76f23",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-c2.cbi",
+      "file": "assets/to-c2.cbi",
+      "bytes": 635,
+      "sha256": "f6fb03d4dc386fc720919e4a6456c52b6872ae47c1466aa691cf98009ac6ce9e",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-n2.cba",
+      "file": "assets/to-n2.cba",
+      "bytes": 1258,
+      "sha256": "55b810bdfafd003592320a43b3bd846e64246f144540d9a3f61029443ba8c4d8",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-d2.cba",
+      "file": "assets/to-d2.cba",
+      "bytes": 1732,
+      "sha256": "70eb9f36b7c2b5f85c181f13f7d7dbb99f34a91cfab18e2a87ffae5a1bf2eefc",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-e2.cbi",
+      "file": "assets/to-e2.cbi",
+      "bytes": 603,
+      "sha256": "b0e630a9bfcbf44e11c65263c16c5f7a6e51cb1c883a05b8403673a34f445eb2",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-i3.cbi",
+      "file": "assets/to-i3.cbi",
+      "bytes": 769,
+      "sha256": "fdf2cf5e9a7d1860080cb05cb60820962a55ce5f512f64463c85814ea2408f20",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-c3.cbi",
+      "file": "assets/to-c3.cbi",
+      "bytes": 832,
+      "sha256": "c6f7f2d94e5a2fe10b21f20d7646b30f16d4f3a6386b1bb11eba08767b9c0b65",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-n3.cba",
+      "file": "assets/to-n3.cba",
+      "bytes": 1560,
+      "sha256": "df24a4e172a497581a00c4becf0832e2624038ab24f0aedfebf5e136451ab719",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-d3.cba",
+      "file": "assets/to-d3.cba",
+      "bytes": 2440,
+      "sha256": "2d12ed2c9bda70a31649d64af998864d6c331ff1aa13608c8c54254495ee903e",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-e3.cbi",
+      "file": "assets/to-e3.cbi",
+      "bytes": 903,
+      "sha256": "b7c1cfcbea0e7bc8999c3f2dec61a6ae329aa431d99a8119f975531a669840f9",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-i4.cba",
+      "file": "assets/to-i4.cba",
+      "bytes": 4550,
+      "sha256": "8c6c39f513cb431cebcad4b8637683264847f49809da1bc1b6b9df9b76bc00fc",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-c4.cba",
+      "file": "assets/to-c4.cba",
+      "bytes": 8747,
+      "sha256": "321eb8250a691df484019fc4643693522a19b244272fbbd7b50ad04c8cd1884f",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-n4.cba",
+      "file": "assets/to-n4.cba",
+      "bytes": 1341,
+      "sha256": "357457b3971a64d4548944b480b1209c9355f16230d4a7f199f386868396e3c4",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-d4.cba",
+      "file": "assets/to-d4.cba",
+      "bytes": 2068,
+      "sha256": "31440e7b46c5880e295c87927520975385471f94c9f36437fa5045efa0dc1ae8",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-e4.cba",
+      "file": "assets/to-e4.cba",
+      "bytes": 2115,
+      "sha256": "7e5d44d14b9bc82a8fa19c8f71fb3492f22c6792f363a54b17726fe54c45f804",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-i5.cbi",
+      "file": "assets/to-i5.cbi",
+      "bytes": 841,
+      "sha256": "edbd436c8f441d7ad35cc78b79968408bb2357aef256719c5c953350f9521623",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-c5.cbi",
+      "file": "assets/to-c5.cbi",
+      "bytes": 880,
+      "sha256": "a154aa0498952568c602adfdafcc34ba2c669784cac70a7a60e2a55022fa165b",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-n5.cba",
+      "file": "assets/to-n5.cba",
+      "bytes": 1682,
+      "sha256": "b5dea331133920a28b315fe518093e4e1aa40e37d82dfb4b2953e6a64d5f936f",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-d5.cbi",
+      "file": "assets/to-d5.cbi",
+      "bytes": 903,
+      "sha256": "6c98f1567d13ecd00b7375138fc2721d204866907ba68ee23d54a3d34c12950a",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-e5.cbi",
+      "file": "assets/to-e5.cbi",
+      "bytes": 906,
+      "sha256": "a7a6551fd2a5d70d1f520889fb24b1b1e85c4209fe77af4c9ad0236f6eb0bb80",
       "contentType": "text/plain"
     }
   ]
