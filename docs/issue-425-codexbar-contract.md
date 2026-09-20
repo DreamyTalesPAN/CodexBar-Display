@@ -23,8 +23,9 @@ at a disposable worktree file, without changing the customer's configuration:
 - `usage --json --status --web-timeout 8` with all providers disabled: `[]` and
   exit 0. No account collection or credential migration was run on this Mac.
 
-The tagged `CLIErrorReporting.swift` exports `error.code`, `error.message` and
-`error.kind`. `CLIHelpers.mapError` maps **both**
+The tagged [CLIErrorReporting.swift](https://github.com/steipete/CodexBar/blob/v0.56.8/Sources/CodexBarCLI/CLIErrorReporting.swift)
+exports `error.code`, `error.message` and `error.kind`.
+[CLIHelpers.mapError](https://github.com/steipete/CodexBar/blob/v0.56.8/Sources/CodexBarCLI/CLIHelpers.swift) maps **both**
 `GeminiStatusProbeError.consumerTierDeprecated` and several parse/OAuth errors
 to code 3. There is no exported migration identifier or destination field.
 
@@ -38,10 +39,12 @@ VibeTV does not duplicate these Google rules.
 
 > Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.
 
-VibeTV recognizes an explicit end-of-support statement before incidental OAuth
-or sign-in words. Other 403, parse and authentication errors remain separate.
-The original message still passes through the existing redactor. Terminal
-`unsupported` cannot be upgraded to ready by an old saved reading.
+VibeTV preserves this guidance but does not turn an English end-of-support
+phrase into a terminal `unsupported` classification. CodexBar 0.56.8 does not
+export a typed migration status, and code 3 also covers parse/OAuth failures.
+These responses retain the existing nonterminal unavailable/auth presentation;
+message wording cannot establish support or readiness. The original message
+still passes through the existing redactor.
 
 The shared provider list uses the Screen 07 notice layout from the imported
 Claude Design project for every provider notice: name and toggle in the header,
@@ -49,7 +52,9 @@ a full-width separator, then customer guidance and any actions in one row.
 The guidance wraps as needed; actions stay aligned to its right. Ready,
 disabled and initially checking rows retain their compact presentation.
 
-For an upstream-declared migration, the replacement must exist in the current
+The terminal migration notice requires an explicit unsupported status; the
+pinned macOS CLI cannot currently supply it. When that contract is available,
+the replacement must exist in the current
 provider inventory and be named in the upstream guidance. The explicit `Turn on
 Antigravity` button uses the same settings callback as its toggle. It does not
 change Gemini's setting or search/filter the list. Once Antigravity is enabled,
@@ -73,7 +78,8 @@ button. Source assets and local screenshots are kept under
 
 ## Validation boundaries
 
-Regression fixtures cover the exported migration message, the shared numeric
+Regression fixtures cover nonterminal handling of the exported migration message,
+obsolete-auth guidance, untyped unsupported wording, the shared numeric
 error code, unrelated/license 403, ordinary sign-in failures, Antigravity weekly
 usage, descriptor redaction/readiness, and explicit replacement enablement.
 The browser flow exercises the visible wizard against mocked Companion replies

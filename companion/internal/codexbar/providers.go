@@ -550,10 +550,6 @@ func providerHealthErrorText(value any) string {
 }
 
 func classifyProviderHealth(raw string) ProviderHealthState {
-	// Share the terminal classification with setup before generic auth markers.
-	if classifyProviderError(raw) == ProviderUnsupported {
-		return ProviderHealthUnsupported
-	}
 	message := strings.ToLower(raw)
 	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "cookie", "token"} {
 		if strings.Contains(message, marker) {

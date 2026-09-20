@@ -617,11 +617,6 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 func classifyProviderError(detail string) string {
 	lower := strings.ToLower(detail)
 	switch {
-	// CodexBar exports provider errors as code/message/kind, without a typed
-	// migration reason. An explicit end-of-support statement takes precedence
-	// over incidental auth words in its guidance; no API or account inference.
-	case strings.Contains(lower, "no longer supports"), strings.Contains(lower, "no longer supported"):
-		return ProviderUnsupported
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
 		return ProviderTimeout
 	case strings.Contains(lower, "permission"), strings.Contains(lower, "not permitted"), strings.Contains(lower, "access denied"), strings.Contains(lower, "keychain") && (strings.Contains(lower, "denied") || strings.Contains(lower, "locked") || strings.Contains(lower, "not allowed")):
