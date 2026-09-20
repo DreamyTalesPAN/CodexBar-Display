@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // claudeCredentialsFlag is Win-CodexBar's consent switch for reading Claude
@@ -19,6 +20,9 @@ import (
 const claudeCredentialsFlag = "claude_allow_reading_claude_code_credentials"
 
 var grantClaudeCredentialsFn = grantClaudeCredentials
+
+// Serialize Companion-owned settings writes, including CLI provider toggles.
+var windowsSettingsMu sync.Mutex
 
 // settingsCodec wraps and unwraps the Win-CodexBar settings payload. Windows
 // uses DPAPI; tests substitute a reversible stand-in.
@@ -103,6 +107,9 @@ func rewriteSettingsFile(path string, codec settingsCodec) error {
 }
 
 func rewriteWindowsSettingsFile(path string, codec settingsCodec, update func(map[string]json.RawMessage)) error {
+	windowsSettingsMu.Lock()
+	defer windowsSettingsMu.Unlock()
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err

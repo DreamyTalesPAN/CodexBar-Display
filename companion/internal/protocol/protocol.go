@@ -398,7 +398,7 @@ func (f Frame) MarshalLine() ([]byte, error) {
 // MarshalNormalizedLine serializes a frame that has already been normalized.
 // It is for callers that need the normalized frame as well as its wire form.
 func (f Frame) MarshalNormalizedLine() ([]byte, error) {
-	b, err := json.Marshal(f)
+	b, err := json.Marshal(&f)
 	if err != nil {
 		return nil, err
 	}

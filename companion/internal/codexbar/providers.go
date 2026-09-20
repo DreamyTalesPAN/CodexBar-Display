@@ -359,6 +359,12 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 			return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 		}
 	}
+	// The Windows CLI also rewrites settings.json. Consent above acquires the
+	// same lock separately; the CLI must read the latest completed settings.
+	if providerProbePerProvider {
+		windowsSettingsMu.Lock()
+		defer windowsSettingsMu.Unlock()
+	}
 	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, providerToggleArgs(action, providerID)...)
 	if err != nil {
 		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
