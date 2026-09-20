@@ -248,3 +248,12 @@ state-asset loops plus removal of duplicate frame initialization now pass all
 agent names skip unnecessary normalization in the frame benchmark. The Mini
 vector golden changes only for the intentional single-frame GIF representation
 under reduced motion; the focused browser preview suite passes.
+
+The second Codex review identified a missing producer for the device animation-off
+flag. The central outgoing-frame path now reads the host's motion preference on
+macOS and Windows and negotiates it with `agent-theme-states-v1`; older firmware
+still receives no unsupported flag. Regression coverage checks on/off changes in
+actual outgoing JSON and the acknowledged-frame log. That log and its API parser
+also retain the observed agent name and motion setting, so the live device preview
+uses the same presentation as the sent frame. System preferences were only read;
+no OS setting or physical device was changed.

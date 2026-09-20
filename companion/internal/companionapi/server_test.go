@@ -13808,3 +13808,10 @@ func TestAgentIntegrationRequiresExplicitChoiceAndReturnsEngineState(t *testing.
 		t.Fatalf("%d %s", response.Code, response.Body.String())
 	}
 }
+
+func TestDisplayFrameLogPreservesAgentAndMotion(t *testing.T) {
+	frame, ok := frameFromDisplayStreamLogLine(`sent frame -> test transport=usb deviceId=test provider=codex label=Codex session=10 weekly=20 activity="waiting_for_answer" agentName="Claude Code" animationsDisabled=true time="12:00" date="20 Sep" error=""`)
+	if !ok || frame.Activity != "waiting_for_answer" || frame.AgentName != "Claude Code" || !frame.AnimationsDisabled || frame.Time != "12:00" {
+		t.Fatalf("preview lost acknowledged presentation: %+v", frame)
+	}
+}

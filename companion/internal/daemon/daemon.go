@@ -19,6 +19,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/motion"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
@@ -149,6 +150,7 @@ type runtimeDeps struct {
 	startDashboard        func(context.Context, func(string, ...any)) codexbar.DashboardServe
 	dashboard             codexbar.DashboardServe
 	usageBarsShowUsed     func() bool
+	reducedMotion         func(context.Context) bool
 	beginDeviceWrite      func() func()
 	sendLine              func(string, []byte) error
 	fetchUpdateState      func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
@@ -320,6 +322,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			reducedMotion:     motion.Reduced,
 			startDashboard:    codexbar.StartDashboardServe,
 			logf:              logf,
 		})
@@ -332,6 +335,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		sendLine:          usb.SendLine,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		reducedMotion:     motion.Reduced,
 		startDashboard:    codexbar.StartDashboardServe,
 		logf:              logf,
 	})
@@ -1432,6 +1436,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
+	if caps.SupportsAgentThemeStatesV1 && deps.reducedMotion != nil {
+		frame.AnimationsDisabled = deps.reducedMotion(ctx)
+	}
 	frame = applyDeviceActivity(frame, caps)
 	if !caps.SupportsProviderSlotsV1 {
 		// Firmware without provider-slots-v1 would carry these rows as dead
@@ -1530,8 +1537,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
-	deps.logf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q agentName=%q animationsDisabled=%t time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.AgentName, frame.AnimationsDisabled, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {

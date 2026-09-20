@@ -95,7 +95,10 @@ Run it once per actual agent-state transition. Repeated snapshots, quota updates
 countdown ticks, and update-notice rotation must not retrigger it. Nothing running
 does not flash. When animation is disabled, update the label without flashing;
 disabling animation mid-flash must restore normal colors immediately. Browser
-prototypes must also respect `prefers-reduced-motion`. Preview replay controls
+prototypes must also respect `prefers-reduced-motion`. The Companion sends the
+computer's system motion preference with every frame to capable firmware, so
+changing that preference also pauses device animations without an open browser.
+Preview replay controls
 may repeat the announcement for review; production must not loop it endlessly.
 
 ## Core Rule

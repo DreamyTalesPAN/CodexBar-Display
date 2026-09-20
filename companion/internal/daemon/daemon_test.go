@@ -6845,3 +6845,37 @@ func TestAgentPresentationNegotiatesIndependentlyOfActivity(t *testing.T) {
 		t.Fatalf("modern firmware: %+v", got)
 	}
 }
+
+func TestOutgoingFramesFollowHostMotionPreference(t *testing.T) {
+	prepareFastTestEnv(t)
+	disabled := false
+	var sent protocol.Frame
+	var logLine string
+	state := &runtimeState{}
+	deps := runtimeDeps{
+		reducedMotion: func(context.Context) bool { return disabled },
+		sendLine:      func(_ string, data []byte) error { return json.Unmarshal(data, &sent) },
+		logf:          func(format string, args ...any) { logLine = fmt.Sprintf(format, args...) },
+	}.withDefaults()
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+	result := cycleResult{frame: protocol.Frame{Provider: "codex", Label: "Codex", Session: 10}, usageFresh: true}
+	for _, want := range []bool{false, true, false} {
+		disabled = want
+		sent = protocol.Frame{}
+		if err := sendCycleResult(context.Background(), "/test-device", caps, 2048, state, deps, result); err != nil {
+			t.Fatal(err)
+		}
+		if sent.AnimationsDisabled != want || !strings.Contains(logLine, fmt.Sprintf("animationsDisabled=%t", want)) || !strings.Contains(logLine, `agentName="Agent"`) {
+			t.Fatalf("preference not delivered to device and preview: %+v, %s", sent, logLine)
+		}
+	}
+	disabled = true
+	caps.SupportsAgentThemeStatesV1 = false
+	sent = protocol.Frame{}
+	if err := sendCycleResult(context.Background(), "/test-device", caps, 2048, state, deps, result); err != nil {
+		t.Fatal(err)
+	}
+	if sent.AnimationsDisabled {
+		t.Fatal("legacy firmware received unsupported motion flag")
+	}
+}
