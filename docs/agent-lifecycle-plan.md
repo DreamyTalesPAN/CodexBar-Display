@@ -236,3 +236,15 @@ notice priority, and writer-loss expiry over both Cable and WiFi. No connected
 VibeTV was written to. This remains a feature-branch candidate; publishing packs,
 merging main, and release actions are separate approvals. CI/review evidence is
 recorded on the PR for its exact pushed head.
+
+CI integration follow-up: the first Codex review found the inherited macOS
+runtime pin still at 0.46.0 while #427 ships 0.56.8. The Companion version/hash
+now match the shipped manifest; a manifest regression and real signed-archive
+staging test pass. The Windows hook-refresh test inspects the decoded command.
+The first firmware candidate exceeded the unchanged size gate; shared slot and
+state-asset loops plus removal of duplicate frame initialization now pass all
+153 native cases within 46.0% flash, 60.1% static RAM, 485104-byte binary and
+343115-byte gzip. Runtime tile cadence/heap still needs physical proof. Empty
+agent names skip unnecessary normalization in the frame benchmark. The Mini
+vector golden changes only for the intentional single-frame GIF representation
+under reduced motion; the focused browser preview suite passes.

@@ -179,7 +179,9 @@ func (f Frame) Normalize() Frame {
 		f.NextClockTransition = nil
 	}
 	f.Activity = normalizeActivity(f.Activity)
-	f.AgentName = strings.Join(strings.Fields(f.AgentName), " ")
+	if f.AgentName != "" {
+		f.AgentName = strings.Join(strings.Fields(f.AgentName), " ")
+	}
 	if len(f.AgentName) > 40 {
 		f.AgentName = "Agent"
 	}

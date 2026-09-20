@@ -84,8 +84,11 @@ test('app upgrade refreshes only previously enabled hooks, preserving native set
   const foreign={hooks:{BeforeAgent:[{hooks:[{type:'command',command:'my-hook'}]}]}};
   fs.writeFileSync(profiles['gemini-cli'].file(),JSON.stringify(foreign));
   require('../src/integrations.cjs').refreshConfigured({...opts,settingsPath:undefined,directory:path.join(opts.directory,'new')});
-  const changed=fs.readFileSync(oldOptions.settingsPath,'utf8');
-  assert.match(changed,/new/);assert.doesNotMatch(changed,/\/old\//);
+  const changed=JSON.parse(fs.readFileSync(oldOptions.settingsPath));
+  for(const entries of Object.values(changed.hooks)) for(const entry of entries) for(const hook of entry.hooks) {
+   const command=process.platform==='win32'?decodeWindowsEncodedCommand(hook.command):hook.command;
+   assert.match(command,/[\\/]new[\\/]/);assert.doesNotMatch(command,/[\\/]old[\\/]/);
+  }
   assert.deepEqual(JSON.parse(fs.readFileSync(profiles['gemini-cli'].file())),foreign);
   assert.equal(fs.existsSync(profiles['qwen-code'].file()),false);
  } finally {

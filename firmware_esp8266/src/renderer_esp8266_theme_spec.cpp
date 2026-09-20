@@ -111,14 +111,11 @@ bool compiledThemeSpecHasCbaAssets(const themespec::CompiledThemeSpec& scene) {
   };
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const themespec::CompiledPrimitive& primitive = scene.primitives[i];
-    if (primitive.kind == themespec::PrimitiveKind::Sprite &&
-        (isCba(primitive.needsYouAssetPath) ||
-         isCba(primitive.doneAssetPath) ||
-         isCba(primitive.errorAssetPath) ||
-         isCba(primitive.assetPath) ||
-         isCba(primitive.idleAssetPath) ||
-         isCba(primitive.codingAssetPath))) {
-      return true;
+    if (primitive.kind == themespec::PrimitiveKind::Sprite) {
+      if (isCba(primitive.assetPath)) return true;
+      for (const char* asset : primitive.stateAssets) {
+        if (isCba(asset)) return true;
+      }
     }
   }
   return false;
@@ -1242,10 +1239,8 @@ void TickThemeSpecAnnouncement() {
     const auto frameData = currentThemeSpecFrameData();
     for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
       const auto& p = cachedThemeSpecScene.primitives[i];
-      const char* asset = state == agentactivity::State::Working ? p.codingAssetPath :
-          state == agentactivity::State::NeedsYou ? p.needsYouAssetPath :
-          state == agentactivity::State::Done ? p.doneAssetPath :
-          state == agentactivity::State::Error ? p.errorAssetPath : nullptr;
+      const int index = static_cast<int>(state) - 1;
+      const char* asset = index >= 0 ? p.stateAssets[index] : nullptr;
       dedicated = dedicated || (asset && std::strcmp(asset,
           themespec::CompiledStateAssetPathFor(cachedThemeSpecScene, p, frameData)) == 0);
     }
