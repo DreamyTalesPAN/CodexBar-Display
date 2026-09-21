@@ -911,9 +911,12 @@ void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
   TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(
       String(R"JSON({"p":[{"t":"tx","b":"pv1l"},{"t":"tx","b":"pv2l"}]})JSON"), 0));
 
-  // The substring probe DrawReset actually runs, over the same inputs.
+  // The substring probe DrawReset actually runs, over the same inputs. It is
+  // wider than the helper on purpose: any provider-slot binding arms the
+  // repaint, and repainting a label costs nothing while missing a countdown
+  // leaves a value on screen the device can no longer stand behind.
   const auto drawResetProbe = [](const String& raw) {
-    return raw.indexOf("pv1r") >= 0 || raw.indexOf("pv2r") >= 0 ||
+    return raw.indexOf("pv1") >= 0 || raw.indexOf("pv2") >= 0 ||
            raw.indexOf("providerSlot") >= 0;
   };
   TEST_ASSERT_TRUE(drawResetProbe(nightClockish));
@@ -922,6 +925,16 @@ void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
   // A theme with no provider binding at all still asks for nothing.
   TEST_ASSERT_FALSE(drawResetProbe(
       String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON")));
+
+  // The usage-window probe in the same function keeps every shipped spelling.
+  const auto usageProbe = [](const String& raw) {
+    return raw.indexOf("usageSlot") >= 0 || raw.indexOf("usage.") >= 0 ||
+           raw.indexOf("us1r") >= 0 || raw.indexOf("us2r") >= 0;
+  };
+  TEST_ASSERT_TRUE(usageProbe(String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON")));
+  TEST_ASSERT_TRUE(usageProbe(String(R"JSON({"p":[{"t":"tx","v":"{usage.0.reset}"}]})JSON")));
+  TEST_ASSERT_TRUE(usageProbe(String(R"JSON({"p":[{"t":"tx","b":"us2r"}]})JSON")));
+  TEST_ASSERT_FALSE(usageProbe(nightClockish));
 }
 
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
