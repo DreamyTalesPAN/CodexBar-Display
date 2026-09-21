@@ -276,6 +276,10 @@ func providerSetupFailureMustWin(status string) bool {
 		status == codexbar.ProviderBrowserSignInRequired ||
 		status == codexbar.ProviderNotConfigured ||
 		status == codexbar.ProviderPermissionRequired ||
+		// A provider the account lost access to must keep its own row: a
+		// cached reading from before the shutdown would otherwise restore a
+		// "ready" Gemini and hide the migration guidance again.
+		status == codexbar.ProviderUnsupported ||
 		status == codexbar.ProviderConfigError
 }
 

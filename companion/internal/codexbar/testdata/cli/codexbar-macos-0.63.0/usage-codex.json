@@ -1,0 +1,846 @@
+[
+  {
+    "credits": {
+      "balanceIsWorkspace": false,
+      "balanceReadSucceeded": true,
+      "creditsAvailable": false,
+      "events": [],
+      "remaining": 0,
+      "updatedAt": "2026-09-21T08:47:41Z"
+    },
+    "openaiDashboard": {
+      "accountID": "",
+      "accountPlan": "Pro 20x",
+      "codeReviewLimit": {
+        "usedPercent": 44
+      },
+      "codeReviewRemainingPercent": 56,
+      "creditEvents": [
+        {
+          "creditsUsed": 7.691,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "D394135F-EDF6-49A7-BB0F-08F1B97959DB",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 0.06,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "A3F6449D-0A21-44F2-B6D6-799538897259",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 15.83,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "61D69CC5-6D1D-42B2-9DBF-54B250BF663E",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 0.067,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "84AC228D-54FC-41E8-B1EA-3B9B8AFF85F6",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.334,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "26D36303-3506-427B-A98E-812D976A643B",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.331,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "6230F590-EDBE-490D-9243-7CB247BCD995",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.336,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "DC9ADB29-F1D3-4679-A902-94D6E741F1CC",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.346,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "44A95991-D5A5-4C70-A07B-3B94F94F61C5",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.348,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "6EC853ED-1215-472C-B3D9-8DEFF43CE1A0",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 23.325,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "235C5F3E-B3CD-4D31-B547-5D3982A35546",
+          "service": "Exec"
+        }
+      ],
+      "creditsAvailable": false,
+      "creditsRemaining": 0,
+      "dailyBreakdown": [
+        {
+          "day": "2026-08-07",
+          "services": [
+            {
+              "creditsUsed": 30.342999999999996,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 23.325,
+              "service": "Exec"
+            }
+          ],
+          "totalCreditsUsed": 53.66799999999999
+        }
+      ],
+      "primaryLimit": {
+        "resetDescription": "26. Sept., 10:15",
+        "resetsAt": "2026-09-26T08:15:28Z",
+        "usedPercent": 44,
+        "windowMinutes": 10080
+      },
+      "secondaryLimit": {
+        "resetDescription": "Resets Sep 26, 2026 10:15 AM",
+        "resetsAt": "2026-09-26T08:15:38Z",
+        "usedPercent": 44,
+        "windowMinutes": 10080
+      },
+      "signedInEmail": "redacted@example.com",
+      "subscriptionRenewsAt": "2026-10-09T09:04:37Z",
+      "updatedAt": "2026-09-21T08:32:38Z",
+      "usageBreakdown": [
+        {
+          "day": "2026-09-20",
+          "services": [
+            {
+              "creditsUsed": 68.25245010797093,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 5.145538182972864,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.00651530955977891,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 73.40450360050357
+        },
+        {
+          "day": "2026-09-19",
+          "services": [
+            {
+              "creditsUsed": 79.25594455168562,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 5.8102554874592425,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 4.787223048706037,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.04484530983749538,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 89.8982683976884
+        },
+        {
+          "day": "2026-09-18",
+          "services": [
+            {
+              "creditsUsed": 14.761035972274971,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 3.9797330599687433,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.2618270983365409,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.013440675004263134,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0017207953644370185,
+              "service": "Web"
+            }
+          ],
+          "totalCreditsUsed": 19.017757600948954
+        },
+        {
+          "day": "2026-09-17",
+          "services": [
+            {
+              "creditsUsed": 6.0593099737402545,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 4.816980186190753,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 3.375694687586812,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.022309817120569047,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 14.274294664638386
+        },
+        {
+          "day": "2026-09-16",
+          "services": [
+            {
+              "creditsUsed": 82.65580312531367,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 20.9749850982325,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 12.059117610599872,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.12193648138692234,
+              "service": "Agent Identity"
+            },
+            {
+              "creditsUsed": 0.054678706899029,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 115.866521022432
+        },
+        {
+          "day": "2026-09-15",
+          "services": [
+            {
+              "creditsUsed": 122.6472084297905,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 11.668696984764996,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 5.259039151230369,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.605165556041151,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.003915359227740154,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 140.18402548105476
+        },
+        {
+          "day": "2026-09-14",
+          "services": [
+            {
+              "creditsUsed": 164.62822822366357,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 8.6793914499475,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 3.548800519538309,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 1.163663920959402,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.021348045852592548,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 178.04143215996137
+        },
+        {
+          "day": "2026-09-13",
+          "services": [
+            {
+              "creditsUsed": 24.236612539148535,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.06638070509002066,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.014344466406398065,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 24.317337710644953
+        },
+        {
+          "day": "2026-09-12",
+          "services": [
+            {
+              "creditsUsed": 87.88504001935067,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 8.646245824140493,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 2.4370227738425925,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.011427419580298267,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 98.97973603691405
+        },
+        {
+          "day": "2026-09-11",
+          "services": [
+            {
+              "creditsUsed": 74.87898372296097,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 15.988255704400157,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 8.562156063615298,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.002886639116712968,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 99.43228213009313
+        },
+        {
+          "day": "2026-09-10",
+          "services": [
+            {
+              "creditsUsed": 231.57415368558767,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 25.051894344815306,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 13.817482695253126,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 1.9208179651243367,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.011532964305514334,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 272.37588165508595
+        },
+        {
+          "day": "2026-09-09",
+          "services": [
+            {
+              "creditsUsed": 282.9369777612248,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 44.82339839501428,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 13.352579614271653,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.017416413016720377,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0015410613761380392,
+              "service": "Agent Identity"
+            }
+          ],
+          "totalCreditsUsed": 341.1319132449036
+        },
+        {
+          "day": "2026-09-08",
+          "services": [
+            {
+              "creditsUsed": 301.8883203479208,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 62.44281420937484,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 37.14556282885925,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.013440104811553963,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0027739104770484703,
+              "service": "Agent Identity"
+            }
+          ],
+          "totalCreditsUsed": 401.49291140144345
+        },
+        {
+          "day": "2026-09-07",
+          "services": [
+            {
+              "creditsUsed": 112.21935063582205,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 1.4991771772082587,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.007061132951721987,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 113.72558894598203
+        },
+        {
+          "day": "2026-09-06",
+          "services": [
+            {
+              "creditsUsed": 2.731099869072424,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.008262200230185198,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 2.7393620693026093
+        },
+        {
+          "day": "2026-09-05",
+          "services": [
+            {
+              "creditsUsed": 15.387743691396526,
+              "service": "Work Desktop"
+            },
+            {
+              "creditsUsed": 13.371218792711016,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.013621123017666393,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 28.77258360712521
+        },
+        {
+          "day": "2026-09-04",
+          "services": [
+            {
+              "creditsUsed": 526.817926145604,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 48.642817629344464,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 24.266261147385833,
+              "service": "Work Desktop"
+            },
+            {
+              "creditsUsed": 0.25720314367743874,
+              "service": "Agent Identity"
+            },
+            {
+              "creditsUsed": 0.01579193398829199,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 600.0000000000001
+        },
+        {
+          "day": "2026-09-03",
+          "services": [
+            {
+              "creditsUsed": 136.8895564143725,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 14.168359562891386,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 1.121561985467787,
+              "service": "Work Desktop"
+            },
+            {
+              "creditsUsed": 0.1321677111480129,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0335834259333506,
+              "service": "Web"
+            }
+          ],
+          "totalCreditsUsed": 152.34522909981305
+        },
+        {
+          "day": "2026-09-02",
+          "services": [
+            {
+              "creditsUsed": 77.17689179141465,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 3.020440743321902,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.21512866219423954,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.012370382194178998,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 80.42483157912497
+        },
+        {
+          "day": "2026-09-01",
+          "services": [
+            {
+              "creditsUsed": 47.80362378302342,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 10.488186848634914,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 4.855622223144345,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.01830362259844806,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 63.165736477401126
+        },
+        {
+          "day": "2026-08-31",
+          "services": [
+            {
+              "creditsUsed": 146.62832457128312,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 49.811097491443824,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 2.397284708353934,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.9067638115909669,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.08938311628799618,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 199.83285369895984
+        },
+        {
+          "day": "2026-08-30",
+          "services": [
+            {
+              "creditsUsed": 36.29165552182744,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 1.455559117282007,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.8635264066667997,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.17237262576995827,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.08045480768858905,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.01838124072309288,
+              "service": "Work Mobile"
+            }
+          ],
+          "totalCreditsUsed": 38.88194971995789
+        },
+        {
+          "day": "2026-08-29",
+          "services": [
+            {
+              "creditsUsed": 21.39324911759806,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.2857718531554111,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.07683661132600961,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 21.75585758207948
+        },
+        {
+          "day": "2026-08-28",
+          "services": [
+            {
+              "creditsUsed": 159.85309563619492,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 7.9579538301772414,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 3.7230089552200765,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 1.097361758630852,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.2541111119005141,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 172.88553129212363
+        },
+        {
+          "day": "2026-08-27",
+          "services": [
+            {
+              "creditsUsed": 139.3652631047958,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 14.94642049326877,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 14.830670756882492,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 4.6333844136627755,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.025303226106292112,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 173.80104199471612
+        },
+        {
+          "day": "2026-08-26",
+          "services": [
+            {
+              "creditsUsed": 145.6219035721368,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 16.64040046512416,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 8.14507494241458,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 1.5609177824528266,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.013446654322402551,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 171.98174341645074
+        },
+        {
+          "day": "2026-08-25",
+          "services": [
+            {
+              "creditsUsed": 168.33790807672298,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 12.11883885524899,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 6.841100850545905,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.7876453920895197,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.02147549162839917,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 188.1069686662358
+        },
+        {
+          "day": "2026-08-24",
+          "services": [
+            {
+              "creditsUsed": 96.44214947681384,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 10.36617472681878,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 5.790424390509123,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.060733937721833144,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.032678422229599775,
+              "service": "Web"
+            }
+          ],
+          "totalCreditsUsed": 112.69216095409317
+        },
+        {
+          "day": "2026-08-23",
+          "services": [
+            {
+              "creditsUsed": 13.929213744246393,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.6103789666766262,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.004049827106550706,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 14.54364253802957
+        }
+      ]
+    },
+    "pace": {
+      "secondary": {
+        "deltaPercent": 17,
+        "etaSeconds": 205121,
+        "expectedUsedPercent": 29,
+        "stage": "farAhead",
+        "summary": "17% in deficit | Expected 29% used | Runs out in 2d 8h",
+        "willLastToReset": false
+      }
+    },
+    "provider": "codex",
+    "source": "oauth",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "codexResetCredits": {
+        "availableCount": 1,
+        "credits": [
+          {
+            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zur\u00fccksetzung des Ratenlimits erhalten.",
+            "expires_at": "2026-10-05T04:19:25Z",
+            "granted_at": "2026-09-05T04:19:25Z",
+            "id": "codex-reset-credit-v1-ebd1be319f630bbeeab719b81d1f8677238359e16b1f8680e91a222260c9cb3c",
+            "reset_type": "codex_rate_limits",
+            "status": "available",
+            "title": "Vollst\u00e4ndiges Zur\u00fccksetzen"
+          }
+        ],
+        "updatedAt": "2026-09-21T08:47:41Z"
+      },
+      "dataConfidence": "exact",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "loginMethod": "pro",
+        "providerID": "codex"
+      },
+      "loginMethod": "pro",
+      "primary": null,
+      "providerCost": {
+        "balanceUpdatedAt": "2026-09-21T08:47:41Z",
+        "currencyCode": "Credits",
+        "limit": 0,
+        "period": "Extra usage",
+        "updatedAt": "2026-09-21T08:47:41Z",
+        "used": 0
+      },
+      "secondary": {
+        "resetDescription": "Sep 26 at 10:15\u202fAM",
+        "resetsAt": "2026-09-26T08:15:28Z",
+        "usedPercent": 46,
+        "windowMinutes": 10080
+      },
+      "tertiary": null,
+      "updatedAt": "2026-09-21T08:47:41Z"
+    },
+    "version": "0.155.0"
+  }
+]

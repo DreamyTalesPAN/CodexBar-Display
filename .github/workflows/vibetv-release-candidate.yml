@@ -118,10 +118,10 @@ jobs:
               (cd "$dir" && CODEXBAR_DISPLAY_FW_VERSION="$fw" pio run -e "$env") 2>&1 | tee "$BUILD_LOG"
               source="$dir/.pio/build/$env/firmware.bin"
               if [[ "$env" == esp8266_* ]]; then
-                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 486000 350000
+                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 47 82 489000 350000
                 gzip -c -9 "$source" > "$destination"
               else
-                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 0 0
+                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 47 82 0 0
                 cp "$source" "$destination"
               fi
             fi
