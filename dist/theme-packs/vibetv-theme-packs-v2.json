@@ -6,17 +6,17 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.3.0",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/u/claude--7-af1d5b.json",
+      "version": "1.3.1",
+      "themeRev": 8,
+      "themeSpecPath": "/themes/u/claude--8-beb07c.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1",
         "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.3.0.zip",
-      "sha256": "3f180bb2c7fdd8dca2ecaddb793598e1dd69a27c02d903d6927469ad1b4794f9",
-      "bytes": 5545
+      "downloadAsset": "vibetv-theme-claude-creature-v1.3.1.zip",
+      "sha256": "82cf3e26236f5ea397528724feef58f8d6f7eb65e6f4cb2bbced24ab652e90ad",
+      "bytes": 5542
     },
     {
       "id": "clippy",
@@ -37,17 +37,17 @@
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.2.1",
-      "themeRev": 8,
-      "themeSpecPath": "/themes/u/mini-cl-8-958eb7.json",
+      "version": "1.2.2",
+      "themeRev": 9,
+      "themeSpecPath": "/themes/u/mini-cl-9-828c60.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1",
         "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.2.1.zip",
-      "sha256": "c7b8657e2790523b546f64699d33286335d7188c0723212f99fbcf028ab19b16",
-      "bytes": 21657
+      "downloadAsset": "vibetv-theme-mini-classic-v1.2.2.zip",
+      "sha256": "efc76b5fd2805702e0690c51bebc3afe6259c3d4ed3f542d1a118fa7cf8a6bd2",
+      "bytes": 21647
     },
     {
       "id": "night-clock",

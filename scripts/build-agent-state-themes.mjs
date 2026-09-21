@@ -235,7 +235,7 @@ const mini = JSON.parse(
 mini.p = mini.p.filter(
   (p) => !p.a?.startsWith("/themes/u/mi-") || p.a === "/themes/u/mi-eyes.cba",
 );
-mini.rev = 8;
+mini.rev = 9;
 const props = {},
   sa = { idle: "/themes/u/mi-blank.cbi" };
 props["mi-blank.cbi"] = encode(1, 1, [["#000000"]], 0);
@@ -309,7 +309,7 @@ mini.p.push({
   a: sa.idle,
   sa,
 });
-await finish("mini-classic", mini, "1.2.1", props);
+await finish("mini-classic", mini, "1.2.2", props);
 
 // Claude Design's current Creature files are static SVG poses (no embedded
 // animation). Rasterize the actual 62x66 artwork in its existing 77x77 slot.
@@ -352,8 +352,8 @@ for (const [key, name] of [
 const creatureSprite = creature.p.find((p) => p.t === "sp");
 creatureSprite.a = creatureStates.idle;
 creatureSprite.sa = creatureStates;
-creature.rev = 7;
-await finish("claude-creature", creature, "1.3.0", creatureAssets);
+creature.rev = 8;
+await finish("claude-creature", creature, "1.3.1", creatureAssets);
 
 // The existing synthwave heading uses font 4 at its minimum size. Use font 2
 // inside the same 198x23 slot so lifecycle text can fit without clipping.

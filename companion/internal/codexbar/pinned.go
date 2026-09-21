@@ -1,4 +1,4 @@
 package codexbar
 
 // Immutable identity of the shipped archive; kept in sync with its manifest.
-const PinnedVersion = "0.56.8"
+const PinnedVersion = "0.63.0"

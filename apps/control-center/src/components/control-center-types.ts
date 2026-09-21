@@ -481,6 +481,7 @@ export type PreferenceHealthState =
   | "auth_required"
   | "browser_sign_in_required"
   | "setup_required"
+  | "unsupported"
   | "stale"
   | "service_outage"
   | "unavailable"
