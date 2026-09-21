@@ -66,9 +66,6 @@ unsigned int cbaBufferContentionStreak = 0;
 // Row the owning sprite had reached when contention was last observed. A
 // changed value proves the owner is still advancing.
 int cbaBufferContentionOwnerRow = -1;
-// The owner whose progress is being watched. A different owner is progress in
-// itself, because the buffer changed hands.
-const AnimatedSpriteCache* cbaBufferContentionOwner = nullptr;
 // Above this many consecutive contended attempts without any owner progress
 // the sprites are treated as starved and the condition is published.
 constexpr unsigned int kCbaBufferContentionStreakLimit = 12;
@@ -110,6 +107,10 @@ struct AnimatedSpriteCache {
 
 AnimatedSpriteCache animatedSpriteCaches[kAnimatedSpriteCacheSlots];
 AnimatedSpriteCache* cbaFrameBufferOwner = nullptr;
+// The owner whose progress is being watched while another sprite waits for the
+// shared frame buffer. A different owner is progress in itself, because the
+// buffer changed hands.
+const AnimatedSpriteCache* cbaBufferContentionOwner = nullptr;
 int nextAnimatedSpriteCacheSlot = 0;
 
 void markThemeSpecRenderOk() {
