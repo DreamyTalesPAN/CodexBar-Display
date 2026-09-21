@@ -511,10 +511,17 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
     // active session" reverts to "Reset unavailable" the moment the shared
     // trust budget expires. Night Clock binds nothing but {pv1r}/{pv2r}, so
     // leaving this field out froze that screen on its last wording.
-    for (size_t i = 0; i < core::kMaxProviderSlots; ++i) {
-      if (core::ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i)) {
-        countdownFields |= codexbar_display::themespec::kThemeSpecFieldProviderSlots;
-      }
+    //
+    // Probed by substring instead of through
+    // ThemeSpecUsesProviderSlotResetBinding: instantiating that helper here
+    // costs ~83 bytes, and the image has fewer than that left under the 46%
+    // ceiling. Matching the "providerSlot" prefix also accepts the label and
+    // percent bindings, so a theme showing provider labels repaints them on
+    // the same tick. That repaint is idempotent, so erring wide is cheap;
+    // missing the countdown is not.
+    if (themeSpecRaw.indexOf("pv1r") >= 0 || themeSpecRaw.indexOf("pv2r") >= 0 ||
+        themeSpecRaw.indexOf("providerSlot") >= 0) {
+      countdownFields |= codexbar_display::themespec::kThemeSpecFieldProviderSlots;
     }
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&

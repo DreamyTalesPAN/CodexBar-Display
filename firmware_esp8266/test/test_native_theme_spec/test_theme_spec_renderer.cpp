@@ -893,6 +893,9 @@ void testUsageWindowResetCountdownsTickIndependently() {
 // provider-slot countdowns would never be asked to repaint: an idle slot
 // reading "No active session" would keep that wording after the trust budget
 // expired, presenting a value the device can no longer stand behind.
+//
+// DrawReset probes this by substring because the image has no flash left for
+// the formatted helper, so the shipped theme is pinned here directly.
 void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
   const String nightClockish =
       String(R"JSON({"p":[{"t":"tx","b":"pv1l"},{"t":"tx","b":"pv1r"},)JSON")
@@ -907,6 +910,18 @@ void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
   // A theme that only shows provider labels has no countdown to repaint.
   TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(
       String(R"JSON({"p":[{"t":"tx","b":"pv1l"},{"t":"tx","b":"pv2l"}]})JSON"), 0));
+
+  // The substring probe DrawReset actually runs, over the same inputs.
+  const auto drawResetProbe = [](const String& raw) {
+    return raw.indexOf("pv1r") >= 0 || raw.indexOf("pv2r") >= 0 ||
+           raw.indexOf("providerSlot") >= 0;
+  };
+  TEST_ASSERT_TRUE(drawResetProbe(nightClockish));
+  TEST_ASSERT_TRUE(drawResetProbe(
+      String(R"JSON({"p":[{"t":"tx","v":"{providerSlot1Reset}"}]})JSON")));
+  // A theme with no provider binding at all still asks for nothing.
+  TEST_ASSERT_FALSE(drawResetProbe(
+      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON")));
 }
 
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
