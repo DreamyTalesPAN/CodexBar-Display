@@ -1051,6 +1051,21 @@ bool testUploadedSpriteAssetsAreValidatedBeforePromotion(const char* mainPath) {
           "an uploaded sprite header must match its destination extension")) {
     return false;
   }
+  // AssetPathLooksAnimated() compares ".cba" case-sensitively, so an uppercase
+  // .CBA is never scheduled for animation. Matching case-insensitively here
+  // would promote a payload that then renders nothing.
+  const std::size_t animatedHelper =
+      mainSource.find("bool assetPathLooksAnimatedSprite(const String& path) {");
+  if (!expect(animatedHelper != std::string::npos, "the animated-suffix helper must remain discoverable")) {
+    return false;
+  }
+  const std::string animatedBody = mainSource.substr(animatedHelper, 400);
+  if (!expect(
+          animatedBody.find("toLowerCase()") == std::string::npos &&
+              animatedBody.find("path.endsWith(\".cba\")") != std::string::npos,
+          "only the canonical lowercase .cba may be treated as animated")) {
+    return false;
+  }
   if (!expect(
           mainSource.find("committed = validateCompletedAssetUpload() && promoteCompletedAssetUpload()") !=
                   std::string::npos &&

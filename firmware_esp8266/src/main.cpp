@@ -2710,10 +2710,6 @@ bool validateCompletedAssetUpload() {
       // A CBA1 payload stored as .cbi never gets an animation tick and a CBI1
       // stored as .cba is skipped by the animated path, so either mismatch
       // leaves a missing sprite while the device still reports healthy.
-      // Animation scheduling keys off the destination suffix, not the header.
-      // A CBA1 payload stored as .cbi never gets an animation tick and a CBI1
-      // stored as .cba is skipped by the animated path, so either mismatch
-      // leaves a missing sprite while the device still reports healthy.
       if (spriteInfo.animated != assetPathLooksAnimatedSprite(assetUploadPath)) {
         setAssetUploadError("sprite header does not match file extension");
         return false;
@@ -2788,9 +2784,10 @@ bool assetPathLooksSprite(const String& path) {
 }
 
 bool assetPathLooksAnimatedSprite(const String& path) {
-  String lower = path;
-  lower.toLowerCase();
-  return lower.endsWith(".cba");
+  // AssetPathLooksAnimated() compares ".cba" case-sensitively, so only the
+  // canonical lowercase spelling is ever scheduled for animation. Matching
+  // case-insensitively here would promote a .CBA that never animates.
+  return path.endsWith(".cba");
 }
 
 bool assetUploadContentLengthWouldExceedLimits(const HTTPUpload& upload) {
