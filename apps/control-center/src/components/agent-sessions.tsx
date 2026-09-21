@@ -60,7 +60,7 @@ export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) 
         {available ? <span className="font-mono text-xs text-muted-foreground">updated {elapsed(now - snapshot.generatedAt)} ago</span> : null}
       </div>
       {sessions.length ? (
-        <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(164px,100%),1fr))] gap-3">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(164px,100%),1fr))] gap-3">
           {sessions.map((session) => {
             const waiting = agentThemeState(session.phase) === "needs_you";
             const name = snapshot!.sources.find((source) => source.id === session.source)?.name || "Agent";
