@@ -251,6 +251,10 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   // released while the next theme is parsed and compiled; GifCore allocates it
   // lazily only after real playback has found a valid GIF header.
   resetAnimatedSpriteCaches();
+  // The previous theme's assets are no longer drawn, so its sprite diagnostic
+  // cannot describe the current render. A failing asset that the new theme
+  // still references is re-reported by the next render pass.
+  clearSpriteRenderError();
   GifCore().ReleaseMemory();
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
@@ -534,7 +538,9 @@ void drawStaticSpriteAsset(
         !ThemeSpecRuntimePolicy::ScaledSpriteRowIntersectsClip(row, height, y, drawHeight, clip.y, clip.height)) {
       const int drawY1 = y + ((row * drawHeight) / height);
       if (drawY1 >= clip.y + clip.height) {
-        break;
+        // The rows below the clip were never read, so this pass proves
+        // nothing about them. Leave recovery to a scan reaching the last row.
+        return;
       }
     } else if (!drawSpriteRleRow(
                    line,
@@ -896,7 +902,11 @@ void drawSpriteAsset(
 }
 
 void resetAnimatedSpriteCaches() {
-  clearSpriteRenderError();
+  // Deliberately keeps lastAnimatedSpriteError/lastSpriteErrorAsset: dropping
+  // the animation caches frees memory, it does not repair a broken asset.
+  // Only a completed decode of the failing asset clears the diagnostic, so an
+  // unrelated upload cannot make /health report renderOk for a still-broken
+  // active sprite.
   cbaRenderJobInProgress = false;
   cbaFrameBufferOwner = nullptr;
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {

@@ -1105,6 +1105,52 @@ bool testSpriteDecodeFailuresReachRenderHealth(const char* themeSpecRendererPath
       "a sprite that decodes again must clear its own render error");
 }
 
+// Recovery must require proof that the failing asset decoded again. Dropping
+// caches or skipping rows below a clip proves nothing, so neither may restore
+// renderOk while the active sprite is still broken.
+bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRendererPath) {
+  const std::string renderer = readFile(themeSpecRendererPath);
+  const std::size_t resetStart = renderer.find("void resetAnimatedSpriteCaches() {");
+  if (!expect(resetStart != std::string::npos, "the sprite cache reset must remain discoverable")) {
+    return false;
+  }
+  const std::size_t resetEnd = renderer.find("\n}", resetStart);
+  if (!expect(resetEnd != std::string::npos, "the sprite cache reset must be delimited")) {
+    return false;
+  }
+  const std::string reset = renderer.substr(resetStart, resetEnd - resetStart);
+  // resetAnimatedSpriteCaches() runs on every asset upload and on activity or
+  // provider partial renders. Clearing the diagnostic there hides a broken
+  // active sprite behind an unrelated upload.
+  if (!expect(
+          reset.find("clearSpriteRenderError()") == std::string::npos,
+          "dropping animation caches must not clear the sprite render error")) {
+    return false;
+  }
+  const std::size_t drawStart = renderer.find("void drawStaticSpriteAsset(");
+  const std::size_t drawEnd = renderer.find("AnimatedSpriteCache* animatedSpriteCacheForPath(", drawStart);
+  if (!expect(
+          drawStart != std::string::npos && drawEnd != std::string::npos,
+          "the static sprite draw path must remain discoverable")) {
+    return false;
+  }
+  const std::string staticDraw = renderer.substr(drawStart, drawEnd - drawStart);
+  // A clipped render deliberately stops before the last row. Falling through
+  // to the success block would clear an error found in a row it never read.
+  if (!expect(
+          staticDraw.find("if (drawY1 >= clip.y + clip.height) {") != std::string::npos &&
+              staticDraw.find("break;") == std::string::npos,
+          "a clipped sprite render must leave the row loop without reaching recovery")) {
+    return false;
+  }
+  // A new theme no longer draws the old theme's assets, so its stale
+  // diagnostic must not outlive the theme switch.
+  return expect(
+      renderer.find("ensureThemeSpecSceneCached") != std::string::npos &&
+          renderer.find("clearSpriteRenderError();\n  GifCore().ReleaseMemory();") != std::string::npos,
+      "switching themes must clear the previous theme's sprite diagnostic");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1220,6 +1266,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testSpriteDecodeFailuresReachRenderHealth(argv[1])) {
+    return 1;
+  }
+  if (!testSpriteRenderErrorsOnlyClearOnProvenDecode(argv[1])) {
     return 1;
   }
 

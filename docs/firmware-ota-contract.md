@@ -182,3 +182,23 @@ build is approximately 484.3 KB, so CI and release-candidate image budgets are
 budgets remain unchanged, as do the receiver's runtime update-size checks. This
 source-feature budget adjustment is not hardware update acceptance; the
 combined image still requires the release rehearsal described above.
+
+## #221 sprite-validation budget
+
+Adding the CBI/CBA upload validator grew the image by 2,208 bytes, from
+484,448 to 486,656 bytes (flash 46.0% to 46.2%). The image budget moves to
+489,000 bytes and the flash budget to 47%; the 82% RAM and 350,000-byte
+compressed-image budgets are unchanged, and the compressed image still measures
+343,915 bytes.
+
+This stays well inside the OTA constraint rather than spending headroom the
+device does not have. The sketch region is 1,044,464 bytes and an OTA image is
+staged in its free space while the running image occupies the rest, so the
+hard ceiling is half the region: 522,232 bytes. At 486,656 bytes the image
+keeps 35,576 bytes of OTA headroom, and `otaMaxSizeForCommand()` reports
+roughly 557,056 bytes free for the staged image. The new budget of 489,000
+bytes leaves 33,232 bytes of margin below that ceiling.
+
+As above, this is a source-feature budget adjustment, not hardware update
+acceptance. The combined image still requires the release rehearsal described
+above.
