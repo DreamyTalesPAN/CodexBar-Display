@@ -1856,7 +1856,7 @@ func TestUnsupportedProviderKeepsGuidanceWithoutInventingReadiness(t *testing.T)
 	if len(items) != 1 || items[0].Health.State != "unsupported" || items[0].Health.Reported != message {
 		t.Fatalf("unsupported provider lost its state or guidance: %+v", items)
 	}
-	if providerReadinessNextAction(codexbar.ProviderUnsupported) != "Follow the provider message and choose another provider." {
+	if providerReadinessNextAction(codexbar.ProviderUnsupported) != "Read the provider message, then switch this provider off and use another one." {
 		t.Fatal("unsupported provider got retry or repair guidance")
 	}
 	settings[0].Enabled = false
