@@ -1145,10 +1145,33 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
   }
   // A new theme no longer draws the old theme's assets, so its stale
   // diagnostic must not outlive the theme switch.
-  return expect(
+  if (!expect(
       renderer.find("ensureThemeSpecSceneCached") != std::string::npos &&
           renderer.find("clearSpriteRenderError();\n  GifCore().ReleaseMemory();") != std::string::npos,
-      "switching themes must clear the previous theme's sprite diagnostic");
+      "switching themes must clear the previous theme's sprite diagnostic")) {
+    return false;
+  }
+  // Corruption can sit in a later CBA frame while frame zero still decodes,
+  // and a failure restarts the animation at frame zero. Clearing after one
+  // frame would flip /health between ok and broken forever.
+  if (!expect(
+          renderer.find("int consecutiveCleanFrames = 0;") != std::string::npos &&
+              renderer.find("cache.consecutiveCleanFrames >= cache.frameCount &&") != std::string::npos,
+          "a CBA must decode every frame before its render error is cleared")) {
+    return false;
+  }
+  const std::size_t cancelStart = renderer.find("void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {");
+  if (!expect(cancelStart != std::string::npos, "the animated frame cancel path must remain discoverable")) {
+    return false;
+  }
+  const std::size_t cancelEnd = renderer.find("\n}", cancelStart);
+  if (!expect(cancelEnd != std::string::npos, "the animated frame cancel path must be delimited")) {
+    return false;
+  }
+  const std::string cancel = renderer.substr(cancelStart, cancelEnd - cancelStart);
+  return expect(
+      cancel.find("cache.consecutiveCleanFrames = 0;") != std::string::npos,
+      "an aborted CBA frame must restart the clean-pass requirement");
 }
 
 }  // namespace

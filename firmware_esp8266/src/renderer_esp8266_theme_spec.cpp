@@ -70,6 +70,10 @@ struct AnimatedSpriteCache {
   uint32_t nextRowOffset = 0;
   bool frameInProgress = false;
   bool frameReadyToPush = false;
+  // Counts frames completed without an intervening failure. Recovery needs a
+  // full pass over the frame table, because corruption can sit in a later
+  // frame while frame zero still decodes.
+  int consecutiveCleanFrames = 0;
   unsigned long frameStartedAtMs = 0;
   unsigned long nextFrameAtMs = 0;
   int frameBufferWidth = 0;
@@ -173,6 +177,9 @@ void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {
   cache.frameInProgress = false;
   cache.nextRow = 0;
   cache.nextRowOffset = 0;
+  // An aborted frame breaks the clean run, so recovery must start over from a
+  // full pass rather than counting frames from before the failure.
+  cache.consecutiveCleanFrames = 0;
 }
 
 void cooperativeYield() {
@@ -734,8 +741,14 @@ void pushCompletedAnimatedSpriteFrame(
   }
   cache.frameReadyToPush = false;
   cbaCompletedFrames += 1;
-  // A completed frame proves this asset decodes again.
-  if (lastSpriteErrorAsset == cache.path) {
+  if (cache.consecutiveCleanFrames < cache.frameCount) {
+    cache.consecutiveCleanFrames += 1;
+  }
+  // One good frame proves nothing: a failure in a later frame invalidates the
+  // cache and the retry restarts at frame zero, so clearing here would flip
+  // /health between ok and broken forever. Require a full clean pass.
+  if (cache.consecutiveCleanFrames >= cache.frameCount &&
+      lastSpriteErrorAsset == cache.path) {
     clearSpriteRenderError();
   }
   cbaLastFrameDurationMs = millis() - cache.frameStartedAtMs;
