@@ -706,6 +706,16 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
           "CBA frame delay must follow the asset fps")) {
     return false;
   }
+  // A non-animating CBA never decodes a second frame, so demanding the full
+  // frame table would keep /health broken forever after it recovers.
+  if (!expect(
+          ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(4, 8) == 4 &&
+              ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(4, 0) == 1 &&
+              ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(1, 8) == 1 &&
+              ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(0, 0) == 1,
+          "only an animating CBA may require a full frame table to recover")) {
+    return false;
+  }
   if (!expect(
           ThemeSpecRuntimePolicy::CbaBufferBytes(74, 74) == 10952 &&
               ThemeSpecRuntimePolicy::CbaBufferBytes(77, 77) == 11858 &&
@@ -1157,12 +1167,43 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
   // frame would flip /health between ok and broken forever.
   if (!expect(
           renderer.find("int consecutiveCleanFrames = 0;") != std::string::npos &&
-              renderer.find("cache.consecutiveCleanFrames >= cache.frameCount &&") != std::string::npos,
+              renderer.find("ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(") != std::string::npos,
           "a CBA must decode every frame before its render error is cleared")) {
     return false;
   }
   const std::size_t cancelStart = renderer.find("void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {");
   if (!expect(cancelStart != std::string::npos, "the animated frame cancel path must remain discoverable")) {
+    return false;
+  }
+  // A transient "low heap" condition must never outrank a real decode failure
+  // for the same asset, or /health blames memory for a broken sprite forever.
+  const std::size_t markStart = renderer.find("void markSpriteRenderFailed(const char* code, const char* assetPath) {");
+  if (!expect(markStart != std::string::npos, "the sprite failure path must remain discoverable")) {
+    return false;
+  }
+  const std::size_t markEnd = renderer.find("\n}", markStart);
+  if (!expect(markEnd != std::string::npos, "the sprite failure path must be delimited")) {
+    return false;
+  }
+  const std::string mark = renderer.substr(markStart, markEnd - markStart);
+  if (!expect(
+          mark.find("lastSpriteErrorIsDecodeFailure) {") != std::string::npos &&
+              mark.find("lastSpriteErrorIsDecodeFailure = true;") != std::string::npos,
+          "a decode failure must supersede a transient error for the same asset")) {
+    return false;
+  }
+  const std::size_t transientStart = renderer.find("void setSpriteRenderError(const char* code, const char* assetPath) {");
+  if (!expect(transientStart != std::string::npos, "the transient sprite error path must remain discoverable")) {
+    return false;
+  }
+  const std::size_t transientEnd = renderer.find("\n}", transientStart);
+  if (!expect(transientEnd != std::string::npos, "the transient sprite error path must be delimited")) {
+    return false;
+  }
+  if (!expect(
+          renderer.substr(transientStart, transientEnd - transientStart)
+                  .find("lastSpriteErrorIsDecodeFailure = false;") != std::string::npos,
+          "a transient sprite error must record itself as non-fatal")) {
     return false;
   }
   const std::size_t cancelEnd = renderer.find("\n}", cancelStart);

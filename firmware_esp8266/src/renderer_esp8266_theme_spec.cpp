@@ -44,6 +44,10 @@ const char* lastAnimatedSpriteError = "";
 // ever reach this field, so support diagnostics can name the failing file
 // without exposing unrelated customer data.
 String lastSpriteErrorAsset = "";
+// Severity of the current sprite diagnostic. A transient resource condition
+// may be replaced by a real decode failure for the same asset; the reverse
+// must not happen, or low memory would permanently mask a broken asset.
+bool lastSpriteErrorIsDecodeFailure = false;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -103,23 +107,31 @@ void setSpriteRenderError(const char* code, const char* assetPath) {
   }
   lastAnimatedSpriteError = code == nullptr ? "sprite_render_failed" : code;
   lastSpriteErrorAsset = path;
+  lastSpriteErrorIsDecodeFailure = false;
 }
 
 // A sprite that cannot be decoded is a real render failure, not a skippable
 // primitive: the theme would otherwise show a missing image area while health
 // still reported renderOk.
 void markSpriteRenderFailed(const char* code, const char* assetPath) {
+  // A decode failure outranks a transient condition for the same asset. Only
+  // an existing decode failure for that asset is kept, so the reported code
+  // stays stable without letting "low heap" hide a genuinely broken sprite.
   if (lastAnimatedSpriteError[0] != '\0' &&
-      lastSpriteErrorAsset == (assetPath == nullptr ? "" : assetPath)) {
+      lastSpriteErrorAsset == (assetPath == nullptr ? "" : assetPath) &&
+      lastSpriteErrorIsDecodeFailure) {
     return;
   }
-  setSpriteRenderError(code, assetPath);
+  lastAnimatedSpriteError = code == nullptr ? "sprite_render_failed" : code;
+  lastSpriteErrorAsset = assetPath == nullptr ? "" : assetPath;
+  lastSpriteErrorIsDecodeFailure = true;
   themeSpecRenderFailures += 1;
 }
 
 void clearSpriteRenderError() {
   lastAnimatedSpriteError = "";
   lastSpriteErrorAsset = "";
+  lastSpriteErrorIsDecodeFailure = false;
 }
 
 // Retires a diagnostic whose asset the compiled scene no longer references at
@@ -767,8 +779,13 @@ void pushCompletedAnimatedSpriteFrame(
   }
   // One good frame proves nothing: a failure in a later frame invalidates the
   // cache and the retry restarts at frame zero, so clearing here would flip
-  // /health between ok and broken forever. Require a full clean pass.
-  if (cache.consecutiveCleanFrames >= cache.frameCount &&
+  // /health between ok and broken forever. Require a full clean pass -- except
+  // for a non-animating CBA, which never decodes a second frame and would
+  // otherwise keep renderOk: false even after it renders correctly.
+  if (cache.consecutiveCleanFrames >=
+          ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(
+              cache.frameCount,
+              cache.fps) &&
       lastSpriteErrorAsset == cache.path) {
     clearSpriteRenderError();
   }
