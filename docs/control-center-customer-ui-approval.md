@@ -4688,3 +4688,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by Paul's Overview-card request above and its exact Claude Design reference, whose grid uses auto-fill with a 164px minimum track width.
 - Approved customer-visible result: With only one or two sessions, cards retain compact grid tracks instead of stretching across the entire row. Existing responsive wrapping, card contents and controls are unchanged.
 - Scope: The one-word auto-fit to auto-fill correction in AgentSessions; this records fidelity to the already requested design, not a new design direction.
+
+### 2026-09-21 — One switch for every supported agent
+
+- User approval: Paul requested: "Agent connections und alles was dazugehört wieder entfernen. agent activity reicht, wenn ich das da an flippe, dann wird das einfach für alle angeschaltet".
+- Approved customer-visible result: Remove Agent connections and its per-agent switches. Show agent activity enables the existing observers for all supported agents together; switching it off removes VibeTV-owned hooks and leaves usage visible. Existing third-party hooks and agent settings are preserved. Failures use the existing settings error dialog.
+- Scope: Supersedes the separate connection-path entry above. Keep Overview session cards and the existing blink, reminder and quiet settings. One engine-owned bulk operation replaces the per-source public endpoint; no new provider semantics, signing, merge or release.

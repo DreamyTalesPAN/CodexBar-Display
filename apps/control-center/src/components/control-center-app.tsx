@@ -399,10 +399,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     null,
   );
   const [agents, setAgents] = useState<AgentSnapshot | null>(null);
-  const applyAgents = useCallback((snapshot?: AgentSnapshot) => {
-    setAgents((current) => current && snapshot?.health === "ready" &&
-      current.generatedAt > snapshot.generatedAt ? current : snapshot || null);
-  }, []);
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
   const [deviceCandidates, setDeviceCandidates] = useState<DeviceCandidate[]>(
     [],
@@ -1219,7 +1215,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
-        applyAgents(payload.agents);
+        setAgents(payload.agents || null);
         applyConnectionStatus(payload);
         setProviderSetup(payload.providerSetup || null);
         setProviderSelectionSetup(payload.setup || null);
@@ -1349,7 +1345,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [
       addEvent,
-      applyAgents,
       applyConnectionStatus,
       applyPolledDeviceSnapshot,
       applyThemeInstallJob,
@@ -1386,7 +1381,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
-      applyAgents(payload.agents);
+      setAgents(payload.agents || null);
       applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
@@ -1428,7 +1423,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       statusPollInFlight.current = false;
     }
   }, [
-    applyAgents,
     applyConnectionStatus,
     applyPolledDeviceSnapshot,
     applyThemeInstallJob,
@@ -4910,8 +4904,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
-            agents={agents}
-            onAgentsChange={applyAgents}
             agentSettingsRequest={runCompanion}
             usageMode={usageMode}
             usageSavePending={usageModePending}

@@ -90,7 +90,7 @@ function entryFor(agentId, event, {runtimeDir, directory, platform = process.pla
   return entry;
 }
 
-function configure(agentId, enabled, options) {
+function prepare(agentId, enabled, options) {
   const profile = profiles[agentId];
   if (!profile || typeof enabled !== 'boolean') throw Error('unsupported-integration');
   const requestedPath = options.settingsPath || fileFor(profile);
@@ -146,17 +146,48 @@ function configure(agentId, enabled, options) {
   if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
   }
   if (JSON.stringify(settings) === before) return;
-  // Version detection can invoke a CLI. Refuse a stale edit if that client
-  // changed its configuration in the meantime.
-  const currentBytes = fs.existsSync(file) ? fs.readFileSync(file) : null;
-  if ((originalBytes === null) !== (currentBytes === null) || originalBytes && !originalBytes.equals(currentBytes)) throw Error('agent-settings-changed');
-  // One bounded backup, never overwrite an earlier pre-integration backup.
-  if (fs.existsSync(file)) {
-    try { fs.copyFileSync(file, file + '.vibetv-backup', fs.constants.COPYFILE_EXCL); fs.chmodSync(file + '.vibetv-backup', 0o600); }
-    catch (error) { if (error.code !== 'EEXIST') throw error; }
+  let writtenBytes;
+  return {
+    commit() {
+      // Version detection can invoke a CLI. Refuse stale edits.
+      const current = fs.existsSync(file) ? fs.readFileSync(file) : null;
+      if ((originalBytes === null) !== (current === null) || originalBytes && !originalBytes.equals(current)) throw Error('agent-settings-changed');
+      if (originalBytes) {
+        try { fs.copyFileSync(file, file + '.vibetv-backup', fs.constants.COPYFILE_EXCL); fs.chmodSync(file + '.vibetv-backup', 0o600); }
+        catch (error) { if (error.code !== 'EEXIST') throw error; }
+      }
+      writeJsonAtomic(file, settings);
+      writtenBytes = fs.readFileSync(file);
+      fs.chmodSync(file, 0o600);
+    },
+    rollback() {
+      // Never overwrite another process's edit while undoing a failed batch.
+      if (!writtenBytes) return;
+      if (!fs.readFileSync(file).equals(writtenBytes)) throw Error('agent-settings-changed');
+      if (originalBytes === null) fs.unlinkSync(file);
+      else fs.writeFileSync(file, originalBytes, {mode: 0o600});
+    },
+  };
+}
+
+function configure(agentId, enabled, options) {
+  prepare(agentId, enabled, options)?.commit();
+}
+
+function configureAll(enabled, options) {
+  if (typeof enabled !== 'boolean') throw Error('invalid-agent-activity');
+  // Validate every client's native settings before changing any of them.
+  const plans = Object.keys(profiles).map(id => prepare(id, enabled, options)).filter(Boolean);
+  const attempted = [];
+  try {
+    for (const plan of plans) { attempted.push(plan); plan.commit(); }
+  } catch (error) {
+    const errors = [error];
+    for (const plan of attempted.reverse()) {
+      try { plan.rollback(); } catch (rollbackError) { errors.push(rollbackError); }
+    }
+    throw new AggregateError(errors, 'agent-activity-could-not-be-saved');
   }
-  writeJsonAtomic(file, settings);
-  fs.chmodSync(file, 0o600);
 }
 
 // The app updater replaces the containing bundle. Refresh only integrations
@@ -168,4 +199,4 @@ function refreshConfigured(options) {
   }
 }
 
-module.exports = {profiles, connection, configure, entryFor, eventsFor, refreshConfigured};
+module.exports = {profiles, connection, configure, configureAll, entryFor, eventsFor, refreshConfigured};

@@ -50,7 +50,12 @@ and pin upgrades without rebuilding their parsers inside the Companion.
 
 
 Product-path evidence is recorded in `agent-lifecycle-native-validation.md`.
-Installed hooks refresh on app startup only for previously connected clients;
+The Show agent activity master switch installs observation hooks for every
+supported hook adapter together; switching it off removes only VibeTV-owned
+hooks. Codex uses its automatic local log monitor. There are no per-agent
+connection controls or public per-source configuration endpoint. All native
+configurations are validated before the batch writes; failures do not report
+success. Installed hooks refresh on app startup for previously enabled clients;
 foreign hooks and native permissions remain unchanged. This covers hook
 migration, not a signed Sparkle/NSIS installation or rollback rehearsal.
 

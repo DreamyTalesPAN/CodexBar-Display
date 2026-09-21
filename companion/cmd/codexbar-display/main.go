@@ -573,7 +573,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	server, err := companionapi.New(companionapi.Options{
 		DisplayStreamRunning: workerRunning.Load,
 		AgentSnapshot:        engine.Snapshot,
-		ConfigureAgent:       engine.Configure,
+		ConfigureAgents:      engine.Configure,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {

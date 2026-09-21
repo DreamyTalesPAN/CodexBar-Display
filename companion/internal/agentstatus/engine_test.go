@@ -81,10 +81,9 @@ func TestConfigureUsesAuthenticatedLocalEngineAndReturnsItsSnapshot(t *testing.T
 			t.Error("invalid engine request")
 		}
 		var payload struct {
-			Source  string
 			Enabled bool
 		}
-		if json.NewDecoder(r.Body).Decode(&payload) != nil || payload.Source != "claude-code" || !payload.Enabled {
+		if json.NewDecoder(r.Body).Decode(&payload) != nil || !payload.Enabled {
 			t.Error("wrong choice")
 		}
 		_ = json.NewEncoder(w).Encode(validSnapshot(time.Now()))
@@ -96,7 +95,7 @@ func TestConfigureUsesAuthenticatedLocalEngineAndReturnsItsSnapshot(t *testing.T
 		t.Fatal(err)
 	}
 	engine := &Engine{runtimeDir: dir}
-	got, err := engine.Configure(context.Background(), "claude-code", true)
+	got, err := engine.Configure(context.Background(), true)
 	if err != nil || !called || got.Phase != "working" {
 		t.Fatalf("%+v %v", got, err)
 	}
@@ -106,7 +105,7 @@ func TestConfigureUsesAuthenticatedLocalEngineAndReturnsItsSnapshot(t *testing.T
 	// A tampered discovery file must never leak the bearer token off-machine.
 	data, _ = json.Marshal(map[string]string{"url": "https://example.invalid", "token": token})
 	_ = os.WriteFile(filepath.Join(dir, "endpoint.json"), data, 0600)
-	if _, err := engine.Configure(context.Background(), "claude-code", true); err == nil {
+	if _, err := engine.Configure(context.Background(), true); err == nil {
 		t.Fatal("external endpoint accepted")
 	}
 }

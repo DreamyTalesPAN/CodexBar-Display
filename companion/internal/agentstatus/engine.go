@@ -40,7 +40,6 @@ type Source struct {
 	Transport        string `json:"transport"`
 	CapabilityLevel  string `json:"capabilityLevel"`
 	ExplicitThinking bool   `json:"explicitThinking"`
-	Connection       string `json:"connection"`
 }
 type Snapshot struct {
 	SchemaVersion    int       `json:"schemaVersion"`
@@ -102,7 +101,7 @@ func decode(data []byte, now time.Time) (Snapshot, error) {
 		seen[row.ID] = true
 	}
 	for _, source := range s.Sources {
-		if !sourcePattern.MatchString(source.ID) || len(source.Name) > 80 || len(source.Transport) > 32 || len(source.CapabilityLevel) > 32 || len(source.Connection) > 24 {
+		if !sourcePattern.MatchString(source.ID) || len(source.Name) > 80 || len(source.Transport) > 32 || len(source.CapabilityLevel) > 32 {
 			return s, errors.New("invalid engine source")
 		}
 	}
@@ -209,12 +208,9 @@ func (e *Engine) run(ctx context.Context, directory, runtimeDir string) {
 	}
 }
 
-// Configure forwards an explicit user choice to Clawd. Source-specific paths,
+// Configure forwards the activity master switch to Clawd. Source-specific paths,
 // settings formats and hook ownership stay entirely inside the engine.
-func (e *Engine) Configure(ctx context.Context, source string, enabled bool) (Snapshot, error) {
-	if !sourcePattern.MatchString(source) {
-		return Snapshot{}, errors.New("invalid agent source")
-	}
+func (e *Engine) Configure(ctx context.Context, enabled bool) (Snapshot, error) {
 	data, err := os.ReadFile(filepath.Join(e.runtimeDir, "endpoint.json"))
 	if err != nil {
 		return Snapshot{}, err
@@ -230,7 +226,7 @@ func (e *Engine) Configure(ctx context.Context, source string, enabled bool) (Sn
 	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.User != nil || len(endpoint.Token) != 64 || strings.Trim(endpoint.Token, "abcdef0123456789") != "" {
 		return Snapshot{}, errors.New("invalid engine endpoint")
 	}
-	payload, _ := json.Marshal(map[string]any{"source": source, "enabled": enabled})
+	payload, _ := json.Marshal(map[string]any{"enabled": enabled})
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.Scheme+"://"+parsed.Host+"/integrations", bytes.NewReader(payload))

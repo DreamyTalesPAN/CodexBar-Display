@@ -9280,14 +9280,13 @@ async function testOverviewAgentSessions(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
   const installRequests = [];
   let phase = "waiting_for_permission";
-  let claudeConnected = false;
-  const integrationWrites = [];
+  const activityWrites = [];
   const observedAt = Date.now() - 252_000;
   await routeCompanionOnline(page, installRequests, () => {}, {
-    onAgentIntegration: (payload) => { integrationWrites.push(payload); claudeConnected = payload.enabled; },
+    onAgentActivity: (value) => activityWrites.push(value),
     agentSnapshot: () => ({
       health: "ready", generatedAt: Date.now(),
-      sources: [{ id: "codex", name: "Codex CLI", connection: "automatic", capabilityLevel: "log-observed" }, { id: "claude", name: "Claude Code", connection: claudeConnected ? "connected" : "disconnected", capabilityLevel: "hook-adapter" }],
+      sources: [{ id: "codex", name: "Codex CLI",  }, { id: "claude", name: "Claude Code",  }],
       sessions: [
         { id: "one", source: "codex", phase, observedAt },
         { id: "two", source: "codex", phase: "tool_use", observedAt },
@@ -9308,15 +9307,15 @@ async function testOverviewAgentSessions(browser, appUrl) {
   await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/overview-sessions-mobile.png"), fullPage: true });
   await page.setViewportSize(desktopViewport);
   await (await getNavigationButton(page, "Settings")).click();
-  const connection = page.getByRole("switch", { name: "Connect Claude Code", exact: true });
-  await connection.waitFor();
-  assert(integrationWrites.length === 0, "Viewing agent connections must not configure hooks");
-  await connection.click();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Connect Claude Code"]')?.getAttribute('aria-checked') === 'true');
-  assert(integrationWrites[0]?.source === "claude" && integrationWrites[0]?.enabled === true, "Connect must forward the engine's source id and explicit choice");
-  await connection.click();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Connect Claude Code"]')?.getAttribute('aria-checked') === 'false');
-  assert(integrationWrites[1]?.enabled === false, "Disconnect must forward the explicit off choice");
+  const activity = page.getByRole("switch", { name: "Show agent activity", exact: true });
+  await activity.waitFor();
+  assert(await page.getByText("Agent connections", { exact: true }).count() === 0, "Separate agent connections must be removed");
+  assert(activityWrites.length === 0, "Viewing Settings must not change observation");
+  await activity.click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Show agent activity"]')?.getAttribute('aria-checked') === 'false');
+  await activity.click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Show agent activity"]')?.getAttribute('aria-checked') === 'true');
+  assert(JSON.stringify(activityWrites) === '[false,true]', "The master switch is the only enable/disable path");
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -11162,7 +11161,7 @@ async function routeCompanionOnline(
   onSettings = () => {},
   {
     agentSnapshot,
-    onAgentIntegration,
+    onAgentActivity,
     companionFeatures = {
       themeInstallEnabled: true,
       macAppSelfUpdateEnabled: false,
@@ -11760,6 +11759,13 @@ async function routeCompanionOnline(
       });
       return;
     }
+    if (pathname === "/v1/preferences/vibetv.agents.enabled" && route.request().method() === "PATCH") {
+      const value = JSON.parse(route.request().postData()).value;
+      onAgentActivity?.(value);
+      const item = { id: "vibetv.agents.enabled", type: "boolean", label: "Show agent activity", value, writable: true, availability: { state: "available" } };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, item }) });
+      return;
+    }
     if (pathname === "/v1/preferences" && new URL(route.request().url()).searchParams.get("section") === "agents") {
       // Agent settings have their own preference owner; provider fixtures and
       // delayed provider-read races must not leak into this section.
@@ -12058,11 +12064,6 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({ ok: true, device: nextDevice }),
       });
-      return;
-    }
-    if (pathname === "/v1/agents/integrations") {
-      onAgentIntegration?.(JSON.parse(route.request().postData() || "{}"));
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, agents: agentSnapshot?.() }) });
       return;
     }
     if (pathname === "/v1/status") {

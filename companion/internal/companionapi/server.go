@@ -184,7 +184,7 @@ var displayStreamLogKeys = []string{
 
 type Options struct {
 	AgentSnapshot        func() agentstatus.Snapshot
-	ConfigureAgent       func(context.Context, string, bool) (agentstatus.Snapshot, error)
+	ConfigureAgents      func(context.Context, bool) (agentstatus.Snapshot, error)
 	Addr                 string
 	Home                 string
 	AllowedOrigins       []string
@@ -201,7 +201,8 @@ type Options struct {
 
 type Server struct {
 	agentSnapshot          func() agentstatus.Snapshot
-	configureAgent         func(context.Context, string, bool) (agentstatus.Snapshot, error)
+	agentPreferencesMu     sync.Mutex
+	configureAgents        func(context.Context, bool) (agentstatus.Snapshot, error)
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
@@ -988,7 +989,7 @@ func New(opts Options) (*Server, error) {
 	server := &Server{
 		addr:                   addr,
 		agentSnapshot:          opts.AgentSnapshot,
-		configureAgent:         opts.ConfigureAgent,
+		configureAgents:        opts.ConfigureAgents,
 		home:                   home,
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
@@ -1097,7 +1098,6 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
-	mux.HandleFunc("/v1/agents/integrations", s.handleAgentIntegration)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
@@ -10321,31 +10321,4 @@ func (s *Server) agents() agentstatus.Snapshot {
 		return s.agentSnapshot()
 	}
 	return agentstatus.Snapshot{SchemaVersion: 1, Health: "unavailable", Phase: "unavailable", Sessions: []agentstatus.Session{}, Sources: []agentstatus.Source{}}
-}
-
-func (s *Server) handleAgentIntegration(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	if s.configureAgent == nil {
-		writeError(w, 503, "agent_engine_unavailable", "Agent activity is unavailable.", "Restart VibeTV and try again.")
-		return
-	}
-	var request struct {
-		Source  string `json:"source"`
-		Enabled *bool  `json:"enabled"`
-	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&request) != nil || request.Enabled == nil || request.Source == "" || decoder.Decode(&struct{}{}) != io.EOF {
-		writeError(w, 400, "invalid_request", "Choose an agent and whether to connect it.", "")
-		return
-	}
-	snapshot, err := s.configureAgent(r.Context(), request.Source, *request.Enabled)
-	if err != nil {
-		writeError(w, 409, "agent_configuration_failed", "The agent connection could not be saved.", "Check that the agent's settings are valid and hooks are enabled, then try again.")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "agents": snapshot})
 }

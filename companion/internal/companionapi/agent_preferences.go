@@ -2,6 +2,7 @@ package companionapi
 
 import (
 	"context"
+	"errors"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
@@ -23,7 +24,7 @@ func (a agentPreferenceAdapter) List(context.Context) ([]preferenceDescriptor, e
 	}
 	s := cfg.AgentActivitySettings()
 	items := []preferenceDescriptor{
-		{ID: "vibetv.agents.enabled", Type: preferenceTypeBoolean, Label: "Show agent activity", Description: "Off means VibeTV shows usage only.", Value: s.Enabled},
+		{ID: "vibetv.agents.enabled", Type: preferenceTypeBoolean, Label: "Show agent activity", Description: "For all supported agents. Off means VibeTV shows usage only.", Value: s.Enabled},
 		{ID: "vibetv.agents.blink", Type: preferenceTypeBoolean, Label: "Blink the screen when an agent needs you", Description: "Two short blinks, then the line stays.", Value: s.Blink},
 		{ID: "vibetv.agents.reminder", Type: preferenceTypeEnum, Label: "Remind me again", Description: "While a session is still waiting.", Value: s.Reminder, Options: []preferenceOption{{"5", "After 5 minutes"}, {"15", "After 15 minutes"}, {"never", "Never"}}},
 		{ID: "vibetv.agents.quiet", Type: preferenceTypeEnum, Label: "Quiet from", Description: "No blinks at night. The line still updates.", Value: s.Quiet, Options: []preferenceOption{{"off", "Never quiet"}, {"22", "22:00 to 08:00"}, {"00", "00:00 to 07:00"}}},
@@ -42,7 +43,21 @@ func (a agentPreferenceAdapter) Write(ctx context.Context, id string, value any)
 	if !a.Owns(id) {
 		return preferenceDescriptor{}, errPreferenceNotFound
 	}
-	_, err := a.server.updateConfig(func(cfg *runtimeconfig.Config) {
+	a.server.agentPreferencesMu.Lock()
+	defer a.server.agentPreferencesMu.Unlock()
+	previous, err := a.server.loadConfigNormalized()
+	if err != nil {
+		return preferenceDescriptor{}, err
+	}
+	if id == "vibetv.agents.enabled" {
+		if a.server.configureAgents == nil {
+			return preferenceDescriptor{}, errors.New("agent activity is unavailable")
+		}
+		if _, err := a.server.configureAgents(ctx, value.(bool)); err != nil {
+			return preferenceDescriptor{}, err
+		}
+	}
+	_, err = a.server.updateConfig(func(cfg *runtimeconfig.Config) {
 		s := cfg.AgentActivitySettings()
 		switch id {
 		case "vibetv.agents.enabled":
@@ -57,6 +72,10 @@ func (a agentPreferenceAdapter) Write(ctx context.Context, id string, value any)
 		cfg.AgentActivity = &s
 	})
 	if err != nil {
+		if id == "vibetv.agents.enabled" {
+			_, rollbackErr := a.server.configureAgents(context.WithoutCancel(ctx), previous.AgentActivitySettings().Enabled)
+			err = errors.Join(err, rollbackErr)
+		}
 		return preferenceDescriptor{}, err
 	}
 	if a.server.renderDisplayStream != nil {

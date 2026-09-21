@@ -13782,33 +13782,6 @@ func TestStatusCarriesAuthoritativeAgentSnapshotWithoutDevice(t *testing.T) {
 	}
 }
 
-func TestAgentIntegrationRequiresExplicitChoiceAndReturnsEngineState(t *testing.T) {
-	s := newTestServer(t, runtimeconfig.Config{})
-	calls := 0
-	s.configureAgent = func(_ context.Context, source string, enabled bool) (agentstatus.Snapshot, error) {
-		calls++
-		if source != "claude-code" || !enabled {
-			t.Fatal("wrong source choice")
-		}
-		return agentstatus.Snapshot{SchemaVersion: 1, Health: "ready", Phase: "idle", Sessions: []agentstatus.Session{}, Sources: []agentstatus.Source{}}, nil
-	}
-	for _, body := range []string{`{}`, `{"source":"claude-code"}`, `{"source":"claude-code","enabled":"yes"}`, `{"source":"claude-code","enabled":true,"command":"approve"}`, `{"source":"claude-code","enabled":true} {}`} {
-		response := httptest.NewRecorder()
-		s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/agents/integrations", strings.NewReader(body)))
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("invalid choice accepted: %s", body)
-		}
-	}
-	if calls != 0 {
-		t.Fatal("invalid request reached engine")
-	}
-	response := httptest.NewRecorder()
-	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/agents/integrations", strings.NewReader(`{"source":"claude-code","enabled":true}`)))
-	if response.Code != http.StatusOK || calls != 1 || !strings.Contains(response.Body.String(), `"agents"`) {
-		t.Fatalf("%d %s", response.Code, response.Body.String())
-	}
-}
-
 func TestDisplayFrameLogPreservesAgentAndMotion(t *testing.T) {
 	frame, ok := frameFromDisplayStreamLogLine(`sent frame -> test transport=usb deviceId=test provider=codex label=Codex session=10 weekly=20 activity="waiting_for_answer" agentName="Claude Code" animationsDisabled=true time="12:00" date="20 Sep" error=""`)
 	if !ok || frame.Activity != "waiting_for_answer" || frame.AgentName != "Claude Code" || !frame.AnimationsDisabled || frame.Time != "12:00" {

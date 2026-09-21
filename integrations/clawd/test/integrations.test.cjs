@@ -95,3 +95,61 @@ test('app upgrade refreshes only previously enabled hooks, preserving native set
   for(const [profile,file] of originalFiles) {if(file)profile.file=file;else delete profile.file;}
  }
 });
+
+test('one master choice enables every supported hook adapter, then removes only owned hooks', t => {
+ const opts = fixture(t);
+ const previous = new Map(Object.values(profiles).map(profile => [profile, profile.file]));
+ const foreign = {permissions:{deny:['Bash']},hooks:{PreToolUse:[{hooks:[{type:'command',command:'my-hook'}]}]}};
+ for (const [id, profile] of Object.entries(profiles)) {
+  profile.file = () => path.join(opts.directory,id+'.json');
+  fs.writeFileSync(profile.file(),JSON.stringify(foreign));
+ }
+ try {
+  const options = {...opts,settingsPath:undefined};
+  const {configureAll,connection} = require('../src/integrations.cjs');
+  configureAll(true, options);
+  for (const id of Object.keys(profiles)) assert.equal(connection(id),'connected',id);
+  assert.equal(connection('codex'),'automatic');
+  configureAll(false, options);
+  for (const [id,profile] of Object.entries(profiles)) {
+   assert.equal(connection(id),'disconnected',id);
+   const expected = {...foreign};
+   if (id === 'copilot-cli') expected.version = 1;
+   assert.deepEqual(JSON.parse(fs.readFileSync(profile.file())), expected);
+  }
+ } finally { for(const [profile,file] of previous) {if(file)profile.file=file;else delete profile.file;} }
+});
+
+test('a blocked last adapter leaves every other config untouched', t => {
+ const opts = fixture(t);
+ const previous = new Map(Object.values(profiles).map(profile => [profile, profile.file]));
+ for (const [id,profile] of Object.entries(profiles)) profile.file=()=>path.join(opts.directory,id+'.json');
+ try {
+  const last = Object.values(profiles).at(-1).file();
+  fs.writeFileSync(last,'{"disableAllHooks":true}');
+  assert.throws(()=>require('../src/integrations.cjs').configureAll(true,{...opts,settingsPath:undefined}));
+  assert.deepEqual(fs.readdirSync(opts.directory),[path.basename(last)]);
+  assert.equal(fs.readFileSync(last,'utf8'),'{"disableAllHooks":true}');
+ } finally { for(const [profile,file] of previous) {if(file)profile.file=file;else delete profile.file;} }
+});
+
+test('a write failure rolls back already updated clients', t => {
+ const opts = fixture(t);
+ const previous = new Map(Object.values(profiles).map(profile => [profile, profile.file]));
+ const ids=Object.keys(profiles);
+ for(const [id,profile] of Object.entries(profiles)) profile.file=()=>path.join(opts.directory,id+'.json');
+ const chmod = fs.chmodSync;
+ let failed = false;
+ fs.chmodSync = (file,...args) => {
+  if (!failed && file === profiles[ids[1]].file()) { failed=true; throw Error('simulated-write-failure'); }
+  return chmod(file,...args);
+ };
+ try {
+  assert.throws(()=>require('../src/integrations.cjs').configureAll(true,{...opts,settingsPath:undefined}));
+  assert.equal(failed,true);
+  for(const profile of Object.values(profiles)) assert.equal(fs.existsSync(profile.file()),false);
+ } finally {
+  fs.chmodSync=chmod;
+  for(const [profile,file] of previous) {if(file)profile.file=file;else delete profile.file;}
+ }
+});
