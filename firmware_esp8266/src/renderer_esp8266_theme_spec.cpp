@@ -1265,6 +1265,11 @@ bool DrawThemeSpecUsage() {
   // A full redraw cancels any partial CBA job. The active state restarts at
   // frame zero and resumes a bounded row chunk per main-loop tick.
   resetAnimatedSpriteCaches();
+  // A full redraw re-selects every sprite, so the outcome of this pass -- not
+  // a diagnostic from an asset the theme may no longer draw -- decides render
+  // health. A sprite that still fails is re-reported by this pass or by the
+  // animated tick that follows it.
+  clearSpriteRenderError();
 
   const auto frameData = currentThemeSpecFrameData();
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
@@ -1334,6 +1339,16 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   const auto frameData = currentThemeSpecFrameData(updateNoticeText);
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
   const char* partialError = nullptr;
+  // An activity or provider change selects different state/provider sprites,
+  // so a diagnostic naming the previously selected asset can no longer
+  // describe what is on screen. Clear it before the pass and let this render
+  // report its own result.
+  const bool reselectsSprites =
+      (changedFields &
+       (themespec::kThemeSpecFieldActivity | themespec::kThemeSpecFieldProvider)) != 0;
+  if (reselectsSprites) {
+    clearSpriteRenderError();
+  }
   if (!themespec::RenderCompiledThemeSpecChangedPrimitives(
           cachedThemeSpecScene,
           frameData,
@@ -1346,8 +1361,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   // State assets are selected by activity; provider assets by provider. Clearing
   // the cache cancels the old resumable CBA job so the new path can own the
   // buffer instead of failing prepareAnimatedSpriteBuffer forever.
-  if ((changedFields &
-       (themespec::kThemeSpecFieldActivity | themespec::kThemeSpecFieldProvider)) != 0) {
+  if (reselectsSprites) {
     resetAnimatedSpriteCaches();
   }
   markThemeSpecPartialOk();

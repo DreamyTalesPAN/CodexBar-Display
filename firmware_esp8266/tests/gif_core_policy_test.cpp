@@ -1170,9 +1170,20 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
     return false;
   }
   const std::string cancel = renderer.substr(cancelStart, cancelEnd - cancelStart);
+  if (!expect(
+          cancel.find("cache.consecutiveCleanFrames = 0;") != std::string::npos,
+          "an aborted CBA frame must restart the clean-pass requirement")) {
+    return false;
+  }
+  // The diagnostic names one asset path. A full redraw re-selects every
+  // sprite, and an activity or provider change swaps the state/provider
+  // sprite, so an error about a no-longer-drawn asset must not pin
+  // renderOk: false until the old state happens to return.
   return expect(
-      cancel.find("cache.consecutiveCleanFrames = 0;") != std::string::npos,
-      "an aborted CBA frame must restart the clean-pass requirement");
+      renderer.find("resetAnimatedSpriteCaches();\n  // A full redraw re-selects every sprite") != std::string::npos &&
+          renderer.find("const bool reselectsSprites =") != std::string::npos &&
+          renderer.find("if (reselectsSprites) {\n    clearSpriteRenderError();") != std::string::npos,
+      "a render that re-selects sprites must report its own result");
 }
 
 }  // namespace

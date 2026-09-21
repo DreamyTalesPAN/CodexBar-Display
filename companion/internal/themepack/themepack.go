@@ -34,6 +34,12 @@ const (
 
 	maxDevicePathChars = 31
 	maxZipEntries      = 256
+
+	// Mirrors the firmware's sprite limits so a pack the app accepts cannot
+	// fail only after an install has started writing files to the device.
+	// kMaxSpriteDimension and kSpriteLineMaxBytes in firmware_esp8266.
+	maxSpriteDimension = 480
+	maxSpriteRowChars  = 512
 )
 
 // Pack categories. `kind` marks the file format; `usage` marks what the pack is
@@ -701,6 +707,9 @@ func parseSpriteDimensions(lines []string, animated bool) (width, height, frameC
 	if width <= 0 || height <= 0 {
 		return 0, 0, 0, 0, errors.New("width/height must be > 0")
 	}
+	if width > maxSpriteDimension || height > maxSpriteDimension {
+		return 0, 0, 0, 0, fmt.Errorf("width/height must be <= %d", maxSpriteDimension)
+	}
 	if !animated {
 		return width, height, 1, 0, nil
 	}
@@ -737,6 +746,13 @@ func parseSpritePalette(devicePath string, lines []string, index int) (paletteSi
 
 func validateSpriteRows(devicePath string, rows []string, width int, paletteSize int) error {
 	for rowIndex, row := range rows {
+		// The firmware reads each row into a bounded line buffer, so a row it
+		// cannot read must be rejected here rather than at device upload.
+		if len(row) > maxSpriteRowChars {
+			return fmt.Errorf(
+				"sprite asset %s row %d is %d bytes, max %d",
+				devicePath, rowIndex, len(row), maxSpriteRowChars)
+		}
 		offset := 0
 		for i := 0; i < len(row); {
 			runLength := 0

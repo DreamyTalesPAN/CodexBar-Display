@@ -370,6 +370,19 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 		{name: "unsupported header", data: "CBI2\n1 1\n1\n#FFFFFF\na\n", want: "unsupported header"},
 		{name: "invalid dimensions", data: "CBI1\n0 1\n1\n#FFFFFF\na\n", want: "width/height must be > 0"},
 		{name: "frame table mismatch", data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\n", want: "want 2"},
+		// The firmware caps a sprite edge and the row line buffer. A pack the
+		// app declares valid must not fail only once the install has started
+		// writing to the device.
+		{
+			name: "dimension beyond the firmware limit",
+			data: "CBI1\n481 1\n1\n#FFFFFF\n481a\n",
+			want: "width/height must be <= 480",
+		},
+		{
+			name: "row beyond the firmware line buffer",
+			data: "CBI1\n480 1\n1\n#FFFFFF\n" + strings.Repeat("1a", 480) + "\n",
+			want: "max 512",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
