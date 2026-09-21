@@ -714,8 +714,17 @@ func validateSpriteAsset(devicePath string, data []byte) error {
 	}
 	switch lines[0] {
 	case "CBI1":
+		// The firmware schedules animation from the .cba suffix, not from the
+		// payload, so a CBA stored as .cbi never animates and the theme shows
+		// a missing sprite after a successful install.
+		if strings.HasSuffix(lowerPath, ".cba") {
+			return fmt.Errorf("sprite asset %s is .cba but contains a CBI1 payload", devicePath)
+		}
 		return validateStaticSpriteAsset(devicePath, lines)
 	case "CBA1":
+		if strings.HasSuffix(lowerPath, ".cbi") {
+			return fmt.Errorf("sprite asset %s is .cbi but contains a CBA1 payload", devicePath)
+		}
 		return validateAnimatedSpriteAsset(devicePath, lines)
 	default:
 		return fmt.Errorf("sprite asset %s has unsupported header %q", devicePath, lines[0])

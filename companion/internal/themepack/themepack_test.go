@@ -365,11 +365,12 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 		name string
 		data string
 		want string
+		ext  string
 	}{
 		{name: "truncated", data: "CBI1\n1 2\n1\n#FFFFFF\na\n", want: "want 2"},
 		{name: "unsupported header", data: "CBI2\n1 1\n1\n#FFFFFF\na\n", want: "unsupported header"},
 		{name: "invalid dimensions", data: "CBI1\n0 1\n1\n#FFFFFF\na\n", want: "width/height must be > 0"},
-		{name: "frame table mismatch", data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\n", want: "want 2"},
+		{name: "frame table mismatch", data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\n", want: "want 2", ext: ".cba"},
 		// The firmware caps a sprite edge and the row line buffer. A pack the
 		// app declares valid must not fail only once the install has started
 		// writing to the device.
@@ -397,11 +398,23 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 			data: "CBI1\n1 1\n1\n#FFFFFF\n18446744073709551617a\n",
 			want: "invalid RLE run",
 		},
+		// The firmware picks the animated path from the .cba suffix alone, so
+		// a payload stored under the wrong extension installs and then never
+		// draws.
+		{
+			name: "animated payload stored as .cbi",
+			data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\na\n",
+			want: "contains a CBA1 payload",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			ext := tc.ext
+			if ext == "" {
+				ext = ".cbi"
+			}
 			dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
 				{path: "/themes/u/good.cbi", file: "assets/good.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
-				{path: "/themes/u/extra.cbi", file: "assets/extra.cbi", data: tc.data},
+				{path: "/themes/u/extra" + ext, file: "assets/extra" + ext, data: tc.data},
 			})
 
 			_, err := Load(dir)
