@@ -37,17 +37,17 @@
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.2.0",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/u/mini-cl-7-221c36.json",
+      "version": "1.2.1",
+      "themeRev": 8,
+      "themeSpecPath": "/themes/u/mini-cl-8-958eb7.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1",
         "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.2.0.zip",
-      "sha256": "32a50848557f3e0413840548661328e8c5c2e8c7d1b96bbcf2e5f0c64e551ed4",
-      "bytes": 20265
+      "downloadAsset": "vibetv-theme-mini-classic-v1.2.1.zip",
+      "sha256": "c7b8657e2790523b546f64699d33286335d7188c0723212f99fbcf028ab19b16",
+      "bytes": 21657
     },
     {
       "id": "night-clock",

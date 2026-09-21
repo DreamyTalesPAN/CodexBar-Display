@@ -2281,7 +2281,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let window = window ?? makeMainWindow()
+        let webView = WKWebView(
+            frame: NSRect(origin: .zero, size: window.contentLayoutRect.size),
+            configuration: configuration
+        )
         webView.customUserAgent = nativeControlCenterUserAgent(
             shortVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString"
@@ -2293,7 +2297,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
-        let window = window ?? makeMainWindow()
         window.title = "VibeTV Control Center"
         window.contentView = webView
 

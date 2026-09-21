@@ -3,26 +3,26 @@
   "schemaVersion": 1,
   "id": "mini-classic",
   "name": "Mini Classic",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minFirmware": "1.0.40",
   "requiredCapabilities": [
     "usage-slots-v1",
     "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/mini-cl-7-221c36.json",
+    "path": "/themes/u/mini-cl-8-958eb7.json",
     "file": "theme.json",
-    "bytes": 1162,
-    "sha256": "221c367dc14770b5e50f485b2c07b838b8ed17291e44222719b61b6282b16038",
+    "bytes": 1172,
+    "sha256": "958eb719492ba7bbb055b8b09f02bbc0f6f6b1ec02a6d8d844262990979a9236",
     "contentType": "application/json"
   },
   "assets": [
     {
-      "path": "/themes/u/mini-4-146563.gif",
-      "file": "assets/mini.gif",
-      "bytes": 20870,
-      "sha256": "146563e7d7ce76589f50ea80977c1f8cb32a15468a4a9f3da4152c4de1b37230",
-      "contentType": "image/gif"
+      "path": "/themes/u/mi-eyes.cba",
+      "file": "assets/mi-eyes.cba",
+      "bytes": 22088,
+      "sha256": "e70c29d69a50bebc5944a753e051968fa3572bc36741b7aa6c8e505b8149fd30",
+      "contentType": "text/plain"
     },
     {
       "path": "/themes/u/mi-blank.cbi",

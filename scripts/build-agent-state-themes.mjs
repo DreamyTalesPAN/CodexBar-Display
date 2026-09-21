@@ -79,6 +79,10 @@ async function pngFrames(theme, state, count, w, h) {
     assert.equal(info.height, h);
     raws.push(data);
   }
+  return paletteFrames(raws, w, h);
+}
+async function paletteFrames(raws, w, h) {
+  const count = raws.length;
   // One palette across the whole loop, no dithering or grid resampling.
   const indexed = await sharp(Buffer.concat(raws), {
     raw: { width: w, height: h * count, channels: 3 },
@@ -228,8 +232,10 @@ await finish("tiny-office", office, "0.7.0", generated);
 const mini = JSON.parse(
   await readFile(path.join(root, "theme-packs/mini-classic/theme.json")),
 );
-mini.p = mini.p.filter((p) => !p.a?.startsWith("/themes/u/mi-"));
-mini.rev = 7;
+mini.p = mini.p.filter(
+  (p) => !p.a?.startsWith("/themes/u/mi-") || p.a === "/themes/u/mi-eyes.cba",
+);
+mini.rev = 8;
 const props = {},
   sa = { idle: "/themes/u/mi-blank.cbi" };
 props["mi-blank.cbi"] = encode(1, 1, [["#000000"]], 0);
@@ -249,9 +255,50 @@ for (const [key, name, repeats] of [
   );
   sa[key] = `/themes/u/${asset}`;
 }
-const eyes = mini.p.find((p) => p.t === "gif" || p.t === "g");
+const eyes = mini.p.find(
+  (p) => p.t === "gif" || p.t === "g" || p.a === "/themes/u/mi-eyes.cba",
+);
 assert(eyes);
-Object.assign(eyes, { x: 62, y: 140, w: 40, h: 40 });
+// A GIF decoder plus the 64x64 prop buffer exhausts the ESP8266 heap.
+// Use the existing eye artwork in the shared CBA renderer instead. The
+// original 14-second loop becomes 56 frames at 4 fps, within CBA's 64 limit.
+const eyeGif = sharp(path.join(root, "theme-packs/mini-classic/assets/mini.gif"), {
+  animated: true,
+});
+const eyeMeta = await eyeGif.metadata();
+const eyeRaw = await eyeGif
+  .flatten({ background: "#000000" })
+  .removeAlpha()
+  .raw()
+  .toBuffer();
+const eyeDuration = eyeMeta.delay.reduce((sum, delay) => sum + delay, 0);
+const eyeFrames = [];
+for (let ms = 125; ms < eyeDuration; ms += 250) {
+  let index = 0,
+    end = eyeMeta.delay[0];
+  while (end <= ms && index + 1 < eyeMeta.pages) end += eyeMeta.delay[++index];
+  const start = index * eyeMeta.width * eyeMeta.pageHeight * 3;
+  eyeFrames.push(
+    await sharp(
+      eyeRaw.subarray(start, start + eyeMeta.width * eyeMeta.pageHeight * 3),
+      { raw: { width: eyeMeta.width, height: eyeMeta.pageHeight, channels: 3 } },
+    )
+      .resize(40, 40, { kernel: "nearest" })
+      .raw()
+      .toBuffer(),
+  );
+}
+assert(eyeFrames.length <= 64);
+props["mi-eyes.cba"] = encode(40, 40, await paletteFrames(eyeFrames, 40, 40), 4);
+Object.assign(eyes, {
+  t: "sp",
+  a: "/themes/u/mi-eyes.cba",
+  x: 62,
+  y: 140,
+  w: 40,
+  h: 40,
+  bg: "#000000",
+});
 mini.p.push({
   t: "sp",
   x: 114,
@@ -262,7 +309,7 @@ mini.p.push({
   a: sa.idle,
   sa,
 });
-await finish("mini-classic", mini, "1.2.0", props);
+await finish("mini-classic", mini, "1.2.1", props);
 
 // Claude Design's current Creature files are static SVG poses (no embedded
 // animation). Rasterize the actual 62x66 artwork in its existing 77x77 slot.

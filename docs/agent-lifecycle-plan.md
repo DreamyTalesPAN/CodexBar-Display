@@ -203,7 +203,7 @@ No device writes were performed.
 The approved device treatment is now implemented on this feature branch:
 central agent label, five-state asset selection, and exactly two full-panel
 inversions for states without custom assets. The new `agent-theme-states-v1`
-capability gates packs and wire fields. Mini 1.2.0, Tiny Office 0.7.0, Claude
+capability gates packs and wire fields. Mini 1.2.1, Tiny Office 0.7.0, Claude
 Creature 1.3.0, Synthwave 1.2.0, and Pixel Battery 1.17.0 are versioned together
 with the runtime. Battery/Synthwave and future themes reuse the shared fallback
 without per-theme announcement assets. Synthwave uses font 2 in its existing
@@ -257,3 +257,51 @@ actual outgoing JSON and the acknowledged-frame log. That log and its API parser
 also retain the observed agent name and motion setting, so the live device preview
 uses the same presentation as the sent frame. System preferences were only read;
 no OS setting or physical device was changed.
+
+## USB bench follow-up, 2026-09-21
+
+The user authorized unsigned quick DMGs and firmware on the connected Mac and
+VibeTV. Device `14799300` (`esp8266-smalltv-st7789`, `/dev/cu.usbserial-10`) was
+flashed at 115200 baud with local firmware `1.0.58-dev`; esptool verified the
+written hash. Firmware artifact SHA-256:
+`e9a9ff5a4ffd5ce87e46bc41be769a4de22ddfbebd1fd5fa9c669bf0dc7ae634`.
+Its firmware sources are unchanged from `91a8f697` through the tested runtime
+`e5978988`. This is a local development image, not a signed release candidate.
+
+The installed Companion paired device `14799300`, selected Cable, established a
+healthy usage stream, and completed all five theme installs through its normal
+API. Controlled USB frames then exercised idle, working, needs-you, done and
+error, followed by motion-off, with device health read back after each state.
+These frames use explicit test values; they are not evidence of real agent
+lifecycle observation or real quota values.
+
+Mini 1.2.0 exposed `low_heap_cba_buffer`: its GIF decoder left 7,608 bytes free
+before the additional 8,192-byte CBA buffer. Mini 1.2.1 / revision 8 replaces
+the current eyes GIF primitive with CBA. It preserves the source eye artwork
+and 14-second loop, sampled at 4 fps with a 26-color palette; it does not retain
+the GIF's exact intermediate frames or timing. Historical packs and the source
+GIF remain byte-exact. Corrected pack SHA-256:
+`c7b8657e2790523b546f64699d33286335d7188c0723212f99fbcf028ab19b16`.
+
+Battery and Synthwave passed all state health checks on one uninterrupted boot.
+The corrected Mini, Creature and Office passed on a second uninterrupted boot:
+
+| Theme | Lowest free heap | Lowest contiguous block | Render or buffer allocation failures |
+| --- | --- | --- | --- |
+| Mini 1.2.1 | 14,224 bytes | 10,136 bytes | 0 |
+| Creature 1.3.0 | 22,536 bytes | 21,480 bytes | 0 |
+| Tiny Office 0.7.0 | 10,680 bytes | 5,200 bytes | 0 |
+
+Mini and Office completed animation frames, and their CBA counters stopped with
+motion disabled. Creature's imported poses are static. Physical inversion
+polarity, exactly two visible pulses, sprite appearance and whole-scene cadence
+still need the operator's visual confirmation. WiFi load, writer-loss expiry,
+update-notice priority, Windows and signed release rehearsals remain separate.
+
+The first local helper build omitted the embedded frontend; rebuilding with
+the existing workflow's `controlcenter_static` staging corrected HTTP 503.
+The native window also appeared blank until resized. Its web view now receives
+the window's content size at construction instead of starting at zero size.
+Raw bench logs and the local artifact manifest are retained under the ignored
+`tmp/agent-theme-canary/` directory. Nothing was published to the theme catalog,
+merged to main, tagged or released.

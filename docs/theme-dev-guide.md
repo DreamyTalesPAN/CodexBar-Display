@@ -204,6 +204,13 @@ renderer, the ESP8266 runtime policy, and pack validation—not from browser CSS
 Large design GIFs and PNG sprite sheets are review artifacts, not automatically
 device-compatible assets.
 
+Budget simultaneous decoders as well as individual assets. On the physical
+ESP8266, Mini's GIF eyes left only 7,608 bytes free and its additional 64 × 64 CBA
+buffer failed with `low_heap_cba_buffer`. Mini now uses CBA for both eyes and
+state props so they share one buffer. Do not combine GIF and CBA animation
+without measuring the combined heap on the target device; individually valid
+files do not prove that both can run together.
+
 Within those ceilings, use these launch targets:
 
 - ThemeSpec JSON: preferably below 1000 bytes.
