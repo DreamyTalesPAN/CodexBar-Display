@@ -288,9 +288,20 @@ bool testPaddedHeaderLinesMatchTheRenderer() {
   }
   // Past the renderer's raw line buffer it is unreadable on the device.
   const std::string overlong = "CBI1" + std::string(600, ' ') + "\n4 2\n2\n#FF0000\n#00FF00\n4a\n2a2b\n";
+  if (!expect(
+          validate(overlong) == SpriteValidationError::UnsupportedHeader,
+          "a header past the renderer's line buffer must be rejected")) {
+    return false;
+  }
+  // ParseCbaHeader() skips a whole whitespace run as one separator, so a
+  // dimensions line padded between its fields is renderable. Keeping every
+  // raw space would overflow the validator's token buffer and reject a pack
+  // the device draws, so the run is collapsed while streaming.
+  const std::string interior =
+      "CBI1\n4" + std::string(200, ' ') + "2\n2\n#FF0000\n#00FF00\n4a\n2a2b\n";
   return expect(
-      validate(overlong) == SpriteValidationError::UnsupportedHeader,
-      "a header past the renderer's line buffer must be rejected");
+      validate(interior) == SpriteValidationError::None,
+      "interior header padding the renderer accepts must stay valid");
 }
 
 bool testInconsistentFrameTablesAreRejected() {

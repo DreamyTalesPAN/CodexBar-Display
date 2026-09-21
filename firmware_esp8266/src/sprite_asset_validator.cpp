@@ -7,7 +7,10 @@ namespace esp8266 {
 namespace {
 
 // Longest header/palette line the validator keeps in RAM. RLE rows are
-// validated while streaming and are never collected into a buffer.
+// validated while streaming and are never collected into a buffer. Interior
+// whitespace runs are collapsed to one space while streaming, so a padded
+// line the renderer accepts still fits these real-token bytes without
+// putting a renderer-sized line buffer on the ESP8266 stack.
 constexpr size_t kMaxTokenLineBytes = 64;
 // Mirrors kSpriteLineMaxBytes in the renderer. readSpriteLine() refuses any
 // longer row, so accepting one here would promote an asset the device then
@@ -89,13 +92,16 @@ bool ReadTrimmedLine(LineReader& reader, char* out, size_t capacity, bool& overl
       // Leading padding the renderer trims away before it reads the token.
       continue;
     }
-    while (pendingSpaces > 0) {
+    if (pendingSpaces > 0) {
+      // ParseCbaHeader() skips a whole whitespace run as one separator, so a
+      // padded header parses identically to a single-space one. Collapsing
+      // here keeps a line the renderer accepts from overflowing this buffer.
       if (length + 1 >= capacity) {
         overlong = true;
         return false;
       }
       out[length++] = ' ';
-      --pendingSpaces;
+      pendingSpaces = 0;
     }
     if (length + 1 >= capacity) {
       overlong = true;

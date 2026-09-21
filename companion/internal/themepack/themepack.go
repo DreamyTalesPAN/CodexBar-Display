@@ -873,7 +873,14 @@ func validateSpriteRows(devicePath string, rows []string, width int, paletteSize
 			hasRunLength := false
 			for i < len(row) && row[i] >= '0' && row[i] <= '9' {
 				hasRunLength = true
-				runLength = (runLength * 10) + int(row[i]-'0')
+				digit := int(row[i] - '0')
+				// Mirror the firmware's pre-multiply bound. Without it a run
+				// length wraps around on a 64-bit build and a row the device
+				// rejects is declared valid here.
+				if runLength > (maxSpriteDimension-digit)/10 {
+					return fmt.Errorf("sprite asset %s row %d has invalid RLE run", devicePath, rowIndex)
+				}
+				runLength = (runLength * 10) + digit
 				i++
 			}
 			if !hasRunLength {

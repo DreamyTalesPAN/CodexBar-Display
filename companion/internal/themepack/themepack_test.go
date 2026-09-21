@@ -390,6 +390,13 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 			data: "CBI1\n1 1\n1\n#FFFFFF\n" + strings.Repeat(" ", 600) + "a\n",
 			want: "exceeds 512 bytes",
 		},
+		// A run length that overflows int wraps to a small value and would
+		// otherwise pass, while the firmware's pre-multiply bound rejects it.
+		{
+			name: "run length overflowing the parser",
+			data: "CBI1\n1 1\n1\n#FFFFFF\n18446744073709551617a\n",
+			want: "invalid RLE run",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
