@@ -4682,3 +4682,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul's request to implement the agent settings and show real sessions includes making the supported agents connectable. The current review found that the engine's existing opt-in integration endpoint had no production UI caller; without it, hook-based sessions could not reach the approved cards. This is the implementation needed to make that request work, not permission to silently enable integrations.
 - Approved customer-visible result: A matching Agent connections group in Settings lists engine-supported sources. Codex shows Detected automatically; supported hook adapters have explicit connect switches. Blocked hook configurations stay disabled with explanatory text; unsupported integrations are not offered. The explanation says that connecting adds local activity hooks and requires a new session. Failed writes use the existing error dialog and do not claim success.
 - Scope: Connect the existing engine-owned integration endpoint to the current status owner; no new hook logic, provider semantics or automatically enabled agents. Unit/browser fixtures verify enable, disable and failed writes without modifying a customer's agent settings.
+
+### 2026-09-21 — Preserve the approved small session tiles
+
+- User approval: Covered by Paul's Overview-card request above and its exact Claude Design reference, whose grid uses auto-fill with a 164px minimum track width.
+- Approved customer-visible result: With only one or two sessions, cards retain compact grid tracks instead of stretching across the entire row. Existing responsive wrapping, card contents and controls are unchanged.
+- Scope: The one-word auto-fit to auto-fill correction in AgentSessions; this records fidelity to the already requested design, not a new design direction.
