@@ -672,7 +672,8 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "disabled"
 			message = "Provider is off."
 			reported = ""
-		} else if _, retained := retainedSuccess[setting.ID]; retained {
+		} else if _, retained := retainedSuccess[setting.ID]; retained &&
+			!providerReadinessIsTerminal(readiness, readinessApplies) {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 			if reported != "" {
@@ -756,6 +757,18 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 }
 
 func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
+	return providerReadinessAppliesToSettingImpl(readiness, setting, freshSuccess, now)
+}
+
+// A discontinued provider is not a freshness problem: no later reading can
+// arrive, so the retained snapshot never becomes live again. Reporting it as
+// stale would let the setup step keep offering the old percentage for the
+// whole retention window, so this state outranks a retained reading.
+func providerReadinessIsTerminal(readiness providerReadinessRecord, readinessApplies bool) bool {
+	return readinessApplies && readiness.Status == codexbar.ProviderUnsupported
+}
+
+func providerReadinessAppliesToSettingImpl(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
 	age := now.Sub(readiness.CheckedAt)
 	if readiness.CheckedAt.IsZero() || age < 0 || age > providerReadinessFreshness {
 		return false
