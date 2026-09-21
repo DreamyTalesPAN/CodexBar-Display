@@ -6958,3 +6958,43 @@ func TestAgentPreferencesReachDeviceWithoutChangingUsage(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentTransitionsStayOutOfUsageRecoveryCache(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Now()
+	phase := "working"
+	state := &runtimeState{selector: codexbar.NewProviderSelector(), agentSnapshot: func() agentstatus.Snapshot {
+		return agentstatus.Snapshot{Health: "ready", Phase: phase}
+	}}
+	var sent protocol.Frame
+	deps := runtimeDeps{
+		now: func() time.Time { return now },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}}, nil
+		},
+		sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:     func(string, ...any) {},
+	}.withDefaults()
+	provider := testParsedFrame("codex", 20, 40, 3600)
+	provider.CollectedAt = now
+	var original protocol.Frame
+	for i, next := range []string{"working", "tool_use", "waiting_for_answer", "done"} {
+		phase = next
+		result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{provider}, now, deps, "", "", "", "")
+		if err := sendCycleResult(context.Background(), "/test", protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}, 2048, state, deps, result); err != nil {
+			t.Fatal(err)
+		}
+		if sent.Activity != phase {
+			t.Fatalf("device lost transition: %+v", sent)
+		}
+		cached, _, ok := loadPersistedLastGood(now)
+		if !ok || cached.AgentName != "" || cached.Activity != provider.Frame.Normalize().Activity {
+			t.Fatalf("lifecycle leaked into usage recovery: %+v", cached)
+		}
+		if i == 0 {
+			original = cached
+		} else if !framesEqual(original, cached) {
+			t.Fatal("agent transition changed saved usage")
+		}
+	}
+}

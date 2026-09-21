@@ -1246,7 +1246,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
 	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
-	result.frame, result.activityDetail = applyAgentActivity(result.frame, state)
 	return result
 }
 

@@ -112,6 +112,7 @@ type Engine struct {
 	mu         sync.RWMutex
 	value      Snapshot
 	received   time.Time
+	lastWake   time.Time
 	wake       func()
 	runtimeDir string
 }
@@ -121,8 +122,14 @@ func (e *Engine) accept(value Snapshot, now time.Time) {
 	changed := e.value.Phase != value.Phase || e.value.Health != value.Health || !slices.Equal(e.value.Sessions, value.Sessions) || !slices.Equal(e.value.Sources, value.Sources)
 	e.value = value
 	e.received = now
+	// Renew the firmware's 15-second lease even during a quiet, steady phase.
+	// This is a render-only wake; provider collection keeps its own cadence.
+	wake := changed || now.Sub(e.lastWake) >= 5*time.Second || now.Before(e.lastWake)
+	if wake {
+		e.lastWake = now
+	}
 	e.mu.Unlock()
-	if changed && e.wake != nil {
+	if wake && e.wake != nil {
 		e.wake()
 	}
 }

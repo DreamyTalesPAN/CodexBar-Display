@@ -128,3 +128,24 @@ func TestDisplayNameFollowsObservedSourceNotQuota(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestSteadyHeartbeatsRenewDeviceLeaseWithoutWakingEverySecond(t *testing.T) {
+	now := time.Now()
+	wakes := 0
+	e := &Engine{wake: func() { wakes++ }}
+	s := validSnapshot(now)
+	for second := 0; second <= 45; second++ {
+		current := now.Add(time.Duration(second) * time.Second)
+		s.GeneratedAt = current.UnixMilli()
+		e.accept(s, current)
+		if wakes != second/5+1 {
+			t.Fatalf("second %d: %d render wakes", second, wakes)
+		}
+	}
+	// A phase change is immediate, even just after the previous renewal.
+	s.Phase = "waiting_for_answer"
+	e.accept(s, now.Add(46*time.Second))
+	if wakes != 11 {
+		t.Fatal("phase change waited for renewal")
+	}
+}
