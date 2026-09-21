@@ -56,6 +56,15 @@ bool cbaBufferAllocationFailedThisAttempt = false;
 // draw attempt. Nothing was decoded, so the attempt says nothing about the
 // asset and must not be reported as a failure.
 bool cbaBufferUnavailableThisAttempt = false;
+// Consecutive draw attempts that found the shared frame buffer owned by a
+// different sprite. Occasional contention is normal deferred work, but a
+// theme with more contending sprites than cache slots keeps evicting every
+// in-progress frame, so persistent contention must stop being silent once
+// no sprite can finish a frame.
+unsigned int cbaBufferContentionStreak = 0;
+// Above this many consecutive contended attempts the sprites are treated as
+// starved and the condition is published as a transient render error.
+constexpr unsigned int kCbaBufferContentionStreakLimit = 12;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -720,6 +729,17 @@ bool prepareAnimatedSpriteBuffer(
     // later tick, so it must not be reported as a decode failure.
     if (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache) {
       cbaBufferUnavailableThisAttempt = true;
+      // More contending sprites than cache slots means the owner is evicted
+      // before it finishes, so every sprite restarts at row zero forever. That
+      // is no longer deferred work: publish it so health stops reporting ok
+      // while the theme shows nothing. It stays a transient condition, because
+      // the assets themselves are fine.
+      if (cbaBufferContentionStreak < kCbaBufferContentionStreakLimit) {
+        cbaBufferContentionStreak += 1;
+      }
+      if (cbaBufferContentionStreak >= kCbaBufferContentionStreakLimit) {
+        setSpriteRenderError("cba_buffer_contention", cache.path.c_str());
+      }
     }
     return false;
   }
@@ -762,6 +782,9 @@ bool prepareAnimatedSpriteBuffer(
     cbaFrameBuffer[i] = clearColor;
   }
   cbaFrameBufferOwner = &cache;
+  // This attempt owns the buffer and will decode into it, so the theme is
+  // making progress again.
+  cbaBufferContentionStreak = 0;
   cache.frameBufferWidth = bufferWidth;
   cache.frameBufferHeight = bufferHeight;
   return true;

@@ -1232,6 +1232,16 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
           "shared-buffer contention must not be reported as a decode failure")) {
     return false;
   }
+  // Suppressing contention entirely would hide a theme whose sprites evict
+  // each other forever, so persistent contention has to surface once no
+  // sprite can finish a frame, and reset as soon as one owns the buffer.
+  if (!expect(
+          renderer.find("cbaBufferContentionStreak >= kCbaBufferContentionStreakLimit") != std::string::npos &&
+              renderer.find("setSpriteRenderError(\"cba_buffer_contention\"") != std::string::npos &&
+              renderer.find("cbaBufferContentionStreak = 0;") != std::string::npos,
+          "persistent shared-buffer contention must be reported as a transient error")) {
+    return false;
+  }
   const std::size_t transientStart = renderer.find("void setSpriteRenderError(const char* code, const char* assetPath) {");
   if (!expect(transientStart != std::string::npos, "the transient sprite error path must remain discoverable")) {
     return false;
