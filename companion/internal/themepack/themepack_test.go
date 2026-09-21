@@ -357,6 +357,34 @@ func TestLoadRejectsMalformedSpriteAsset(t *testing.T) {
 	}
 }
 
+// Every sprite in a pack is written to the device, so an unreferenced one must
+// be rejected before any device write instead of failing later in the renderer.
+func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/good.cbi"}]}`
+	for _, tc := range []struct {
+		name string
+		data string
+		want string
+	}{
+		{name: "truncated", data: "CBI1\n1 2\n1\n#FFFFFF\na\n", want: "want 2"},
+		{name: "unsupported header", data: "CBI2\n1 1\n1\n#FFFFFF\na\n", want: "unsupported header"},
+		{name: "invalid dimensions", data: "CBI1\n0 1\n1\n#FFFFFF\na\n", want: "width/height must be > 0"},
+		{name: "frame table mismatch", data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\n", want: "want 2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+				{path: "/themes/u/good.cbi", file: "assets/good.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+				{path: "/themes/u/extra.cbi", file: "assets/extra.cbi", data: tc.data},
+			})
+
+			_, err := Load(dir)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected unreferenced sprite rejection containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestRepositoryThemePacksLoadWithRenderableAssets(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "theme-packs")
 	entries, err := os.ReadDir(root)

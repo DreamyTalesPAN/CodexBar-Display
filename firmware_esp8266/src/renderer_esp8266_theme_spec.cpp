@@ -40,6 +40,10 @@ unsigned long cbaBufferAllocationFailures = 0;
 unsigned long cbaLastPushDurationUs = 0;
 const char* lastThemeSpecRenderError = "";
 const char* lastAnimatedSpriteError = "";
+// Asset that produced the current sprite error. Only theme-namespace paths
+// ever reach this field, so support diagnostics can name the failing file
+// without exposing unrelated customer data.
+String lastSpriteErrorAsset = "";
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -79,6 +83,33 @@ int nextAnimatedSpriteCacheSlot = 0;
 void markThemeSpecRenderOk() {
   lastThemeSpecRenderOk = true;
   lastThemeSpecRenderError = "";
+}
+
+// Publishes a sprite error without counting it as a broken asset. Used for
+// transient resource conditions that recover on their own. The first error of
+// a render pass wins so the reported code stays stable while it persists.
+void setSpriteRenderError(const char* code, const char* assetPath) {
+  if (lastAnimatedSpriteError[0] != '\0') {
+    return;
+  }
+  lastAnimatedSpriteError = code == nullptr ? "sprite_render_failed" : code;
+  lastSpriteErrorAsset = assetPath == nullptr ? "" : assetPath;
+}
+
+// A sprite that cannot be decoded is a real render failure, not a skippable
+// primitive: the theme would otherwise show a missing image area while health
+// still reported renderOk.
+void markSpriteRenderFailed(const char* code, const char* assetPath) {
+  if (lastAnimatedSpriteError[0] != '\0') {
+    return;
+  }
+  setSpriteRenderError(code, assetPath);
+  themeSpecRenderFailures += 1;
+}
+
+void clearSpriteRenderError() {
+  lastAnimatedSpriteError = "";
+  lastSpriteErrorAsset = "";
 }
 
 void markThemeSpecRenderFailed(const char* error) {
@@ -468,6 +499,7 @@ bool readSpritePalette(File& file, uint16_t* palette, int& paletteSize) {
 
 void drawStaticSpriteAsset(
     File& file,
+    const char* assetPath,
     int x,
     int y,
     int targetWidth,
@@ -479,17 +511,20 @@ void drawStaticSpriteAsset(
   int width = 0;
   int height = 0;
   if (!readSpriteLine(file, line) || !parseSpriteHeader(line, width, height)) {
+    markSpriteRenderFailed("cbi_header_invalid", assetPath);
     return;
   }
 
   uint16_t palette[26] = {0};
   int paletteSize = 0;
   if (!readSpritePalette(file, palette, paletteSize)) {
+    markSpriteRenderFailed("cbi_palette_invalid", assetPath);
     return;
   }
 
   for (int row = 0; row < height; ++row) {
     if (!readSpriteLine(file, line)) {
+      markSpriteRenderFailed("cbi_truncated", assetPath);
       return;
     }
     const int drawHeight = targetHeight > 0 ? targetHeight : height;
@@ -515,11 +550,17 @@ void drawStaticSpriteAsset(
                    hasClearColor,
                    clearColor,
                    clip)) {
+      markSpriteRenderFailed("cbi_row_invalid", assetPath);
       return;
     }
     if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
       cooperativeYield();
     }
+  }
+  // Reaching the end of the row budget proves this asset decodes again, so a
+  // stale error from an earlier pass must not stay in render health.
+  if (lastSpriteErrorAsset == assetPath) {
+    clearSpriteRenderError();
   }
 }
 
@@ -636,7 +677,9 @@ bool prepareAnimatedSpriteBuffer(
     }
     if (replacement == nullptr) {
       cbaBufferAllocationFailures += 1;
-      lastAnimatedSpriteError = "low_heap_cba_buffer";
+      // Low heap is a transient resource condition, not a broken asset. It
+      // keeps its own counter and must not inflate renderFailures.
+      setSpriteRenderError("low_heap_cba_buffer", cache.path.c_str());
       return false;
     }
     delete[] cbaFrameBuffer;
@@ -685,7 +728,10 @@ void pushCompletedAnimatedSpriteFrame(
   }
   cache.frameReadyToPush = false;
   cbaCompletedFrames += 1;
-  lastAnimatedSpriteError = "";
+  // A completed frame proves this asset decodes again.
+  if (lastSpriteErrorAsset == cache.path) {
+    clearSpriteRenderError();
+  }
   cbaLastFrameDurationMs = millis() - cache.frameStartedAtMs;
   const unsigned long frameDelayMs = ThemeSpecRuntimePolicy::CbaFrameDelayMs(cache.fps);
   cache.nextFrameAtMs = frameDelayMs > 0 ? cache.frameStartedAtMs + frameDelayMs : 0;
@@ -808,6 +854,7 @@ void drawSpriteAsset(
   }
   File file = LittleFS.open(assetPath, "r");
   if (!file) {
+    markSpriteRenderFailed("sprite_asset_missing", assetPath);
     return;
   }
 
@@ -815,7 +862,8 @@ void drawSpriteAsset(
   if (readSpriteLine(file, line)) {
     if (line == "CBI1") {
       if (mode != SpriteRenderMode::AnimatedOnly) {
-        drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor, clip);
+        drawStaticSpriteAsset(
+            file, assetPath, x, y, targetWidth, targetHeight, hasClearColor, clearColor, clip);
       }
     } else if (line == "CBA1") {
       if (mode != SpriteRenderMode::StaticOnly && animatedCache != nullptr) {
@@ -826,12 +874,16 @@ void drawSpriteAsset(
             targetHeight,
             hasClearColor,
             clearColor)) {
-          if (lastAnimatedSpriteError[0] == '\0') {
-            lastAnimatedSpriteError = "cba_render_failed";
-          }
+          markSpriteRenderFailed("cba_render_failed", assetPath);
         }
       }
+    } else {
+      // An asset that is neither CBI1 nor CBA1 cannot be drawn at all. Without
+      // this the theme would render a hole while health still reported ok.
+      markSpriteRenderFailed("sprite_header_unsupported", assetPath);
     }
+  } else {
+    markSpriteRenderFailed("sprite_unreadable", assetPath);
   }
 
   file.close();
@@ -844,7 +896,7 @@ void drawSpriteAsset(
 }
 
 void resetAnimatedSpriteCaches() {
-  lastAnimatedSpriteError = "";
+  clearSpriteRenderError();
   cbaRenderJobInProgress = false;
   cbaFrameBufferOwner = nullptr;
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {
@@ -1367,6 +1419,10 @@ const char* ThemeSpecRenderError() {
   return lastAnimatedSpriteError[0] != '\0' ? lastAnimatedSpriteError : lastThemeSpecRenderError;
 }
 
+const char* ThemeSpecRenderErrorAsset() {
+  return lastSpriteErrorAsset.c_str();
+}
+
 unsigned long ThemeSpecRenderFailures() {
   return themeSpecRenderFailures;
 }
@@ -1437,6 +1493,10 @@ bool ThemeSpecRenderOk() {
 }
 
 const char* ThemeSpecRenderError() {
+  return "";
+}
+
+const char* ThemeSpecRenderErrorAsset() {
   return "";
 }
 
