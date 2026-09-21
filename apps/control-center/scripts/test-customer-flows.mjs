@@ -11707,6 +11707,18 @@ async function routeCompanionOnline(
       });
       return;
     }
+    if (pathname === "/v1/preferences" && new URL(route.request().url()).searchParams.get("section") === "agents") {
+      // Agent settings have their own preference owner; provider fixtures and
+      // delayed provider-read races must not leak into this section.
+      const items = [
+        { id: "vibetv.agents.enabled", type: "boolean", label: "Show agent activity", value: true },
+        { id: "vibetv.agents.blink", type: "boolean", label: "Blink the screen when an agent needs you", value: true },
+        { id: "vibetv.agents.reminder", type: "enum", label: "Remind me again", value: "5", options: [{ value: "5", label: "After 5 minutes" }] },
+        { id: "vibetv.agents.quiet", type: "enum", label: "Quiet from", value: "off", options: [{ value: "off", label: "Never quiet" }] },
+      ].map(item => ({ ...item, section: "agents", writable: true, availability: { state: "available" } }));
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, items }) });
+      return;
+    }
     if ((pathname === "/v1/preferences" && new URL(route.request().url()).searchParams.get("section") === "display") || pathname === "/v1/preferences/codexbar.usageBarsShowUsed") {
       if (route.request().method() === "PATCH") usageBarsShowUsed = JSON.parse(route.request().postData()).value;
       const item = { id: "codexbar.usageBarsShowUsed", value: usageBarsShowUsed, effectiveValue: usageBarsShowUsed, writable: true };

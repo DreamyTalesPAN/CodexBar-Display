@@ -59,6 +59,9 @@ func (a agentPreferenceAdapter) Write(ctx context.Context, id string, value any)
 	if err != nil {
 		return preferenceDescriptor{}, err
 	}
+	if a.server.renderDisplayStream != nil {
+		a.server.renderDisplayStream()
+	}
 	items, err := a.List(ctx)
 	for _, item := range items {
 		if item.ID == id {

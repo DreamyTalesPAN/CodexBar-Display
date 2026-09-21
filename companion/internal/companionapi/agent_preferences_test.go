@@ -13,6 +13,8 @@ func TestAgentPreferencesPersistWithoutChangingDeviceOrUsage(t *testing.T) {
 	s := newTestServer(t, runtimeconfig.Config{})
 	s.loadConfig = runtimeconfig.Load
 	s.saveConfig = runtimeconfig.Save
+	wakes := 0
+	s.renderDisplayStream = func() { wakes++ }
 	if err := runtimeconfig.Save(s.home, runtimeconfig.Config{DeviceID: "keep-device", ConnectionMode: "cable"}); err != nil {
 		t.Fatal(err)
 	}
@@ -20,10 +22,18 @@ func TestAgentPreferencesPersistWithoutChangingDeviceOrUsage(t *testing.T) {
 		id, body string
 		code     int
 	}{{"enabled", `{"value":false}`, 200}, {"blink", `{"value":false}`, 200}, {"reminder", `{"value":"15"}`, 200}, {"quiet", `{"value":"22"}`, 200}, {"reminder", `{"value":"2"}`, 400}, {"enabled", `{"value":"false"}`, 400}} {
+		before := wakes
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/v1/preferences/vibetv.agents."+tc.id, strings.NewReader(tc.body)))
 		if w.Code != tc.code {
 			t.Fatalf("%s %d %s", tc.id, w.Code, w.Body.String())
+		}
+		wantWakes := before
+		if tc.code == http.StatusOK {
+			wantWakes++
+		}
+		if wakes != wantWakes {
+			t.Fatalf("%s: render wakes = %d, want %d", tc.id, wakes, wantWakes)
 		}
 	}
 	cfg, err := runtimeconfig.Load(s.home)

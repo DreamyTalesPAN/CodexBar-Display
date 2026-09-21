@@ -4658,3 +4658,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul answered the explicit scope question with "Alle themes und ne Einstellung dafür dass ich das ausstellen kann".
 - Approved customer-visible result: The shared two-blink announcement and waiting reminders apply to every theme, including dedicated state sprites. The Blink switch disables those inversions and reminders while preserving status text and artwork. Quiet hours and reduced motion still suppress blinking.
 - Scope: Central firmware and live-preview announcement logic, the already approved settings, tests and theme guidance. No per-theme alert implementation.
+
+### 2026-09-21 — Keep provider browser fixtures scoped to their settings section
+
+- User approval: Covered by Paul's specific Agent activity settings approval above; test-harness correction only.
+- Approved customer-visible result: Unchanged. The browser fixture now answers the agents section separately, matching the real preference API and avoiding duplicate provider controls in that section.
+- Scope: Existing customer-flow browser fixtures only. No new application UI or publication.
