@@ -9280,11 +9280,14 @@ async function testOverviewAgentSessions(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
   const installRequests = [];
   let phase = "waiting_for_permission";
+  let claudeConnected = false;
+  const integrationWrites = [];
   const observedAt = Date.now() - 252_000;
   await routeCompanionOnline(page, installRequests, () => {}, {
+    onAgentIntegration: (payload) => { integrationWrites.push(payload); claudeConnected = payload.enabled; },
     agentSnapshot: () => ({
       health: "ready", generatedAt: Date.now(),
-      sources: [{ id: "codex", name: "Codex CLI" }, { id: "claude", name: "Claude Code" }],
+      sources: [{ id: "codex", name: "Codex CLI", connection: "automatic", capabilityLevel: "log-observed" }, { id: "claude", name: "Claude Code", connection: claudeConnected ? "connected" : "disconnected", capabilityLevel: "hook-adapter" }],
       sessions: [
         { id: "one", source: "codex", phase, observedAt },
         { id: "two", source: "codex", phase: "tool_use", observedAt },
@@ -9303,6 +9306,17 @@ async function testOverviewAgentSessions(browser, appUrl) {
   await page.setViewportSize({ width: 390, height: 844 });
   await assertNoMobileOverflow(page);
   await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/overview-sessions-mobile.png"), fullPage: true });
+  await page.setViewportSize(desktopViewport);
+  await (await getNavigationButton(page, "Settings")).click();
+  const connection = page.getByRole("switch", { name: "Connect Claude Code", exact: true });
+  await connection.waitFor();
+  assert(integrationWrites.length === 0, "Viewing agent connections must not configure hooks");
+  await connection.click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Connect Claude Code"]')?.getAttribute('aria-checked') === 'true');
+  assert(integrationWrites[0]?.source === "claude" && integrationWrites[0]?.enabled === true, "Connect must forward the engine's source id and explicit choice");
+  await connection.click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Connect Claude Code"]')?.getAttribute('aria-checked') === 'false');
+  assert(integrationWrites[1]?.enabled === false, "Disconnect must forward the explicit off choice");
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -11148,6 +11162,7 @@ async function routeCompanionOnline(
   onSettings = () => {},
   {
     agentSnapshot,
+    onAgentIntegration,
     companionFeatures = {
       themeInstallEnabled: true,
       macAppSelfUpdateEnabled: false,
@@ -12043,6 +12058,11 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({ ok: true, device: nextDevice }),
       });
+      return;
+    }
+    if (pathname === "/v1/agents/integrations") {
+      onAgentIntegration?.(JSON.parse(route.request().postData() || "{}"));
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, agents: agentSnapshot?.() }) });
       return;
     }
     if (pathname === "/v1/status") {

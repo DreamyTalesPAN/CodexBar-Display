@@ -13,7 +13,7 @@ export type AgentSnapshot = {
     phase: string;
     observedAt: number;
   }[];
-  sources: { id: string; name: string }[];
+  sources: { id: string; name: string; connection?: string; capabilityLevel?: string }[];
 };
 
 const phaseLabels: Record<string, string> = {

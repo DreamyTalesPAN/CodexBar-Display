@@ -1,5 +1,7 @@
 "use client";
 
+import { AgentConnections } from "./agent-connections";
+import type { AgentSnapshot } from "./agent-sessions";
 import { AgentActivitySettings, type AgentSettingsRequest } from "./agent-activity-settings";
 import { UsageModeChoice } from "./setup/setup-usage-mode-screen";
 import type { UsageDisplayMode } from "./setup/setup-display-previews";
@@ -54,6 +56,8 @@ export function standbyTimeoutLabel(minutes: number): string {
 }
 
 export type SettingsScreenProps = {
+  agents?: AgentSnapshot | null;
+  onAgentsChange?: (snapshot: AgentSnapshot) => void;
   agentSettingsRequest?: AgentSettingsRequest;
   usageMode?: UsageDisplayMode | null;
   usageSavePending?: boolean;
@@ -78,6 +82,8 @@ export type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
+  agents = null,
+  onAgentsChange,
   agentSettingsRequest,
   usageMode, usageSavePending, onUsageModeChange,
   automaticPreviews,
@@ -174,6 +180,12 @@ export function SettingsScreen({
           <AgentActivitySettings request={agentSettingsRequest} />
         </SettingsSection>
         <ItemSeparator />
+        {onAgentsChange ? <>
+          <SettingsSection title="Agent connections">
+            <AgentConnections snapshot={agents} request={agentSettingsRequest} onChange={onAgentsChange} />
+          </SettingsSection>
+          <ItemSeparator />
+        </> : null}
       </> : null}
       <SettingsSection title="Connection">
         <div
