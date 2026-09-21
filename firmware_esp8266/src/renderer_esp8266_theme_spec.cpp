@@ -1175,6 +1175,28 @@ void MarkThemeSpecCountdownsRendered() {
   }
 }
 
+uint32_t ThemeSpecCountdownFields() {
+  const String& raw = currentThemeSpecRaw();
+  if (!CurrentFrame().hasThemeSpec ||
+      !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) ||
+      !ensureThemeSpecSceneCached(raw)) {
+    return 0;
+  }
+  // Every compiled primitive already carries the live fields it binds, so the
+  // countdown mask falls out of the scene the renderer is holding anyway. The
+  // per-slot binding helpers format their candidate names with snprintf, and
+  // the image has no flash left to instantiate them for this.
+  constexpr uint32_t kCountdownMask =
+      codexbar_display::themespec::kThemeSpecFieldReset |
+      codexbar_display::themespec::kThemeSpecFieldUsageWindowReset |
+      codexbar_display::themespec::kThemeSpecFieldProviderSlots;
+  uint32_t fields = 0;
+  for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
+    fields |= cachedThemeSpecScene.primitives[i].liveFields;
+  }
+  return fields & kCountdownMask;
+}
+
 bool DrawThemeSpecUsage() {
   if (!CurrentFrame().hasThemeSpec) {
     return false;

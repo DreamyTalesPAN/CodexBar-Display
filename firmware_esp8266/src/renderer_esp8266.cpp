@@ -496,34 +496,14 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-    uint32_t countdownFields = 0;
-    if (core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
-      countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
-    }
-    // Which live values this theme can show is decided by substring rather
-    // than by the per-slot binding helpers. Those helpers format every
-    // candidate name with snprintf, and instantiating them here costs more
-    // flash than the image has left under its 46% ceiling.
-    //
-    // The prefixes are deliberately wider than the countdown bindings: they
-    // also match the label and percent forms. The only consequence is that a
-    // theme showing those values repaints them on the same tick, and a
-    // repaint is idempotent. Missing a countdown is not: the screen would
-    // keep presenting a value the device can no longer stand behind.
-    if (themeSpecRaw.indexOf("usageSlot") >= 0 || themeSpecRaw.indexOf("usage.") >= 0 ||
-        themeSpecRaw.indexOf("us1r") >= 0 || themeSpecRaw.indexOf("us2r") >= 0) {
-      countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
-    }
-    // Provider-slot countdowns tick locally too, and one can go from a
+    // The cached scene already knows which live fields it binds, including the
+    // provider-slot countdowns. Those tick locally too, and one can go from a
     // deadline to "no deadline" on its own: an idle slot reading "No active
-    // session" must revert to "Reset unavailable" once the shared trust
-    // budget expires. Night Clock binds nothing but {pv1l}/{pv1r}/{pv2l}/
-    // {pv2r}, so leaving this field out froze that screen on its last wording.
-    if (themeSpecRaw.indexOf("pv1") >= 0 || themeSpecRaw.indexOf("pv2") >= 0 ||
-        themeSpecRaw.indexOf("providerSlot") >= 0) {
-      countdownFields |= codexbar_display::themespec::kThemeSpecFieldProviderSlots;
-    }
+    // session" must revert to "Reset unavailable" once the shared trust budget
+    // expires. Night Clock binds nothing but {pv1l}/{pv1r}/{pv2l}/{pv2r}, so
+    // asking only for the root and usage-window fields froze that screen on
+    // its last wording.
+    const uint32_t countdownFields = display::ThemeSpecCountdownFields();
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {

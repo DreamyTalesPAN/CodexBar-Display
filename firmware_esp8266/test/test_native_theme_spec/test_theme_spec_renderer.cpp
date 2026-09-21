@@ -894,47 +894,47 @@ void testUsageWindowResetCountdownsTickIndependently() {
 // reading "No active session" would keep that wording after the trust budget
 // expired, presenting a value the device can no longer stand behind.
 //
-// DrawReset probes this by substring because the image has no flash left for
-// the formatted helper, so the shipped theme is pinned here directly.
+// DrawReset derives that mask from the compiled scene (ThemeSpecCountdownFields),
+// so this pins the compiled live fields the mask is taken from.
 void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
-  const String nightClockish =
-      String(R"JSON({"p":[{"t":"tx","b":"pv1l"},{"t":"tx","b":"pv1r"},)JSON")
-      + String(R"JSON({"t":"tx","b":"pv2l"},{"t":"tx","b":"pv2r"}]})JSON");
-  TEST_ASSERT_TRUE(
-      codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(nightClockish, 0));
-  TEST_ASSERT_TRUE(
-      codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(nightClockish, 1));
-  // The long form binds the same countdown.
-  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(
-      String(R"JSON({"p":[{"t":"tx","v":"{providerSlot1Reset}"}]})JSON"), 0));
-  // A theme that only shows provider labels has no countdown to repaint.
-  TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(
-      String(R"JSON({"p":[{"t":"tx","b":"pv1l"},{"t":"tx","b":"pv2l"}]})JSON"), 0));
-
-  // The substring probe DrawReset actually runs, over the same inputs. It is
-  // wider than the helper on purpose: any provider-slot binding arms the
-  // repaint, and repainting a label costs nothing while missing a countdown
-  // leaves a value on screen the device can no longer stand behind.
-  const auto drawResetProbe = [](const String& raw) {
-    return raw.indexOf("pv1") >= 0 || raw.indexOf("pv2") >= 0 ||
-           raw.indexOf("providerSlot") >= 0;
+  constexpr uint32_t kCountdownMask =
+      codexbar_display::themespec::kThemeSpecFieldReset |
+      codexbar_display::themespec::kThemeSpecFieldUsageWindowReset |
+      codexbar_display::themespec::kThemeSpecFieldProviderSlots;
+  const auto countdownFieldsOf = [](const char* spec) {
+    JsonDocument doc;
+    CompiledThemeSpec scene;
+    TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+    uint32_t fields = 0;
+    for (size_t i = 0; i < scene.primitiveCount; ++i) {
+      fields |= scene.primitives[i].liveFields;
+    }
+    ReleaseCompiledThemeSpec(scene);
+    return fields & kCountdownMask;
   };
-  TEST_ASSERT_TRUE(drawResetProbe(nightClockish));
-  TEST_ASSERT_TRUE(drawResetProbe(
-      String(R"JSON({"p":[{"t":"tx","v":"{providerSlot1Reset}"}]})JSON")));
-  // A theme with no provider binding at all still asks for nothing.
-  TEST_ASSERT_FALSE(drawResetProbe(
-      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON")));
 
-  // The usage-window probe in the same function keeps every shipped spelling.
-  const auto usageProbe = [](const String& raw) {
-    return raw.indexOf("usageSlot") >= 0 || raw.indexOf("usage.") >= 0 ||
-           raw.indexOf("us1r") >= 0 || raw.indexOf("us2r") >= 0;
-  };
-  TEST_ASSERT_TRUE(usageProbe(String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON")));
-  TEST_ASSERT_TRUE(usageProbe(String(R"JSON({"p":[{"t":"tx","v":"{usage.0.reset}"}]})JSON")));
-  TEST_ASSERT_TRUE(usageProbe(String(R"JSON({"p":[{"t":"tx","b":"us2r"}]})JSON")));
-  TEST_ASSERT_FALSE(usageProbe(nightClockish));
+  // The shipped Night Clock shape: provider slots only.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldProviderSlots,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"nc","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"pv1l"},)JSON"
+          R"JSON({"t":"tx","x":0,"y":20,"b":"pv1r"},{"t":"tx","x":0,"y":40,"b":"pv2r"}]})JSON"));
+  // The shipped Claude Creature shape: a usage-window countdown in prose.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldUsageWindowReset,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"cc","rev":1,"p":[)JSON"
+          R"JSON({"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"}]})JSON"));
+  // The root token keeps its own field.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldReset,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"rt","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"}]})JSON"));
+  // A theme with no countdown at all asks for no countdown repaint.
+  TEST_ASSERT_EQUAL_UINT32(
+      0,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"cl","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"tm"}]})JSON"));
 }
 
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
