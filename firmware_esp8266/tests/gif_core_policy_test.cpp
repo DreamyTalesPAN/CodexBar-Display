@@ -1175,15 +1175,23 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
           "an aborted CBA frame must restart the clean-pass requirement")) {
     return false;
   }
-  // The diagnostic names one asset path. A full redraw re-selects every
-  // sprite, and an activity or provider change swaps the state/provider
-  // sprite, so an error about a no-longer-drawn asset must not pin
-  // renderOk: false until the old state happens to return.
+  // The diagnostic names one asset path, so an error about a sprite the theme
+  // no longer draws must not pin renderOk: false forever. Retirement requires
+  // evidence that the asset is gone -- the scene no longer references it, or
+  // the pass that re-selected sprites never drew it -- because a static-only
+  // pass cannot prove a CBA decodes again.
+  if (!expect(
+          renderer.find("void retireSpriteRenderErrorIfAssetUnreferenced(") != std::string::npos &&
+              renderer.find("themespec::CompiledThemeSpecReferencesAsset(scene, lastSpriteErrorAsset.c_str())") != std::string::npos &&
+              renderer.find("retireSpriteRenderErrorIfAssetUnreferenced(cachedThemeSpecScene);") != std::string::npos,
+          "a full redraw may retire an error only for an unreferenced asset")) {
+    return false;
+  }
   return expect(
-      renderer.find("resetAnimatedSpriteCaches();\n  // A full redraw re-selects every sprite") != std::string::npos &&
-          renderer.find("const bool reselectsSprites =") != std::string::npos &&
-          renderer.find("if (reselectsSprites) {\n    clearSpriteRenderError();") != std::string::npos,
-      "a render that re-selects sprites must report its own result");
+      renderer.find("bool sawFailingSpriteAssetThisPass = false;") != std::string::npos &&
+          renderer.find("sawFailingSpriteAssetThisPass = true;") != std::string::npos &&
+          renderer.find("if (reselectsSprites && !sawFailingSpriteAssetThisPass) {") != std::string::npos,
+      "a partial render may retire an error only for an asset it never drew");
 }
 
 }  // namespace

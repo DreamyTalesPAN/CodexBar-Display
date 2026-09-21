@@ -44,6 +44,10 @@ const char* lastAnimatedSpriteError = "";
 // ever reach this field, so support diagnostics can name the failing file
 // without exposing unrelated customer data.
 String lastSpriteErrorAsset = "";
+// Set while a render pass draws the asset named by lastSpriteErrorAsset. A
+// pass that never selected it may retire the diagnostic; a pass that did must
+// leave recovery to a real decode.
+bool sawFailingSpriteAssetThisPass = false;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -114,6 +118,18 @@ void markSpriteRenderFailed(const char* code, const char* assetPath) {
 void clearSpriteRenderError() {
   lastAnimatedSpriteError = "";
   lastSpriteErrorAsset = "";
+}
+
+// Retires a diagnostic whose asset the compiled scene no longer references at
+// all. A still-referenced asset keeps its error until it actually decodes,
+// because a static-only pass cannot prove a CBA is healthy again.
+void retireSpriteRenderErrorIfAssetUnreferenced(const themespec::CompiledThemeSpec& scene) {
+  if (lastSpriteErrorAsset.length() == 0) {
+    return;
+  }
+  if (!themespec::CompiledThemeSpecReferencesAsset(scene, lastSpriteErrorAsset.c_str())) {
+    clearSpriteRenderError();
+  }
 }
 
 void markThemeSpecRenderFailed(const char* error) {
@@ -853,6 +869,11 @@ void drawSpriteAsset(
   if (assetPath == nullptr || assetPath[0] == '\0') {
     return;
   }
+  // Records that this pass actually selected the asset, so a diagnostic about
+  // a different, no-longer-selected sprite can be retired afterwards.
+  if (lastSpriteErrorAsset == assetPath) {
+    sawFailingSpriteAssetThisPass = true;
+  }
   AnimatedSpriteCache* animatedCache = nullptr;
   if (mode == SpriteRenderMode::AnimatedOnly) {
     if (clip.active) {
@@ -1265,11 +1286,10 @@ bool DrawThemeSpecUsage() {
   // A full redraw cancels any partial CBA job. The active state restarts at
   // frame zero and resumes a bounded row chunk per main-loop tick.
   resetAnimatedSpriteCaches();
-  // A full redraw re-selects every sprite, so the outcome of this pass -- not
-  // a diagnostic from an asset the theme may no longer draw -- decides render
-  // health. A sprite that still fails is re-reported by this pass or by the
-  // animated tick that follows it.
-  clearSpriteRenderError();
+  // A full redraw re-selects every sprite, so an error naming an asset this
+  // scene no longer references can be retired. An asset the scene still uses
+  // keeps its error: this pass is static-only and cannot prove a CBA decodes.
+  retireSpriteRenderErrorIfAssetUnreferenced(cachedThemeSpecScene);
 
   const auto frameData = currentThemeSpecFrameData();
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
@@ -1339,16 +1359,13 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   const auto frameData = currentThemeSpecFrameData(updateNoticeText);
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
   const char* partialError = nullptr;
-  // An activity or provider change selects different state/provider sprites,
-  // so a diagnostic naming the previously selected asset can no longer
-  // describe what is on screen. Clear it before the pass and let this render
-  // report its own result.
   const bool reselectsSprites =
       (changedFields &
        (themespec::kThemeSpecFieldActivity | themespec::kThemeSpecFieldProvider)) != 0;
-  if (reselectsSprites) {
-    clearSpriteRenderError();
-  }
+  // An activity or provider change selects different state/provider sprites.
+  // Watch whether this pass still draws the failing asset instead of assuming
+  // either way.
+  sawFailingSpriteAssetThisPass = false;
   if (!themespec::RenderCompiledThemeSpecChangedPrimitives(
           cachedThemeSpecScene,
           frameData,
@@ -1363,6 +1380,12 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   // buffer instead of failing prepareAnimatedSpriteBuffer forever.
   if (reselectsSprites) {
     resetAnimatedSpriteCaches();
+  }
+  // The failing asset was not selected by this pass, so its diagnostic no
+  // longer describes the screen. An asset still drawn keeps its error until it
+  // decodes.
+  if (reselectsSprites && !sawFailingSpriteAssetThisPass) {
+    clearSpriteRenderError();
   }
   markThemeSpecPartialOk();
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
