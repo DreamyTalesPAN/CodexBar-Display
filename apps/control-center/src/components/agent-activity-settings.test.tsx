@@ -72,7 +72,7 @@ it("saves the master switch, disables dependent controls, and keeps failed write
       .hasAttribute("disabled"),
   ).toBe(true);
   fireEvent.click(master);
-  await screen.findByRole("alert");
+  await screen.findByRole("dialog");
   expect(master.getAttribute("aria-checked")).toBe("false");
 });
 it("shows load failures and retries without inventing settings", async () => {

@@ -420,7 +420,7 @@ Review the design before device packaging:
 - Agent status uses the existing label slot; usage labels and reset information remain intact.
 - Long agent names and status text fit without clipping, collisions, or invisible shrinking.
 - Dedicated loops have aligned frames; missing state assets use the shared fallback.
-- The fallback performs two hard inversions with the exact 200/150/200 ms timing, returns to normal, and does not retrigger on an unchanged state.
+- The fallback performs two hard inversions with the exact 200/150/200 ms timing, returns to normal, and only repeats for an unchanged waiting state when a reminder is configured.
 - Idle, replay, animation-off during a flash, and browser reduced-motion behavior are checked.
 - Preview data is labeled as example data; approved designs are not described as already supported firmware features.
 

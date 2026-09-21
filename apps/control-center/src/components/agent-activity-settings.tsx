@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Item, ItemSeparator } from "@/components/ui/item";
 import { PreferenceControl } from "./preference-control";
+import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import type {
   PreferenceDescriptor,
   PreferenceValue,
@@ -21,22 +22,24 @@ export function AgentActivitySettings({
 }) {
   const [items, setItems] = useState<PreferenceDescriptor[] | null>(null);
   const [error, setError] = useState("");
+  const [errorDismissed, setErrorDismissed] = useState(false);
   const [pending, setPending] = useState(false);
   const writing = useRef(false);
   const revision = useRef(0);
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     const current = ++revision.current;
-    try {
-      const result = await request<{ items: PreferenceDescriptor[] }>(
-        "/v1/preferences?section=agents",
-      );
+    return request<{ items: PreferenceDescriptor[] }>(
+      "/v1/preferences?section=agents",
+    ).then((result) => {
       if (current !== revision.current) return;
       setItems(result.items);
       setError("");
-    } catch {
-      if (current === revision.current)
+    }).catch(() => {
+      if (current === revision.current) {
+        setErrorDismissed(false);
         setError("Agent activity settings could not be loaded. Try again.");
-    }
+      }
+    });
   }, [request]);
   useEffect(() => {
     void load();
@@ -50,6 +53,7 @@ export function AgentActivitySettings({
     revision.current += 1;
     setPending(true);
     setError("");
+    setErrorDismissed(false);
     try {
       const result = await request<{ item: PreferenceDescriptor }>(
         `/v1/preferences/${id}`,
@@ -64,7 +68,7 @@ export function AgentActivitySettings({
       );
     } catch {
       setError(
-        "This setting could not be saved. Your previous setting is still active.",
+        "This setting could not be confirmed. Reload settings to check.",
       );
     } finally {
       writing.current = false;
@@ -78,22 +82,15 @@ export function AgentActivitySettings({
   return (
     <div
       className="flex max-w-[520px] flex-col gap-4"
-      aria-busy={pending || !items}
+      aria-busy={pending || (!items && !error)}
     >
-      {error ? (
-        <div role="alert" className="text-sm text-destructive">
-          {error}
-          {!items ? (
-            <Button
-              variant="outline"
-              className="ml-3"
-              onClick={() => void load()}
-            >
-              Try again
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+      <SetupStepFailedDialog
+        error={error && !errorDismissed ? { code: "AGENT_SETTINGS_FAILED", message: "Check agent activity settings", nextAction: error } : null}
+        onOpenChange={(open) => !open && setErrorDismissed(true)}
+        onRetry={() => void load()}
+        retryLabel={items ? "Reload settings" : "Try again"}
+      />
+      {error && errorDismissed ? <Button variant="outline" onClick={() => void load()}>Reload settings</Button> : null}
       {!items && !error ? (
         <p role="status" className="text-sm text-muted-foreground">
           Loading agent activity settings…
