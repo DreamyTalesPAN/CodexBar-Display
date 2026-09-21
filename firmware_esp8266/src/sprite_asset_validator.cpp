@@ -126,6 +126,11 @@ SpriteValidationError ValidateRow(LineReader& reader, int width, int paletteSize
   uint8_t value = 0;
   bool endOfLine = false;
   int rowBytes = 0;
+  // readSpriteLine() trims the row before decoding and the Companion trims it
+  // during pack validation, so surrounding whitespace is not RLE content here
+  // either. Interior whitespace stays invalid, exactly as the renderer sees it.
+  bool sawToken = false;
+  int pendingSpaces = 0;
   while (!endOfLine) {
     if (!reader.ReadByte(value)) {
       endOfLine = true;
@@ -137,6 +142,21 @@ SpriteValidationError ValidateRow(LineReader& reader, int width, int paletteSize
     if (value == '\n') {
       break;
     }
+    if (value == ' ' || value == '\t') {
+      if (!sawToken) {
+        // Leading whitespace is trimmed away before the renderer decodes.
+        continue;
+      }
+      // Could be trailing whitespace; only a later token makes it interior.
+      ++pendingSpaces;
+      continue;
+    }
+    if (pendingSpaces > 0) {
+      // A token after whitespace means that whitespace was interior, which the
+      // renderer's RLE decoder rejects.
+      return SpriteValidationError::InvalidRow;
+    }
+    sawToken = true;
     if (rowBytes >= kMaxRowBytes) {
       return SpriteValidationError::InvalidRow;
     }

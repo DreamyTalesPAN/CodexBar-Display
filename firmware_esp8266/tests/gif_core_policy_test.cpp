@@ -1187,11 +1187,27 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
           "a full redraw may retire an error only for an unreferenced asset")) {
     return false;
   }
+  // A partial pass skips animated primitives and only draws the changed ones,
+  // so it can never prove an asset is gone and must not retire anything.
+  const std::size_t partialStart = renderer.find("bool RenderThemeSpecPartial(");
+  const std::size_t partialEnd = renderer.find("bool RenderThemeSpecRegion(", partialStart);
+  if (!expect(
+          partialStart != std::string::npos && partialEnd != std::string::npos,
+          "the partial render path must remain discoverable")) {
+    return false;
+  }
+  const std::string partial = renderer.substr(partialStart, partialEnd - partialStart);
+  if (!expect(
+          partial.find("clearSpriteRenderError()") == std::string::npos &&
+              partial.find("retireSpriteRenderErrorIfAssetUnreferenced") == std::string::npos,
+          "a partial render must not retire a sprite diagnostic")) {
+    return false;
+  }
+  // A replacement sprite that also fails must supersede the stale diagnostic,
+  // or its failure stays invisible and the old error is retired as gone.
   return expect(
-      renderer.find("bool sawFailingSpriteAssetThisPass = false;") != std::string::npos &&
-          renderer.find("sawFailingSpriteAssetThisPass = true;") != std::string::npos &&
-          renderer.find("if (reselectsSprites && !sawFailingSpriteAssetThisPass) {") != std::string::npos,
-      "a partial render may retire an error only for an asset it never drew");
+      renderer.find("lastAnimatedSpriteError[0] != '\\0' && lastSpriteErrorAsset == path") != std::string::npos,
+      "a failure from a different asset must supersede a stale diagnostic");
 }
 
 }  // namespace

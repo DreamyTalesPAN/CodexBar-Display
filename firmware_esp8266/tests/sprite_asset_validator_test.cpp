@@ -249,6 +249,22 @@ bool testOverlongRowsAreRejected() {
       "a row within the renderer's line limit must stay valid");
 }
 
+// The renderer trims each row before decoding and the Companion trims during
+// pack validation, so the validator must agree: surrounding whitespace is not
+// content, interior whitespace is still invalid.
+bool testRowWhitespaceMatchesTheRenderer() {
+  if (!expect(
+          validate("CBI1\n4 2\n2\n#FF0000\n#00FF00\n  4a  \n2a2b\n") ==
+              SpriteValidationError::None,
+          "surrounding row whitespace must be tolerated")) {
+    return false;
+  }
+  return expect(
+      validate("CBI1\n4 2\n2\n#FF0000\n#00FF00\n2a 2b\n2a2b\n") ==
+          SpriteValidationError::InvalidRow,
+      "interior row whitespace must stay invalid");
+}
+
 bool testInconsistentFrameTablesAreRejected() {
   // The header promises two frames but the payload only contains one.
   if (!expect(
@@ -317,6 +333,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testOverlongRowsAreRejected()) {
+    return 1;
+  }
+  if (!testRowWhitespaceMatchesTheRenderer()) {
     return 1;
   }
   if (!testInconsistentFrameTablesAreRejected()) {
