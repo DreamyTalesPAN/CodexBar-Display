@@ -64,6 +64,11 @@ func TestUnsupportedClassificationStaysNarrow(t *testing.T) {
 		"Antigravity language server not detected. Launch Antigravity and retry.": ProviderEngineError,
 		// A real expiry on another provider keeps its sign-in.
 		"OAuth token expired": ProviderAuthRequired,
+		// A recoverable message from any provider may still say that some
+		// method is no longer supported while naming a real remedy. Matching a
+		// bare "no longer supported" would strip its sign-in and re-check.
+		"This OAuth method is no longer supported; sign in again": ProviderAuthRequired,
+		"The legacy config format is no longer supported":         ProviderConfigError,
 	} {
 		if got := classifyProviderError(detail); got != want {
 			t.Fatalf("%q: got %s want %s", detail, got, want)

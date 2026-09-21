@@ -533,6 +533,8 @@ void drawStaticSpriteAsset(
     return;
   }
 
+  // Recovery requires proof from this pass alone: every declared row decoded.
+  bool decodedEveryRow = true;
   for (int row = 0; row < height; ++row) {
     if (!readSpriteLine(file, line)) {
       markSpriteRenderFailed("cbi_truncated", assetPath);
@@ -543,11 +545,11 @@ void drawStaticSpriteAsset(
     // decoding the unchanged rows of a full-screen background entirely.
     if (clip.active &&
         !ThemeSpecRuntimePolicy::ScaledSpriteRowIntersectsClip(row, height, y, drawHeight, clip.y, clip.height)) {
+      // This row was read but never decoded, so it cannot support recovery.
+      decodedEveryRow = false;
       const int drawY1 = y + ((row * drawHeight) / height);
       if (drawY1 >= clip.y + clip.height) {
-        // The rows below the clip were never read, so this pass proves
-        // nothing about them. Leave recovery to a scan reaching the last row.
-        return;
+        break;
       }
     } else if (!drawSpriteRleRow(
                    line,
@@ -570,9 +572,10 @@ void drawStaticSpriteAsset(
       cooperativeYield();
     }
   }
-  // Reaching the end of the row budget proves this asset decodes again, so a
-  // stale error from an earlier pass must not stay in render health.
-  if (lastSpriteErrorAsset == assetPath) {
+  // Only a pass that actually decoded every declared row proves this asset is
+  // healthy again. A clipped render skips rows outside the viewport, so it
+  // must not clear an error found in a row it never decoded.
+  if (decodedEveryRow && lastSpriteErrorAsset == assetPath) {
     clearSpriteRenderError();
   }
 }

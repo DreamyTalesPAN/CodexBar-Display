@@ -1138,9 +1138,10 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
   // A clipped render deliberately stops before the last row. Falling through
   // to the success block would clear an error found in a row it never read.
   if (!expect(
-          staticDraw.find("if (drawY1 >= clip.y + clip.height) {") != std::string::npos &&
-              staticDraw.find("break;") == std::string::npos,
-          "a clipped sprite render must leave the row loop without reaching recovery")) {
+          staticDraw.find("bool decodedEveryRow = true;") != std::string::npos &&
+              staticDraw.find("decodedEveryRow = false;") != std::string::npos &&
+              staticDraw.find("if (decodedEveryRow && lastSpriteErrorAsset == assetPath) {") != std::string::npos,
+          "only a pass that decoded every row may clear a static sprite error")) {
     return false;
   }
   // A new theme no longer draws the old theme's assets, so its stale

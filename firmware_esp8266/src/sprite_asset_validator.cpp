@@ -9,6 +9,10 @@ namespace {
 // Longest header/palette line the validator keeps in RAM. RLE rows are
 // validated while streaming and are never collected into a buffer.
 constexpr size_t kMaxTokenLineBytes = 64;
+// Mirrors kSpriteLineMaxBytes in the renderer. readSpriteLine() refuses any
+// longer row, so accepting one here would promote an asset the device then
+// fails to draw with cbi_truncated.
+constexpr int kMaxRowBytes = 512;
 
 class LineReader {
  public:
@@ -121,6 +125,7 @@ SpriteValidationError ValidateRow(LineReader& reader, int width, int paletteSize
   bool hasRunLength = false;
   uint8_t value = 0;
   bool endOfLine = false;
+  int rowBytes = 0;
   while (!endOfLine) {
     if (!reader.ReadByte(value)) {
       endOfLine = true;
@@ -132,6 +137,10 @@ SpriteValidationError ValidateRow(LineReader& reader, int width, int paletteSize
     if (value == '\n') {
       break;
     }
+    if (rowBytes >= kMaxRowBytes) {
+      return SpriteValidationError::InvalidRow;
+    }
+    ++rowBytes;
     if (value >= '0' && value <= '9') {
       const int digit = value - '0';
       if (runLength > (kMaxSpriteDimension - digit) / 10) {

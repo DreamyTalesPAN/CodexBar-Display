@@ -222,6 +222,33 @@ bool testInvalidRowsAreRejected() {
       "transparent runs must remain valid");
 }
 
+// readSpriteLine() in the renderer refuses any row longer than 512 bytes, so a
+// longer row must be rejected at upload instead of being promoted and then
+// failing on the device as cbi_truncated.
+bool testOverlongRowsAreRejected() {
+  std::string wide = "CBI1\n480 1\n2\n#FF0000\n#00FF00\n";
+  // 480 single-pixel runs cover the declared width but need 960 row bytes.
+  for (int i = 0; i < 480; ++i) {
+    wide += "1a";
+  }
+  wide += "\n";
+  if (!expect(
+          validate(wide) == SpriteValidationError::InvalidRow,
+          "a row the renderer cannot read must be rejected")) {
+    return false;
+  }
+  // A row just inside the limit stays valid, so the check cannot reject
+  // shippable assets.
+  std::string near = "CBI1\n255 1\n2\n#FF0000\n#00FF00\n";
+  for (int i = 0; i < 255; ++i) {
+    near += "1a";
+  }
+  near += "\n";
+  return expect(
+      validate(near) == SpriteValidationError::None,
+      "a row within the renderer's line limit must stay valid");
+}
+
 bool testInconsistentFrameTablesAreRejected() {
   // The header promises two frames but the payload only contains one.
   if (!expect(
@@ -287,6 +314,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testInvalidRowsAreRejected()) {
+    return 1;
+  }
+  if (!testOverlongRowsAreRejected()) {
     return 1;
   }
   if (!testInconsistentFrameTablesAreRejected()) {

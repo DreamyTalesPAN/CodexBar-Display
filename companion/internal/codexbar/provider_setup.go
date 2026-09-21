@@ -637,7 +637,12 @@ func classifyProviderError(detail string) string {
 	//    provider instead. Workspace and education accounts should keep using
 	//    Gemini." message offers a conditional aside beside a real repair
 	//    ("Reinstall or update Gemini CLI"), so it stays recoverable.
-	case strings.Contains(lower, "no longer supports"), strings.Contains(lower, "no longer supported"),
+	//
+	// Both are matched against the recorded 0.63.0 sentences rather than a bare
+	// "no longer supported", which any provider could emit beside a recoverable
+	// remedy -- "OAuth method is no longer supported; sign in again" must stay
+	// auth_required, not lose its sign-in.
+	case strings.Contains(lower, "no longer supports gemini cli oauth"),
 		strings.Contains(lower, "enable codexbar's antigravity provider"):
 		return ProviderUnsupported
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
