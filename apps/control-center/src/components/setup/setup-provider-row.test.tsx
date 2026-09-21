@@ -242,14 +242,12 @@ describe("provider notices", () => {
   it.each(["healthy", "disabled", "checking"])("does not add a notice for %s", (health) => {
     expect(render({health})).not.toContain('data-slot="provider-notice"');
   });
-  it("keeps terminal upstream instructions out of the customer notice", () => {
+  it("preserves terminal upstream guidance and its copy action", () => {
     const html = render({health: "unsupported", reportedMessage: "Google no longer supports Gemini CLI OAuth. Enable CodexBar's Antigravity provider or run agy.", label: "Gemini"});
-    expect(html).toContain("This provider is no longer supported for this account");
-    expect(html).not.toContain("OAuth");
-    expect(html).not.toContain("CodexBar");
-    expect(html).not.toContain("run agy");
+    expect(html).toContain("Google no longer supports Gemini CLI OAuth.");
+    expect(html).toContain("run agy");
     expect(html).not.toContain("Check Gemini again");
-    expect(html).not.toContain("Copy provider message");
+    expect(html).toContain("Copy provider message");
     expect(html).toContain('role="switch"');
   });
 });

@@ -173,27 +173,8 @@ export function ProviderList({
 
       <ItemGroup className="mt-3 gap-2">
         {visible.map((provider) => {
-          const alternative = setupProviderAlternative(provider, providers);
-          const unavailable = provider.providerId === "gemini"
-            ? "Gemini no longer reports usage for personal Google accounts."
-            : `${provider.label} no longer reports usage for this account.`;
           return (
             <SetupProviderRow
-              alternativeActions={alternative && !alternative.value ? (
-                <Button
-                  disabled={!alternative.writable || pendingPreferenceIds.has(alternative.id)}
-                  onClick={() => onToggle(alternative, true)}
-                  size="sm"
-                  type="button"
-                >
-                  {`Turn on ${alternative.label}`}
-                </Button>
-              ) : undefined}
-              unsupportedMessage={alternative
-                ? `${unavailable} ${alternative.value
-                  ? `${alternative.label} is already on — you can turn ${provider.label} off.`
-                  : `You can turn on ${alternative.label} instead.`}`
-                : undefined}
               checking={pendingCheckIds.has(provider.providerId)}
               enabled={provider.value}
               health={provider.value && provider.health.state === "healthy" && !setupProviderCanDisplay(provider, usage) ? "checking" : provider.health.state}
@@ -423,18 +404,5 @@ export function setupProviderMatchesQuery(
     provider.label.toLowerCase().includes(normalized) ||
     provider.health.message.toLowerCase().includes(normalized) ||
     provider.providerId.toLowerCase().includes(normalized)
-  );
-}
-
-/** Resolve the upstream replacement from the existing inventory, without probing accounts. */
-function setupProviderAlternative(
-  provider: ProviderItem,
-  inventory: ProviderItem[],
-): ProviderItem | undefined {
-  if (provider.health.state !== "unsupported" || !provider.health.reported) return undefined;
-  const words = (value: string) => ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
-  const message = words(provider.health.reported);
-  return inventory.find((candidate) =>
-    candidate.id !== provider.id && message.includes(words(candidate.label)),
   );
 }

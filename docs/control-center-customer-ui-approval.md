@@ -4664,3 +4664,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by Paul's specific Agent activity settings approval above; test-harness correction only.
 - Approved customer-visible result: Unchanged. The browser fixture now answers the agents section separately, matching the real preference API and avoiding duplicate provider controls in that section.
 - Scope: Existing customer-flow browser fixtures only. No new application UI or publication.
+
+### 2026-09-21 — Preserve CodexBar provider guidance
+
+- User approval: Paul's repository instructions explicitly require CodexBar to own provider-specific behavior and errors, and the Mac App to transport that meaning without reimplementing it. His current feature-branch fix/test authorization covers correcting the review finding against that boundary.
+- Approved customer-visible result: Unsupported-provider rows show the existing upstream guidance and copy action. They no longer invent a provider-specific explanation or a replacement-provider button by searching English diagnostic text. The normal provider switches remain available, and usable readings still govern Continue.
+- Scope: Delete the browser's replacement inference and redundant row overrides, update their regressions and browser scenario. No new provider integration, provider probe, main merge or release.

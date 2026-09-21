@@ -13299,19 +13299,19 @@ async function testProviderMigrationHandoff(browser, appUrl) {
   });
   await page.goto(appUrl, {waitUntil: "domcontentloaded"});
   const panel = setupScreen(page, SETUP_PROVIDERS_SCREEN);
-  await panel.getByText("Gemini no longer reports usage for personal Google accounts. You can turn on Antigravity instead.", {exact: true}).waitFor({timeout: 10_000});
+  await panel.getByText(message, {exact: true}).waitFor({timeout: 10_000});
   assert(await panel.getByRole("button", {name: "Continue"}).isDisabled(), "unsupported access alone must not complete setup");
   assert(await panel.getByRole("button", {name: "Check Gemini again"}).count() === 0, "terminal access must not offer Retry");
   if (migrationScreenshotDir) {
     await mkdir(migrationScreenshotDir, {recursive: true});
     await page.screenshot({path: join(migrationScreenshotDir, "gemini-migration-desktop.png"), fullPage: true});
   }
-  assert(await panel.getByText(message, {exact: true}).count() === 0, "internal instructions must not appear in the customer notice");
-  await panel.getByRole("button", {name: "Turn on Antigravity"}).click();
+  assert(await panel.getByRole("button", {name: "Turn on Antigravity"}).count() === 0, "diagnostic text must not create a replacement action");
+  await panel.getByRole("switch", {name: "Antigravity"}).click();
   await waitForCondition(() => writes.some((request) => request.path.includes("antigravity") && request.method === "PATCH"), "the explicit toggle did not use the provider settings endpoint");
   await waitForCondition(async () => !(await panel.getByRole("button", {name: "Continue"}).isDisabled()), "healthy Antigravity must unblock setup alongside unsupported Gemini");
   assert(await panel.getByRole("button", {name: "Turn on Antigravity"}).count() === 0, "already enabled replacement must not offer another enable action");
-  await panel.getByText("Gemini no longer reports usage for personal Google accounts. Antigravity is already on — you can turn Gemini off.").waitFor();
+  await panel.getByText(message, {exact: true}).waitFor();
   assert(await panel.getByRole("switch", {name: "Gemini"}).isChecked(), "enabling the alternative must not silently disable Gemini");
   if (migrationScreenshotDir) {
     await page.screenshot({path: join(migrationScreenshotDir, "gemini-migration-antigravity-ready.png"), fullPage: true});

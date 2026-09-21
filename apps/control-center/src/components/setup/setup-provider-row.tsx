@@ -1,7 +1,6 @@
 "use client";
 
 import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -80,10 +79,6 @@ type SetupProviderRowProps = {
    * has not been satisfied, and repeating the sign-in work behind the check.
    */
   checking?: boolean;
-  /** In-app action for the replacement named by the usage service. */
-  alternativeActions?: ReactNode;
-  /** Customer-facing explanation for a terminal provider migration. */
-  unsupportedMessage?: string;
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
@@ -109,8 +104,6 @@ type SetupProviderRowProps = {
 };
 
 export function SetupProviderRow({
-  alternativeActions,
-  unsupportedMessage,
   checking = false,
   enabled,
   health,
@@ -157,10 +150,7 @@ export function SetupProviderRow({
   const guidance = reportedMessage || detail || fallbackMessage;
 
   const hasNotice = variant !== "checking" && variant !== "toggle";
-  const notice = variant === "unsupported"
-    ? unsupportedMessage || fallbackMessage
-    : guidance;
-  const actions = variant === "unsupported" ? alternativeActions : (
+  const actions = variant === "unsupported" ? copyReportedMessage : (
     <>
       {copyReportedMessage}
       {variant === "stale" ? null : checking ? (
@@ -214,8 +204,8 @@ export function SetupProviderRow({
       </ItemActions>
       {hasNotice ? (
         <div data-slot="provider-notice" className="-mx-4 flex basis-[calc(100%+2rem)] items-center gap-3 border-t border-border px-4 pt-3 text-left">
-          <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{notice}</p>
-          {(variant === "unsupported" ? alternativeActions : variant !== "stale" || copyReportedMessage) ? (
+          <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{guidance}</p>
+          {((variant !== "unsupported" && variant !== "stale") || copyReportedMessage) ? (
             <div className="flex shrink-0 items-center justify-end gap-2">{actions}</div>
           ) : null}
         </div>
