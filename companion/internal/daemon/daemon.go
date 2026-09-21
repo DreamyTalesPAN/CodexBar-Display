@@ -1425,8 +1425,15 @@ func applyDeviceActivity(frame protocol.Frame, caps protocol.DeviceCapabilities)
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame := result.frame
-	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
+	frame := authoritativeFrame.Normalize()
 	frame, result.activityDetail = applyAgentActivity(frame, state)
+	// Usage failures remain in the cycle result/API. A valid independent agent
+	// observation can still render its theme before any usage has been collected.
+	if caps.SupportsAgentThemeStatesV1 && frame.Error != "" && frame.Activity != "unavailable" && frame.Activity != "stale" {
+		frame.Error = ""
+		frame.UsageUnavailable = true
+	}
+	frame = applyUsageBarsPreference(frame, deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil && state.agentSnapshot == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {

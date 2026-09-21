@@ -1699,6 +1699,44 @@ func TestActivityUsesOnlyEngineEvenWhenQuotaChanges(t *testing.T) {
 	}
 }
 
+func TestAgentStateRendersBeforeFirstUsageWithoutInventingUsage(t *testing.T) {
+	for _, test := range []struct {
+		phase   string
+		modern  bool
+		carrier bool
+	}{
+		{"working", true, true}, {"waiting_for_answer", true, true},
+		{"idle", true, true}, {"error", true, true},
+		{"stale", true, false}, {"unavailable", true, false},
+		{"working", false, false},
+	} {
+		t.Run(fmt.Sprintf("%s/modern=%t", test.phase, test.modern), func(t *testing.T) {
+			prepareFastTestEnv(t)
+			state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot {
+				return agentstatus.Snapshot{Health: "ready", Phase: test.phase}
+			}}
+			usageErr := errors.New("first usage collection failed")
+			result := finalizeCycleResult(state, cycleResult{failureErr: usageErr}, time.Now())
+			var sent protocol.Frame
+			deps := runtimeDeps{
+				sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+				logf:     func(string, ...any) {},
+			}.withDefaults()
+			caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: test.modern}
+			err := sendCycleResult(context.Background(), "/test-device", caps, 2048, state, deps, result)
+			if !errors.Is(err, usageErr) {
+				t.Fatalf("usage failure lost: %v", err)
+			}
+			if sent.UsageUnavailable != test.carrier || (sent.Error == "") != test.carrier || sent.Activity != test.phase {
+				t.Fatalf("incorrect lifecycle carrier: %+v", sent)
+			}
+			if sent.Session != 0 || sent.Weekly != 0 || sent.ResetSec != 0 || len(sent.UsageWindows) != 0 || state.hasLastGood {
+				t.Fatalf("invented or retained usage: %+v", sent)
+			}
+		})
+	}
+}
+
 func TestRunCycleWithDepsAppliesThemeWhenDeviceSupportsIt(t *testing.T) {
 	prepareFastTestEnv(t)
 

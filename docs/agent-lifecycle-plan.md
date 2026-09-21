@@ -300,8 +300,17 @@ update-notice priority, Windows and signed release rehearsals remain separate.
 
 The first local helper build omitted the embedded frontend; rebuilding with
 the existing workflow's `controlcenter_static` staging corrected HTTP 503.
-The native window also appeared blank until resized. Its web view now receives
-the window's content size at construction instead of starting at zero size.
+The UI automation's background app launch showed a blank native window, although
+measured web-view bounds were already nonzero. Opening normally through Finder
+rendered the UI without a reload or resize. The speculative sizing change and
+diagnostic logging were removed; neither is needed for the observed foreground
+launch.
+
+The subsequent review found that an initial usage-collection error could hide a
+valid independently observed agent state. On capable firmware, the outgoing frame
+now carries that state with explicitly unavailable usage. The usage error remains
+in the cycle result and API; legacy firmware and unavailable/stale observations
+retain the existing error presentation. Regression tests cover both paths.
 Raw bench logs and the local artifact manifest are retained under the ignored
 `tmp/agent-theme-canary/` directory. Nothing was published to the theme catalog,
 merged to main, tagged or released.
