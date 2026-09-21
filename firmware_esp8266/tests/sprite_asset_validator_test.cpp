@@ -275,6 +275,24 @@ bool testPaddedRowsCountTowardTheLineLimit() {
       "whitespace padding must count toward the renderer's line limit");
 }
 
+// readSpriteLine() trims header and palette lines too, so padding the renderer
+// accepts must not be rejected here and fail only at device upload.
+bool testPaddedHeaderLinesMatchTheRenderer() {
+  const std::string pad(200, ' ');
+  const std::string padded =
+      "CBI1" + pad + "\n" + pad + "4 2\n 2 \n#FF0000\n" + pad + "#00FF00\n4a\n2a2b\n";
+  if (!expect(
+          validate(padded) == SpriteValidationError::None,
+          "padded header and palette lines must stay valid")) {
+    return false;
+  }
+  // Past the renderer's raw line buffer it is unreadable on the device.
+  const std::string overlong = "CBI1" + std::string(600, ' ') + "\n4 2\n2\n#FF0000\n#00FF00\n4a\n2a2b\n";
+  return expect(
+      validate(overlong) == SpriteValidationError::UnsupportedHeader,
+      "a header past the renderer's line buffer must be rejected");
+}
+
 bool testInconsistentFrameTablesAreRejected() {
   // The header promises two frames but the payload only contains one.
   if (!expect(
@@ -349,6 +367,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testPaddedRowsCountTowardTheLineLimit()) {
+    return 1;
+  }
+  if (!testPaddedHeaderLinesMatchTheRenderer()) {
     return 1;
   }
   if (!testInconsistentFrameTablesAreRejected()) {

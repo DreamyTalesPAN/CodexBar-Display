@@ -13,6 +13,8 @@ constexpr size_t kMaxTokenLineBytes = 64;
 // longer row, so accepting one here would promote an asset the device then
 // fails to draw with cbi_truncated.
 constexpr int kMaxRowBytes = 512;
+// The same limit as a size_t, for the raw byte count of header/palette lines.
+constexpr size_t kMaxRawLineBytes = static_cast<size_t>(kMaxRowBytes);
 
 class LineReader {
  public:
@@ -51,12 +53,21 @@ class LineReader {
 
 // Mirrors readSpriteLine() in the renderer: CR is dropped, LF terminates, and
 // surrounding whitespace is trimmed.
+//
+// The renderer trims before it inspects the line, so padding is not content.
+// Trimming while streaming keeps the fixed 64-byte buffer sized for real
+// header/palette tokens while accepting any padding the renderer accepts. The
+// raw-length limit is enforced separately, against kMaxRowBytes.
 bool ReadTrimmedLine(LineReader& reader, char* out, size_t capacity, bool& overlong) {
   overlong = false;
   if (out == nullptr || capacity == 0 || reader.AtEnd()) {
     return false;
   }
   size_t length = 0;
+  size_t rawLength = 0;
+  // Whitespace is only content once a later token proves it was interior, so
+  // trailing padding never reaches the buffer.
+  size_t pendingSpaces = 0;
   uint8_t value = 0;
   while (reader.ReadByte(value)) {
     if (value == '\n') {
@@ -65,24 +76,32 @@ bool ReadTrimmedLine(LineReader& reader, char* out, size_t capacity, bool& overl
     if (value == '\r') {
       continue;
     }
+    // readSpriteLine() counts every raw non-CR byte against its line buffer.
+    if (rawLength >= kMaxRawLineBytes) {
+      overlong = true;
+      return false;
+    }
+    ++rawLength;
+    if (value == ' ' || value == '\t') {
+      if (length > 0) {
+        ++pendingSpaces;
+      }
+      // Leading padding the renderer trims away before it reads the token.
+      continue;
+    }
+    while (pendingSpaces > 0) {
+      if (length + 1 >= capacity) {
+        overlong = true;
+        return false;
+      }
+      out[length++] = ' ';
+      --pendingSpaces;
+    }
     if (length + 1 >= capacity) {
       overlong = true;
       return false;
     }
     out[length++] = static_cast<char>(value);
-  }
-  while (length > 0 && (out[length - 1] == ' ' || out[length - 1] == '\t')) {
-    --length;
-  }
-  size_t start = 0;
-  while (start < length && (out[start] == ' ' || out[start] == '\t')) {
-    ++start;
-  }
-  if (start > 0) {
-    for (size_t i = 0; i + start < length; ++i) {
-      out[i] = out[i + start];
-    }
-    length -= start;
   }
   out[length] = '\0';
   return true;
