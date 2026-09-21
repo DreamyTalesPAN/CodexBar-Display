@@ -1043,6 +1043,14 @@ bool testUploadedSpriteAssetsAreValidatedBeforePromotion(const char* mainPath) {
           "the sprite gate must precede the GIF-only early return")) {
     return false;
   }
+  // Animation scheduling keys off the destination suffix, so a well-formed
+  // payload stored under the wrong extension renders nothing while the device
+  // still reports healthy. The header and the suffix have to agree.
+  if (!expect(
+          gate.find("spriteInfo.animated != assetPathLooksAnimatedSprite(") != std::string::npos,
+          "an uploaded sprite header must match its destination extension")) {
+    return false;
+  }
   if (!expect(
           mainSource.find("committed = validateCompletedAssetUpload() && promoteCompletedAssetUpload()") !=
                   std::string::npos &&

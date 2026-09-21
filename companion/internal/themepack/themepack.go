@@ -545,10 +545,20 @@ func validateDevicePath(devicePath string) error {
 	// uppercase extension changes how the device treats the file: a .CBA is
 	// classified as static, never gets an animation tick, and leaves the theme
 	// with a silently missing sprite.
-	if extension := path.Ext(devicePath); extension != strings.ToLower(extension) {
+	// Only those suffix-classified assets are affected. The pack format imposes
+	// no lowercase rule elsewhere, so a spec at /themes/u/demo.JSON stays valid.
+	extension := path.Ext(devicePath)
+	if lowered := strings.ToLower(extension); extension != lowered && suffixClassifiedExtensions[lowered] {
 		return fmt.Errorf("device path extension must be lowercase: %s", devicePath)
 	}
 	return nil
+}
+
+// Extensions whose casing changes how the firmware classifies an asset.
+var suffixClassifiedExtensions = map[string]bool{
+	".cba": true,
+	".cbi": true,
+	".gif": true,
 }
 
 func cleanPackFile(name string) (string, error) {

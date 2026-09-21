@@ -2685,6 +2685,7 @@ void finishAssetUploadRequest() {
 
 bool assetPathLooksGif(const String& path);
 bool assetPathLooksSprite(const String& path);
+bool assetPathLooksAnimatedSprite(const String& path);
 
 void discardPartialAssetUpload() {
   if (!LittleFS.begin() || !LittleFS.exists(kAssetUploadTemporaryPath)) {
@@ -2700,9 +2701,23 @@ bool validateCompletedAssetUpload() {
     // CBI/CBA assets get the same semantic gate as GIFs: a sprite that cannot
     // be decoded must never be promoted, because the renderer would otherwise
     // skip it and leave a silently missing image area.
+    codexbar_display::esp8266::SpriteValidationInfo spriteInfo;
     const codexbar_display::esp8266::SpriteValidationError spriteError =
-        codexbar_display::esp8266::ValidateSpriteAssetFile(kAssetUploadTemporaryPath);
+        codexbar_display::esp8266::ValidateSpriteAssetFile(
+            kAssetUploadTemporaryPath, &spriteInfo);
     if (spriteError == codexbar_display::esp8266::SpriteValidationError::None) {
+      // Animation scheduling keys off the destination suffix, not the header.
+      // A CBA1 payload stored as .cbi never gets an animation tick and a CBI1
+      // stored as .cba is skipped by the animated path, so either mismatch
+      // leaves a missing sprite while the device still reports healthy.
+      // Animation scheduling keys off the destination suffix, not the header.
+      // A CBA1 payload stored as .cbi never gets an animation tick and a CBI1
+      // stored as .cba is skipped by the animated path, so either mismatch
+      // leaves a missing sprite while the device still reports healthy.
+      if (spriteInfo.animated != assetPathLooksAnimatedSprite(assetUploadPath)) {
+        setAssetUploadError("sprite header does not match file extension");
+        return false;
+      }
       return true;
     }
     setAssetUploadError(
@@ -2770,6 +2785,12 @@ bool assetPathLooksSprite(const String& path) {
   String lower = path;
   lower.toLowerCase();
   return lower.endsWith(".cbi") || lower.endsWith(".cba");
+}
+
+bool assetPathLooksAnimatedSprite(const String& path) {
+  String lower = path;
+  lower.toLowerCase();
+  return lower.endsWith(".cba");
 }
 
 bool assetUploadContentLengthWouldExceedLimits(const HTTPUpload& upload) {
