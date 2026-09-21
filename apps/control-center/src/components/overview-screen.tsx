@@ -8,6 +8,7 @@ import {
   Monitor,
   WifiOff,
 } from "lucide-react";
+import { AgentSessions, type AgentSnapshot } from "./agent-sessions";
 import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ import {
 } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
+  agents?: AgentSnapshot | null;
   companionVersion?: string;
   companionStatus: CompanionStatus;
   device: DeviceInfo | null;
@@ -48,6 +50,7 @@ type OverviewScreenProps = {
 };
 
 export function OverviewScreen({
+  agents = null,
   companionVersion,
   companionStatus,
   device,
@@ -98,6 +101,8 @@ export function OverviewScreen({
               usage={usage || null}
             />
           </div>
+
+          <AgentSessions snapshot={companionStatus === "online" ? agents : null} />
 
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
             <StatusItem

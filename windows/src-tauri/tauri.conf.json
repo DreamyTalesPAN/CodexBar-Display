@@ -22,6 +22,7 @@
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
     "icon": ["icons/icon.ico"],
+    "resources": {"agent-engine/": "agent-engine/"},
     "externalBin": ["binaries/codexbar-display", "binaries/codexbar-cli"],
     "windows": {
       "nsis": {

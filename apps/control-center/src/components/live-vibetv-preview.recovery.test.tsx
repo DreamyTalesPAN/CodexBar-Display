@@ -9,7 +9,7 @@
 // DO NOT weaken these tests to make them pass. Fix the component.
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
@@ -52,6 +52,14 @@ function jsonResponse(body: unknown, ok = true): Response {
     json: async () => body,
   } as unknown as Response;
 }
+
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  })));
+});
 
 afterEach(() => {
   cleanup();

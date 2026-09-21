@@ -3,31 +3,53 @@
   "schemaVersion": 1,
   "id": "claude-creature",
   "name": "Claude Creature",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "minFirmware": "1.0.40",
   "requiredCapabilities": [
-    "usage-slots-v1"
+    "usage-slots-v1",
+    "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/claude--7-4963df.json",
+    "path": "/themes/u/claude--8-beb07c.json",
     "file": "theme.json",
-    "bytes": 1135,
-    "sha256": "2a91252fbff46e3e2f3fdaa2f0902a25c112af7913030878d6d759aae5d58be9",
+    "bytes": 1235,
+    "sha256": "beb07c4522f1cd6f5e4ee571f42e475e4119b17d6cf1c2a781517ce25074bf63",
     "contentType": "application/json"
   },
   "assets": [
     {
-      "path": "/themes/u/cld-i.cba",
-      "file": "assets/cld-i.cba",
-      "bytes": 6287,
-      "sha256": "f13279795b2aa97d6b9705a60897b33c73235b8d732ccd7a168596376be9fdea",
+      "path": "/themes/u/cld-i2.cbi",
+      "file": "assets/cld-i2.cbi",
+      "bytes": 777,
+      "sha256": "a3654a5952d1f04d6111237f0a6de32c28ab318c58ebfbaf08533198e69f2c7e",
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/cld-c.cba",
-      "file": "assets/cld-c.cba",
-      "bytes": 6363,
-      "sha256": "383e35cfde545f12fa7ea48e89a05052bfe58766d89379379b9d0ee89f206587",
+      "path": "/themes/u/cld-c2.cbi",
+      "file": "assets/cld-c2.cbi",
+      "bytes": 909,
+      "sha256": "2ab9ce30af65cd2922901b91a90e88d423703dabbe3e7c3f3f2244cecf7c99a6",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/cld-n2.cbi",
+      "file": "assets/cld-n2.cbi",
+      "bytes": 926,
+      "sha256": "b908d399e19cdca0719892d6c3d67ec7d87dc663ba806349a520ecddd1bbc398",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/cld-d2.cbi",
+      "file": "assets/cld-d2.cbi",
+      "bytes": 1065,
+      "sha256": "1c88b881be33eeded09cdbc7be5cc1a5af4791fb07a11e4088eff42be0d122d7",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/cld-e2.cbi",
+      "file": "assets/cld-e2.cbi",
+      "bytes": 990,
+      "sha256": "db82ccfab99fac05cde09c1c6b977b78287966e1025e34716958649596864663",
       "contentType": "text/plain"
     }
   ]

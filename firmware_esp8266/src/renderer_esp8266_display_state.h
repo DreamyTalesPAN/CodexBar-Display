@@ -49,9 +49,7 @@ inline int64_t& LastRenderedSecs() {
   return Context().lastRenderedSecs;
 }
 
-inline int64_t& LastRenderedMinuteBucket() {
-  return Context().lastRenderedMinuteBucket;
-}
+
 
 inline TFT_eSPI& Tft() {
   return State().tft;
@@ -115,8 +113,10 @@ struct FirmwareUpdateOverlayPlacement {
 
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
+void TickThemeSpecAnnouncement();
+void ResetThemeSpecAnnouncement();
 bool ThemeSpecAnimationWorkPending();
-void MarkThemeSpecCountdownsRendered();
+void MarkThemeSpecCountdownsRendered(uint32_t fields = ~0u);
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);
 // Repaints one bounded display region from the cached ThemeSpec scene without
 // a full-screen redraw. Used to remove the update-notice overlay bar.

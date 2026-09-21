@@ -17,7 +17,7 @@ class RendererESP32 : public app::Renderer {
   void TickSplash(app::RuntimeContext& ctx) override;
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
   void DrawUsage(app::RuntimeContext& ctx) override;
-  void DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) override;
+  bool DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) override;
 
  private:
   TFT_eSPI tft = TFT_eSPI();

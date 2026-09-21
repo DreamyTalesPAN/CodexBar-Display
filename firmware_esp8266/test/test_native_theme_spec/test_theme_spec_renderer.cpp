@@ -669,9 +669,9 @@ void testProviderSlotsParseTickAndTriggerLiveRedraw() {
   const char* resetAdvances =
       R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":1800,"resetAgeSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live","providerSlots":[{"id":"claude","label":"Claude","percent":12,"resetSecs":1800},{"id":"codex","label":"Codex","percent":4,"resetSecs":7200}]})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, resetAdvances, 2000, event));
-  TEST_ASSERT_TRUE(event.visualChanged);
-  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
-  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldProviderSlots) != 0);
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE(codexbar_display::core::ResetTextChanged(3600, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 2000)));
 }
 
 void testIndexedProgressHidesMissingWindow() {
@@ -719,9 +719,9 @@ void testUsageWindowResetCountdownsTickIndependently() {
   TEST_ASSERT_EQUAL_INT64(
       0,
       codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, 121000));
-  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(40, 1));
-  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(140, 3));
-  TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(139, 2));
+  TEST_ASSERT_TRUE(codexbar_display::core::ResetTextChanged(40, 60));
+  TEST_ASSERT_TRUE(codexbar_display::core::ResetTextChanged(140, 180));
+  TEST_ASSERT_FALSE(codexbar_display::core::ResetTextChanged(139, 120));
   TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
       String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON"), 0));
   TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
@@ -839,7 +839,9 @@ void testUsageCountdownRefreshDoesNotRepaintBatteryArea() {
       before.usageWindows[0].resetSecs = 3600;
       auto after = before;
       after.usageWindows[0].resetSecs = 3540;
-      const uint32_t fields = codexbar_display::core::ThemeSpecLiveChangedFields(before, after, String(spec.c_str()));
+      TEST_ASSERT_EQUAL_UINT32(0, codexbar_display::core::ThemeSpecLiveChangedFields(before, after, String(spec.c_str())));
+      TEST_ASSERT_TRUE(codexbar_display::core::ResetTextChanged(before.usageWindows[0].resetSecs, after.usageWindows[0].resetSecs));
+      const uint32_t fields = codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
       RecordingSink sink;
       auto frame = testFrame();
       frame.usageSlot1Available = true;
@@ -898,7 +900,7 @@ void testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns() {
   TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
 }
 
-void testCountdownOnlyFramesRedrawThemesThatShowCountdowns() {
+void testCountdownWireUpdatesLeaveDrawingToLocalResetTick() {
   RuntimeState state;
   SerialConsumeEvent event;
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3600,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3600}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3600}],"themeSpec":{"v":1,"id":"countdowns","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"},{"t":"tx","x":0,"y":20,"sl":1,"b":"us1r"},{"t":"tx","x":0,"y":40,"pl":1,"b":"pv1r"}]}})JSON";
@@ -906,11 +908,11 @@ void testCountdownOnlyFramesRedrawThemesThatShowCountdowns() {
 
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownFrame, 61000, event));
-  TEST_ASSERT_TRUE(event.visualChanged);
-  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
-  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldReset) != 0);
-  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowReset) != 0);
-  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldProviderSlots) != 0);
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
+  TEST_ASSERT_TRUE(codexbar_display::core::ResetTextChanged(
+      3600, codexbar_display::core::CurrentRemainingSecs(state, 61000)));
 }
 
 void testConsumeFrameLineComparesCurrentBeforeAssignment() {
@@ -2538,6 +2540,108 @@ void testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass() {
   TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", codingAnimatedSink.commands[0].assetPath.c_str());
 }
 
+void testAgentReminderAndResetTextChanges() {
+  using codexbar_display::core::ResetTextChanged;
+  TEST_ASSERT_FALSE(ResetTextChanged(420262, 420259));
+  TEST_ASSERT_FALSE(ResetTextChanged(420262, 420202));
+  TEST_ASSERT_TRUE(ResetTextChanged(86400, 86399));
+  TEST_ASSERT_TRUE(ResetTextChanged(7200, 7199));
+  TEST_ASSERT_FALSE(ResetTextChanged(7199, 7198));
+  TEST_ASSERT_TRUE(ResetTextChanged(1, 0));
+  auto before = codexbar_display::core::Frame{};
+  before.resetSecs = 420262;
+  auto after = before; after.resetSecs -= 3;
+  String spec = "{\"p\":[{\"t\":\"tx\",\"b\":\"r\"}]}";
+  TEST_ASSERT_EQUAL_UINT32(0, codexbar_display::core::ThemeSpecLiveChangedFields(before, after, spec));
+  after.resetSecs -= 3600;
+  TEST_ASSERT_EQUAL_UINT32(0, codexbar_display::core::ThemeSpecLiveChangedFields(before, after, spec));
+  TEST_ASSERT_TRUE(ResetTextChanged(before.resetSecs, after.resetSecs));
+  codexbar_display::agentactivity::Announcement a;
+  TEST_ASSERT_FALSE(a.Update("idle", true, 1000, 300));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, 2000, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 2550, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 301999, 300));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, 302000, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", false, 302001, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 302002, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 902002, 0));
+  TEST_ASSERT_FALSE(a.Update("idle", true, 903000, 300));
+}
+
+void testAgentAnnouncementIsTwoHardPulses() {
+  codexbar_display::agentactivity::Announcement a;
+  TEST_ASSERT_FALSE(a.Update("idle", true, 1000));
+  TEST_ASSERT_TRUE(a.Update("working", true, 2000));
+  TEST_ASSERT_TRUE(a.Update("tool_use", true, 2199));
+  TEST_ASSERT_FALSE(a.Update("thinking", true, 2200));
+  TEST_ASSERT_FALSE(a.Update("working", true, 2349));
+  TEST_ASSERT_TRUE(a.Update("working", true, 2350));
+  TEST_ASSERT_TRUE(a.Update("working", true, 2549));
+  TEST_ASSERT_FALSE(a.Update("working", true, 2550));
+  TEST_ASSERT_FALSE(a.Update("working", true, 3000));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_permission", true, 4000));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", false, 4050));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 4100));
+  TEST_ASSERT_TRUE(a.Update("done", true, 5000));
+  TEST_ASSERT_TRUE(a.Update("error", true, 6000));
+  TEST_ASSERT_FALSE(a.Update("unavailable", true, 6100));
+  TEST_ASSERT_FALSE(a.Update("idle", true, 6200));
+  a = {};
+  TEST_ASSERT_FALSE(a.Update("done", true, 0xFFFFFF00u));
+  TEST_ASSERT_TRUE(a.Update("error", true, 0xFFFFFFF0u));
+  TEST_ASSERT_FALSE(a.Update("error", true, 0x00000216u));
+}
+
+void testAgentStateAssetsAndStatusKeepUsageIndependent() {
+  const char* spec = R"JSON({"v":1,"id":"states","rev":1,"p":[
+    {"t":"sp","x":0,"y":30,"w":40,"h":40,"sa":{"idle":"/i.cbi","coding":"/w.cba","needs_you":"/n.cba","done":"/d.cbi","error":"/e.cba"}},
+    {"t":"tx","x":0,"y":0,"b":"l","c":"#FFFFFF"}]})JSON";
+  FrameData frame = testFrame();
+  frame.provider = "claude";
+  frame.label = "Claude";
+  frame.agentName = "Codex";
+  const char* phases[] = {"tool_use", "waiting_for_review", "done", "error", "idle", "stale"};
+  const char* assets[] = {"/w.cba", "/n.cba", "/d.cbi", "/e.cba", "/i.cbi", "/i.cbi"};
+  const char* labels[] = {"Codex is working", "Codex needs you", "Codex is done", "Codex hit an error", "Nothing running", "Agent status unavailable"};
+  for (size_t i = 0; i < 6; ++i) {
+    frame.activity = phases[i];
+    RecordingSink sink;
+    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+    TEST_ASSERT_EQUAL_STRING(assets[i], sink.commands[1].assetPath.c_str());
+    TEST_ASSERT_EQUAL_STRING(labels[i], codexbar_display::themespec::LabelText(frame));
+  }
+  frame.updateAvailable = true;
+  frame.showUpdateNotice = true;
+  frame.updateNotice = "Update available";
+  TEST_ASSERT_EQUAL_STRING("Update available", codexbar_display::themespec::LabelText(frame));
+}
+
+void testAgentActivityExpiresWithoutChangingUsage() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* frame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"activity":"tool_use"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 1000, event));
+  TEST_ASSERT_TRUE(event.reportsWorking);
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 15999));
+  TEST_ASSERT_TRUE(codexbar_display::core::ExpireAgentActivity(state, 16000));
+  TEST_ASSERT_EQUAL_STRING("unavailable", state.current.activity.c_str());
+  TEST_ASSERT_EQUAL_INT(10, state.current.session);
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 17000));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 18000, event));
+  TEST_ASSERT_EQUAL_STRING("tool_use", state.current.activity.c_str());
+}
+
+void testObservedIdleExpiresButLegacyIdleDoesNot() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"claude","session":10,"activity":"idle","agentName":"Codex"})JSON", 1000, event));
+  TEST_ASSERT_TRUE(codexbar_display::core::ExpireAgentActivity(state, 16000));
+  TEST_ASSERT_EQUAL_STRING("unavailable", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 17000));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"claude","session":10,"activity":"idle"})JSON", 18000, event));
+  TEST_ASSERT_FALSE(codexbar_display::core::ExpireAgentActivity(state, 34000));
+}
+
 void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2886,7 +2990,7 @@ void testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset() {
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_EQUAL_UINT32(
-      kThemeSpecFieldActivity | kThemeSpecFieldSession | kThemeSpecFieldWeekly | kThemeSpecFieldReset,
+      kThemeSpecFieldActivity | kThemeSpecFieldSession | kThemeSpecFieldWeekly,
       event.themeSpecChangedFields);
 
   RecordingSink sink;
@@ -3519,7 +3623,7 @@ int main() {
   RUN_TEST(testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
-  RUN_TEST(testCountdownOnlyFramesRedrawThemesThatShowCountdowns);
+  RUN_TEST(testCountdownWireUpdatesLeaveDrawingToLocalResetTick);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
   RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
   RUN_TEST(testUsageProgressRequiresStableProviderAndWindowIdentity);
@@ -3583,6 +3687,11 @@ int main() {
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testObservedIdleExpiresButLegacyIdleDoesNot);
+  RUN_TEST(testAgentAnnouncementIsTwoHardPulses);
+  RUN_TEST(testAgentReminderAndResetTextChanges);
+  RUN_TEST(testAgentStateAssetsAndStatusKeepUsageIndependent);
+  RUN_TEST(testAgentActivityExpiresWithoutChangingUsage);
   RUN_TEST(testUsageProgressIgnoresTokenHistoryExpiryAndRestore);
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
   RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);

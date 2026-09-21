@@ -412,6 +412,9 @@ func UsageBarsShowUsed() bool {
 	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
 		return showUsed
 	}
+	if runtime.GOOS == "windows" {
+		return windowsUsageBarsShowUsed()
+	}
 	if runtime.GOOS != "darwin" {
 		return true
 	}
@@ -427,6 +430,26 @@ func UsageBarsShowUsed() bool {
 		return showUsed
 	}
 	return true
+}
+
+// SetUsageBarsShowUsed writes the same preference read by CodexBar and the stream.
+func SetUsageBarsShowUsed(ctx context.Context, showUsed bool) error {
+	if runtime.GOOS == "windows" {
+		return setWindowsUsageBarsShowUsed(showUsed)
+	}
+	value := "false"
+	if showUsed {
+		value = "true"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	if err := exec.CommandContext(ctx, "defaults", "write", "com.steipete.codexbar", "usageBarsShowUsed", "-bool", value).Run(); err != nil {
+		return err
+	}
+	if UsageBarsShowUsed() != showUsed {
+		return errors.New("usage display preference was not applied")
+	}
+	return nil
 }
 
 func runUsageCommand(parent context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {

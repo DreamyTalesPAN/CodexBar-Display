@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
@@ -169,6 +170,10 @@ var displayStreamLogKeys = []string{
 	"usageSlots",
 	"providerSlots",
 	"activity",
+	"agentName",
+	"animationsDisabled",
+	"agentAlertsMuted",
+	"agentReminderSecs",
 	"time",
 	"date",
 	"error",
@@ -178,6 +183,8 @@ var displayStreamLogKeys = []string{
 }
 
 type Options struct {
+	AgentSnapshot        func() agentstatus.Snapshot
+	ConfigureAgents      func(context.Context, bool) (agentstatus.Snapshot, error)
 	Addr                 string
 	Home                 string
 	AllowedOrigins       []string
@@ -193,6 +200,9 @@ type Options struct {
 }
 
 type Server struct {
+	agentSnapshot          func() agentstatus.Snapshot
+	agentPreferencesMu     sync.Mutex
+	configureAgents        func(context.Context, bool) (agentstatus.Snapshot, error)
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
@@ -487,6 +497,7 @@ type themeSpecHealth struct {
 }
 
 type statusResponse struct {
+	Agents                       agentstatus.Snapshot   `json:"agents"`
 	OK                           bool                   `json:"ok"`
 	Companion                    companion              `json:"companion"`
 	Device                       deviceInfo             `json:"device"`
@@ -833,6 +844,10 @@ type usageProviderInfo struct {
 	WeekTokens            int64                    `json:"weekTokens,omitempty"`
 	TotalTokens           int64                    `json:"totalTokens,omitempty"`
 	Activity              string                   `json:"activity,omitempty"`
+	AgentName             string                   `json:"agentName,omitempty"`
+	AgentAlertsMuted      bool                     `json:"agentAlertsMuted,omitempty"`
+	AgentReminderSecs     int                      `json:"agentReminderSecs,omitempty"`
+	AnimationsDisabled    bool                     `json:"animationsDisabled,omitempty"`
 	Stale                 bool                     `json:"stale"`
 	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
 	SessionUnavailable    bool                     `json:"sessionUnavailable,omitempty"`
@@ -974,6 +989,8 @@ func New(opts Options) (*Server, error) {
 	}
 	server := &Server{
 		addr:                   addr,
+		agentSnapshot:          opts.AgentSnapshot,
+		configureAgents:        opts.ConfigureAgents,
 		home:                   home,
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
@@ -1005,30 +1022,30 @@ func New(opts Options) (*Server, error) {
 		streamStatus: func(ctx context.Context, target string) displayStreamInfo {
 			return inspectDisplayStreamAfterRunning(ctx, target, time.Time{}, opts.DisplayStreamRunning)
 		},
-		waitRender:             nil,
-		refreshStream:          opts.RefreshDisplayStream,
-		pauseDisplayStream:     opts.PauseDisplayStream,
-		wakeDisplayStream:      opts.WakeDisplayStream,
-		renderDisplayStream:    opts.RenderDisplayStream,
-		displayStreamRunning:   opts.DisplayStreamRunning,
-		pairAttempts:           defaultPairAttempts,
-		pairAttemptTimeout:     defaultPairAttemptTimeout,
-		pairRetryGap:           defaultPairRetryGap,
-		repairFlights:          make(map[string]*deviceRepairFlight),
-		helloProbeCache:        make(map[string]helloProbeSnapshot),
-		helloProbeFlights:      make(map[string]*helloProbeFlight),
-		healthProbeCache:       make(map[string]healthProbeSnapshot),
-		healthProbeFlights:     make(map[string]*healthProbeFlight),
-		probeCacheTime:         deviceProbeCacheTime,
-		connectionStates:       make(map[string]*configuredDeviceConnection),
-		now:                    time.Now,
-		displayVerifications:   make(map[string]displayVerification),
-		allowMacAppSelfUpdate:  false,
-		installationMode:       macAppInstallationMode(),
-		loadUsage:              daemon.LoadPersistedUsage,
-		probeProviderSetup:     codexbar.ProbeProviderSetup,
-		probeExactProvider:     codexbar.ProbeProviderSetupForProvider,
-		exactProviderProbes:    make(map[string]*exactProviderProbeFlight),
+		waitRender:            nil,
+		refreshStream:         opts.RefreshDisplayStream,
+		pauseDisplayStream:    opts.PauseDisplayStream,
+		wakeDisplayStream:     opts.WakeDisplayStream,
+		renderDisplayStream:   opts.RenderDisplayStream,
+		displayStreamRunning:  opts.DisplayStreamRunning,
+		pairAttempts:          defaultPairAttempts,
+		pairAttemptTimeout:    defaultPairAttemptTimeout,
+		pairRetryGap:          defaultPairRetryGap,
+		repairFlights:         make(map[string]*deviceRepairFlight),
+		helloProbeCache:       make(map[string]helloProbeSnapshot),
+		helloProbeFlights:     make(map[string]*helloProbeFlight),
+		healthProbeCache:      make(map[string]healthProbeSnapshot),
+		healthProbeFlights:    make(map[string]*healthProbeFlight),
+		probeCacheTime:        deviceProbeCacheTime,
+		connectionStates:      make(map[string]*configuredDeviceConnection),
+		now:                   time.Now,
+		displayVerifications:  make(map[string]displayVerification),
+		allowMacAppSelfUpdate: false,
+		installationMode:      macAppInstallationMode(),
+		loadUsage:             daemon.LoadPersistedUsage,
+		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
+		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
@@ -1493,6 +1510,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		themeInstall = &latest
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
+		Agents:                       s.agents(),
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
 		Device:                       device,
@@ -2818,6 +2836,8 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		WeekTokens:            frame.WeekTokens,
 		TotalTokens:           frame.TotalTokens,
 		Activity:              strings.TrimSpace(frame.Activity),
+		AgentName:             frame.AgentName,
+		AnimationsDisabled:    frame.AnimationsDisabled,
 		Stale:                 snapshot.Stale,
 		UsageUnavailable:      snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
 		SessionUnavailable:    snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
@@ -2877,6 +2897,8 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		WeekTokens:         frame.WeekTokens,
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
+		AgentName:          frame.AgentName,
+		AnimationsDisabled: frame.AnimationsDisabled,
 		Stale:              parsed.Stale,
 		UsageUnavailable:   parsed.Stale || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
 		SessionUnavailable: parsed.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
@@ -3513,6 +3535,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, statusResponse{
+		Agents:                       s.agents(),
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
 		Device:                       device,
@@ -9899,10 +9922,15 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 		ResetTrust:         displayStreamLogValue(line, "resetTrust"),
 		UsageMode:          displayStreamLogValue(line, "usageMode"),
 		Activity:           displayStreamLogValue(line, "activity"),
-		Time:               displayStreamLogValue(line, "time"),
-		Date:               displayStreamLogValue(line, "date"),
-		Error:              displayStreamLogValue(line, "error"),
+		AgentName:          displayStreamLogValue(line, "agentName"),
+		AnimationsDisabled: boolFieldFromDisplayStreamLog(line, "animationsDisabled"),
+		AgentAlertsMuted:   boolFieldFromDisplayStreamLog(line, "agentAlertsMuted"),
+
+		Time:  displayStreamLogValue(line, "time"),
+		Date:  displayStreamLogValue(line, "date"),
+		Error: displayStreamLogValue(line, "error"),
 	}
+	frame.AgentReminderSecs, _ = intFieldFromDisplayStreamLog(line, "agentReminderSecs")
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}
@@ -10293,4 +10321,11 @@ func uniqueStrings(values ...string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func (s *Server) agents() agentstatus.Snapshot {
+	if s.agentSnapshot != nil {
+		return s.agentSnapshot()
+	}
+	return agentstatus.Snapshot{SchemaVersion: 1, Health: "unavailable", Phase: "unavailable", Sessions: []agentstatus.Session{}, Sources: []agentstatus.Source{}}
 }

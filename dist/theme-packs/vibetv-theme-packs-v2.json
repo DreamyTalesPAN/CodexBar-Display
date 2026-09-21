@@ -6,16 +6,17 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.3.0",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/u/claude--7-4963df.json",
+      "version": "1.3.1",
+      "themeRev": 8,
+      "themeSpecPath": "/themes/u/claude--8-beb07c.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.3.0.zip",
-      "sha256": "40383c6347886111c3df58f7e2649f6ffb32b825dbd96db92dee53ea4b9950b8",
-      "bytes": 3339
+      "downloadAsset": "vibetv-theme-claude-creature-v1.3.1.zip",
+      "sha256": "82cf3e26236f5ea397528724feef58f8d6f7eb65e6f4cb2bbced24ab652e90ad",
+      "bytes": 5542
     },
     {
       "id": "clippy",
@@ -36,16 +37,17 @@
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.2.0",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/u/mini-cl-7-c7cbf4.json",
+      "version": "1.2.2",
+      "themeRev": 9,
+      "themeSpecPath": "/themes/u/mini-cl-9-828c60.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.2.0.zip",
-      "sha256": "0af2dd3a2cf14738407259c9104fd18842f3abe3bc0b87e0e5644f2629d2a259",
-      "bytes": 18495
+      "downloadAsset": "vibetv-theme-mini-classic-v1.2.2.zip",
+      "sha256": "efc76b5fd2805702e0690c51bebc3afe6259c3d4ed3f542d1a118fa7cf8a6bd2",
+      "bytes": 21647
     },
     {
       "id": "night-clock",
@@ -67,19 +69,20 @@
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.16.0",
-      "themeRev": 16,
-      "themeSpecPath": "/themes/u/pba-16-f46829.json",
+      "version": "1.17.0",
+      "themeRev": 17,
+      "themeSpecPath": "/themes/u/pba-17-91175e.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
         "provider-assets-v1",
         "color-stops-v1",
-        "text-valign-v1"
+        "text-valign-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.16.0.zip",
-      "sha256": "9316ceeddd0617afad7be02352f755dc4afc551d93de917e874d7152df16324c",
-      "bytes": 2855
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.0.zip",
+      "sha256": "560dfc471b8ee7bcb874103aa447a44216c11d143af366243edd361429f65f70",
+      "bytes": 2867
     },
     {
       "id": "reset-countdown",
@@ -100,32 +103,35 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.1.3",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/synthwa-5-0f760a.json",
-      "requiresFirmware": "1.0.40",
+      "version": "1.2.0",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/synthwa-6-18aba9.json",
+      "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "text-valign-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.1.3.zip",
-      "sha256": "70c4382b601043f6c25f26415bae0d4308cbb1478cfc8dab7ac1a1349aee5df2",
-      "bytes": 1585
+      "downloadAsset": "vibetv-theme-synthwave-v1.2.0.zip",
+      "sha256": "cf22e44b48b63551dbf85b223402d4507054424a4baec3b3f451b7f1f25bf567",
+      "bytes": 1617
     },
     {
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.6.0",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/u/to-7-d7799cec.json",
+      "version": "0.7.0",
+      "themeRev": 8,
+      "themeSpecPath": "/themes/u/to-8-0d46ed.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
-        "text-valign-v1"
+        "text-valign-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.6.0.zip",
-      "sha256": "b548609e4c19886d877119bf5630cc5067fa2bdc3123ab7c5d9a5bd593417d4a",
-      "bytes": 8071
+      "downloadAsset": "vibetv-theme-tiny-office-v0.7.0.zip",
+      "sha256": "bae8de77b53371005ed915c482faa4d1d1eba289e43c6dc3157b4e1308a9b3d2",
+      "bytes": 28505
     },
     {
       "id": "token-fire",

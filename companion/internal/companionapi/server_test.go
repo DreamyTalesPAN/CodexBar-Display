@@ -24,6 +24,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
@@ -788,7 +789,22 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		t.Fatalf("accepted firmware update must retain the serial port: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
 	}
 	server.updateFirmwareUpdateJob(job.ID, func(job *firmwareUpdateJob) { job.Phase = "complete" })
+
+	rec = search()
+	if rec.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("Cable discovery must resume after update completion: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	}
+
+	// WiFi and Cable now run concurrently, so the Cable goroutine may own
+	// this mutex during the WiFi probe. Test WiFi alone to distinguish that
+	// legitimate ownership from an accidental lock around WiFi discovery.
+	server.discoverCableDevices = nil
+	wifiProbed := false
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	server.localNetworkAvailable = func() bool {
+		wifiProbed = true
+		defer cancel()
 		if !server.firmwareUpdateStartMu.TryLock() {
 			t.Error("WiFi discovery must not delay firmware update start")
 		} else {
@@ -796,9 +812,9 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		}
 		return false
 	}
-	rec = search()
-	if rec.Code != http.StatusOK || calls != 1 {
-		t.Fatalf("Cable discovery must resume after update completion: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	server.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)).WithContext(ctx))
+	if !wifiProbed {
+		t.Fatal("WiFi ownership assertion was not exercised")
 	}
 }
 
@@ -13744,5 +13760,31 @@ func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
 	}
 	if got := refusals(); got != 2 {
 		t.Fatalf("a refused theme-install hold must be counted too, got %d", got)
+	}
+}
+
+func TestStatusCarriesAuthoritativeAgentSnapshotWithoutDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	for _, phase := range []string{"unavailable", "waiting_for_permission", "done"} {
+		server.agentSnapshot = func() agentstatus.Snapshot {
+			return agentstatus.Snapshot{SchemaVersion: 1, Health: "ready", Phase: phase}
+		}
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if json.Unmarshal(response.Body.Bytes(), &got) != nil || got.Agents.Phase != phase {
+			t.Fatalf("snapshot lost: %s", response.Body.String())
+		}
+	}
+	server.agentSnapshot = nil
+	if server.agents().Phase != "unavailable" {
+		t.Fatal("missing helper became idle")
+	}
+}
+
+func TestDisplayFrameLogPreservesAgentAndMotion(t *testing.T) {
+	frame, ok := frameFromDisplayStreamLogLine(`sent frame -> test transport=usb deviceId=test provider=codex label=Codex session=10 weekly=20 activity="waiting_for_answer" agentName="Claude Code" animationsDisabled=true time="12:00" date="20 Sep" error=""`)
+	if !ok || frame.Activity != "waiting_for_answer" || frame.AgentName != "Claude Code" || !frame.AnimationsDisabled || frame.Time != "12:00" {
+		t.Fatalf("preview lost acknowledged presentation: %+v", frame)
 	}
 }

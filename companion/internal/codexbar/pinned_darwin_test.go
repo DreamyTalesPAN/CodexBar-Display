@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -114,5 +115,19 @@ func TestPreparePinnedCLIRelease(t *testing.T) {
 	leftovers, err := filepath.Glob(filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", ".extract-*"))
 	if err != nil || len(leftovers) != 0 {
 		t.Fatalf("staging was not cleaned: %v, %v", leftovers, err)
+	}
+}
+
+func TestPinnedIdentityMatchesShippedManifest(t *testing.T) {
+	data, err := os.ReadFile("../../../macos/VibeTVControlCenter/CodexBar-v" + PinnedVersion + ".manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct{ Version, SHA256, TeamIdentifier, BundleIdentifier string }
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != PinnedVersion || manifest.SHA256 != pinnedSHA256 || manifest.TeamIdentifier != pinnedTeam || manifest.BundleIdentifier != pinnedBundle {
+		t.Fatalf("runtime pin differs from shipped manifest: %+v", manifest)
 	}
 }

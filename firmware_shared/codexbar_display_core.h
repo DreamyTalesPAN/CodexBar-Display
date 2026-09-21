@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "agent_activity.h"
 #include <ArduinoJson.h>
 #include <cstdio>
 #include <cstring>
@@ -146,6 +147,10 @@ struct Frame {
   bool hasUsageMode = false;
   String usageMode;
   String activity;
+  String agentName;
+  bool animationsDisabled = false;
+  bool agentAlertsMuted = false;
+  uint16_t agentReminderSecs = 0;
   // Pre-formatted Companion clock strings. Fallback only: the device clock
   // (firmware_shared/device_clock.h) owns {time}/{date} once SNTP answered, and
   // these strings are dropped as soon as they stop being current. Repainting
@@ -487,11 +492,17 @@ inline bool DecodeResetTrustRecord(
   return true;
 }
 
-inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
+// Match the visible reset text, not its second-by-second transport value.
+// Above one day themes show days/hours; below it they show hours/minutes.
+inline bool ResetTextChanged(int64_t a, int64_t b) {
+  if ((a <= 0) != (b <= 0)) return true;
+  return (a >= 86400 && b >= 86400) ? a / 3600 != b / 3600 : a / 60 != b / 60;
+}
+
+inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next) {
   return previous.id != next.id ||
          previous.label != next.label ||
          previous.percent != next.percent ||
-         (includeReset && previous.resetSecs != next.resetSecs) ||
          previous.available != next.available;
 }
 
@@ -738,9 +749,7 @@ inline bool ThemeSpecUsesProviderSlotResetBinding(const String& raw, size_t slot
   return raw.indexOf(longName) >= 0 || raw.indexOf(compactName) >= 0;
 }
 
-inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
-  return remainingSecs / 60 != lastRenderedMinuteBucket;
-}
+
 
 inline uint32_t ThemeSpecUsageWindowField(size_t slotIndex) {
   (void)slotIndex;
@@ -760,8 +769,7 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
     if (ThemeSpecUsesProviderSlotBinding(raw, i) &&
         UsageWindowChanged(
             previous.providerSlots[i],
-            next.providerSlots[i],
-            ThemeSpecUsesProviderSlotResetBinding(raw, i))) {
+            next.providerSlots[i])) {
       providerSlotsChanged = true;
     }
   }
@@ -775,15 +783,16 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   return ((ThemeSpecUsesBinding(raw, "provider", "pr") || ThemeSpecUsesProviderAssets(raw)) &&
           previous.provider != next.provider) ||
          (usesLabel &&
-          (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
+          (previous.label != next.label || previous.agentName != next.agentName ||
+           (previous.activity != next.activity &&
+            (previous.agentName.length() > 0 || next.agentName.length() > 0)) ||
+           previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
-         (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
          (usesUsageWindows && [&]() {
            for (size_t i = 0; i < kMaxUsageWindows; ++i) {
              if (ThemeSpecUsesUsageWindowBinding(raw, i) &&
-                 UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i],
-                                    ThemeSpecUsesUsageWindowResetBinding(raw, i))) {
+                 UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
                return true;
              }
            }
@@ -810,11 +819,17 @@ inline uint32_t ThemeSpecLiveChangedFields(
     const Frame& next,
     const String& themeSpecRaw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  // Countdown drawing has one owner: the local reset tick compares the last
+  // rendered text against the current deadline, including new wire values.
+  (void)themeSpecRaw;
   uint32_t fields = 0;
   if (previous.provider != next.provider) {
     fields |= themespec::kThemeSpecFieldProvider;
   }
-  if (previous.label != next.label || previous.updateAvailable != next.updateAvailable) {
+  if (previous.label != next.label || previous.agentName != next.agentName ||
+      (previous.activity != next.activity &&
+       (previous.agentName.length() > 0 || next.agentName.length() > 0)) ||
+      previous.updateAvailable != next.updateAvailable) {
     fields |= themespec::kThemeSpecFieldLabel;
   }
   if (previous.session != next.session) {
@@ -823,24 +838,17 @@ inline uint32_t ThemeSpecLiveChangedFields(
   if (previous.weekly != next.weekly) {
     fields |= themespec::kThemeSpecFieldWeekly;
   }
-  if (previous.resetSecs != next.resetSecs &&
-      ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
-    fields |= themespec::kThemeSpecFieldReset;
-  }
+
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
+    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
       fields |= ThemeSpecUsageWindowField(i);
     }
-    if (previous.usageWindows[i].resetSecs != next.usageWindows[i].resetSecs &&
-        ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
-      fields |= themespec::kThemeSpecFieldUsageWindowReset;
-    }
+
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
     if (UsageWindowChanged(
             previous.providerSlots[i],
-            next.providerSlots[i],
-            ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i))) {
+            next.providerSlots[i])) {
       fields |= themespec::kThemeSpecFieldProviderSlots;
     }
   }
@@ -992,6 +1000,23 @@ inline String FormatDuration(int64_t secs) {
   return String(minutes) + "m";
 }
 
+// Both usage and provider rows use the same bounded wire representation.
+inline void ParseFrameSlots(JsonArrayConst slots, UsageWindow* output, size_t capacity) {
+  size_t index = 0;
+  for (JsonObjectConst slot : slots) {
+    if (index >= capacity) break;
+    const char* label = slot["label"] | "";
+    const char* id = slot["id"] | "";
+    if (id[0] == '\0' || label[0] == '\0') continue;
+    auto& row = output[index++];
+    row.id = String(id);
+    row.label = String(label);
+    row.percent = ClampPct(slot["percent"] | 0);
+    row.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | static_cast<int64_t>(0)));
+    row.available = true;
+  }
+}
+
 inline bool ParseFrameLine(const char* line, Frame& out) {
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, line);
@@ -1010,14 +1035,15 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     return false;
   }
 
+  out = {};
   bool hasThemeSpec = false;
   bool clearThemeSpec = false;
   const bool confirmClearThemeSpec = doc["confirmClearThemeSpec"].is<bool>() &&
                                      doc["confirmClearThemeSpec"].as<bool>();
-  String themeSpecId;
+  String& themeSpecId = out.themeSpecId;
   int themeSpecRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  String themeSpecRaw;
+  String& themeSpecRaw = out.themeSpecRaw;
 #endif
   if (confirmClearThemeSpec &&
       std::strstr(line, "\"themeSpec\"") != nullptr &&
@@ -1045,7 +1071,7 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   }
 
   bool hasUsageMode = false;
-  String usageMode;
+  String& usageMode = out.usageMode;
   if (doc["usageMode"].is<const char*>()) {
     usageMode = String(doc["usageMode"].as<const char*>());
     usageMode.trim();
@@ -1077,7 +1103,7 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   }
   const bool hasResetFields = resetTrust != ResetTrust::kUnknown || !doc["resetSecs"].isNull();
 
-  String activity;
+  String& activity = out.activity;
   if (doc["activity"].is<const char*>()) {
     activity = String(doc["activity"].as<const char*>());
     activity.trim();
@@ -1124,9 +1150,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
 
   bool hasUpdateAvailable = false;
   bool updateAvailable = false;
-  String updateLatestVersion;
-  String updateStatus;
-  String updateLastError;
+  String& updateLatestVersion = out.updateLatestVersion;
+  String& updateStatus = out.updateStatus;
+  String& updateLastError = out.updateLastError;
   if (doc["update"].is<JsonObjectConst>()) {
     JsonObjectConst update = doc["update"].as<JsonObjectConst>();
     if (update["available"].is<bool>()) {
@@ -1141,39 +1167,34 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     updateLastError.trim();
   }
 
+  out.hasUsageMode = hasUsageMode;
+  out.agentName = String(doc["agentName"] | "");
+  if (out.agentName.length() > 40) out.agentName = "Agent";
+  out.animationsDisabled = doc["animationsDisabled"] | false;
+  out.agentAlertsMuted = doc["agentAlertsMuted"] | false;
+  out.agentReminderSecs = doc["agentReminderSecs"] | 0;
+  out.timeText = String(doc["time"] | "");
+  out.dateText = String(doc["date"] | "");
+  out.hasClockSchedule = hasClockSchedule;
+  out.clockOffsetMinutes = static_cast<int16_t>(clockOffsetMinutes);
+  out.clockTransitionEpoch = clockTransitionEpoch;
+  out.clockTransitionOffsetMinutes =
+      static_cast<int16_t>(clockTransitionOffsetMinutes);
+  out.clockFollowingTransitionEpoch = clockFollowingTransitionEpoch;
+  out.clockFollowingTransitionOffsetMinutes =
+      static_cast<int16_t>(clockFollowingTransitionOffsetMinutes);
+  out.clearThemeSpec = clearThemeSpec;
+  out.hasThemeSpec = hasThemeSpec;
+  out.themeSpecRev = themeSpecRev;
+  out.hasUpdateAvailable = hasUpdateAvailable;
+  out.updateAvailable = updateAvailable;
+
   if (doc["error"].is<const char*>()) {
-    out = {};
-    out.hasUsageMode = hasUsageMode;
-    out.usageMode = usageMode;
-    out.activity = activity;
-    out.timeText = String(doc["time"] | "");
-    out.dateText = String(doc["date"] | "");
-    out.hasClockSchedule = hasClockSchedule;
-    out.clockOffsetMinutes = static_cast<int16_t>(clockOffsetMinutes);
-    out.clockTransitionEpoch = clockTransitionEpoch;
-    out.clockTransitionOffsetMinutes =
-        static_cast<int16_t>(clockTransitionOffsetMinutes);
-    out.clockFollowingTransitionEpoch = clockFollowingTransitionEpoch;
-    out.clockFollowingTransitionOffsetMinutes =
-        static_cast<int16_t>(clockFollowingTransitionOffsetMinutes);
-    out.clearThemeSpec = clearThemeSpec;
-    out.hasThemeSpec = hasThemeSpec;
-    out.themeSpecId = themeSpecId;
-    out.themeSpecRev = themeSpecRev;
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    out.themeSpecRaw = themeSpecRaw;
-#endif
-    out.hasUpdateAvailable = hasUpdateAvailable;
-    out.updateAvailable = updateAvailable;
-    out.updateLatestVersion = updateLatestVersion;
-    out.updateStatus = updateStatus;
-    out.updateLastError = updateLastError;
     out.hasError = true;
     out.error = String(doc["error"].as<const char*>());
     return true;
   }
 
-  out = {};
   out.provider = String(doc["provider"] | "");
   out.label = String(doc["label"] | "Provider");
   out.session = ClampPct(doc["session"] | 0);
@@ -1185,59 +1206,12 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.resetTrust = resetTrust;
   out.hasResetFields = hasResetFields;
   out.usageUnavailable = doc["usageUnavailable"] | false;
-  if (doc["usageWindows"].is<JsonArrayConst>() || doc["usageSlots"].is<JsonArrayConst>()) {
-    JsonArrayConst slots = doc["usageWindows"].is<JsonArrayConst>()
-        ? doc["usageWindows"].as<JsonArrayConst>()
-        : doc["usageSlots"].as<JsonArrayConst>();
-    int slotIndex = 0;
-    for (JsonObjectConst slot : slots) {
-      if (slotIndex >= static_cast<int>(kMaxUsageWindows)) {
-        break;
-      }
-      const char* slotLabel = slot["label"] | "";
-      const char* slotID = slot["id"] | "";
-      if (slotID[0] == '\0' || slotLabel[0] == '\0') {
-        continue;
-      }
-      out.usageWindows[slotIndex].id = String(slotID);
-      out.usageWindows[slotIndex].label = String(slotLabel);
-      out.usageWindows[slotIndex].percent = ClampPct(slot["percent"] | 0);
-      out.usageWindows[slotIndex].resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | static_cast<int64_t>(0)));
-      out.usageWindows[slotIndex].available = true;
-      ++slotIndex;
-    }
-  }
-  if (doc["providerSlots"].is<JsonArrayConst>()) {
-    int providerSlotIndex = 0;
-    for (JsonObjectConst slot : doc["providerSlots"].as<JsonArrayConst>()) {
-      if (providerSlotIndex >= static_cast<int>(kMaxProviderSlots)) {
-        break;
-      }
-      const char* slotLabel = slot["label"] | "";
-      const char* slotID = slot["id"] | "";
-      if (slotID[0] == '\0' || slotLabel[0] == '\0') {
-        continue;
-      }
-      out.providerSlots[providerSlotIndex].id = String(slotID);
-      out.providerSlots[providerSlotIndex].label = String(slotLabel);
-      out.providerSlots[providerSlotIndex].percent = ClampPct(slot["percent"] | 0);
-      out.providerSlots[providerSlotIndex].resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | static_cast<int64_t>(0)));
-      out.providerSlots[providerSlotIndex].available = true;
-      ++providerSlotIndex;
-    }
-  }
+  ParseFrameSlots(doc["usageWindows"].is<JsonArrayConst>()
+      ? doc["usageWindows"].as<JsonArrayConst>() : doc["usageSlots"].as<JsonArrayConst>(),
+      out.usageWindows, kMaxUsageWindows);
+  ParseFrameSlots(doc["providerSlots"].as<JsonArrayConst>(), out.providerSlots, kMaxProviderSlots);
   out.sessionUnavailable = doc["sessionUnavailable"] | false;
   out.weeklyUnavailable = doc["weeklyUnavailable"] | false;
-  out.timeText = String(doc["time"] | "");
-  out.dateText = String(doc["date"] | "");
-  out.hasClockSchedule = hasClockSchedule;
-  out.clockOffsetMinutes = static_cast<int16_t>(clockOffsetMinutes);
-  out.clockTransitionEpoch = clockTransitionEpoch;
-  out.clockTransitionOffsetMinutes =
-      static_cast<int16_t>(clockTransitionOffsetMinutes);
-  out.clockFollowingTransitionEpoch = clockFollowingTransitionEpoch;
-  out.clockFollowingTransitionOffsetMinutes =
-      static_cast<int16_t>(clockFollowingTransitionOffsetMinutes);
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | static_cast<int64_t>(0)));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | static_cast<int64_t>(0)));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | static_cast<int64_t>(0)));
@@ -1245,21 +1219,6 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
                        !doc["sessionTokens"].isNull() ||
                        !doc["weekTokens"].isNull() ||
                        !doc["totalTokens"].isNull();
-  out.hasUsageMode = hasUsageMode;
-  out.usageMode = usageMode;
-  out.activity = activity;
-  out.clearThemeSpec = clearThemeSpec;
-  out.hasThemeSpec = hasThemeSpec;
-  out.themeSpecId = themeSpecId;
-  out.themeSpecRev = themeSpecRev;
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  out.themeSpecRaw = themeSpecRaw;
-#endif
-  out.hasUpdateAvailable = hasUpdateAvailable;
-  out.updateAvailable = updateAvailable;
-  out.updateLatestVersion = updateLatestVersion;
-  out.updateStatus = updateStatus;
-  out.updateLastError = updateLastError;
   out.hasError = false;
   out.error = "";
   return true;
@@ -1287,7 +1246,9 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.totalTokens != next.totalTokens ||
                                      previous.hasUsageMode != next.hasUsageMode ||
                                      previous.usageMode != next.usageMode ||
-                                     previous.activity != next.activity;
+                                     previous.activity != next.activity ||
+                                     previous.agentName != next.agentName ||
+                                     previous.animationsDisabled != next.animationsDisabled;
   const bool themeIdentityChanged =
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
@@ -1453,6 +1414,16 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
 #endif
 }
 
+// Only the new explicit lifecycle contract uses this lease. Older Companions
+// send coding/idle at a slower cadence and retain their compatibility behavior.
+inline bool ExpireAgentActivity(RuntimeState& state, unsigned long nowMillis) {
+  const bool explicitIdle = state.current.agentName.length() > 0 && state.current.activity == "idle";
+  if (!state.hasFrame || (!explicitIdle && !agentactivity::HasLease(state.current.activity.c_str())) ||
+      nowMillis - state.resetBaseMillis < 15000UL) return false;
+  state.current.activity = "unavailable";
+  return true;
+}
+
 inline bool ConsumeFrameLine(
     RuntimeState& runtimeState,
     const char* line,
@@ -1478,7 +1449,7 @@ inline bool ConsumeFrameLine(
   // Read the activity verdict after the fallback above, so a frame that
   // carries `activity` is taken at its word and a frame that omits it still
   // resolves to the inferred value. An error frame reports nothing.
-  outEvent.reportsWorking = !next.hasError && next.activity == "coding";
+  outEvent.reportsWorking = !next.hasError && agentactivity::IsWorking(next.activity.c_str());
 
   outEvent.hadFrame = runtimeState.hasFrame;
   const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);

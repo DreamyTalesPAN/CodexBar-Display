@@ -33,3 +33,14 @@ SOFTWARE.
 Portions of the Clippy theme sprite animation are adapted from the Microsoft Office XP Clippit/Clippy sprite sheet archived by The Spriters Resource.
 
 Source: https://www.spriters-resource.com/pc_computer/microsoftofficexp/asset/104487/
+
+## Clawd on Desk observation engine
+
+Source: https://github.com/rullerzhou-afk/clawd-on-desk
+License: AGPL-3.0-only. Copyright the Clawd on Desk contributors.
+
+The separately bundled headless observer and VibeTV modifications in
+`integrations/clawd` retain that license. The immutable revision, Node runtime
+checksums, complete corresponding source archive, overlay, tests and build
+instructions are shipped with the helper. See `integrations/clawd/NOTICE.md`.
+The repository's default license does not replace third-party licenses.

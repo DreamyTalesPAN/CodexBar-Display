@@ -37,9 +37,9 @@
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 const char kThemeFeatureJSON[] =
-    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-health-v1\"]";
+    "[\"agent-activity-v1\",\"agent-theme-states-v1\",\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-health-v1\"]";
 #else
-const char kThemeFeatureJSON[] = "[]";
+const char kThemeFeatureJSON[] = "[\"agent-activity-v1\"]";
 #endif
 
 namespace {
@@ -126,7 +126,7 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   if (!enabled) {
     return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsTextValignV1\":true,\"maxUsageWindows\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsAgentThemeStatesV1\":true,\"supportsTextValignV1\":true,\"maxUsageWindows\":";
   out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
   out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
@@ -1487,7 +1487,7 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
           ? (setupMode ? "setup" : "station")
           : "off";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-  config.featuresJSON = "[]";
+  config.featuresJSON = "[\"agent-activity-v1\"]";
 #else
   config.featuresJSON = kThemeFeatureJSON;
 #endif
@@ -4473,6 +4473,10 @@ void loop() {
   const unsigned long loopStartUs = micros();
   bool rendered = false;
   unsigned long renderDurationUs = 0;
+  if (codexbar_display::core::ExpireAgentActivity(runtimeCtx.runtime, millis())) {
+    runtimeCtx.screenDirty = true;
+  }
+
 
   if (pendingHttpRender) {
     const codexbar_display::core::SerialConsumeEvent event = pendingHttpRenderEvent;
@@ -4522,52 +4526,27 @@ void loop() {
       !frameStaleStatusRendered) {
     renderer.TickActive(runtimeCtx);
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
-    bool countdownMinuteChanged = false;
-    if (remain != runtimeCtx.lastRenderedSecs) {
-      if (codexbar_display::core::RemainingMinuteBucketChanged(
-              remain, runtimeCtx.lastRenderedMinuteBucket)) {
-        countdownMinuteChanged = true;
-      } else {
-        runtimeCtx.lastRenderedSecs = remain;
-      }
-    }
+    bool countdownMinuteChanged = codexbar_display::core::ResetTextChanged(
+        remain, runtimeCtx.lastRenderedSecs);
     for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
-      const int64_t slotRemain =
-          codexbar_display::app::CurrentUsageWindowRemainingSecs(runtimeCtx, i, millis());
-      if (slotRemain == runtimeCtx.lastRenderedUsageWindowSecs[i]) {
-        continue;
-      }
-      if (codexbar_display::core::RemainingMinuteBucketChanged(
-              slotRemain, runtimeCtx.lastRenderedUsageWindowMinuteBuckets[i])) {
-        countdownMinuteChanged = true;
-      } else {
-        runtimeCtx.lastRenderedUsageWindowSecs[i] = slotRemain;
-      }
+      countdownMinuteChanged |= codexbar_display::core::ResetTextChanged(
+          codexbar_display::app::CurrentUsageWindowRemainingSecs(runtimeCtx, i, millis()),
+          runtimeCtx.lastRenderedUsageWindowSecs[i]);
     }
-    // Provider slots count down locally too. A screensaver bound to them —
-    // Night Clock does exactly that — would otherwise sit at the last received
-    // value for as long as the Mac stays away.
     for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
-      const int64_t slotRemain =
-          codexbar_display::app::CurrentProviderSlotRemainingSecs(runtimeCtx, i, millis());
-      if (slotRemain == runtimeCtx.lastRenderedProviderSlotSecs[i]) {
-        continue;
-      }
-      if (codexbar_display::core::RemainingMinuteBucketChanged(
-              slotRemain, runtimeCtx.lastRenderedProviderSlotMinuteBuckets[i])) {
-        countdownMinuteChanged = true;
-      } else {
-        runtimeCtx.lastRenderedProviderSlotSecs[i] = slotRemain;
-      }
+      countdownMinuteChanged |= codexbar_display::core::ResetTextChanged(
+          codexbar_display::app::CurrentProviderSlotRemainingSecs(runtimeCtx, i, millis()),
+          runtimeCtx.lastRenderedProviderSlotSecs[i]);
     }
     if (countdownMinuteChanged) {
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
       runtimeCtx.screenDirty = true;
 #else
       const unsigned long renderStartUs = micros();
-      renderer.DrawReset(runtimeCtx, remain);
-      drawFirmwareUpdateNotice();
-      recordRenderPartial("reset", micros() - renderStartUs);
+      if (renderer.DrawReset(runtimeCtx, remain)) {
+        drawFirmwareUpdateNotice();
+        recordRenderPartial("reset", micros() - renderStartUs);
+      }
 #endif
     }
   }

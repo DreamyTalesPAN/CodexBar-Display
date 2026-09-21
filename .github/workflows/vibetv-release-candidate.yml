@@ -202,6 +202,9 @@ jobs:
       - name: Extract the pinned CodexBar CLI sidecar
         shell: pwsh
         run: ./scripts/fetch-win-codexbar.ps1 -Destination "$env:RUNNER_TEMP/win-codexbar"
+      - name: Bundle pinned agent observer and corresponding source
+        shell: pwsh
+        run: python integrations/clawd/prepare.py --platform win-x64 --output windows/src-tauri/agent-engine
       - name: Stage the CodexBar CLI sidecar
         shell: pwsh
         run: Copy-Item $env:CODEXBAR_CONTRACT_BIN windows/src-tauri/binaries/codexbar-cli-x86_64-pc-windows-msvc.exe

@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/companionapi"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
@@ -560,9 +561,19 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		}
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	engine := agentstatus.Start(ctx, agentstatus.BundledDirectory(), runtimepaths.Path(home, "agent-engine"), func() {
+		select {
+		case renderWake <- struct{}{}:
+		default:
+		}
+	})
 	var workerRunning atomic.Bool
 	server, err := companionapi.New(companionapi.Options{
 		DisplayStreamRunning: workerRunning.Load,
+		AgentSnapshot:        engine.Snapshot,
+		ConfigureAgents:      engine.Configure,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
@@ -583,10 +594,8 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	daemonOpts := opts.Daemon
+	daemonOpts.AgentSnapshot = engine.Snapshot
 	daemonOpts.Wake = wake
 	daemonOpts.RenderWake = renderWake
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused

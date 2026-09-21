@@ -401,6 +401,16 @@ main() {
   copy_codexbar_distribution "${resources_dir}/CodexBar"
   copy_control_center_static "${resources_dir}/control-center"
   copy_companion_binary "$helpers_dir"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    mkdir -p "${helpers_dir}/agent-engine"
+    printf '#!/bin/sh\nexit 0\n' > "${helpers_dir}/agent-engine/node"
+    chmod 755 "${helpers_dir}/agent-engine/node"
+  else
+    local engine_platform="darwin-$(uname -m)"
+    [[ "$engine_platform" != "darwin-x86_64" ]] || engine_platform="darwin-x64"
+    [[ "$UNIVERSAL" != "1" ]] || engine_platform="darwin-universal"
+    python3 "${ROOT}/integrations/clawd/prepare.py" --platform "$engine_platform" --output "${helpers_dir}/agent-engine"
+  fi
   verify_companion_version
   copy_runtime_agent_plist "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"

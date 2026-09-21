@@ -4,7 +4,6 @@ import {
   act,
   cleanup,
   fireEvent,
-  within,
   render as renderDom,
   screen,
 } from "@testing-library/react";
@@ -96,67 +95,25 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
-  it("keeps an acknowledged sign-in issue dismissed while sign-in and background checks run", () => {
+  it("keeps sign-in available beside inline guidance during polling", () => {
     const failed = provider({ providerId: "claude", label: "Claude", health: "auth_required", message: "Sign in required." });
     const onOpenSignIn = vi.fn();
     const props = { usage, providers: [failed], onOpenSignIn,
       onCheckAgain: vi.fn(), onToggle: vi.fn(), onContinue: vi.fn(),
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
     fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
     expect(onOpenSignIn).toHaveBeenCalledWith(failed);
     expect(screen.queryByRole("dialog")).toBeNull();
     rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["claude"])} />);
-    rerender(<SetupProvidersScreen {...props} providers={[{ ...failed }]} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Check Claude again" })).toBeNull();
     const changed = { ...failed, health: { ...failed.health, message: "A new sign-in failure." } };
     rerender(<SetupProvidersScreen {...props} providers={[changed]} />);
-    expect(within(screen.getByRole("dialog")).getByText("A new sign-in failure.")).toBeTruthy();
-  });
-
-  it("shows one provider popup, keeps dismissal across polls, and reopens after retry", () => {
-    const onCheckAgain = vi.fn();
-    const onToggle = vi.fn();
-    const failed = { ...copilot, value: true,
-      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
-    const props = { usage, providers: [claude, failed], onCheckAgain, onToggle,
-      onContinue: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
-    const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(screen.getByRole("dialog")).getByText(failed.health.reported)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    rerender(<SetupProvidersScreen {...props} providers={[{ ...claude }, { ...failed }]} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByText(failed.health.reported)).toBeNull();
-    expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Check GitHub Copilot again" }));
-    expect(onCheckAgain).toHaveBeenCalledWith(failed);
-    rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["copilot"])} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    rerender(<SetupProvidersScreen {...props} />);
-    expect(screen.getByRole("dialog")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    fireEvent.click(screen.getByRole("switch", { name: "GitHub Copilot" }));
-    expect(onToggle).toHaveBeenCalledWith(failed, false);
-    rerender(<SetupProvidersScreen {...props} providers={[claude, { ...failed, value: false }]} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
-    const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
-    renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}
-      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
-      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    expect(within(screen.getByRole("dialog")).getByText("OpenAI")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Show provider message for GitHub Copilot" }));
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    expect(screen.getByText("A new sign-in failure.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check Claude again" }));
+    expect(props.onCheckAgain).toHaveBeenCalledWith(changed);
+    fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
+    expect(props.onToggle).toHaveBeenCalledWith(changed, false);
   });
 
   // VibeTV launches with the four providers it has been checked against. The
@@ -378,6 +335,7 @@ describe("SetupProvidersScreen", () => {
 
   it("continues on an enabled provider with a bounded last-good reading", () => {
     const html = render({
+      usage: { providers: [{id: "codex", label: "Codex", session: 0, weekly: 0, usageMode: "used"}] },
       providers: [
         provider({
           health: "stale",
@@ -391,8 +349,8 @@ describe("SetupProvidersScreen", () => {
     expect(html).not.toMatch(
       /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
     );
-    expect(html).toContain('aria-label="Show provider message for Codex"');
-    expect(html).not.toContain("Live usage is unavailable. Showing the last saved reading.");
+    expect(html).toContain('data-slot="provider-notice"');
+    expect(html).toContain("Live usage is unavailable. Showing the last saved reading.");
   });
 
   // CodexBar ships 65 providers and almost all of them are off. Putting the
@@ -592,3 +550,27 @@ describe("SetupProvidersScreen", () => {
     }
   });
 });
+
+ describe("upstream provider migration", () => {
+   const gemini = provider({health: "unsupported", label: "Gemini", providerId: "gemini"});
+   gemini.health.reported = "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.";
+   const antigravity = provider({health: "disabled", label: "Antigravity", providerId: "antigravity", value: false});
+   it("preserves upstream guidance without inferring a replacement action", () => {
+     const onToggle = vi.fn();
+     renderDom(<SetupProvidersScreen usage={usage} onCheckAgain={vi.fn()} onContinue={vi.fn()} onToggle={onToggle} pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} providers={[gemini, antigravity]} />);
+     expect(screen.getByText(gemini.health.reported!)).toBeTruthy();
+     expect(screen.queryByRole("button", {name: "Turn on Antigravity"})).toBeNull();
+     fireEvent.click(screen.getByRole("switch", {name: "Antigravity"}));
+     expect(onToggle).toHaveBeenCalledExactlyOnceWith(antigravity, true);
+     expect(screen.getByRole("switch", {name: "Gemini"}).getAttribute("aria-checked")).toBe("true");
+   });
+   it("opens Continue only once an enabled provider has usable data", () => {
+     expect(render({providers:[gemini, antigravity]})).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Continue/);
+     const healthy = {...antigravity, value: true, health: {...antigravity.health, state: "healthy"}};
+     expect(render({providers:[gemini, healthy], usage: {providers: [{id: "antigravity", label: "Antigravity", session: 0, weekly: 0, usageMode: "used"}]}})).not.toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Continue/);
+     expect(setupProviderCanDisplay(gemini, usage)).toBe(false);
+   });
+   it("does not invent an alternative absent from the inventory", () => {
+     expect(render({providers:[gemini]})).not.toContain("Turn on Antigravity");
+   });
+ });

@@ -68,43 +68,48 @@ type ClockSchedule struct {
 }
 
 type Frame struct {
-	V                  int           `json:"v"`
-	Provider           string        `json:"provider,omitempty"`
-	Label              string        `json:"label,omitempty"`
-	Session            int           `json:"session,omitempty"`
-	Weekly             int           `json:"weekly,omitempty"`
-	ResetSec           int64         `json:"resetSecs,omitempty"`
-	ResetAgeSec        int64         `json:"resetAgeSecs,omitempty"`
-	ResetTrustSec      int64         `json:"resetTrustSecs,omitempty"`
-	ResetSource        string        `json:"resetSource,omitempty"`
-	ResetTrust         string        `json:"resetTrust,omitempty"`
-	UsageUnavailable   bool          `json:"usageUnavailable,omitempty"`
-	SessionUnavailable bool          `json:"sessionUnavailable,omitempty"`
-	WeeklyUnavailable  bool          `json:"weeklyUnavailable,omitempty"`
-	UsageMode          string        `json:"usageMode,omitempty"`
-	UsageWindows       []UsageWindow `json:"usageWindows,omitempty"`
-	UsageSlots         []UsageSlot   `json:"usageSlots,omitempty"`
+	V             int    `json:"v"`
+	Provider      string `json:"provider,omitempty"`
+	Label         string `json:"label,omitempty"`
+	Session       int    `json:"session,omitempty"`
+	Weekly        int    `json:"weekly,omitempty"`
+	ResetSec      int64  `json:"resetSecs,omitempty"`
+	ResetAgeSec   int64  `json:"resetAgeSecs,omitempty"`
+	ResetTrustSec int64  `json:"resetTrustSecs,omitempty"`
+	ResetSource   string `json:"resetSource,omitempty"`
+	ResetTrust    string `json:"resetTrust,omitempty"`
+	// Keep flags together to avoid padding in every normalized/serialized frame.
+	UsageUnavailable   bool `json:"usageUnavailable,omitempty"`
+	SessionUnavailable bool `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable  bool `json:"weeklyUnavailable,omitempty"`
+	// TokenTotalsKnown marks a completed token-history result on the wire.
+	// Zero totals are omitted by omitempty, so without this marker a device
+	// cannot tell a genuine all-zero history from an unavailable one.
+	TokenTotalsKnown      bool          `json:"tokenTotalsKnown,omitempty"`
+	AgentAlertsMuted      bool          `json:"agentAlertsMuted,omitempty"`
+	AnimationsDisabled    bool          `json:"animationsDisabled,omitempty"`
+	ConfirmClearThemeSpec bool          `json:"confirmClearThemeSpec,omitempty"`
+	UsageMode             string        `json:"usageMode,omitempty"`
+	UsageWindows          []UsageWindow `json:"usageWindows,omitempty"`
+	UsageSlots            []UsageSlot   `json:"usageSlots,omitempty"`
 	// ProviderSlots lists every configured provider with its soonest usage
 	// reset across that provider's windows. Unlike UsageWindows, which carry
 	// the currently displayed provider, these rows span all providers so a
 	// theme can render "Claude 1h / Codex 3h" style overviews.
-	ProviderSlots       []UsageSlot    `json:"providerSlots,omitempty"`
-	Time                string         `json:"time,omitempty"`
-	Date                string         `json:"date,omitempty"`
-	NextClockTransition *ClockSchedule `json:"clockSchedule,omitempty"`
-	SessionTokens       int64          `json:"sessionTokens,omitempty"`
-	WeekTokens          int64          `json:"weekTokens,omitempty"`
-	TotalTokens         int64          `json:"totalTokens,omitempty"`
-	// TokenTotalsKnown marks a completed token-history result on the wire.
-	// Zero totals are omitted by omitempty, so without this marker a device
-	// cannot tell a genuine all-zero history from an unavailable one.
-	TokenTotalsKnown      bool            `json:"tokenTotalsKnown,omitempty"`
-	Activity              string          `json:"activity,omitempty"`
-	Theme                 string          `json:"theme,omitempty"`
-	ThemeSpec             json.RawMessage `json:"themeSpec,omitempty"`
-	ConfirmClearThemeSpec bool            `json:"confirmClearThemeSpec,omitempty"`
-	Update                *UpdateState    `json:"update,omitempty"`
-	Error                 string          `json:"error,omitempty"`
+	ProviderSlots       []UsageSlot     `json:"providerSlots,omitempty"`
+	Time                string          `json:"time,omitempty"`
+	Date                string          `json:"date,omitempty"`
+	NextClockTransition *ClockSchedule  `json:"clockSchedule,omitempty"`
+	SessionTokens       int64           `json:"sessionTokens,omitempty"`
+	WeekTokens          int64           `json:"weekTokens,omitempty"`
+	TotalTokens         int64           `json:"totalTokens,omitempty"`
+	Activity            string          `json:"activity,omitempty"`
+	AgentName           string          `json:"agentName,omitempty"`
+	AgentReminderSecs   int             `json:"agentReminderSecs,omitempty"`
+	Theme               string          `json:"theme,omitempty"`
+	ThemeSpec           json.RawMessage `json:"themeSpec,omitempty"`
+	Update              *UpdateState    `json:"update,omitempty"`
+	Error               string          `json:"error,omitempty"`
 }
 
 type UpdateState struct {
@@ -140,7 +145,7 @@ func (f Frame) Normalize() Frame {
 		f.ResetSec = 0
 	}
 	f.UsageWindows = normalizeUsageWindows(firstNonEmptyUsageWindows(f.UsageWindows, f.UsageSlots))
-	f = applyLegacyUsageProjection(f)
+	applyLegacyUsageProjection(&f)
 	if protocolVersion >= ProtocolVersionV2 {
 		f.UsageSlots = nil
 	} else {
@@ -177,6 +182,12 @@ func (f Frame) Normalize() Frame {
 		f.NextClockTransition = nil
 	}
 	f.Activity = normalizeActivity(f.Activity)
+	if f.AgentName != "" {
+		f.AgentName = strings.Join(strings.Fields(f.AgentName), " ")
+	}
+	if len(f.AgentName) > 40 {
+		f.AgentName = "Agent"
+	}
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
 		f.ThemeSpec = nil
@@ -271,9 +282,9 @@ func legacyUsageSlots(windows []UsageWindow) []UsageSlot {
 	return out
 }
 
-func applyLegacyUsageProjection(f Frame) Frame {
+func applyLegacyUsageProjection(f *Frame) {
 	if len(f.UsageWindows) == 0 {
-		return f
+		return
 	}
 	// The legacy lanes are named, not positional: a provider whose primary
 	// window is informational (Win-CodexBar's session notice) reports only
@@ -306,7 +317,6 @@ func applyLegacyUsageProjection(f Frame) Frame {
 	}
 	f.SessionUnavailable = !hasSession
 	f.WeeklyUnavailable = !hasWeekly
-	return f
 }
 
 func usageWindowByID(windows []UsageWindow, ids ...string) (UsageWindow, bool) {
@@ -390,7 +400,7 @@ func (f Frame) MarshalLine() ([]byte, error) {
 // MarshalNormalizedLine serializes a frame that has already been normalized.
 // It is for callers that need the normalized frame as well as its wire form.
 func (f Frame) MarshalNormalizedLine() ([]byte, error) {
-	b, err := json.Marshal(f)
+	b, err := json.Marshal(&f)
 	if err != nil {
 		return nil, err
 	}

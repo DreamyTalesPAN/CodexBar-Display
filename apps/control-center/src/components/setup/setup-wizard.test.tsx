@@ -14,6 +14,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 
 import type { DeviceCandidate } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
@@ -34,15 +35,15 @@ window.matchMedia = ((query: string) => ({
   removeEventListener: () => {},
 })) as unknown as typeof window.matchMedia;
 
-function provider(): ProviderItem {
+function provider(id = "codex", label = "Codex"): ProviderItem {
   return {
     allowsDefault: false,
     availability: { state: "available" },
     effectiveValue: true,
     health: { message: "", service: "operational", state: "healthy" },
-    id: "codexbar.providers.codex.enabled",
-    providerId: "codex",
-    label: "Codex",
+    id: `codexbar.providers.${id}.enabled`,
+    providerId: id,
+    label,
     owner: "codexbar",
     value: true,
   } as ProviderItem;
@@ -92,7 +93,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     providersLoading: false,
     onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
-    providers: [provider()],
+    providers: [provider(), provider("claude", "Claude")],
     selectedThemeId: null,
     step: "display",
     themeInstallLogs: [],
@@ -209,6 +210,29 @@ describe("SetupWizard: theme failures", () => {
 });
 
 describe("SetupWizard: initial provider scan", () => {
+  it("reopens providers after connecting without fresh usage and preserves real device loss", async () => {
+    const device = { active: true, connected: true, paired: true, ready: false };
+    const props = baseProps({
+      step: "device",
+      device,
+      deviceCandidates: [{ deviceId: "vibetv-1", target: "http://192.168.178.73", known: true }],
+      connectSteps: {
+        connect: vi.fn(async () => device),
+        checkFirmware: vi.fn(async () => null),
+        installFirmware: vi.fn(),
+      },
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(shownStep()).toBe("Choose AI providers");
+    rerender(<SetupWizard {...props} step="live" device={{ ...device, ready: true }} />);
+    expect(shownStep()).toBe("Choose AI providers");
+    rerender(<SetupWizard {...props} device={{ ...device, connected: false }} />);
+    expect(shownStep()).toBe("Choose your VibeTV");
+  });
+
   it("shows the provider loading screen instead of the finished list", () => {
     render(
       <SetupWizard
@@ -277,7 +301,7 @@ describe("SetupWizard: initial provider scan", () => {
     ).toBeTruthy();
   });
 
-  it("moves directly from provider completion to Display Mode after a fresh connection", async () => {
+  it("moves directly to the theme after connecting with one provider", async () => {
     let finishFirmwareCheck!: (value: null) => void;
     let finishProviderCompletion!: (value: boolean) => void;
     const checkFirmware = vi.fn(
@@ -319,12 +343,12 @@ describe("SetupWizard: initial provider scan", () => {
           hasActiveDevice: true,
           hasEnteredControlCenter: false,
         }),
-        displayConfigured: false,
+        displayConfigured: !providerSelectionRequired,
         displaySelectionSupported: true,
         initialCheckComplete: true,
         providerSelectionRequired,
         searchingForDevice: false,
-        themeSetupRequired: false,
+        themeSetupRequired: true,
       });
     let props = baseProps({
       connectSteps: {
@@ -376,7 +400,9 @@ describe("SetupWizard: initial provider scan", () => {
         .disabled,
     ).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
     expect(onProvidersContinue).toHaveBeenCalledTimes(1);
     expect(shownStep()).toBe("Choose AI providers");
     expect(
@@ -385,14 +411,15 @@ describe("SetupWizard: initial provider scan", () => {
     ).toBe(true);
 
     // The successful completion response clears the provider requirement while
-    // the first usage frame is still missing. That must advance to Display Mode,
+    // the first usage frame is still missing. Manual is saved for the sole
+    // provider, so this must advance to the theme,
     // not briefly send the freshly connected customer back to Device.
     await act(async () => {
       props = { ...props, step: stepAfterConnection(false) };
       rerender(<SetupWizard {...props} />);
       finishProviderCompletion(true);
     });
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Choose your theme");
     expect(
       screen.queryByRole("main", { name: "Choose your VibeTV" }),
     ).toBeNull();
@@ -990,6 +1017,89 @@ describe("SetupWizard: saved WiFi recovery", () => {
   });
 });
 
+describe("SetupWizard: one enabled provider", () => {
+  it("saves Manual before completion and skips Display Mode in both directions", async () => {
+    let finishSave!: (saved: boolean) => void;
+    const save = vi.fn<SetupWizardProps["onDisplayContinue"]>(() => new Promise<boolean>((resolve) => { finishSave = resolve; }));
+    const complete = vi.fn();
+    function Harness() {
+      const [step, setStep] = useState<SetupWizardProps["step"]>("providers");
+      const [pending, setPending] = useState(false);
+      return <SetupWizard {...baseProps({
+        step, providers: [provider()], displaySavePending: pending,
+        onDisplayContinue: async (selection) => {
+          setPending(true);
+          // Simulate the optimistic parent state while its PATCH is pending.
+          setStep("theme");
+          const saved = await save(selection);
+          setPending(false);
+          return saved;
+        },
+        onProvidersContinue: complete,
+      })} />;
+    }
+    render(<Harness />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
+    expect(save).toHaveBeenCalledWith({ mode: "fixed", providerIds: ["codex"] });
+    expect(complete).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Choose AI providers");
+    expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => finishSave(true));
+    expect(complete).toHaveBeenCalledOnce();
+    expect(shownStep()).toBe("Choose your theme");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose AI providers");
+  });
+
+  it("stays on providers when saving Manual fails", async () => {
+    const complete = vi.fn();
+    render(<SetupWizard {...baseProps({
+      step: "theme", providers: [provider()],
+      onDisplayContinue: vi.fn(async () => false), onProvidersContinue: complete,
+    })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
+    expect(complete).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Choose AI providers");
+  });
+
+  it("counts enabled toggles even when only one provider has usage", async () => {
+    const save = vi.fn();
+    const unhealthy = { ...provider("gemini", "Gemini"), health: { message: "Sign in", service: "unknown", state: "auth_required" } } as ProviderItem;
+    render(<SetupWizard {...baseProps({ step: "theme", providers: [provider(), unhealthy], onDisplayContinue: save })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
+    expect(save).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Choose your theme");
+  });
+
+  it.each([false, true])("does not bypass readiness for enabled=%s", (enabled) => {
+    const item = { ...provider(), value: enabled, health: { message: "Sign in", service: "unknown", state: "auth_required" } } as ProviderItem;
+    const save = vi.fn();
+    render(<SetupWizard {...baseProps({ step: "providers", providers: [item], onDisplayContinue: save })} />);
+    const button = screen.getByRole("button", { name: "Continue" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("re-evaluates the current enabled providers after going back", async () => {
+    const save = vi.fn(async () => true);
+    const props = baseProps({ step: "theme", providers: [provider()], onDisplayContinue: save });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    rerender(<SetupWizard {...props} providers={[provider(), provider("claude", "Claude")]} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
+    expect(shownStep()).toBe("Choose your theme");
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    rerender(<SetupWizard {...props} providers={[{ ...provider(), value: false }, provider("claude", "Claude")]} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
+    expect(save).toHaveBeenCalledWith({ mode: "fixed", providerIds: ["claude"] });
+    expect(shownStep()).toBe("Choose your theme");
+  });
+});
+
 describe("SetupWizard: going back", () => {
   it("returns from WiFi credentials to the choice even after the Mac saved Cable mode", async () => {
     const connect = vi.fn();
@@ -1022,8 +1132,8 @@ describe("SetupWizard: going back", () => {
   // provider step for good -- no Back button, and a Continue that answered 200
   // without ever moving.
   it("hands the screen back to the derived step once Continue is pressed", async () => {
-    render(<SetupWizard {...baseProps({ step: "display" })} />);
-    expect(shownStep()).toBe("Display Mode");
+    render(<SetupWizard {...baseProps({ step: "theme" })} />);
+    expect(shownStep()).toBe("Choose your theme");
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
@@ -1032,7 +1142,7 @@ describe("SetupWizard: going back", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Choose your theme");
   });
 
   // Coming back from theme leaves the derived step ahead, so a refused
@@ -1042,7 +1152,6 @@ describe("SetupWizard: going back", () => {
     render(
       <SetupWizard {...baseProps({ step: "theme", onProvidersContinue })} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
 
@@ -1060,8 +1169,9 @@ describe("SetupWizard: going back", () => {
   // screen that renders none. The step that owns it is named instead.
   it("shows the step a refusal names, with the refusal on it", async () => {
     const onProvidersContinue = vi.fn(async () => "display" as const);
-    const props = baseProps({ step: "theme", onProvidersContinue });
+    const props = baseProps({ step: "usage", onProvidersContinue });
     const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
@@ -1093,7 +1203,7 @@ describe("SetupWizard: going back", () => {
   // moves on, and a connect that finishes releases the step again.
   it("walks back to the device step, and Connect carries the customer on again", async () => {
     const props = baseProps({
-      step: "display",
+      step: "theme",
       deviceCandidates: [
         {
           deviceId: "vibetv-1",
@@ -1117,7 +1227,7 @@ describe("SetupWizard: going back", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     });
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Choose your theme");
   });
 
   // A save that did not land must not read as one that did: the rollback
@@ -1127,7 +1237,7 @@ describe("SetupWizard: going back", () => {
     const onDisplayContinue = vi.fn(async () => false);
     render(
       <SetupWizard
-        {...baseProps({ step: "theme", onDisplayContinue })}
+        {...baseProps({ step: "usage", onDisplayContinue })}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -1145,7 +1255,7 @@ describe("SetupWizard: going back", () => {
     const onDisplayContinue = vi.fn(async () => true);
     render(
       <SetupWizard
-        {...baseProps({ step: "theme", onDisplayContinue })}
+        {...baseProps({ step: "usage", onDisplayContinue })}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -1154,7 +1264,7 @@ describe("SetupWizard: going back", () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
 
-    expect(shownStep()).toBe("Choose your theme");
+    expect(shownStep()).toBe("Show usage as");
   });
 
   // The save can still be running when the customer leaves the step, and Back
@@ -1170,20 +1280,20 @@ describe("SetupWizard: going back", () => {
         }),
     );
     render(
-      <SetupWizard {...baseProps({ step: "theme", onDisplayContinue })} />,
+      <SetupWizard {...baseProps({ step: "usage", onDisplayContinue })} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Display Mode");
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Choose AI providers");
+    expect(shownStep()).toBe("Choose your theme");
 
     await act(async () => {
       settle(true);
     });
 
-    expect(shownStep()).toBe("Choose AI providers");
+    expect(shownStep()).toBe("Choose your theme");
   });
 
   it("keeps a Back press made while provider completion was running", async () => {
@@ -1195,7 +1305,7 @@ describe("SetupWizard: going back", () => {
         }),
     );
     render(
-      <SetupWizard {...baseProps({ step: "display", onProvidersContinue })} />,
+      <SetupWizard {...baseProps({ step: "theme", onProvidersContinue })} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -1213,21 +1323,21 @@ describe("SetupWizard: going back", () => {
   it("holds the display step while its save is in flight", () => {
     const { rerender } = render(
       <SetupWizard
-        {...baseProps({ step: "theme", displaySavePending: true })}
+        {...baseProps({ step: "usage", displaySavePending: true })}
       />,
     );
     expect(shownStep()).toBe("Display Mode");
 
     rerender(
       <SetupWizard
-        {...baseProps({ step: "theme", displaySavePending: false })}
+        {...baseProps({ step: "usage", displaySavePending: false })}
       />,
     );
-    expect(shownStep()).toBe("Choose your theme");
+    expect(shownStep()).toBe("Show usage as");
   });
 
   it("releases the theme step the same way", async () => {
-    render(<SetupWizard {...baseProps({ step: "theme" })} />);
+    render(<SetupWizard {...baseProps({ step: "usage" })} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Display Mode");
 
@@ -1236,7 +1346,7 @@ describe("SetupWizard: going back", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
-    expect(shownStep()).toBe("Choose your theme");
+    expect(shownStep()).toBe("Show usage as");
   });
 });
 
@@ -1840,5 +1950,39 @@ describe("SetupWizard with a broken usage service", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     expect(onDismissUsageFailure).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SetupWizard: usage choice", () => {
+  it("waits for a confirmed save and keeps the choice on failure", async () => {
+    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    function Harness() {
+      const [step, setStep] = useState<SetupWizardProps["step"]>("usage");
+      return <SetupWizard {...baseProps({ step, usageMode: "used",
+        onUsageContinue: async (mode) => {
+          const saved = await save(mode);
+          if (saved) setStep("live");
+          return saved;
+        },
+      })} />;
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: /Remaining/ }));
+    expect(save).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Continue" })));
+    expect(save).toHaveBeenLastCalledWith("remaining");
+    expect(shownStep()).toBe("Show usage as");
+    expect(screen.getByRole("button", { name: /Remaining/ }).getAttribute("aria-pressed")).toBe("true");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Continue" })));
+    expect(shownStep()).toBe("Your VibeTV is live");
+  });
+  it.each([1, 2])("returns from usage to the right choice with %s providers", (count) => {
+    render(<SetupWizard {...baseProps({ step: "usage", providers: [provider(), provider("claude", "Claude")].slice(0, count), usageMode: "remaining" })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe(count === 1 ? "Choose your theme" : "Display Mode");
+  });
+  it("does not confirm a choice that has not loaded", () => {
+    render(<SetupWizard {...baseProps({ step: "usage", usageMode: null })} />);
+    expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
