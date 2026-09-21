@@ -1152,22 +1152,19 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
 
 }  // namespace
 
-void MarkThemeSpecCountdownsRendered() {
+void MarkThemeSpecCountdownsRendered(uint32_t fields) {
   const unsigned long now = millis();
   const int64_t remain = CurrentRemainingSecs();
-  LastRenderedSecs() = remain;
-  LastRenderedMinuteBucket() = remain / 60;
+  if (fields & themespec::kThemeSpecFieldReset) LastRenderedSecs() = remain;
   for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
     const int64_t slotRemain =
         codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, now);
-    Context().lastRenderedUsageWindowSecs[i] = slotRemain;
-    Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
+    if (fields & (themespec::kThemeSpecFieldUsageWindowReset | themespec::kThemeSpecFieldUsageWindows)) Context().lastRenderedUsageWindowSecs[i] = slotRemain;
   }
   for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
     const int64_t slotRemain =
         codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, now);
-    Context().lastRenderedProviderSlotSecs[i] = slotRemain;
-    Context().lastRenderedProviderSlotMinuteBuckets[i] = slotRemain / 60;
+    if (fields & themespec::kThemeSpecFieldProviderSlots) Context().lastRenderedProviderSlotSecs[i] = slotRemain;
   }
 }
 
@@ -1245,8 +1242,8 @@ void TickThemeSpecAnnouncement() {
           themespec::CompiledStateAssetPathFor(cachedThemeSpecScene, p, frameData)) == 0);
     }
   }
-  const bool enabled = ready && !frame.animationsDisabled && frame.agentName.length() > 0;
-  SetAnnouncementInverted(announcement.Update(frame.activity.c_str(), enabled, dedicated, millis()));
+  const bool enabled = ready && !frame.animationsDisabled && !frame.agentAlertsMuted && frame.agentName.length() > 0;
+  SetAnnouncementInverted(announcement.Update(frame.activity.c_str(), enabled, dedicated, millis(), frame.agentReminderSecs));
 }
 
 bool TickThemeSpecGifs() {
@@ -1321,7 +1318,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
-  MarkThemeSpecCountdownsRendered();
+  MarkThemeSpecCountdownsRendered(changedFields);
   return true;
 }
 

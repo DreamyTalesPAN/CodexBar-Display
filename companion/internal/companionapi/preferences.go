@@ -252,7 +252,7 @@ func (s *Server) preferenceRegistry() []preferenceAdapter {
 	if len(s.preferenceAdapters) > 0 {
 		return s.preferenceAdapters
 	}
-	return []preferenceAdapter{providerPreferenceAdapter{server: s}, usageDisplayPreferenceAdapter{}}
+	return []preferenceAdapter{providerPreferenceAdapter{server: s}, usageDisplayPreferenceAdapter{}, agentPreferenceAdapter{server: s}}
 }
 
 func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {

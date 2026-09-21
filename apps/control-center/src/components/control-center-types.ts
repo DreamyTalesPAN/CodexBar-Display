@@ -369,6 +369,8 @@ export type UsageProviderInfo = {
   activity?: string;
   agentName?: string;
   animationsDisabled?: boolean;
+  agentAlertsMuted?: boolean;
+  agentReminderSecs?: number;
   stale?: boolean;
   usageUnavailable?: boolean;
   sessionUnavailable?: boolean;

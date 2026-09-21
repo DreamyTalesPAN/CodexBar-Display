@@ -34,7 +34,6 @@ void RendererESP32::DrawSplash(app::RuntimeContext& ctx) {
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.println("Waiting for CodexBar...");
   ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
 }
 
 void RendererESP32::TickSplash(app::RuntimeContext&) {
@@ -53,7 +52,6 @@ void RendererESP32::DrawError(app::RuntimeContext& ctx, const String& message) {
   tft.println(message);
 
   ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
 }
 
 void RendererESP32::DrawUsage(app::RuntimeContext& ctx) {
@@ -90,7 +88,6 @@ void RendererESP32::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   tft.printf("Reset in %s", app::FormatDuration(remainSecs).c_str());
 
   ctx.lastRenderedSecs = remainSecs;
-  ctx.lastRenderedMinuteBucket = remainSecs / 60;
 }
 
 void RendererESP32::barColorsForProvider(const String& provider, uint16_t& sessionColor, uint16_t& weeklyColor) const {

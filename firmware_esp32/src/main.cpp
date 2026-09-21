@@ -127,7 +127,7 @@ void loop() {
       !runtimeCtx.screenDirty) {
     renderer.TickActive(runtimeCtx);
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
-    if (remain != runtimeCtx.lastRenderedSecs) {
+    if (codexbar_display::core::ResetTextChanged(remain, runtimeCtx.lastRenderedSecs)) {
       renderer.DrawReset(runtimeCtx, remain);
     }
   }

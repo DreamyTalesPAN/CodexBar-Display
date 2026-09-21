@@ -231,7 +231,6 @@ void RendererESP8266::DrawStatus(
   tft.print(line2);
 
   ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
   ctx.screenDirty = false;
 #else
   (void)ctx;
@@ -302,7 +301,6 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   tft.print(ipLine);
 
   ctx.lastRenderedSecs = -1;
-  ctx.lastRenderedMinuteBucket = -1;
   ctx.screenDirty = false;
 #else
   (void)ctx;
@@ -501,12 +499,17 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
     uint32_t countdownFields = 0;
-    if (core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
+    if (core::ResetTextChanged(remainSecs, ctx.lastRenderedSecs) && core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
       countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
     }
     for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
-      if (core::ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
+      if (core::ResetTextChanged(core::CurrentUsageWindowRemainingSecs(ctx.runtime, i, millis()), ctx.lastRenderedUsageWindowSecs[i]) && core::ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
         countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
+      }
+    }
+    for (size_t i = 0; i < core::kMaxProviderSlots; ++i) {
+      if (core::ResetTextChanged(core::CurrentProviderSlotRemainingSecs(ctx.runtime, i, millis()), ctx.lastRenderedProviderSlotSecs[i]) && core::ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i)) {
+        countdownFields |= codexbar_display::themespec::kThemeSpecFieldProviderSlots;
       }
     }
     if (display::CurrentThemeSpecRenderedSuccessfully() &&

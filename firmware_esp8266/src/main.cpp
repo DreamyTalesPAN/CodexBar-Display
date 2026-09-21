@@ -4484,43 +4484,17 @@ void loop() {
       !frameStaleStatusRendered) {
     renderer.TickActive(runtimeCtx);
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
-    bool countdownMinuteChanged = false;
-    if (remain != runtimeCtx.lastRenderedSecs) {
-      if (codexbar_display::core::RemainingMinuteBucketChanged(
-              remain, runtimeCtx.lastRenderedMinuteBucket)) {
-        countdownMinuteChanged = true;
-      } else {
-        runtimeCtx.lastRenderedSecs = remain;
-      }
-    }
+    bool countdownMinuteChanged = codexbar_display::core::ResetTextChanged(
+        remain, runtimeCtx.lastRenderedSecs);
     for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
-      const int64_t slotRemain =
-          codexbar_display::app::CurrentUsageWindowRemainingSecs(runtimeCtx, i, millis());
-      if (slotRemain == runtimeCtx.lastRenderedUsageWindowSecs[i]) {
-        continue;
-      }
-      if (codexbar_display::core::RemainingMinuteBucketChanged(
-              slotRemain, runtimeCtx.lastRenderedUsageWindowMinuteBuckets[i])) {
-        countdownMinuteChanged = true;
-      } else {
-        runtimeCtx.lastRenderedUsageWindowSecs[i] = slotRemain;
-      }
+      countdownMinuteChanged |= codexbar_display::core::ResetTextChanged(
+          codexbar_display::app::CurrentUsageWindowRemainingSecs(runtimeCtx, i, millis()),
+          runtimeCtx.lastRenderedUsageWindowSecs[i]);
     }
-    // Provider slots count down locally too. A screensaver bound to them —
-    // Night Clock does exactly that — would otherwise sit at the last received
-    // value for as long as the Mac stays away.
     for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
-      const int64_t slotRemain =
-          codexbar_display::app::CurrentProviderSlotRemainingSecs(runtimeCtx, i, millis());
-      if (slotRemain == runtimeCtx.lastRenderedProviderSlotSecs[i]) {
-        continue;
-      }
-      if (codexbar_display::core::RemainingMinuteBucketChanged(
-              slotRemain, runtimeCtx.lastRenderedProviderSlotMinuteBuckets[i])) {
-        countdownMinuteChanged = true;
-      } else {
-        runtimeCtx.lastRenderedProviderSlotSecs[i] = slotRemain;
-      }
+      countdownMinuteChanged |= codexbar_display::core::ResetTextChanged(
+          codexbar_display::app::CurrentProviderSlotRemainingSecs(runtimeCtx, i, millis()),
+          runtimeCtx.lastRenderedProviderSlotSecs[i]);
     }
     if (countdownMinuteChanged) {
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY

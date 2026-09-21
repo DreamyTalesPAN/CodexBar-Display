@@ -87,6 +87,8 @@ type DisplayFrame = {
   activity?: string;
   agentName?: string;
   animationsDisabled?: boolean;
+  agentAlertsMuted?: boolean;
+  agentReminderSecs?: number;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
@@ -197,6 +199,8 @@ export type FrameData = {
   activity: string;
   agentName?: string;
   animationsDisabled?: boolean;
+  agentAlertsMuted?: boolean;
+  agentReminderSecs?: number;
   sessionTokens: number;
   weekTokens: number;
   totalTokens: number;
@@ -664,15 +668,23 @@ function ThemeSpecSVG({
     const changed = lastState.current.themeId === themeId && lastState.current.state !== state;
     lastState.current = { state, themeId };
     const node = svgRef.current;
-    if (!node || !changed || !motionEnabled || !hasAgentStatus || dedicated || ["idle", "unavailable"].includes(state)) return;
-    const animation = node.animate([
-      { filter: "invert(1)", offset: 0, easing: "step-end" },
-      { filter: "invert(0)", offset: 200 / 550, easing: "step-end" },
-      { filter: "invert(1)", offset: 350 / 550, easing: "step-end" },
-      { filter: "invert(0)", offset: 1 },
-    ], { duration: 550 });
-    return () => animation.cancel();
-  }, [state, motionEnabled, dedicated, hasAgentStatus, themeId]);
+    if (!node || !motionEnabled || !hasAgentStatus || frame.agentAlertsMuted ||
+        dedicated || ["idle", "unavailable"].includes(state)) return;
+    let animation: Animation | undefined;
+    const blink = () => {
+      animation?.cancel();
+      animation = node.animate([
+        { filter: "invert(1)", offset: 0, easing: "step-end" },
+        { filter: "invert(0)", offset: 200 / 550, easing: "step-end" },
+        { filter: "invert(1)", offset: 350 / 550, easing: "step-end" },
+        { filter: "invert(0)", offset: 1 },
+      ], { duration: 550 });
+    };
+    if (changed) blink();
+    const timer = state === "needs_you" && (frame.agentReminderSecs ?? 0) > 0
+      ? window.setInterval(blink, frame.agentReminderSecs! * 1000) : undefined;
+    return () => { animation?.cancel(); window.clearInterval(timer); };
+  }, [state, motionEnabled, dedicated, hasAgentStatus, themeId, frame.agentAlertsMuted, frame.agentReminderSecs]);
   const renderedFrame = frame.agentName ? { ...frame, label: agentStatusText(frame.activity, frame.agentName) } : frame;
   const animationFps = useMemo(
     () => (motionEnabled ? maximumAnimatedSpriteFps(sprites) : 0),
@@ -1344,6 +1356,8 @@ export function buildFrameData(
     activity: displayFrame.activity || "idle",
     agentName: displayFrame.agentName,
     animationsDisabled: displayFrame.animationsDisabled,
+    agentAlertsMuted: displayFrame.agentAlertsMuted,
+    agentReminderSecs: displayFrame.agentReminderSecs,
     sessionTokens: displayFrame.sessionTokens ?? 0,
     hasTokenTotals:
       displayFrame.tokenTotalsKnown === true ||

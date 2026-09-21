@@ -4895,6 +4895,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
+            agentSettingsRequest={runCompanion}
             usageMode={usageMode}
             usageSavePending={usageModePending}
             onUsageModeChange={(mode) => void saveUsageMode(mode)}

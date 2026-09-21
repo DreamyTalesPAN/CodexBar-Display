@@ -314,3 +314,33 @@ retain the existing error presentation. Regression tests cover both paths.
 Raw bench logs and the local artifact manifest are retained under the ignored
 `tmp/agent-theme-canary/` directory. Nothing was published to the theme catalog,
 merged to main, tagged or released.
+
+## Settings and reset follow-up, 2026-09-21
+
+Source: Claude Design `Control Center - Agent Activity.dc.html`, project
+`36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`, etag `1789894480238945`.
+The four approved controls are implemented through the existing preferences
+registry: Show agent activity, Blink the screen, Remind me again (5/15 minutes
+or never), and Quiet from (off, 22:00–08:00, 00:00–07:00). They persist in
+VibeTV's existing locked runtime config; provider settings stay with CodexBar.
+The master switch affects presentation, not observation. Quiet hours use the
+host's local timezone, preserve status text and artwork, and suppress pulses.
+Host Reduce Motion still overrides all animation. Reminders use the same two
+pulse announcement and stop when the observed waiting state ends. Existing
+sprite themes retain their dedicated artwork instead of fallback inversions.
+
+The photographed single row is Codex's weekly usage. The installed CodexBar
+0.56.8 executable itself returned `primary: null`, a weekly secondary window
+and `tertiary: null`; the snapshot, usage API and acknowledged device frame
+all retain that single known window. No synthetic second limit is introduced.
+
+Reset seconds previously caused a second repaint path on every incoming frame.
+Countdown repainting now belongs to the local reset tick, which compares the
+last rendered display bucket (hours above one day, minutes below one day).
+Only bound countdowns with changed text are redrawn; unrelated partial draws
+no longer mark undrawn countdowns as updated. The obsolete minute-bucket cache
+was deleted. The same display comparison also applies to the ESP32 reset tick.
+
+The ESP8266 percentage warning is adjusted from 46.0% to 46.1% for the new
+settings transport. The absolute 486,000-byte image limit, 350,000-byte gzip
+limit and 82% RAM limit remain unchanged.

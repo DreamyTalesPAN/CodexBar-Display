@@ -1410,6 +1410,8 @@ func applyDeviceActivity(frame protocol.Frame, caps protocol.DeviceCapabilities)
 	if !caps.SupportsAgentThemeStatesV1 {
 		frame.AgentName = ""
 		frame.AnimationsDisabled = false
+		frame.AgentAlertsMuted = false
+		frame.AgentReminderSecs = 0
 	}
 	if !caps.SupportsAgentActivityV1 {
 		switch frame.Activity {
@@ -1427,9 +1429,20 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	authoritativeFrame := result.frame
 	frame := authoritativeFrame.Normalize()
 	frame, result.activityDetail = applyAgentActivity(frame, state)
+	cfg, _ := loadRuntimeConfig(deps)
+	settings := cfg.AgentActivitySettings()
+	if !settings.Enabled {
+		frame.Activity = "idle"
+		frame.AgentName = ""
+	}
+	frame.AgentAlertsMuted = settings.Muted(deps.now())
+	frame.AgentReminderSecs = 0
+	if !frame.AgentAlertsMuted && strings.HasPrefix(frame.Activity, "waiting_for_") {
+		frame.AgentReminderSecs = settings.ReminderSeconds()
+	}
 	// Usage failures remain in the cycle result/API. A valid independent agent
 	// observation can still render its theme before any usage has been collected.
-	if caps.SupportsAgentThemeStatesV1 && frame.Error != "" && frame.Activity != "unavailable" && frame.Activity != "stale" {
+	if settings.Enabled && caps.SupportsAgentThemeStatesV1 && frame.Error != "" && frame.Activity != "unavailable" && frame.Activity != "stale" {
 		frame.Error = ""
 		frame.UsageUnavailable = true
 	}
@@ -1544,8 +1557,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
-	deps.logf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q agentName=%q animationsDisabled=%t time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.AgentName, frame.AnimationsDisabled, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q agentName=%q animationsDisabled=%t agentAlertsMuted=%t agentReminderSecs=%d time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.AgentName, frame.AnimationsDisabled, frame.AgentAlertsMuted, frame.AgentReminderSecs, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {

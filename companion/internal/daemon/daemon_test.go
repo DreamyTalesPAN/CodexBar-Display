@@ -6917,3 +6917,38 @@ func TestOutgoingFramesFollowHostMotionPreference(t *testing.T) {
 		t.Fatal("legacy firmware received unsupported motion flag")
 	}
 }
+
+func TestAgentPreferencesReachDeviceWithoutChangingUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		settings runtimeconfig.AgentActivitySettings
+		phase    string
+		muted    bool
+		reminder int
+		activity string
+	}{
+		{"off", runtimeconfig.AgentActivitySettings{}, "working", true, 0, "idle"},
+		{"quiet", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "22"}, "waiting_for_answer", true, 0, "waiting_for_answer"},
+		{"waiting", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "15", Quiet: "off"}, "waiting_for_answer", false, 900, "waiting_for_answer"},
+		{"working", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}, "working", false, 0, "working"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return agentstatus.Snapshot{Health: "ready", Phase: tc.phase} }}
+			var sent protocol.Frame
+			deps := runtimeDeps{now: func() time.Time { return time.Date(2026, 9, 21, 23, 0, 0, 0, time.Local) }, loadConfig: func(string) (runtimeconfig.Config, error) {
+				return runtimeconfig.Config{AgentActivity: &tc.settings}, nil
+			}, sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) }, logf: func(string, ...any) {}}.withDefaults()
+			result := cycleResult{frame: protocol.Frame{Session: 12, Weekly: 34, ResetSec: 600}, usageFresh: true}
+			if err := sendCycleResult(context.Background(), "/test", protocol.DeviceCapabilities{SupportsAgentThemeStatesV1: true, SupportsAgentActivityV1: true}, 2048, state, deps, result); err != nil {
+				t.Fatal(err)
+			}
+			if sent.Activity != tc.activity || sent.AgentAlertsMuted != tc.muted || sent.AgentReminderSecs != tc.reminder || sent.Session != 12 || sent.Weekly != 34 {
+				t.Fatalf("%+v", sent)
+			}
+			if !tc.settings.Enabled && sent.AgentName != "" {
+				t.Fatalf("agent label survived off: %+v", sent)
+			}
+		})
+	}
+}

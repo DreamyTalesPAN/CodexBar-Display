@@ -101,6 +101,8 @@ type Frame struct {
 	TokenTotalsKnown      bool            `json:"tokenTotalsKnown,omitempty"`
 	Activity              string          `json:"activity,omitempty"`
 	AgentName             string          `json:"agentName,omitempty"`
+	AgentAlertsMuted      bool            `json:"agentAlertsMuted,omitempty"`
+	AgentReminderSecs     int             `json:"agentReminderSecs,omitempty"`
 	AnimationsDisabled    bool            `json:"animationsDisabled,omitempty"`
 	Theme                 string          `json:"theme,omitempty"`
 	ThemeSpec             json.RawMessage `json:"themeSpec,omitempty"`

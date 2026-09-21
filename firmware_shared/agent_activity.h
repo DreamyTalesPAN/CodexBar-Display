@@ -48,17 +48,23 @@ struct Announcement {
   bool initialized = false;
   bool running = false;
   uint32_t startedAt = 0;
-  bool Update(const char* phase, bool enabled, bool dedicated, uint32_t now) {
+  bool Update(const char* phase, bool enabled, bool dedicated, uint32_t now, uint16_t reminderSecs = 0) {
     const State state = DisplayState(phase);
+    const bool eligible = enabled && !dedicated &&
+        state != State::Idle && state != State::Unknown;
+    if (!initialized || !eligible) startedAt = now;
     if (initialized && state != previous) {
-      running = enabled && !dedicated && state != State::Idle && state != State::Unknown;
+      running = eligible;
+      startedAt = now;
+    } else if (initialized && eligible && state == State::NeedsYou && reminderSecs > 0 &&
+               now - startedAt >= static_cast<uint32_t>(reminderSecs) * 1000UL) {
+      running = true;
       startedAt = now;
     }
     initialized = true;
     previous = state;
-    if (!enabled || dedicated || state == State::Idle || state == State::Unknown) running = false;
     const uint32_t elapsed = now - startedAt;
-    if (elapsed >= 550) running = false;
+    if (!eligible || elapsed >= 550) running = false;
     return running && (elapsed < 200 || elapsed >= 350);
   }
 };

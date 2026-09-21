@@ -1,5 +1,6 @@
 "use client";
 
+import { AgentActivitySettings, type AgentSettingsRequest } from "./agent-activity-settings";
 import { UsageModeChoice } from "./setup/setup-usage-mode-screen";
 import type { UsageDisplayMode } from "./setup/setup-display-previews";
 import { CircleArrowRight, Wifi } from "lucide-react";
@@ -53,6 +54,7 @@ export function standbyTimeoutLabel(minutes: number): string {
 }
 
 export type SettingsScreenProps = {
+  agentSettingsRequest?: AgentSettingsRequest;
   usageMode?: UsageDisplayMode | null;
   usageSavePending?: boolean;
   onUsageModeChange?: (mode: UsageDisplayMode) => void;
@@ -76,6 +78,7 @@ export type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
+  agentSettingsRequest,
   usageMode, usageSavePending, onUsageModeChange,
   automaticPreviews,
   device,
@@ -166,6 +169,12 @@ export function SettingsScreen({
         error={actionError ?? providerError ?? null}
         onOpenChange={(open) => !open && onDismissError()}
       />
+      {agentSettingsRequest ? <>
+        <SettingsSection title="Agent activity" description="What your agents are doing, and when one needs you.">
+          <AgentActivitySettings request={agentSettingsRequest} />
+        </SettingsSection>
+        <ItemSeparator />
+      </> : null}
       <SettingsSection title="Connection">
         <div
           aria-label="Connection mode"

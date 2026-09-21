@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ThemeSpecPreview,
@@ -110,4 +110,22 @@ describe("agent theme announcements", () => {
     result.rerender(view("error"));
     expect(animate).not.toHaveBeenCalled();
   });
+});
+
+it("repeats waiting alerts, mutes them without hiding status, and stops on completion", () => {
+ vi.useFakeTimers();
+ try {
+  const result=render(view("idle",{agentReminderSecs:300}));
+  result.rerender(view("waiting_for_answer",{agentReminderSecs:300}));
+  expect(animate).toHaveBeenCalledTimes(1);
+  act(()=>vi.advanceTimersByTime(300000));
+  expect(animate).toHaveBeenCalledTimes(2);
+  result.rerender(view("waiting_for_answer",{agentReminderSecs:300,agentAlertsMuted:true}));
+  act(()=>vi.advanceTimersByTime(600000));
+  expect(animate).toHaveBeenCalledTimes(2);
+  expect(result.container.textContent).toContain("Codex needs you");
+  result.rerender(view("done",{agentReminderSecs:0}));
+  act(()=>vi.advanceTimersByTime(600000));
+  expect(animate).toHaveBeenCalledTimes(3);
+ } finally {vi.useRealTimers();}
 });

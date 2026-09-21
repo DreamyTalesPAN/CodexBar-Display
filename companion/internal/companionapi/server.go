@@ -172,6 +172,8 @@ var displayStreamLogKeys = []string{
 	"activity",
 	"agentName",
 	"animationsDisabled",
+	"agentAlertsMuted",
+	"agentReminderSecs",
 	"time",
 	"date",
 	"error",
@@ -841,6 +843,8 @@ type usageProviderInfo struct {
 	TotalTokens           int64                    `json:"totalTokens,omitempty"`
 	Activity              string                   `json:"activity,omitempty"`
 	AgentName             string                   `json:"agentName,omitempty"`
+	AgentAlertsMuted      bool                     `json:"agentAlertsMuted,omitempty"`
+	AgentReminderSecs     int                      `json:"agentReminderSecs,omitempty"`
 	AnimationsDisabled    bool                     `json:"animationsDisabled,omitempty"`
 	Stale                 bool                     `json:"stale"`
 	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
@@ -9913,10 +9917,13 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 		Activity:           displayStreamLogValue(line, "activity"),
 		AgentName:          displayStreamLogValue(line, "agentName"),
 		AnimationsDisabled: boolFieldFromDisplayStreamLog(line, "animationsDisabled"),
-		Time:               displayStreamLogValue(line, "time"),
-		Date:               displayStreamLogValue(line, "date"),
-		Error:              displayStreamLogValue(line, "error"),
+		AgentAlertsMuted:   boolFieldFromDisplayStreamLog(line, "agentAlertsMuted"),
+
+		Time:  displayStreamLogValue(line, "time"),
+		Date:  displayStreamLogValue(line, "date"),
+		Error: displayStreamLogValue(line, "error"),
 	}
+	frame.AgentReminderSecs, _ = intFieldFromDisplayStreamLog(line, "agentReminderSecs")
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}

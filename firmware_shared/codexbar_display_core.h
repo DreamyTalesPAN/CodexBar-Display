@@ -149,6 +149,8 @@ struct Frame {
   String activity;
   String agentName;
   bool animationsDisabled = false;
+  bool agentAlertsMuted = false;
+  uint16_t agentReminderSecs = 0;
   // Pre-formatted Companion clock strings. Fallback only: the device clock
   // (firmware_shared/device_clock.h) owns {time}/{date} once SNTP answered, and
   // these strings are dropped as soon as they stop being current. Repainting
@@ -490,11 +492,17 @@ inline bool DecodeResetTrustRecord(
   return true;
 }
 
-inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
+// Match the visible reset text, not its second-by-second transport value.
+// Above one day themes show days/hours; below it they show hours/minutes.
+inline bool ResetTextChanged(int64_t a, int64_t b) {
+  if ((a <= 0) != (b <= 0)) return true;
+  return (a >= 86400 && b >= 86400) ? a / 3600 != b / 3600 : a / 60 != b / 60;
+}
+
+inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next) {
   return previous.id != next.id ||
          previous.label != next.label ||
          previous.percent != next.percent ||
-         (includeReset && previous.resetSecs != next.resetSecs) ||
          previous.available != next.available;
 }
 
@@ -741,9 +749,7 @@ inline bool ThemeSpecUsesProviderSlotResetBinding(const String& raw, size_t slot
   return raw.indexOf(longName) >= 0 || raw.indexOf(compactName) >= 0;
 }
 
-inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
-  return remainingSecs / 60 != lastRenderedMinuteBucket;
-}
+
 
 inline uint32_t ThemeSpecUsageWindowField(size_t slotIndex) {
   (void)slotIndex;
@@ -763,8 +769,7 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
     if (ThemeSpecUsesProviderSlotBinding(raw, i) &&
         UsageWindowChanged(
             previous.providerSlots[i],
-            next.providerSlots[i],
-            ThemeSpecUsesProviderSlotResetBinding(raw, i))) {
+            next.providerSlots[i])) {
       providerSlotsChanged = true;
     }
   }
@@ -784,12 +789,10 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
            previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
-         (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
          (usesUsageWindows && [&]() {
            for (size_t i = 0; i < kMaxUsageWindows; ++i) {
              if (ThemeSpecUsesUsageWindowBinding(raw, i) &&
-                 UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i],
-                                    ThemeSpecUsesUsageWindowResetBinding(raw, i))) {
+                 UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
                return true;
              }
            }
@@ -816,6 +819,9 @@ inline uint32_t ThemeSpecLiveChangedFields(
     const Frame& next,
     const String& themeSpecRaw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  // Countdown drawing has one owner: the local reset tick compares the last
+  // rendered text against the current deadline, including new wire values.
+  (void)themeSpecRaw;
   uint32_t fields = 0;
   if (previous.provider != next.provider) {
     fields |= themespec::kThemeSpecFieldProvider;
@@ -832,24 +838,17 @@ inline uint32_t ThemeSpecLiveChangedFields(
   if (previous.weekly != next.weekly) {
     fields |= themespec::kThemeSpecFieldWeekly;
   }
-  if (previous.resetSecs != next.resetSecs &&
-      ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
-    fields |= themespec::kThemeSpecFieldReset;
-  }
+
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
+    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
       fields |= ThemeSpecUsageWindowField(i);
     }
-    if (previous.usageWindows[i].resetSecs != next.usageWindows[i].resetSecs &&
-        ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
-      fields |= themespec::kThemeSpecFieldUsageWindowReset;
-    }
+
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
     if (UsageWindowChanged(
             previous.providerSlots[i],
-            next.providerSlots[i],
-            ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i))) {
+            next.providerSlots[i])) {
       fields |= themespec::kThemeSpecFieldProviderSlots;
     }
   }
@@ -1172,6 +1171,8 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.agentName = String(doc["agentName"] | "");
   if (out.agentName.length() > 40) out.agentName = "Agent";
   out.animationsDisabled = doc["animationsDisabled"] | false;
+  out.agentAlertsMuted = doc["agentAlertsMuted"] | false;
+  out.agentReminderSecs = doc["agentReminderSecs"] | 0;
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
   out.hasClockSchedule = hasClockSchedule;
