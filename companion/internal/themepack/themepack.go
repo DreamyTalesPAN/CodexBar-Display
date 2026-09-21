@@ -570,11 +570,12 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 
 func validateSpriteAssets(spec themespec.Spec, assets []File) error {
 	refs := referencedSpriteAssets(spec)
-	if len(refs) == 0 {
-		return nil
-	}
 	for _, asset := range assets {
-		if _, ok := refs[asset.Entry.Path]; !ok {
+		_, referenced := refs[asset.Entry.Path]
+		// Every .cbi/.cba file in the pack is written to the device, so an
+		// unreferenced sprite must be validated too. Otherwise a malformed
+		// asset still reaches storage and only fails later in the renderer.
+		if !referenced && !hasSpriteExtension(asset.Entry.Path) {
 			continue
 		}
 		if err := validateSpriteAsset(asset.Entry.Path, asset.Data); err != nil {
@@ -582,6 +583,11 @@ func validateSpriteAssets(spec themespec.Spec, assets []File) error {
 		}
 	}
 	return nil
+}
+
+func hasSpriteExtension(devicePath string) bool {
+	lower := strings.ToLower(devicePath)
+	return strings.HasSuffix(lower, ".cbi") || strings.HasSuffix(lower, ".cba")
 }
 
 func referencedSpriteAssets(spec themespec.Spec) map[string]struct{} {

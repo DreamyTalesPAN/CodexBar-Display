@@ -22,6 +22,7 @@
 #include "screensaver_preview.h"
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
+#include "sprite_asset_validator_file.h"
 #include "renderer_esp8266.h"
 #include "wifi_recovery_policy.h"
 #include "wifi_setup_portal.h"
@@ -2381,9 +2382,9 @@ String healthJSON() {
 
   String out;
   // Sized for the full payload: #280 added the clock block, #279 the reset
-  // trust block and #284 the standby state, and growing this String mid-build
-  // fragments a tight heap.
-  out.reserve(1344);
+  // trust block, #284 the standby state and #221 the failing sprite asset
+  // path, and growing this String mid-build fragments a tight heap.
+  out.reserve(1408);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -2430,6 +2431,8 @@ String healthJSON() {
   out += snapshot.themeSpecRenderOk ? "true" : "false";
   out += ",\"renderError\":";
   appendJSONNullableString(out, snapshot.themeSpecRenderError);
+  out += ",\"renderErrorAsset\":";
+  appendJSONNullableString(out, snapshot.themeSpecRenderErrorAsset);
   out += ",\"renderFailures\":";
   out += String(snapshot.themeSpecRenderFailures);
   out += ",\"cbaCompletedFrames\":";
@@ -2681,6 +2684,7 @@ void finishAssetUploadRequest() {
 }
 
 bool assetPathLooksGif(const String& path);
+bool assetPathLooksSprite(const String& path);
 
 void discardPartialAssetUpload() {
   if (!LittleFS.begin() || !LittleFS.exists(kAssetUploadTemporaryPath)) {
@@ -2692,6 +2696,19 @@ void discardPartialAssetUpload() {
 }
 
 bool validateCompletedAssetUpload() {
+  if (assetPathLooksSprite(assetUploadPath)) {
+    // CBI/CBA assets get the same semantic gate as GIFs: a sprite that cannot
+    // be decoded must never be promoted, because the renderer would otherwise
+    // skip it and leave a silently missing image area.
+    const codexbar_display::esp8266::SpriteValidationError spriteError =
+        codexbar_display::esp8266::ValidateSpriteAssetFile(kAssetUploadTemporaryPath);
+    if (spriteError == codexbar_display::esp8266::SpriteValidationError::None) {
+      return true;
+    }
+    setAssetUploadError(
+        codexbar_display::esp8266::SpriteValidationErrorText(spriteError));
+    return false;
+  }
   if (!assetPathLooksGif(assetUploadPath)) {
     return true;
   }
@@ -2713,7 +2730,8 @@ bool validateCompletedAssetUpload() {
 
 bool promoteCompletedAssetUpload() {
   // LittleFS rename is atomic and replaces an existing destination only after
-  // the temporary file has been fully written and, for GIFs, validated.
+  // the temporary file has been fully written and, for GIF and CBI/CBA sprite
+  // assets, semantically validated.
   if (!LittleFS.rename(kAssetUploadTemporaryPath, assetUploadPath)) {
     setAssetUploadError("commit asset failed");
     return false;
@@ -2746,6 +2764,12 @@ bool assetPathLooksGif(const String& path) {
   String lower = path;
   lower.toLowerCase();
   return lower.endsWith(".gif");
+}
+
+bool assetPathLooksSprite(const String& path) {
+  String lower = path;
+  lower.toLowerCase();
+  return lower.endsWith(".cbi") || lower.endsWith(".cba");
 }
 
 bool assetUploadContentLengthWouldExceedLimits(const HTTPUpload& upload) {

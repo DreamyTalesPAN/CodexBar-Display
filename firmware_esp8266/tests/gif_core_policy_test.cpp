@@ -1007,6 +1007,104 @@ bool testConnectedSetupRendererShowsSafeIpFallback(const char* rendererPath) {
       "connected setup renderer must display a validated IP line and an unavailable state");
 }
 
+// Content hashes prove transported bytes, not renderability. Every uploaded
+// sprite must pass the same semantic gate as a GIF before it is promoted.
+bool testUploadedSpriteAssetsAreValidatedBeforePromotion(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t start = mainSource.find("bool validateCompletedAssetUpload()");
+  const std::size_t end = mainSource.find("bool promoteCompletedAssetUpload()", start);
+  if (!expect(
+          start != std::string::npos && end != std::string::npos,
+          "the completed-upload validation gate must remain discoverable")) {
+    return false;
+  }
+  const std::string gate = mainSource.substr(start, end - start);
+  if (!expect(
+          gate.find("assetPathLooksSprite") != std::string::npos &&
+              gate.find("ValidateSpriteAssetFile") != std::string::npos &&
+              gate.find("SpriteValidationErrorText") != std::string::npos,
+          "CBI/CBA uploads must be semantically validated before promotion")) {
+    return false;
+  }
+  // The sprite branch has to run before the GIF-only early return, otherwise
+  // malformed sprites would pass through unchecked again.
+  if (!expect(
+          gate.find("assetPathLooksSprite") < gate.find("if (!assetPathLooksGif"),
+          "the sprite gate must precede the GIF-only early return")) {
+    return false;
+  }
+  if (!expect(
+          mainSource.find("committed = validateCompletedAssetUpload() && promoteCompletedAssetUpload()") !=
+                  std::string::npos &&
+              mainSource.find("validateCompletedAssetUpload() &&\n        promoteCompletedAssetUpload()") !=
+                  std::string::npos,
+          "both the Cable and HTTP upload paths must validate before promoting")) {
+    return false;
+  }
+  return expect(
+      mainSource.find("bool assetPathLooksSprite(const String& path)") != std::string::npos &&
+          mainSource.find("\".cbi\"") != std::string::npos &&
+          mainSource.find("\".cba\"") != std::string::npos,
+      "sprite detection must cover both CBI and CBA extensions");
+}
+
+// A sprite that cannot be decoded must surface as an unhealthy render state
+// with a stable code, not be silently skipped.
+bool testSpriteDecodeFailuresReachRenderHealth(const char* themeSpecRendererPath) {
+  const std::string renderer = readFile(themeSpecRendererPath);
+  const std::size_t drawStart = renderer.find("void drawStaticSpriteAsset(");
+  const std::size_t drawEnd = renderer.find("AnimatedSpriteCache* animatedSpriteCacheForPath(", drawStart);
+  if (!expect(
+          drawStart != std::string::npos && drawEnd != std::string::npos,
+          "the static sprite draw path must remain discoverable")) {
+    return false;
+  }
+  const std::string staticDraw = renderer.substr(drawStart, drawEnd - drawStart);
+  if (!expect(
+          countOccurrences(staticDraw, "markSpriteRenderFailed(") == 4 &&
+              staticDraw.find("cbi_header_invalid") != std::string::npos &&
+              staticDraw.find("cbi_palette_invalid") != std::string::npos &&
+              staticDraw.find("cbi_truncated") != std::string::npos &&
+              staticDraw.find("cbi_row_invalid") != std::string::npos,
+          "every static sprite decode failure must set a stable diagnostic code")) {
+    return false;
+  }
+  const std::size_t dispatchStart = renderer.find("void drawSpriteAsset(");
+  const std::size_t dispatchEnd = renderer.find("void resetAnimatedSpriteCaches(", dispatchStart);
+  if (!expect(
+          dispatchStart != std::string::npos && dispatchEnd != std::string::npos,
+          "the sprite dispatch path must remain discoverable")) {
+    return false;
+  }
+  const std::string dispatch = renderer.substr(dispatchStart, dispatchEnd - dispatchStart);
+  if (!expect(
+          dispatch.find("sprite_asset_missing") != std::string::npos &&
+              dispatch.find("sprite_header_unsupported") != std::string::npos &&
+              dispatch.find("sprite_unreadable") != std::string::npos &&
+              dispatch.find("cba_render_failed") != std::string::npos,
+          "unreadable, missing, and unsupported sprites must set a diagnostic code")) {
+    return false;
+  }
+  // Low heap is transient and keeps its own counter, so it must not inflate
+  // renderFailures the way a broken asset does.
+  if (!expect(
+          renderer.find("setSpriteRenderError(\"low_heap_cba_buffer\"") != std::string::npos &&
+              renderer.find("markSpriteRenderFailed(\"low_heap_cba_buffer\"") == std::string::npos,
+          "transient low-heap sprite errors must not count as asset render failures")) {
+    return false;
+  }
+  if (!expect(
+          renderer.find("themeSpecRenderFailures += 1") != std::string::npos &&
+              renderer.find("const char* ThemeSpecRenderErrorAsset()") != std::string::npos,
+          "render health must expose the failing sprite asset for support")) {
+    return false;
+  }
+  return expect(
+      renderer.find("lastSpriteErrorAsset == assetPath") != std::string::npos &&
+          renderer.find("lastSpriteErrorAsset == cache.path") != std::string::npos,
+      "a sprite that decodes again must clear its own render error");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1116,6 +1214,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testConnectedSetupRendererShowsSafeIpFallback(argv[4])) {
+    return 1;
+  }
+  if (!testUploadedSpriteAssetsAreValidatedBeforePromotion(argv[3])) {
+    return 1;
+  }
+  if (!testSpriteDecodeFailuresReachRenderHealth(argv[1])) {
     return 1;
   }
 
