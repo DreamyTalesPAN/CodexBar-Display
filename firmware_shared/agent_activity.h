@@ -48,9 +48,9 @@ struct Announcement {
   bool initialized = false;
   bool running = false;
   uint32_t startedAt = 0;
-  bool Update(const char* phase, bool enabled, bool dedicated, uint32_t now, uint16_t reminderSecs = 0) {
+  bool Update(const char* phase, bool enabled, uint32_t now, uint16_t reminderSecs = 0) {
     const State state = DisplayState(phase);
-    const bool eligible = enabled && !dedicated &&
+    const bool eligible = enabled &&
         state != State::Idle && state != State::Unknown;
     if (!initialized || !eligible) startedAt = now;
     if (initialized && state != previous) {

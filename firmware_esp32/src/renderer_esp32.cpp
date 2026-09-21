@@ -80,7 +80,7 @@ void RendererESP32::DrawUsage(app::RuntimeContext& ctx) {
   DrawReset(ctx, remain);
 }
 
-void RendererESP32::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
+bool RendererESP32::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   tft.fillRect(kContentX, kResetY, kContentW, 28, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setTextFont(4);
@@ -88,6 +88,7 @@ void RendererESP32::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   tft.printf("Reset in %s", app::FormatDuration(remainSecs).c_str());
 
   ctx.lastRenderedSecs = remainSecs;
+  return true;
 }
 
 void RendererESP32::barColorsForProvider(const String& provider, uint16_t& sessionColor, uint16_t& weeklyColor) const {

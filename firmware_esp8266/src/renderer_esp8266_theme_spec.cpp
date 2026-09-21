@@ -1230,20 +1230,8 @@ void ResetThemeSpecAnnouncement() {
 void TickThemeSpecAnnouncement() {
   const auto& frame = CurrentFrame();
   const bool ready = frame.hasThemeSpec && !frame.hasError && currentThemeSpecRenderedSuccessfully();
-  bool dedicated = false;
-  const auto state = agentactivity::DisplayState(frame.activity.c_str());
-  if (ready) {
-    const auto frameData = currentThemeSpecFrameData();
-    for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
-      const auto& p = cachedThemeSpecScene.primitives[i];
-      const int index = static_cast<int>(state) - 1;
-      const char* asset = index >= 0 ? p.stateAssets[index] : nullptr;
-      dedicated = dedicated || (asset && std::strcmp(asset,
-          themespec::CompiledStateAssetPathFor(cachedThemeSpecScene, p, frameData)) == 0);
-    }
-  }
   const bool enabled = ready && !frame.animationsDisabled && !frame.agentAlertsMuted && frame.agentName.length() > 0;
-  SetAnnouncementInverted(announcement.Update(frame.activity.c_str(), enabled, dedicated, millis(), frame.agentReminderSecs));
+  SetAnnouncementInverted(announcement.Update(frame.activity.c_str(), enabled, millis(), frame.agentReminderSecs));
 }
 
 bool TickThemeSpecGifs() {

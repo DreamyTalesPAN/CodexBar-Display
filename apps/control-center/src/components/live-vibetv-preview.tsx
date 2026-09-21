@@ -655,10 +655,6 @@ function ThemeSpecSVG({
   const sprites = useMemo(() => decodeSpriteAssets(assets), [assets]);
   const primitives = spec.primitives || spec.p || [];
   const state = agentThemeState(frame.activity);
-  const dedicated = primitives.some(p => {
-    const asset = (p.stateAssets || p.sa)?.[state];
-    return Boolean(asset && asset === activeAssetPath(p, frame));
-  });
   const reducedMotion = useSyncExternalStore(subscribeReducedMotion, reducedMotionSnapshot, serverReducedMotionSnapshot);
   const motionEnabled = animate && !frame.animationsDisabled && !reducedMotion;
   const hasAgentStatus = Boolean(frame.agentName);
@@ -669,7 +665,7 @@ function ThemeSpecSVG({
     lastState.current = { state, themeId };
     const node = svgRef.current;
     if (!node || !motionEnabled || !hasAgentStatus || frame.agentAlertsMuted ||
-        dedicated || ["idle", "unavailable"].includes(state)) return;
+        ["idle", "unavailable"].includes(state)) return;
     let animation: Animation | undefined;
     const blink = () => {
       animation?.cancel();
@@ -684,7 +680,7 @@ function ThemeSpecSVG({
     const timer = state === "needs_you" && (frame.agentReminderSecs ?? 0) > 0
       ? window.setInterval(blink, frame.agentReminderSecs! * 1000) : undefined;
     return () => { animation?.cancel(); window.clearInterval(timer); };
-  }, [state, motionEnabled, dedicated, hasAgentStatus, themeId, frame.agentAlertsMuted, frame.agentReminderSecs]);
+  }, [state, motionEnabled, hasAgentStatus, themeId, frame.agentAlertsMuted, frame.agentReminderSecs]);
   const renderedFrame = frame.agentName ? { ...frame, label: agentStatusText(frame.activity, frame.agentName) } : frame;
   const animationFps = useMemo(
     () => (motionEnabled ? maximumAnimatedSpriteFps(sprites) : 0),

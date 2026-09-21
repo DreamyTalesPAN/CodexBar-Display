@@ -70,19 +70,19 @@ for a new state; this is not a limit on approved existing loops. Use one stable
 scene and animate only the necessary region. Do not independently regenerate
 the whole background for each frame.
 
-Choose the fallback **per state**: use the dedicated asset when one exists;
-otherwise use the shared announcement and persistent label text. A theme does
+Choose artwork **per state**: use the dedicated asset when one exists.
+Every theme also uses the shared announcement and persistent label text. A theme does
 not need five custom animations to participate. Intentionally calm Idle behavior
 remains valid, including Mini's eyes-only Idle.
 
 The Control Center owns the presentation preferences centrally: Show agent activity,
 Blink, repeat waiting reminders (5/15 minutes or never), and local quiet hours.
-Do not implement separate theme settings or timers. Quiet hours suppress fallback
+Do not implement separate theme settings or timers. Quiet hours suppress all
 pulses while the status line and dedicated artwork remain current. Turning agent
 activity off returns the header to its usage label and the scene to idle. Reduced
 motion overrides all animation. None of these controls change the usage source.
 
-The universal fallback inverts the **entire composed display**, including the
+The universal announcement (also the fallback without state artwork) inverts the **entire composed display**, including the
 status line, twice:
 
 | Time after transition | Display |

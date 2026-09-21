@@ -2557,39 +2557,39 @@ void testAgentReminderAndResetTextChanges() {
   TEST_ASSERT_EQUAL_UINT32(0, codexbar_display::core::ThemeSpecLiveChangedFields(before, after, spec));
   TEST_ASSERT_TRUE(ResetTextChanged(before.resetSecs, after.resetSecs));
   codexbar_display::agentactivity::Announcement a;
-  TEST_ASSERT_FALSE(a.Update("idle", true, false, 1000, 300));
-  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, false, 2000, 300));
-  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, false, 2550, 300));
-  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, false, 301999, 300));
-  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, false, 302000, 300));
-  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", false, false, 302001, 300));
-  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, false, 302002, 300));
-  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, false, 902002, 0));
-  TEST_ASSERT_FALSE(a.Update("idle", true, false, 903000, 300));
+  TEST_ASSERT_FALSE(a.Update("idle", true, 1000, 300));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, 2000, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 2550, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 301999, 300));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, 302000, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", false, 302001, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 302002, 300));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 902002, 0));
+  TEST_ASSERT_FALSE(a.Update("idle", true, 903000, 300));
 }
 
 void testAgentAnnouncementIsTwoHardPulses() {
   codexbar_display::agentactivity::Announcement a;
-  TEST_ASSERT_FALSE(a.Update("idle", true, false, 1000));
-  TEST_ASSERT_TRUE(a.Update("working", true, false, 2000));
-  TEST_ASSERT_TRUE(a.Update("tool_use", true, false, 2199));
-  TEST_ASSERT_FALSE(a.Update("thinking", true, false, 2200));
-  TEST_ASSERT_FALSE(a.Update("working", true, false, 2349));
-  TEST_ASSERT_TRUE(a.Update("working", true, false, 2350));
-  TEST_ASSERT_TRUE(a.Update("working", true, false, 2549));
-  TEST_ASSERT_FALSE(a.Update("working", true, false, 2550));
-  TEST_ASSERT_FALSE(a.Update("working", true, false, 3000));
-  TEST_ASSERT_TRUE(a.Update("waiting_for_permission", true, false, 4000));
-  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", false, false, 4050));
-  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, false, 4100));
-  TEST_ASSERT_FALSE(a.Update("done", true, true, 5000));
-  TEST_ASSERT_TRUE(a.Update("error", true, false, 6000));
-  TEST_ASSERT_FALSE(a.Update("unavailable", true, false, 6100));
-  TEST_ASSERT_FALSE(a.Update("idle", true, false, 6200));
+  TEST_ASSERT_FALSE(a.Update("idle", true, 1000));
+  TEST_ASSERT_TRUE(a.Update("working", true, 2000));
+  TEST_ASSERT_TRUE(a.Update("tool_use", true, 2199));
+  TEST_ASSERT_FALSE(a.Update("thinking", true, 2200));
+  TEST_ASSERT_FALSE(a.Update("working", true, 2349));
+  TEST_ASSERT_TRUE(a.Update("working", true, 2350));
+  TEST_ASSERT_TRUE(a.Update("working", true, 2549));
+  TEST_ASSERT_FALSE(a.Update("working", true, 2550));
+  TEST_ASSERT_FALSE(a.Update("working", true, 3000));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_permission", true, 4000));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", false, 4050));
+  TEST_ASSERT_FALSE(a.Update("waiting_for_answer", true, 4100));
+  TEST_ASSERT_TRUE(a.Update("done", true, 5000));
+  TEST_ASSERT_TRUE(a.Update("error", true, 6000));
+  TEST_ASSERT_FALSE(a.Update("unavailable", true, 6100));
+  TEST_ASSERT_FALSE(a.Update("idle", true, 6200));
   a = {};
-  TEST_ASSERT_FALSE(a.Update("done", true, false, 0xFFFFFF00u));
-  TEST_ASSERT_TRUE(a.Update("error", true, false, 0xFFFFFFF0u));
-  TEST_ASSERT_FALSE(a.Update("error", true, false, 0x00000216u));
+  TEST_ASSERT_FALSE(a.Update("done", true, 0xFFFFFF00u));
+  TEST_ASSERT_TRUE(a.Update("error", true, 0xFFFFFFF0u));
+  TEST_ASSERT_FALSE(a.Update("error", true, 0x00000216u));
 }
 
 void testAgentStateAssetsAndStatusKeepUsageIndependent() {

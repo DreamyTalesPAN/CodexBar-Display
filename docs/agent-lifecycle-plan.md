@@ -326,8 +326,8 @@ VibeTV's existing locked runtime config; provider settings stay with CodexBar.
 The master switch affects presentation, not observation. Quiet hours use the
 host's local timezone, preserve status text and artwork, and suppress pulses.
 Host Reduce Motion still overrides all animation. Reminders use the same two
-pulse announcement and stop when the observed waiting state ends. Existing
-sprite themes retain their dedicated artwork instead of fallback inversions.
+pulse announcement and stop when the observed waiting state ends. Paul explicitly requested blinking for all themes, with the same off switch.
+Sprite themes retain their artwork and also receive the shared inversions.
 
 The photographed single row is Codex's weekly usage. The installed CodexBar
 0.56.8 executable itself returned `primary: null`, a weekly secondary window
@@ -341,6 +341,7 @@ Only bound countdowns with changed text are redrawn; unrelated partial draws
 no longer mark undrawn countdowns as updated. The obsolete minute-bucket cache
 was deleted. The same display comparison also applies to the ESP32 reset tick.
 
-The ESP8266 percentage warning is adjusted from 46.0% to 46.1% for the new
-settings transport. The absolute 486,000-byte image limit, 350,000-byte gzip
-limit and 82% RAM limit remain unchanged.
+The ESP8266 build remains within the original 46.0% flash warning and hard
+limits of 486,000 firmware bytes, 350,000 gzip bytes and 82% RAM. Removing the
+per-sprite blink exception offsets the settings cost. Reset diagnostics count
+actual redraws rather than no-op checks of unbound provider clocks.

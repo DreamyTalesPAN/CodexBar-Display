@@ -492,7 +492,7 @@ bool RendererESP8266::DrawClock(app::RuntimeContext& ctx) {
 #endif
 }
 
-void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
+bool RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
@@ -515,16 +515,18 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {
-      return;
+      return true;
     }
 #endif
     display::MarkThemeSpecCountdownsRendered();
-    return;
+    return false;
   }
   (void)remainSecs;
+  return false;
 #else
   (void)remainSecs;
   probe::DrawReset(ctx);
+  return true;
 #endif
 }
 

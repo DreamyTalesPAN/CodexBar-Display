@@ -93,7 +93,7 @@ describe("agent theme announcements", () => {
     result.rerender(view("done", {}, pack, "other-theme"));
     expect(animate).toHaveBeenCalledTimes(1);
   });
-  it("keeps dedicated sprites and reduced motion quiet", () => {
+  it("blinks with dedicated sprites but respects reduced motion", () => {
     const dedicated: ThemeRenderPack = {
       ...pack,
       spec: {
@@ -103,12 +103,12 @@ describe("agent theme announcements", () => {
     };
     const result = render(view("idle", {}, dedicated));
     result.rerender(view("done", {}, dedicated));
-    expect(animate).not.toHaveBeenCalled();
+    expect(animate).toHaveBeenCalledTimes(1);
     vi.mocked(window.matchMedia).mockReturnValue({
       matches: true,
     } as MediaQueryList);
     result.rerender(view("error"));
-    expect(animate).not.toHaveBeenCalled();
+    expect(animate).toHaveBeenCalledTimes(1);
   });
 });
 

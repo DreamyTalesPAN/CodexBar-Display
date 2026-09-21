@@ -4501,9 +4501,10 @@ void loop() {
       runtimeCtx.screenDirty = true;
 #else
       const unsigned long renderStartUs = micros();
-      renderer.DrawReset(runtimeCtx, remain);
-      drawFirmwareUpdateNotice();
-      recordRenderPartial("reset", micros() - renderStartUs);
+      if (renderer.DrawReset(runtimeCtx, remain)) {
+        drawFirmwareUpdateNotice();
+        recordRenderPartial("reset", micros() - renderStartUs);
+      }
 #endif
     }
   }
