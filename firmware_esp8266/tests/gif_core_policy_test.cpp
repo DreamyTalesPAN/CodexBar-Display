@@ -1242,6 +1242,15 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
           "persistent shared-buffer contention must be reported as a transient error")) {
     return false;
   }
+  // A valid 480-row sprite needs 60 resume ticks while holding the buffer, so
+  // counting contended attempts alone would report ordinary animation as a
+  // fault. The streak may only grow while the owner makes no progress.
+  if (!expect(
+          renderer.find("owner->nextRow != cbaBufferContentionOwnerRow") != std::string::npos &&
+              renderer.find("cbaBufferContentionOwnerRow = owner->nextRow;") != std::string::npos,
+          "contention may only count while the buffer owner makes no progress")) {
+    return false;
+  }
   const std::size_t transientStart = renderer.find("void setSpriteRenderError(const char* code, const char* assetPath) {");
   if (!expect(transientStart != std::string::npos, "the transient sprite error path must remain discoverable")) {
     return false;

@@ -673,7 +673,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			message = "Provider is off."
 			reported = ""
 		} else if _, retained := retainedSuccess[setting.ID]; retained &&
-			!providerReadinessIsTerminal(readiness, readinessApplies) {
+			!providerIsDiscontinued(setting, readiness, readinessApplies) {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 			if reported != "" {
@@ -764,7 +764,18 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 // arrive, so the retained snapshot never becomes live again. Reporting it as
 // stale would let the setup step keep offering the old percentage for the
 // whole retention window, so this state outranks a retained reading.
-func providerReadinessIsTerminal(readiness providerReadinessRecord, readinessApplies bool) bool {
+//
+// The background provider scan reports it through setting.Health, and the
+// exact readiness record through its own status. After a Companion restart
+// only the background state exists, so both have to count.
+func providerIsDiscontinued(
+	setting codexbar.ProviderSetting,
+	readiness providerReadinessRecord,
+	readinessApplies bool,
+) bool {
+	if setting.Health == codexbar.ProviderHealthUnsupported {
+		return true
+	}
 	return readinessApplies && readiness.Status == codexbar.ProviderUnsupported
 }
 

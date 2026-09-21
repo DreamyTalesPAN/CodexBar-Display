@@ -152,6 +152,29 @@ func TestPreferencesReportDiscontinuedProviderOverRetainedUsage(t *testing.T) {
 	}
 }
 
+// After a Companion restart there is no in-memory readiness record, and only
+// the background scan reports the provider as discontinued. The retained
+// snapshot must not win in that window either.
+func TestPreferencesReportDiscontinuedProviderWithoutReadinessRecord(t *testing.T) {
+	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	collectedAt := now.Add(-2 * time.Hour)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadiness = nil
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "gemini", Frame: protocol.Frame{Provider: "gemini", Session: 12}, CollectedAt: collectedAt, Retained: true,
+		}}}, true
+	}
+
+	items := server.providerDescriptors([]codexbar.ProviderSetting{{
+		ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthUnsupported,
+	}})
+	if len(items) != 1 || items[0].Health.State != "unsupported" {
+		t.Fatalf("retained usage hid the discontinued provider after restart: %#v", items)
+	}
+}
+
 func TestPreferencesMarkFreshCollectorProviderHealthy(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	collectedAt := time.Date(2026, 7, 28, 12, 45, 0, 0, time.UTC)
