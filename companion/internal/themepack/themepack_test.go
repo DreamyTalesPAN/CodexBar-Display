@@ -405,6 +405,62 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 	}
 }
 
+// A CBA is composed in a full-frame buffer, so its rendered size is capped at
+// 80x80 even though a source sprite may be up to 480px. A pack that renders
+// larger must be rejected before installation starts writing to the device.
+func TestLoadRejectsAnimatedSpriteRenderedAboveBufferLimit(t *testing.T) {
+	oversizedFrame := "CBA1\n100 100 2 4\n1\n#FFFFFF\n" +
+		strings.Repeat("100a\n", 200)
+	smallFrame := "CBA1\n40 40 2 4\n1\n#FFFFFF\n" + strings.Repeat("40a\n", 80)
+
+	for _, tc := range []struct {
+		name    string
+		spec    string
+		data    string
+		wantErr bool
+	}{
+		{
+			// Omitted primitive dimensions mean the asset draws at its own
+			// size, so the source dimensions decide the buffer.
+			name:    "asset larger than the buffer with implicit size",
+			spec:    `{"v":1,"id":"big-cba","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"a":"/themes/u/anim.cba"}]}`,
+			data:    oversizedFrame,
+			wantErr: true,
+		},
+		{
+			// A small asset scaled up past the buffer fails the same way.
+			name:    "small asset rendered above the buffer",
+			spec:    `{"v":1,"id":"scaled-cba","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":100,"h":100,"a":"/themes/u/anim.cba"}]}`,
+			data:    smallFrame,
+			wantErr: true,
+		},
+		{
+			// A large source asset explicitly scaled into the buffer is fine.
+			name:    "large asset scaled into the buffer",
+			spec:    `{"v":1,"id":"scaled-down-cba","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":80,"h":80,"a":"/themes/u/anim.cba"}]}`,
+			data:    oversizedFrame,
+			wantErr: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := writeThemePackWithSpec(t, tc.spec, []themePackTestAsset{
+				{path: "/themes/u/anim.cba", file: "assets/anim.cba", data: tc.data},
+			})
+
+			_, err := Load(dir)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "renders animated sprite") {
+					t.Fatalf("expected render-size rejection, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("pack scaled into the buffer should load: %v", err)
+			}
+		})
+	}
+}
+
 func TestRepositoryThemePacksLoadWithRenderableAssets(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "theme-packs")
 	entries, err := os.ReadDir(root)

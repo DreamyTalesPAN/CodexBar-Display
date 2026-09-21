@@ -40,6 +40,12 @@ const (
 	// kMaxSpriteDimension and kSpriteLineMaxBytes in firmware_esp8266.
 	maxSpriteDimension = 480
 	maxSpriteRowChars  = 512
+
+	// An animated sprite is composed in a full-frame buffer before it is
+	// pushed, so its rendered size is bounded by that buffer rather than by
+	// the source dimension limit. kMaxCbaBufferWidth/Height in
+	// firmware_esp8266 theme_spec_runtime_policy.h.
+	maxAnimatedSpriteRenderDimension = 80
 )
 
 // Pack categories. `kind` marks the file format; `usage` marks what the pack is
@@ -588,7 +594,84 @@ func validateSpriteAssets(spec themespec.Spec, assets []File) error {
 			return err
 		}
 	}
+	return validateAnimatedSpriteRenderSizes(spec, assets)
+}
+
+// validateAnimatedSpriteRenderSizes rejects a CBA whose rendered size exceeds
+// the firmware's frame buffer. The source dimension limit is not enough: the
+// renderer composes the effective size from the primitive, falling back to the
+// asset's own dimensions, and CbaBufferBytes() returns zero above 80x80. Such
+// a theme would otherwise install and only then fail with cba_render_failed.
+func validateAnimatedSpriteRenderSizes(spec themespec.Spec, assets []File) error {
+	animated := map[string]bool{}
+	for _, asset := range assets {
+		if !strings.HasSuffix(strings.ToLower(asset.Entry.Path), ".cba") {
+			continue
+		}
+		animated[asset.Entry.Path] = true
+	}
+	if len(animated) == 0 {
+		return nil
+	}
+	sourceSizes := map[string][2]int{}
+	for _, asset := range assets {
+		if !animated[asset.Entry.Path] {
+			continue
+		}
+		lines := spriteAssetLines(asset.Data)
+		if len(lines) == 0 || lines[0] != "CBA1" {
+			continue
+		}
+		width, height, _, _, err := parseSpriteDimensions(lines[1:], true)
+		if err != nil {
+			continue
+		}
+		sourceSizes[asset.Entry.Path] = [2]int{width, height}
+	}
+	for index, primitive := range spec.Primitives {
+		if primitive.Type != "sprite" && primitive.Type != "image" {
+			continue
+		}
+		for _, assetPath := range primitiveSpriteAssets(primitive) {
+			if !animated[assetPath] {
+				continue
+			}
+			width, height := primitive.Width, primitive.Height
+			if source, ok := sourceSizes[assetPath]; ok {
+				// An omitted primitive dimension means the asset draws at its
+				// own size, which is exactly what the renderer buffers.
+				if width <= 0 {
+					width = source[0]
+				}
+				if height <= 0 {
+					height = source[1]
+				}
+			}
+			if width > maxAnimatedSpriteRenderDimension ||
+				height > maxAnimatedSpriteRenderDimension {
+				return fmt.Errorf(
+					"primitives[%d] renders animated sprite %s at %dx%d, max %dx%d",
+					index, assetPath, width, height,
+					maxAnimatedSpriteRenderDimension,
+					maxAnimatedSpriteRenderDimension)
+			}
+		}
+	}
 	return nil
+}
+
+func primitiveSpriteAssets(primitive themespec.Primitive) []string {
+	paths := []string{}
+	if primitive.AssetPath != "" {
+		paths = append(paths, primitive.AssetPath)
+	}
+	for _, assetPath := range primitive.StateAssets {
+		paths = append(paths, assetPath)
+	}
+	for _, assetPath := range primitive.ProviderAssets {
+		paths = append(paths, assetPath)
+	}
+	return paths
 }
 
 func hasSpriteExtension(devicePath string) bool {
