@@ -49,17 +49,28 @@ inline void RenderYield() {
 #endif
 }
 
+// An idle window is measured, current and simply has no deadline because
+// nothing has been used yet. It is not an error: the renderer says "No active
+// session" for it instead of the stale/offline "Reset unavailable".
+//
+// The state rides in resetSecs as a negative sentinel rather than in a
+// separate flag. The ESP8266 image sits at its flash ceiling, and a flag on
+// every window plus its legacy-slot copies cost more than this build can
+// spend. Every reader already branches on "resetSecs <= 0" before formatting a
+// duration, so the sentinel lands on paths that are checked anyway. A basis
+// the device cannot stand behind never carries it, so the trust path keeps its
+// own wording.
+constexpr int64_t kResetSecsIdle = -1;
+
+inline bool ResetSecsAreIdle(int64_t resetSecs) {
+  return resetSecs < 0;
+}
+
 struct UsageWindowData {
   const char* label = "";
   int percent = 0;
   int64_t resetSecs = 0;
   bool available = false;
-  // True when the window is measured, current and simply has no deadline
-  // because nothing has been used yet. An idle window is not an error: the
-  // renderer says "No active session" for it instead of the stale/offline
-  // "Reset unavailable". Stays false whenever the basis is untrustworthy, so
-  // the trust path keeps its own wording.
-  bool idle = false;
 };
 
 struct FrameData {
@@ -77,12 +88,10 @@ struct FrameData {
   int usageSlot1Percent = 0;
   int64_t usageSlot1ResetSecs = 0;
   bool usageSlot1Available = false;
-  bool usageSlot1Idle = false;
   const char* usageSlot2Label = "";
   int usageSlot2Percent = 0;
   int64_t usageSlot2ResetSecs = 0;
   bool usageSlot2Available = false;
-  bool usageSlot2Idle = false;
   // Cross-provider reset rows: every configured provider with its soonest
   // window reset, independent of which provider owns this frame.
   UsageWindowData providerSlots[kMaxThemeSpecProviderSlots];
@@ -641,14 +650,12 @@ inline UsageWindowData LegacyUsageSlotFor(const FrameData& frame, int slotIndex)
       out.percent = frame.usageSlot1Percent;
       out.resetSecs = frame.usageSlot1ResetSecs;
       out.available = frame.usageSlot1Available;
-      out.idle = frame.usageSlot1Idle;
       break;
     case 1:
       out.label = frame.usageSlot2Label;
       out.percent = frame.usageSlot2Percent;
       out.resetSecs = frame.usageSlot2ResetSecs;
       out.available = frame.usageSlot2Available;
-      out.idle = frame.usageSlot2Idle;
       break;
     default:
       break;
@@ -738,7 +745,7 @@ inline bool RootResetIsIdle(const FrameData& frame) {
     if (!frame.usageWindows[i].available) {
       continue;
     }
-    if (!frame.usageWindows[i].idle) {
+    if (!ResetSecsAreIdle(frame.usageWindows[i].resetSecs)) {
       return false;
     }
     sawWindow = true;
@@ -806,7 +813,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(slot.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (slot.resetSecs <= 0) {
-        std::snprintf(out, outSize, "%s", ResetTextFor(slot.idle));
+        std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(slot.resetSecs)));
       } else {
         FormatDuration(slot.resetSecs, out, outSize);
       }
@@ -832,7 +839,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(window.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (window.resetSecs <= 0) {
-        std::snprintf(out, outSize, "%s", ResetTextFor(window.idle));
+        std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
       } else {
         FormatDuration(window.resetSecs, out, outSize);
       }
@@ -950,17 +957,14 @@ inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& f
 
     int64_t resetSecs = 0;
     bool available = false;
-    bool idle = false;
     if (providerSlotIndex >= 0) {
       const UsageWindowData& slot = frame.providerSlots[providerSlotIndex];
       resetSecs = slot.resetSecs;
       available = slot.available;
-      idle = slot.idle;
     } else {
       const UsageWindowData window = BoundUsageWindowFor(frame, key, usageSlotIndex);
       resetSecs = window.resetSecs;
       available = window.available;
-      idle = window.idle;
     }
     // An unavailable window renders empty, not as the unavailable text, and
     // collapsing the line would hide prose the theme wants standing.
@@ -971,7 +975,7 @@ inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& f
       return nullptr;
     }
     sawUnavailableCountdown = true;
-    allIdle = allIdle && idle;
+    allIdle = allIdle && ResetSecsAreIdle(resetSecs);
     i += keyLen + 2;
   }
   if (!sawUnavailableCountdown) {

@@ -198,6 +198,10 @@ theme cannot bind its way around this.
   says `No active session` for it (`UsageWindowIsIdle`). This never applies
   while trust is `stale` or usage is unavailable, so the wording above stays
   exactly as strict as before.
+  Inside the renderer that state travels as a negative `resetSecs` on the
+  frame it builds (`kResetSecsIdle`), because the ESP8266 image has no flash
+  left for a separate per-window flag. This is renderer-internal only: the wire
+  format is unchanged and still sends `0` for a window with no deadline.
 - The device does not parse `resetAgeSecs`. The age is exactly
   `kResetTrustHorizonSecs - resetTrustSecs`, so it derives it from the budget.
 - A `live` frame whose derived basis age exceeds 150 seconds is shown as

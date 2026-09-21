@@ -343,36 +343,49 @@ inline int64_t CurrentProviderSlotRemainingSecs(
   return remain < 0 ? 0 : remain;
 }
 
-// A window with nothing scheduled to reset, as opposed to one the device can
-// no longer stand behind. The host sends a window with no deadline at all when
-// the provider reports the window but names no reset time -- an idle Claude
-// account with no session started is exactly that. That is a healthy, current
-// reading, so the renderer must not report it with the stale/offline wording.
+// Whether a window with no deadline may be reported as idle at all. The host
+// sends a window without any reset time when the provider reports the window
+// but names no deadline -- an idle Claude account with no session started is
+// exactly that, and it is a healthy, current reading. A basis the device can
+// no longer stand behind keeps the stale/offline wording instead.
 //
-// A deadline that merely counted down to zero here is not idle: it reached the
-// reset the host did send, and the next frame carries the new one.
+// This costs a full trust evaluation, so callers walking several windows hoist
+// it out of their loop. The ESP8266 image sits at its flash ceiling and cannot
+// spend bytes on repeating it per window.
+inline bool ResetBasisAllowsIdle(const RuntimeState& state, unsigned long nowMillis) {
+  return state.hasFrame &&
+         !state.current.usageUnavailable &&
+         CurrentResetTrust(state.reset, nowMillis) != ResetTrust::kStale;
+}
+
+// The idle rule itself, over a basis the caller already judged. A window is
+// idle when the host sent it with no deadline at all.
+//
+// A deadline that merely counted down to zero is not idle: it reached the
+// reset the host did send, and the next frame carries the new one. That is why
+// this reads the deadline the host sent, never the locally counted remainder.
+inline bool WindowIsIdle(bool basisAllowsIdle, bool available, int64_t sentResetSecs) {
+  return basisAllowsIdle && available && sentResetSecs == 0;
+}
+
 inline bool UsageWindowIsIdle(
     const RuntimeState& state,
     size_t slotIndex,
     unsigned long nowMillis) {
-  return state.hasFrame &&
-         !state.current.usageUnavailable &&
-         CurrentResetTrust(state.reset, nowMillis) != ResetTrust::kStale &&
-         slotIndex < kMaxUsageWindows &&
-         state.current.usageWindows[slotIndex].available &&
-         state.current.usageWindows[slotIndex].resetSecs == 0;
+  return slotIndex < kMaxUsageWindows &&
+         WindowIsIdle(ResetBasisAllowsIdle(state, nowMillis),
+                      state.current.usageWindows[slotIndex].available,
+                      state.current.usageWindows[slotIndex].resetSecs);
 }
 
 inline bool ProviderSlotIsIdle(
     const RuntimeState& state,
     size_t slotIndex,
     unsigned long nowMillis) {
-  return state.hasFrame &&
-         !state.current.usageUnavailable &&
-         CurrentResetTrust(state.reset, nowMillis) != ResetTrust::kStale &&
-         slotIndex < kMaxProviderSlots &&
-         state.current.providerSlots[slotIndex].available &&
-         state.current.providerSlots[slotIndex].resetSecs == 0;
+  return slotIndex < kMaxProviderSlots &&
+         WindowIsIdle(ResetBasisAllowsIdle(state, nowMillis),
+                      state.current.providerSlots[slotIndex].available,
+                      state.current.providerSlots[slotIndex].resetSecs);
 }
 
 inline bool IsSafeIdentifier(const String& value, bool allowSourceChars) {

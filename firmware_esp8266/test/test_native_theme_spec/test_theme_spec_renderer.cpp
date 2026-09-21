@@ -11,6 +11,7 @@
 namespace {
 
 using codexbar_display::themespec::FrameData;
+using codexbar_display::themespec::kResetSecsIdle;
 using codexbar_display::themespec::GifCommand;
 using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
@@ -568,9 +569,8 @@ void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
   frame.label = "Claude";
   frame.usageSlot1Label = "Session";
   frame.usageSlot1Percent = 0;
-  frame.usageSlot1ResetSecs = 0;
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
   frame.usageSlot1Available = true;
-  frame.usageSlot1Idle = true;
   frame.usageSlot2Label = "Weekly";
   frame.usageSlot2Percent = 32;
   frame.usageSlot2ResetSecs = 4 * 24 * 3600;
@@ -602,14 +602,12 @@ void testIdleCountdownCollapsesForCompactResetAliases() {
   FrameData frame;
   frame.usageSlot1Label = "Session";
   frame.usageSlot1Percent = 0;
-  frame.usageSlot1ResetSecs = 0;
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
   frame.usageSlot1Available = true;
-  frame.usageSlot1Idle = true;
   frame.providerSlots[0].label = "Claude";
   frame.providerSlots[0].percent = 0;
-  frame.providerSlots[0].resetSecs = 0;
+  frame.providerSlots[0].resetSecs = kResetSecsIdle;
   frame.providerSlots[0].available = true;
-  frame.providerSlots[0].idle = true;
   frame.providerSlots[1].label = "Codex";
   frame.providerSlots[1].percent = 40;
   frame.providerSlots[1].resetSecs = 3 * 3600;
@@ -641,7 +639,6 @@ void testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot() {
   stale.usageSlot1Percent = 0;
   stale.usageSlot1ResetSecs = 0;
   stale.usageSlot1Available = true;
-  stale.usageSlot1Idle = false;
 
   const char* spec =
       R"JSON({"v":1,"id":"idle-vs-stale","rev":1,"p":[
@@ -656,7 +653,7 @@ void testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", staleSink.commands[2].text.c_str());
 
   FrameData idle = stale;
-  idle.usageSlot1Idle = true;
+  idle.usageSlot1ResetSecs = kResetSecsIdle;
   RecordingSink idleSink;
   TEST_ASSERT_TRUE(renderSpec(spec, idle, idleSink));
   TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[1].text.c_str());
@@ -669,13 +666,11 @@ void testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot() {
 void testMixedIdleAndStaleCountdownsKeepTheUnavailableWording() {
   FrameData frame;
   frame.usageSlot1Label = "Session";
-  frame.usageSlot1ResetSecs = 0;
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
   frame.usageSlot1Available = true;
-  frame.usageSlot1Idle = true;
   frame.usageSlot2Label = "Weekly";
   frame.usageSlot2ResetSecs = 0;
   frame.usageSlot2Available = true;
-  frame.usageSlot2Idle = false;
 
   const char* spec =
       R"JSON({"v":1,"id":"mixed-reset","rev":1,"p":[
@@ -694,9 +689,8 @@ void testRootResetTokenFollowsTheWindowsItSummarises() {
   FrameData idle;
   idle.resetSecs = 0;
   idle.usageWindows[0].label = "Session";
-  idle.usageWindows[0].resetSecs = 0;
+  idle.usageWindows[0].resetSecs = kResetSecsIdle;
   idle.usageWindows[0].available = true;
-  idle.usageWindows[0].idle = true;
 
   const char* spec =
       R"JSON({"v":1,"id":"root-reset","rev":1,"p":[
