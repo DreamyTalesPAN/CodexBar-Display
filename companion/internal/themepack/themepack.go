@@ -773,13 +773,36 @@ func validateSpriteTokenLineLengths(devicePath string, lines []string) error {
 		}
 	}
 	for index := 0; index < tokenLines; index++ {
-		if len(lines[index]) > maxSpriteTokenLineChars {
+		// ReadTrimmedLine() collapses an interior whitespace run to a single
+		// separator before it fills the token buffer, and ParseCbaHeader()
+		// reads a run as one separator too. Measuring the uncollapsed line
+		// would reject a header the device validates and renders.
+		if collapsed := collapseHeaderSeparators(lines[index]); len(collapsed) > maxSpriteTokenLineChars {
 			return fmt.Errorf(
 				"sprite asset %s line %d is %d bytes, max %d for a header line",
-				devicePath, index, len(lines[index]), maxSpriteTokenLineChars)
+				devicePath, index, len(collapsed), maxSpriteTokenLineChars)
 		}
 	}
 	return nil
+}
+
+// collapseHeaderSeparators mirrors ReadTrimmedLine() on the device, which
+// stores one space for each interior whitespace run.
+func collapseHeaderSeparators(line string) string {
+	var builder strings.Builder
+	pendingSeparator := false
+	for i := 0; i < len(line); i++ {
+		if line[i] == ' ' || line[i] == '\t' {
+			pendingSeparator = builder.Len() > 0
+			continue
+		}
+		if pendingSeparator {
+			builder.WriteByte(' ')
+			pendingSeparator = false
+		}
+		builder.WriteByte(line[i])
+	}
+	return builder.String()
 }
 
 // validateRawSpriteLineLengths mirrors readSpriteLine() on the device, which

@@ -1215,6 +1215,15 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
           "a transient sprite error must record itself as non-fatal")) {
     return false;
   }
+  // Two animated sprites share one frame buffer, so B running out of heap
+  // must not bury A's corrupt data behind ordinary memory pressure.
+  if (!expect(
+          renderer.substr(transientStart, transientEnd - transientStart)
+                  .find("if (lastSpriteErrorIsDecodeFailure && lastAnimatedSpriteError[0] != '\\0') {") !=
+              std::string::npos,
+          "a transient error must not overwrite another asset's decode failure")) {
+    return false;
+  }
   const std::size_t cancelEnd = renderer.find("\n}", cancelStart);
   if (!expect(cancelEnd != std::string::npos, "the animated frame cancel path must be delimited")) {
     return false;
