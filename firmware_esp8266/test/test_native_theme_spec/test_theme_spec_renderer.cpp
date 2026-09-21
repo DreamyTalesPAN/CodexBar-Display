@@ -560,9 +560,9 @@ void testUsageUnavailableKeepsThemeAndProgress() {
 // A customer received a VibeTV showing "Resets in Reset unavailable" on the
 // Claude Creature theme: Session at 0% with no active Claude session, so
 // Anthropic sent no session deadline, and the theme's hard-coded "Resets in "
-// prefix stood in front of the unavailable text. The line has to collapse to
-// the unavailable text, and a template that still substitutes real values must
-// keep its prefix.
+// prefix stood in front of the unavailable text. The line has to collapse to a
+// single string, and an idle window says so plainly instead of reporting a
+// fault; a template that still substitutes real values keeps its prefix.
 void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
   FrameData frame;
   frame.label = "Claude";
@@ -570,6 +570,7 @@ void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
   frame.usageSlot1Percent = 0;
   frame.usageSlot1ResetSecs = 0;
   frame.usageSlot1Available = true;
+  frame.usageSlot1Idle = true;
   frame.usageSlot2Label = "Weekly";
   frame.usageSlot2Percent = 32;
   frame.usageSlot2ResetSecs = 4 * 24 * 3600;
@@ -585,12 +586,13 @@ void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
   TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
-  // The idle session line collapses instead of reading "Resets in Reset unavailable".
-  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+  // The idle session line collapses instead of reading "Resets in Reset unavailable",
+  // and names the idle state rather than reporting a fault.
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
   // A window that does have a deadline is untouched.
   TEST_ASSERT_EQUAL_STRING("Resets in 4d 0h", sink.commands[2].text.c_str());
   // A template carrying another real value keeps substituting in place.
-  TEST_ASSERT_EQUAL_STRING("Session Reset unavailable", sink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Session No active session", sink.commands[3].text.c_str());
 }
 
 // The compact aliases bind the same countdown as the long names; a theme that
@@ -602,10 +604,12 @@ void testIdleCountdownCollapsesForCompactResetAliases() {
   frame.usageSlot1Percent = 0;
   frame.usageSlot1ResetSecs = 0;
   frame.usageSlot1Available = true;
+  frame.usageSlot1Idle = true;
   frame.providerSlots[0].label = "Claude";
   frame.providerSlots[0].percent = 0;
   frame.providerSlots[0].resetSecs = 0;
   frame.providerSlots[0].available = true;
+  frame.providerSlots[0].idle = true;
   frame.providerSlots[1].label = "Codex";
   frame.providerSlots[1].percent = 40;
   frame.providerSlots[1].resetSecs = 3 * 3600;
@@ -621,9 +625,101 @@ void testIdleCountdownCollapsesForCompactResetAliases() {
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
   TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
-  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[2].text.c_str());
   TEST_ASSERT_EQUAL_STRING("Resets in 3h 0m", sink.commands[3].text.c_str());
+}
+
+// The idle wording is only for a reading the device stands behind. A countdown
+// the device cannot justify keeps saying so: an idle window and a stale one
+// look identical in the numbers (percent 0, no deadline) and only the trust
+// flag tells them apart. Getting this backwards would report a fresh, healthy
+// account as broken, or dress up an untrustworthy screen as merely idle.
+void testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot() {
+  FrameData stale;
+  stale.usageSlot1Label = "Session";
+  stale.usageSlot1Percent = 0;
+  stale.usageSlot1ResetSecs = 0;
+  stale.usageSlot1Available = true;
+  stale.usageSlot1Idle = false;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-vs-stale","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"},
+        {"t":"tx","x":0,"y":20,"b":"us1r"}
+      ]})JSON";
+
+  RecordingSink staleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, stale, staleSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", staleSink.commands[1].text.c_str());
+  // A bare binding carries no prose to collapse and reports the same state.
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", staleSink.commands[2].text.c_str());
+
+  FrameData idle = stale;
+  idle.usageSlot1Idle = true;
+  RecordingSink idleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, idle, idleSink));
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[2].text.c_str());
+}
+
+// One template binding two countdowns cannot claim everything is merely idle
+// while one of its values is untrustworthy, so a mixed line stays on the
+// unavailable wording.
+void testMixedIdleAndStaleCountdownsKeepTheUnavailableWording() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = 0;
+  frame.usageSlot1Available = true;
+  frame.usageSlot1Idle = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2ResetSecs = 0;
+  frame.usageSlot2Available = true;
+  frame.usageSlot2Idle = false;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"mixed-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"{usageSlot1Reset} / {usageSlot2Reset}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+}
+
+// The root {reset} token owns no window of its own. It may only claim the idle
+// state when every window the frame carries is idle; otherwise a stale basis
+// would be dressed up as an idle account.
+void testRootResetTokenFollowsTheWindowsItSummarises() {
+  FrameData idle;
+  idle.resetSecs = 0;
+  idle.usageWindows[0].label = "Session";
+  idle.usageWindows[0].resetSecs = 0;
+  idle.usageWindows[0].available = true;
+  idle.usageWindows[0].idle = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"root-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Reset in {reset}"}
+      ]})JSON";
+
+  RecordingSink idleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, idle, idleSink));
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[1].text.c_str());
+
+  // No windows at all: nothing says the account is idle, so the wording stays.
+  FrameData bare;
+  bare.resetSecs = 0;
+  RecordingSink bareSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, bare, bareSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", bareSink.commands[1].text.c_str());
+
+  // Usage that could not be read at all is never idle.
+  FrameData unavailable = idle;
+  unavailable.usageUnavailable = true;
+  RecordingSink unavailableSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, unavailable, unavailableSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", unavailableSink.commands[1].text.c_str());
 }
 
 void testUsageWindowOwnershipHidesCompleteMissingLane() {
@@ -3517,6 +3613,34 @@ void testMalformedAndControlLinesNeverBecomeFrames() {
   TEST_ASSERT_TRUE(event.frameAccepted);
 }
 
+// The customer's exact wire frame: Claude with an idle 5-hour session (no
+// deadline at all) beside a weekly window that does have one. The device must
+// read the session window as idle and the weekly one as a running countdown,
+// which is what separates "nothing started yet" from "cannot be trusted".
+void testIdleWindowIsDistinguishedFromAnUntrustworthyOne() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* idleSession =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","session":0,"weekly":32,)JSON"
+      R"JSON("resetSecs":345600,"resetTrustSecs":18000,"resetSource":"claude:secondary","resetTrust":"live",)JSON"
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":32,"resetSecs":345600}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleSession, 1000, event));
+
+  // The session window carries no deadline and is current: idle, not stale.
+  TEST_ASSERT_TRUE(UsageWindowIsIdle(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  // The weekly window has a real deadline, so it is a countdown, not idle.
+  TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 1, 1000));
+  TEST_ASSERT_EQUAL_INT64(345600, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+
+  // Past the trust horizon nothing is idle any more: the basis is stale and
+  // the renderer must go back to reporting the countdown as unavailable.
+  const unsigned long stale = 1000 + 6 * kHourMs;
+  TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 0, stale));
+  TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 1, stale));
+}
+
 // The selected provider can lack a reset while another fresh provider has one.
 // providerResetSlots still ships that countdown, so trust must not hinge on the
 // legacy root projection being positive.
@@ -3577,6 +3701,9 @@ int main() {
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
   RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
+  RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);
+  RUN_TEST(testMixedIdleAndStaleCountdownsKeepTheUnavailableWording);
+  RUN_TEST(testRootResetTokenFollowsTheWindowsItSummarises);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testTokenTotalsRenderCompactAndTruncated);
   RUN_TEST(testProviderSlotBindingsRenderLabelAndFormattedReset);
@@ -3701,5 +3828,6 @@ int main() {
   RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
   RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
+  RUN_TEST(testIdleWindowIsDistinguishedFromAnUntrustworthyOne);
   return UNITY_END();
 }

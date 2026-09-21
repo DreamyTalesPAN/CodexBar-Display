@@ -4573,3 +4573,40 @@ issue scope, or release permission never implies UI permission.
   regression tests, and this approval record.
 - Scope: Corrections to the already approved fix only. No new customer-visible
   behavior, no release, and no firmware flash is included.
+
+## 2026-09-21 — Idle countdown reads as idle, not as a fault (#448)
+
+- User approval: Marcus asked for issue #448 to be worked to a solution and
+  fully tested ("bitte arbeite an einer lösung für dieses issue. und teste es
+  komplett durch"). The issue's own acceptance criteria require that a session
+  at 0 % with no deadline "must not look like an error"; the previously
+  approved collapse removed the doubled sentence but still showed the error
+  wording, so this completes what was approved rather than changing it.
+- Approved customer-visible result: A usage window that is current and measured
+  but has no reset time at all now reads `No active session` instead of
+  `Reset unavailable`. On the Claude theme with an idle session the bottom
+  line therefore reads `No active session` where it previously read
+  `Resets in Reset unavailable` and then `Reset unavailable`. A line that
+  also carries a label renders `Session No active session`. Nothing else
+  changes: a countdown the device cannot stand behind (stale basis, offline
+  beyond the trust horizon, usage unreadable) keeps `Reset unavailable`, a
+  countdown that merely ran out keeps `Reset unavailable` until the next frame
+  carries the new deadline, and one line binding both an idle and an
+  untrustworthy countdown keeps `Reset unavailable`. Windows with a real
+  deadline still render `Resets in 4d 0h`. No theme design, layout, provider
+  flow, or setup copy is changed, and both strings are 17 characters so no
+  shipped lane changes its fitted font size.
+- Evidence: 152/152 native ThemeSpec renderer tests, including a new test that
+  feeds the customer's exact wire frame (Claude, session 0 % with no
+  `resetSecs`, weekly with one) and asserts the session window is read as idle
+  while the weekly one keeps counting down, and asserts that past the trust
+  horizon nothing is idle any more. 543/543 Control Center tests, including new
+  tests separating an idle window from a countdown that ran out and from a
+  mixed line. No hardware test with an idle Claude account is claimed.
+- Approved files: The idle window state in `theme_spec_renderer_core.h` and
+  `codexbar_display_core.h`, its frame wiring in
+  `renderer_esp8266_theme_spec.cpp`, its mirror in `live-vibetv-preview.tsx`,
+  the renderer and theme-pack tests, the protocol and theme-guide notes, and
+  this approval record.
+- Scope: This wording fix only. No release, no firmware flash for a customer,
+  and no change to the stale/offline trust path.

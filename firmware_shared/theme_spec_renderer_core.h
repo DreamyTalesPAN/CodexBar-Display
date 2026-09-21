@@ -54,6 +54,12 @@ struct UsageWindowData {
   int percent = 0;
   int64_t resetSecs = 0;
   bool available = false;
+  // True when the window is measured, current and simply has no deadline
+  // because nothing has been used yet. An idle window is not an error: the
+  // renderer says "No active session" for it instead of the stale/offline
+  // "Reset unavailable". Stays false whenever the basis is untrustworthy, so
+  // the trust path keeps its own wording.
+  bool idle = false;
 };
 
 struct FrameData {
@@ -71,10 +77,12 @@ struct FrameData {
   int usageSlot1Percent = 0;
   int64_t usageSlot1ResetSecs = 0;
   bool usageSlot1Available = false;
+  bool usageSlot1Idle = false;
   const char* usageSlot2Label = "";
   int usageSlot2Percent = 0;
   int64_t usageSlot2ResetSecs = 0;
   bool usageSlot2Available = false;
+  bool usageSlot2Idle = false;
   // Cross-provider reset rows: every configured provider with its soonest
   // window reset, independent of which provider owns this frame.
   UsageWindowData providerSlots[kMaxThemeSpecProviderSlots];
@@ -633,12 +641,14 @@ inline UsageWindowData LegacyUsageSlotFor(const FrameData& frame, int slotIndex)
       out.percent = frame.usageSlot1Percent;
       out.resetSecs = frame.usageSlot1ResetSecs;
       out.available = frame.usageSlot1Available;
+      out.idle = frame.usageSlot1Idle;
       break;
     case 1:
       out.label = frame.usageSlot2Label;
       out.percent = frame.usageSlot2Percent;
       out.resetSecs = frame.usageSlot2ResetSecs;
       out.available = frame.usageSlot2Available;
+      out.idle = frame.usageSlot2Idle;
       break;
     default:
       break;
@@ -704,6 +714,42 @@ inline void FormatTokenCount(int64_t value, char* out, size_t outSize) {
   }
 }
 
+// A countdown the device cannot stand behind reads "Reset unavailable": the
+// basis went stale or offline and the number would be a guess. A window that
+// is measured and current but simply has no deadline is a different state --
+// nothing has been used, so nothing is scheduled to reset. Saying "Reset
+// unavailable" there reported a fault for a perfectly healthy account.
+constexpr const char* kResetUnavailableText = "Reset unavailable";
+constexpr const char* kResetIdleText = "No active session";
+
+inline const char* ResetTextFor(bool idle) {
+  return idle ? kResetIdleText : kResetUnavailableText;
+}
+
+// The root {reset} token carries no window of its own. It is idle only when
+// every window the frame does carry is idle, so a genuinely stale basis (which
+// leaves no idle window behind) keeps the unavailable wording.
+inline bool RootResetIsIdle(const FrameData& frame) {
+  if (frame.usageUnavailable) {
+    return false;
+  }
+  bool sawWindow = false;
+  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
+    if (!frame.usageWindows[i].available) {
+      continue;
+    }
+    if (!frame.usageWindows[i].idle) {
+      return false;
+    }
+    sawWindow = true;
+  }
+  return sawWindow;
+}
+
+inline const char* RootResetUnavailableText(const FrameData& frame) {
+  return ResetTextFor(RootResetIsIdle(frame));
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -737,7 +783,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   }
   if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0 || std::strcmp(key, "r") == 0) {
     if (frame.usageUnavailable || frame.resetSecs <= 0) {
-      std::snprintf(out, outSize, "Reset unavailable");
+      std::snprintf(out, outSize, "%s", RootResetUnavailableText(frame));
     } else {
       FormatDuration(frame.resetSecs, out, outSize);
     }
@@ -760,7 +806,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(slot.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (slot.resetSecs <= 0) {
-        std::snprintf(out, outSize, "Reset unavailable");
+        std::snprintf(out, outSize, "%s", ResetTextFor(slot.idle));
       } else {
         FormatDuration(slot.resetSecs, out, outSize);
       }
@@ -786,7 +832,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(window.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (window.resetSecs <= 0) {
-        std::snprintf(out, outSize, "Reset unavailable");
+        std::snprintf(out, outSize, "%s", ResetTextFor(window.idle));
       } else {
         FormatDuration(window.resetSecs, out, outSize);
       }
@@ -848,7 +894,8 @@ inline void AppendText(char* out, size_t outSize, size_t& outLen, const char* te
   }
 }
 
-// True when a template's only substitution is an unavailable countdown.
+// The replacement for a template whose only substitution is a countdown with
+// no deadline, or nullptr when the template must substitute in place.
 //
 // Shipped themes hard-code the prose around the countdown ("Resets in {us1r}",
 // "Reset in {usageSlot1Reset}"). Substituting the unavailable text in place
@@ -860,9 +907,14 @@ inline void AppendText(char* out, size_t outSize, size_t& outLen, const char* te
 // Only the countdown tokens are probed. A template that also substitutes a
 // label or a percentage still carries information worth rendering, so it keeps
 // its in-place substitution.
-inline bool TemplateIsOnlyUnavailableCountdown(const char* raw, const FrameData& frame) {
+//
+// An idle window collapses to the idle wording instead. Mixed idle and stale
+// countdowns in one template keep the unavailable wording: the line cannot
+// claim everything is merely idle while one of its values is untrustworthy.
+inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& frame) {
   raw = SafeText(raw);
   bool sawUnavailableCountdown = false;
+  bool allIdle = true;
   for (size_t i = 0; raw[i] != '\0';) {
     if (raw[i] != '{') {
       ++i;
@@ -875,7 +927,7 @@ inline bool TemplateIsOnlyUnavailableCountdown(const char* raw, const FrameData&
     char key[32] = {0};
     const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
     if (keyLen == 0 || keyLen >= sizeof(key)) {
-      return false;
+      return nullptr;
     }
     std::memcpy(key, raw + i + 1, keyLen);
 
@@ -893,32 +945,39 @@ inline bool TemplateIsOnlyUnavailableCountdown(const char* raw, const FrameData&
          (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0));
     if (!isCountdown) {
       // Any other substitution carries its own information.
-      return false;
+      return nullptr;
     }
 
     int64_t resetSecs = 0;
     bool available = false;
+    bool idle = false;
     if (providerSlotIndex >= 0) {
       const UsageWindowData& slot = frame.providerSlots[providerSlotIndex];
       resetSecs = slot.resetSecs;
       available = slot.available;
+      idle = slot.idle;
     } else {
       const UsageWindowData window = BoundUsageWindowFor(frame, key, usageSlotIndex);
       resetSecs = window.resetSecs;
       available = window.available;
+      idle = window.idle;
     }
     // An unavailable window renders empty, not as the unavailable text, and
     // collapsing the line would hide prose the theme wants standing.
     if (!available) {
-      return false;
+      return nullptr;
     }
     if (resetSecs > 0) {
-      return false;
+      return nullptr;
     }
     sawUnavailableCountdown = true;
+    allIdle = allIdle && idle;
     i += keyLen + 2;
   }
-  return sawUnavailableCountdown;
+  if (!sawUnavailableCountdown) {
+    return nullptr;
+  }
+  return ResetTextFor(allIdle);
 }
 
 inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* out, size_t outSize) {
@@ -932,12 +991,12 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
       (std::strstr(raw, "{reset}") != nullptr ||
        std::strstr(raw, "{resetCountdown}") != nullptr ||
        std::strstr(raw, "{r}") != nullptr)) {
-    std::snprintf(out, outSize, "Reset unavailable");
+    std::snprintf(out, outSize, "%s", RootResetUnavailableText(frame));
     return;
   }
 
-  if (TemplateIsOnlyUnavailableCountdown(raw, frame)) {
-    std::snprintf(out, outSize, "Reset unavailable");
+  if (const char* countdownOnly = TemplateCountdownOnlyText(raw, frame)) {
+    std::snprintf(out, outSize, "%s", countdownOnly);
     return;
   }
 

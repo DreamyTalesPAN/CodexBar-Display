@@ -175,20 +175,24 @@ type FrameData = {
     percent: number;
     resetSecs: number;
     available: boolean;
+    idle: boolean;
   }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
   usageSlot1ResetSecs: number;
   usageSlot1Available: boolean;
+  usageSlot1Idle: boolean;
   usageSlot2Label: string;
   usageSlot2Percent: number;
   usageSlot2ResetSecs: number;
   usageSlot2Available: boolean;
+  usageSlot2Idle: boolean;
   providerSlots: Array<{
     label: string;
     percent: number;
     resetSecs: number;
     available: boolean;
+    idle: boolean;
   }>;
   activity: string;
   sessionTokens: number;
@@ -213,20 +217,22 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "used",
   usageWindows: [
-    { label: "Session", percent: 64, resetSecs: 3600, available: true },
-    { label: "Weekly", percent: 28, resetSecs: 7200, available: true },
+    { label: "Session", percent: 64, resetSecs: 3600, available: true, idle: false },
+    { label: "Weekly", percent: 28, resetSecs: 7200, available: true, idle: false },
   ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
   usageSlot1ResetSecs: 3600,
   usageSlot1Available: true,
+  usageSlot1Idle: false,
   usageSlot2Label: "Weekly",
   usageSlot2Percent: 28,
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
+  usageSlot2Idle: false,
   providerSlots: [
-    { label: "Claude", percent: 64, resetSecs: 3600, available: true },
-    { label: "Codex", percent: 28, resetSecs: 12000, available: true },
+    { label: "Claude", percent: 64, resetSecs: 3600, available: true, idle: false },
+    { label: "Codex", percent: 28, resetSecs: 12000, available: true, idle: false },
   ],
   activity: "preview",
   sessionTokens: 1_400_000,
@@ -1278,15 +1284,18 @@ export function buildFrameData(
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
+      idle: windowIsIdle(slot.resetSecs),
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
     usageSlot1ResetSecs: remainingResetSeconds(slot1?.resetSecs),
     usageSlot1Available: Boolean(slot1),
+    usageSlot1Idle: Boolean(slot1) && windowIsIdle(slot1?.resetSecs),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
     usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
+    usageSlot2Idle: Boolean(slot2) && windowIsIdle(slot2?.resetSecs),
     providerSlots: (displayFrame.providerSlots || [])
       .filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()))
       .map((slot) => ({
@@ -1294,6 +1303,7 @@ export function buildFrameData(
         percent: clampPercent(slot.percent),
         resetSecs: remainingResetSeconds(slot.resetSecs),
         available: true,
+        idle: windowIsIdle(slot.resetSecs),
       })),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
@@ -1443,6 +1453,28 @@ export function themeRenderPackMatchesActiveRevision(
 // device never shows.
 const RESET_UNAVAILABLE = "Reset unavailable";
 
+// Mirrors kResetIdleText in theme_spec_renderer_core.h. A window that is
+// current and measured but has no deadline is idle, not broken: the customer
+// simply has not started a session yet, so nothing is scheduled to reset.
+const RESET_IDLE = "No active session";
+
+// Mirrors UsageWindowIsIdle in codexbar_display_core.h: a window the host sent
+// without any deadline at all has nothing scheduled to reset. A deadline that
+// merely counted down to zero since the frame was saved is not idle -- it
+// reached the reset the host did send.
+function windowIsIdle(sourceResetSecs: number | undefined): boolean {
+  return (sourceResetSecs ?? 0) <= 0;
+}
+
+// Mirrors RootResetIsIdle in theme_spec_renderer_core.h. The root {reset}
+// token owns no window, so it is idle only when every window the frame does
+// carry is idle; a stale basis leaves no idle window behind and keeps the
+// unavailable wording.
+function rootResetIsIdle(frame: FrameData): boolean {
+  const windows = frame.usageWindows.filter((window) => window.available);
+  return windows.length > 0 && windows.every((window) => window.idle);
+}
+
 export function renderTextPrimitive(
   primitive: ThemePrimitive,
   frame: FrameData,
@@ -1459,52 +1491,62 @@ export function renderTextPrimitive(
   // shipped themes hard-code "Resets in {usageSlot1Reset}", and substituting
   // in place produced "Resets in Reset unavailable" on a customer's screen.
   if (frame.resetSecs <= 0 && /\{reset\}|\{resetCountdown\}|\{r\}/.test(raw)) {
-    return RESET_UNAVAILABLE;
+    return rootResetIsIdle(frame) ? RESET_IDLE : RESET_UNAVAILABLE;
   }
-  if (templateIsOnlyUnavailableCountdown(raw, frame)) {
-    return RESET_UNAVAILABLE;
+  const countdownOnly = templateCountdownOnlyText(raw, frame);
+  if (countdownOnly) {
+    return countdownOnly;
   }
   return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
 }
 
-// Mirrors TemplateIsOnlyUnavailableCountdown in theme_spec_renderer_core.h.
+// Mirrors TemplateCountdownOnlyText in theme_spec_renderer_core.h.
 // A template that also substitutes a label or a percentage still carries
 // information, so it keeps its in-place substitution; an unavailable window
 // renders empty rather than as the unavailable text, so it is left alone too.
-function templateIsOnlyUnavailableCountdown(
+function templateCountdownOnlyText(
   raw: string,
   frame: FrameData,
-): boolean {
+): string | null {
   const tokens = raw.match(/\{([a-zA-Z0-9_.-]+)\}/g);
   if (!tokens || tokens.length === 0) {
-    return false;
+    return null;
   }
   let sawUnavailableCountdown = false;
+  let allIdle = true;
   for (const token of tokens) {
     const key = token.slice(1, -1);
     const slot = slotCountdownFor(key, frame);
     if (!slot) {
-      return false;
+      return null;
     }
     if (!slot.available || slot.resetSecs > 0) {
-      return false;
+      return null;
     }
     sawUnavailableCountdown = true;
+    allIdle = allIdle && slot.idle;
   }
-  return sawUnavailableCountdown;
+  if (!sawUnavailableCountdown) {
+    return null;
+  }
+  return allIdle ? RESET_IDLE : RESET_UNAVAILABLE;
 }
 
 function slotCountdownFor(
   key: string,
   frame: FrameData,
-): { available: boolean; resetSecs: number } | undefined {
+): { available: boolean; resetSecs: number; idle: boolean } | undefined {
   const usageMatch = /^usage\.(\d+)\.reset$/.exec(key);
   if (usageMatch) {
     const window = frame.usageWindows[Number(usageMatch[1])];
     return window
-      ? { available: window.available, resetSecs: window.resetSecs }
+      ? {
+          available: window.available,
+          resetSecs: window.resetSecs,
+          idle: window.idle,
+        }
       : undefined;
   }
   switch (key) {
@@ -1513,12 +1555,14 @@ function slotCountdownFor(
       return {
         available: frame.usageSlot1Available,
         resetSecs: frame.usageSlot1ResetSecs,
+        idle: frame.usageSlot1Idle,
       };
     case "usageSlot2Reset":
     case "us2r":
       return {
         available: frame.usageSlot2Available,
         resetSecs: frame.usageSlot2ResetSecs,
+        idle: frame.usageSlot2Idle,
       };
     case "providerSlot1Reset":
     case "pv1r":
@@ -1526,6 +1570,7 @@ function slotCountdownFor(
         ? {
             available: frame.providerSlots[0].available,
             resetSecs: frame.providerSlots[0].resetSecs,
+            idle: frame.providerSlots[0].idle,
           }
         : undefined;
     case "providerSlot2Reset":
@@ -1534,6 +1579,7 @@ function slotCountdownFor(
         ? {
             available: frame.providerSlots[1].available,
             resetSecs: frame.providerSlots[1].resetSecs,
+            idle: frame.providerSlots[1].idle,
           }
         : undefined;
     default:
@@ -1596,7 +1642,7 @@ export function boundValue(key: string, frame: FrameData): string {
       return window.label;
     }
     if (field === "reset") {
-      return formatReset(window.resetSecs);
+      return formatReset(window.resetSecs, window.idle);
     }
     return String(window.percent);
   }
@@ -1619,7 +1665,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "reset":
     case "resetCountdown":
     case "r":
-      return formatReset(frame.resetSecs);
+      return formatReset(frame.resetSecs, rootResetIsIdle(frame));
     case "usageSlot1Label":
     case "us1l":
       return frame.usageSlot1Available ? frame.usageSlot1Label : "";
@@ -1629,7 +1675,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot1Reset":
     case "us1r":
       return frame.usageSlot1Available
-        ? formatReset(frame.usageSlot1ResetSecs)
+        ? formatReset(frame.usageSlot1ResetSecs, frame.usageSlot1Idle)
         : "";
     case "usageSlot1Available":
     case "us1a":
@@ -1643,7 +1689,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot2Reset":
     case "us2r":
       return frame.usageSlot2Available
-        ? formatReset(frame.usageSlot2ResetSecs)
+        ? formatReset(frame.usageSlot2ResetSecs, frame.usageSlot2Idle)
         : "";
     case "usageSlot2Available":
     case "us2a":
@@ -1659,7 +1705,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot1Reset":
     case "pv1r":
       return frame.providerSlots[0]?.available
-        ? formatReset(frame.providerSlots[0].resetSecs)
+        ? formatReset(frame.providerSlots[0].resetSecs, frame.providerSlots[0].idle)
         : "";
     case "providerSlot1Available":
     case "pv1a":
@@ -1675,7 +1721,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot2Reset":
     case "pv2r":
       return frame.providerSlots[1]?.available
-        ? formatReset(frame.providerSlots[1].resetSecs)
+        ? formatReset(frame.providerSlots[1].resetSecs, frame.providerSlots[1].idle)
         : "";
     case "providerSlot2Available":
     case "pv2a":
@@ -2241,9 +2287,9 @@ function clampPercent(value?: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function formatReset(seconds?: number): string {
+function formatReset(seconds?: number, idle = false): string {
   if (!seconds || seconds <= 0) {
-    return RESET_UNAVAILABLE;
+    return idle ? RESET_IDLE : RESET_UNAVAILABLE;
   }
   const totalMinutes = Math.floor(seconds / 60);
   const days = Math.floor(totalMinutes / (24 * 60));

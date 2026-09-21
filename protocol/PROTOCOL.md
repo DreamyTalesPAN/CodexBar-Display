@@ -193,6 +193,11 @@ reads the countdown through `CurrentRemainingSecs`, which returns `0` for a
 stale basis, and the ThemeSpec renderer turns `0` into `Reset unavailable`. A
 theme cannot bind its way around this.
 
+- A window the host sends without any deadline is idle, not stale: it is
+  measured and current and simply has nothing scheduled to reset. The renderer
+  says `No active session` for it (`UsageWindowIsIdle`). This never applies
+  while trust is `stale` or usage is unavailable, so the wording above stays
+  exactly as strict as before.
 - The device does not parse `resetAgeSecs`. The age is exactly
   `kResetTrustHorizonSecs - resetTrustSecs`, so it derives it from the budget.
 - A `live` frame whose derived basis age exceeds 150 seconds is shown as

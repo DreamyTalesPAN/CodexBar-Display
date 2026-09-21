@@ -343,6 +343,38 @@ inline int64_t CurrentProviderSlotRemainingSecs(
   return remain < 0 ? 0 : remain;
 }
 
+// A window with nothing scheduled to reset, as opposed to one the device can
+// no longer stand behind. The host sends a window with no deadline at all when
+// the provider reports the window but names no reset time -- an idle Claude
+// account with no session started is exactly that. That is a healthy, current
+// reading, so the renderer must not report it with the stale/offline wording.
+//
+// A deadline that merely counted down to zero here is not idle: it reached the
+// reset the host did send, and the next frame carries the new one.
+inline bool UsageWindowIsIdle(
+    const RuntimeState& state,
+    size_t slotIndex,
+    unsigned long nowMillis) {
+  return state.hasFrame &&
+         !state.current.usageUnavailable &&
+         CurrentResetTrust(state.reset, nowMillis) != ResetTrust::kStale &&
+         slotIndex < kMaxUsageWindows &&
+         state.current.usageWindows[slotIndex].available &&
+         state.current.usageWindows[slotIndex].resetSecs == 0;
+}
+
+inline bool ProviderSlotIsIdle(
+    const RuntimeState& state,
+    size_t slotIndex,
+    unsigned long nowMillis) {
+  return state.hasFrame &&
+         !state.current.usageUnavailable &&
+         CurrentResetTrust(state.reset, nowMillis) != ResetTrust::kStale &&
+         slotIndex < kMaxProviderSlots &&
+         state.current.providerSlots[slotIndex].available &&
+         state.current.providerSlots[slotIndex].resetSecs == 0;
+}
+
 inline bool IsSafeIdentifier(const String& value, bool allowSourceChars) {
   const size_t len = value.length();
   if (len == 0 || len > 31) {

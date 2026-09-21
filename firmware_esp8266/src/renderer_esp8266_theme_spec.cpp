@@ -1101,15 +1101,19 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
     frame.usageWindows[i].resetSecs =
         codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, millis());
     frame.usageWindows[i].available = CurrentFrame().usageWindows[i].available && !CurrentFrame().usageUnavailable;
+    frame.usageWindows[i].idle =
+        codexbar_display::core::UsageWindowIsIdle(RuntimeState(), i, millis());
   }
   frame.usageSlot1Label = frame.usageWindows[0].label;
   frame.usageSlot1Percent = frame.usageWindows[0].percent;
   frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs;
   frame.usageSlot1Available = frame.usageWindows[0].available;
+  frame.usageSlot1Idle = frame.usageWindows[0].idle;
   frame.usageSlot2Label = frame.usageWindows[1].label;
   frame.usageSlot2Percent = frame.usageWindows[1].percent;
   frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs;
   frame.usageSlot2Available = frame.usageWindows[1].available;
+  frame.usageSlot2Idle = frame.usageWindows[1].idle;
   for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecProviderSlots &&
                      i < codexbar_display::core::kMaxProviderSlots; ++i) {
     frame.providerSlots[i].label = CurrentFrame().providerSlots[i].label.c_str();
@@ -1117,6 +1121,8 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
     frame.providerSlots[i].resetSecs =
         codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, millis());
     frame.providerSlots[i].available = CurrentFrame().providerSlots[i].available;
+    frame.providerSlots[i].idle =
+        codexbar_display::core::ProviderSlotIsIdle(RuntimeState(), i, millis());
   }
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
