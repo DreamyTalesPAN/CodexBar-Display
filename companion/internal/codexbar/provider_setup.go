@@ -29,11 +29,18 @@ const (
 	// cookies are readable.
 	ProviderBrowserSignInRequired = "browser_sign_in_required"
 	ProviderPermissionRequired    = "permission_required"
-	ProviderNoUsageAvailable      = "no_usage_available"
-	ProviderTimeout               = "timeout"
-	ProviderConfigError           = "config_error"
-	ProviderEngineError           = "engine_error"
-	ProviderNotConfigured         = "not_configured"
+	// ProviderUnsupported: the provider itself states this account can no
+	// longer use it at all -- not a credential that expired. Google's
+	// consumer Gemini CLI shutdown is the case this exists for: the stored
+	// token is still valid and accepted by userinfo, the account has simply
+	// lost access, so another sign-in is a loop. The remedy is the provider's
+	// own migration guidance, never a re-auth.
+	ProviderUnsupported      = "unsupported"
+	ProviderNoUsageAvailable = "no_usage_available"
+	ProviderTimeout          = "timeout"
+	ProviderConfigError      = "config_error"
+	ProviderEngineError      = "engine_error"
+	ProviderNotConfigured    = "not_configured"
 )
 
 type configPathContextKey struct{}
@@ -616,6 +623,23 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 func classifyProviderError(detail string) string {
 	lower := strings.ToLower(detail)
 	switch {
+	// Two upstream signals, both checked before the auth markers below because
+	// every one of these sentences also names OAuth, credentials or signing in
+	// -- while saying that signing in is exactly what will not help.
+	//
+	// CodexBar exports provider failures as {code, kind, message} with no typed
+	// migration reason, so the message is the contract. The account diagnosis
+	// itself stays upstream: CodexBar reads loadCodeAssist's ineligibleTiers.
+	//
+	// 1. An explicit end-of-support statement.
+	// 2. Upstream's imperative migration remedy. This is deliberately the
+	//    imperative form only. The "...should use CodexBar's Antigravity
+	//    provider instead. Workspace and education accounts should keep using
+	//    Gemini." message offers a conditional aside beside a real repair
+	//    ("Reinstall or update Gemini CLI"), so it stays recoverable.
+	case strings.Contains(lower, "no longer supports"), strings.Contains(lower, "no longer supported"),
+		strings.Contains(lower, "enable codexbar's antigravity provider"):
+		return ProviderUnsupported
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
 		return ProviderTimeout
 	case strings.Contains(lower, "permission"), strings.Contains(lower, "not permitted"), strings.Contains(lower, "access denied"), strings.Contains(lower, "keychain") && (strings.Contains(lower, "denied") || strings.Contains(lower, "locked") || strings.Contains(lower, "not allowed")):
@@ -694,6 +718,12 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
 		result.NextAction = "Allow the requested macOS permission, then check again."
+	case ProviderUnsupported:
+		// No sign-in wording: the account cannot use this provider at all, so
+		// the provider's own message carries the migration path and the row
+		// only says what the customer can still do here.
+		result.Detail = label + " no longer supports this account."
+		result.NextAction = "Read the provider message, then switch this provider off and use another one."
 	case ProviderNoUsageAvailable:
 		result.Detail = "This account does not expose usage data."
 		result.NextAction = "Choose another provider that exposes usage limits."

@@ -1,0 +1,93 @@
+{
+  "generatedAt": "2026-09-21T08:30:16Z",
+  "host": {
+    "codexBarVersion": "0.63.0",
+    "refreshIntervalSeconds": 60,
+    "usageBarsShowUsed": false
+  },
+  "providers": [
+    {
+      "cost": {
+        "last30DaysUSD": 478.4306641199999,
+        "todayUSD": 79.5051444
+      },
+      "credits": {
+        "remaining": 0,
+        "unit": "credits"
+      },
+      "display": {
+        "accentColor": "#49A3B0",
+        "priority": "normal",
+        "sortKey": 0
+      },
+      "enabled": true,
+      "error": null,
+      "id": "codex",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "plan": "Pro 20x"
+      },
+      "name": "Codex",
+      "source": "oauth",
+      "status": null,
+      "updatedAt": "2026-09-21T08:30:15Z",
+      "windows": [
+        {
+          "kind": "weekly",
+          "label": "Weekly",
+          "remainingPercent": 57,
+          "resetAt": "2026-09-26T08:15:28Z",
+          "usedPercent": 43
+        }
+      ]
+    },
+    {
+      "cost": {
+        "last30DaysUSD": 0,
+        "todayUSD": null
+      },
+      "credits": null,
+      "display": {
+        "accentColor": "#CC7C5E",
+        "priority": "normal",
+        "sortKey": 30
+      },
+      "enabled": true,
+      "error": null,
+      "id": "claude",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "plan": "Max 20x"
+      },
+      "name": "Claude",
+      "source": "web",
+      "status": null,
+      "updatedAt": "2026-09-21T08:30:16Z",
+      "windows": [
+        {
+          "kind": "session",
+          "label": "Session",
+          "remainingPercent": 92,
+          "resetAt": "2026-09-21T11:50:00Z",
+          "usedPercent": 8
+        },
+        {
+          "kind": "weekly",
+          "label": "Weekly",
+          "remainingPercent": 27,
+          "resetAt": "2026-09-22T11:00:00Z",
+          "usedPercent": 73
+        },
+        {
+          "kind": "claude-weekly-scoped-fable",
+          "label": "Fable only",
+          "remainingPercent": 0,
+          "resetAt": "2026-09-22T11:00:00Z",
+          "usedPercent": 100
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "staleAfterSeconds": 180
+}

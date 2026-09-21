@@ -137,7 +137,7 @@ jobs:
           echo "CODEXBAR_CONTRACT_ARCHIVE=$archive" >> "$GITHUB_ENV"
           ditto -x -k "$archive" "$RUNNER_TEMP/codexbar-contract"
           echo "CODEXBAR_CONTRACT_BIN=$RUNNER_TEMP/codexbar-contract/CodexBar.app/Contents/Helpers/CodexBarCLI" >> "$GITHUB_ENV"
-          echo "CODEXBAR_CONTRACT_VERSION=0.46.0" >> "$GITHUB_ENV"
+          echo "CODEXBAR_CONTRACT_VERSION=0.63.0" >> "$GITHUB_ENV"
       - name: Extract hash-pinned Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
