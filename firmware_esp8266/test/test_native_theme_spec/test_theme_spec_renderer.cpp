@@ -887,6 +887,28 @@ void testUsageWindowResetCountdownsTickIndependently() {
       String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON"), 1));
 }
 
+// The periodic countdown redraw has to ask for every kind of reset a theme
+// binds, not just the root and the usage windows. Night Clock binds nothing
+// but {pv1l}/{pv1r}/{pv2l}/{pv2r}, so a screen whose only live values are
+// provider-slot countdowns would never be asked to repaint: an idle slot
+// reading "No active session" would keep that wording after the trust budget
+// expired, presenting a value the device can no longer stand behind.
+void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
+  const String nightClockish =
+      String(R"JSON({"p":[{"t":"tx","b":"pv1l"},{"t":"tx","b":"pv1r"},)JSON")
+      + String(R"JSON({"t":"tx","b":"pv2l"},{"t":"tx","b":"pv2r"}]})JSON");
+  TEST_ASSERT_TRUE(
+      codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(nightClockish, 0));
+  TEST_ASSERT_TRUE(
+      codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(nightClockish, 1));
+  // The long form binds the same countdown.
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(
+      String(R"JSON({"p":[{"t":"tx","v":"{providerSlot1Reset}"}]})JSON"), 0));
+  // A theme that only shows provider labels has no countdown to repaint.
+  TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecUsesProviderSlotResetBinding(
+      String(R"JSON({"p":[{"t":"tx","b":"pv1l"},{"t":"tx","b":"pv2l"}]})JSON"), 0));
+}
+
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   std::string frameLine;
   const auto appendEscapedText = [&frameLine](size_t decodedBytes, size_t variant) {
@@ -3704,6 +3726,7 @@ int main() {
   RUN_TEST(testProviderSlotsParseTickAndTriggerLiveRedraw);
   RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
+  RUN_TEST(testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);

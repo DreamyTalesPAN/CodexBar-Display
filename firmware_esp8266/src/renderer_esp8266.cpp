@@ -506,6 +506,16 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
         countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
       }
     }
+    // Provider-slot countdowns tick locally too, and one of them can go from a
+    // deadline to "no deadline" on its own -- an idle slot that renders "No
+    // active session" reverts to "Reset unavailable" the moment the shared
+    // trust budget expires. Night Clock binds nothing but {pv1r}/{pv2r}, so
+    // leaving this field out froze that screen on its last wording.
+    for (size_t i = 0; i < core::kMaxProviderSlots; ++i) {
+      if (core::ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i)) {
+        countdownFields |= codexbar_display::themespec::kThemeSpecFieldProviderSlots;
+      }
+    }
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {
