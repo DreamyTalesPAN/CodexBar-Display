@@ -624,6 +624,34 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 	return false
 }
 
+// Throttling wording: the endpoint answered and refused this call for being
+// too frequent.
+func isThrottlingDetail(lower string) bool {
+	for _, marker := range []string{
+		"rate limited", "ratelimited", "rate-limited",
+		"rate limit exceeded", "too many requests", "429",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// Wording that reports a credential the provider could not use at all. Waiting
+// never repairs that, so it outranks throttling mentioned in the same summary.
+func namesUnusableCredential(lower string) bool {
+	for _, marker := range []string{
+		"no cookies", "not logged in", "no credentials", "credentials were preserved",
+		"token expired", "unauthorized",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func classifyProviderError(detail string) string {
 	lower := strings.ToLower(detail)
 	switch {
@@ -637,9 +665,12 @@ func classifyProviderError(detail string) string {
 	// data it wanted ("authentication required to read rate limits"); telling
 	// that customer to wait would hide the sign-in they must repair, so the
 	// bare noun "rate limits" must not match.
-	case strings.Contains(lower, "rate limited"), strings.Contains(lower, "ratelimited"),
-		strings.Contains(lower, "rate-limited"), strings.Contains(lower, "rate limit exceeded"),
-		strings.Contains(lower, "too many requests"), strings.Contains(lower, "429"):
+	//
+	// A summary that also reports an unusable credential ("No cookies available",
+	// "not logged in") is a sign-in failure that happens to mention throttling
+	// among several failed sources. Waiting cannot fix a credential that is
+	// missing, so the sign-in advice wins there.
+	case isThrottlingDetail(lower) && !namesUnusableCredential(lower):
 		return ProviderRateLimited
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
 		return ProviderTimeout
