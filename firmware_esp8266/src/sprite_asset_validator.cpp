@@ -142,6 +142,12 @@ SpriteValidationError ValidateRow(LineReader& reader, int width, int paletteSize
     if (value == '\n') {
       break;
     }
+    // readSpriteLine() counts every raw non-CR byte against its line buffer
+    // before trimming, so leading and trailing whitespace counts too.
+    if (rowBytes >= kMaxRowBytes) {
+      return SpriteValidationError::InvalidRow;
+    }
+    ++rowBytes;
     if (value == ' ' || value == '\t') {
       if (!sawToken) {
         // Leading whitespace is trimmed away before the renderer decodes.
@@ -157,10 +163,6 @@ SpriteValidationError ValidateRow(LineReader& reader, int width, int paletteSize
       return SpriteValidationError::InvalidRow;
     }
     sawToken = true;
-    if (rowBytes >= kMaxRowBytes) {
-      return SpriteValidationError::InvalidRow;
-    }
-    ++rowBytes;
     if (value >= '0' && value <= '9') {
       const int digit = value - '0';
       if (runLength > (kMaxSpriteDimension - digit) / 10) {

@@ -381,7 +381,14 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 		{
 			name: "row beyond the firmware line buffer",
 			data: "CBI1\n480 1\n1\n#FFFFFF\n" + strings.Repeat("1a", 480) + "\n",
-			want: "max 512",
+			want: "exceeds 512 bytes",
+		},
+		// The firmware counts raw bytes before trimming, so a row padded with
+		// whitespace must be rejected here too rather than only at upload.
+		{
+			name: "row padded past the firmware line buffer",
+			data: "CBI1\n1 1\n1\n#FFFFFF\n" + strings.Repeat(" ", 600) + "a\n",
+			want: "exceeds 512 bytes",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

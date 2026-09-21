@@ -265,6 +265,16 @@ bool testRowWhitespaceMatchesTheRenderer() {
       "interior row whitespace must stay invalid");
 }
 
+// readSpriteLine() counts raw bytes before trimming, so padding a row past the
+// line buffer must be rejected even though the trimmed row is tiny.
+bool testPaddedRowsCountTowardTheLineLimit() {
+  const std::string padded =
+      "CBI1\n1 1\n1\n#FFFFFF\n" + std::string(600, ' ') + "a\n";
+  return expect(
+      validate(padded) == SpriteValidationError::InvalidRow,
+      "whitespace padding must count toward the renderer's line limit");
+}
+
 bool testInconsistentFrameTablesAreRejected() {
   // The header promises two frames but the payload only contains one.
   if (!expect(
@@ -336,6 +346,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testRowWhitespaceMatchesTheRenderer()) {
+    return 1;
+  }
+  if (!testPaddedRowsCountTowardTheLineLimit()) {
     return 1;
   }
   if (!testInconsistentFrameTablesAreRejected()) {

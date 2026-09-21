@@ -624,6 +624,11 @@ func validateSpriteAsset(devicePath string, data []byte) error {
 	if len(lines) == 0 {
 		return fmt.Errorf("sprite asset %s is empty", devicePath)
 	}
+	// readSpriteLine() counts raw bytes against its line buffer before
+	// trimming, so the limit must be checked before spriteAssetLines trims.
+	if err := validateRawSpriteLineLengths(devicePath, data); err != nil {
+		return err
+	}
 	switch lines[0] {
 	case "CBI1":
 		return validateStaticSpriteAsset(devicePath, lines)
@@ -632,6 +637,32 @@ func validateSpriteAsset(devicePath string, data []byte) error {
 	default:
 		return fmt.Errorf("sprite asset %s has unsupported header %q", devicePath, lines[0])
 	}
+}
+
+// validateRawSpriteLineLengths mirrors readSpriteLine() on the device, which
+// counts every raw byte except CR against its fixed line buffer before the row
+// is trimmed. Checking the trimmed rows alone would accept a row padded with
+// whitespace that the firmware then refuses to read.
+func validateRawSpriteLineLengths(devicePath string, data []byte) error {
+	length := 0
+	line := 0
+	for _, b := range data {
+		if b == '\r' {
+			continue
+		}
+		if b == '\n' {
+			length = 0
+			line++
+			continue
+		}
+		length++
+		if length > maxSpriteRowChars {
+			return fmt.Errorf(
+				"sprite asset %s line %d exceeds %d bytes",
+				devicePath, line, maxSpriteRowChars)
+		}
+	}
+	return nil
 }
 
 func spriteAssetLines(data []byte) []string {
