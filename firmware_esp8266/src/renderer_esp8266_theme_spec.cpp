@@ -52,6 +52,10 @@ bool lastSpriteErrorIsDecodeFailure = false;
 // could not be allocated. That attempt never decoded anything, so its result
 // says nothing about the asset and must not be reported as a decode failure.
 bool cbaBufferAllocationFailedThisAttempt = false;
+// Set when the shared frame buffer belonged to another sprite during this
+// draw attempt. Nothing was decoded, so the attempt says nothing about the
+// asset and must not be reported as a failure.
+bool cbaBufferUnavailableThisAttempt = false;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -711,6 +715,12 @@ bool prepareAnimatedSpriteBuffer(
       bufferHeight);
   if (!hasClearColor || bufferBytes == 0 ||
       (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache)) {
+    // Another sprite holds the shared frame buffer for its in-progress frame.
+    // That is deferred work, not a broken asset: this sprite simply draws on a
+    // later tick, so it must not be reported as a decode failure.
+    if (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache) {
+      cbaBufferUnavailableThisAttempt = true;
+    }
     return false;
   }
 
@@ -941,6 +951,7 @@ void drawSpriteAsset(
     } else if (line == "CBA1") {
       if (mode != SpriteRenderMode::StaticOnly && animatedCache != nullptr) {
         cbaBufferAllocationFailedThisAttempt = false;
+        cbaBufferUnavailableThisAttempt = false;
         if (!drawAnimatedSpriteAsset(
             *animatedCache,
             file,
@@ -952,11 +963,10 @@ void drawSpriteAsset(
           // transient low-heap diagnostic it already recorded stands. Calling
           // markSpriteRenderFailed() here would report memory pressure as a
           // corrupt asset and inflate renderFailures.
-          // A failed buffer allocation never decoded the asset, so the
-          // transient low-heap diagnostic it already recorded stands. Calling
-          // markSpriteRenderFailed() here would report memory pressure as a
-          // corrupt asset and inflate renderFailures.
-          if (!cbaBufferAllocationFailedThisAttempt) {
+          // A buffer still held by another sprite is deferred work for the
+          // same reason: this attempt never decoded anything either.
+          if (!cbaBufferAllocationFailedThisAttempt &&
+              !cbaBufferUnavailableThisAttempt) {
             markSpriteRenderFailed("cba_render_failed", assetPath);
           }
         }

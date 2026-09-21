@@ -1197,8 +1197,16 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
   // inflate renderFailures.
   if (!expect(
           renderer.find("cbaBufferAllocationFailedThisAttempt = true;") != std::string::npos &&
-              renderer.find("if (!cbaBufferAllocationFailedThisAttempt) {") != std::string::npos,
+              renderer.find("if (!cbaBufferAllocationFailedThisAttempt &&") != std::string::npos,
           "a failed CBA buffer allocation must not be reported as a decode failure")) {
+    return false;
+  }
+  // Two tall CBAs share one frame buffer, so the second sprite finding it
+  // occupied is deferred work rather than a corrupt asset.
+  if (!expect(
+          renderer.find("cbaBufferUnavailableThisAttempt = true;") != std::string::npos &&
+              renderer.find("!cbaBufferUnavailableThisAttempt) {") != std::string::npos,
+          "shared-buffer contention must not be reported as a decode failure")) {
     return false;
   }
   const std::size_t transientStart = renderer.find("void setSpriteRenderError(const char* code, const char* assetPath) {");

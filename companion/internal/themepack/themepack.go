@@ -833,7 +833,10 @@ func validateRawSpriteLineLengths(devicePath string, data []byte) error {
 
 func spriteAssetLines(data []byte) []string {
 	raw := strings.ReplaceAll(string(data), "\r\n", "\n")
-	raw = strings.ReplaceAll(raw, "\r", "\n")
+	// Both firmware readers drop a lone CR without ending the line, so turning
+	// one into a line break here would split a payload the device reads as a
+	// single unparsable line. Dropping it keeps both sides on the same rows.
+	raw = strings.ReplaceAll(raw, "\r", "")
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil

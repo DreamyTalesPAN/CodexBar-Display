@@ -414,6 +414,14 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 			data: "CBI1\n4 " + strings.Repeat("0", 70) + "1\n1\n#FFFFFF\n4a\n",
 			want: "max 63 for a header line",
 		},
+		// Both firmware readers drop a lone CR without ending the line, so a
+		// CR-only file is one unparsable line on the device. Splitting it here
+		// would accept a pack the device rejects mid-install.
+		{
+			name: "carriage-return-only line endings",
+			data: "CBI1\r1 1\r1\r#FFFFFF\ra\r",
+			want: "unsupported header",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ext := tc.ext
