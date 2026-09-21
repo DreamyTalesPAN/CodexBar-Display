@@ -415,6 +415,33 @@ func TestProviderReadinessKeepsAuthFailuresThatMentionRateLimitData(t *testing.T
 	}
 }
 
+// The cached health scan speaks for a row whenever no fresh exact readiness
+// does, so it has to reach the same verdict. It used to read the bundled
+// "OAuth ... rate limited" message as auth_required and offer a sign-in the
+// customer did not need (#448).
+func TestProviderHealthClassifiesThrottlingLikeReadiness(t *testing.T) {
+	for _, detail := range []string{
+		"OAuth error: Claude OAuth usage endpoint is rate limited",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthRateLimited, got)
+		}
+	}
+	// A credential the provider could not use at all is still a sign-in
+	// failure, even when throttling is mentioned in the same summary.
+	for _, detail := range []string{
+		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: rate limited.",
+		"OAuth token expired",
+		"authentication required to read rate limits",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthAuthRequired, got)
+		}
+	}
+}
+
 // A provider-scoped probe answers through CodexBar's own stand-in when the
 // usage call itself fails. Losing the rate limit there told the customer their
 // account exposes no usage instead of asking them to wait.

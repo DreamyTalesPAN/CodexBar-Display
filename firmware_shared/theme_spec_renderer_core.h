@@ -60,6 +60,11 @@ inline void RenderYield() {
 // duration, so the sentinel lands on paths that are checked anyway. A basis
 // the device cannot stand behind never carries it, so the trust path keeps its
 // own wording.
+//
+// This is the same value the countdown helpers in codexbar_display_core.h
+// return (kRemainingSecsIdle); the frame carries it straight through. It is
+// restated here because this header is the lower of the two and cannot
+// include that one.
 constexpr int64_t kResetSecsIdle = -1;
 
 inline bool ResetSecsAreIdle(int64_t resetSecs) {

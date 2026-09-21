@@ -766,7 +766,7 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 	}
 	switch setting.Health {
 	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthBrowserSignIn, codexbar.ProviderHealthSetupRequired,
-		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable, codexbar.ProviderHealthRateLimited:
 		return false
 	default:
 		return true
@@ -880,6 +880,8 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Finish setup for this provider."
 	case codexbar.ProviderHealthNoUsage:
 		return "This account does not expose usage data."
+	case codexbar.ProviderHealthRateLimited:
+		return "This provider is limiting usage checks right now."
 	case codexbar.ProviderHealthUnavailable:
 		return "Provider is not responding right now."
 	default:

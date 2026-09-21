@@ -311,6 +311,36 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
   return ResetDeadlineSecs(state.reset, nowMillis);
 }
 
+// A window the host sent with no deadline at all, over a basis the device
+// still stands behind: nothing has been used, so nothing is scheduled to
+// reset. An idle Claude account with no session started is exactly that, and
+// reporting it as unavailable made a healthy account look broken.
+//
+// It is carried as a negative remainder rather than a separate flag because
+// the ESP8266 image sits at its flash ceiling. Every consumer already branches
+// on "<= 0" before formatting a duration, so the sentinel lands on paths that
+// are checked anyway, and the value keeps flowing through the same
+// change-detection that repaints any other countdown. That is what makes the
+// wording revert on its own when the trust budget later expires: the helpers
+// stop returning the sentinel, the tracked value changes, and the periodic
+// redraw fires.
+//
+// The magnitude stays under a minute so that "secs / 60" keeps landing in
+// bucket 0 like a real expiry, which leaves the minute-bucket comparison
+// untouched.
+constexpr int64_t kRemainingSecsIdle = -1;
+
+inline bool RemainingSecsAreIdle(int64_t remainingSecs) {
+  return remainingSecs < 0;
+}
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+// The renderer restates this value because its header is the lower of the two
+// and cannot include this one. Pin them together so they cannot drift.
+static_assert(kRemainingSecsIdle == themespec::kResetSecsIdle,
+              "idle sentinel must match the renderer's");
+#endif
+
 inline int64_t CurrentUsageWindowRemainingSecs(
     const RuntimeState& state,
     size_t slotIndex,
@@ -320,6 +350,10 @@ inline int64_t CurrentUsageWindowRemainingSecs(
       slotIndex >= kMaxUsageWindows ||
       !state.current.usageWindows[slotIndex].available) {
     return 0;
+  }
+  if (state.current.usageWindows[slotIndex].resetSecs == 0 &&
+      !state.current.usageUnavailable) {
+    return kRemainingSecsIdle;
   }
   const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
   const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
@@ -337,55 +371,34 @@ inline int64_t CurrentProviderSlotRemainingSecs(
       !state.current.providerSlots[slotIndex].available) {
     return 0;
   }
+  if (state.current.providerSlots[slotIndex].resetSecs == 0 &&
+      !state.current.usageUnavailable) {
+    return kRemainingSecsIdle;
+  }
   const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
   const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
   const int64_t remain = state.current.providerSlots[slotIndex].resetSecs - elapsedSecs;
   return remain < 0 ? 0 : remain;
 }
 
-// Whether a window with no deadline may be reported as idle at all. The host
-// sends a window without any reset time when the provider reports the window
-// but names no deadline -- an idle Claude account with no session started is
-// exactly that, and it is a healthy, current reading. A basis the device can
-// no longer stand behind keeps the stale/offline wording instead.
-//
-// This costs a full trust evaluation, so callers walking several windows hoist
-// it out of their loop. The ESP8266 image sits at its flash ceiling and cannot
-// spend bytes on repeating it per window.
-inline bool ResetBasisAllowsIdle(const RuntimeState& state, unsigned long nowMillis) {
-  return state.hasFrame &&
-         !state.current.usageUnavailable &&
-         CurrentResetTrust(state.reset, nowMillis) != ResetTrust::kStale;
-}
-
-// The idle rule itself, over a basis the caller already judged. A window is
-// idle when the host sent it with no deadline at all.
-//
 // A deadline that merely counted down to zero is not idle: it reached the
-// reset the host did send, and the next frame carries the new one. That is why
-// this reads the deadline the host sent, never the locally counted remainder.
-inline bool WindowIsIdle(bool basisAllowsIdle, bool available, int64_t sentResetSecs) {
-  return basisAllowsIdle && available && sentResetSecs == 0;
-}
-
+// reset the host did send, and the next frame carries the new one. Both
+// predicates therefore read the deadline the host sent, never the locally
+// counted remainder, and both go false as soon as trust turns stale.
 inline bool UsageWindowIsIdle(
     const RuntimeState& state,
     size_t slotIndex,
     unsigned long nowMillis) {
-  return slotIndex < kMaxUsageWindows &&
-         WindowIsIdle(ResetBasisAllowsIdle(state, nowMillis),
-                      state.current.usageWindows[slotIndex].available,
-                      state.current.usageWindows[slotIndex].resetSecs);
+  return RemainingSecsAreIdle(
+      CurrentUsageWindowRemainingSecs(state, slotIndex, nowMillis));
 }
 
 inline bool ProviderSlotIsIdle(
     const RuntimeState& state,
     size_t slotIndex,
     unsigned long nowMillis) {
-  return slotIndex < kMaxProviderSlots &&
-         WindowIsIdle(ResetBasisAllowsIdle(state, nowMillis),
-                      state.current.providerSlots[slotIndex].available,
-                      state.current.providerSlots[slotIndex].resetSecs);
+  return RemainingSecsAreIdle(
+      CurrentProviderSlotRemainingSecs(state, slotIndex, nowMillis));
 }
 
 inline bool IsSafeIdentifier(const String& value, bool allowSourceChars) {
