@@ -906,11 +906,11 @@ func parseSpriteDimensions(lines []string, animated bool) (width, height, frameC
 	if len(fields) != want {
 		return 0, 0, 0, 0, fmt.Errorf("dimensions must have %d fields", want)
 	}
-	width, err = strconv.Atoi(fields[0])
+	width, err = parseSpriteNumber(fields[0])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("width must be numeric")
 	}
-	height, err = strconv.Atoi(fields[1])
+	height, err = parseSpriteNumber(fields[1])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("height must be numeric")
 	}
@@ -923,22 +923,38 @@ func parseSpriteDimensions(lines []string, animated bool) (width, height, frameC
 	if !animated {
 		return width, height, 1, 0, nil
 	}
-	frameCount, err = strconv.Atoi(fields[2])
+	frameCount, err = parseSpriteNumber(fields[2])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("frame count must be numeric")
 	}
-	fps, err = strconv.Atoi(fields[3])
+	fps, err = parseSpriteNumber(fields[3])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("fps must be numeric")
 	}
 	return width, height, frameCount, fps, nil
 }
 
+// parseSpriteNumber mirrors the firmware's ParseCbaHeader grammar, which reads
+// digits only. strconv.Atoi additionally accepts a leading sign, so a header
+// written as "+1 +1" passed preflight here and was only rejected once the
+// device had already started writing the pack.
+func parseSpriteNumber(field string) (int, error) {
+	if field == "" {
+		return 0, errors.New("value must be numeric")
+	}
+	for i := 0; i < len(field); i++ {
+		if field[i] < '0' || field[i] > '9' {
+			return 0, errors.New("value must be numeric")
+		}
+	}
+	return strconv.Atoi(field)
+}
+
 func parseSpritePalette(devicePath string, lines []string, index int) (paletteSize int, rowStart int, err error) {
 	if len(lines) <= index {
 		return 0, 0, fmt.Errorf("sprite asset %s missing palette size", devicePath)
 	}
-	paletteSize, err = strconv.Atoi(lines[index-1])
+	paletteSize, err = parseSpriteNumber(lines[index-1])
 	if err != nil || paletteSize <= 0 || paletteSize > 26 {
 		return 0, 0, fmt.Errorf("sprite asset %s palette size must be 1..26", devicePath)
 	}

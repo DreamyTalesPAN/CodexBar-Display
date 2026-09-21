@@ -422,6 +422,19 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 			data: "CBI1\r1 1\r1\r#FFFFFF\ra\r",
 			want: "unsupported header",
 		},
+		// The firmware header parser reads digits only, so a signed value is
+		// rejected on the device. Accepting it here would start an install
+		// that fails partway through.
+		{
+			name: "signed sprite dimensions",
+			data: "CBI1\n+1 +1\n1\n#FFFFFF\na\n",
+			want: "must be numeric",
+		},
+		{
+			name: "signed palette size",
+			data: "CBI1\n1 1\n+1\n#FFFFFF\na\n",
+			want: "palette size must be 1..26",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ext := tc.ext
