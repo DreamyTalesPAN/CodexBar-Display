@@ -82,6 +82,7 @@ import {
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
 import { useLatestDisplayFrame } from "./live-vibetv-preview";
+import type { AgentSnapshot } from "./agent-sessions";
 import { OverviewScreen } from "./overview-screen";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
@@ -397,6 +398,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
     null,
   );
+  const [agents, setAgents] = useState<AgentSnapshot | null>(null);
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
   const [deviceCandidates, setDeviceCandidates] = useState<DeviceCandidate[]>(
     [],
@@ -765,6 +767,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const markCompanionUnavailable = useCallback(() => {
     setCompanionStatus("missing");
     setCompanionInfo(null);
+    setAgents(null);
     setThemeInstallEnabled(false);
     setUsage(null);
     setUsageError(null);
@@ -777,6 +780,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const markCompanionAccessBlocked = useCallback(() => {
     setCompanionStatus("unknown");
     setCompanionInfo(null);
+    setAgents(null);
     setThemeInstallEnabled(false);
     setUsage(null);
     setUsageError(null);
@@ -1194,6 +1198,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       try {
         const payload = await runCompanion<{
+          agents?: AgentSnapshot;
           companion?: CompanionInfo;
           connectionMode?: string;
           connectionModeChoiceRequired?: boolean;
@@ -1210,6 +1215,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
+        setAgents(payload.agents || null);
         applyConnectionStatus(payload);
         setProviderSetup(payload.providerSetup || null);
         setProviderSelectionSetup(payload.setup || null);
@@ -1360,6 +1366,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const setupGeneration = setupGenerationRef.current;
     try {
       const payload = await runCompanion<{
+        agents?: AgentSnapshot;
         companion?: CompanionInfo;
         connectionMode?: string;
         connectionModeChoiceRequired?: boolean;
@@ -1374,6 +1381,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
+      setAgents(payload.agents || null);
       applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
@@ -4874,6 +4882,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       >
         {activeShellTab === "overview" ? (
           <OverviewScreen
+            agents={agents}
             companionVersion={companionInfo?.version}
             companionStatus={companionStatus}
             device={device}

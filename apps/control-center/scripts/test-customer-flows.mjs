@@ -394,6 +394,11 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (process.argv.includes("--agent-sessions")) {
+      await testOverviewAgentSessions(browser, appContext.appUrl);
+      console.log("overview agent session tests passed");
+      return;
+    }
     if (process.argv.includes("--firmware-onboarding")) {
       await testFirmwareOnboardingTerminalStates(browser, appContext.appUrl);
       await testFirmwareAttentionDoesNotOfferSecondFlash(browser, appContext.appUrl);
@@ -1001,6 +1006,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testOverviewAgentSessions(browser, appContext.appUrl);
     await testOverviewSeparatesMacAppAndFirmwareVersions(
       browser,
       appContext.appUrl,
@@ -9270,6 +9276,37 @@ async function testSavedAddressReconnectsReadOnly(browser, appUrl) {
   await page.close();
 }
 
+async function testOverviewAgentSessions(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const installRequests = [];
+  let phase = "waiting_for_permission";
+  const observedAt = Date.now() - 252_000;
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    agentSnapshot: () => ({
+      health: "ready", generatedAt: Date.now(),
+      sources: [{ id: "codex", name: "Codex CLI" }, { id: "claude", name: "Claude Code" }],
+      sessions: [
+        { id: "one", source: "codex", phase, observedAt },
+        { id: "two", source: "codex", phase: "tool_use", observedAt },
+        { id: "three", source: "claude", phase: "idle", observedAt },
+      ],
+    }),
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const cards = page.getByRole("region", { name: "Sessions", exact: true });
+  await cards.getByText("Waiting for approval").waitFor();
+  assert(await cards.getByRole("listitem").count() === 3, "Each observed session needs its own card");
+  assert(await cards.getByText("Codex CLI", { exact: true }).count() === 2, "Same-agent sessions must not collapse");
+  await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/overview-sessions-desktop.png"), fullPage: true });
+  phase = "done";
+  await cards.getByText("Finished", { exact: true }).waitFor({ timeout: 12_000 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertNoMobileOverflow(page);
+  await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/overview-sessions-mobile.png"), fullPage: true });
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
 async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -11110,6 +11147,7 @@ async function routeCompanionOnline(
   installRequests,
   onSettings = () => {},
   {
+    agentSnapshot,
     companionFeatures = {
       themeInstallEnabled: true,
       macAppSelfUpdateEnabled: false,
@@ -12066,6 +12104,7 @@ async function routeCompanionOnline(
           ),
           providerSetup: currentProviderSetup,
           setup: currentProviderSelectionSetup,
+          agents: agentSnapshot?.(),
           device: responseDevice,
           connectionMode: responseDevice?.capabilities?.transport?.mode || "",
           connectionModeChoiceRequired,
