@@ -1192,6 +1192,15 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
           "a decode failure must supersede a transient error for the same asset")) {
     return false;
   }
+  // A buffer allocation that failed never decoded the asset, so reporting a
+  // decode failure would blame the asset for ordinary memory pressure and
+  // inflate renderFailures.
+  if (!expect(
+          renderer.find("cbaBufferAllocationFailedThisAttempt = true;") != std::string::npos &&
+              renderer.find("if (!cbaBufferAllocationFailedThisAttempt) {") != std::string::npos,
+          "a failed CBA buffer allocation must not be reported as a decode failure")) {
+    return false;
+  }
   const std::size_t transientStart = renderer.find("void setSpriteRenderError(const char* code, const char* assetPath) {");
   if (!expect(transientStart != std::string::npos, "the transient sprite error path must remain discoverable")) {
     return false;

@@ -48,6 +48,10 @@ String lastSpriteErrorAsset = "";
 // may be replaced by a real decode failure for the same asset; the reverse
 // must not happen, or low memory would permanently mask a broken asset.
 bool lastSpriteErrorIsDecodeFailure = false;
+// Set when the current draw attempt failed only because the frame buffer
+// could not be allocated. That attempt never decoded anything, so its result
+// says nothing about the asset and must not be reported as a decode failure.
+bool cbaBufferAllocationFailedThisAttempt = false;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -726,6 +730,7 @@ bool prepareAnimatedSpriteBuffer(
       // Low heap is a transient resource condition, not a broken asset. It
       // keeps its own counter and must not inflate renderFailures.
       setSpriteRenderError("low_heap_cba_buffer", cache.path.c_str());
+      cbaBufferAllocationFailedThisAttempt = true;
       return false;
     }
     delete[] cbaFrameBuffer;
@@ -924,6 +929,7 @@ void drawSpriteAsset(
       }
     } else if (line == "CBA1") {
       if (mode != SpriteRenderMode::StaticOnly && animatedCache != nullptr) {
+        cbaBufferAllocationFailedThisAttempt = false;
         if (!drawAnimatedSpriteAsset(
             *animatedCache,
             file,
@@ -931,7 +937,17 @@ void drawSpriteAsset(
             targetHeight,
             hasClearColor,
             clearColor)) {
-          markSpriteRenderFailed("cba_render_failed", assetPath);
+          // A failed buffer allocation never decoded the asset, so the
+          // transient low-heap diagnostic it already recorded stands. Calling
+          // markSpriteRenderFailed() here would report memory pressure as a
+          // corrupt asset and inflate renderFailures.
+          // A failed buffer allocation never decoded the asset, so the
+          // transient low-heap diagnostic it already recorded stands. Calling
+          // markSpriteRenderFailed() here would report memory pressure as a
+          // corrupt asset and inflate renderFailures.
+          if (!cbaBufferAllocationFailedThisAttempt) {
+            markSpriteRenderFailed("cba_render_failed", assetPath);
+          }
         }
       }
     } else {
