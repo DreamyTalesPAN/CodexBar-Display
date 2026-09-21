@@ -545,8 +545,9 @@ func validateDevicePath(devicePath string) error {
 	// uppercase extension changes how the device treats the file: a .CBA is
 	// classified as static, never gets an animation tick, and leaves the theme
 	// with a silently missing sprite.
-	// Only those suffix-classified assets are affected. The pack format imposes
-	// no lowercase rule elsewhere, so a spec at /themes/u/demo.JSON stays valid.
+	// Only animated assets are affected. A static sprite dispatches on its
+	// CBI1 header rather than its suffix, so /themes/u/icon.CBI renders fine
+	// and must not be rejected here.
 	extension := path.Ext(devicePath)
 	if lowered := strings.ToLower(extension); extension != lowered && suffixClassifiedExtensions[lowered] {
 		return fmt.Errorf("device path extension must be lowercase: %s", devicePath)
@@ -557,7 +558,6 @@ func validateDevicePath(devicePath string) error {
 // Extensions whose casing changes how the firmware classifies an asset.
 var suffixClassifiedExtensions = map[string]bool{
 	".cba": true,
-	".cbi": true,
 	".gif": true,
 }
 
@@ -736,9 +736,6 @@ func validateSpriteAsset(devicePath string, data []byte) error {
 	if err := validateRawSpriteLineLengths(devicePath, data); err != nil {
 		return err
 	}
-	// The device validator holds header and palette lines in a smaller token
-	// buffer than the renderer's line buffer, so a long token it cannot read
-	// must be rejected here rather than during upload.
 	// The device validator holds header and palette lines in a smaller token
 	// buffer than the renderer's line buffer, so a long token it cannot read
 	// must be rejected here rather than during upload.

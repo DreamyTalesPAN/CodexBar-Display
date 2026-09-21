@@ -471,18 +471,18 @@ func TestLoadRejectsUppercaseSpriteExtension(t *testing.T) {
 	}
 }
 
-// Only suffix-classified assets change meaning with their casing. The pack
-// format imposes no lowercase rule elsewhere, so rejecting an uppercase
-// extension on any other file would refuse a pack the device installs fine.
-func TestLoadAcceptsUppercaseExtensionOnUnclassifiedAsset(t *testing.T) {
-	spec := `{"v":1,"id":"upper-other","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/a.cbi"}]}`
+// Only animated assets are classified by their suffix. A static sprite is
+// dispatched from its CBI1 header, and the pack format imposes no lowercase
+// rule on other files, so rejecting either would refuse a renderable pack.
+func TestLoadAcceptsUppercaseExtensionOnStaticAndUnclassifiedAssets(t *testing.T) {
+	spec := `{"v":1,"id":"upper-other","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/icon.CBI"}]}`
 	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
-		{path: "/themes/u/a.cbi", file: "assets/a.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+		{path: "/themes/u/icon.CBI", file: "assets/icon.CBI", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
 		{path: "/themes/u/notes.TXT", file: "assets/notes.TXT", data: "readme\n"},
 	})
 
 	if _, err := Load(dir); err != nil {
-		t.Fatalf("expected uppercase extension on an unclassified asset to load, got %v", err)
+		t.Fatalf("expected an uppercase static sprite extension to load, got %v", err)
 	}
 }
 
