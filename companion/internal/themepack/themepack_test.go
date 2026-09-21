@@ -406,6 +406,14 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 			data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\na\n",
 			want: "contains a CBA1 payload",
 		},
+		// The device validator holds a header line in a 64-byte token buffer
+		// while rows are streamed, so a long numeric token passes every other
+		// check and fails only at upload.
+		{
+			name: "header token past the device token buffer",
+			data: "CBI1\n4 " + strings.Repeat("0", 70) + "1\n1\n#FFFFFF\n4a\n",
+			want: "max 63 for a header line",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ext := tc.ext
@@ -428,6 +436,20 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 // A CBA is composed in a full-frame buffer, so its rendered size is capped at
 // 80x80 even though a source sprite may be up to 480px. A pack that renders
 // larger must be rejected before installation starts writing to the device.
+// The firmware compares asset suffixes against lowercase literals, so an
+// uppercase extension silently changes how the device treats the file.
+func TestLoadRejectsUppercaseSpriteExtension(t *testing.T) {
+	spec := `{"v":1,"id":"upper-ext","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/a.CBA"}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/a.CBA", file: "assets/a.CBA", data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\na\n"},
+	})
+
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "extension must be lowercase") {
+		t.Fatalf("expected uppercase extension rejection, got %v", err)
+	}
+}
+
 func TestLoadRejectsAnimatedSpriteRenderedAboveBufferLimit(t *testing.T) {
 	oversizedFrame := "CBA1\n100 100 2 4\n1\n#FFFFFF\n" +
 		strings.Repeat("100a\n", 200)

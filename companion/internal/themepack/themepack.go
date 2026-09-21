@@ -46,6 +46,13 @@ const (
 	// the source dimension limit. kMaxCbaBufferWidth/Height in
 	// firmware_esp8266 theme_spec_runtime_policy.h.
 	maxAnimatedSpriteRenderDimension = 80
+
+	// The device-side sprite validator reads header and palette lines into a
+	// fixed token buffer before parsing them, and it cannot stream a single
+	// long numeric token. Enforcing that smaller limit here keeps a pack from
+	// passing preflight and then failing during upload.
+	// kMaxTokenLineBytes in firmware_esp8266 sprite_asset_validator.cpp.
+	maxSpriteTokenLineChars = 63
 )
 
 // Pack categories. `kind` marks the file format; `usage` marks what the pack is
@@ -534,6 +541,13 @@ func validateDevicePath(devicePath string) error {
 		strings.HasSuffix(devicePath, "/") {
 		return fmt.Errorf("unsafe device path: %s", devicePath)
 	}
+	// The firmware compares asset suffixes against lowercase literals, so an
+	// uppercase extension changes how the device treats the file: a .CBA is
+	// classified as static, never gets an animation tick, and leaves the theme
+	// with a silently missing sprite.
+	if extension := path.Ext(devicePath); extension != strings.ToLower(extension) {
+		return fmt.Errorf("device path extension must be lowercase: %s", devicePath)
+	}
 	return nil
 }
 
@@ -712,6 +726,15 @@ func validateSpriteAsset(devicePath string, data []byte) error {
 	if err := validateRawSpriteLineLengths(devicePath, data); err != nil {
 		return err
 	}
+	// The device validator holds header and palette lines in a smaller token
+	// buffer than the renderer's line buffer, so a long token it cannot read
+	// must be rejected here rather than during upload.
+	// The device validator holds header and palette lines in a smaller token
+	// buffer than the renderer's line buffer, so a long token it cannot read
+	// must be rejected here rather than during upload.
+	if err := validateSpriteTokenLineLengths(devicePath, lines); err != nil {
+		return err
+	}
 	switch lines[0] {
 	case "CBI1":
 		// The firmware schedules animation from the .cba suffix, not from the
@@ -729,6 +752,34 @@ func validateSpriteAsset(devicePath string, data []byte) error {
 	default:
 		return fmt.Errorf("sprite asset %s has unsupported header %q", devicePath, lines[0])
 	}
+}
+
+// validateSpriteTokenLineLengths mirrors the device validator's token buffer,
+// which holds a whole header or palette line while RLE rows are streamed. A
+// long numeric token such as a value padded with leading zeroes stays inside
+// the renderer's line limit and parses correctly, yet the device validator
+// cannot hold it, so the pack would install only to fail at upload.
+//
+// Only the header, dimensions, and palette lines use that buffer. Their count
+// is known from the palette size, and anything past it is a streamed row.
+func validateSpriteTokenLineLengths(devicePath string, lines []string) error {
+	// Header, dimensions, palette size, then one line per palette colour.
+	tokenLines := len(lines)
+	if len(lines) > 2 {
+		if paletteSize, err := strconv.Atoi(lines[2]); err == nil {
+			if bounded := 3 + paletteSize; bounded < tokenLines {
+				tokenLines = bounded
+			}
+		}
+	}
+	for index := 0; index < tokenLines; index++ {
+		if len(lines[index]) > maxSpriteTokenLineChars {
+			return fmt.Errorf(
+				"sprite asset %s line %d is %d bytes, max %d for a header line",
+				devicePath, index, len(lines[index]), maxSpriteTokenLineChars)
+		}
+	}
+	return nil
 }
 
 // validateRawSpriteLineLengths mirrors readSpriteLine() on the device, which
