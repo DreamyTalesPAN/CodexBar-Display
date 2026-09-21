@@ -50,6 +50,7 @@ and pin upgrades without rebuilding their parsers inside the Companion.
 
 
 Product-path evidence is recorded in `agent-lifecycle-native-validation.md`.
+New profiles start with Agent activity off; saved choices are preserved.
 The Show agent activity master switch installs observation hooks for every
 supported hook adapter together; switching it off removes only VibeTV-owned
 hooks. Codex uses its automatic local log monitor. There are no per-agent

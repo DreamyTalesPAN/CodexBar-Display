@@ -7,8 +7,12 @@ import (
 
 func TestAgentQuietHoursAndDefaults(t *testing.T) {
 	s := Config{}.AgentActivitySettings()
-	if !s.Enabled || !s.Blink || s.ReminderSeconds() != 300 || s.Muted(time.Now()) {
+	if s.Enabled || !s.Blink || s.ReminderSeconds() != 300 || !s.Muted(time.Now()) {
 		t.Fatal(s)
+	}
+	s.Enabled = true
+	if got := (Config{AgentActivity: &s}).AgentActivitySettings(); !got.Enabled {
+		t.Fatal("saved master choice lost")
 	}
 	for _, tc := range []struct {
 		quiet string

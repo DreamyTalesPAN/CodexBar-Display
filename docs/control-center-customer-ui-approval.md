@@ -4713,3 +4713,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul's continuing authorization is to combine the updated themes and agent feature on this feature branch and test them together. Current main added the separately approved readability and discontinued-provider corrections recorded above.
 - Approved customer-visible result: Retain readable percentage lanes from main together with the approved five-state sprites; keep this branch's provider notices and typed unsupported-provider behavior. Preserve the reviewed provider-neutral adapter boundary: do not reinstate provider-specific terminal-state inference from English migration messages. Agent activity remains the sole master switch.
 - Scope: Conflict resolution on the feature branch only. Mini 1.2.2 and Creature 1.3.1 preserve published ZIPs, and CodexBar 0.63.0 retains immutable archive verification. No main write or release.
+
+### 2026-09-21 — Make the first master-switch activation truthful
+
+- User approval: Paul's master-switch request explicitly makes switching Agent activity on the action that enables all supported agents.
+- Approved customer-visible result: New profiles start with Agent activity off, so the first on action installs every supported hook adapter before confirming success. Explicitly saved choices are preserved. This supersedes the earlier on-by-default presentation setting now that the control also installs observers. Blink, reminder and quiet defaults remain unchanged.
+- Scope: Default and regression coverage only, fixing the reviewed clean-install activation gap without another connection control or startup installation path.

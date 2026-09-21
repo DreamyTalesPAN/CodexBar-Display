@@ -1719,6 +1719,9 @@ func TestAgentStateRendersBeforeFirstUsageWithoutInventingUsage(t *testing.T) {
 			result := finalizeCycleResult(state, cycleResult{failureErr: usageErr}, time.Now())
 			var sent protocol.Frame
 			deps := runtimeDeps{
+				loadConfig: func(string) (runtimeconfig.Config, error) {
+					return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}}, nil
+				},
 				sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
 				logf:     func(string, ...any) {},
 			}.withDefaults()
@@ -6891,6 +6894,9 @@ func TestOutgoingFramesFollowHostMotionPreference(t *testing.T) {
 	var logLine string
 	state := &runtimeState{}
 	deps := runtimeDeps{
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}}, nil
+		},
 		reducedMotion: func(context.Context) bool { return disabled },
 		sendLine:      func(_ string, data []byte) error { return json.Unmarshal(data, &sent) },
 		logf:          func(format string, args ...any) { logLine = fmt.Sprintf(format, args...) },

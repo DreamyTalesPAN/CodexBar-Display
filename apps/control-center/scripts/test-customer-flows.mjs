@@ -9312,10 +9312,10 @@ async function testOverviewAgentSessions(browser, appUrl) {
   assert(await page.getByText("Agent connections", { exact: true }).count() === 0, "Separate agent connections must be removed");
   assert(activityWrites.length === 0, "Viewing Settings must not change observation");
   await activity.click();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Show agent activity"]')?.getAttribute('aria-checked') === 'false');
-  await activity.click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Show agent activity"]')?.getAttribute('aria-checked') === 'true');
-  assert(JSON.stringify(activityWrites) === '[false,true]', "The master switch is the only enable/disable path");
+  await activity.click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Show agent activity"]')?.getAttribute('aria-checked') === 'false');
+  assert(JSON.stringify(activityWrites) === '[true,false]', "The master switch is the only enable/disable path");
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -11770,7 +11770,7 @@ async function routeCompanionOnline(
       // Agent settings have their own preference owner; provider fixtures and
       // delayed provider-read races must not leak into this section.
       const items = [
-        { id: "vibetv.agents.enabled", type: "boolean", label: "Show agent activity", value: true },
+        { id: "vibetv.agents.enabled", type: "boolean", label: "Show agent activity", value: false },
         { id: "vibetv.agents.blink", type: "boolean", label: "Blink the screen when an agent needs you", value: true },
         { id: "vibetv.agents.reminder", type: "enum", label: "Remind me again", value: "5", options: [{ value: "5", label: "After 5 minutes" }] },
         { id: "vibetv.agents.quiet", type: "enum", label: "Quiet from", value: "off", options: [{ value: "off", label: "Never quiet" }] },

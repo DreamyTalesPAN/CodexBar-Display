@@ -19,8 +19,8 @@ func TestAgentPreferencesPersistWithoutChangingDeviceOrUsage(t *testing.T) {
 	calls := 0
 	s.configureAgents = func(_ context.Context, enabled bool) (agentstatus.Snapshot, error) {
 		calls++
-		if enabled {
-			t.Fatal("expected master off")
+		if enabled != (calls == 1) {
+			t.Fatal("expected master on then off")
 		}
 		return agentstatus.Snapshot{}, nil
 	}
@@ -32,7 +32,7 @@ func TestAgentPreferencesPersistWithoutChangingDeviceOrUsage(t *testing.T) {
 	for _, tc := range []struct {
 		id, body string
 		code     int
-	}{{"enabled", `{"value":false}`, 200}, {"blink", `{"value":false}`, 200}, {"reminder", `{"value":"15"}`, 200}, {"quiet", `{"value":"22"}`, 200}, {"reminder", `{"value":"2"}`, 400}, {"enabled", `{"value":"false"}`, 400}} {
+	}{{"enabled", `{"value":true}`, 200}, {"enabled", `{"value":false}`, 200}, {"blink", `{"value":false}`, 200}, {"reminder", `{"value":"15"}`, 200}, {"quiet", `{"value":"22"}`, 200}, {"reminder", `{"value":"2"}`, 400}, {"enabled", `{"value":"false"}`, 400}} {
 		before := wakes
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/v1/preferences/vibetv.agents."+tc.id, strings.NewReader(tc.body)))
@@ -47,7 +47,7 @@ func TestAgentPreferencesPersistWithoutChangingDeviceOrUsage(t *testing.T) {
 			t.Fatalf("%s: render wakes = %d, want %d", tc.id, wakes, wantWakes)
 		}
 	}
-	if calls != 1 {
+	if calls != 2 {
 		t.Fatalf("master calls: %d", calls)
 	}
 	cfg, err := runtimeconfig.Load(s.home)

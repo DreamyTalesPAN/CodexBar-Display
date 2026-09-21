@@ -2,8 +2,8 @@ package runtimeconfig
 
 import "time"
 
-// Presentation preferences belong to VibeTV; observation and usage keep their
-// existing owners. A missing section uses the approved design defaults.
+// The master switch is opt-in because enabling it installs local observation
+// hooks for every supported agent. Other presentation defaults follow the design.
 type AgentActivitySettings struct {
 	Enabled  bool   `json:"enabled"`
 	Blink    bool   `json:"blink"`
@@ -15,7 +15,7 @@ func (c Config) AgentActivitySettings() AgentActivitySettings {
 	if c.AgentActivity != nil {
 		return *c.AgentActivity
 	}
-	return AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}
+	return AgentActivitySettings{Enabled: false, Blink: true, Reminder: "5", Quiet: "off"}
 }
 
 func (s AgentActivitySettings) Muted(now time.Time) bool {
