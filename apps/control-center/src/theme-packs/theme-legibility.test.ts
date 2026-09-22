@@ -162,8 +162,8 @@ describe.each(themes)("%s legibility and fit (issue #258)", (themeId) => {
       readFileSync(path.join(root, "theme-packs", themeId, "manifest.json"), "utf8"),
     );
     const raw = readFileSync(path.join(root, "theme-packs", themeId, "theme.json"), "utf8");
-    expect(JSON.parse(raw).rev).toBe(7);
-    expect(manifest.themeSpec.path).toContain("-7-");
+    expect(JSON.parse(raw).rev).toBe(9);
+    expect(manifest.themeSpec.path).toContain("-9-");
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(raw));
     // The published render pack has to match the tracked source revision.
     expect(pack(themeId).specPath).toBe(manifest.themeSpec.path);
