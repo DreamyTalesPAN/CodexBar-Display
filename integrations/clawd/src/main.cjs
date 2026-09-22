@@ -13,7 +13,10 @@ async function main() {
  if(!runtimeDir||!path.isAbsolute(runtimeDir)) throw Error('runtime-directory-required');
  fs.mkdirSync(runtimeDir,{recursive:true,mode:0o700});
  const integrationOptions={runtimeDir,directory:path.resolve(__dirname,'..')};
- require('./integrations.cjs').configureAll(process.argv[3]==='true',integrationOptions);
+ // A conflicting native file must not take down existing observers or the
+ // configuration endpoint. The same transactional operation can be retried
+ // through Settings after the conflict is resolved.
+ try {require('./integrations.cjs').configureAll(process.argv[3]==='true',integrationOptions);} catch {}
  const token=randomBytes(32).toString('hex');
  const engine=await createEngine({token,integrationOptions,hooksEnabled:process.argv[3]==='true',doneSeconds:Number(process.argv[4]),codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
  const endpoint=path.join(runtimeDir,'endpoint.json');
