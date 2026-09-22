@@ -49,9 +49,9 @@ private let runtimeValidationUnregisterArgument =
 private let runtimeValidationUnregisterEnvironmentKey =
     "VIBETV_RUNTIME_VALIDATION_UNREGISTER"
 private let codexBarBundleIdentifier = "com.steipete.codexbar"
-private let codexBarPinnedVersion = "0.63.0"
+private let codexBarPinnedVersion = "0.46.0"
 
-private let codexBarArchiveName = "CodexBar-macos-universal-0.63.0.zip"
+private let codexBarArchiveName = "CodexBar-macos-universal-0.46.0.zip"
 
 private let legacyLaunchAgents = [
     ("com.codexbar-display.daemon", "com.codexbar-display.daemon.plist"),

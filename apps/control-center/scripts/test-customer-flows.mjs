@@ -330,7 +330,7 @@ function readyProviderSetup() {
     checkedAt: "2026-07-17T17:00:00Z",
     engine: {
       status: "ready",
-      version: "0.63.0",
+      version: "0.46.0",
       path: "/Users/customer/Applications/CodexBar.app",
       source: "bundled",
       configWritable: true,
@@ -3669,7 +3669,7 @@ function providerSetupFixture(status) {
     checkedAt: "2026-07-17T17:00:00Z",
     engine: {
       status: engineProblem ? status : "ready",
-      version: "0.63.0",
+      version: "0.46.0",
       path: "/Users/customer/Applications/CodexBar.app",
       source: "bundled",
       configWritable: status !== "config_error",

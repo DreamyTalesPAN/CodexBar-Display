@@ -18,8 +18,7 @@ describe("SetupProviderRow", () => {
   });
 
   it.each(["checking", "auth_required", "setup_required", "permission_required", "timeout",
-    "no_usage_available", "service_outage", "unavailable", "config_error", "engine_error", "stale",
-    "unsupported"])(
+    "no_usage_available", "service_outage", "unavailable", "config_error", "engine_error", "stale"])(
     "keeps the switch usable for %s", (health) => {
       const html = render({ health });
       expect(html).toContain('role="switch"');
@@ -98,7 +97,6 @@ describe("provider popup guidance", () => {
   it.each([
     ["auth_required", "Sign in to Claude Code"],
     ["permission_required", "Allow access in macOS"],
-    ["unsupported", "This provider no longer supports this account"],
     ["no_usage_available", "No usage data on this account"],
     ["service_outage", "Service outage — try again later"],
     ["stale", "Live usage is unavailable"],
@@ -112,39 +110,5 @@ describe("provider popup guidance", () => {
 
   it.each(["healthy", "checking", "disabled"])("does not turn %s into an error", (health) => {
     expect(setupProviderIssueMessage({ health, label: "Codex" })).toBeNull();
-  });
-});
-
-// Google ended Gemini CLI OAuth for consumer accounts. The stored credential
-// is still valid, so a sign-in button or a re-check would only repeat the
-// same refusal; the row must carry the provider's migration path instead.
-describe("a provider the account lost access to", () => {
-  const reportedMessage =
-    "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.";
-
-  it("shows the migration message and no sign-in or re-check loop", () => {
-    const html = render({
-      health: "unsupported",
-      label: "Gemini",
-      onOpenSignIn: vi.fn(),
-    });
-    expect(html).toContain('aria-label="Show provider message for Gemini"');
-    // The two actions that cannot resolve it must not be offered.
-    expect(html).not.toContain("Sign in to Gemini");
-    expect(html).not.toContain('aria-label="Check Gemini again"');
-    // Switching it off is how the customer moves on, so it stays available.
-    expect(html).toContain('role="switch"');
-    expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
-  });
-
-  it("passes the upstream migration guidance through unchanged", () => {
-    expect(
-      setupProviderIssueMessage({
-        health: "unsupported",
-        label: "Gemini",
-        detail: "Gemini no longer supports this account.",
-        reportedMessage,
-      }),
-    ).toBe(reportedMessage);
   });
 });

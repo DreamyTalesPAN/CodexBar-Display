@@ -141,12 +141,9 @@ const (
 	// endpoint only answers a browser session. See ProviderBrowserSignInRequired.
 	ProviderHealthBrowserSignIn ProviderHealthState = "browser_sign_in_required"
 	ProviderHealthSetupRequired ProviderHealthState = "setup_required"
-	// ProviderHealthUnsupported mirrors ProviderUnsupported: the account lost
-	// access to the provider, so no sign-in or repair on this row resolves it.
-	ProviderHealthUnsupported ProviderHealthState = "unsupported"
-	ProviderHealthNoUsage     ProviderHealthState = "no_usage_available"
-	ProviderHealthUnavailable ProviderHealthState = "unavailable"
-	ProviderHealthChecking    ProviderHealthState = "checking"
+	ProviderHealthNoUsage       ProviderHealthState = "no_usage_available"
+	ProviderHealthUnavailable   ProviderHealthState = "unavailable"
+	ProviderHealthChecking      ProviderHealthState = "checking"
 )
 
 type ProviderServiceState string
@@ -552,11 +549,6 @@ func providerHealthErrorText(value any) string {
 }
 
 func classifyProviderHealth(raw string) ProviderHealthState {
-	// Share the terminal diagnosis with the setup path, ahead of the auth
-	// markers below: the shutdown message contains "oauth" and "sign in".
-	if classifyProviderError(raw) == ProviderUnsupported {
-		return ProviderHealthUnsupported
-	}
 	message := strings.ToLower(raw)
 	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "cookie", "token"} {
 		if strings.Contains(message, marker) {
