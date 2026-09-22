@@ -81,7 +81,7 @@ describe("displayPreviewsFor", () => {
       label: id.slice(0, 1).toUpperCase() + id.slice(1),
     }));
 
-  it("rotates only through the providers that are switched on", () => {
+  it("includes only the providers that are switched on", () => {
     const previews = displayPreviewsFor(usage, enabled("codex", "claude"));
 
     expect(previews.map((p) => p.providerLabel)).toEqual(["Codex", "Claude"]);
@@ -100,9 +100,11 @@ describe("displayPreviewsFor", () => {
     ]);
   });
 
-  // Dropping a provider the usage service has not reported yet shrank the
-  // rotation to whatever had already been read. On a Mac where that was one
-  // provider, Automatic held still and looked exactly like Manual.
+  it("puts the acknowledged provider first and follows actual changes", () => {
+    expect(displayPreviewsFor(usage, enabled("codex", "claude"), "claude").map(p => p.providerLabel)).toEqual(["Claude", "Codex"]);
+    expect(displayPreviewsFor(usage, enabled("codex", "claude"), "codex").map(p => p.providerLabel)).toEqual(["Codex", "Claude"]);
+  });
+
   it("keeps a provider that has no reading yet, as unavailable", () => {
     const previews = displayPreviewsFor(usage, enabled("codex", "gemini"));
 
@@ -114,7 +116,7 @@ describe("displayPreviewsFor", () => {
     });
   });
 
-  it("has an empty rotation when nothing is switched on", () => {
+  it("has no choices when nothing is switched on", () => {
     expect(displayPreviewsFor(usage, [])).toEqual([]);
     expect(displayPreviewsFor(null, enabled("codex"))).toEqual([
       {

@@ -81,9 +81,11 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).toContain('data-provider="claude" data-session="12"');
   });
 
-  it("rotates from the caller's provider list without lending missing readings", () => {
-    const html = render({ previewTheme: { id: "clippy", name: "Clippy" }, providers: [cursor, codex] });
-    expect(html).toContain('data-provider="" data-session="0" data-week-unavailable="true"');
+  it("shows the supplied current provider regardless of inventory order", () => {
+    const html = render({ previewTheme: { id: "clippy", name: "Clippy" }, providers: [cursor, codex],
+      automaticPreview: displayPreviewFor({ id: "codex", label: "Codex", session: 64, weekly: 12, usageMode: "used" }) });
+    expect(html).toContain('data-provider="codex" data-session="64"');
+    expect(html).not.toContain('data-provider="cursor"');
   });
 
   it("shows a missing theme as unavailable", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
@@ -27,10 +27,6 @@ import {
   SetupWizardTitle,
 } from "./setup-wizard-screen";
 
-/** How long the Automatic tile rests on one provider before moving on. */
-// Short enough that the rotation reads as a rotation without waiting on it.
-const ROTATION_HOLD_MS = 1000;
-
 /** One AI provider that is switched on for this Mac. */
 export type SetupDisplayModeProvider = {
   id: string;
@@ -54,14 +50,6 @@ type SetupDisplayModeScreenProps = {
   usageMode?: UsageDisplayMode;
   /** Live usage of the provider Automatic would show right now. */
   automaticPreview: SetupDisplayModePreview | null;
-  /**
-   * Every provider Automatic moves through, in the order it moves through
-   * them. Optional: a caller that has only read one provider can leave it out,
-   * and the tile falls back to `providers` so the rotation still names all of
-   * them — the ones it holds no reading for stay visibly unavailable rather
-   * than borrowing another provider's numbers.
-   */
-  automaticPreviews?: SetupDisplayModePreview[];
   /** Live usage of the provider Manual is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
   mode: ProviderDisplaySelection["mode"];
@@ -81,7 +69,6 @@ export function SetupDisplayModeScreen({
   previewTheme,
   usageMode,
   automaticPreview,
-  automaticPreviews,
   manualPreview,
   mode,
   aiFixPrompt,
@@ -111,7 +98,6 @@ export function SetupDisplayModeScreen({
         previewTheme={previewTheme}
         usageMode={usageMode}
         automaticPreview={automaticPreview}
-        automaticPreviews={automaticPreviews}
         className="mt-4"
         manualPreview={manualPreview}
         mode={mode}
@@ -154,7 +140,6 @@ type DisplayModeChoiceProps = Pick<
   | "previewTheme"
   | "usageMode"
   | "automaticPreview"
-  | "automaticPreviews"
   | "manualPreview"
   | "mode"
   | "onSelectMode"
@@ -177,7 +162,6 @@ export function DisplayModeChoice({
   previewTheme,
   usageMode,
   automaticPreview,
-  automaticPreviews,
   className,
   manualPreview,
   mode,
@@ -187,13 +171,6 @@ export function DisplayModeChoice({
   saving = false,
   selectedProviderId,
 }: DisplayModeChoiceProps) {
-  const rotation = rotationFrames(
-    automaticPreview,
-    automaticPreviews,
-    providers,
-  );
-  const { index } = useProviderRotation(rotation.length);
-
   return (
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <div className="grid w-full grid-cols-2 items-stretch gap-4">
@@ -204,7 +181,7 @@ export function DisplayModeChoice({
           selected={mode === "automatic"}
           title="Automatic"
         >
-          <PreviewTile simple={simplePreview} preview={rotation[index]} theme={previewTheme} usageMode={usageMode} />
+          <PreviewTile simple={simplePreview} preview={automaticPreview} theme={previewTheme} usageMode={usageMode} />
         </ModeCard>
         <ModeCard
           description="VibeTV always shows the one provider you pick — nothing else."
@@ -246,60 +223,6 @@ export function DisplayModeChoice({
       ) : null}
     </div>
   );
-}
-
-/**
- * The providers the Automatic tile moves through. A caller that hands over the
- * whole set decides the order; otherwise the enabled providers are the set,
- * and only the one reading the caller did take carries numbers.
- */
-function rotationFrames(
-  automaticPreview: SetupDisplayModePreview | null,
-  automaticPreviews: SetupDisplayModePreview[] | undefined,
-  providers: SetupDisplayModeProvider[],
-): SetupDisplayModePreview[] {
-  if (automaticPreviews?.length) return automaticPreviews;
-  if (!providers.length) return automaticPreview ? [automaticPreview] : [];
-  return providers.map((provider) =>
-    provider.label === automaticPreview?.providerLabel
-      ? automaticPreview
-      : {
-          providerLabel: provider.label,
-          resetLabel: null,
-          windows: [],
-        },
-  );
-}
-
-/**
- * Which provider the Automatic tile is on. It starts held on the first one, so
- * server output and a reduced-motion Mac render the same still tile; on such a
- * Mac the card's own description is what says the mode rotates.
- */
-function useProviderRotation(count: number): { index: number } {
-  const [animated, setAnimated] = useState(false);
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => setAnimated(!query.matches);
-    sync();
-    query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
-  }, []);
-
-  const moving = animated && count > 1;
-
-  useEffect(() => {
-    if (!moving) return;
-    const timer = window.setInterval(
-      () => setIndex((current) => (current + 1) % count),
-      ROTATION_HOLD_MS,
-    );
-    return () => window.clearInterval(timer);
-  }, [count, moving]);
-
-  return { index: count ? index % count : 0 };
 }
 
 export function ModeCard({

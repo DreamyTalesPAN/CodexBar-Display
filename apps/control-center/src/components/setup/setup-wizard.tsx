@@ -981,7 +981,6 @@ export function SetupWizard(props: SetupWizardProps) {
           previewTheme={props.themes.find((theme) => theme.id === props.selectedThemeId)}
           usageMode={props.usageMode ?? undefined}
           automaticPreview={props.automaticPreviews[0] ?? null}
-          automaticPreviews={props.automaticPreviews}
           manualPreview={
             props.automaticPreviews.find(
               (preview) =>

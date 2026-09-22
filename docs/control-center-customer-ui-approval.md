@@ -4725,3 +4725,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: "wie siehts aus mit dem display mode automatic? bisher hat der auf basis von token difference umgeschaltet, glaube ich. zieh das um auf die neue agent activity."
 - Approved customer-visible result: Automatic follows the new Agent activity source instead of token or usage deltas. Needs-you states take priority, then the existing engine priority; the most recently observed session in that phase leads. Idle/unavailable/unmapped activity retains the current available provider. The master switch controls this behavior too; Manual stays pinned. The Automatic tile describes this behavior and its dependency on Agent activity. No new setting or connection control is added.
 - Validation: regression tests cover activity-only switching, waiting priority, token spikes, master-off, Manual, stale observations and missing/disabled usage providers. Remove the old usage-delta and filesystem-activity heuristics rather than retain a second activity owner.
+
+## 2026-09-22 — Automatic preview matches observed selection
+
+- User approval: The request to move Automatic from token differences to the new Agent activity also governs its preview in Setup and Settings.
+- Approved customer-visible result: Remove the old timed provider rotation from the Automatic tile. Its existing preview follows the provider acknowledged by VibeTV, using the shared display-frame path; no browser-side activity inference or new controls. Without a display frame yet, preview the first available provider choice.
+- Validation: Codex review 5279093171 identified the stale rotation. The shared preview now updates only with supplied data; tests cover current-provider ordering and real selection changes.

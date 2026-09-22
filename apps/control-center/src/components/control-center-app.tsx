@@ -4585,6 +4585,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id: item.providerId,
       label: item.label,
     })),
+    displayFrame?.frame?.provider,
   );
   // Step 05 keeps offering all four live themes: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the

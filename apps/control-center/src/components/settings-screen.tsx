@@ -58,7 +58,7 @@ export type SettingsScreenProps = {
   usageMode?: UsageDisplayMode | null;
   usageSavePending?: boolean;
   onUsageModeChange?: (mode: UsageDisplayMode) => void;
-  /** Live usage per provider, in the order Automatic moves through them. */
+  /** Live usage per provider, with the currently displayed provider first. */
   automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
   brightness: number | null;
@@ -247,7 +247,6 @@ export function SettingsScreen({
           simplePreview
           usageMode={usageMode ?? undefined}
           automaticPreview={automaticPreviews[0] ?? null}
-          automaticPreviews={automaticPreviews}
           manualPreview={
             automaticPreviews.find(
               (preview) =>
