@@ -15,6 +15,9 @@ import (
 // pipe, watchdog and restart contract runs on Windows and Mac alike.
 func TestMain(m *testing.M) {
 	if mode := os.Getenv("VIBETV_TEST_ENGINE_PROCESS"); mode != "" {
+		if expected := os.Getenv("VIBETV_TEST_ENGINE_ENABLED"); expected != "" && os.Args[len(os.Args)-1] != expected {
+			os.Exit(2)
+		}
 		if mode == "silent" {
 			_, _ = io.Copy(io.Discard, os.Stdin)
 			os.Exit(0)
@@ -72,7 +75,8 @@ func TestSupervisorRestartsInvalidChildAndStopsOnCancellation(t *testing.T) {
 	dir := helperDirectory(t, "restart")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	engine := Start(ctx, dir, t.TempDir(), nil)
+	t.Setenv("VIBETV_TEST_ENGINE_ENABLED", "true")
+	engine := Start(ctx, dir, t.TempDir(), func() bool { return true }, nil)
 	waitHealth(t, engine, "ready", 10*time.Second)
 	cancel()
 	waitHealth(t, engine, "stopped", 5*time.Second)
@@ -80,6 +84,7 @@ func TestSupervisorRestartsInvalidChildAndStopsOnCancellation(t *testing.T) {
 
 func TestSupervisorReapsSilentChild(t *testing.T) {
 	dir := helperDirectory(t, "silent")
+	t.Setenv("VIBETV_TEST_ENGINE_ENABLED", "false")
 	engine := &Engine{}
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

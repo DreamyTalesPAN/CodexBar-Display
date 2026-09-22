@@ -138,3 +138,33 @@ test('usage identities are explicit and unknown clients cannot borrow quota',asy
  const mapped=Object.fromEntries(engine.snapshot().sources.filter(source=>source.usageProvider).map(source=>[source.id,source.usageProvider]));
  assert.deepEqual(mapped,{'codex':'codex','claude-code':'claude','gemini-cli':'gemini','antigravity-cli':'antigravity','copilot-cli':'copilot'});
 });
+
+test('master off clears observations and ignores hooks retained by running clients',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const {profiles}=require('../src/integrations.cjs');
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'vibetv-master-fence-'));
+ const previous=new Map(Object.values(profiles).map(profile=>[profile,profile.file]));
+ for(const [id,profile] of Object.entries(profiles)) profile.file=()=>path.join(directory,id+'.json');
+ let engine;
+ try {
+  engine=await createEngine({token,hooksEnabled:false,integrationOptions:{directory,runtimeDir:path.join(directory,'runtime'),claudeVersionInfo:{version:'2.1.78',status:'known',source:'test'}}});
+  const post=(body,url='/state')=>fetch(engine.url+url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify(body)});
+  const event=name=>post(buildObservation('claude-code',name,{session_id:'test',tool_name:'AskUserQuestion'},()=>({})));
+  assert.equal((await event('UserPromptSubmit')).status,204,'disabled on startup');
+  assert.equal(engine.snapshot().sessions.length,0);
+  assert.equal((await post({enabled:true},'/integrations')).status,200);
+  await event('UserPromptSubmit');await event('PreToolUse');
+  assert.equal(engine.snapshot().phase,'waiting_for_answer');
+  assert.equal((await post({enabled:false},'/integrations')).status,200);
+  assert.equal(engine.snapshot().sessions.length,0,'old waiting phase cleared');
+  assert.equal((await event('PreToolUse')).status,204,'loaded hook ignored while off');
+  assert.equal((await post({enabled:true},'/integrations')).status,200);
+  assert.equal(engine.snapshot().sessions.length,0,'reenable does not replay old phase');
+  await event('UserPromptSubmit');
+  assert.equal(engine.snapshot().phase,'working','new evidence resumes activity');
+ } finally {
+  if(engine)await engine.close();
+  for(const [profile,file]of previous){if(file)profile.file=file;else delete profile.file;}
+  fs.rmSync(directory,{recursive:true,force:true});
+ }
+});

@@ -563,7 +563,10 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	engine := agentstatus.Start(ctx, agentstatus.BundledDirectory(), runtimepaths.Path(home, "agent-engine"), func() {
+	engine := agentstatus.Start(ctx, agentstatus.BundledDirectory(), runtimepaths.Path(home, "agent-engine"), func() bool {
+		cfg, err := runtimeconfig.Load(home)
+		return err == nil && cfg.AgentActivitySettings().Enabled
+	}, func() {
 		select {
 		case renderWake <- struct{}{}:
 		default:

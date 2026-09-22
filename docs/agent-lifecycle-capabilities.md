@@ -63,3 +63,9 @@ migration, not a signed Sparkle/NSIS installation or rollback rehearsal.
 New firmware advertises `agent-activity-v1` for all phases and its 15-second
 activity lease. Older firmware receives legacy `coding`/`idle`; it cannot gain
 the new writer-loss expiry without a firmware update.
+
+Disabling the master clears existing observations through upstream session cleanup
+and ignores HTTP hook ingress until enabled again, including in-flight requests
+from before the toggle. A restarted engine receives the saved master choice from
+the Companion. Codex local log observation remains passive and may supply fresh
+events while display activity is off; old hook states cannot replay on re-enable.

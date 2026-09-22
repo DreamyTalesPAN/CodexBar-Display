@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -143,12 +144,13 @@ func decode(data []byte, now time.Time) (Snapshot, error) {
 }
 
 type Engine struct {
-	mu         sync.RWMutex
-	value      Snapshot
-	received   time.Time
-	lastWake   time.Time
-	wake       func()
-	runtimeDir string
+	mu           sync.RWMutex
+	value        Snapshot
+	received     time.Time
+	lastWake     time.Time
+	wake         func()
+	runtimeDir   string
+	hooksEnabled func() bool
 }
 
 func (e *Engine) accept(value Snapshot, now time.Time) {
@@ -192,8 +194,8 @@ func BundledDirectory() string {
 	}
 	return filepath.Join(filepath.Dir(executable), "agent-engine")
 }
-func Start(ctx context.Context, directory, runtimeDir string, wake func()) *Engine {
-	e := &Engine{wake: wake, runtimeDir: runtimeDir}
+func Start(ctx context.Context, directory, runtimeDir string, hooksEnabled func() bool, wake func()) *Engine {
+	e := &Engine{wake: wake, runtimeDir: runtimeDir, hooksEnabled: hooksEnabled}
 	e.unavailable("starting")
 	go func() {
 		for ctx.Err() == nil {
@@ -218,7 +220,8 @@ func (e *Engine) run(ctx context.Context, directory, runtimeDir string) {
 	if runtime.GOOS == "windows" {
 		binary = "node.exe"
 	}
-	cmd := childproc.Hide(exec.CommandContext(ctx, filepath.Join(directory, binary), filepath.Join(directory, "src", "main.cjs"), runtimeDir))
+	enabled := e.hooksEnabled != nil && e.hooksEnabled()
+	cmd := childproc.Hide(exec.CommandContext(ctx, filepath.Join(directory, binary), filepath.Join(directory, "src", "main.cjs"), runtimeDir, strconv.FormatBool(enabled)))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return

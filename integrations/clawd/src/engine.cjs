@@ -20,9 +20,10 @@ const noop=()=>{};
 // still report lifecycle but cannot select an unrelated provider's quota.
 const usageProviders={'codex':'codex','claude-code':'claude','gemini-cli':'gemini','antigravity-cli':'antigravity','copilot-cli':'copilot'};
 const priority=['waiting_for_permission','waiting_for_answer','waiting_for_review','error','compacting','tool_use','thinking','working','done','stale','idle','unavailable'];
-async function createEngine({token,port=0,codexSessionsDir=null,integrationOptions=null,now=Date.now}={}) {
+async function createEngine({token,port=0,codexSessionsDir=null,integrationOptions=null,hooksEnabled=true,now=Date.now}={}) {
  if(typeof token!=='string'||token.length<32) throw Error('engine-token-required');
  const instance=randomUUID();
+ let observationEpoch=0;
  const ctx={lang:'en',theme:{hitBoxes:{default:{}},states:Object.fromEntries(['idle',...new Set(getAllAgents().flatMap(agent=>Object.values(agent.eventMap||{})))].map(state=>[state,['']])),timings:{minDisplay:{},autoReturn:{}}},
   doNotDisturb:false,miniTransitioning:false,miniMode:false,mouseOverPet:false,idlePaused:true,
   forceEyeResend:false,eyePauseUntil:0,mouseStillSince:now(),miniSleepPeeked:false,
@@ -112,6 +113,7 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
   if(auth.length!==expected.length||!timingSafeEqual(auth,expected)) {res.writeHead(401);res.end();return;}
   if(req.method==='GET'&&req.url==='/snapshot') {res.setHeader('Content-Type','application/json');res.end(JSON.stringify(snapshot()));return;}
   if(req.method!=='POST'||!['/state','/integrations'].includes(req.url)) {res.writeHead(404);res.end();return;}
+  const requestEpoch=observationEpoch;
   let body=Buffer.alloc(0);
   try {
    for await(const chunk of req) {if(body.length+chunk.length>16384){res.writeHead(413);res.end();return;}body=Buffer.concat([body,chunk]);}
@@ -121,10 +123,20 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
     try {
      if(!data||Object.keys(data).some(key=>key!=='enabled')) throw Error('invalid-agent-activity');
      integrations.configureAll(data.enabled,integrationOptions);
+     if(hooksEnabled!==data.enabled) observationEpoch++;
+     hooksEnabled=data.enabled;
+     if(!hooksEnabled) {
+      // Use upstream cleanup so pending completion timers cannot restore a wait.
+      for(const agent of getAllAgents()) state.clearSessionsByAgent(agent.id);
+     }
     }
     catch {res.writeHead(409);res.end(JSON.stringify({error:'agent-integration-could-not-be-saved'}));return;}
     res.setHeader('Content-Type','application/json');res.end(JSON.stringify(snapshot()));return;
    }
+   // Running clients may retain the removed hook in memory. Ignore it while
+   // disabled, including requests that crossed an off/on transition. The local
+   // Codex log monitor stays observational and can supply fresh events.
+   if(!hooksEnabled || requestEpoch!==observationEpoch) {res.writeHead(204);res.end();return;}
    if(!data||typeof data.session_id!=='string'||!data.session_id.trim()||data.session_id.length>256||/(^|:)default$/.test(data.session_id)) {res.writeHead(422);res.end();return;}
    const identity=resolveHookAgentId(data,{allowDefaultAgent:false});
    if(identity.rejected||!getAllAgents().some(agent=>agent.id===identity.agentId)){res.writeHead(422);res.end();return;}

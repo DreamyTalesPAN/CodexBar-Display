@@ -15,7 +15,7 @@ async function main() {
  const integrationOptions={runtimeDir,directory:path.resolve(__dirname,'..')};
  require('./integrations.cjs').refreshConfigured(integrationOptions);
  const token=randomBytes(32).toString('hex');
- const engine=await createEngine({token,integrationOptions,codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
+ const engine=await createEngine({token,integrationOptions,hooksEnabled:process.argv[3]==='true',codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
  const endpoint=path.join(runtimeDir,'endpoint.json');
  const temp=endpoint+'.'+process.pid+'.tmp';
  fs.writeFileSync(temp,JSON.stringify({schemaVersion:1,url:engine.url,token}),{mode:0o600});
