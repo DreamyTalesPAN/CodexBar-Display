@@ -132,3 +132,9 @@ test('manual native denial settles only its exact waiting tool from transcript e
  assert.equal(snapshot.sessions[0].errorKind,'tool');
  assert.doesNotMatch(JSON.stringify(snapshot),/PRIVATE|session.jsonl/);
 });
+
+test('usage identities are explicit and unknown clients cannot borrow quota',async t=>{
+ const {engine}=await fixture(t);
+ const mapped=Object.fromEntries(engine.snapshot().sources.filter(source=>source.usageProvider).map(source=>[source.id,source.usageProvider]));
+ assert.deepEqual(mapped,{'codex':'codex','claude-code':'claude','gemini-cli':'gemini','antigravity-cli':'antigravity','copilot-cli':'copilot'});
+});

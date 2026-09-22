@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ type Session struct {
 	ErrorKind    string `json:"errorKind,omitempty"`
 }
 type Source struct {
+	UsageProvider    string `json:"usageProvider,omitempty"`
 	ID               string `json:"id"`
 	Name             string `json:"name"`
 	Transport        string `json:"transport"`
@@ -74,6 +76,38 @@ func (s Snapshot) DisplayName() string {
 	return "Agent"
 }
 
+// ActiveProviders follows the engine's aggregate priority. Within that phase,
+// the most recently observed session leads; stable IDs resolve equal timestamps.
+// Passive or unhealthy observations never move the display.
+func (s Snapshot) ActiveProviders() []string {
+	if s.Health != "ready" || !ValidPhase(s.Phase) {
+		return nil
+	}
+	switch s.Phase {
+	case "idle", "stale", "unavailable":
+		return nil
+	}
+	sessions := append([]Session(nil), s.Sessions...)
+	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].ObservedAt != sessions[j].ObservedAt {
+			return sessions[i].ObservedAt > sessions[j].ObservedAt
+		}
+		return sessions[i].ID < sessions[j].ID
+	})
+	var providers []string
+	for _, session := range sessions {
+		if session.Phase != s.Phase {
+			continue
+		}
+		for _, source := range s.Sources {
+			if source.ID == session.Source && source.UsageProvider != "" && !slices.Contains(providers, source.UsageProvider) {
+				providers = append(providers, source.UsageProvider)
+			}
+		}
+	}
+	return providers
+}
+
 func ValidPhase(value string) bool {
 	switch value {
 	case "idle", "working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "unavailable":
@@ -101,7 +135,7 @@ func decode(data []byte, now time.Time) (Snapshot, error) {
 		seen[row.ID] = true
 	}
 	for _, source := range s.Sources {
-		if !sourcePattern.MatchString(source.ID) || len(source.Name) > 80 || len(source.Transport) > 32 || len(source.CapabilityLevel) > 32 {
+		if (source.UsageProvider != "" && !sourcePattern.MatchString(source.UsageProvider)) || !sourcePattern.MatchString(source.ID) || len(source.Name) > 80 || len(source.Transport) > 32 || len(source.CapabilityLevel) > 32 {
 			return s, errors.New("invalid engine source")
 		}
 	}

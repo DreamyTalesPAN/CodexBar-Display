@@ -198,7 +198,7 @@ export function DisplayModeChoice({
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <div className="grid w-full grid-cols-2 items-stretch gap-4">
         <ModeCard
-          description="VibeTV switches between your providers based on recent activity and usage."
+          description="With Agent activity on, VibeTV follows your agents. Agents that need you come first. Otherwise, the current provider stays on screen."
           disabled={saving}
           onSelect={() => onSelectMode("automatic")}
           selected={mode === "automatic"}

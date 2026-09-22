@@ -84,7 +84,7 @@ when the step is really done, not when a button was pressed.
    your normal WiFi afterward. Leave VibeTV powered during any required update.
 3. `Choose AI providers` — switch on the tools whose usage VibeTV should show.
    At least one has to be switched on and working before you can continue.
-4. `Display Mode` — `Automatic` rotates through your providers, `Manual` pins
+4. `Display Mode` — `Automatic` follows observed agent activity when enabled, `Manual` pins
    the display to one of them.
 5. `Choose your theme`, then `Install`. The install runs on the device and
    reports its steps.

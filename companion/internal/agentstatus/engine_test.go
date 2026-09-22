@@ -149,3 +149,35 @@ func TestSteadyHeartbeatsRenewDeviceLeaseWithoutWakingEverySecond(t *testing.T) 
 		t.Fatal("phase change waited for renewal")
 	}
 }
+
+func TestActiveProvidersFollowAggregatePhaseAndRecency(t *testing.T) {
+	s := Snapshot{Health: "ready", Phase: "waiting_for_answer", Sources: []Source{
+		{ID: "codex", UsageProvider: "codex"}, {ID: "claude-code", UsageProvider: "claude"},
+	}, Sessions: []Session{
+		{ID: "a", Source: "codex", Phase: "working", ObservedAt: 99},
+		{ID: "b", Source: "claude-code", Phase: "waiting_for_answer", ObservedAt: 10},
+		{ID: "c", Source: "unknown", Phase: "waiting_for_answer", ObservedAt: 100},
+	}}
+	if got := s.ActiveProviders(); len(got) != 1 || got[0] != "claude" {
+		t.Fatalf("wait lost priority: %v", got)
+	}
+	s.Sessions[0].Phase = "waiting_for_answer"
+	if got := s.ActiveProviders(); len(got) != 2 || got[0] != "codex" {
+		t.Fatalf("recency lost: %v", got)
+	}
+	s.Sessions[1].ObservedAt = 99
+	if got := s.ActiveProviders(); got[0] != "codex" {
+		t.Fatalf("tie unstable: %v", got)
+	}
+	for _, phase := range []string{"idle", "stale", "unavailable", "invalid"} {
+		s.Phase = phase
+		if got := s.ActiveProviders(); len(got) != 0 {
+			t.Fatalf("passive %s selected %v", phase, got)
+		}
+	}
+	s.Phase = "waiting_for_answer"
+	s.Health = "stale"
+	if got := s.ActiveProviders(); len(got) != 0 {
+		t.Fatalf("stale engine selected %v", got)
+	}
+}

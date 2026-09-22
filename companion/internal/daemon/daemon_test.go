@@ -6178,7 +6178,8 @@ func TestApplyProviderDisplaySelectionUsesEveryCurrentlyEnabledAutomaticProvider
 		ProviderIDs: []string{"codex", "claude"},
 	})
 
-	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps)
+	cfg, _ := loadRuntimeConfig(deps)
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, cfg.ProviderDisplay)
 	if len(got) != 2 || got[0].Frame.Provider != "claude" || got[1].Frame.Provider != "cursor" {
 		t.Fatalf("automatic selection=%+v want every currently enabled ready provider", got)
 	}
@@ -6196,7 +6197,8 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderWithoutFallback(t *testi
 		ProviderIDs: []string{"codex"},
 	})
 
-	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, deps)
+	cfg, _ := loadRuntimeConfig(deps)
+	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, cfg.ProviderDisplay)
 	if len(got) != 1 || got[0].Frame.Provider != "codex" || !got[0].Frame.UsageUnavailable {
 		t.Fatalf("fixed selection silently fell back: %+v", got)
 	}
@@ -6997,4 +6999,50 @@ func TestAgentTransitionsStayOutOfUsageRecoveryCache(t *testing.T) {
 			t.Fatal("agent transition changed saved usage")
 		}
 	}
+}
+
+func TestAutomaticDisplayFollowsObservedAgents(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Now()
+	snapshot := agentstatus.Snapshot{Health: "ready", Phase: "working", Sources: []agentstatus.Source{
+		{ID: "codex", UsageProvider: "codex"}, {ID: "claude-code", UsageProvider: "claude"},
+	}, Sessions: []agentstatus.Session{{ID: "a", Source: "claude-code", Phase: "working", ObservedAt: 10}}}
+	cfg := runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}, ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude"}}}
+	deps := runtimeDeps{loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil }}.withDefaults()
+	state := &runtimeState{selector: codexbar.NewProviderSelector(), agentSnapshot: func() agentstatus.Snapshot { return snapshot }}
+	providers := []codexbar.ParsedFrame{testParsedFrame("codex", 10, 20, 3600), testParsedFrame("claude", 30, 40, 7200)}
+	state.selector.SetCurrentProvider("codex")
+	check := func(want string) {
+		t.Helper()
+		got := selectCycleFrameFromProviders(state, providers, now, deps, "", "", "", "")
+		if got.frame.Provider != want {
+			t.Fatalf("selected %s, want %s (%s)", got.frame.Provider, want, got.selectionReason)
+		}
+		if got.frame.AgentName != "" {
+			t.Fatal("selection polluted usage with lifecycle")
+		}
+	}
+	check("claude") // Switch without any quota or token change.
+	snapshot.Phase = "waiting_for_answer"
+	snapshot.Sessions = append(snapshot.Sessions, agentstatus.Session{ID: "b", Source: "codex", Phase: "waiting_for_answer", ObservedAt: 5})
+	check("codex") // Needs-you wins over a more recent working session.
+	snapshot.Phase = "idle"
+	providers[1].Frame.Session = 99
+	providers[1].Frame.TotalTokens = 2_700_000_000
+	check("codex") // No token fallback after the agent stops.
+	snapshot.Phase = "working"
+	snapshot.Health = "stale"
+	check("codex")
+	snapshot.Health = "ready"
+	cfg.AgentActivity.Enabled = false
+	check("codex")
+	cfg.AgentActivity.Enabled = true
+	cfg.ProviderDisplay.Mode = "fixed"
+	cfg.ProviderDisplay.ProviderIDs = []string{"codex"}
+	check("codex") // Manual remains pinned despite Claude activity.
+	cfg.ProviderDisplay.Mode = "automatic"
+	providers[1].Frame.UsageUnavailable = true
+	check("codex") // Observations cannot manufacture usable quota.
+	providers = providers[:1]
+	check("codex") // An agent cannot resurrect a disabled provider.
 }

@@ -1202,7 +1202,8 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
-	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
+	cfg, configured := loadRuntimeConfig(deps)
+	allProviders = applyProviderDisplaySelection(state, allProviders, cfg.ProviderDisplay)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -1210,7 +1211,11 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureErr = codexbar.ErrNoProviders
 		return finalizeCycleResult(state, result, now)
 	}
-	decision, ok := state.selector.SelectWithDecision(allProviders)
+	var activeProviders []string
+	if configured && cfg.AgentActivitySettings().Enabled && (cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic") && state.agentSnapshot != nil {
+		activeProviders = state.agentSnapshot().ActiveProviders()
+	}
+	decision, ok := state.selector.SelectWithDecision(allProviders, activeProviders...)
 	if !ok {
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = "select-provider"
@@ -1249,20 +1254,19 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	return result
 }
 
-func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) []codexbar.ParsedFrame {
-	cfg, ok := loadRuntimeConfig(deps)
-	if !ok || cfg.ProviderDisplay == nil {
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, display *runtimeconfig.ProviderDisplayConfig) []codexbar.ParsedFrame {
+	if display == nil {
 		return preferAvailableProviders(providers)
 	}
 	// Automatic means every provider currently enabled in CodexBar. The
 	// collected list already follows that inventory, while ProviderIDs is only
 	// the snapshot saved when the customer chose the mode. Filtering by that
 	// snapshot silently excluded providers enabled later outside this app.
-	if cfg.ProviderDisplay.Mode == "automatic" {
+	if display.Mode == "automatic" {
 		return preferAvailableProviders(providers)
 	}
-	allowed := make(map[string]struct{}, len(cfg.ProviderDisplay.ProviderIDs))
-	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+	allowed := make(map[string]struct{}, len(display.ProviderIDs))
+	for _, providerID := range display.ProviderIDs {
 		providerID = normalizeProviderKey(providerID)
 		if providerID != "" {
 			allowed[providerID] = struct{}{}

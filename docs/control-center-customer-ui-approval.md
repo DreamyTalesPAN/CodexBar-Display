@@ -4719,3 +4719,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul's master-switch request explicitly makes switching Agent activity on the action that enables all supported agents.
 - Approved customer-visible result: New profiles start with Agent activity off, so the first on action installs every supported hook adapter before confirming success. Explicitly saved choices are preserved. This supersedes the earlier on-by-default presentation setting now that the control also installs observers. Blink, reminder and quiet defaults remain unchanged.
 - Scope: Default and regression coverage only, fixing the reviewed clean-install activation gap without another connection control or startup installation path.
+
+## 2026-09-22 — Automatic display follows observed agent activity
+
+- User approval: "wie siehts aus mit dem display mode automatic? bisher hat der auf basis von token difference umgeschaltet, glaube ich. zieh das um auf die neue agent activity."
+- Approved customer-visible result: Automatic follows the new Agent activity source instead of token or usage deltas. Needs-you states take priority, then the existing engine priority; the most recently observed session in that phase leads. Idle/unavailable/unmapped activity retains the current available provider. The master switch controls this behavior too; Manual stays pinned. The Automatic tile describes this behavior and its dependency on Agent activity. No new setting or connection control is added.
+- Validation: regression tests cover activity-only switching, waiting priority, token spikes, master-off, Manual, stale observations and missing/disabled usage providers. Remove the old usage-delta and filesystem-activity heuristics rather than retain a second activity owner.

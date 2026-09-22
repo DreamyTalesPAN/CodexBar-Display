@@ -46,7 +46,7 @@ describe("SetupDisplayModeScreen", () => {
 
     expect(html).toContain("Automatic");
     expect(html).toContain(
-      "VibeTV switches between your providers based on recent activity and usage.",
+      "With Agent activity on, VibeTV follows your agents. Agents that need you come first. Otherwise, the current provider stays on screen.",
     );
     expect(html).toContain("Manual");
     expect(html).toContain(
