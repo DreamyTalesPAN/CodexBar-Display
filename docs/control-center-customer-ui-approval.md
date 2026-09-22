@@ -4638,3 +4638,32 @@ issue scope, or release permission never implies UI permission.
 - User approval: Shown that reverting #466 would delete Claude Creature 1.3.0 and Mini Classic 1.2.0, which the merge had already published to the live catalog, Marcus chose the option that republishes them at a higher version instead of deleting assets customers may already have installed.
 - Approved customer-visible result: The theme catalog offers Claude Creature 1.3.1 and Mini Classic 1.2.1. Their rendered layout is byte-identical to the pre-merge revisions, so the #258 legibility layout is withdrawn and the earlier text positions, sizes, and colors are what customers see again. The previously published 1.3.0 and 1.2.0 downloads stay available, so a device that already installed one keeps working and updates through the ordinary catalog path. No control, copy, or screen changes beyond the theme rendering itself.
 - Scope: `theme-packs/claude-creature`, `theme-packs/mini-classic`, and the regenerated `dist/theme-packs` artifacts. No release, installation, or device operation.
+
+## 2026-09-22 — The idle reset text verified on real hardware (#448)
+
+- User approval: Marcus asked for the #448 fix to be tested on the real device
+  ("mach den test auf echter hardware"). Issue #448 makes that verification an
+  acceptance criterion, so this records the hardware evidence the earlier
+  entries could not claim. No customer-visible behaviour is changed by this
+  entry.
+- Approved customer-visible result: Unchanged from the entries above. The
+  hardware run confirms them: on VibeTV `16199591`
+  (`esp8266-smalltv-st7789`) running the candidate firmware built from this
+  branch, the published Claude Creature theme shows `No active session` for an
+  idle Claude session, `Resets in 2h 0m` when a deadline exists, and
+  `Reset unavailable` when the basis cannot be trusted. Night Clock, which
+  binds only provider slots, behaves the same way.
+- Evidence: `CODEX Test VibeTV Merge` run `35729768498` built firmware
+  `9999.0.116` from this branch head; every job passed. Its `firmware.bin`
+  matched the manifest SHA-256
+  `8f2a0920b3de55bab6469f746e05885a8ff9444e0b0b1fd6d2ab64b873cdd855` and was
+  installed over the device's cable transport, which then reported that exact
+  firmware, a healthy display stream, and the published Claude Creature spec
+  `/themes/u/claude--6-546f9e.json` active with `renderOk`. The device
+  accepted the customer's exact idle wire frame from the issue. Rendering that
+  same stored spec and frame through this branch's renderer prints
+  `No active session`, while the pre-fix renderer on `main` prints
+  `Resets in Reset unavailable` for identical inputs.
+- Approved files: This approval record only.
+- Scope: Recording hardware evidence. No code, theme, release, or customer
+  device operation is part of this entry.
