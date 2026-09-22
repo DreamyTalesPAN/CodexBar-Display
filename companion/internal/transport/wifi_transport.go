@@ -61,15 +61,12 @@ type DeviceHealthSnapshot struct {
 	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
-			Active      bool   `json:"active"`
-			Path        string `json:"path"`
-			Hash        string `json:"hash"`
-			RenderOk    bool   `json:"renderOk"`
-			RenderError string `json:"renderError"`
-			// Theme asset that produced the current sprite render error, so
-			// support can name the failing file instead of guessing.
-			RenderErrorAsset string `json:"renderErrorAsset"`
-			RenderFailures   int    `json:"renderFailures"`
+			Active         bool   `json:"active"`
+			Path           string `json:"path"`
+			Hash           string `json:"hash"`
+			RenderOk       bool   `json:"renderOk"`
+			RenderError    string `json:"renderError"`
+			RenderFailures int    `json:"renderFailures"`
 		} `json:"themeSpec"`
 		GIF struct {
 			ActivePath       string `json:"activePath"`

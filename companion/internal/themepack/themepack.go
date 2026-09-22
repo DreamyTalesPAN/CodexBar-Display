@@ -34,25 +34,6 @@ const (
 
 	maxDevicePathChars = 31
 	maxZipEntries      = 256
-
-	// Mirrors the firmware's sprite limits so a pack the app accepts cannot
-	// fail only after an install has started writing files to the device.
-	// kMaxSpriteDimension and kSpriteLineMaxBytes in firmware_esp8266.
-	maxSpriteDimension = 480
-	maxSpriteRowChars  = 512
-
-	// An animated sprite is composed in a full-frame buffer before it is
-	// pushed, so its rendered size is bounded by that buffer rather than by
-	// the source dimension limit. kMaxCbaBufferWidth/Height in
-	// firmware_esp8266 theme_spec_runtime_policy.h.
-	maxAnimatedSpriteRenderDimension = 80
-
-	// The device-side sprite validator reads header and palette lines into a
-	// fixed token buffer before parsing them, and it cannot stream a single
-	// long numeric token. Enforcing that smaller limit here keeps a pack from
-	// passing preflight and then failing during upload.
-	// kMaxTokenLineBytes in firmware_esp8266 sprite_asset_validator.cpp.
-	maxSpriteTokenLineChars = 63
 )
 
 // Pack categories. `kind` marks the file format; `usage` marks what the pack is
@@ -541,24 +522,7 @@ func validateDevicePath(devicePath string) error {
 		strings.HasSuffix(devicePath, "/") {
 		return fmt.Errorf("unsafe device path: %s", devicePath)
 	}
-	// The firmware compares asset suffixes against lowercase literals, so an
-	// uppercase extension changes how the device treats the file: a .CBA is
-	// classified as static, never gets an animation tick, and leaves the theme
-	// with a silently missing sprite.
-	// Only animated assets are affected. A static sprite dispatches on its
-	// CBI1 header rather than its suffix, so /themes/u/icon.CBI renders fine
-	// and must not be rejected here.
-	extension := path.Ext(devicePath)
-	if lowered := strings.ToLower(extension); extension != lowered && suffixClassifiedExtensions[lowered] {
-		return fmt.Errorf("device path extension must be lowercase: %s", devicePath)
-	}
 	return nil
-}
-
-// Extensions whose casing changes how the firmware classifies an asset.
-var suffixClassifiedExtensions = map[string]bool{
-	".cba": true,
-	".gif": true,
 }
 
 func cleanPackFile(name string) (string, error) {
@@ -606,101 +570,18 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 
 func validateSpriteAssets(spec themespec.Spec, assets []File) error {
 	refs := referencedSpriteAssets(spec)
+	if len(refs) == 0 {
+		return nil
+	}
 	for _, asset := range assets {
-		_, referenced := refs[asset.Entry.Path]
-		// Every .cbi/.cba file in the pack is written to the device, so an
-		// unreferenced sprite must be validated too. Otherwise a malformed
-		// asset still reaches storage and only fails later in the renderer.
-		if !referenced && !hasSpriteExtension(asset.Entry.Path) {
+		if _, ok := refs[asset.Entry.Path]; !ok {
 			continue
 		}
 		if err := validateSpriteAsset(asset.Entry.Path, asset.Data); err != nil {
 			return err
 		}
 	}
-	return validateAnimatedSpriteRenderSizes(spec, assets)
-}
-
-// validateAnimatedSpriteRenderSizes rejects a CBA whose rendered size exceeds
-// the firmware's frame buffer. The source dimension limit is not enough: the
-// renderer composes the effective size from the primitive, falling back to the
-// asset's own dimensions, and CbaBufferBytes() returns zero above 80x80. Such
-// a theme would otherwise install and only then fail with cba_render_failed.
-func validateAnimatedSpriteRenderSizes(spec themespec.Spec, assets []File) error {
-	animated := map[string]bool{}
-	for _, asset := range assets {
-		if !strings.HasSuffix(strings.ToLower(asset.Entry.Path), ".cba") {
-			continue
-		}
-		animated[asset.Entry.Path] = true
-	}
-	if len(animated) == 0 {
-		return nil
-	}
-	sourceSizes := map[string][2]int{}
-	for _, asset := range assets {
-		if !animated[asset.Entry.Path] {
-			continue
-		}
-		lines := spriteAssetLines(asset.Data)
-		if len(lines) == 0 || lines[0] != "CBA1" {
-			continue
-		}
-		width, height, _, _, err := parseSpriteDimensions(lines[1:], true)
-		if err != nil {
-			continue
-		}
-		sourceSizes[asset.Entry.Path] = [2]int{width, height}
-	}
-	for index, primitive := range spec.Primitives {
-		if primitive.Type != "sprite" && primitive.Type != "image" {
-			continue
-		}
-		for _, assetPath := range primitiveSpriteAssets(primitive) {
-			if !animated[assetPath] {
-				continue
-			}
-			width, height := primitive.Width, primitive.Height
-			if source, ok := sourceSizes[assetPath]; ok {
-				// An omitted primitive dimension means the asset draws at its
-				// own size, which is exactly what the renderer buffers.
-				if width <= 0 {
-					width = source[0]
-				}
-				if height <= 0 {
-					height = source[1]
-				}
-			}
-			if width > maxAnimatedSpriteRenderDimension ||
-				height > maxAnimatedSpriteRenderDimension {
-				return fmt.Errorf(
-					"primitives[%d] renders animated sprite %s at %dx%d, max %dx%d",
-					index, assetPath, width, height,
-					maxAnimatedSpriteRenderDimension,
-					maxAnimatedSpriteRenderDimension)
-			}
-		}
-	}
 	return nil
-}
-
-func primitiveSpriteAssets(primitive themespec.Primitive) []string {
-	paths := []string{}
-	if primitive.AssetPath != "" {
-		paths = append(paths, primitive.AssetPath)
-	}
-	for _, assetPath := range primitive.StateAssets {
-		paths = append(paths, assetPath)
-	}
-	for _, assetPath := range primitive.ProviderAssets {
-		paths = append(paths, assetPath)
-	}
-	return paths
-}
-
-func hasSpriteExtension(devicePath string) bool {
-	lower := strings.ToLower(devicePath)
-	return strings.HasSuffix(lower, ".cbi") || strings.HasSuffix(lower, ".cba")
 }
 
 func referencedSpriteAssets(spec themespec.Spec) map[string]struct{} {
@@ -731,119 +612,19 @@ func validateSpriteAsset(devicePath string, data []byte) error {
 	if len(lines) == 0 {
 		return fmt.Errorf("sprite asset %s is empty", devicePath)
 	}
-	// readSpriteLine() counts raw bytes against its line buffer before
-	// trimming, so the limit must be checked before spriteAssetLines trims.
-	if err := validateRawSpriteLineLengths(devicePath, data); err != nil {
-		return err
-	}
-	// The device validator holds header and palette lines in a smaller token
-	// buffer than the renderer's line buffer, so a long token it cannot read
-	// must be rejected here rather than during upload.
-	if err := validateSpriteTokenLineLengths(devicePath, lines); err != nil {
-		return err
-	}
 	switch lines[0] {
 	case "CBI1":
-		// The firmware schedules animation from the .cba suffix, not from the
-		// payload, so a CBA stored as .cbi never animates and the theme shows
-		// a missing sprite after a successful install.
-		if strings.HasSuffix(lowerPath, ".cba") {
-			return fmt.Errorf("sprite asset %s is .cba but contains a CBI1 payload", devicePath)
-		}
 		return validateStaticSpriteAsset(devicePath, lines)
 	case "CBA1":
-		if strings.HasSuffix(lowerPath, ".cbi") {
-			return fmt.Errorf("sprite asset %s is .cbi but contains a CBA1 payload", devicePath)
-		}
 		return validateAnimatedSpriteAsset(devicePath, lines)
 	default:
 		return fmt.Errorf("sprite asset %s has unsupported header %q", devicePath, lines[0])
 	}
 }
 
-// validateSpriteTokenLineLengths mirrors the device validator's token buffer,
-// which holds a whole header or palette line while RLE rows are streamed. A
-// long numeric token such as a value padded with leading zeroes stays inside
-// the renderer's line limit and parses correctly, yet the device validator
-// cannot hold it, so the pack would install only to fail at upload.
-//
-// Only the header, dimensions, and palette lines use that buffer. Their count
-// is known from the palette size, and anything past it is a streamed row.
-func validateSpriteTokenLineLengths(devicePath string, lines []string) error {
-	// Header, dimensions, palette size, then one line per palette colour.
-	tokenLines := len(lines)
-	if len(lines) > 2 {
-		if paletteSize, err := strconv.Atoi(lines[2]); err == nil {
-			if bounded := 3 + paletteSize; bounded < tokenLines {
-				tokenLines = bounded
-			}
-		}
-	}
-	for index := 0; index < tokenLines; index++ {
-		// ReadTrimmedLine() collapses an interior whitespace run to a single
-		// separator before it fills the token buffer, and ParseCbaHeader()
-		// reads a run as one separator too. Measuring the uncollapsed line
-		// would reject a header the device validates and renders.
-		if collapsed := collapseHeaderSeparators(lines[index]); len(collapsed) > maxSpriteTokenLineChars {
-			return fmt.Errorf(
-				"sprite asset %s line %d is %d bytes, max %d for a header line",
-				devicePath, index, len(collapsed), maxSpriteTokenLineChars)
-		}
-	}
-	return nil
-}
-
-// collapseHeaderSeparators mirrors ReadTrimmedLine() on the device, which
-// stores one space for each interior whitespace run.
-func collapseHeaderSeparators(line string) string {
-	var builder strings.Builder
-	pendingSeparator := false
-	for i := 0; i < len(line); i++ {
-		if line[i] == ' ' || line[i] == '\t' {
-			pendingSeparator = builder.Len() > 0
-			continue
-		}
-		if pendingSeparator {
-			builder.WriteByte(' ')
-			pendingSeparator = false
-		}
-		builder.WriteByte(line[i])
-	}
-	return builder.String()
-}
-
-// validateRawSpriteLineLengths mirrors readSpriteLine() on the device, which
-// counts every raw byte except CR against its fixed line buffer before the row
-// is trimmed. Checking the trimmed rows alone would accept a row padded with
-// whitespace that the firmware then refuses to read.
-func validateRawSpriteLineLengths(devicePath string, data []byte) error {
-	length := 0
-	line := 0
-	for _, b := range data {
-		if b == '\r' {
-			continue
-		}
-		if b == '\n' {
-			length = 0
-			line++
-			continue
-		}
-		length++
-		if length > maxSpriteRowChars {
-			return fmt.Errorf(
-				"sprite asset %s line %d exceeds %d bytes",
-				devicePath, line, maxSpriteRowChars)
-		}
-	}
-	return nil
-}
-
 func spriteAssetLines(data []byte) []string {
 	raw := strings.ReplaceAll(string(data), "\r\n", "\n")
-	// Both firmware readers drop a lone CR without ending the line, so turning
-	// one into a line break here would split a payload the device reads as a
-	// single unparsable line. Dropping it keeps both sides on the same rows.
-	raw = strings.ReplaceAll(raw, "\r", "")
+	raw = strings.ReplaceAll(raw, "\r", "\n")
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -903,55 +684,36 @@ func parseSpriteDimensions(lines []string, animated bool) (width, height, frameC
 	if len(fields) != want {
 		return 0, 0, 0, 0, fmt.Errorf("dimensions must have %d fields", want)
 	}
-	width, err = parseSpriteNumber(fields[0])
+	width, err = strconv.Atoi(fields[0])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("width must be numeric")
 	}
-	height, err = parseSpriteNumber(fields[1])
+	height, err = strconv.Atoi(fields[1])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("height must be numeric")
 	}
 	if width <= 0 || height <= 0 {
 		return 0, 0, 0, 0, errors.New("width/height must be > 0")
 	}
-	if width > maxSpriteDimension || height > maxSpriteDimension {
-		return 0, 0, 0, 0, fmt.Errorf("width/height must be <= %d", maxSpriteDimension)
-	}
 	if !animated {
 		return width, height, 1, 0, nil
 	}
-	frameCount, err = parseSpriteNumber(fields[2])
+	frameCount, err = strconv.Atoi(fields[2])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("frame count must be numeric")
 	}
-	fps, err = parseSpriteNumber(fields[3])
+	fps, err = strconv.Atoi(fields[3])
 	if err != nil {
 		return 0, 0, 0, 0, errors.New("fps must be numeric")
 	}
 	return width, height, frameCount, fps, nil
 }
 
-// parseSpriteNumber mirrors the firmware's ParseCbaHeader grammar, which reads
-// digits only. strconv.Atoi additionally accepts a leading sign, so a header
-// written as "+1 +1" passed preflight here and was only rejected once the
-// device had already started writing the pack.
-func parseSpriteNumber(field string) (int, error) {
-	if field == "" {
-		return 0, errors.New("value must be numeric")
-	}
-	for i := 0; i < len(field); i++ {
-		if field[i] < '0' || field[i] > '9' {
-			return 0, errors.New("value must be numeric")
-		}
-	}
-	return strconv.Atoi(field)
-}
-
 func parseSpritePalette(devicePath string, lines []string, index int) (paletteSize int, rowStart int, err error) {
 	if len(lines) <= index {
 		return 0, 0, fmt.Errorf("sprite asset %s missing palette size", devicePath)
 	}
-	paletteSize, err = parseSpriteNumber(lines[index-1])
+	paletteSize, err = strconv.Atoi(lines[index-1])
 	if err != nil || paletteSize <= 0 || paletteSize > 26 {
 		return 0, 0, fmt.Errorf("sprite asset %s palette size must be 1..26", devicePath)
 	}
@@ -969,27 +731,13 @@ func parseSpritePalette(devicePath string, lines []string, index int) (paletteSi
 
 func validateSpriteRows(devicePath string, rows []string, width int, paletteSize int) error {
 	for rowIndex, row := range rows {
-		// The firmware reads each row into a bounded line buffer, so a row it
-		// cannot read must be rejected here rather than at device upload.
-		if len(row) > maxSpriteRowChars {
-			return fmt.Errorf(
-				"sprite asset %s row %d is %d bytes, max %d",
-				devicePath, rowIndex, len(row), maxSpriteRowChars)
-		}
 		offset := 0
 		for i := 0; i < len(row); {
 			runLength := 0
 			hasRunLength := false
 			for i < len(row) && row[i] >= '0' && row[i] <= '9' {
 				hasRunLength = true
-				digit := int(row[i] - '0')
-				// Mirror the firmware's pre-multiply bound. Without it a run
-				// length wraps around on a 64-bit build and a row the device
-				// rejects is declared valid here.
-				if runLength > (maxSpriteDimension-digit)/10 {
-					return fmt.Errorf("sprite asset %s row %d has invalid RLE run", devicePath, rowIndex)
-				}
-				runLength = (runLength * 10) + digit
+				runLength = (runLength * 10) + int(row[i]-'0')
 				i++
 			}
 			if !hasRunLength {

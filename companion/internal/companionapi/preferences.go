@@ -237,8 +237,6 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 		return codexbar.ProviderHealthBrowserSignIn
 	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
 		return codexbar.ProviderHealthSetupRequired
-	case codexbar.ProviderUnsupported:
-		return codexbar.ProviderHealthUnsupported
 	case codexbar.ProviderNoUsageAvailable:
 		return codexbar.ProviderHealthNoUsage
 	default:
@@ -672,8 +670,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "disabled"
 			message = "Provider is off."
 			reported = ""
-		} else if _, retained := retainedSuccess[setting.ID]; retained &&
-			!providerIsDiscontinued(setting, readiness, readinessApplies) {
+		} else if _, retained := retainedSuccess[setting.ID]; retained {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 			if reported != "" {
@@ -757,29 +754,6 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 }
 
 func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
-	return providerReadinessAppliesToSettingImpl(readiness, setting, freshSuccess, now)
-}
-
-// A discontinued provider is not a freshness problem: no later reading can
-// arrive, so the retained snapshot never becomes live again. Reporting it as
-// stale would let the setup step keep offering the old percentage for the
-// whole retention window, so this state outranks a retained reading.
-//
-// The background provider scan reports it through setting.Health, and the
-// exact readiness record through its own status. After a Companion restart
-// only the background state exists, so both have to count.
-func providerIsDiscontinued(
-	setting codexbar.ProviderSetting,
-	readiness providerReadinessRecord,
-	readinessApplies bool,
-) bool {
-	if setting.Health == codexbar.ProviderHealthUnsupported {
-		return true
-	}
-	return readinessApplies && readiness.Status == codexbar.ProviderUnsupported
-}
-
-func providerReadinessAppliesToSettingImpl(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
 	age := now.Sub(readiness.CheckedAt)
 	if readiness.CheckedAt.IsZero() || age < 0 || age > providerReadinessFreshness {
 		return false
@@ -792,7 +766,7 @@ func providerReadinessAppliesToSettingImpl(readiness providerReadinessRecord, se
 	}
 	switch setting.Health {
 	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthBrowserSignIn, codexbar.ProviderHealthSetupRequired,
-		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable, codexbar.ProviderHealthUnsupported:
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
 		return false
 	default:
 		return true
@@ -817,8 +791,6 @@ func providerReadinessHealthState(status string) string {
 		return "browser_sign_in_required"
 	case codexbar.ProviderPermissionRequired:
 		return "permission_required"
-	case codexbar.ProviderUnsupported:
-		return "unsupported"
 	case codexbar.ProviderNoUsageAvailable:
 		return "no_usage_available"
 	case codexbar.ProviderTimeout:
@@ -844,8 +816,6 @@ func providerReadinessMessage(status string) string {
 		return "This provider needs a signed-in session in your browser."
 	case codexbar.ProviderPermissionRequired:
 		return "macOS blocked access required by this provider."
-	case codexbar.ProviderUnsupported:
-		return "This provider no longer supports this account."
 	case codexbar.ProviderNoUsageAvailable:
 		return "This account does not expose usage data."
 	case codexbar.ProviderTimeout:
@@ -869,8 +839,6 @@ func providerReadinessNextAction(status string) string {
 		return "Sign in to this provider in your browser, close the browser, then check this provider."
 	case codexbar.ProviderPermissionRequired:
 		return "Allow the required macOS access, then check this provider."
-	case codexbar.ProviderUnsupported:
-		return "Read the provider message, then switch this provider off and use another one."
 	case codexbar.ProviderNoUsageAvailable:
 		return "Use this provider once or connect an account with usage, then check again."
 	case codexbar.ProviderTimeout:
@@ -904,8 +872,6 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Sign in to this provider in your browser, close the browser, then check again."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
-	case codexbar.ProviderHealthUnsupported:
-		return "This provider no longer supports this account."
 	case codexbar.ProviderHealthNoUsage:
 		return "This account does not expose usage data."
 	case codexbar.ProviderHealthUnavailable:

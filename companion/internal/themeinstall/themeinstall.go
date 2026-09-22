@@ -1149,12 +1149,11 @@ func validateThemeHealthSnapshot(health transportlayer.DeviceHealthSnapshot, act
 		!health.Display.ThemeSpec.RenderOk ||
 		(strings.TrimSpace(activePath) != "" && health.Display.ThemeSpec.Path != activePath) {
 		return fmt.Errorf(
-			"theme render not healthy: active=%t path=%q renderOk=%t renderError=%q renderErrorAsset=%q activeTheme=%q",
+			"theme render not healthy: active=%t path=%q renderOk=%t renderError=%q activeTheme=%q",
 			health.Display.ThemeSpec.Active,
 			health.Display.ThemeSpec.Path,
 			health.Display.ThemeSpec.RenderOk,
 			health.Display.ThemeSpec.RenderError,
-			health.Display.ThemeSpec.RenderErrorAsset,
 			health.Display.ActiveTheme,
 		)
 	}

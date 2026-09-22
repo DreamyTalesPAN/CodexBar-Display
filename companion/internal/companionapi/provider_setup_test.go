@@ -51,7 +51,7 @@ func TestProviderSetupReconcilesFreshCollectorUsageAcrossStatusUsageAndDiagnosti
 		return codexbar.ProviderSetup{
 			Status:    "setup_required",
 			CheckedAt: now.Add(-time.Minute).Format(time.RFC3339Nano),
-			Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady, Version: "0.63.0"},
+			Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady, Version: "0.46.0"},
 			Providers: []codexbar.ProviderReadiness{{
 				ID: "codexbar", Label: "Usage service", Enabled: providerEnabled(true), Status: codexbar.ProviderEngineError,
 				Detail: "The usage service could not read this provider.",

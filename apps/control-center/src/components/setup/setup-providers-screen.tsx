@@ -98,11 +98,6 @@ export function setupProviderOffersSignIn(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
   const { state, signInUrl } = provider.health;
-  // The account lost access to this provider: its own message carries the
-  // migration path, and every sign-in here ends on the same refusal.
-  if (state === "unsupported") {
-    return false;
-  }
   if (state === "browser_sign_in_required") {
     // CodexBar named the page itself, so this works for any provider.
     return Boolean(signInUrl);

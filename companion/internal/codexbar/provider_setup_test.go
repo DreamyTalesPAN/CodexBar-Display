@@ -234,11 +234,11 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 		systemAppBinaryPaths = originalSystemApps
 	}()
 	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
-	t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
 	home := t.TempDir()
 	testenv.Home(t, home)
 
-	privateCLI := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	privateCLI := runtimepaths.Path(home, "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
 	foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
 	systemCLI := filepath.Join(t.TempDir(), "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
 	pathDir := t.TempDir()
@@ -277,7 +277,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "target app",
 			setup: func(t *testing.T, home string) {
-				targetApp := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app")
+				targetApp := runtimepaths.Path(home, "CodexBar", "0.46.0", "CodexBar.app")
 				realApp := filepath.Join(t.TempDir(), "CodexBar.app")
 				writeExecutable(t, filepath.Join(realApp, "Contents", "Helpers", "CodexBarCLI"))
 				if err := os.MkdirAll(filepath.Dir(targetApp), 0o700); err != nil {
@@ -293,7 +293,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 			setup: func(t *testing.T, home string) {
 				targetParent := runtimepaths.Path(home, "CodexBar")
 				realParent := filepath.Join(t.TempDir(), "CodexBar")
-				writeExecutable(t, filepath.Join(realParent, "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				writeExecutable(t, filepath.Join(realParent, "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
 				if err := os.MkdirAll(filepath.Dir(targetParent), 0o700); err != nil {
 					t.Fatal(err)
 				}
@@ -307,7 +307,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 			setup: func(t *testing.T, home string) {
 				config := filepath.Dir(runtimepaths.Root(home))
 				realConfig := filepath.Join(t.TempDir(), "config")
-				writeExecutable(t, filepath.Join(realConfig, "codexbar-display", "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				writeExecutable(t, filepath.Join(realConfig, "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
 				if err := os.MkdirAll(filepath.Dir(config), 0o700); err != nil {
 					t.Fatal(err)
 				}
@@ -326,7 +326,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 			}()
 			executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
 			systemAppBinaryPaths = nil
-			t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
+			t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
 			home := t.TempDir()
 			testenv.Home(t, home)
 			foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
@@ -414,13 +414,13 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.63.0"), nil
+		return []byte("CodexBar 0.46.0"), nil
 	}
 	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":0}}}]`), nil
 	}
 	got := ProbeProviderSetup(context.Background(), t.TempDir())
-	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.63" {
+	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.46" {
 		t.Fatalf("unexpected ready probe: %+v", got)
 	}
 	if len(got.Providers) != 1 || got.Providers[0].Status != ProviderReady {
@@ -643,7 +643,7 @@ func fileMode(t *testing.T, path string) os.FileMode {
 	return info.Mode()
 }
 
-// Verified against bundled CodexBar 0.63.0: `usage --json` lists only the
+// Verified against bundled CodexBar 0.46.0: `usage --json` lists only the
 // providers that are switched on and carries no enabled field, so switching
 // every provider off yields an empty list. That used to become the
 // not-configured stand-in, and the customer was told to download the CodexBar
@@ -663,7 +663,7 @@ func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.63.0"), nil
+		return []byte("CodexBar 0.46.0"), nil
 	}
 	inventoryCalls := 0
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
@@ -710,7 +710,7 @@ func TestProbeProviderSetupDisclosesSwitchedOffBesideSilentEnabledProvider(t *te
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.63.0"), nil
+		return []byte("CodexBar 0.46.0"), nil
 	}
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
@@ -751,7 +751,7 @@ func TestProbeProviderSetupDisclosesSwitchedOffBesideFailingProvider(t *testing.
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.63.0"), nil
+		return []byte("CodexBar 0.46.0"), nil
 	}
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
@@ -822,7 +822,7 @@ func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.63.0"), nil
+		return []byte("CodexBar 0.46.0"), nil
 	}
 	inventoryCalls := 0
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {

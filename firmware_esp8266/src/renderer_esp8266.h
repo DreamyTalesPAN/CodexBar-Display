@@ -18,7 +18,6 @@ struct RendererHealthSnapshot {
   bool themeSpecActive = false;
   bool themeSpecRenderOk = true;
   String themeSpecRenderError;
-  String themeSpecRenderErrorAsset;
   unsigned long themeSpecRenderFailures = 0;
   unsigned long cbaCompletedFrames = 0;
   unsigned long cbaLastFrameDurationMs = 0;
