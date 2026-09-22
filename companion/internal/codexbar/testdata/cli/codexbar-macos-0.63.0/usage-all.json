@@ -1,0 +1,1733 @@
+[
+  {
+    "credits": {
+      "balanceIsWorkspace": false,
+      "balanceReadSucceeded": true,
+      "creditsAvailable": false,
+      "events": [],
+      "remaining": 0,
+      "updatedAt": "2026-09-21T08:47:17Z"
+    },
+    "openaiDashboard": {
+      "accountID": "",
+      "accountPlan": "Pro 20x",
+      "codeReviewLimit": {
+        "usedPercent": 44
+      },
+      "codeReviewRemainingPercent": 56,
+      "creditEvents": [
+        {
+          "creditsUsed": 7.691,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "D394135F-EDF6-49A7-BB0F-08F1B97959DB",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 0.06,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "A3F6449D-0A21-44F2-B6D6-799538897259",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 15.83,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "61D69CC5-6D1D-42B2-9DBF-54B250BF663E",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 0.067,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "84AC228D-54FC-41E8-B1EA-3B9B8AFF85F6",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.334,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "26D36303-3506-427B-A98E-812D976A643B",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.331,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "6230F590-EDBE-490D-9243-7CB247BCD995",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.336,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "DC9ADB29-F1D3-4679-A902-94D6E741F1CC",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.346,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "44A95991-D5A5-4C70-A07B-3B94F94F61C5",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 1.348,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "6EC853ED-1215-472C-B3D9-8DEFF43CE1A0",
+          "service": "Desktop App"
+        },
+        {
+          "creditsUsed": 23.325,
+          "date": "2026-08-06T22:00:00Z",
+          "id": "235C5F3E-B3CD-4D31-B547-5D3982A35546",
+          "service": "Exec"
+        }
+      ],
+      "creditsAvailable": false,
+      "creditsRemaining": 0,
+      "dailyBreakdown": [
+        {
+          "day": "2026-08-07",
+          "services": [
+            {
+              "creditsUsed": 30.342999999999996,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 23.325,
+              "service": "Exec"
+            }
+          ],
+          "totalCreditsUsed": 53.66799999999999
+        }
+      ],
+      "primaryLimit": {
+        "resetDescription": "26. Sept., 10:15",
+        "resetsAt": "2026-09-26T08:15:28Z",
+        "usedPercent": 44,
+        "windowMinutes": 10080
+      },
+      "secondaryLimit": {
+        "resetDescription": "Resets Sep 26, 2026 10:15 AM",
+        "resetsAt": "2026-09-26T08:15:38Z",
+        "usedPercent": 44,
+        "windowMinutes": 10080
+      },
+      "signedInEmail": "redacted@example.com",
+      "subscriptionRenewsAt": "2026-10-09T09:04:37Z",
+      "updatedAt": "2026-09-21T08:32:38Z",
+      "usageBreakdown": [
+        {
+          "day": "2026-09-20",
+          "services": [
+            {
+              "creditsUsed": 68.25245010797093,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 5.145538182972864,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.00651530955977891,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 73.40450360050357
+        },
+        {
+          "day": "2026-09-19",
+          "services": [
+            {
+              "creditsUsed": 79.25594455168562,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 5.8102554874592425,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 4.787223048706037,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.04484530983749538,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 89.8982683976884
+        },
+        {
+          "day": "2026-09-18",
+          "services": [
+            {
+              "creditsUsed": 14.761035972274971,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 3.9797330599687433,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.2618270983365409,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.013440675004263134,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0017207953644370185,
+              "service": "Web"
+            }
+          ],
+          "totalCreditsUsed": 19.017757600948954
+        },
+        {
+          "day": "2026-09-17",
+          "services": [
+            {
+              "creditsUsed": 6.0593099737402545,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 4.816980186190753,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 3.375694687586812,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.022309817120569047,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 14.274294664638386
+        },
+        {
+          "day": "2026-09-16",
+          "services": [
+            {
+              "creditsUsed": 82.65580312531367,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 20.9749850982325,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 12.059117610599872,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.12193648138692234,
+              "service": "Agent Identity"
+            },
+            {
+              "creditsUsed": 0.054678706899029,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 115.866521022432
+        },
+        {
+          "day": "2026-09-15",
+          "services": [
+            {
+              "creditsUsed": 122.6472084297905,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 11.668696984764996,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 5.259039151230369,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.605165556041151,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.003915359227740154,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 140.18402548105476
+        },
+        {
+          "day": "2026-09-14",
+          "services": [
+            {
+              "creditsUsed": 164.62822822366357,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 8.6793914499475,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 3.548800519538309,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 1.163663920959402,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.021348045852592548,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 178.04143215996137
+        },
+        {
+          "day": "2026-09-13",
+          "services": [
+            {
+              "creditsUsed": 24.236612539148535,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.06638070509002066,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.014344466406398065,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 24.317337710644953
+        },
+        {
+          "day": "2026-09-12",
+          "services": [
+            {
+              "creditsUsed": 87.88504001935067,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 8.646245824140493,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 2.4370227738425925,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.011427419580298267,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 98.97973603691405
+        },
+        {
+          "day": "2026-09-11",
+          "services": [
+            {
+              "creditsUsed": 74.87898372296097,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 15.988255704400157,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 8.562156063615298,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.002886639116712968,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 99.43228213009313
+        },
+        {
+          "day": "2026-09-10",
+          "services": [
+            {
+              "creditsUsed": 231.57415368558767,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 25.051894344815306,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 13.817482695253126,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 1.9208179651243367,
+              "service": "Work Mobile"
+            },
+            {
+              "creditsUsed": 0.011532964305514334,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 272.37588165508595
+        },
+        {
+          "day": "2026-09-09",
+          "services": [
+            {
+              "creditsUsed": 282.9369777612248,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 44.82339839501428,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 13.352579614271653,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.017416413016720377,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0015410613761380392,
+              "service": "Agent Identity"
+            }
+          ],
+          "totalCreditsUsed": 341.1319132449036
+        },
+        {
+          "day": "2026-09-08",
+          "services": [
+            {
+              "creditsUsed": 301.8883203479208,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 62.44281420937484,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 37.14556282885925,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.013440104811553963,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0027739104770484703,
+              "service": "Agent Identity"
+            }
+          ],
+          "totalCreditsUsed": 401.49291140144345
+        },
+        {
+          "day": "2026-09-07",
+          "services": [
+            {
+              "creditsUsed": 112.21935063582205,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 1.4991771772082587,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.007061132951721987,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 113.72558894598203
+        },
+        {
+          "day": "2026-09-06",
+          "services": [
+            {
+              "creditsUsed": 2.731099869072424,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.008262200230185198,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 2.7393620693026093
+        },
+        {
+          "day": "2026-09-05",
+          "services": [
+            {
+              "creditsUsed": 15.387743691396526,
+              "service": "Work Desktop"
+            },
+            {
+              "creditsUsed": 13.371218792711016,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.013621123017666393,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 28.77258360712521
+        },
+        {
+          "day": "2026-09-04",
+          "services": [
+            {
+              "creditsUsed": 526.817926145604,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 48.642817629344464,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 24.266261147385833,
+              "service": "Work Desktop"
+            },
+            {
+              "creditsUsed": 0.25720314367743874,
+              "service": "Agent Identity"
+            },
+            {
+              "creditsUsed": 0.01579193398829199,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 600.0000000000001
+        },
+        {
+          "day": "2026-09-03",
+          "services": [
+            {
+              "creditsUsed": 136.8895564143725,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 14.168359562891386,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 1.121561985467787,
+              "service": "Work Desktop"
+            },
+            {
+              "creditsUsed": 0.1321677111480129,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.0335834259333506,
+              "service": "Web"
+            }
+          ],
+          "totalCreditsUsed": 152.34522909981305
+        },
+        {
+          "day": "2026-09-02",
+          "services": [
+            {
+              "creditsUsed": 77.17689179141465,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 3.020440743321902,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.21512866219423954,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.012370382194178998,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 80.42483157912497
+        },
+        {
+          "day": "2026-09-01",
+          "services": [
+            {
+              "creditsUsed": 47.80362378302342,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 10.488186848634914,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 4.855622223144345,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.01830362259844806,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 63.165736477401126
+        },
+        {
+          "day": "2026-08-31",
+          "services": [
+            {
+              "creditsUsed": 146.62832457128312,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 49.811097491443824,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 2.397284708353934,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.9067638115909669,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.08938311628799618,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 199.83285369895984
+        },
+        {
+          "day": "2026-08-30",
+          "services": [
+            {
+              "creditsUsed": 36.29165552182744,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 1.455559117282007,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.8635264066667997,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.17237262576995827,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.08045480768858905,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.01838124072309288,
+              "service": "Work Mobile"
+            }
+          ],
+          "totalCreditsUsed": 38.88194971995789
+        },
+        {
+          "day": "2026-08-29",
+          "services": [
+            {
+              "creditsUsed": 21.39324911759806,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.2857718531554111,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.07683661132600961,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 21.75585758207948
+        },
+        {
+          "day": "2026-08-28",
+          "services": [
+            {
+              "creditsUsed": 159.85309563619492,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 7.9579538301772414,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 3.7230089552200765,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 1.097361758630852,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.2541111119005141,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 172.88553129212363
+        },
+        {
+          "day": "2026-08-27",
+          "services": [
+            {
+              "creditsUsed": 139.3652631047958,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 14.94642049326877,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 14.830670756882492,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 4.6333844136627755,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.025303226106292112,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 173.80104199471612
+        },
+        {
+          "day": "2026-08-26",
+          "services": [
+            {
+              "creditsUsed": 145.6219035721368,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 16.64040046512416,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 8.14507494241458,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 1.5609177824528266,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.013446654322402551,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 171.98174341645074
+        },
+        {
+          "day": "2026-08-25",
+          "services": [
+            {
+              "creditsUsed": 168.33790807672298,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 12.11883885524899,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 6.841100850545905,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.7876453920895197,
+              "service": "Web"
+            },
+            {
+              "creditsUsed": 0.02147549162839917,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 188.1069686662358
+        },
+        {
+          "day": "2026-08-24",
+          "services": [
+            {
+              "creditsUsed": 96.44214947681384,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 10.36617472681878,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 5.790424390509123,
+              "service": "GitHub Code Review"
+            },
+            {
+              "creditsUsed": 0.060733937721833144,
+              "service": "CLI"
+            },
+            {
+              "creditsUsed": 0.032678422229599775,
+              "service": "Web"
+            }
+          ],
+          "totalCreditsUsed": 112.69216095409317
+        },
+        {
+          "day": "2026-08-23",
+          "services": [
+            {
+              "creditsUsed": 13.929213744246393,
+              "service": "Desktop App"
+            },
+            {
+              "creditsUsed": 0.6103789666766262,
+              "service": "Exec"
+            },
+            {
+              "creditsUsed": 0.004049827106550706,
+              "service": "CLI"
+            }
+          ],
+          "totalCreditsUsed": 14.54364253802957
+        }
+      ]
+    },
+    "pace": {
+      "secondary": {
+        "deltaPercent": 17,
+        "etaSeconds": 205094,
+        "expectedUsedPercent": 29,
+        "stage": "farAhead",
+        "summary": "17% in deficit | Expected 29% used | Runs out in 2d 8h",
+        "willLastToReset": false
+      }
+    },
+    "provider": "codex",
+    "source": "oauth",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "codexResetCredits": {
+        "availableCount": 1,
+        "credits": [
+          {
+            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zur\u00fccksetzung des Ratenlimits erhalten.",
+            "expires_at": "2026-10-05T04:19:25Z",
+            "granted_at": "2026-09-05T04:19:25Z",
+            "id": "codex-reset-credit-v1-ebd1be319f630bbeeab719b81d1f8677238359e16b1f8680e91a222260c9cb3c",
+            "reset_type": "codex_rate_limits",
+            "status": "available",
+            "title": "Vollst\u00e4ndiges Zur\u00fccksetzen"
+          }
+        ],
+        "updatedAt": "2026-09-21T08:47:17Z"
+      },
+      "dataConfidence": "exact",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "loginMethod": "pro",
+        "providerID": "codex"
+      },
+      "loginMethod": "pro",
+      "primary": null,
+      "providerCost": {
+        "balanceUpdatedAt": "2026-09-21T08:47:17Z",
+        "currencyCode": "Credits",
+        "limit": 0,
+        "period": "Extra usage",
+        "updatedAt": "2026-09-21T08:47:17Z",
+        "used": 0
+      },
+      "secondary": {
+        "resetDescription": "Sep 26 at 10:15\u202fAM",
+        "resetsAt": "2026-09-26T08:15:28Z",
+        "usedPercent": 46,
+        "windowMinutes": 10080
+      },
+      "tertiary": null,
+      "updatedAt": "2026-09-21T08:47:17Z"
+    },
+    "version": "0.155.0"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for openai."
+    },
+    "provider": "openai",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Azure OpenAI API key not configured. Set AZURE_OPENAI_API_KEY or configure an API key in Settings."
+    },
+    "provider": "azureopenai",
+    "source": "auto"
+  },
+  {
+    "pace": {
+      "primary": {
+        "deltaPercent": -27,
+        "expectedUsedPercent": 39,
+        "stage": "farBehind",
+        "summary": "27% in reserve | Expected 39% used | Lasts until reset",
+        "willLastToReset": true
+      },
+      "secondary": {
+        "deltaPercent": -10,
+        "expectedUsedPercent": 84,
+        "stage": "behind",
+        "summary": "10% in reserve | Expected 84% used | Lasts until reset",
+        "willLastToReset": true
+      }
+    },
+    "provider": "claude",
+    "source": "web",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "accountOrganization": "redacted@example.com's Organization",
+      "extraRateWindows": [
+        {
+          "id": "claude-weekly-scoped-fable",
+          "title": "Fable only",
+          "window": {
+            "resetsAt": "2026-09-22T11:00:00Z",
+            "usedPercent": 100,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "accountOrganization": "redacted@example.com's Organization",
+        "loginMethod": "Claude Max 20x",
+        "providerID": "claude"
+      },
+      "loginMethod": "Claude Max 20x",
+      "primary": {
+        "resetDescription": "Sep 21 at 1:50PM",
+        "resetsAt": "2026-09-21T11:50:00Z",
+        "usedPercent": 12,
+        "windowMinutes": 300
+      },
+      "providerCost": {
+        "balance": 0,
+        "currencyCode": "EUR",
+        "limit": 100,
+        "period": "Monthly cap",
+        "updatedAt": "2026-09-21T08:47:19Z",
+        "used": 0
+      },
+      "secondary": {
+        "resetDescription": "Sep 22 at 1:00PM",
+        "resetsAt": "2026-09-22T11:00:00Z",
+        "usedPercent": 74,
+        "windowMinutes": 10080
+      },
+      "tertiary": null,
+      "updatedAt": "2026-09-21T08:47:20Z"
+    }
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for clinepass."
+    },
+    "provider": "clinepass",
+    "source": "auto"
+  },
+  {
+    "pace": {
+      "primary": {
+        "deltaPercent": -39,
+        "expectedUsedPercent": 39,
+        "stage": "farBehind",
+        "summary": "39% in reserve | Expected 39% used | Lasts until reset",
+        "willLastToReset": true
+      },
+      "secondary": {
+        "deltaPercent": -39,
+        "expectedUsedPercent": 39,
+        "stage": "farBehind",
+        "summary": "39% in reserve | Expected 39% used | Lasts until reset",
+        "willLastToReset": true
+      },
+      "tertiary": {
+        "deltaPercent": -39,
+        "expectedUsedPercent": 39,
+        "stage": "farBehind",
+        "summary": "39% in reserve | Expected 39% used | Lasts until reset",
+        "willLastToReset": true
+      }
+    },
+    "provider": "cursor",
+    "source": "web",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "accountID": "user_01JXAZ336ZSDKH94QFXC8X05K4",
+        "loginMethod": "Cursor Free",
+        "providerID": "cursor"
+      },
+      "loginMethod": "Cursor Free",
+      "primary": {
+        "resetDescription": "Resets Oct 9 at 8:28PM",
+        "resetsAt": "2026-10-09T18:28:24Z",
+        "usedPercent": 0,
+        "windowMinutes": 43200
+      },
+      "secondary": {
+        "resetDescription": "Resets Oct 9 at 8:28PM",
+        "resetsAt": "2026-10-09T18:28:24Z",
+        "usedPercent": 0,
+        "windowMinutes": 43200
+      },
+      "tertiary": {
+        "resetDescription": "Resets Oct 9 at 8:28PM",
+        "resetsAt": "2026-10-09T18:28:24Z",
+        "usedPercent": 0,
+        "windowMinutes": 43200
+      },
+      "updatedAt": "2026-09-21T08:47:22Z"
+    }
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No OpenCode session cookies found in browsers."
+    },
+    "provider": "opencode",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No OpenCode session cookies found in browsers."
+    },
+    "provider": "opencodego",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for alibaba."
+    },
+    "provider": "alibaba",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Alibaba Token Plan session cookies found in browsers. Sign in to Model Studio/Bailian in Chrome, allow CodexBar to access Chrome Safe Storage in Keychain Access, or paste a manual Cookie header. Safari: Safari cookie file not found."
+    },
+    "provider": "alibabatokenplan",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Qwen Cloud session cookies found in browsers. Sign in to Qwen Cloud in Chrome or Brave, allow CodexBar to access the corresponding Safe Storage in Keychain Access (Chrome Safe Storage and/or Brave Safe Storage), or paste a manual Cookie header."
+    },
+    "provider": "qwencloud",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Safari cookie file not found."
+    },
+    "provider": "factory",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for fireworks."
+    },
+    "provider": "fireworks",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Not logged in to Gemini. Run 'gemini' in Terminal to authenticate."
+    },
+    "provider": "gemini",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Antigravity language server not detected. Launch Antigravity and retry."
+    },
+    "provider": "antigravity",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for copilot."
+    },
+    "provider": "copilot",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Devin browser session found. Please log in to app.devin.ai or paste a Bearer token."
+    },
+    "provider": "devin",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for zai."
+    },
+    "provider": "zai",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for minimax."
+    },
+    "provider": "minimax",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for manus."
+    },
+    "provider": "manus",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for kimi."
+    },
+    "provider": "kimi",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Kilo CLI session not found at /Users/redacted/.local/share/kilo/auth.json. Run `kilo auth login` to create ~/.local/share/kilo/auth.json."
+    },
+    "provider": "kilo",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Kiro usage requires the Kiro CLI. Install it from https://kiro.dev/docs/cli/ and run 'kiro-cli login' first."
+    },
+    "provider": "kiro",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for vertexai."
+    },
+    "provider": "vertexai",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Augment session found. Please log in to app.augmentcode.com in Safari, Chrome, Chrome Beta, Chrome Canary, Microsoft Edge, Microsoft Edge Beta, Brave, Arc, Dia, Arc Beta, or Firefox."
+    },
+    "provider": "augment",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No JetBrains IDE with AI Assistant detected. Install a JetBrains IDE and enable AI Assistant."
+    },
+    "provider": "jetbrains",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for moonshot."
+    },
+    "provider": "moonshot",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Amp session cookie found. Please log in to ampcode.com in your browser."
+    },
+    "provider": "amp",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No T3 Chat cookies found. Please log in to t3.chat in your browser."
+    },
+    "provider": "t3chat",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Ollama session cookie found. Please sign in at https://ollama.com/signin in your browser."
+    },
+    "provider": "ollama",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for synthetic."
+    },
+    "provider": "synthetic",
+    "source": "auto"
+  },
+  {
+    "provider": "openrouter",
+    "source": "api",
+    "usage": {
+      "details": [
+        {
+          "rows": [
+            {
+              "label": "Remaining",
+              "value": "$57.11"
+            },
+            {
+              "label": "Used",
+              "value": "$302.89"
+            },
+            {
+              "label": "Total added",
+              "value": "$360.00"
+            }
+          ],
+          "title": "Credits"
+        },
+        {
+          "chart": {
+            "kind": "bars",
+            "points": [
+              {
+                "label": "Today",
+                "value": 0
+              },
+              {
+                "label": "This week",
+                "value": 0
+              },
+              {
+                "label": "This month",
+                "value": 11.46585513
+              }
+            ],
+            "title": "Key spend",
+            "unit": "USD"
+          },
+          "rows": [
+            {
+              "label": "API key limit",
+              "secondaryValue": "Spending cap, not balance",
+              "value": "$18.00"
+            },
+            {
+              "label": "API key remaining",
+              "value": "$0.49"
+            },
+            {
+              "label": "API key used",
+              "value": "$17.51"
+            },
+            {
+              "label": "Today",
+              "value": "$0.00"
+            },
+            {
+              "label": "This week",
+              "value": "$0.00"
+            },
+            {
+              "label": "This month",
+              "value": "$11.47"
+            }
+          ],
+          "title": "API key"
+        },
+        {
+          "rows": [
+            {
+              "label": "Last 30 days",
+              "secondaryValue": "Management API key not configured",
+              "value": "Unavailable right now"
+            }
+          ],
+          "title": "Spend history"
+        }
+      ],
+      "identity": {
+        "loginMethod": "Balance: $57.11",
+        "providerID": "openrouter"
+      },
+      "loginMethod": "Balance: $57.11",
+      "primary": {
+        "usedPercent": 97.27703315000001
+      },
+      "secondary": null,
+      "tertiary": null,
+      "updatedAt": "2026-09-21T08:47:30Z"
+    }
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for elevenlabs."
+    },
+    "provider": "elevenlabs",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for warp."
+    },
+    "provider": "warp",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Windsurf database not found at /Users/redacted/Library/Application Support/Windsurf/User/globalStorage/state.vscdb. Ensure Windsurf is installed and has been launched at least once."
+    },
+    "provider": "windsurf",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Not signed in to Zed. Sign in from the Zed editor app with GitHub."
+    },
+    "provider": "zed",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for perplexity."
+    },
+    "provider": "perplexity",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Xiaomi MiMo browser session found. Log in at platform.xiaomimimo.com first."
+    },
+    "provider": "mimo",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "arkcli was not found. Install arkcli, run 'arkcli auth login', or configure Doubao API credentials."
+    },
+    "provider": "doubao",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for sakana."
+    },
+    "provider": "sakana",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Abacus AI session found. Please log in to apps.abacus.ai in your browser or paste a Cookie header in manual mode."
+    },
+    "provider": "abacus",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Mistral session cookies found in browsers."
+    },
+    "provider": "mistral",
+    "source": "auto"
+  },
+  {
+    "provider": "deepseek",
+    "source": "web",
+    "usage": {
+      "identity": {
+        "providerID": "deepseek"
+      },
+      "primary": null,
+      "secondary": null,
+      "tertiary": null,
+      "updatedAt": "2026-09-21T08:47:35Z"
+    }
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for deepinfra."
+    },
+    "provider": "deepinfra",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Codebuff API token not configured. Set CODEBUFF_API_KEY or run `codebuff login` to populate ~/.config/manicode/credentials.json."
+    },
+    "provider": "codebuff",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for crof."
+    },
+    "provider": "crof",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for venice."
+    },
+    "provider": "venice",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Command Code session cookie not found. Sign in to commandcode.ai in Chrome."
+    },
+    "provider": "commandcode",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Qoder session cookie not found. Sign in to qoder.com or qoder.com.cn in Chrome, or paste a Cookie header."
+    },
+    "provider": "qoder",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Missing StepFun username or password. Set STEPFUN_USERNAME and STEPFUN_PASSWORD environment variables."
+    },
+    "provider": "stepfun",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for bedrock."
+    },
+    "provider": "bedrock",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for grok."
+    },
+    "provider": "grok",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for groq."
+    },
+    "provider": "groq",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for llmproxy."
+    },
+    "provider": "llmproxy",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for litellm."
+    },
+    "provider": "litellm",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for deepgram."
+    },
+    "provider": "deepgram",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for poe."
+    },
+    "provider": "poe",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for chutes."
+    },
+    "provider": "chutes",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for neuralwatt."
+    },
+    "provider": "neuralwatt",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for clawrouter."
+    },
+    "provider": "clawrouter",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for longcat."
+    },
+    "provider": "longcat",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for sub2api."
+    },
+    "provider": "sub2api",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Could not reach the Wayfinder gateway. Start it with `wayfinder-router serve` (default http://127.0.0.1:8088) or fix the Gateway URL in Settings."
+    },
+    "provider": "wayfinder",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for zenmux."
+    },
+    "provider": "zenmux",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for aiand."
+    },
+    "provider": "aiand",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Could not parse ZoomMate usage: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+    },
+    "provider": "zoommate",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for xai."
+    },
+    "provider": "xai",
+    "source": "auto"
+  },
+  {
+    "pace": {
+      "secondary": {
+        "deltaPercent": -87,
+        "expectedUsedPercent": 87,
+        "stage": "farBehind",
+        "summary": "87% in reserve | Expected 87% used | Lasts until reset",
+        "willLastToReset": true
+      }
+    },
+    "provider": "notion",
+    "source": "web",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "accountOrganization": "DreamyTales GmbH",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "accountID": "17ad872b-594c-8152-b31f-00029313591a",
+        "accountOrganization": "DreamyTales GmbH",
+        "loginMethod": "Business",
+        "providerID": "notion"
+      },
+      "loginMethod": "Business",
+      "primary": {
+        "usedPercent": 0,
+        "windowMinutes": 360
+      },
+      "secondary": {
+        "resetsAt": "2026-09-25T10:00:00Z",
+        "usedPercent": 0.24,
+        "windowMinutes": 43200
+      },
+      "tertiary": null,
+      "updatedAt": "2026-09-21T08:47:37Z"
+    }
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for ibmbob."
+    },
+    "provider": "ibmbob",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Hermes auth file at /Users/redacted/.hermes/auth.json has no Nous Portal access token. Run `hermes auth add nous` to sign in."
+    },
+    "provider": "nous",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for muse."
+    },
+    "provider": "muse",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for coderabbit."
+    },
+    "provider": "coderabbit",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No Replicate session cookies found. Sign in at replicate.com/account/billing or paste a Cookie header."
+    },
+    "provider": "replicate",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for huggingface."
+    },
+    "provider": "huggingface",
+    "source": "auto"
+  },
+  {
+    "provider": "pi",
+    "source": "local",
+    "usage": {
+      "dataConfidence": "estimated",
+      "primary": null,
+      "secondary": null,
+      "tertiary": null,
+      "updatedAt": "2026-09-21T08:47:39Z"
+    }
+  }
+]

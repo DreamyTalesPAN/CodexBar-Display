@@ -477,12 +477,13 @@ type deviceHealthInfo struct {
 }
 
 type themeSpecHealth struct {
-	Active         bool   `json:"active"`
-	Path           string `json:"path,omitempty"`
-	Hash           string `json:"hash,omitempty"`
-	RenderOK       *bool  `json:"renderOk,omitempty"`
-	RenderError    string `json:"renderError,omitempty"`
-	RenderFailures uint64 `json:"renderFailures,omitempty"`
+	Active           bool   `json:"active"`
+	Path             string `json:"path,omitempty"`
+	Hash             string `json:"hash,omitempty"`
+	RenderOK         *bool  `json:"renderOk,omitempty"`
+	RenderError      string `json:"renderError,omitempty"`
+	RenderErrorAsset string `json:"renderErrorAsset,omitempty"`
+	RenderFailures   uint64 `json:"renderFailures,omitempty"`
 }
 
 type statusResponse struct {
@@ -1004,30 +1005,30 @@ func New(opts Options) (*Server, error) {
 		streamStatus: func(ctx context.Context, target string) displayStreamInfo {
 			return inspectDisplayStreamAfterRunning(ctx, target, time.Time{}, opts.DisplayStreamRunning)
 		},
-		waitRender:             nil,
-		refreshStream:          opts.RefreshDisplayStream,
-		pauseDisplayStream:     opts.PauseDisplayStream,
-		wakeDisplayStream:      opts.WakeDisplayStream,
-		renderDisplayStream:    opts.RenderDisplayStream,
-		displayStreamRunning:   opts.DisplayStreamRunning,
-		pairAttempts:           defaultPairAttempts,
-		pairAttemptTimeout:     defaultPairAttemptTimeout,
-		pairRetryGap:           defaultPairRetryGap,
-		repairFlights:          make(map[string]*deviceRepairFlight),
-		helloProbeCache:        make(map[string]helloProbeSnapshot),
-		helloProbeFlights:      make(map[string]*helloProbeFlight),
-		healthProbeCache:       make(map[string]healthProbeSnapshot),
-		healthProbeFlights:     make(map[string]*healthProbeFlight),
-		probeCacheTime:         deviceProbeCacheTime,
-		connectionStates:       make(map[string]*configuredDeviceConnection),
-		now:                    time.Now,
-		displayVerifications:   make(map[string]displayVerification),
-		allowMacAppSelfUpdate:  false,
-		installationMode:       macAppInstallationMode(),
-		loadUsage:              daemon.LoadPersistedUsage,
-		probeProviderSetup:     codexbar.ProbeProviderSetup,
-		probeExactProvider:     codexbar.ProbeProviderSetupForProvider,
-		exactProviderProbes:    make(map[string]*exactProviderProbeFlight),
+		waitRender:            nil,
+		refreshStream:         opts.RefreshDisplayStream,
+		pauseDisplayStream:    opts.PauseDisplayStream,
+		wakeDisplayStream:     opts.WakeDisplayStream,
+		renderDisplayStream:   opts.RenderDisplayStream,
+		displayStreamRunning:  opts.DisplayStreamRunning,
+		pairAttempts:          defaultPairAttempts,
+		pairAttemptTimeout:    defaultPairAttemptTimeout,
+		pairRetryGap:          defaultPairRetryGap,
+		repairFlights:         make(map[string]*deviceRepairFlight),
+		helloProbeCache:       make(map[string]helloProbeSnapshot),
+		helloProbeFlights:     make(map[string]*helloProbeFlight),
+		healthProbeCache:      make(map[string]healthProbeSnapshot),
+		healthProbeFlights:    make(map[string]*healthProbeFlight),
+		probeCacheTime:        deviceProbeCacheTime,
+		connectionStates:      make(map[string]*configuredDeviceConnection),
+		now:                   time.Now,
+		displayVerifications:  make(map[string]displayVerification),
+		allowMacAppSelfUpdate: false,
+		installationMode:      macAppInstallationMode(),
+		loadUsage:             daemon.LoadPersistedUsage,
+		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
+		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
@@ -8358,12 +8359,13 @@ type deviceHealth struct {
 	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
-			Active         bool   `json:"active"`
-			Path           string `json:"path"`
-			Hash           string `json:"hash"`
-			RenderOK       *bool  `json:"renderOk"`
-			RenderError    string `json:"renderError"`
-			RenderFailures uint64 `json:"renderFailures"`
+			Active           bool   `json:"active"`
+			Path             string `json:"path"`
+			Hash             string `json:"hash"`
+			RenderOK         *bool  `json:"renderOk"`
+			RenderError      string `json:"renderError"`
+			RenderErrorAsset string `json:"renderErrorAsset"`
+			RenderFailures   uint64 `json:"renderFailures"`
 		} `json:"themeSpec"`
 	} `json:"display"`
 	Render struct {
@@ -9284,12 +9286,13 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
 			ThemeSpec: &themeSpecHealth{
-				Active:         health.Display.ThemeSpec.Active,
-				Path:           strings.TrimSpace(health.Display.ThemeSpec.Path),
-				Hash:           strings.TrimSpace(health.Display.ThemeSpec.Hash),
-				RenderOK:       health.Display.ThemeSpec.RenderOK,
-				RenderError:    strings.TrimSpace(health.Display.ThemeSpec.RenderError),
-				RenderFailures: health.Display.ThemeSpec.RenderFailures,
+				Active:           health.Display.ThemeSpec.Active,
+				Path:             strings.TrimSpace(health.Display.ThemeSpec.Path),
+				Hash:             strings.TrimSpace(health.Display.ThemeSpec.Hash),
+				RenderOK:         health.Display.ThemeSpec.RenderOK,
+				RenderError:      strings.TrimSpace(health.Display.ThemeSpec.RenderError),
+				RenderErrorAsset: strings.TrimSpace(health.Display.ThemeSpec.RenderErrorAsset),
+				RenderFailures:   health.Display.ThemeSpec.RenderFailures,
 			},
 		}
 	}
@@ -9464,6 +9467,10 @@ func renderHealthDiagnosticDetail(spec *themeSpecHealth) string {
 		return "VibeTV rendered the current image."
 	}
 	if spec.RenderError != "" {
+		if spec.RenderErrorAsset != "" {
+			return "VibeTV could not redraw the current image: " + spec.RenderError +
+				" (asset " + spec.RenderErrorAsset + ")."
+		}
 		return "VibeTV could not redraw the current image: " + spec.RenderError + "."
 	}
 	return "VibeTV could not redraw the current image."

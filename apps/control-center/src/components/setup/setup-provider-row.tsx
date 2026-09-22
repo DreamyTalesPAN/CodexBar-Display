@@ -23,7 +23,8 @@ export type SetupProviderRowVariant =
   | "sign_in"
   | "stale"
   | "timed_out"
-  | "toggle";
+  | "toggle"
+  | "unsupported";
 
 /**
  * The health states the usage service reports, mapped onto the presentations
@@ -58,6 +59,11 @@ export function setupProviderRowVariant(
       return "browser_sign_in";
     case "permission_required":
       return "permission";
+    // The account lost access to this provider for good. It must not offer a
+    // sign-in: the stored credential is still valid, so signing in again
+    // changes nothing and only sends the customer around the same loop.
+    case "unsupported":
+      return "unsupported";
     case "no_usage_available":
       return "no_usage";
     case "service_outage":
@@ -111,7 +117,8 @@ export function SetupProviderRow({
   saving = false,
 }: SetupProviderRowProps) {
   const variant = enabled ? setupProviderRowVariant(health) : "toggle";
-  const unusable = variant === "no_usage" || variant === "outage";
+  const unusable =
+    variant === "no_usage" || variant === "outage" || variant === "unsupported";
   const checkAgain = (
     <SetupProviderRowAction
       icon={RefreshCw}
@@ -158,7 +165,7 @@ export function SetupProviderRow({
                 <span>{`Sign in to ${label}`}</span>
               </Button>
             ) : null}
-            {variant === "stale" ? null : checking ? (
+            {variant === "stale" || variant === "unsupported" ? null : checking ? (
               <>
                 <span className="sr-only">Checking {label}…</span>
                 <Spinner />
@@ -203,6 +210,8 @@ export function setupProviderIssueMessage({
         ? `Sign in to ${label} in your browser, close the browser, then check again`
       : variant === "permission"
         ? "Allow access in macOS"
+        : variant === "unsupported"
+          ? "This provider no longer supports this account"
         : variant === "no_usage"
           ? "No usage data on this account"
           : variant === "outage"
