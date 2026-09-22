@@ -7046,3 +7046,51 @@ func TestAutomaticDisplayFollowsObservedAgents(t *testing.T) {
 	providers = providers[:1]
 	check("codex") // An agent cannot resurrect a disabled provider.
 }
+
+func TestStaleUsageRequiresValidEnabledAgentPresentation(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		enabled, supported bool
+		health, phase      string
+		wantSend           bool
+	}{
+		{"master off", false, true, "ready", "working", false},
+		{"observer unavailable", true, true, "unavailable", "working", false},
+		{"phase unavailable", true, true, "ready", "unavailable", false},
+		{"phase stale", true, true, "ready", "stale", false},
+		{"invalid phase", true, true, "ready", "invented", false},
+		{"legacy firmware", true, false, "ready", "working", false},
+		{"working without fresh quota", true, true, "ready", "working", true},
+		{"idle without fresh quota", true, true, "ready", "idle", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot {
+				return agentstatus.Snapshot{Health: tc.health, Phase: tc.phase}
+			}}
+			var sent protocol.Frame
+			sends := 0
+			deps := runtimeDeps{
+				loadConfig: func(string) (runtimeconfig.Config, error) {
+					return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: tc.enabled}}, nil
+				},
+				sendLine: func(_ string, line []byte) error { sends++; return json.Unmarshal(line, &sent) },
+				logf:     func(string, ...any) {},
+			}.withDefaults()
+			result := cycleResult{frame: protocol.Frame{Provider: "codex", Session: 20, Weekly: 40}, usageFresh: false}
+			caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: tc.supported}
+			if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+				t.Fatal(err)
+			}
+			if (sends > 0) != tc.wantSend {
+				t.Fatalf("sent %d frames; wantSend=%t", sends, tc.wantSend)
+			}
+			if tc.wantSend && (!sent.UsageUnavailable || sent.Activity != tc.phase) {
+				t.Fatalf("stale quota must be unavailable while retaining lifecycle: %+v", sent)
+			}
+			if state.hasLastGood {
+				t.Fatal("stale quota entered recovery cache")
+			}
+		})
+	}
+}
