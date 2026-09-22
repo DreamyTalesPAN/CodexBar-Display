@@ -345,10 +345,6 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
-	// Refresh the activity lease independently of the usage collector cadence.
-	if opts.AgentSnapshot != nil && opts.Interval > 5*time.Second {
-		opts.Interval = 5 * time.Second
-	}
 	deps.beginDeviceWrite = opts.BeginDeviceWrite
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()

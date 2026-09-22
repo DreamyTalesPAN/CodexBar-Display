@@ -158,13 +158,14 @@ type Engine struct {
 }
 
 func (e *Engine) accept(value Snapshot, now time.Time) {
+	renewLease := e.currentSettings().Enabled && value.Health == "ready" && ValidPhase(value.Phase) && value.Phase != "stale" && value.Phase != "unavailable"
 	e.mu.Lock()
 	changed := e.value.Phase != value.Phase || e.value.Health != value.Health || !slices.Equal(e.value.Sessions, value.Sessions) || !slices.Equal(e.value.Sources, value.Sources)
 	e.value = value
 	e.received = now
 	// Renew the firmware's 15-second lease even during a quiet, steady phase.
 	// This is a render-only wake; provider collection keeps its own cadence.
-	wake := changed || now.Sub(e.lastWake) >= 5*time.Second || now.Before(e.lastWake)
+	wake := changed || renewLease && (now.Sub(e.lastWake) >= 5*time.Second || now.Before(e.lastWake))
 	if wake {
 		e.lastWake = now
 	}

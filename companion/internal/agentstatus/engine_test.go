@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 func validSnapshot(now time.Time) Snapshot {
@@ -55,7 +57,7 @@ func TestSnapshotCopiesSlices(t *testing.T) {
 func TestSessionChangesWakeWithUnchangedAggregate(t *testing.T) {
 	now := time.Now()
 	wakes := 0
-	e := &Engine{wake: func() { wakes++ }}
+	e := &Engine{wake: func() { wakes++ }, settings: func() runtimeconfig.AgentActivitySettings { return runtimeconfig.AgentActivitySettings{Enabled: true} }}
 	s := validSnapshot(now)
 	e.accept(s, now)
 	s.GeneratedAt++
@@ -132,7 +134,7 @@ func TestDisplayNameFollowsObservedSourceNotQuota(t *testing.T) {
 func TestSteadyHeartbeatsRenewDeviceLeaseWithoutWakingEverySecond(t *testing.T) {
 	now := time.Now()
 	wakes := 0
-	e := &Engine{wake: func() { wakes++ }}
+	e := &Engine{wake: func() { wakes++ }, settings: func() runtimeconfig.AgentActivitySettings { return runtimeconfig.AgentActivitySettings{Enabled: true} }}
 	s := validSnapshot(now)
 	for second := 0; second <= 45; second++ {
 		current := now.Add(time.Duration(second) * time.Second)
@@ -147,6 +149,42 @@ func TestSteadyHeartbeatsRenewDeviceLeaseWithoutWakingEverySecond(t *testing.T) 
 	e.accept(s, now.Add(46*time.Second))
 	if wakes != 11 {
 		t.Fatal("phase change waited for renewal")
+	}
+}
+
+func TestLeaseRenewalStopsWhenDisabledOrUnavailable(t *testing.T) {
+	for _, phase := range []string{"working", "idle", "done", "stale", "unavailable", "invalid"} {
+		for _, health := range []string{"ready", "stale"} {
+			t.Run(phase+"/"+health, func(t *testing.T) {
+				enabled := true
+				wakes := 0
+				e := &Engine{wake: func() { wakes++ }, settings: func() runtimeconfig.AgentActivitySettings {
+					return runtimeconfig.AgentActivitySettings{Enabled: enabled}
+				}}
+				now := time.Now()
+				s := validSnapshot(now)
+				s.Phase, s.Health = phase, health
+				e.accept(s, now)
+				e.accept(s, now.Add(5*time.Second))
+				want := 1
+				if health == "ready" && phase != "stale" && phase != "unavailable" && phase != "invalid" {
+					want = 2
+				}
+				if wakes != want {
+					t.Fatalf("enabled wakes=%d want=%d", wakes, want)
+				}
+				enabled = false
+				e.accept(s, now.Add(10*time.Second))
+				if wakes != want {
+					t.Fatal("disabled activity renewed the lease")
+				}
+				s.Health = "stopped"
+				e.accept(s, now.Add(11*time.Second))
+				if wakes != want+1 {
+					t.Fatal("health change did not clear previous presentation")
+				}
+			})
+		}
 	}
 }
 

@@ -73,24 +73,29 @@ test('Windows commands use absolute bundled Node, including Git Bash clients',()
 });
 
 
-test('app upgrade refreshes only previously enabled hooks, preserving native settings',t=>{
+test('saved master choice restores missing hooks after app upgrade, preserving native settings',t=>{
  const opts=fixture(t);
  const originalFiles=new Map(Object.values(profiles).map(profile=>[profile,profile.file]));
- // Redirect every profile before refresh, including clients not in this fixture.
+ // Redirect every profile, including clients with no remaining VibeTV marker.
  for(const [id,profile] of Object.entries(profiles)) profile.file=()=>path.join(opts.directory,id+'.json');
  try {
   const oldOptions={...opts,settingsPath:profiles['claude-code'].file(),directory:path.join(opts.directory,'old')};
   configure('claude-code',true,oldOptions);
   const foreign={hooks:{BeforeAgent:[{hooks:[{type:'command',command:'my-hook'}]}]}};
   fs.writeFileSync(profiles['gemini-cli'].file(),JSON.stringify(foreign));
-  require('../src/integrations.cjs').refreshConfigured({...opts,settingsPath:undefined,directory:path.join(opts.directory,'new')});
+  const {configureAll,connection}=require('../src/integrations.cjs');
+  const options={...opts,settingsPath:undefined,directory:path.join(opts.directory,'new')};
+  configureAll(false,options);
+  assert.equal(fs.existsSync(profiles['qwen-code'].file()),false);
+  configureAll(true,options);
   const changed=JSON.parse(fs.readFileSync(oldOptions.settingsPath));
   for(const entries of Object.values(changed.hooks)) for(const entry of entries) for(const hook of entry.hooks) {
    const command=process.platform==='win32'?decodeWindowsEncodedCommand(hook.command):hook.command;
    assert.match(command,/[\\/]new[\\/]/);assert.doesNotMatch(command,/[\\/]old[\\/]/);
   }
+  for(const id of Object.keys(profiles)) assert.equal(connection(id),'connected',id);
+  configureAll(false,options);
   assert.deepEqual(JSON.parse(fs.readFileSync(profiles['gemini-cli'].file())),foreign);
-  assert.equal(fs.existsSync(profiles['qwen-code'].file()),false);
  } finally {
   for(const [profile,file] of originalFiles) {if(file)profile.file=file;else delete profile.file;}
  }

@@ -13,7 +13,7 @@ async function main() {
  if(!runtimeDir||!path.isAbsolute(runtimeDir)) throw Error('runtime-directory-required');
  fs.mkdirSync(runtimeDir,{recursive:true,mode:0o700});
  const integrationOptions={runtimeDir,directory:path.resolve(__dirname,'..')};
- require('./integrations.cjs').refreshConfigured(integrationOptions);
+ require('./integrations.cjs').configureAll(process.argv[3]==='true',integrationOptions);
  const token=randomBytes(32).toString('hex');
  const engine=await createEngine({token,integrationOptions,hooksEnabled:process.argv[3]==='true',doneSeconds:Number(process.argv[4]),codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
  const endpoint=path.join(runtimeDir,'endpoint.json');

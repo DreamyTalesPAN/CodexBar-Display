@@ -190,13 +190,4 @@ function configureAll(enabled, options) {
   }
 }
 
-// The app updater replaces the containing bundle. Refresh only integrations
-// the user previously enabled; never turn on another client during startup.
-function refreshConfigured(options) {
-  for (const agentId of Object.keys(profiles)) {
-    if (connection(agentId) !== 'connected') continue;
-    try { configure(agentId, true, options); } catch { /* Preserve user settings on conflict. */ }
-  }
-}
-
-module.exports = {profiles, connection, configure, configureAll, entryFor, eventsFor, refreshConfigured};
+module.exports = {profiles, connection, configure, configureAll, entryFor, eventsFor};
