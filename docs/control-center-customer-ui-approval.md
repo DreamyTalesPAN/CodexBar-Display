@@ -4513,3 +4513,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Same explicitly approved recovery behavior above; review regression coverage only extends the sequence leading into it.
 - Approved customer-visible result: A stale selection of a disconnected cable device does not hide WiFi devices found by the next scan. Explicit WiFi recovery returns to the existing device picker, and another identity still requires its own Connect action.
 - Scope: Clear the stale candidate filter in the existing WiFi recovery branch and test the failed-cable-to-WiFi sequence. No new controls, copy, merge, or release.
+
+## 2026-09-22 — Return main to its pre-#466 customer-visible state
+
+- User approval: Marcus stated that merging PR #466 before the three P1 fixes were verified on real VibeTV hardware was a mistake, asked for the merge to be undone, and chose the full revert when shown that it also withdraws the two published theme versions.
+- Approved customer-visible result: The Control Center shows exactly what it showed before #466 was merged. The theme catalog lists Claude Creature 1.2.1 and Mini Classic 1.1.4 again instead of 1.3.0 and 1.2.0, and every other screen, control, and copy string returns to its pre-merge state. A customer who installed 1.3.0 or 1.2.0 from the catalog keeps the theme already on their device; it is no longer offered for a new install until the batch returns with hardware evidence.
+- Scope: Revert squash commit `bb7dfa45` in full. The resulting tree is identical to `db281000`, so this adds no new visible result of its own and removes no approval that still describes shipped behavior. No release, installation, or device operation. The withdrawn work stays on `codex/integration-p1-batch` for hardware verification.
