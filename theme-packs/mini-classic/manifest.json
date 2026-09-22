@@ -3,16 +3,16 @@
   "schemaVersion": 1,
   "id": "mini-classic",
   "name": "Mini Classic",
-  "version": "1.1.4",
+  "version": "1.2.1",
   "minFirmware": "1.0.40",
   "requiredCapabilities": [
     "usage-slots-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/mini-cl-6-024b0e.json",
+    "path": "/themes/u/mini-cl-8-803dd6.json",
     "file": "theme.json",
     "bytes": 897,
-    "sha256": "abd55c4d79237626ff6d0b006d67aa1a90be2f32a6c831a3165fc7319f95788e",
+    "sha256": "44bb512a0f5ac9a40dfbb66318aaa994b699feee8ba90d49645f17a781978071",
     "contentType": "application/json"
   },
   "assets": [
