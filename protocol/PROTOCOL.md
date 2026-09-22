@@ -193,6 +193,20 @@ reads the countdown through `CurrentRemainingSecs`, which returns `0` for a
 stale basis, and the ThemeSpec renderer turns `0` into `Reset unavailable`. A
 theme cannot bind its way around this.
 
+- A window the host sends without any deadline is idle, not stale: it is
+  measured and current and simply has nothing scheduled to reset. The renderer
+  says `No active session` for it (`UsageWindowIsIdle`). This never applies
+  while trust is `stale` or usage is unavailable, so the wording above stays
+  exactly as strict as before.
+  Inside the device that state travels as a negative remaining value
+  (`kRemainingSecsIdle`, mirrored as `kResetSecsIdle` in the renderer),
+  because the ESP8266 image has no flash left for a separate per-window flag.
+  Carrying it in the same value that every countdown is compared against is
+  also what makes the wording revert on its own: when the trust budget
+  expires the helpers stop returning the sentinel, the tracked value changes,
+  and the periodic redraw repaints the line. This is device-internal only:
+  the wire format is unchanged and still sends `0` for a window with no
+  deadline.
 - The device does not parse `resetAgeSecs`. The age is exactly
   `kResetTrustHorizonSecs - resetTrustSecs`, so it derives it from the budget.
 - A `live` frame whose derived basis age exceeds 150 seconds is shown as

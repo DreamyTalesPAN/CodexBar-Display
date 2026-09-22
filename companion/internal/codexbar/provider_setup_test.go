@@ -374,6 +374,92 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	}
 }
 
+// Anthropic answers 429 while a customer is connecting Claude during setup.
+// That is not a fault they can repair: the sign-in works and the usage service
+// is healthy, so it must not be classified as an auth or engine failure and
+// must not advise repairing anything.
+func TestProviderReadinessClassifiesRateLimitAsWaitAndRetry(t *testing.T) {
+	for _, detail := range []string{
+		"Claude CLI usage endpoint is rate limited right now. Please try again later.",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderError(detail); got != ProviderRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderRateLimited, got)
+		}
+	}
+
+	result := providerResult("claude", ProviderRateLimited)
+	advice := strings.ToLower(result.Detail + " " + result.NextAction)
+	for _, wrong := range []string{"repair", "sign in", "permission"} {
+		if strings.Contains(advice, wrong) {
+			t.Fatalf("rate-limit copy should not mention %q: %+v", wrong, result)
+		}
+	}
+	if !strings.Contains(advice, "wait") {
+		t.Fatalf("rate-limit copy should tell the customer to wait: %+v", result)
+	}
+}
+
+// A sign-in failure may name the data it wanted to read. Telling that customer
+// to wait hides the sign-in they must repair, so the bare noun must not be
+// mistaken for throttling.
+func TestProviderReadinessKeepsAuthFailuresThatMentionRateLimitData(t *testing.T) {
+	for _, detail := range []string{
+		"Codex connection failed: codex account authentication required to read rate limits",
+		"no cookies in session while reading rate limit data",
+	} {
+		if got := classifyProviderError(detail); got != ProviderAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderAuthRequired, got)
+		}
+	}
+}
+
+// The cached health scan speaks for a row whenever no fresh exact readiness
+// does, so it has to reach the same verdict. It used to read the bundled
+// "OAuth ... rate limited" message as auth_required and offer a sign-in the
+// customer did not need (#448).
+func TestProviderHealthClassifiesThrottlingLikeReadiness(t *testing.T) {
+	for _, detail := range []string{
+		"OAuth error: Claude OAuth usage endpoint is rate limited",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthRateLimited, got)
+		}
+	}
+	// A credential the provider could not use at all is still a sign-in
+	// failure, even when throttling is mentioned in the same summary.
+	for _, detail := range []string{
+		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: rate limited.",
+		"OAuth token expired",
+		"authentication required to read rate limits",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthAuthRequired, got)
+		}
+	}
+}
+
+// A provider-scoped probe answers through CodexBar's own stand-in when the
+// usage call itself fails. Losing the rate limit there told the customer their
+// account exposes no usage instead of asking them to wait.
+func TestExactProviderReadinessKeepsRateLimitFromStandIn(t *testing.T) {
+	got := exactProviderReadinessFromOutput(
+		"claude",
+		nil,
+		errors.New("usage request failed: too many requests"),
+		nil,
+	)
+	if got.Status != ProviderRateLimited {
+		t.Fatalf("exact probe dropped the rate limit: %+v", got)
+	}
+	if got.ID != "claude" {
+		t.Fatalf("exact probe must answer for the requested provider: %+v", got)
+	}
+}
+
 func TestProviderReadinessClassifiesTimeoutWithoutSecrets(t *testing.T) {
 	got := providerReadinessFromOutput(nil, context.DeadlineExceeded, context.DeadlineExceeded)
 	if len(got) != 1 || got[0].Status != ProviderTimeout || strings.Contains(got[0].Detail, "deadline") {

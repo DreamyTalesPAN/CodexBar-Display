@@ -137,6 +137,10 @@ type ProviderHealthState string
 const (
 	ProviderHealthHealthy      ProviderHealthState = "healthy"
 	ProviderHealthAuthRequired ProviderHealthState = "auth_required"
+	// ProviderHealthRateLimited: the sign-in works and the provider's own
+	// usage endpoint refused this check for being too frequent. Waiting fixes
+	// it, so the row must not offer a sign-in the customer does not need.
+	ProviderHealthRateLimited ProviderHealthState = "rate_limited"
 	// ProviderHealthBrowserSignIn: signed in to the tool, but the usage
 	// endpoint only answers a browser session. See ProviderBrowserSignInRequired.
 	ProviderHealthBrowserSignIn ProviderHealthState = "browser_sign_in_required"
@@ -550,6 +554,15 @@ func providerHealthErrorText(value any) string {
 
 func classifyProviderHealth(raw string) ProviderHealthState {
 	message := strings.ToLower(raw)
+	// Before the auth markers, and for the same reason classifyProviderError
+	// puts it first: the provider names the endpoint that refused ("usage
+	// endpoint is rate limited") while the sign-in it used is still valid.
+	// Reading that as auth_required sent the customer to re-authenticate
+	// something that already works, whenever the cached health scan spoke for
+	// the row instead of a fresh exact readiness.
+	if isThrottlingDetail(message) && !namesUnusableCredential(message) {
+		return ProviderHealthRateLimited
+	}
 	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "cookie", "token"} {
 		if strings.Contains(message, marker) {
 			return ProviderHealthAuthRequired

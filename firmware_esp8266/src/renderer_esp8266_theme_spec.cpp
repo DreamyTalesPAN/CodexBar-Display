@@ -1094,12 +1094,15 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
   frame.usageUnavailable = CurrentFrame().usageUnavailable;
+  // The countdown helpers already hand back the idle sentinel for a window the
+  // host sent without any deadline, so the frame carries it through unchanged.
+  const unsigned long frameNowMillis = millis();
   for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows &&
                      i < codexbar_display::core::kMaxUsageWindows; ++i) {
     frame.usageWindows[i].label = CurrentFrame().usageWindows[i].label.c_str();
     frame.usageWindows[i].percent = CurrentFrame().usageWindows[i].percent;
     frame.usageWindows[i].resetSecs =
-        codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, millis());
+        codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, frameNowMillis);
     frame.usageWindows[i].available = CurrentFrame().usageWindows[i].available && !CurrentFrame().usageUnavailable;
   }
   frame.usageSlot1Label = frame.usageWindows[0].label;
@@ -1115,7 +1118,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
     frame.providerSlots[i].label = CurrentFrame().providerSlots[i].label.c_str();
     frame.providerSlots[i].percent = CurrentFrame().providerSlots[i].percent;
     frame.providerSlots[i].resetSecs =
-        codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, millis());
+        codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, frameNowMillis);
     frame.providerSlots[i].available = CurrentFrame().providerSlots[i].available;
   }
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
@@ -1157,6 +1160,28 @@ void MarkThemeSpecCountdownsRendered() {
     Context().lastRenderedProviderSlotSecs[i] = slotRemain;
     Context().lastRenderedProviderSlotMinuteBuckets[i] = slotRemain / 60;
   }
+}
+
+uint32_t ThemeSpecCountdownFields() {
+  const String& raw = currentThemeSpecRaw();
+  if (!CurrentFrame().hasThemeSpec ||
+      !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) ||
+      !ensureThemeSpecSceneCached(raw)) {
+    return 0;
+  }
+  // Every compiled primitive already carries the live fields it binds, so the
+  // countdown mask falls out of the scene the renderer is holding anyway. The
+  // per-slot binding helpers format their candidate names with snprintf, and
+  // the image has no flash left to instantiate them for this.
+  constexpr uint32_t kCountdownMask =
+      codexbar_display::themespec::kThemeSpecFieldReset |
+      codexbar_display::themespec::kThemeSpecFieldUsageWindowReset |
+      codexbar_display::themespec::kThemeSpecFieldProviderSlots;
+  uint32_t fields = 0;
+  for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
+    fields |= cachedThemeSpecScene.primitives[i].liveFields;
+  }
+  return fields & kCountdownMask;
 }
 
 bool DrawThemeSpecUsage() {

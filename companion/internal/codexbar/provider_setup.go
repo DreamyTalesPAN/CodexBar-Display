@@ -31,9 +31,15 @@ const (
 	ProviderPermissionRequired    = "permission_required"
 	ProviderNoUsageAvailable      = "no_usage_available"
 	ProviderTimeout               = "timeout"
-	ProviderConfigError           = "config_error"
-	ProviderEngineError           = "engine_error"
-	ProviderNotConfigured         = "not_configured"
+	// ProviderRateLimited: the provider's own usage endpoint refused this
+	// check for being too frequent. The sign-in is fine and nothing needs
+	// repairing, so the only correct advice is to wait and check again.
+	// Anthropic answers 429 during first-run setup, and routing that into
+	// engine_error told customers to repair a healthy usage service.
+	ProviderRateLimited   = "rate_limited"
+	ProviderConfigError   = "config_error"
+	ProviderEngineError   = "engine_error"
+	ProviderNotConfigured = "not_configured"
 )
 
 type configPathContextKey struct{}
@@ -455,8 +461,13 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 		if provider.ID == providerID {
 			return provider
 		}
-		if provider.ID == "codexbar" && provider.Status == ProviderTimeout {
-			return providerResult(providerID, ProviderTimeout)
+		// The stand-in explains why the whole usage call failed, so an
+		// engine-level verdict about the requested provider survives the
+		// translation. Dropping a rate limit here made the row claim the
+		// account exposes no usage instead of asking the customer to wait.
+		if provider.ID == "codexbar" &&
+			(provider.Status == ProviderTimeout || provider.Status == ProviderRateLimited) {
+			return providerResult(providerID, provider.Status)
 		}
 	}
 	return providerResult(providerID, ProviderNoUsageAvailable)
@@ -613,9 +624,54 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 	return false
 }
 
+// Throttling wording: the endpoint answered and refused this call for being
+// too frequent.
+func isThrottlingDetail(lower string) bool {
+	for _, marker := range []string{
+		"rate limited", "ratelimited", "rate-limited",
+		"rate limit exceeded", "too many requests", "429",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// Wording that reports a credential the provider could not use at all. Waiting
+// never repairs that, so it outranks throttling mentioned in the same summary.
+func namesUnusableCredential(lower string) bool {
+	for _, marker := range []string{
+		"no cookies", "not logged in", "no credentials", "credentials were preserved",
+		"token expired", "unauthorized",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func classifyProviderError(detail string) string {
 	lower := strings.ToLower(detail)
 	switch {
+	// Before the timeout rule: a rate-limit message routinely also mentions
+	// retrying later, and before the auth rule, because the provider names the
+	// endpoint that refused ("usage endpoint is rate limited") while the
+	// sign-in it used is still valid. Classifying it as auth_required would
+	// send the customer to re-authenticate something that already works.
+	//
+	// Only actual throttling wording counts. A sign-in failure can name the
+	// data it wanted ("authentication required to read rate limits"); telling
+	// that customer to wait would hide the sign-in they must repair, so the
+	// bare noun "rate limits" must not match.
+	//
+	// A summary that also reports an unusable credential ("No cookies available",
+	// "not logged in") is a sign-in failure that happens to mention throttling
+	// among several failed sources. Waiting cannot fix a credential that is
+	// missing, so the sign-in advice wins there.
+	case isThrottlingDetail(lower) && !namesUnusableCredential(lower):
+		return ProviderRateLimited
 	case strings.Contains(lower, "timeout"), strings.Contains(lower, "timed out"), strings.Contains(lower, "deadline exceeded"):
 		return ProviderTimeout
 	case strings.Contains(lower, "permission"), strings.Contains(lower, "not permitted"), strings.Contains(lower, "access denied"), strings.Contains(lower, "keychain") && (strings.Contains(lower, "denied") || strings.Contains(lower, "locked") || strings.Contains(lower, "not allowed")):
@@ -700,6 +756,9 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderTimeout:
 		result.Detail = "The provider check timed out."
 		result.NextAction = "Confirm the provider sign-in, then check again."
+	case ProviderRateLimited:
+		result.Detail = label + " is limiting usage checks right now."
+		result.NextAction = "Wait a few minutes, then check again. Nothing needs to be fixed."
 	case ProviderConfigError:
 		result.Detail = "The usage service could not save or read its provider settings."
 		result.NextAction = "Repair the usage service, then check again."

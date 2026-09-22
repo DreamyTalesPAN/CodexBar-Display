@@ -496,16 +496,14 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-    uint32_t countdownFields = 0;
-    if (core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
-      countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
-    }
-    for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
-      if (core::ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
-        countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
-      }
-    }
+    // The cached scene already knows which live fields it binds, including the
+    // provider-slot countdowns. Those tick locally too, and one can go from a
+    // deadline to "no deadline" on its own: an idle slot reading "No active
+    // session" must revert to "Reset unavailable" once the shared trust budget
+    // expires. Night Clock binds nothing but {pv1l}/{pv1r}/{pv2l}/{pv2r}, so
+    // asking only for the root and usage-window fields froze that screen on
+    // its last wording.
+    const uint32_t countdownFields = display::ThemeSpecCountdownFields();
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {

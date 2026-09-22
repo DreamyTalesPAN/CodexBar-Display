@@ -39,8 +39,10 @@ func TestBrowserSignInStaysNarrow(t *testing.T) {
 		// A real sign-out is still auth_required.
 		"OAuth token expired": ProviderAuthRequired,
 		"Web: No cookies available for web API; OAuth: not logged in": ProviderAuthRequired,
-		// Rate limited alone, cookies were readable: the web path may recover.
-		"OAuth error: Claude OAuth usage endpoint is rate limited": ProviderAuthRequired,
+		// Rate limited alone, cookies were readable: the web path may recover,
+		// so the customer is asked to wait rather than to sign in again (#448).
+		// What matters to this test is that it is not a browser sign-in.
+		"OAuth error: Claude OAuth usage endpoint is rate limited": ProviderRateLimited,
 		// The English summary alone, without CodexBar's marker, is not enough.
 		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited.": ProviderAuthRequired,
 		// A marker without a page, or with a page that is not https, is ignored.

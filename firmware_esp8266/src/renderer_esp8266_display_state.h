@@ -117,6 +117,10 @@ bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
 bool ThemeSpecAnimationWorkPending();
 void MarkThemeSpecCountdownsRendered();
+// The live fields the cached scene actually binds, masked to the countdown
+// ones. Computed from the compiled primitives, which already carry their own
+// live-field mask, so no theme text has to be scanned again.
+uint32_t ThemeSpecCountdownFields();
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);
 // Repaints one bounded display region from the cached ThemeSpec scene without
 // a full-screen redraw. Used to remove the update-notice overlay bar.

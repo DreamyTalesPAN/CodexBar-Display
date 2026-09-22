@@ -4514,6 +4514,103 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A stale selection of a disconnected cable device does not hide WiFi devices found by the next scan. Explicit WiFi recovery returns to the existing device picker, and another identity still requires its own Connect action.
 - Scope: Clear the stale candidate filter in the existing WiFi recovery branch and test the failed-cable-to-WiFi sequence. No new controls, copy, merge, or release.
 
+## 2026-09-17 — Idle reset text and rate-limited provider check (#448)
+
+- User approval: Marcus forwarded customer Bernd's report that his new VibeTV
+  shows `Resets in Reset unavailable` on the Claude theme at 0 % session usage,
+  and that the Claude provider check failed repeatedly during setup with
+  cookie, timeout, and too-many-requests errors. After both visible results
+  were presented for review, Marcus approved them with "ja".
+- Approved customer-visible result: A usage slot whose countdown is unknown no
+  longer produces a doubled sentence. A line whose only substituted value is
+  that countdown collapses to `Reset unavailable` instead of
+  `Resets in Reset unavailable`. Slots with a real deadline keep rendering the
+  full sentence, for example `Resets in 4d 0h`, and lines that also carry a
+  label or percentage keep substituting in place. During setup, a provider that
+  answers with a rate limit now reports "Claude is limiting usage checks right
+  now." with "Wait a few minutes, then check again. Nothing needs to be fixed."
+  instead of the previous "The usage service could not read this provider." and
+  "Repair the usage service." No theme design, provider selection flow, or
+  unrelated UI is changed.
+- Evidence: The new native ThemeSpec renderer test reproduces the customer
+  string exactly; with the fix disabled it fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'`. 147/147
+  native renderer tests, 541/541 Control Center tests, the companion codexbar,
+  companionapi, and protocol packages, customer-copy, customer-docs,
+  frame-render-policy, and theme-pack checks pass. The ESP8266 cross build is
+  left to CI because the xtensa toolchain cannot run on this Mac, and no
+  hardware test with an idle Claude session is claimed.
+- Approved files: The renderer rule in `theme_spec_renderer_core.h`, its mirror
+  in `live-vibetv-preview.tsx`, the rate-limit status in
+  `setup-provider-row.tsx` and `control-center-types.ts`, the companion
+  provider-setup and preferences mapping, their regression tests, and this
+  approval record.
+- Scope: Approval covers this fix and pushing the PR branch. No release, no
+  firmware flash for the customer, and no Fable credit display is included.
+
+## 2026-09-17 — Codex review follow-up for #448
+
+- User approval: Marcus approved the two visible results above with "ja" and
+  asked for the fix to be carried through. The automated Codex review on PR
+  #449 then found that the same approved results were not actually reached on
+  every path; repairing those paths is part of delivering what he approved and
+  changes no promise made to him.
+- Approved customer-visible result: Unchanged from the entry above, now also
+  reached where it previously was not. A theme written with the compact tokens
+  `{us1r}` or `{pv1r}` collapses to `Reset unavailable` like the long token
+  names, so devices on those themes stop showing the doubled sentence. A
+  provider-scoped check that answers with a rate limit keeps telling the
+  customer to wait instead of claiming the account exposes no usage. A sign-in
+  failure that merely names rate-limit data still asks the customer to sign in
+  rather than to wait.
+- Evidence: The new native test fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'` when the
+  compact-alias rule is removed and passes with it; 148/148 native renderer
+  tests pass. The companion codexbar and companionapi packages pass uncached
+  with the two new regression tests. No hardware test is claimed.
+- Approved files: The compact-alias rule in `theme_spec_renderer_core.h`, the
+  throttling matcher and stand-in translation in `provider_setup.go`, their
+  regression tests, and this approval record.
+- Scope: Corrections to the already approved fix only. No new customer-visible
+  behavior, no release, and no firmware flash is included.
+
+## 2026-09-21 — Idle countdown reads as idle, not as a fault (#448)
+
+- User approval: Marcus asked for issue #448 to be worked to a solution and
+  fully tested ("bitte arbeite an einer lösung für dieses issue. und teste es
+  komplett durch"). The issue's own acceptance criteria require that a session
+  at 0 % with no deadline "must not look like an error"; the previously
+  approved collapse removed the doubled sentence but still showed the error
+  wording, so this completes what was approved rather than changing it.
+- Approved customer-visible result: A usage window that is current and measured
+  but has no reset time at all now reads `No active session` instead of
+  `Reset unavailable`. On the Claude theme with an idle session the bottom
+  line therefore reads `No active session` where it previously read
+  `Resets in Reset unavailable` and then `Reset unavailable`. A line that
+  also carries a label renders `Session No active session`. Nothing else
+  changes: a countdown the device cannot stand behind (stale basis, offline
+  beyond the trust horizon, usage unreadable) keeps `Reset unavailable`, a
+  countdown that merely ran out keeps `Reset unavailable` until the next frame
+  carries the new deadline, and one line binding both an idle and an
+  untrustworthy countdown keeps `Reset unavailable`. Windows with a real
+  deadline still render `Resets in 4d 0h`. No theme design, layout, provider
+  flow, or setup copy is changed, and both strings are 17 characters so no
+  shipped lane changes its fitted font size.
+- Evidence: 152/152 native ThemeSpec renderer tests, including a new test that
+  feeds the customer's exact wire frame (Claude, session 0 % with no
+  `resetSecs`, weekly with one) and asserts the session window is read as idle
+  while the weekly one keeps counting down, and asserts that past the trust
+  horizon nothing is idle any more. 543/543 Control Center tests, including new
+  tests separating an idle window from a countdown that ran out and from a
+  mixed line. No hardware test with an idle Claude account is claimed.
+- Approved files: The idle window state in `theme_spec_renderer_core.h` and
+  `codexbar_display_core.h`, its frame wiring in
+  `renderer_esp8266_theme_spec.cpp`, its mirror in `live-vibetv-preview.tsx`,
+  the renderer and theme-pack tests, the protocol and theme-guide notes, and
+  this approval record.
+- Scope: This wording fix only. No release, no firmware flash for a customer,
+  and no change to the stale/offline trust path.
+
 ## 2026-09-21 — A discontinued Gemini account stops offering a sign-in
 
 - User approval: Marcus selected issue #425 as one of the three P1 issues to implement in this batch and instructed Codex to work autonomously until each fix was ready. Codex reported the exact visible consequence before the change: Google discontinued the Gemini consumer tier, the stored credential is still valid, and the row therefore offered "Sign in to Gemini" above guidance explaining that signing in cannot help, so every attempt ended on the same refusal.
@@ -4541,3 +4638,32 @@ issue scope, or release permission never implies UI permission.
 - User approval: Shown that reverting #466 would delete Claude Creature 1.3.0 and Mini Classic 1.2.0, which the merge had already published to the live catalog, Marcus chose the option that republishes them at a higher version instead of deleting assets customers may already have installed.
 - Approved customer-visible result: The theme catalog offers Claude Creature 1.3.1 and Mini Classic 1.2.1. Their rendered layout is byte-identical to the pre-merge revisions, so the #258 legibility layout is withdrawn and the earlier text positions, sizes, and colors are what customers see again. The previously published 1.3.0 and 1.2.0 downloads stay available, so a device that already installed one keeps working and updates through the ordinary catalog path. No control, copy, or screen changes beyond the theme rendering itself.
 - Scope: `theme-packs/claude-creature`, `theme-packs/mini-classic`, and the regenerated `dist/theme-packs` artifacts. No release, installation, or device operation.
+
+## 2026-09-22 — The idle reset text verified on real hardware (#448)
+
+- User approval: Marcus asked for the #448 fix to be tested on the real device
+  ("mach den test auf echter hardware"). Issue #448 makes that verification an
+  acceptance criterion, so this records the hardware evidence the earlier
+  entries could not claim. No customer-visible behaviour is changed by this
+  entry.
+- Approved customer-visible result: Unchanged from the entries above. The
+  hardware run confirms them: on VibeTV `16199591`
+  (`esp8266-smalltv-st7789`) running the candidate firmware built from this
+  branch, the published Claude Creature theme shows `No active session` for an
+  idle Claude session, `Resets in 2h 0m` when a deadline exists, and
+  `Reset unavailable` when the basis cannot be trusted. Night Clock, which
+  binds only provider slots, behaves the same way.
+- Evidence: `CODEX Test VibeTV Merge` run `35729768498` built firmware
+  `9999.0.116` from this branch head; every job passed. Its `firmware.bin`
+  matched the manifest SHA-256
+  `8f2a0920b3de55bab6469f746e05885a8ff9444e0b0b1fd6d2ab64b873cdd855` and was
+  installed over the device's cable transport, which then reported that exact
+  firmware, a healthy display stream, and the published Claude Creature spec
+  `/themes/u/claude--6-546f9e.json` active with `renderOk`. The device
+  accepted the customer's exact idle wire frame from the issue. Rendering that
+  same stored spec and frame through this branch's renderer prints
+  `No active session`, while the pre-fix renderer on `main` prints
+  `Resets in Reset unavailable` for identical inputs.
+- Approved files: This approval record only.
+- Scope: Recording hardware evidence. No code, theme, release, or customer
+  device operation is part of this entry.

@@ -393,10 +393,41 @@ describe("dynamic usage slot preview", () => {
       ],
       providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 0 }],
     });
+    // A window the host sent without any deadline is idle, not broken: the
+    // device says the same, so the preview must not report a fault here.
+    expect(boundValue("us1r", frame)).toBe("No active session");
+    expect(boundValue("us2r", frame)).toBe("No active session");
+    expect(boundValue("usage.0.reset", frame)).toBe("No active session");
+    expect(boundValue("pv1r", frame)).toBe("No active session");
+  });
+
+  // A deadline that ran out between the frame being saved and now is not idle:
+  // it reached the reset the host did send, so the countdown is genuinely
+  // unavailable until the next frame arrives.
+  it("separates an idle window from a countdown that ran out", () => {
+    const frame = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 60,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 40, resetSecs: 60 },
+          { id: "weekly", label: "Weekly", percent: 0, resetSecs: 0 },
+        ],
+      },
+      new Date("2026-07-24T11:30:00Z"),
+    );
     expect(boundValue("us1r", frame)).toBe("Reset unavailable");
-    expect(boundValue("us2r", frame)).toBe("Reset unavailable");
-    expect(boundValue("usage.0.reset", frame)).toBe("Reset unavailable");
-    expect(boundValue("pv1r", frame)).toBe("Reset unavailable");
+    expect(boundValue("us2r", frame)).toBe("No active session");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {us1r}" }, frame),
+    ).toBe("Reset unavailable");
+    // One line binding both cannot claim everything is merely idle.
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{us1r} / {us2r}" }, frame),
+    ).toBe("Reset unavailable");
   });
 
   it("keeps an unavailable slot empty rather than reporting it unavailable", () => {
@@ -423,23 +454,85 @@ describe("dynamic usage slot preview", () => {
     );
   });
 
-  // Pins the asymmetry so nobody "tidies" it later: RenderTextTemplate probes
-  // only the root tokens, so slot tokens really do substitute in place on the
-  // device and leave the surrounding text standing.
-  it("substitutes slot countdown tokens in place, like the firmware", () => {
-    const expired = buildFrameData("2026-07-24T10:30:00Z", {
+  // The root token owns no window of its own, so it may only name the idle
+  // state when every window the frame carries is idle. Anything else would
+  // dress an untrustworthy screen up as a merely idle account.
+  it("lets the root countdown name the idle state only when every window is idle", () => {
+    const idle = buildFrameData("2026-07-24T10:30:00Z", {
       v: 2,
-      provider: "codex",
-      label: "Codex",
+      provider: "claude",
+      label: "Claude",
       resetSecs: 0,
-      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+      usageSlots: [{ id: "session", label: "Session", percent: 0, resetSecs: 0 }],
+    });
+    expect(boundValue("reset", idle)).toBe("No active session");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {reset}" }, idle),
+    ).toBe("No active session");
+
+    const mixed = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 60,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 32, resetSecs: 60 },
+        ],
+      },
+      new Date("2026-07-24T11:30:00Z"),
+    );
+    expect(boundValue("reset", mixed)).toBe("Reset unavailable");
+  });
+
+  // A customer received a VibeTV reading "Resets in Reset unavailable": an idle
+  // Claude session carries no deadline, and the shipped theme hard-codes the
+  // "Resets in " prefix. A line whose only substitution is a countdown without
+  // a deadline collapses on the device, and an idle window names that state
+  // instead of reporting a fault, so the preview has to match.
+  it("collapses a line whose only value is an unavailable countdown", () => {
+    const idle = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetSecs: 0,
+      usageSlots: [{ id: "session", label: "Session", percent: 0, resetSecs: 0 }],
     });
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {usage.0.reset}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {usage.0.reset}" }, idle),
+    ).toBe("No active session");
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {us1r}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {us1r}" }, idle),
+    ).toBe("No active session");
+  });
+
+  // The collapse is limited to countdown-only templates. A line that also
+  // substitutes a label or a percentage still carries information, so it keeps
+  // substituting in place exactly as the firmware does.
+  it("keeps substituting in place when the line carries another real value", () => {
+    const idle = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 0,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+        ],
+      },
+      new Date("2026-07-24T10:30:00Z"),
+    );
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{us1l} {us1r}" }, idle),
+    ).toBe("Session No active session");
+    // A window that does have a deadline is untouched.
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {us2r}" }, idle),
+    ).toBe("Resets in 4d 0h");
   });
 
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {

@@ -274,6 +274,40 @@ func TestParseProviderPayloadReadsExtraRateWindows(t *testing.T) {
 	}
 }
 
+// A customer's Claude account had no active session: Anthropic sent
+// `five_hour` with a real 0% and no `resets_at`, while the weekly window kept
+// a live deadline. The root countdown used to be overwritten with the session
+// window's zero, so the frame claimed a deadline of 0 while resetSource still
+// named the weekly window, and themes binding the root countdown showed
+// "Reset unavailable" despite a known weekly reset.
+func TestParseProviderPayloadKeepsWeeklyDeadlineWhenSessionIsIdle(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"claude",
+			"usage":{
+				"primary":{"usedPercent":0,"windowMinutes":300},
+				"secondary":{"usedPercent":32,"windowMinutes":10080,"resetsAt":"2099-01-02T01:00:00Z"}
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	frame := parsed[0].Frame
+	if frame.ResetSec <= 0 {
+		t.Fatalf("expected the weekly deadline to survive an idle session, got %+v", frame)
+	}
+	if frame.ResetSource == "" {
+		t.Fatalf("a deadline without a source is unattributable: %+v", frame)
+	}
+	// The session window itself still reports no deadline of its own.
+	if len(frame.UsageWindows) == 0 || frame.UsageWindows[0].ResetSec != 0 {
+		t.Fatalf("expected the idle session window to carry no deadline, got %+v", frame.UsageWindows)
+	}
+}
+
 func TestParseProviderPayloadTreatsNamedOnlyUsageWindowsAsAvailable(t *testing.T) {
 	tests := []struct {
 		name string

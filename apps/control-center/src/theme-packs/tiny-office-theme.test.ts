@@ -101,11 +101,12 @@ describe("Tiny Office theme pack", () => {
     expect(manifest.requiredCapabilities).toContain("text-valign-v1");
   });
 
-  it("shows unavailable reset once instead of inventing a countdown", () => {
+  it("shows the idle reset state once instead of inventing a countdown", () => {
     const data = frame("idle", [{ id: "s", label: "Session", percent: 0, resetSecs: 0 }]);
     const values = primitives.filter((p) => p.t === "tx" || p.type === "text").map((p) => text(p, data));
-    expect(values).toContain("Reset unavailable");
-    expect(values).not.toContain("Reset Reset unavailable");
+    // A window with no deadline at all is idle, not broken.
+    expect(values).toContain("No active session");
+    expect(values).not.toContain("Reset No active session");
   });
 
   it("keeps every text primitive inside the 240 px panel at its unshrunk height", () => {
@@ -122,8 +123,8 @@ describe("Tiny Office theme pack", () => {
     // at size 1: contracted CodexBar window names, 100%, a week-long reset,
     // the renderer's unavailable text and the firmware update notices.
     const spark = frame("coding", [{ id: "codex-spark-weekly", label: "Codex Spark Weekly", percent: 100, resetSecs: 604800 }], "remaining", "Open VibeTV Mac App");
-    const unavailable = frame("idle", [{ id: "s", label: "Session", percent: 0, resetSecs: 0 }]);
-    for (const data of [frame(), spark, unavailable]) {
+    const idleReset = frame("idle", [{ id: "s", label: "Session", percent: 0, resetSecs: 0 }]);
+    for (const data of [frame(), spark, idleReset]) {
       for (const p of primitives.filter((p) => p.t === "tx" || p.type === "text")) {
         if (!primitiveUsageSlotVisible(p, data)) continue;
         const width = p.w ?? p.width ?? 0;
@@ -134,7 +135,7 @@ describe("Tiny Office theme pack", () => {
       }
     }
     expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, spark))).toContain("Codex Spark Weekly");
-    expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, unavailable))).toContain("Reset unavailable");
+    expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, idleReset))).toContain("No active session");
   });
 
   it("renders different idle/coding art through the production component", () => {
