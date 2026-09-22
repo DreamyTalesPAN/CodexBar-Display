@@ -37,6 +37,7 @@ Center on the customer's Mac.
 
 ## Theme Docs
 
+- [AI Theme Studio design draft](design/ai-theme-studio/README.md): offline interaction prototype for #151, not a production feature.
 - [Themes](themes.md): public theme overview.
 - [Theme packs](theme-packs.md): installable theme-pack format and CLI.
 - [Theme development guide](theme-dev-guide.md): hardware-safe ThemeSpec and asset rules.

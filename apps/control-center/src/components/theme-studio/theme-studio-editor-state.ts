@@ -3,6 +3,7 @@ import {
   type ThemeStudioPrimitive,
 } from "@/lib/theme-studio";
 import type { ThemeStudioDocument } from "@/lib/theme-studio-storage";
+import { normalizeCompanionPrimitive } from "./editor-geometry";
 
 export type { ThemeStudioDocument } from "@/lib/theme-studio-storage";
 
@@ -32,6 +33,9 @@ export function createThemeStudioEditorState(
   document: ThemeStudioDocument,
 ): ThemeStudioEditorState {
   const initial = cloneDocument(document);
+  // Every opened design (auto-restore, library, import) passes through here,
+  // so companions saved outside the helper's bounds are repaired once.
+  initial.spec.primitives.forEach(normalizeCompanionPrimitive);
   return {
     future: [],
     past: [],
