@@ -45,6 +45,7 @@ type Source struct {
 	ExplicitThinking bool   `json:"explicitThinking"`
 }
 type Snapshot struct {
+	ObservationEpoch uint64    `json:"observationEpoch"`
 	SchemaVersion    int       `json:"schemaVersion"`
 	EngineVersion    string    `json:"engineVersion"`
 	UpstreamRevision string    `json:"upstreamRevision"`
@@ -144,13 +145,15 @@ func decode(data []byte, now time.Time) (Snapshot, error) {
 }
 
 type Engine struct {
-	mu           sync.RWMutex
-	value        Snapshot
-	received     time.Time
-	lastWake     time.Time
-	wake         func()
-	runtimeDir   string
-	hooksEnabled func() bool
+	mu                    sync.RWMutex
+	value                 Snapshot
+	received              time.Time
+	lastWake              time.Time
+	wake                  func()
+	runtimeDir            string
+	hooksEnabled          func() bool
+	configurationInstance string
+	minObservationEpoch   uint64
 }
 
 func (e *Engine) accept(value Snapshot, now time.Time) {
@@ -177,7 +180,7 @@ func (e *Engine) snapshotAt(now time.Time) Snapshot {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	s := e.value
-	if e.received.IsZero() || now.Sub(e.received) > 15*time.Second || now.Before(e.received) {
+	if (s.Instance == e.configurationInstance && s.ObservationEpoch < e.minObservationEpoch) || e.received.IsZero() || now.Sub(e.received) > 15*time.Second || now.Before(e.received) {
 		return Snapshot{SchemaVersion: 1, Health: "stale", Phase: "unavailable", Sessions: []Session{}, Sources: []Source{}}
 	}
 	s.Sessions = append([]Session{}, s.Sessions...)
@@ -295,5 +298,15 @@ func (e *Engine) Configure(ctx context.Context, enabled bool) (Snapshot, error) 
 	}
 	// Only the supervised stream owns the current snapshot. A delayed command
 	// response must not overwrite a newer lifecycle event from that stream.
-	return decode(data, time.Now())
+	snapshot, err := decode(data, time.Now())
+	if err != nil {
+		return Snapshot{}, err
+	}
+	// Keep stream ownership, but fence buffered pre-toggle snapshots until the
+	// stream carries the engine's acknowledged configuration generation.
+	e.mu.Lock()
+	e.configurationInstance = snapshot.Instance
+	e.minObservationEpoch = snapshot.ObservationEpoch
+	e.mu.Unlock()
+	return snapshot, nil
 }

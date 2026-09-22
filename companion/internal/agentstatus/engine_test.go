@@ -181,3 +181,45 @@ func TestActiveProvidersFollowAggregatePhaseAndRecency(t *testing.T) {
 		t.Fatalf("stale engine selected %v", got)
 	}
 }
+
+func TestConfigureFencesBufferedPreToggleObservations(t *testing.T) {
+	now := time.Now()
+	old := validSnapshot(now)
+	old.Phase = "waiting_for_answer"
+	cleared := old
+	cleared.ObservationEpoch = 1
+	cleared.Phase = "unavailable"
+	cleared.Sessions = nil
+	token := strings.Repeat("a", 64)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(cleared) }))
+	defer server.Close()
+	dir := t.TempDir()
+	endpoint, _ := json.Marshal(map[string]string{"url": server.URL, "token": token})
+	if err := os.WriteFile(filepath.Join(dir, "endpoint.json"), endpoint, 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine := &Engine{runtimeDir: dir}
+	engine.accept(old, now)
+	if _, err := engine.Configure(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if engine.Snapshot().Phase != "unavailable" {
+		t.Fatal("old wait escaped after toggle acknowledgment")
+	}
+	engine.accept(old, time.Now()) // A buffered pre-toggle stdout line arrives late.
+	if engine.Snapshot().Phase != "unavailable" {
+		t.Fatal("buffered wait escaped the generation fence")
+	}
+	engine.accept(cleared, time.Now())
+	if engine.Snapshot().Health != "ready" {
+		t.Fatal("current stream generation was not accepted")
+	}
+	newer := cleared
+	newer.Instance = "restarted"
+	newer.ObservationEpoch = 0
+	newer.Phase = "working"
+	engine.accept(newer, time.Now())
+	if engine.Snapshot().Phase != "working" {
+		t.Fatal("old generation blocked the restarted engine")
+	}
+}

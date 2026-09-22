@@ -104,7 +104,7 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
   }
   const sessions=[...state.sessions].map(([id,session])=>project(id,session,{now:generatedAt})).sort((a,b)=>a.id.localeCompare(b.id));
   const phase=priority.find(value=>sessions.some(session=>session.phase===value))||'unavailable';
-  return {schemaVersion:1,engineVersion:lock.engineVersion,upstreamRevision:lock.clawd.commit,instance,generatedAt,health:'ready',phase,sessions,
+  return {schemaVersion:1,engineVersion:lock.engineVersion,upstreamRevision:lock.clawd.commit,instance,observationEpoch,generatedAt,health:'ready',phase,sessions,
    sources:getAllAgents().map(agent=>({id:agent.id,name:agent.name,usageProvider:usageProviders[agent.id],transport:agent.eventSource,capabilityLevel:agent.id==='codex'?'log-observed':integrations.profiles[agent.id]?'hook-adapter':'declared',explicitThinking:false}))};
  }
  const server=http.createServer(async(req,res)=>{
