@@ -1,12 +1,16 @@
 package agentstatus
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -15,8 +19,25 @@ import (
 // pipe, watchdog and restart contract runs on Windows and Mac alike.
 func TestMain(m *testing.M) {
 	if mode := os.Getenv("VIBETV_TEST_ENGINE_PROCESS"); mode != "" {
-		if expected := os.Getenv("VIBETV_TEST_ENGINE_ENABLED"); expected != "" && os.Args[len(os.Args)-1] != expected {
+		if expected := os.Getenv("VIBETV_TEST_ENGINE_ENABLED"); expected != "" && os.Args[len(os.Args)-2] != expected {
 			os.Exit(2)
+		}
+		if expected := os.Getenv("VIBETV_TEST_ENGINE_DONE"); expected != "" && os.Args[len(os.Args)-1] != expected {
+			os.Exit(3)
+		}
+		if mode == "duration" {
+			go func() {
+				ticker := time.NewTicker(50 * time.Millisecond)
+				defer ticker.Stop()
+				for range ticker.C {
+					_ = json.NewEncoder(os.Stdout).Encode(validSnapshot(time.Now()))
+				}
+			}()
+			reader := bufio.NewScanner(os.Stdin)
+			for reader.Scan() {
+				_ = os.WriteFile(os.Getenv("VIBETV_TEST_ENGINE_MARKER"), reader.Bytes(), 0600)
+			}
+			os.Exit(0)
 		}
 		if mode == "silent" {
 			_, _ = io.Copy(io.Discard, os.Stdin)
@@ -76,7 +97,7 @@ func TestSupervisorRestartsInvalidChildAndStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	t.Setenv("VIBETV_TEST_ENGINE_ENABLED", "true")
-	engine := Start(ctx, dir, t.TempDir(), func() bool { return true }, nil)
+	engine := Start(ctx, dir, t.TempDir(), func() runtimeconfig.AgentActivitySettings { return runtimeconfig.AgentActivitySettings{Enabled: true} }, nil)
 	waitHealth(t, engine, "ready", 10*time.Second)
 	cancel()
 	waitHealth(t, engine, "stopped", 5*time.Second)
@@ -96,4 +117,27 @@ func TestSupervisorReapsSilentChild(t *testing.T) {
 	if engine.Snapshot().Phase != "unavailable" {
 		t.Fatal("silent process advertised activity")
 	}
+}
+
+func TestSupervisorAppliesSavedDoneDurationWithoutRestart(t *testing.T) {
+	dir := helperDirectory(t, "duration")
+	t.Setenv("VIBETV_TEST_ENGINE_DONE", "120")
+	var duration atomic.Int32
+	duration.Store(120)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine := Start(ctx, dir, t.TempDir(), func() runtimeconfig.AgentActivitySettings {
+		return runtimeconfig.AgentActivitySettings{DoneDuration: strconv.Itoa(int(duration.Load()))}
+	}, nil)
+	waitHealth(t, engine, "ready", 5*time.Second)
+	duration.Store(300)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		data, _ := os.ReadFile(os.Getenv("VIBETV_TEST_ENGINE_MARKER"))
+		if string(data) == "300" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("running engine did not receive the changed done duration")
 }

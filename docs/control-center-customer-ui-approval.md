@@ -4731,3 +4731,11 @@ issue scope, or release permission never implies UI permission.
 - User approval: The request to move Automatic from token differences to the new Agent activity also governs its preview in Setup and Settings.
 - Approved customer-visible result: Remove the old timed provider rotation from the Automatic tile. Its existing preview follows the provider acknowledged by VibeTV, using the shared display-frame path; no browser-side activity inference or new controls. Without a display frame yet, preview the first available provider choice.
 - Validation: Codex review 5279093171 identified the stale rotation. The shared preview now updates only with supplied data; tests cover current-provider ordering and real selection changes.
+
+
+### 2026-09-22 — Finished-session display duration
+
+- User approval: “wenn ne session fertig ist, geht es zu schnell über zu nothing running. mach das einstellbar in den settings.” Default explicitly selected: “30 Sekunden (empfohlen)”.
+- Approved customer-visible result: Add “Keep ‘Done’ on screen” under Agent activity, with “How long a finished session stays visible. New activity takes over immediately.” Choices: 10 seconds, 30 seconds, 1 minute, 2 minutes, 5 minutes. Default 30 seconds, including existing profiles without this setting.
+- Use the existing preference control. Disable with the master switch, independently of blinking. Apply centrally to all themes without a restart. New activity and needs-you retain their existing priority.
+- Preview correctness: accept acknowledged lifecycle-only frames with a valid named agent while keeping all quota fields unavailable, so the preview matches the already-approved physical agent display even before first usage collection.

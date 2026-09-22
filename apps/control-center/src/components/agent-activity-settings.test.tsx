@@ -42,6 +42,13 @@ const items = [
     value: "off",
     options: [{ value: "off", label: "Never quiet" }],
   },
+  {
+    id: "vibetv.agents.doneDuration",
+    type: "enum",
+    label: "Keep ‘Done’ on screen",
+    value: "30",
+    options: [{ value: "30", label: "30 seconds" }, { value: "120", label: "2 minutes" }],
+  },
 ].map((item) => ({
   ...item,
   writable: true,
@@ -84,4 +91,13 @@ it("shows load failures and retries without inventing settings", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
   await screen.findByRole("switch", { name: "Show agent activity" });
   expect(request).toHaveBeenCalledTimes(2);
+});
+
+it("keeps done duration available when blinking is off", async () => {
+ const request = vi.fn().mockResolvedValueOnce({items:items.map(item=>item.id==="vibetv.agents.blink"?{...item,value:false}:item)});
+ render(<AgentActivitySettings request={request as AgentSettingsRequest}/>);
+ const duration=await screen.findByRole("combobox",{name:"Keep ‘Done’ on screen"});
+ expect(duration.hasAttribute("disabled")).toBe(false);
+ expect(duration.textContent).toContain("30 seconds");
+ expect(screen.getByRole("combobox",{name:"Remind me again"}).hasAttribute("disabled")).toBe(true);
 });

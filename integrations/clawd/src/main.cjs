@@ -15,7 +15,7 @@ async function main() {
  const integrationOptions={runtimeDir,directory:path.resolve(__dirname,'..')};
  require('./integrations.cjs').refreshConfigured(integrationOptions);
  const token=randomBytes(32).toString('hex');
- const engine=await createEngine({token,integrationOptions,hooksEnabled:process.argv[3]==='true',codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
+ const engine=await createEngine({token,integrationOptions,hooksEnabled:process.argv[3]==='true',doneSeconds:Number(process.argv[4]),codexSessionsDir:path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'sessions')});
  const endpoint=path.join(runtimeDir,'endpoint.json');
  const temp=endpoint+'.'+process.pid+'.tmp';
  fs.writeFileSync(temp,JSON.stringify({schemaVersion:1,url:engine.url,token}),{mode:0o600});
@@ -28,7 +28,10 @@ async function main() {
   try {const current=JSON.parse(fs.readFileSync(endpoint));if(current.token===token)fs.unlinkSync(endpoint);}catch{}
   await engine.close();
  }
- process.stdin.resume();process.stdin.once('end',close);
+ require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
+  try {engine.setDoneSeconds(Number(line));emit();} catch {void close();}
+ });
+ process.stdin.once('end',close);
  for(const signal of ['SIGTERM','SIGINT'])process.once(signal,close);
  process.stdout.on('error',close);
 }

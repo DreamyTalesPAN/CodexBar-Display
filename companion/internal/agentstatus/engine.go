@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 type Session struct {
@@ -151,7 +152,7 @@ type Engine struct {
 	lastWake              time.Time
 	wake                  func()
 	runtimeDir            string
-	hooksEnabled          func() bool
+	settings              func() runtimeconfig.AgentActivitySettings
 	configurationInstance string
 	minObservationEpoch   uint64
 }
@@ -197,8 +198,8 @@ func BundledDirectory() string {
 	}
 	return filepath.Join(filepath.Dir(executable), "agent-engine")
 }
-func Start(ctx context.Context, directory, runtimeDir string, hooksEnabled func() bool, wake func()) *Engine {
-	e := &Engine{wake: wake, runtimeDir: runtimeDir, hooksEnabled: hooksEnabled}
+func Start(ctx context.Context, directory, runtimeDir string, settings func() runtimeconfig.AgentActivitySettings, wake func()) *Engine {
+	e := &Engine{wake: wake, runtimeDir: runtimeDir, settings: settings}
 	e.unavailable("starting")
 	go func() {
 		for ctx.Err() == nil {
@@ -223,8 +224,9 @@ func (e *Engine) run(ctx context.Context, directory, runtimeDir string) {
 	if runtime.GOOS == "windows" {
 		binary = "node.exe"
 	}
-	enabled := e.hooksEnabled != nil && e.hooksEnabled()
-	cmd := childproc.Hide(exec.CommandContext(ctx, filepath.Join(directory, binary), filepath.Join(directory, "src", "main.cjs"), runtimeDir, strconv.FormatBool(enabled)))
+	settings := e.currentSettings()
+	doneSeconds := settings.DoneSeconds()
+	cmd := childproc.Hide(exec.CommandContext(ctx, filepath.Join(directory, binary), filepath.Join(directory, "src", "main.cjs"), runtimeDir, strconv.FormatBool(settings.Enabled), strconv.Itoa(doneSeconds)))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return
@@ -252,6 +254,15 @@ func (e *Engine) run(ctx context.Context, directory, runtimeDir string) {
 		}
 		watchdog.Reset(15 * time.Second)
 		e.accept(value, time.Now())
+		// Reuse the supervised pipe to apply saved presentation settings live.
+		// Lifecycle timing remains owned by Clawd, including after an engine restart.
+		nextDoneSeconds := e.currentSettings().DoneSeconds()
+		if nextDoneSeconds != doneSeconds {
+			if _, err := io.WriteString(stdin, strconv.Itoa(nextDoneSeconds)+"\n"); err != nil {
+				return
+			}
+			doneSeconds = nextDoneSeconds
+		}
 	}
 }
 
@@ -309,4 +320,11 @@ func (e *Engine) Configure(ctx context.Context, enabled bool) (Snapshot, error) 
 	e.minObservationEpoch = snapshot.ObservationEpoch
 	e.mu.Unlock()
 	return snapshot, nil
+}
+
+func (e *Engine) currentSettings() runtimeconfig.AgentActivitySettings {
+	if e.settings != nil {
+		return e.settings()
+	}
+	return runtimeconfig.Config{}.AgentActivitySettings()
 }

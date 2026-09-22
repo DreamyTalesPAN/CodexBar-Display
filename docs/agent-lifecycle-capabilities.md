@@ -69,3 +69,13 @@ and ignores HTTP hook ingress until enabled again, including in-flight requests
 from before the toggle. A restarted engine receives the saved master choice from
 the Companion. Codex local log observation remains passive and may supply fresh
 events while display activity is off; old hook states cannot replay on re-enable.
+
+
+Finished-session visibility is configurable with **Keep ‘Done’ on screen**:
+10 seconds, 30 seconds (default), 1 minute, 2 minutes, or 5 minutes. The Clawd
+projection owns the duration for all themes and retains exited CLI sessions
+through that interval in its existing bounded session map. New activity and
+needs-you states take precedence. The Companion reads the saved setting at
+engine startup and forwards changes over the supervised stdin pipe; it does
+not infer or cache a second completion state. Historical completions remain
+suppressed on restart.

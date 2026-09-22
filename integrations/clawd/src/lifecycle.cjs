@@ -41,7 +41,7 @@ function processAlive(pid) {
  if(!Number.isSafeInteger(pid)||pid<=0)return null;
  try {process.kill(pid,0);return true;} catch(error) {return error.code==='EPERM';}
 }
-function project(id,session,{now=Date.now(),doneMs=10000,staleMs=300000,isProcessAlive=processAlive}={}) {
+function project(id,session,{now=Date.now(),doneMs=30000,staleMs=300000,isProcessAlive=processAlive}={}) {
  const evidence=session.observation;
  let phase=phases[evidence?.event] || (evidence && ['working','thinking','juggling'].includes(evidence.state) ? 'working' : 'unavailable');
  let reason=evidence?'accepted-event':'no-lifecycle-evidence';

@@ -168,3 +168,38 @@ test('master off clears observations and ignores hooks retained by running clien
   fs.rmSync(directory,{recursive:true,force:true});
  }
 });
+
+test('done duration changes live, survives CLI exit and yields to new work',async t=>{
+ let now=Date.now();
+ const engine=await createEngine({token,now:()=>now});t.after(()=>engine.close());
+ const event=(name,sid='duration')=>fetch(engine.url+'/state',{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify(buildObservation('claude-code',name,{session_id:sid,tool_name:'AskUserQuestion'},()=>({})))});
+ await event('SessionStart');await event('UserPromptSubmit');await event('Stop');await event('SessionEnd');
+ now+=15000;
+ assert.equal(engine.snapshot().phase,'done'); // Default no longer expires at 10s.
+ engine.setDoneSeconds(120);
+ now+=20000;
+ assert.equal(engine.snapshot().phase,'done'); // Ended CLI retained beyond 30s.
+ await event('SessionStart','next');await event('UserPromptSubmit','next');
+ assert.equal(engine.snapshot().phase,'working');
+ await event('PreToolUse','next');
+ assert.equal(engine.snapshot().phase,'waiting_for_answer');
+ engine.state.clearSessionsByAgent('claude-code');
+ assert.equal(engine.snapshot().sessions.length,0);
+ assert.throws(()=>engine.setDoneSeconds(0),/invalid-done-duration/);
+});
+
+test('configured done duration expires at its exact boundary',async t=>{
+ for(const seconds of [10,30,60,120,300]) {
+  let now=Date.now();const engine=await createEngine({token,doneSeconds:seconds,now:()=>now});t.after(()=>engine.close());
+  const session={agentId:'claude-code',awaitingInputSinceStop:true,observation:{event:'stop',at:now,completedAt:now}};
+  engine.state.sessions.set('finished',session);
+  now+=seconds*1000-1;assert.equal(engine.snapshot().phase,'done');
+  now++;assert.equal(engine.snapshot().phase,'idle');
+ }
+});
+
+test('done duration does not extend an uncompleted session exit',async t=>{
+ let now=Date.now();const engine=await createEngine({token,doneSeconds:300,now:()=>now});t.after(()=>engine.close());
+ engine.state.sessions.set('aborted',{agentId:'claude-code',endedAt:now,observation:{event:'sessionend',at:now}});
+ now+=10000;assert.equal(engine.snapshot().sessions.length,0);
+});

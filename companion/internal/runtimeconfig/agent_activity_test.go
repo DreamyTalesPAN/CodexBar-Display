@@ -35,3 +35,21 @@ func TestAgentQuietHoursAndDefaults(t *testing.T) {
 		t.Fatal("master off ignored")
 	}
 }
+
+func TestDoneDurationDefaultsAndSavedValues(t *testing.T) {
+	for _, duration := range []string{"", "invalid", "0", "600"} {
+		s := (Config{AgentActivity: &AgentActivitySettings{Enabled: true, DoneDuration: duration}}).AgentActivitySettings()
+		if !s.Enabled || s.DoneDuration != "30" || s.DoneSeconds() != 30 {
+			t.Fatal(s)
+		}
+	}
+	for _, tc := range []struct {
+		value   string
+		seconds int
+	}{{"10", 10}, {"30", 30}, {"60", 60}, {"120", 120}, {"300", 300}} {
+		s := (Config{AgentActivity: &AgentActivitySettings{DoneDuration: tc.value}}).AgentActivitySettings()
+		if s.DoneSeconds() != tc.seconds {
+			t.Fatal(s)
+		}
+	}
+}

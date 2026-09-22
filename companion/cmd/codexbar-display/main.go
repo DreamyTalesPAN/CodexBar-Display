@@ -563,9 +563,9 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	engine := agentstatus.Start(ctx, agentstatus.BundledDirectory(), runtimepaths.Path(home, "agent-engine"), func() bool {
-		cfg, err := runtimeconfig.Load(home)
-		return err == nil && cfg.AgentActivitySettings().Enabled
+	engine := agentstatus.Start(ctx, agentstatus.BundledDirectory(), runtimepaths.Path(home, "agent-engine"), func() runtimeconfig.AgentActivitySettings {
+		cfg, _ := runtimeconfig.Load(home)
+		return cfg.AgentActivitySettings()
 	}, func() {
 		select {
 		case renderWake <- struct{}{}:

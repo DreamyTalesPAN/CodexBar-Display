@@ -32,7 +32,7 @@ func TestAgentPreferencesPersistWithoutChangingDeviceOrUsage(t *testing.T) {
 	for _, tc := range []struct {
 		id, body string
 		code     int
-	}{{"enabled", `{"value":true}`, 200}, {"enabled", `{"value":false}`, 200}, {"blink", `{"value":false}`, 200}, {"reminder", `{"value":"15"}`, 200}, {"quiet", `{"value":"22"}`, 200}, {"reminder", `{"value":"2"}`, 400}, {"enabled", `{"value":"false"}`, 400}} {
+	}{{"enabled", `{"value":true}`, 200}, {"enabled", `{"value":false}`, 200}, {"blink", `{"value":false}`, 200}, {"reminder", `{"value":"15"}`, 200}, {"quiet", `{"value":"22"}`, 200}, {"doneDuration", `{"value":"120"}`, 200}, {"doneDuration", `{"value":"0"}`, 400}, {"doneDuration", `{"value":30}`, 400}, {"reminder", `{"value":"2"}`, 400}, {"enabled", `{"value":"false"}`, 400}} {
 		before := wakes
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/v1/preferences/vibetv.agents."+tc.id, strings.NewReader(tc.body)))
@@ -55,13 +55,13 @@ func TestAgentPreferencesPersistWithoutChangingDeviceOrUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := cfg.AgentActivitySettings()
-	if a.Enabled || a.Blink || a.Reminder != "15" || a.Quiet != "22" || cfg.DeviceID != "keep-device" || cfg.ConnectionMode != "cable" {
+	if a.Enabled || a.Blink || a.Reminder != "15" || a.Quiet != "22" || a.DoneSeconds() != 120 || cfg.DeviceID != "keep-device" || cfg.ConnectionMode != "cable" {
 		t.Fatalf("%+v %+v", a, cfg)
 	}
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=agents", nil))
 	var response preferencesResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || len(response.Items) != 4 {
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || len(response.Items) != 5 {
 		t.Fatalf("%s", w.Body.String())
 	}
 }

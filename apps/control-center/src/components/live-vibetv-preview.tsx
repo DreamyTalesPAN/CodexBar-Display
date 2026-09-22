@@ -364,13 +364,13 @@ export function LiveVibeTVPreview({
         // usage as if it were live.
         (device?.connected !== false ||
           frameFreshForReconnect(displayFrame)) &&
-        hasRenderableUsage(displayFrame)),
+        hasRenderableFrame(displayFrame)),
   );
   const deviceReady = deviceIsReady(device);
   const awaitingProviderSetup = deviceAwaitsProviderSetup(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
   const effectiveDisplayFrame = livePreviewDisplayFrame(device, displayFrame);
-  const frame = hasRenderableUsage(effectiveDisplayFrame)
+  const frame = hasRenderableFrame(effectiveDisplayFrame)
     ? buildFrameData(
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
         effectiveDisplayFrame.frame,
@@ -568,7 +568,7 @@ export function livePreviewDisplayFrame(
       (!deviceIsActive(device) || device?.paired === false)) ||
     (deviceUsesCable(device) &&
       (!device?.deviceId || displayFrame?.deviceId?.toLowerCase() !== device.deviceId.toLowerCase())) ||
-    !hasRenderableUsage(displayFrame)
+    !hasRenderableFrame(displayFrame)
   ) {
     return null;
   }
@@ -1265,19 +1265,22 @@ function FirmwareUpdateRestarting() {
   );
 }
 
-export function hasRenderableUsage(
+export function hasRenderableFrame(
   snapshot: DisplayFrameSnapshot | null | undefined,
 ): snapshot is DisplayFrameSnapshot & { ok: true; frame: DisplayFrame } {
   const displayFrame = snapshot?.frame;
   if (
     snapshot?.ok !== true ||
     !displayFrame ||
-    displayFrame.usageUnavailable === true ||
     typeof displayFrame.v !== "number" ||
     !Number.isInteger(displayFrame.v) ||
     displayFrame.v < 1
   ) {
     return false;
+  }
+  if (displayFrame.usageUnavailable === true) {
+    return typeof displayFrame.agentName === "string" && Boolean(displayFrame.agentName.trim()) &&
+      agentThemeState(displayFrame.activity || "") !== "unavailable";
   }
   const hasProvider = [displayFrame.provider, displayFrame.label].some(
     (value) => typeof value === "string" && value.trim().length > 0,
@@ -1302,6 +1305,16 @@ export function buildFrameData(
   displayFrame: DisplayFrame,
   currentTime = new Date(),
 ): FrameData {
+  if (displayFrame.usageUnavailable) {
+    displayFrame = {
+      ...displayFrame,
+      session: undefined, weekly: undefined, resetSecs: undefined,
+      sessionUnavailable: true, weeklyUnavailable: true,
+      usageWindows: [], usageSlots: [], providerSlots: [],
+      tokenTotalsKnown: false,
+      sessionTokens: undefined, weekTokens: undefined, totalTokens: undefined,
+    };
+  }
   const savedAt = generatedAt ? new Date(generatedAt) : currentTime;
   const usableSavedAt = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
   const elapsedSeconds = Math.max(

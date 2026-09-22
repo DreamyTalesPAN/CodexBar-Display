@@ -20,8 +20,13 @@ const noop=()=>{};
 // still report lifecycle but cannot select an unrelated provider's quota.
 const usageProviders={'codex':'codex','claude-code':'claude','gemini-cli':'gemini','antigravity-cli':'antigravity','copilot-cli':'copilot'};
 const priority=['waiting_for_permission','waiting_for_answer','waiting_for_review','error','compacting','tool_use','thinking','working','done','stale','idle','unavailable'];
-async function createEngine({token,port=0,codexSessionsDir=null,integrationOptions=null,hooksEnabled=true,now=Date.now}={}) {
+async function createEngine({token,port=0,codexSessionsDir=null,integrationOptions=null,hooksEnabled=true,doneSeconds=30,now=Date.now}={}) {
  if(typeof token!=='string'||token.length<32) throw Error('engine-token-required');
+ function setDoneSeconds(value) {
+  if(![10,30,60,120,300].includes(value)) throw Error('invalid-done-duration');
+  doneSeconds=value;
+ }
+ setDoneSeconds(doneSeconds);
  const instance=randomUUID();
  let observationEpoch=0;
  const ctx={lang:'en',theme:{hitBoxes:{default:{}},states:Object.fromEntries(['idle',...new Set(getAllAgents().flatMap(agent=>Object.values(agent.eventMap||{})))].map(state=>[state,['']])),timings:{minDisplay:{},autoReturn:{}}},
@@ -100,9 +105,9 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
   const generatedAt=now();
   for(const [id,session] of state.sessions) {
    reconcileWait(id,session,update,generatedAt);
-   if(session.endedAt && generatedAt-session.endedAt>=10000) state.sessions.delete(id);
+   if(session.endedAt && generatedAt-session.endedAt>=(session.observation?.completedAt?doneSeconds*1000:10000)) state.sessions.delete(id);
   }
-  const sessions=[...state.sessions].map(([id,session])=>project(id,session,{now:generatedAt})).sort((a,b)=>a.id.localeCompare(b.id));
+  const sessions=[...state.sessions].map(([id,session])=>project(id,session,{now:generatedAt,doneMs:doneSeconds*1000})).sort((a,b)=>a.id.localeCompare(b.id));
   const phase=priority.find(value=>sessions.some(session=>session.phase===value))||'unavailable';
   return {schemaVersion:1,engineVersion:lock.engineVersion,upstreamRevision:lock.clawd.commit,instance,observationEpoch,generatedAt,health:'ready',phase,sessions,
    sources:getAllAgents().map(agent=>({id:agent.id,name:agent.name,usageProvider:usageProviders[agent.id],transport:agent.eventSource,capabilityLevel:agent.id==='codex'?'log-observed':integrations.profiles[agent.id]?'hook-adapter':'declared',explicitThinking:false}))};
@@ -151,7 +156,7 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
  server.requestTimeout=3000;server.headersTimeout=3000;server.maxConnections=32;
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
  if(codexSessionsDir) runtime.startCodexLogMonitor();
- return {snapshot,url:`http://127.0.0.1:${server.address().port}`,state,runtime,
+ return {snapshot,setDoneSeconds,url:`http://127.0.0.1:${server.address().port}`,state,runtime,
   async close(){runtime.cleanup();state.cleanup();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));},
  };
 }
