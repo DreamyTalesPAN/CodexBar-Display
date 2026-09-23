@@ -1,4 +1,5 @@
 import type { ApiError, ControlCenterEvent } from "../control-center-types";
+import { copyForHost } from "@/lib/customer-platform";
 import { redactSensitiveValues } from "../support-report";
 import type { SetupStep } from "./setup-step";
 
@@ -104,7 +105,9 @@ export function buildAiFixPrompt(input: AiFixPromptInput): string {
     "whether I want a pull request. Never commit, push, or open a pull request",
     "without my explicit approval.",
   ];
-  return lines.join("\n");
+  // The runtime's own errors and events still name the Mac, so the whole
+  // prompt is worded for the host, not only its fixed header.
+  return copyForHost(lines.join("\n"), input.windowsHost === true);
 }
 
 function versionLabel(version?: string, suffix?: string): string {

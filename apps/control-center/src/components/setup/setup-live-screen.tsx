@@ -16,6 +16,8 @@ type SetupLiveScreenProps = {
   displayFrame: DisplayFrameSnapshot | null;
   aiFixPrompt?: () => string;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  /** The app runs on Windows; the Help menu words its outcomes for it. */
+  windowsHost?: boolean;
   onPreviewReady?: () => void;
   onBack?: () => void;
   usage: UsageSnapshot | null;
@@ -30,6 +32,7 @@ export function SetupLiveScreen({
   displayFrame,
   aiFixPrompt,
   onCreateSupportReport,
+  windowsHost,
   onPreviewReady,
   onBack,
   usage,
@@ -39,6 +42,7 @@ export function SetupLiveScreen({
       label="Your VibeTV is live"
       aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
       onBack={onBack}
     >
       <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>

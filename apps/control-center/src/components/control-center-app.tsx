@@ -4685,6 +4685,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           aiFixPrompt={setupAiFixPrompt}
           lines={setupWelcomeLines}
           onCreateSupportReport={loadSupportDiagnostics}
+          windowsHost={windowsHost}
         />
       );
     }

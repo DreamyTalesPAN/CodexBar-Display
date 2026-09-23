@@ -676,6 +676,7 @@ export function SetupWizard(props: SetupWizardProps) {
     aiFixPrompt: () =>
       aiFixPrompt(connectLogLines(connect.state).map((line) => line.text)),
     onCreateSupportReport,
+    windowsHost: props.windowsHost,
   };
 
   const restoredInstallLogs = !connectInFlight && props.firmwareInstallLogs

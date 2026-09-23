@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { copyForHost } from "@/lib/customer-platform";
 import { belongsToReport, HELP_OUTCOME_COPY } from "./setup-help-menu";
 
 describe("belongsToReport", () => {
@@ -28,6 +29,14 @@ describe("HELP_OUTCOME_COPY", () => {
     for (const copy of Object.values(HELP_OUTCOME_COPY)) {
       expect(`${copy.title} ${copy.detail}`).not.toMatch(
         /CodexBar|Companion|\bAPI\b/,
+      );
+    }
+  });
+
+  it("does not name a Mac in any outcome the Windows app shows", () => {
+    for (const copy of Object.values(HELP_OUTCOME_COPY)) {
+      expect(copyForHost(`${copy.title} ${copy.detail}`, true)).not.toMatch(
+        /\bMac\b/,
       );
     }
   });

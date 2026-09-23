@@ -49,6 +49,8 @@ type SetupDeviceScreenProps = {
   onConfigureWiFi: (ssid: string, password: string) => Promise<void>;
   onEditWiFi?: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  /** The app runs on Windows; the Help menu words its outcomes for it. */
+  windowsHost?: boolean;
   onEnterAddressManually: () => void;
   onSearchAgain: () => void;
   onScanWiFiNetworks: () => void;
@@ -80,6 +82,7 @@ export function SetupDeviceScreen({
   onConfigureWiFi,
   onEditWiFi,
   onCreateSupportReport,
+  windowsHost,
   onEnterAddressManually,
   onSearchAgain,
   onScanWiFiNetworks,
@@ -150,6 +153,7 @@ export function SetupDeviceScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={wifiBusy ? undefined : onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>{title}</SetupWizardTitle>
       {/*

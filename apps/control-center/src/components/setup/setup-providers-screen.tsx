@@ -304,6 +304,7 @@ export function SetupProvidersScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
 
@@ -374,6 +375,7 @@ function SetupProvidersLoadingScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
       <SetupWizardSubtitle>
