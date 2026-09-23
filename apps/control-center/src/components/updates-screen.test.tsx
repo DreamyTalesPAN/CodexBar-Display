@@ -396,4 +396,46 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     expect(html).toContain("Update");
     expect(html).not.toContain('disabled=""');
   });
+
+  // Issues #438/#460: the Windows app must not call itself a Mac App.
+  it.each([
+    [false, "Mac App", "Software running on this Mac.", "Checking Mac App"],
+    [true, "App", "Software running on this computer.", "Checking the app"],
+  ])("names the app for the platform (windows=%s)", (windowsHost, title, description, checking) => {
+    const html = renderMarkup(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        companionRelease={null}
+        onInstallUpdate={() => true}
+        windowsHost={windowsHost}
+      />,
+    );
+
+    expect(html).toContain(`>${title}<`);
+    expect(html).toContain(description);
+    expect(html).toContain(checking);
+    expect(html.includes("Mac")).toBe(!windowsHost);
+  });
+
+  it("asks a Windows customer to update the app first", () => {
+    const html = renderMarkup(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        companionRelease={{
+          checkedAt: "2026-08-09T13:00:00Z",
+          status: "available",
+          latestVersion: "1.0.53",
+          installedVersion: "1.0.52",
+          updateAvailable: true,
+          message: "An update is available.",
+        }}
+        companionInfo={{ app: { installedInApplications: true } }}
+        onInstallUpdate={() => true}
+        windowsHost
+      />,
+    );
+
+    expect(html).toContain("Update the app first");
+    expect(html).not.toContain("Mac");
+  });
 });

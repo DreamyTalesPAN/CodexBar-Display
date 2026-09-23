@@ -45,6 +45,8 @@ type SetupUsageDialogProps = {
   onOpenChange: (open: boolean) => void;
   onRepair: () => void;
   open: boolean;
+  /** The app runs on Windows, where "this Mac" reads "this computer". */
+  windowsHost?: boolean;
 };
 
 export function SetupUsageDialog({
@@ -53,10 +55,14 @@ export function SetupUsageDialog({
   onOpenChange,
   onRepair,
   open,
+  windowsHost = false,
 }: SetupUsageDialogProps) {
+  const { description, title } = setupUsageCauseCopy[cause];
+  const forHost = (text: string) =>
+    windowsHost ? text.replace("this Mac", "this computer") : text;
   return (
     <SetupDialog
-      description={setupUsageCauseCopy[cause].description}
+      description={forHost(description)}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ label: "Repair", onSelect: onRepair }}
@@ -67,7 +73,7 @@ export function SetupUsageDialog({
         label: "Create support report",
         onSelect: onCreateSupportReport,
       }}
-      title={setupUsageCauseCopy[cause].title}
+      title={forHost(title)}
     />
   );
 }

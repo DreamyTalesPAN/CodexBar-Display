@@ -727,6 +727,9 @@ type companionRuntimeInfo struct {
 	Executable    string `json:"executable,omitempty"`
 	PID           int    `json:"pid"`
 	ListenerOwner string `json:"listenerOwner,omitempty"`
+	// OS lets the app word itself for the platform it runs on. Both native
+	// shells replace the user agent, so the app cannot tell on its own.
+	OS string `json:"os"`
 }
 
 type companionFeatures struct {
@@ -1004,30 +1007,30 @@ func New(opts Options) (*Server, error) {
 		streamStatus: func(ctx context.Context, target string) displayStreamInfo {
 			return inspectDisplayStreamAfterRunning(ctx, target, time.Time{}, opts.DisplayStreamRunning)
 		},
-		waitRender:             nil,
-		refreshStream:          opts.RefreshDisplayStream,
-		pauseDisplayStream:     opts.PauseDisplayStream,
-		wakeDisplayStream:      opts.WakeDisplayStream,
-		renderDisplayStream:    opts.RenderDisplayStream,
-		displayStreamRunning:   opts.DisplayStreamRunning,
-		pairAttempts:           defaultPairAttempts,
-		pairAttemptTimeout:     defaultPairAttemptTimeout,
-		pairRetryGap:           defaultPairRetryGap,
-		repairFlights:          make(map[string]*deviceRepairFlight),
-		helloProbeCache:        make(map[string]helloProbeSnapshot),
-		helloProbeFlights:      make(map[string]*helloProbeFlight),
-		healthProbeCache:       make(map[string]healthProbeSnapshot),
-		healthProbeFlights:     make(map[string]*healthProbeFlight),
-		probeCacheTime:         deviceProbeCacheTime,
-		connectionStates:       make(map[string]*configuredDeviceConnection),
-		now:                    time.Now,
-		displayVerifications:   make(map[string]displayVerification),
-		allowMacAppSelfUpdate:  false,
-		installationMode:       macAppInstallationMode(),
-		loadUsage:              daemon.LoadPersistedUsage,
-		probeProviderSetup:     codexbar.ProbeProviderSetup,
-		probeExactProvider:     codexbar.ProbeProviderSetupForProvider,
-		exactProviderProbes:    make(map[string]*exactProviderProbeFlight),
+		waitRender:            nil,
+		refreshStream:         opts.RefreshDisplayStream,
+		pauseDisplayStream:    opts.PauseDisplayStream,
+		wakeDisplayStream:     opts.WakeDisplayStream,
+		renderDisplayStream:   opts.RenderDisplayStream,
+		displayStreamRunning:  opts.DisplayStreamRunning,
+		pairAttempts:          defaultPairAttempts,
+		pairAttemptTimeout:    defaultPairAttemptTimeout,
+		pairRetryGap:          defaultPairRetryGap,
+		repairFlights:         make(map[string]*deviceRepairFlight),
+		helloProbeCache:       make(map[string]helloProbeSnapshot),
+		helloProbeFlights:     make(map[string]*helloProbeFlight),
+		healthProbeCache:      make(map[string]healthProbeSnapshot),
+		healthProbeFlights:    make(map[string]*healthProbeFlight),
+		probeCacheTime:        deviceProbeCacheTime,
+		connectionStates:      make(map[string]*configuredDeviceConnection),
+		now:                   time.Now,
+		displayVerifications:  make(map[string]displayVerification),
+		allowMacAppSelfUpdate: false,
+		installationMode:      macAppInstallationMode(),
+		loadUsage:             daemon.LoadPersistedUsage,
+		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
+		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
@@ -9155,6 +9158,7 @@ func currentCompanionRuntimeInfo() companionRuntimeInfo {
 		Executable:    strings.TrimSpace(executable),
 		PID:           os.Getpid(),
 		ListenerOwner: displayStreamLaunchAgentLabel(),
+		OS:            runtime.GOOS,
 	}
 }
 

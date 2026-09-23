@@ -396,6 +396,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
     null,
   );
+  // Kept once the runtime has named it: "Mac App offline" is shown exactly
+  // when the runtime is gone, and both native shells replace the user agent.
+  const [windowsHost, setWindowsHost] = useState(false);
+  const runtimeOs = companionInfo?.runtime?.os;
+  if (runtimeOs && (runtimeOs === "windows") !== windowsHost) {
+    setWindowsHost(runtimeOs === "windows");
+  }
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
   const [deviceCandidates, setDeviceCandidates] = useState<DeviceCandidate[]>(
     [],
@@ -4434,7 +4441,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // act on.
   const setupWelcomeLines = [
     { id: "service", text: "starting background service" },
-    { id: "usage", text: "reading provider usage on this Mac" },
+    {
+      id: "usage",
+      text: windowsHost
+        ? "reading provider usage on this computer"
+        : "reading provider usage on this Mac",
+    },
     { id: "wifi", text: "scanning your WiFi" },
     { id: "device", text: "looking for your VibeTV" },
   ].map((line, index, lines) => ({
@@ -4783,6 +4795,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themes={setupThemes}
           usage={usage}
           welcomeLines={setupWelcomeLines}
+          windowsHost={windowsHost}
         />
       );
     }
@@ -4810,6 +4823,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             displayFrame={displayFrame}
             firmwareUpdateStatus={firmwareUpdateStatus}
             usage={usage}
+            windowsHost={windowsHost}
           />
         ) : null}
 
@@ -4858,6 +4872,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={resetSetup}
+            windowsHost={windowsHost}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}
             onSaveStandby={saveStandby}
@@ -4914,6 +4929,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             busyAction={busyAction}
             companionRelease={companionRelease}
             companionStatus={companionStatus}
+            windowsHost={windowsHost}
             companionVersion={companionInfo?.version}
             companionInfo={companionInfo}
             device={device}
@@ -4986,6 +5002,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onOpenChange={(open) => setUsageFailureHidden(!open)}
           onRepair={retryUsageService}
           open
+          windowsHost={windowsHost}
         />
       ) : null}
     </>

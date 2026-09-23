@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -2557,6 +2558,10 @@ func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 	}
 	if got.Companion.Runtime.Version != got.Companion.Version {
 		t.Fatalf("legacy version alias must remain the runtime version: companion=%q runtime=%q", got.Companion.Version, got.Companion.Runtime.Version)
+	}
+	// The app words itself for the platform from this, not from the user agent.
+	if got.Companion.Runtime.OS != runtime.GOOS {
+		t.Fatalf("runtime must report its platform: got %q want %q", got.Companion.Runtime.OS, runtime.GOOS)
 	}
 	if got.Companion.Update.InstalledVersion != "1.0.98" || !got.Companion.Update.UpdateAvailable {
 		t.Fatalf("Mac App update check must compare the app version: %+v", got.Companion.Update)

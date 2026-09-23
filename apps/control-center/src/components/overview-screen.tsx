@@ -45,6 +45,8 @@ type OverviewScreenProps = {
     stage?: string;
   } | null;
   usage?: UsageSnapshot | null;
+  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  windowsHost?: boolean;
 };
 
 export function OverviewScreen({
@@ -54,6 +56,7 @@ export function OverviewScreen({
   displayFrame = null,
   firmwareUpdateStatus = null,
   usage,
+  windowsHost = false,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
   const connected = deviceIsCustomerConnected(device);
@@ -67,7 +70,12 @@ export function OverviewScreen({
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
-  const hero = buildHeroCopy(companionStatus, connected, updateOwnedDisconnect);
+  const hero = buildHeroCopy(
+    companionStatus,
+    connected,
+    updateOwnedDisconnect,
+    windowsHost,
+  );
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
@@ -102,8 +110,12 @@ export function OverviewScreen({
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
             <StatusItem
               icon={<AppWindow aria-hidden />}
-              label="Mac App"
-              value={labelForCompanion(companionStatus, companionVersion)}
+              label={windowsHost ? "App" : "Mac App"}
+              value={labelForCompanion(
+                companionStatus,
+                companionVersion,
+                windowsHost,
+              )}
             />
             <StatusItem
               icon={<ArrowUpFromLine aria-hidden />}
@@ -193,6 +205,7 @@ function buildHeroCopy(
   companionStatus: CompanionStatus,
   connected: boolean,
   updateOwnedDisconnect = false,
+  windowsHost = false,
 ) {
   if (connected) {
     return {
@@ -210,7 +223,11 @@ function buildHeroCopy(
   }
   return {
     badge:
-      companionStatus === "missing" ? "Mac App offline" : "Not connected",
+      companionStatus === "missing"
+        ? windowsHost
+          ? "App offline"
+          : "Mac App offline"
+        : "Not connected",
     badgeVariant: "outline" as const,
     icon: <CircleHelp data-icon="inline-start" aria-hidden />,
   };
@@ -219,6 +236,7 @@ function buildHeroCopy(
 function labelForCompanion(
   status: CompanionStatus,
   companionVersion?: string,
+  windowsHost = false,
 ): string {
   if (status === "online") {
     return companionVersion ? `Online ${companionVersion}` : "Online";
@@ -226,5 +244,5 @@ function labelForCompanion(
   if (status === "missing") {
     return "Not reachable";
   }
-  return "Waiting for Mac App";
+  return windowsHost ? "Waiting for app" : "Waiting for Mac App";
 }
