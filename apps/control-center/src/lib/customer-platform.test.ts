@@ -1,5 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { detectCustomerPlatform } from "./customer-platform";
+import {
+  copyForHost,
+  detectCustomerPlatform,
+  errorForHost,
+} from "./customer-platform";
+
+describe("copyForHost", () => {
+  it("leaves every macOS text unchanged", () => {
+    const text =
+      "Mac App did not answer. Quit VibeTV Control Center, then open it again from Applications. Update the Mac App on this Mac.";
+    expect(copyForHost(text, false)).toBe(text);
+  });
+
+  it("words the app and the computer for Windows", () => {
+    expect(copyForHost("Mac App needs setup.", true)).toBe("App needs setup.");
+    expect(
+      copyForHost(
+        "Mac App did not answer. Quit VibeTV Control Center, then open it again from Applications. If it still does not answer, replace it with the latest Mac App from app.vibetv.shop.",
+        true,
+      ),
+    ).toBe(
+      "App did not answer. Quit VibeTV Control Center, then open it again from the Start menu. If it still does not answer, replace it with the latest app from app.vibetv.shop.",
+    );
+    expect(copyForHost("Your Mac App is out of date", true)).toBe(
+      "Your app is out of date",
+    );
+    expect(
+      copyForHost("Keep VibeTV on the same WiFi as this Mac.", true),
+    ).toBe("Keep VibeTV on the same WiFi as this computer.");
+  });
+
+  it("words an error's message and next step for Windows only", () => {
+    const error = {
+      code: "COMPANION_TIMEOUT",
+      message: "Mac App took too long to answer.",
+      nextAction: "Restart the Mac App, then retry.",
+    };
+    expect(errorForHost(error, false)).toBe(error);
+    expect(errorForHost(error, true)).toEqual({
+      code: "COMPANION_TIMEOUT",
+      message: "App took too long to answer.",
+      nextAction: "Restart the app, then retry.",
+    });
+    expect(errorForHost(null, true)).toBeNull();
+  });
+});
 
 describe("detectCustomerPlatform", () => {
   it("trusts the browser's own platform name first", () => {

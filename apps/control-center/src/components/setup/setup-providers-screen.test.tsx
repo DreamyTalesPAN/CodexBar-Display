@@ -271,6 +271,11 @@ describe("SetupProvidersScreen", () => {
 
     expect(html).toContain("This can take up to 5 minutes. We&#x27;re sorry.");
     expect(html).toContain("reading provider usage on this Mac");
+
+    // Issue #438: Windows reads usage on this computer, not on a Mac.
+    const windows = render({ loading: true, providers: [], windowsHost: true });
+    expect(windows).toContain("reading provider usage on this computer");
+    expect(windows).not.toContain("this Mac");
     expect(html).not.toContain("still checking, hang tight");
     expect(html).toMatch(
       /<input[^>]*disabled=""[^>]*placeholder="Search providers"/,

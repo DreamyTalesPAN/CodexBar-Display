@@ -176,6 +176,8 @@ export type ThemeLibraryScreenProps = {
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
   onSaveStandby?: (value: StandbySettings) => Promise<void> | void;
+  /** The app runs on Windows, where "Mac App" reads "app". */
+  windowsHost?: boolean;
 };
 
 export function ThemeLibraryScreen({
@@ -197,6 +199,7 @@ export function ThemeLibraryScreen({
   onSelectTheme,
   onInstallTheme,
   onSaveStandby,
+  windowsHost = false,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes.filter(
     (theme) => (theme.usage || "live") === usage,
@@ -259,6 +262,7 @@ export function ThemeLibraryScreen({
         device,
         selectedTheme: displayTheme,
         themeInstallEnabled,
+        windowsHost,
       });
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -502,6 +506,7 @@ export function ThemeLibraryScreen({
         onRecoveryDiscarded={() => setRecovery(null)}
         onSaveToLibrary={saveThemeFromEditor}
         saveBlockedReason={storageLocked ? storageWarning : undefined}
+        windowsHost={windowsHost}
       />
     );
   }
@@ -1186,11 +1191,13 @@ function buildInstallReadiness({
   device,
   selectedTheme,
   themeInstallEnabled,
+  windowsHost,
 }: {
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   selectedTheme?: ThemeProduct;
   themeInstallEnabled: boolean;
+  windowsHost: boolean;
 }) {
   const metadataBlocker = selectedTheme
     ? themeMetadataBlocker(selectedTheme)
@@ -1209,9 +1216,11 @@ function buildInstallReadiness({
   }
   if (companionStatus !== "online") {
     return {
-      title: "Install Mac App first",
+      title: windowsHost ? "Install the app first" : "Install Mac App first",
       detail: "",
-      buttonReason: "Install Mac App first.",
+      buttonReason: windowsHost
+        ? "Install the app first."
+        : "Install Mac App first.",
       icon: <Wifi size={22} aria-hidden />,
     };
   }

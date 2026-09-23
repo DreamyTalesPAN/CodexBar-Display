@@ -48,6 +48,8 @@ type SetupProvidersScreenProps = {
   pendingPreferenceIds: Set<string>;
   providers: ProviderItem[];
   usage: UsageSnapshot | null;
+  /** The app runs on Windows, where "this Mac" reads "this computer". */
+  windowsHost?: boolean;
 };
 
 /** How many provider rows are on screen before the customer asks for more. */
@@ -283,6 +285,7 @@ export function SetupProvidersScreen({
   pendingPreferenceIds,
   providers,
   usage,
+  windowsHost = false,
 }: SetupProvidersScreenProps) {
   if (loading) {
     return (
@@ -290,6 +293,7 @@ export function SetupProvidersScreen({
         aiFixPrompt={aiFixPrompt}
         onBack={onBack}
         onCreateSupportReport={onCreateSupportReport}
+        windowsHost={windowsHost}
       />
     );
   }
@@ -300,6 +304,7 @@ export function SetupProvidersScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
 
@@ -334,9 +339,10 @@ function SetupProvidersLoadingScreen({
   aiFixPrompt,
   onBack,
   onCreateSupportReport,
+  windowsHost,
 }: Pick<
   SetupProvidersScreenProps,
-  "aiFixPrompt" | "onBack" | "onCreateSupportReport"
+  "aiFixPrompt" | "onBack" | "onCreateSupportReport" | "windowsHost"
 >) {
   const [stillCheckingCount, setStillCheckingCount] = useState(0);
 
@@ -351,7 +357,9 @@ function SetupProvidersLoadingScreen({
   const lines: SetupLogLine[] = [
     {
       id: "provider-usage",
-      text: "reading provider usage on this Mac",
+      text: windowsHost
+        ? "reading provider usage on this computer"
+        : "reading provider usage on this Mac",
       tone: stillCheckingCount > 0 ? "done" : undefined,
     },
     ...Array.from({ length: stillCheckingCount }, (_, index) => ({
@@ -367,6 +375,7 @@ function SetupProvidersLoadingScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
       <SetupWizardSubtitle>

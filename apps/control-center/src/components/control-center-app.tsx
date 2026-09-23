@@ -94,7 +94,9 @@ import {
 } from "./provider-preferences-polling";
 import { isProviderItem } from "./provider-picker";
 import {
+  copyForHost,
   detectCustomerPlatformFromBrowser,
+  errorForHost,
   type CustomerPlatform,
 } from "@/lib/customer-platform";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
@@ -396,6 +398,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
     null,
   );
+  // The runtime names its platform, and that answer is kept: "Mac App
+  // offline" is shown exactly when the runtime is gone. Until it first
+  // answers, the system the WebView reports stands in, so a slow first status
+  // never shows Mac copy on Windows. Both native shells replace the user
+  // agent, so it says nothing about the platform.
+  const windowsWebView = useSyncExternalStore(
+    subscribeRuntimeSurface,
+    isWindowsWebView,
+    getWindowsWebViewServerSnapshot,
+  );
+  const [runtimeOnWindows, setRuntimeOnWindows] = useState<boolean | null>(
+    null,
+  );
+  const runtimeOs = companionInfo?.runtime?.os;
+  if (runtimeOs && (runtimeOs === "windows") !== runtimeOnWindows) {
+    setRuntimeOnWindows(runtimeOs === "windows");
+  }
+  const windowsHost = runtimeOnWindows ?? windowsWebView;
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
   const [deviceCandidates, setDeviceCandidates] = useState<DeviceCandidate[]>(
     [],
@@ -3901,8 +3921,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const logs = events.map((event) => ({
     id: event.id,
-    label: event.label,
-    detail: event.detail,
+    label: copyForHost(event.label, windowsHost),
+    detail: copyForHost(event.detail, windowsHost),
     timestamp: event.at,
   }));
   const effectiveFirmwareUpdate =
@@ -4434,7 +4454,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // act on.
   const setupWelcomeLines = [
     { id: "service", text: "starting background service" },
-    { id: "usage", text: "reading provider usage on this Mac" },
+    {
+      id: "usage",
+      text: windowsHost
+        ? "reading provider usage on this computer"
+        : "reading provider usage on this Mac",
+    },
     { id: "wifi", text: "scanning your WiFi" },
     { id: "device", text: "looking for your VibeTV" },
   ].map((line, index, lines) => ({
@@ -4643,6 +4668,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       })),
       screen: setupStep,
       setupLog,
+      windowsHost,
     });
 
   // The background service can die at any point, so its recovery is drawn
@@ -4659,6 +4685,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           aiFixPrompt={setupAiFixPrompt}
           lines={setupWelcomeLines}
           onCreateSupportReport={loadSupportDiagnostics}
+          windowsHost={windowsHost}
         />
       );
     }
@@ -4695,14 +4722,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
           firmwareProgress={firmwareUpdateStatus?.progress}
           firmwareInstallLogs={
-            firmwareUpdateInProgress ? firmwareUpdateStatus.logs : undefined
+            firmwareUpdateInProgress
+              ? firmwareUpdateStatus.logs.map((line) =>
+                  copyForHost(line, windowsHost),
+                )
+              : undefined
           }
           displayProviders={displayableProviders.map((item) => ({
             id: item.providerId,
             label: item.label,
           }))}
           installingTheme={themeInstallStatus?.phase === "installing"}
-          themeError={setupThemeError}
+          themeError={errorForHost(setupThemeError, windowsHost)}
           themeErrorDismissible={themeInstallStatus?.phase === "error"}
           onDismissThemeError={() => {
             if (themeInstallStatus?.phase === "error") {
@@ -4766,10 +4797,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }}
           searchError={
             startupDeviceSearchState === "failed" && !needsRuntimeRecovery
-              ? lastError
+              ? errorForHost(lastError, windowsHost)
               : null
           }
-          providerError={providerDisplayError || providerPreferencesError}
+          providerError={errorForHost(
+            providerDisplayError || providerPreferencesError,
+            windowsHost,
+          )}
           onSearchDevices={() => void searchAndConnect()}
           onScanWiFiNetworks={scanSetupWiFiNetworks}
           onSelectConnectionMode={selectSetupConnectionMode}
@@ -4779,10 +4813,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providers={setupProviders}
           selectedThemeId={selectedThemeId}
           step={settingsWiFiSetup ? "device" : setupStep}
-          themeInstallLogs={themeInstallStatus?.logs || []}
+          themeInstallLogs={(themeInstallStatus?.logs || []).map((line) =>
+            copyForHost(line, windowsHost),
+          )}
           themes={setupThemes}
           usage={usage}
           welcomeLines={setupWelcomeLines}
+          windowsHost={windowsHost}
         />
       );
     }
@@ -4810,6 +4847,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             displayFrame={displayFrame}
             firmwareUpdateStatus={firmwareUpdateStatus}
             usage={usage}
+            windowsHost={windowsHost}
           />
         ) : null}
 
@@ -4819,13 +4857,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             companionStatus={companionStatus}
             onRefresh={() => refreshUsage()}
             usage={usage}
-            usageError={usageError}
+            usageError={errorForHost(usageError, windowsHost)}
+            windowsHost={windowsHost}
           />
         ) : null}
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
-            actionError={lastError}
+            actionError={errorForHost(lastError, windowsHost)}
             onDismissError={() => {
               setLastError(null);
               setProviderDisplayError(null);
@@ -4858,6 +4897,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={resetSetup}
+            windowsHost={windowsHost}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}
             onSaveStandby={saveStandby}
@@ -4906,6 +4946,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
             onSaveStandby={saveStandby}
+            windowsHost={windowsHost}
           />
         ) : null}
 
@@ -4914,6 +4955,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             busyAction={busyAction}
             companionRelease={companionRelease}
             companionStatus={companionStatus}
+            windowsHost={windowsHost}
             companionVersion={companionInfo?.version}
             companionInfo={companionInfo}
             device={device}
@@ -4938,11 +4980,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             device={device}
             diagnostics={supportDiagnostics}
             events={logs}
-            lastError={lastError}
+            lastError={errorForHost(lastError, windowsHost)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRunSetupAgain={resetSetup}
             supportReportBusy={supportReportBusy}
+            windowsHost={windowsHost}
           />
         ) : null}
       </ControlCenterShell>
@@ -4986,6 +5029,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onOpenChange={(open) => setUsageFailureHidden(!open)}
           onRepair={retryUsageService}
           open
+          windowsHost={windowsHost}
         />
       ) : null}
     </>
@@ -5016,6 +5060,14 @@ function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
 
 function getCustomerPlatformServerSnapshot(): CustomerPlatform {
   return "unknown";
+}
+
+function isWindowsWebView(): boolean {
+  return typeof navigator !== "undefined" && /^win/i.test(navigator.platform);
+}
+
+function getWindowsWebViewServerSnapshot(): boolean {
+  return false;
 }
 
 function usageRefreshEvent(payload: UsageSnapshot): {

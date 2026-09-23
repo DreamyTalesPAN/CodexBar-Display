@@ -36,6 +36,8 @@ type SetupThemeScreenProps = {
   aiFixPrompt?: () => string;
   onBack?: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  /** The app runs on Windows; the Help menu words its outcomes for it. */
+  windowsHost?: boolean;
   onInstall: () => void;
   onSelect: (theme: SetupThemeOption) => void;
   selectedThemeId: string | null;
@@ -48,6 +50,7 @@ export function SetupThemeScreen({
   aiFixPrompt,
   onBack,
   onCreateSupportReport,
+  windowsHost,
   onInstall,
   onSelect,
   selectedThemeId,
@@ -61,6 +64,7 @@ export function SetupThemeScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle className="text-[40px]">
         Choose your theme

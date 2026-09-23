@@ -34,15 +34,15 @@ window.matchMedia = ((query: string) => ({
   removeEventListener: () => {},
 })) as unknown as typeof window.matchMedia;
 
-function provider(): ProviderItem {
+function provider(id = "codex", label = "Codex"): ProviderItem {
   return {
     allowsDefault: false,
     availability: { state: "available" },
     effectiveValue: true,
     health: { message: "", service: "operational", state: "healthy" },
-    id: "codexbar.providers.codex.enabled",
-    providerId: "codex",
-    label: "Codex",
+    id: `codexbar.providers.${id}.enabled`,
+    providerId: id,
+    label,
     owner: "codexbar",
     value: true,
   } as ProviderItem;
@@ -92,7 +92,8 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     providersLoading: false,
     onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
-    providers: [provider()],
+    // Two switched on: with one, the display step is skipped (issue #423).
+    providers: [provider(), provider("claude", "Claude")],
     selectedThemeId: null,
     step: "display",
     themeInstallLogs: [],
@@ -277,7 +278,9 @@ describe("SetupWizard: initial provider scan", () => {
     ).toBeTruthy();
   });
 
-  it("moves directly from provider completion to Display Mode after a fresh connection", async () => {
+  // One provider switched on: the display step is skipped (issue #423), so
+  // completion moves straight on to the theme -- still never back to Device.
+  it("moves directly from provider completion to the theme after a fresh connection", async () => {
     let finishFirmwareCheck!: (value: null) => void;
     let finishProviderCompletion!: (value: boolean) => void;
     const checkFirmware = vi.fn(
@@ -319,12 +322,13 @@ describe("SetupWizard: initial provider scan", () => {
           hasActiveDevice: true,
           hasEnteredControlCenter: false,
         }),
-        displayConfigured: false,
+        // The skip saves the sole provider before completion is asked for.
+        displayConfigured: !providerSelectionRequired,
         displaySelectionSupported: true,
         initialCheckComplete: true,
         providerSelectionRequired,
         searchingForDevice: false,
-        themeSetupRequired: false,
+        themeSetupRequired: true,
       });
     let props = baseProps({
       connectSteps: {
@@ -376,7 +380,13 @@ describe("SetupWizard: initial provider scan", () => {
         .disabled,
     ).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(props.onDisplayContinue).toHaveBeenCalledWith({
+      mode: "fixed",
+      providerIds: ["claude"],
+    });
     expect(onProvidersContinue).toHaveBeenCalledTimes(1);
     expect(shownStep()).toBe("Choose AI providers");
     expect(
@@ -385,14 +395,14 @@ describe("SetupWizard: initial provider scan", () => {
     ).toBe(true);
 
     // The successful completion response clears the provider requirement while
-    // the first usage frame is still missing. That must advance to Display Mode,
+    // the first usage frame is still missing. That must advance to the theme,
     // not briefly send the freshly connected customer back to Device.
     await act(async () => {
       props = { ...props, step: stepAfterConnection(false) };
       rerender(<SetupWizard {...props} />);
       finishProviderCompletion(true);
     });
-    expect(shownStep()).toBe("Display Mode");
+    expect(shownStep()).toBe("Choose your theme");
     expect(
       screen.queryByRole("main", { name: "Choose your VibeTV" }),
     ).toBeNull();
@@ -853,6 +863,47 @@ describe("SetupWizard: direct connection", () => {
 });
 
 describe("SetupWizard: WiFi recovery dialogs", () => {
+  // Issue #440: the customer's latest Cable/WiFi choice wins over a late answer.
+  it.each(["resolve", "reject"] as const)(
+    "keeps Cable when the earlier WiFi selection %ss late",
+    async (outcome) => {
+      let settle: { resolve: (value: unknown) => void; reject: (error: unknown) => void } | null = null;
+      const onSelectConnectionMode = vi.fn(
+        () => new Promise((resolve, reject) => { settle = { resolve, reject }; }),
+      );
+      const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "same", transport: "cable" };
+      const connect = vi.fn().mockResolvedValue({ board: "esp8266_smalltv_st7789", firmware: "1.0.43" });
+      const props = baseProps({
+        step: "device",
+        connectionModeChoiceRequired: true,
+        deviceSearchState: "multiple",
+        deviceCandidates: [cable, { target: "http://192.168.1.42", deviceId: "same", transport: "wifi" }],
+        connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+        onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+        onSelectConnectionMode: onSelectConnectionMode as unknown as SetupWizardProps["onSelectConnectionMode"],
+      });
+      render(<SetupWizard {...props} />);
+      fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+      await waitFor(() => expect(onSelectConnectionMode).toHaveBeenCalledWith("wifi", "same"));
+
+      fireEvent.click(screen.getByRole("button", { name: "Use Cable instead" }));
+      await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+
+      await act(async () => {
+        if (outcome === "resolve") {
+          settle!.resolve({ status: "wifi_credentials_required", deviceId: "same" });
+        } else {
+          settle!.reject({ code: "cable_missing", message: "VibeTV is not connected by Cable." });
+        }
+      });
+
+      expect(screen.queryByRole("heading", { name: "Connect VibeTV to WiFi" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "WiFi setup failed" })).toBeNull();
+      expect(props.onScanWiFiNetworks).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["choice", "not-found"])("shows a rejected WiFi selection from %s and allows retry", async (entry) => {
     const failure = { code: "cable_missing", message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry." };
     const onSelectConnectionMode = vi.fn().mockRejectedValue(failure);
@@ -987,6 +1038,148 @@ describe("SetupWizard: saved WiFi recovery", () => {
     expect(props.onConfigureWiFi).not.toHaveBeenCalled();
     rerender(<SetupWizard {...props} deviceCandidates={[wifi]} />);
     await waitFor(() => expect(connect).toHaveBeenCalledWith(wifi));
+  });
+});
+
+// Issue #423: with exactly one provider switched on there is nothing to choose
+// on the display step. The toggles decide, not which providers have data.
+describe("SetupWizard: one enabled provider", () => {
+  it("saves the sole provider before completion and moves on to the theme", async () => {
+    const onDisplayContinue = vi.fn(async () => true);
+    const onProvidersContinue = vi.fn(async () => true);
+    const props = baseProps({
+      step: "providers",
+      providers: [provider()],
+      onDisplayContinue,
+      onProvidersContinue,
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(onDisplayContinue).toHaveBeenCalledWith({
+      mode: "fixed",
+      providerIds: ["codex"],
+    });
+    expect(onProvidersContinue).toHaveBeenCalledOnce();
+    expect(onDisplayContinue.mock.invocationCallOrder[0]).toBeLessThan(
+      onProvidersContinue.mock.invocationCallOrder[0],
+    );
+
+    rerender(<SetupWizard {...props} step="theme" />);
+    expect(shownStep()).toBe("Choose your theme");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose AI providers");
+  });
+
+  it("shows Display Mode as before with two providers switched on", async () => {
+    const onDisplayContinue = vi.fn(async () => true);
+    render(
+      <SetupWizard {...baseProps({ step: "theme", onDisplayContinue })} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Display Mode");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(onDisplayContinue).not.toHaveBeenCalled();
+  });
+
+  it("keeps Continue closed with no provider switched on", () => {
+    const onDisplayContinue = vi.fn();
+    const onProvidersContinue = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "providers",
+          providers: [{ ...provider(), value: false, effectiveValue: false }],
+          onDisplayContinue,
+          onProvidersContinue,
+        })}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Continue" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onDisplayContinue).not.toHaveBeenCalled();
+    expect(onProvidersContinue).not.toHaveBeenCalled();
+  });
+
+  it("stays on the provider step when the save is refused", async () => {
+    const onProvidersContinue = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "theme",
+          providers: [provider()],
+          onDisplayContinue: vi.fn(async () => false),
+          onProvidersContinue,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(onProvidersContinue).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Choose AI providers");
+  });
+
+  it("counts a switched-on provider that has no data yet", async () => {
+    const onDisplayContinue = vi.fn(async () => true);
+    const signedOut = {
+      ...provider("gemini", "Gemini"),
+      health: { message: "Sign in", service: "unknown", state: "auth_required" },
+    } as ProviderItem;
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "theme",
+          providers: [provider(), signedOut],
+          onDisplayContinue,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Display Mode");
+  });
+
+  it("evaluates the current selection again after going back", async () => {
+    const onDisplayContinue = vi.fn(async () => true);
+    const props = baseProps({
+      step: "theme",
+      providers: [provider()],
+      onDisplayContinue,
+      onProvidersContinue: vi.fn(async () => true),
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    // One became two: the choice is the customer's again.
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose AI providers");
+    const two = [provider(), provider("claude", "Claude")];
+    rerender(<SetupWizard {...props} providers={two} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(onDisplayContinue).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Display Mode");
+
+    // Two became one: the remaining provider is saved and the step skipped.
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    const one = [{ ...provider(), value: false }, provider("claude", "Claude")];
+    rerender(<SetupWizard {...props} providers={one} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(onDisplayContinue).toHaveBeenCalledWith({
+      mode: "fixed",
+      providerIds: ["claude"],
+    });
+    expect(shownStep()).toBe("Choose your theme");
   });
 });
 
@@ -1841,4 +2034,27 @@ describe("SetupWizard with a broken usage service", () => {
 
     expect(onDismissUsageFailure).toHaveBeenCalledTimes(1);
   });
+
+  // Issue #438: the Windows app must not ask to finish setup "on this Mac".
+  it.each(["checking", "not_set_up", "setup_incomplete", "unknown"] as const)(
+    "says this computer on Windows (%s)",
+    (cause) => {
+      render(
+        <SetupWizard
+          {...baseProps({
+            step: "welcome",
+            usageFailure: cause,
+            onRepairUsageService: vi.fn(),
+            windowsHost: true,
+          })}
+        />,
+      );
+
+      const dialog = screen.getByRole("dialog");
+      expect(dialog.textContent).not.toContain("Mac");
+      if (cause === "setup_incomplete") {
+        expect(screen.getByText("Finish AI setup on this computer")).toBeTruthy();
+      }
+    },
+  );
 });

@@ -537,6 +537,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testWindowsAppDoesNotSpeakOfAMac(browser, appContext.appUrl);
       console.log("control-center startup timeout test passed");
       return;
     }
@@ -910,6 +911,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testWindowsAppDoesNotSpeakOfAMac(browser, appContext.appUrl);
     await testInitialHealthyStatusRaceAvoidsRepair(browser, appContext.appUrl);
     await testDelayedSettingsDoesNotResetActiveTab(browser, appContext.appUrl);
     await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
@@ -2123,12 +2125,28 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     "A ready provider must let the first-time setup continue",
   );
   await providersContinue.click();
-  const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
-  await displayScreen.waitFor({ timeout: 15_000 });
-  await displayScreen.getByRole("button", { name: "Continue" }).click();
   await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({
     timeout: 15_000,
   });
+  // One provider switched on leaves nothing to choose (issue #423): it is
+  // saved as the one VibeTV shows, and Display Mode is never drawn.
+  assert(
+    (await page.getByRole("heading", { name: SETUP_DISPLAY_SCREEN }).count()) ===
+      0,
+    "One enabled provider must skip Display Mode",
+  );
+  const displayWrites = requests.filter(
+    (request) => request === "PATCH /v1/provider-display",
+  );
+  assert(
+    displayWrites.length === 1,
+    `The sole provider must be saved once, got ${JSON.stringify(requests)}`,
+  );
+  assert(
+    requests.indexOf("PATCH /v1/provider-display") <
+      requests.indexOf("POST /v1/setup/providers/complete"),
+    `The sole provider must be saved before completion, got ${JSON.stringify(requests)}`,
+  );
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
@@ -5706,6 +5724,79 @@ async function testUsageServiceFailureAfterSetupOffersRecovery(
     timeout: 10_000,
   });
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+// Issues #438/#460: on Windows the app named itself a Mac App and asked to
+// finish AI setup "on this Mac". The runtime names its platform; both native
+// shells replace the user agent, so nothing else can.
+async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  // WebView2 keeps reporting Windows here even though the shell replaces the
+  // user agent. The first status answer is held back, so the welcome log is
+  // drawn before the runtime has named its platform.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      get: () => "Win32",
+    });
+  });
+  let usageBroken = false;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: companionDevice,
+    companionRuntime: { version: "1.0.32", os: "windows" },
+    firstStatusDelayMs: 3_000,
+    onStatusProviderSetup: () =>
+      usageBroken
+        ? {
+            status: "setup_required",
+            engine: { status: "ready" },
+            providers: [{ id: "codexbar", status: "timeout" }],
+          }
+        : readyProviderSetup(),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const welcome = setupScreen(page, SETUP_WELCOME_SCREEN);
+  await welcome
+    .getByText("reading provider usage on this computer")
+    .waitFor({ timeout: 10_000 });
+  assert(
+    !(await welcome.innerText()).includes("Mac"),
+    "The Windows welcome step must not name a Mac before the runtime answers",
+  );
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  const main = page.getByRole("main");
+  await main.getByText("App", { exact: true }).first().waitFor();
+  assert(
+    !(await main.innerText()).includes("Mac"),
+    "The Windows Overview must not name a Mac",
+  );
+
+  usageBroken = true;
+  const usageDialog = page.getByRole("dialog", {
+    name: "Finish AI setup on this computer",
+  });
+  await usageDialog.waitFor({ timeout: 20_000 });
+  assert(
+    !(await usageDialog.innerText()).includes("Mac"),
+    "The Windows usage dialog must not name a Mac",
+  );
+  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
+
+  for (const tab of ["Usage", "Settings", "Appearance", "Updates", "Support"]) {
+    await clickNavigation(page, tab);
+    await page.waitForTimeout(500);
+    assert(
+      !(await main.innerText()).includes("Mac"),
+      `The Windows ${tab} screen must not name a Mac`,
+    );
+  }
   await page.close();
 }
 

@@ -40,6 +40,8 @@ export type CompanionInfo = {
     executable?: string;
     pid?: number;
     listenerOwner?: string;
+    /** The platform the runtime runs on, e.g. "darwin" or "windows". */
+    os?: string;
   };
   update?: CompanionReleaseInfo;
   features?: {

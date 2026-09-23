@@ -164,4 +164,25 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Connected by Cable");
     expect(html).not.toContain("Change connection");
   });
+
+  // Issues #438/#460: the Windows app must not call itself a Mac App. The
+  // Mac wording is asserted too, because it must not change at all.
+  it.each([
+    [false, "Mac App", "Mac App offline", "Waiting for Mac App"],
+    [true, "App", "App offline", "Waiting for app"],
+  ])("names the app for the platform (windows=%s)", (windowsHost, label, offline, waiting) => {
+    const device = { active: true, connected: false, paired: true, ready: false };
+    const missing = renderToStaticMarkup(
+      <OverviewScreen companionStatus="missing" device={device} windowsHost={windowsHost} />,
+    );
+    const unknown = renderToStaticMarkup(
+      <OverviewScreen companionStatus="unknown" device={device} windowsHost={windowsHost} />,
+    );
+
+    expect(missing).toContain(`>${label}<`);
+    expect(missing).toContain(offline);
+    expect(unknown).toContain(waiting);
+    expect(missing.includes("Mac")).toBe(!windowsHost);
+    expect(unknown.includes("Mac")).toBe(!windowsHost);
+  });
 });

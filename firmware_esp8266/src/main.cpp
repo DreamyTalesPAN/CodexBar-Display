@@ -1191,6 +1191,7 @@ void maintainWifiSetupRecovery() {
   inputs.credentialsAvailable = savedWifiCredentialsAvailable;
   inputs.busy = wifiSetupRecoveryBusy();
   inputs.connected = WiFi.status() == WL_CONNECTED;
+  inputs.setupClientConnected = WiFi.softAPgetStationNum() > 0;
 
   const codexbar_display::esp8266::wifi_recovery::Action action =
       codexbar_display::esp8266::wifi_recovery::Tick(wifiSetupRecoveryState, inputs);
@@ -1213,6 +1214,12 @@ void maintainWifiSetupRecovery() {
       break;
     case codexbar_display::esp8266::wifi_recovery::Action::Connected:
       finishWifiSetupRecovery();
+      break;
+    case codexbar_display::esp8266::wifi_recovery::Action::Interrupted:
+      // Stop the station attempt only; restarting the access point would
+      // drop the customer who is joined to it.
+      WiFi.disconnect(false);
+      Serial.println("wifi_setup_retry_paused reason=setup_client");
       break;
     case codexbar_display::esp8266::wifi_recovery::Action::None:
       break;
@@ -1569,13 +1576,17 @@ bool saveWifiCredentials(const String& ssid, const String& password) {
   return EEPROM.commit();
 }
 
-void clearWifiCredentials() {
+bool clearWifiCredentials() {
   EEPROM.begin(kEepromBytes);
   for (size_t i = 0; i < kWifiCredsBytes; ++i) {
     EEPROM.write(i, 0);
   }
-  EEPROM.commit();
+  if (!EEPROM.commit()) {
+    Serial.println("wifi_credentials_clear_failed reason=eeprom_commit");
+    return false;
+  }
   Serial.println("wifi_credentials_cleared");
+  return true;
 }
 
 void clearSdkWifiCredentials() {
@@ -1875,11 +1886,14 @@ void handleResetWifi() {
     return;
   }
 
+  if (!clearWifiCredentials()) {
+    webServer.send(500, "text/plain; charset=utf-8", "WiFi settings could not be cleared");
+    return;
+  }
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>WiFi settings cleared. Vibe TV is restarting setup.</p>");
   drawWifiResetStatus("Restarting");
   waitStatusRendered = true;
   delay(500);
-  clearWifiCredentials();
   clearSdkWifiCredentials();
   delay(250);
   persistResetTrustForRestart();

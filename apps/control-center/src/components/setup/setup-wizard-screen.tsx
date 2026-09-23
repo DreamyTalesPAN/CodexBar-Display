@@ -15,6 +15,8 @@ type SetupWizardScreenProps = {
   aiFixPrompt?: () => string;
   onBack?: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  /** The app runs on Windows, where "Mac App" reads "app". */
+  windowsHost?: boolean;
 };
 
 /**
@@ -29,6 +31,7 @@ export function SetupWizardScreen({
   aiFixPrompt,
   onBack,
   onCreateSupportReport,
+  windowsHost,
 }: SetupWizardScreenProps) {
   return (
     <main
@@ -68,6 +71,7 @@ export function SetupWizardScreen({
       <SetupHelpMenu
         aiFixPrompt={aiFixPrompt}
         onCreateSupportReport={onCreateSupportReport}
+        windowsHost={windowsHost}
       />
     </main>
   );

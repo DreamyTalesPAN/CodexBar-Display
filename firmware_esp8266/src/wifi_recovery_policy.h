@@ -14,6 +14,7 @@ enum class Action : uint8_t {
   StartAttempt,
   Timeout,
   Connected,
+  Interrupted,
 };
 
 struct State {
@@ -29,6 +30,8 @@ struct Inputs {
   bool credentialsAvailable = false;
   bool busy = false;
   bool connected = false;
+  // A phone or computer is joined to VibeTV-Setup.
+  bool setupClientConnected = false;
 };
 
 inline uint32_t elapsedMs(uint32_t nowMs, uint32_t startedAtMs) {
@@ -61,6 +64,19 @@ inline Action Tick(State& state, const Inputs& inputs) {
   if (inputs.connected) {
     state = {};
     return Action::Connected;
+  }
+
+  // A station attempt moves the single radio's channel, and the setup access
+  // point follows it: the customer is dropped mid-entry (issue #453). While
+  // someone is joined, no attempt starts, a running one stops, and the next
+  // one waits a full interval after they leave.
+  if (inputs.setupClientConnected) {
+    const bool interrupted = state.attemptInProgress;
+    state.attemptInProgress = false;
+    state.attemptStartedAtMs = 0;
+    state.retryScheduled = true;
+    state.retryDueAtMs = inputs.nowMs + kRetryIntervalMs;
+    return interrupted ? Action::Interrupted : Action::None;
   }
 
   if (state.attemptInProgress) {
