@@ -162,7 +162,7 @@ describe.each(themes)("%s legibility and fit (issue #258)", (themeId) => {
       readFileSync(path.join(root, "theme-packs", themeId, "manifest.json"), "utf8"),
     );
     const raw = readFileSync(path.join(root, "theme-packs", themeId, "theme.json"), "utf8");
-    const revision = themeId === "mini-classic" ? 9 : 8;
+    const revision = 9;
     expect(JSON.parse(raw).rev).toBe(revision);
     expect(manifest.themeSpec.path).toContain(`-${revision}-`);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(raw));

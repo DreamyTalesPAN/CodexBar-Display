@@ -114,9 +114,9 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/claude-creature.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      version: "1.1.1",
-      themeRev: 3,
-      themeSpecPath: "/themes/u/claude--3-afab9c.json",
+      version: "1.3.2",
+      themeRev: 9,
+      themeSpecPath: "/themes/u/claude--9-b93c35.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -9673,16 +9673,57 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     }
 
     if (theme.kind === "animated-sprite") {
-      const firstRender = await renderedTheme.evaluate(
-        (node) => node.innerHTML,
+      const specPath = catalogFixture.themes.find(
+        (candidate) => candidate.id === theme.id,
+      )?.themeSpecPath;
+      assert(specPath, `${theme.id} should have a render pack path`);
+      const pack = JSON.parse(
+        await readFile(
+          join(root, "../../dist/theme-packs/render", theme.id, specPath.split("/").at(-1)),
+          "utf8",
+        ),
       );
-      await page.waitForTimeout(650);
-      const secondRender = await renderedTheme.evaluate(
-        (node) => node.innerHTML,
+      const spritePrimitive = (pack.spec.p || pack.spec.primitives || []).find(
+        (primitive) => {
+          if (!["sp", "sprite"].includes(primitive.t || primitive.type)) {
+            return false;
+          }
+          const assetPath =
+            primitive.sa?.coding ||
+            primitive.stateAssets?.coding ||
+            primitive.a ||
+            primitive.assetPath;
+          const data = pack.assets[assetPath]?.data;
+          if (!data?.startsWith("CBA1\n")) return false;
+          const [, , frameCount, fps] = data.split("\n")[1].split(" ").map(Number);
+          return frameCount > 1 && fps > 0;
+        },
       );
-      assert(
-        firstRender !== secondRender,
-        `${theme.id} animated sprite should advance frames`,
+      assert(spritePrimitive, `${theme.id} coding asset should have multiple animated frames`);
+      // The SVG also contains reset countdowns. Compare the sprite group only
+      // so changing text cannot make a frozen character pass this check.
+      const spriteMarkup = () =>
+        renderedTheme.evaluate((node, sprite) => {
+          const group = [...node.children].find(
+            (child) =>
+              child.tagName.toLowerCase() === "g" &&
+              [...child.children].some(
+                (rect) =>
+                  rect.tagName.toLowerCase() === "rect" &&
+                  Number(rect.getAttribute("x")) === sprite.x &&
+                  Number(rect.getAttribute("y")) === sprite.y &&
+                  Number(rect.getAttribute("width")) === sprite.w &&
+                  Number(rect.getAttribute("height")) === sprite.h,
+              ),
+          );
+          return group?.innerHTML || null;
+        }, spritePrimitive);
+      const firstRender = await spriteMarkup();
+      assert(firstRender, `${theme.id} animated sprite should render as its own group`);
+      await waitForCondition(
+        async () => (await spriteMarkup()) !== firstRender,
+        `${theme.id} animated sprite should advance frames in the 3D screen`,
+        3_000,
       );
     }
 

@@ -311,24 +311,44 @@ mini.p.push({
 });
 await finish("mini-classic", mini, "1.2.2", props);
 
-// Claude Design's current Creature files are static SVG poses (no embedded
-// animation). Rasterize the actual 62x66 artwork in its existing 77x77 slot.
+// Keep the original animated Creature poses for idle and coding. The three
+// additional Claude Design poses are static SVGs; enlarge their bodies inside
+// the same 77x77 slot so the Creature stays legible at the original scale.
 const creature = JSON.parse(
   await readFile(path.join(root, "theme-packs/claude-creature/theme.json")),
 );
 const creatureAssets = {},
-  creatureStates = {};
-for (const [key, name] of [
-  ["coding", "working-typing"],
-  ["needs_you", "notification"],
-  ["done", "happy"],
-  ["error", "dizzy"],
-  ["idle", "sleeping"],
+  creatureStates = {
+    idle: "/themes/u/cld-i.cba",
+    coding: "/themes/u/cld-c.cba",
+  };
+for (const [key, name, poseClass] of [
+  ["needs_you", "notification", "body-anim"],
+  ["done", "happy", "bounce-anim"],
+  ["error", "dizzy", "body-anim-rot"],
 ]) {
-  const source = await readFile(
+  let source = await readFile(
     path.join(root, `docs/assets/agent-states/claude-creature/${name}.svg`),
+    "utf8",
   );
-  const raster = await sharp(source).resize(62, 66).png().toBuffer();
+  const poseTag = `<g class="${poseClass}">`;
+  assert(source.includes(poseTag));
+  source = source.replace(
+    poseTag,
+    `<g class="${poseClass}" transform="translate(-4.5 -9) scale(1.6)">`,
+  );
+  if (key === "needs_you") {
+    source = source.replace(
+      'class="alert-pop"',
+      'class="alert-pop" transform="translate(2 -9)"',
+    );
+  } else if (key === "error") {
+    source = source.replace(
+      'transform="translate(7.5, 2)"',
+      'transform="translate(7.5, -5)"',
+    );
+  }
+  const raster = await sharp(Buffer.from(source)).resize(62, 66).png().toBuffer();
   const indexed = await sharp({
     create: { width: 77, height: 77, channels: 3, background: "#000000" },
   })
@@ -336,24 +356,23 @@ for (const [key, name] of [
     .png({ palette: true, colours: 26, dither: 0, effort: 10 })
     .toBuffer();
   const raw = await sharp(indexed).removeAlpha().raw().toBuffer();
+  const background = raw.subarray(0, 3).toString("hex").toUpperCase();
   const pixels = Array.from(
     { length: 77 * 77 },
-    (_, i) =>
-      "#" +
-      raw
-        .subarray(i * 3, i * 3 + 3)
-        .toString("hex")
-        .toUpperCase(),
+    (_, i) => {
+      const color = raw.subarray(i * 3, i * 3 + 3).toString("hex").toUpperCase();
+      return color === background ? "#000000" : `#${color}`;
+    },
   );
-  const file = `cld-${key === "needs_you" ? "n" : key[0]}2.cbi`;
+  const file = `cld-${key === "needs_you" ? "n" : key[0]}3.cbi`;
   creatureAssets[file] = encode(77, 77, [pixels], 0);
   creatureStates[key] = `/themes/u/${file}`;
 }
 const creatureSprite = creature.p.find((p) => p.t === "sp");
 creatureSprite.a = creatureStates.idle;
 creatureSprite.sa = creatureStates;
-creature.rev = 8;
-await finish("claude-creature", creature, "1.3.1", creatureAssets);
+creature.rev = 9;
+await finish("claude-creature", creature, "1.3.2", creatureAssets);
 
 // The existing synthwave heading uses font 4 at its minimum size. Use font 2
 // inside the same 198x23 slot so lifecycle text can fit without clipping.

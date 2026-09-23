@@ -56,3 +56,19 @@ describe("status labels in real theme slots", () => {
     });
   }
 });
+
+it("ships the original animated Creature poses alongside the three new states", () => {
+  const pack = JSON.parse(
+    readFileSync("../../dist/theme-packs/render/claude-creature.json", "utf8"),
+  ) as ThemeRenderPack;
+  const sprite = (pack.spec!.p || []).find((p) => p.t === "sp");
+  expect(sprite).toBeDefined();
+  for (const [state, fps] of [["idle", 3], ["coding", 6]] as const) {
+    const asset = pack.assets?.[sprite!.sa![state]];
+    expect(asset?.data).toMatch(new RegExp(`^CBA1\\n52 52 12 ${fps}\\n`));
+  }
+  for (const state of ["needs_you", "done", "error"] as const) {
+    const asset = pack.assets?.[sprite!.sa![state]];
+    expect(asset?.data).toMatch(/^CBI1\n77 77\n/);
+  }
+});
