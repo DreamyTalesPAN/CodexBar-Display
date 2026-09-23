@@ -78,6 +78,11 @@ it("saves the master switch, disables dependent controls, and keeps failed write
       .getByRole("combobox", { name: "Remind me again" })
       .hasAttribute("disabled"),
   ).toBe(true);
+  expect(
+    screen
+      .getByRole("combobox", { name: "Keep ‘Done’ on screen" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
   fireEvent.click(master);
   await screen.findByRole("dialog");
   expect(master.getAttribute("aria-checked")).toBe("false");

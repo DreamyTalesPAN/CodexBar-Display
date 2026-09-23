@@ -25,6 +25,8 @@ type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
   onPreviewReady?: () => void;
+  /** Render only the real display output when a 3D case provides the housing. */
+  screenOnly?: boolean;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -344,6 +346,7 @@ export function LiveVibeTVPreview({
   device,
   displayFrame,
   onPreviewReady,
+  screenOnly = false,
   updateOwnedDisconnect = false,
   usage,
 }: LiveVibeTVPreviewProps) {
@@ -495,39 +498,43 @@ export function LiveVibeTVPreview({
     themeSpecPath,
   ]);
 
+  const screen = updateOwnedDisconnect ? (
+    <FirmwareUpdateRestarting />
+  ) : !deviceConnected ? (
+    <ThemePreviewOffline />
+  ) : pack?.spec && frame ? (
+    <ThemeSpecSVG
+      assets={pack.assets || {}}
+      frame={frame}
+      spec={pack.spec}
+      themeId={pack.themeId || themeId}
+    />
+  ) : frame ? (
+    <ThemeSpecLoading status={packStatus} themeId={themeId} />
+  ) : awaitingProviderSetup ? (
+    <ThemeSpecLoading
+      message="Waiting for AI setup…"
+      status="loading"
+      themeId={themeId}
+    />
+  ) : !deviceReady && !waitingForUsage ? (
+    <ThemePreviewOffline />
+  ) : waitingForUsage ? (
+    <ThemeSpecLoading
+      message="Waiting for usage…"
+      status="loading"
+      themeId={themeId}
+    />
+  ) : (
+    <ThemeSpecLoading status={packStatus} themeId={themeId} />
+  );
+
+  if (screenOnly) return screen;
+
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {updateOwnedDisconnect ? (
-          <FirmwareUpdateRestarting />
-        ) : !deviceConnected ? (
-          <ThemePreviewOffline />
-        ) : pack?.spec && frame ? (
-          <ThemeSpecSVG
-            assets={pack.assets || {}}
-            frame={frame}
-            spec={pack.spec}
-            themeId={pack.themeId || themeId}
-          />
-        ) : frame ? (
-          <ThemeSpecLoading status={packStatus} themeId={themeId} />
-        ) : awaitingProviderSetup ? (
-          <ThemeSpecLoading
-            message="Waiting for AI setup…"
-            status="loading"
-            themeId={themeId}
-          />
-        ) : !deviceReady && !waitingForUsage ? (
-          <ThemePreviewOffline />
-        ) : waitingForUsage ? (
-          <ThemeSpecLoading
-            message="Waiting for usage…"
-            status="loading"
-            themeId={themeId}
-          />
-        ) : (
-          <ThemeSpecLoading status={packStatus} themeId={themeId} />
-        )}
+        {screen}
       </VibeTVCaseShell>
     </figure>
   );

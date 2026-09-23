@@ -9284,31 +9284,61 @@ async function testOverviewAgentSessions(browser, appUrl) {
   const observedAt = Date.now() - 252_000;
   await routeCompanionOnline(page, installRequests, () => {}, {
     onAgentActivity: (value) => activityWrites.push(value),
+    displayFrameResponse: () => ({
+      ok: true,
+      savedAt: new Date().toISOString(),
+      frame: {
+        v: 1,
+        provider: "codex",
+        label: "Codex",
+        session: 27,
+        weekly: 63,
+        resetSecs: 5400,
+        usageMode: "used",
+        activity: "coding",
+        usageSlots: [
+          { id: "session", label: "Session", percent: 27, resetSecs: 5400 },
+          { id: "weekly", label: "Weekly", percent: 63, resetSecs: 5400 },
+        ],
+      },
+    }),
     agentSnapshot: () => ({
       health: "ready", generatedAt: Date.now(),
       sources: [{ id: "codex", name: "Codex CLI",  }, { id: "claude", name: "Claude Code",  }],
       sessions: [
+        { id: "two", source: "codex", phase: "tool_use", observedAt: observedAt + 206_000 },
+        { id: "three", source: "claude", phase: "idle", observedAt: observedAt - 468_000 },
         { id: "one", source: "codex", phase, observedAt },
-        { id: "two", source: "codex", phase: "tool_use", observedAt },
-        { id: "three", source: "claude", phase: "idle", observedAt },
       ],
     }),
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("img", {
+    name: /Rendered VibeTV theme clippy showing Codex, Session 27% used, Weekly 63% used/,
+  }).waitFor({ timeout: 10_000 });
   const cards = page.getByRole("region", { name: "Sessions", exact: true });
   await cards.getByText("Waiting for approval").waitFor();
-  assert(await cards.getByRole("listitem").count() === 3, "Each observed session needs its own card");
+  assert(await cards.getByRole("listitem").count() === 3, "Each observed session needs its own row");
+  assert(await cards.getByRole("listitem").first().getByText("Needs you").count() === 1, "Needs-you session must sort first with a badge");
+  assert(await cards.getByRole("listitem").first().locator('[aria-label^="Last activity"]').count() === 1, "Time must describe last observed activity");
   assert(await cards.getByText("Codex CLI", { exact: true }).count() === 2, "Same-agent sessions must not collapse");
+  await mkdir(join(root, "../../tmp/settings-reset-fix"), { recursive: true });
   await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/overview-sessions-desktop.png"), fullPage: true });
-  phase = "done";
-  await cards.getByText("Finished", { exact: true }).waitFor({ timeout: 12_000 });
   await page.setViewportSize({ width: 390, height: 844 });
   await assertNoMobileOverflow(page);
   await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/overview-sessions-mobile.png"), fullPage: true });
   await page.setViewportSize(desktopViewport);
+  phase = "done";
+  await cards.getByText("Finished", { exact: true }).waitFor({ timeout: 12_000 });
   await (await getNavigationButton(page, "Settings")).click();
   const activity = page.getByRole("switch", { name: "Show agent activity", exact: true });
   await activity.waitFor();
+  await page.getByRole("combobox", { name: "Keep ‘Done’ on screen" }).waitFor();
+  await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/settings-agent-activity-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertNoMobileOverflow(page);
+  await page.screenshot({ path: join(root, "../../tmp/settings-reset-fix/settings-agent-activity-mobile.png"), fullPage: true });
+  await page.setViewportSize(desktopViewport);
   assert(await page.getByText("Agent connections", { exact: true }).count() === 0, "Separate agent connections must be removed");
   assert(activityWrites.length === 0, "Viewing Settings must not change observation");
   await activity.click();
@@ -11771,6 +11801,7 @@ async function routeCompanionOnline(
       // delayed provider-read races must not leak into this section.
       const items = [
         { id: "vibetv.agents.enabled", type: "boolean", label: "Show agent activity", value: false },
+        { id: "vibetv.agents.doneDuration", type: "enum", label: "Keep ‘Done’ on screen", description: "How long a finished session stays visible. New activity takes over immediately.", value: "30", options: [{ value: "10", label: "10 seconds" }, { value: "30", label: "30 seconds" }, { value: "60", label: "1 minute" }, { value: "120", label: "2 minutes" }, { value: "300", label: "5 minutes" }] },
         { id: "vibetv.agents.blink", type: "boolean", label: "Blink the screen when an agent needs you", value: true },
         { id: "vibetv.agents.reminder", type: "enum", label: "Remind me again", value: "5", options: [{ value: "5", label: "After 5 minutes" }] },
         { id: "vibetv.agents.quiet", type: "enum", label: "Quiet from", value: "off", options: [{ value: "off", label: "Never quiet" }] },

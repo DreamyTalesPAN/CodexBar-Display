@@ -39,6 +39,10 @@ function elapsed(milliseconds: number) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+function needsYou(phase: string) {
+  return agentThemeState(phase) === "needs_you";
+}
+
 export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -49,37 +53,52 @@ export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) 
   // Match the observer's 15-second lease even if a status request hangs.
   const available = snapshot?.health === "ready" &&
     snapshot.generatedAt >= now - 15_000 && snapshot.generatedAt <= now + 5_000;
-  const sessions = available ? snapshot.sessions : [];
+  const sessions = available
+    ? [...snapshot.sessions].sort((a, b) => Number(needsYou(b.phase)) - Number(needsYou(a.phase)))
+    : [];
 
   return (
     <section aria-labelledby="agent-sessions-title" className="w-full max-w-[880px] space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 id="agent-sessions-title" className="text-[13px] font-semibold tracking-widest text-muted-foreground uppercase">
-          Sessions
-        </h3>
-        {available ? <span className="font-mono text-xs text-muted-foreground">updated {elapsed(now - snapshot.generatedAt)} ago</span> : null}
-      </div>
+      <h2 id="agent-sessions-title" className="text-[13px] font-semibold tracking-[0.1em] text-muted-foreground uppercase">
+        Sessions
+      </h2>
       {sessions.length ? (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(164px,100%),1fr))] gap-3">
-          {sessions.map((session) => {
-            const waiting = agentThemeState(session.phase) === "needs_you";
+        <ul className="overflow-hidden rounded-xl ring-1 ring-border">
+          {sessions.map((session, index) => {
+            const waiting = needsYou(session.phase);
             const name = snapshot!.sources.find((source) => source.id === session.source)?.name || "Agent";
+            const activityAge = Number.isFinite(session.observedAt) && session.observedAt > 0 && session.observedAt <= now + 5_000
+              ? elapsed(now - session.observedAt)
+              : null;
             return (
-              <li key={session.id} className={cn("min-w-0 space-y-0.5 rounded-xl bg-card p-3 ring-1 ring-border", session.phase === "idle" && "bg-muted opacity-65")}>
-                <div className="flex min-w-0 items-center gap-2">
-                  {waiting ? <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary" /> : null}
-                  <span className="truncate text-[13px] font-semibold" title={name}>{name}</span>
-                </div>
-                <p className={cn("text-xs text-muted-foreground", waiting && "text-foreground")}>{phaseLabels[session.phase] || "Status unavailable"}</p>
-                <p className="font-mono text-[11px] text-muted-foreground" title="Time since the agent's last observed activity">
-                  Last activity {elapsed(now - session.observedAt)} ago
-                </p>
+              <li
+                key={session.id}
+                className={cn(
+                  "grid min-h-[52px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-0.5 px-4 py-2 sm:grid-cols-[150px_minmax(0,1fr)_72px]",
+                  index > 0 && "border-t border-border",
+                  waiting && "bg-success text-success-foreground",
+                )}
+              >
+                <span className={cn("min-w-0 truncate text-sm font-medium", waiting && "font-semibold", session.phase === "idle" && "text-muted-foreground")} title={name}>
+                  {name}
+                </span>
+                <span className={cn("col-span-2 row-start-2 flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-muted-foreground sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:flex-nowrap", waiting && "text-success-foreground")}>
+                  <span className="min-w-0 sm:truncate">{phaseLabels[session.phase] || "Status unavailable"}</span>
+                  {waiting ? <span className="inline-flex h-5 shrink-0 items-center rounded-[6px] bg-primary px-[7px] text-[11px] font-semibold text-primary-foreground">Needs you</span> : null}
+                </span>
+                <span
+                  aria-label={activityAge ? `Last activity ${activityAge} ago` : "Last activity unavailable"}
+                  className={cn("col-start-2 row-start-1 justify-self-end whitespace-nowrap font-mono text-xs text-muted-foreground sm:col-start-3", waiting && "text-success-foreground")}
+                  title={activityAge ? `Last activity ${activityAge} ago` : "Last activity unavailable"}
+                >
+                  {activityAge || "—"}
+                </span>
               </li>
             );
           })}
         </ul>
       ) : (
-        <p className="rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">
+        <p className="rounded-xl px-4 py-3 text-sm text-muted-foreground ring-1 ring-border">
           {available ? "Nothing running" : "Agent status unavailable"}
         </p>
       )}

@@ -462,7 +462,7 @@ function SettingsSection({
       <div className="min-w-0">
         <h2 className="text-base font-semibold">{title}</h2>
         {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
         ) : null}
       </div>
       <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>

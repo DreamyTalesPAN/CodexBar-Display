@@ -18,14 +18,17 @@ function snapshot(): AgentSnapshot {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("AgentSessions", () => {
-  it("shows separate sessions, source names and observed activity rather than invented durations", () => {
+  it("puts needs-you sessions first and labels the time as last observed activity", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
-    render(<AgentSessions snapshot={snapshot()} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    render(<AgentSessions snapshot={{ ...snapshot(), sessions: [snapshot().sessions[1], snapshot().sessions[2], snapshot().sessions[0]] }} />);
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toContain("Waiting for approval");
+    expect(rows[0].textContent).toContain("Needs you");
+    expect(rows[1].textContent).toContain("Running a tool");
     expect(screen.getAllByText("Codex CLI")).toHaveLength(2);
-    expect(screen.getByText("Waiting for approval")).toBeTruthy();
-    expect(screen.getByText("Running a tool")).toBeTruthy();
-    expect(screen.getByText("Last activity 4m 12s ago")).toBeTruthy();
+    expect(screen.getByLabelText("Last activity 4m 12s ago")).toBeTruthy();
+    expect(screen.queryByText("Last activity 4m 12s ago")).toBeNull();
     expect(screen.getByText("Idle")).toBeTruthy();
   });
   it("expires visible activity when no fresh status reaches the browser, and recovers", () => {
@@ -53,5 +56,10 @@ describe("AgentSessions", () => {
     expect(screen.getByText("Agent")).toBeTruthy();
     expect(screen.getByText("Status unavailable")).toBeTruthy();
     expect(screen.queryByText("unknown-source")).toBeNull();
+  });
+  it("marks missing activity time unavailable rather than inventing an age", () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    render(<AgentSessions snapshot={{ ...snapshot(), sessions: [{ id: "one", source: "codex", phase: "working", observedAt: 0 }] }} />);
+    expect(screen.getByLabelText("Last activity unavailable")).toBeTruthy();
   });
 });

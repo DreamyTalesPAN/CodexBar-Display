@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Item, ItemSeparator } from "@/components/ui/item";
 import { PreferenceControl } from "./preference-control";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import type {
@@ -97,37 +96,41 @@ export function AgentActivitySettings({
         </p>
       ) : null}
       {items ? (
-        <div className="overflow-hidden rounded-xl border bg-card">
-          {items.map((item, index) => (
-            <div key={item.id}>
-              {index > 0 ? <ItemSeparator className="mx-0" /> : null}
-              <Item className="flex-wrap gap-4 rounded-none px-4 py-3 sm:flex-nowrap">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{item.label}</p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {item.description}
-                  </p>
-                </div>
-                <div
-                  className={
-                    item.type === "enum" ? "w-[170px] shrink-0" : "shrink-0"
+        <div className="flex flex-col">
+          {items.map((item) => (
+            <div
+              className="flex min-h-[60px] flex-wrap items-center gap-4 px-4 py-3 sm:flex-nowrap"
+              key={item.id}
+            >
+              <div className="min-w-[180px] flex-1">
+                <p className="text-sm font-medium">{item.label}</p>
+                <p className="text-xs leading-[1.5] text-muted-foreground">
+                  {item.id === "vibetv.agents.enabled"
+                    ? "Off means VibeTV shows usage only."
+                    : item.description}
+                </p>
+              </div>
+              <div
+                className={
+                  item.type === "enum"
+                    ? "ml-auto flex w-[170px] shrink-0 justify-end"
+                    : "ml-auto shrink-0"
+                }
+              >
+                <PreferenceControl
+                  descriptor={item}
+                  disabled={
+                    pending ||
+                    (item.id !== "vibetv.agents.enabled" && !enabled) ||
+                    ([
+                      "vibetv.agents.reminder",
+                      "vibetv.agents.quiet",
+                    ].includes(item.id) &&
+                      !blink)
                   }
-                >
-                  <PreferenceControl
-                    descriptor={item}
-                    disabled={
-                      pending ||
-                      (item.id !== "vibetv.agents.enabled" && !enabled) ||
-                      ([
-                        "vibetv.agents.reminder",
-                        "vibetv.agents.quiet",
-                      ].includes(item.id) &&
-                        !blink)
-                    }
-                    onChange={(value) => save(item.id, value)}
-                  />
-                </div>
-              </Item>
+                  onChange={(value) => save(item.id, value)}
+                />
+              </div>
             </div>
           ))}
         </div>

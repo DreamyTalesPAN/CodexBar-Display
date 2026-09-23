@@ -84,6 +84,7 @@ import { LogsScreen } from "./logs-screen";
 import { useLatestDisplayFrame } from "./live-vibetv-preview";
 import type { AgentSnapshot } from "./agent-sessions";
 import { OverviewScreen } from "./overview-screen";
+import { ShellConnectionStatus, overviewConnectionStatus } from "./shell-connection-status";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
   providerUsageNeedsReconcile,
@@ -4872,6 +4873,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
         device={device}
+        headerAction={activeShellTab === "overview" ? (
+          <ShellConnectionStatus {...overviewConnectionStatus(
+            companionStatus,
+            device,
+            firmwareUpdateStatus?.phase,
+            companionInfo?.app?.version,
+          )} />
+        ) : undefined}
         updateAvailable={anyUpdateAvailable}
         onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
@@ -4884,7 +4893,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "overview" ? (
           <OverviewScreen
             agents={agents}
-            companionVersion={companionInfo?.version}
             companionStatus={companionStatus}
             device={device}
             displayFrame={displayFrame}
