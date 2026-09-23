@@ -1139,6 +1139,7 @@ func (s *Server) registerControlCenterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/control-center/", s.handleControlCenter)
 	mux.HandleFunc("/_next/", s.handleControlCenterAsset)
 	mux.HandleFunc("/images/", s.handleControlCenterAsset)
+	mux.HandleFunc("/models/", s.handleControlCenterAsset)
 	mux.HandleFunc("/theme-packs/render/", s.handleThemeRenderPack)
 	mux.HandleFunc("/theme-packs/", s.handleControlCenterAsset)
 	mux.HandleFunc("/favicon.ico", s.handleControlCenterAsset)

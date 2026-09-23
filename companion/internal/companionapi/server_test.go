@@ -4524,6 +4524,9 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 		"_next/static/app.js": {
 			Data: []byte(`console.log("control-center")`),
 		},
+		"models/vibetv-native.glb": {
+			Data: []byte("glTF-model"),
+		},
 		"install/synthwave.html": {
 			Data: []byte(`<!doctype html><div id="root">Install Synthwave</div>`),
 		},
@@ -4555,6 +4558,13 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	}
 	if got := asset.Header().Get("Cache-Control"); got != "" {
 		t.Fatalf("expected hashed static asset to retain default caching, got Cache-Control %q", got)
+	}
+
+	model := httptest.NewRecorder()
+	modelReq := httptest.NewRequest(http.MethodGet, "/models/vibetv-native.glb", nil)
+	server.Handler().ServeHTTP(model, modelReq)
+	if model.Code != http.StatusOK || model.Body.String() != "glTF-model" {
+		t.Fatalf("expected embedded 3D model, got %d body=%s", model.Code, model.Body.String())
 	}
 
 	install := httptest.NewRecorder()
