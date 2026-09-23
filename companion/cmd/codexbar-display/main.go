@@ -1355,12 +1355,13 @@ func readLocalCableCapabilitiesOrigins(origins []string, expectedOwner string) (
 				} `json:"runtime"`
 			} `json:"companion"`
 			Device struct {
-				DeviceID     string                    `json:"deviceId"`
-				Connected    bool                      `json:"connected"`
-				NetworkMode  string                    `json:"networkMode"`
-				Board        string                    `json:"board"`
-				Firmware     string                    `json:"firmware"`
-				Capabilities *protocol.CapabilityBlock `json:"capabilities"`
+				DeviceID        string                    `json:"deviceId"`
+				Connected       bool                      `json:"connected"`
+				ConnectionState string                    `json:"connectionState"`
+				NetworkMode     string                    `json:"networkMode"`
+				Board           string                    `json:"board"`
+				Firmware        string                    `json:"firmware"`
+				Capabilities    *protocol.CapabilityBlock `json:"capabilities"`
 			} `json:"device"`
 		}
 		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result)
@@ -1388,6 +1389,12 @@ func readLocalCableCapabilitiesOrigins(origins []string, expectedOwner string) (
 		}
 		if !result.Device.Connected {
 			lastErr = errors.New("companion status reported Cable disconnected")
+			continue
+		}
+		// "reconnecting" is the Companion's anti-flap grace window: connected
+		// and capabilities are cached, not live proof of an attached Cable.
+		if result.Device.ConnectionState == "reconnecting" {
+			lastErr = errors.New("companion status reported Cable reconnecting")
 			continue
 		}
 		if result.Device.Capabilities == nil {

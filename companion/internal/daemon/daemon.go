@@ -1200,6 +1200,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
+	invalidateLastGoodTerminal(state, allProviders, deps)
 	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
 
 	if len(allProviders) == 0 {
@@ -1933,6 +1934,33 @@ func clearPersistedDisplayFrame(state *runtimeState) error {
 		state.hasPersistedGood = false
 	}
 	return clearPersistedLastGood()
+}
+
+// invalidateLastGoodTerminal drops the runtime and persisted last-good frame
+// when CodexBar reported its provider as permanently unsupported; the bounded
+// retention exists for transient failures only.
+func invalidateLastGoodTerminal(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) {
+	if state == nil || !state.hasLastGood {
+		return
+	}
+	provider := normalizeProviderKey(state.lastGood.Provider)
+	for _, parsed := range providers {
+		if !parsed.Terminal || normalizeProviderKey(parsed.Provider) != provider {
+			continue
+		}
+		state.lastGood = protocol.Frame{}
+		state.lastGoodAt = time.Time{}
+		state.hasLastGood = false
+		if state.selector != nil {
+			state.selector.SetCurrentProvider("")
+		}
+		if err := clearPersistedDisplayFrame(state); err != nil {
+			deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+			return
+		}
+		deps.logf("runtime event=last-good-cleared provider=%s reason=provider-terminal\n", provider)
+		return
+	}
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {

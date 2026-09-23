@@ -109,20 +109,24 @@ func TestWiFiTransportSendLineAllowsSlowESP8266Render(t *testing.T) {
 }
 
 func TestWiFiTransportSendLineAcceptsEOFWhenESPClosesAfterReadingFrame(t *testing.T) {
-	var gotBody string
+	// Capacity 2 lets a retried request be recorded instead of blocking the handler.
+	bodies := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("read frame: %v", err)
+			t.Errorf("read frame: %v", err)
+			return
 		}
-		gotBody = string(body)
+		bodies <- string(body)
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("test server does not support hijacking")
+			t.Error("test server does not support hijacking")
+			return
 		}
 		conn, _, err := hijacker.Hijack()
 		if err != nil {
-			t.Fatalf("hijack connection: %v", err)
+			t.Errorf("hijack connection: %v", err)
+			return
 		}
 		_ = conn.Close()
 	}))
@@ -133,8 +137,11 @@ func TestWiFiTransportSendLineAcceptsEOFWhenESPClosesAfterReadingFrame(t *testin
 	if err := transport.SendLine(server.URL, line); err != nil {
 		t.Fatalf("response-side EOF after a complete frame must not trigger a retry: %v", err)
 	}
-	if gotBody != string(line) {
+	if gotBody := <-bodies; gotBody != string(line) {
 		t.Fatalf("device did not receive the complete frame: %q", gotBody)
+	}
+	if len(bodies) != 0 {
+		t.Fatalf("frame was sent %d extra time(s) after EOF", len(bodies))
 	}
 }
 
