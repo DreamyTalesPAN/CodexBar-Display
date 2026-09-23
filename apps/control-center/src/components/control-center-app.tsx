@@ -396,13 +396,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
     null,
   );
-  // Kept once the runtime has named it: "Mac App offline" is shown exactly
-  // when the runtime is gone, and both native shells replace the user agent.
-  const [windowsHost, setWindowsHost] = useState(false);
+  // The runtime names its platform, and that answer is kept: "Mac App
+  // offline" is shown exactly when the runtime is gone. Until it first
+  // answers, the system the WebView reports stands in, so a slow first status
+  // never shows Mac copy on Windows. Both native shells replace the user
+  // agent, so it says nothing about the platform.
+  const windowsWebView = useSyncExternalStore(
+    subscribeRuntimeSurface,
+    isWindowsWebView,
+    getWindowsWebViewServerSnapshot,
+  );
+  const [runtimeOnWindows, setRuntimeOnWindows] = useState<boolean | null>(
+    null,
+  );
   const runtimeOs = companionInfo?.runtime?.os;
-  if (runtimeOs && (runtimeOs === "windows") !== windowsHost) {
-    setWindowsHost(runtimeOs === "windows");
+  if (runtimeOs && (runtimeOs === "windows") !== runtimeOnWindows) {
+    setRuntimeOnWindows(runtimeOs === "windows");
   }
+  const windowsHost = runtimeOnWindows ?? windowsWebView;
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
   const [deviceCandidates, setDeviceCandidates] = useState<DeviceCandidate[]>(
     [],
@@ -5033,6 +5044,14 @@ function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
 
 function getCustomerPlatformServerSnapshot(): CustomerPlatform {
   return "unknown";
+}
+
+function isWindowsWebView(): boolean {
+  return typeof navigator !== "undefined" && /^win/i.test(navigator.platform);
+}
+
+function getWindowsWebViewServerSnapshot(): boolean {
+  return false;
 }
 
 function usageRefreshEvent(payload: UsageSnapshot): {

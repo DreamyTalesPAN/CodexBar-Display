@@ -5734,10 +5734,20 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
+  // WebView2 keeps reporting Windows here even though the shell replaces the
+  // user agent. The first status answer is held back, so the welcome log is
+  // drawn before the runtime has named its platform.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      get: () => "Win32",
+    });
+  });
   let usageBroken = false;
   await routeCompanionOnline(page, [], () => {}, {
     device: companionDevice,
     companionRuntime: { version: "1.0.32", os: "windows" },
+    firstStatusDelayMs: 3_000,
     onStatusProviderSetup: () =>
       usageBroken
         ? {
@@ -5749,6 +5759,14 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const welcome = setupScreen(page, SETUP_WELCOME_SCREEN);
+  await welcome
+    .getByText("reading provider usage on this computer")
+    .waitFor({ timeout: 10_000 });
+  assert(
+    !(await welcome.innerText()).includes("Mac"),
+    "The Windows welcome step must not name a Mac before the runtime answers",
+  );
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
