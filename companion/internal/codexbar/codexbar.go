@@ -480,6 +480,9 @@ type ParsedFrame struct {
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
 	Stale              bool
+	// Terminal marks a provider error CodexBar states as permanent (see
+	// providerErrorIsTerminal): retained quota for that provider is void.
+	Terminal bool
 }
 
 type ProviderUsageMeta struct {
@@ -724,6 +727,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 			Provider: provider,
 			Source:   source,
 			Stale:    true,
+			Terminal: providerErrorIsTerminal(providerHealthErrorText(payload["error"])),
 		}, nil
 	}
 
@@ -1426,6 +1430,16 @@ func providerPayloadHasError(payload map[string]any) bool {
 	default:
 		return true
 	}
+}
+
+// providerErrorIsTerminal reports CodexBar's explicit end-of-support
+// statement for a provider. CodexBar exports provider failures as
+// {code, kind, message} without a typed reason, so its own sentence is the
+// contract: GeminiConsumerTierMigration.deprecationError, byte-identical in
+// the bundled 0.46.0 and in 0.63.0. Every other error is transient here and
+// keeps the bounded last-good quota.
+func providerErrorIsTerminal(detail string) bool {
+	return strings.Contains(strings.ToLower(detail), "no longer supports gemini cli oauth")
 }
 
 const (
