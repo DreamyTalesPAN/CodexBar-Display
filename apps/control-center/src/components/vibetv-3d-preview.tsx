@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  AmbientLight,
+  ACESFilmicToneMapping,
+  Box3,
   DirectionalLight,
   Group,
+  HemisphereLight,
   Mesh,
-  MeshStandardMaterial,
   type Object3D,
+  PCFSoftShadowMap,
   PerspectiveCamera,
+  PlaneGeometry,
+  PMREMGenerator,
   Scene,
+  ShadowMaterial,
+  Vector3,
   WebGLRenderer,
 } from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CSS3DObject, CSS3DRenderer } from "three/addons/renderers/CSS3DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { cn } from "@/lib/utils";
@@ -29,10 +37,11 @@ type VibeTV3DPreviewProps = {
 
 const MODEL_URL = "/models/vibetv-native.glb";
 const SCREEN_PX = 240;
-// The GLB is authored in meters. CSS3D text vanishes in Chromium when its
-// element is scaled to ~0.00012, so both renderers work in millimeters.
-const WORLD_SCALE = 1000;
-const PIVOT_Y = 0.02 * WORLD_SCALE;
+// The GLB is authored in meters. CSS3D text vanishes in Chromium at tiny
+// element scales, so the scene works in millimeters. Staging numbers come from
+// VibeTV3D.js in the Claude Design file, whose unit is 35 mm.
+const MM = 1000;
+const U = 35;
 // Front-face corners measured from display_glass in the bundled GLB. The
 // screen is tilted back, so a flat z-facing overlay would float above it.
 const GLASS = {
@@ -44,20 +53,8 @@ const GLASS = {
   topZ: 0.020998245,
 };
 const GLASS_WIDTH = GLASS.right - GLASS.left;
-const GLASS_HEIGHT = Math.hypot(
-  GLASS.topY - GLASS.bottomY,
-  GLASS.topZ - GLASS.bottomZ,
-);
-const GLASS_TILT = Math.atan2(
-  GLASS.topZ - GLASS.bottomZ,
-  GLASS.topY - GLASS.bottomY,
-);
-const MAX_YAW = 0.85;
-const MAX_PITCH = 0.19;
-
-function clamp(value: number, limit: number) {
-  return Math.max(-limit, Math.min(limit, value));
-}
+const GLASS_HEIGHT = Math.hypot(GLASS.topY - GLASS.bottomY, GLASS.topZ - GLASS.bottomZ);
+const GLASS_TILT = Math.atan2(GLASS.topZ - GLASS.bottomZ, GLASS.topY - GLASS.bottomY);
 
 function disposeMeshes(root: Object3D) {
   root.traverse((node) => {
@@ -82,9 +79,6 @@ export function VibeTV3DPreview({
   const stageRef = useRef<HTMLDivElement>(null);
   const webglLayerRef = useRef<HTMLDivElement>(null);
   const cssLayerRef = useRef<HTMLDivElement>(null);
-  const renderRef = useRef<(() => void) | null>(null);
-  const rotationRef = useRef({ yaw: 0, pitch: 0 });
-  const dragRef = useRef<{ pointerId: number; x: number; y: number; yaw: number; pitch: number } | null>(null);
   const [screenHost, setScreenHost] = useState<HTMLDivElement | null>(null);
   const [modelReady, setModelReady] = useState(false);
   const [modelFailed, setModelFailed] = useState(false);
@@ -99,12 +93,16 @@ export function VibeTV3DPreview({
     let disposed = false;
     let renderer: WebGLRenderer;
     try {
-      renderer = new WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" });
+      renderer = new WebGLRenderer({ alpha: true, antialias: true });
     } catch {
       const timer = window.setTimeout(() => setModelFailed(true), 0);
       return () => window.clearTimeout(timer);
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = PCFSoftShadowMap;
     renderer.domElement.setAttribute("aria-hidden", "true");
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
@@ -117,31 +115,61 @@ export function VibeTV3DPreview({
     cssLayer.appendChild(cssRenderer.domElement);
 
     const scene = new Scene();
+    const pmrem = new PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     const cssScene = new Scene();
     const modelPivot = new Group();
     const screenPivot = new Group();
-    modelPivot.position.y = PIVOT_Y;
-    screenPivot.position.y = PIVOT_Y;
     scene.add(modelPivot);
     cssScene.add(screenPivot);
 
-    const camera = new PerspectiveCamera(32, 1, 0.005 * WORLD_SCALE, 2 * WORLD_SCALE);
-    camera.position.set(0.0343 * WORLD_SCALE, 0.0447 * WORLD_SCALE, 0.1123 * WORLD_SCALE);
-    camera.lookAt(0, 0.02 * WORLD_SCALE, 0.002 * WORLD_SCALE);
+    const camera = new PerspectiveCamera(28, 1, 0.1 * U, 50 * U);
+    camera.position.set(1.55 * U, 1.05 * U, 3.4 * U);
 
-    scene.add(new AmbientLight(0xffffff, 1.05));
-    const key = new DirectionalLight(0xffffff, 1.35);
-    key.position.set(-0.045 * WORLD_SCALE, 0.1 * WORLD_SCALE, 0.09 * WORLD_SCALE);
-    scene.add(key);
+    const key = new DirectionalLight(0xffffff, 1.6);
+    key.position.set(2.5 * U, 4 * U, 3 * U);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.radius = 6;
+    Object.assign(key.shadow.camera, { left: -2 * U, right: 2 * U, top: 2 * U, bottom: -2 * U });
+    scene.add(key, new HemisphereLight(0xffffff, 0xdedede, 0.6));
 
-    const render = () => {
-      const { yaw, pitch } = rotationRef.current;
-      modelPivot.rotation.set(pitch, yaw, 0);
-      screenPivot.rotation.copy(modelPivot.rotation);
+    const ground = new Mesh(new PlaneGeometry(8 * U, 8 * U), new ShadowMaterial({ opacity: 0.14 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.5 * U;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const controls = new OrbitControls(camera, stage);
+    controls.enableZoom = false;
+    controls.enablePan = false;
+    controls.enableDamping = true;
+    controls.minPolarAngle = 1.0;
+    controls.maxPolarAngle = 1.55;
+    controls.minAzimuthAngle = -1.2;
+    controls.maxAzimuthAngle = 1.2;
+    controls.rotateSpeed = 0.6;
+    let touchedAt = 0;
+    const touch = () => { touchedAt = performance.now(); };
+    controls.addEventListener("start", touch);
+    controls.addEventListener("end", touch);
+
+    // Like the design: after 2.5 s without dragging, the device sways gently.
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const startedAt = performance.now();
+    let frameRequest = 0;
+    const loop = () => {
+      frameRequest = requestAnimationFrame(loop);
+      const now = performance.now();
+      if (!still && now - touchedAt > 2500) {
+        const sway = Math.sin(((now - startedAt) / 1000) * 0.35) * 0.18;
+        modelPivot.rotation.y += (sway - modelPivot.rotation.y) * 0.02;
+        screenPivot.rotation.y = modelPivot.rotation.y;
+      }
+      controls.update();
       renderer.render(scene, camera);
       cssRenderer.render(cssScene, camera);
     };
-    renderRef.current = render;
 
     const resize = () => {
       const width = Math.max(1, stage.clientWidth);
@@ -150,30 +178,32 @@ export function VibeTV3DPreview({
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
       cssRenderer.setSize(width, height);
-      render();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(stage);
     resize();
+    loop();
 
-    const loader = new GLTFLoader();
-    loader.load(
+    new GLTFLoader().load(
       MODEL_URL,
       (gltf) => {
         if (disposed) {
           disposeMeshes(gltf.scene);
           return;
         }
-        gltf.scene.scale.setScalar(WORLD_SCALE);
-        gltf.scene.position.y = -PIVOT_Y;
-        gltf.scene.traverse((node) => {
-          if (!(node instanceof Mesh)) return;
-          if (node.name === "housing" && node.material instanceof MeshStandardMaterial) {
-            node.material.color.set("#fafaf6");
-            node.material.roughness = 0.58;
+        const model = gltf.scene;
+        model.scale.setScalar(MM);
+        model.traverse((node) => {
+          if (node instanceof Mesh) {
+            node.castShadow = true;
+            node.receiveShadow = true;
           }
         });
-        modelPivot.add(gltf.scene);
+        model.updateMatrixWorld(true);
+        const box = new Box3().setFromObject(model);
+        const center = box.getCenter(new Vector3());
+        model.position.set(-center.x, -box.min.y - 0.5 * U, -center.z);
+        modelPivot.add(model);
 
         const host = document.createElement("div");
         host.style.width = `${SCREEN_PX}px`;
@@ -185,20 +215,15 @@ export function VibeTV3DPreview({
         host.style.pointerEvents = "none";
         const screen = new CSS3DObject(host);
         screen.position.set(
-          ((GLASS.left + GLASS.right) / 2) * WORLD_SCALE,
-          ((GLASS.bottomY + GLASS.topY) / 2 + 0.00003) * WORLD_SCALE - PIVOT_Y,
-          ((GLASS.bottomZ + GLASS.topZ) / 2 + 0.00012) * WORLD_SCALE,
-        );
+          ((GLASS.left + GLASS.right) / 2) * MM,
+          ((GLASS.bottomY + GLASS.topY) / 2 + 0.00003) * MM,
+          ((GLASS.bottomZ + GLASS.topZ) / 2 + 0.00012) * MM,
+        ).add(model.position);
         screen.rotation.x = GLASS_TILT;
-        screen.scale.set(
-          GLASS_WIDTH * WORLD_SCALE / SCREEN_PX,
-          GLASS_HEIGHT * WORLD_SCALE / SCREEN_PX,
-          1,
-        );
+        screen.scale.set(GLASS_WIDTH * MM / SCREEN_PX, GLASS_HEIGHT * MM / SCREEN_PX, 1);
         screenPivot.add(screen);
         setScreenHost(host);
         setModelReady(true);
-        render();
       },
       undefined,
       () => { if (!disposed) setModelFailed(true); },
@@ -206,8 +231,11 @@ export function VibeTV3DPreview({
 
     return () => {
       disposed = true;
+      cancelAnimationFrame(frameRequest);
       observer.disconnect();
-      renderRef.current = null;
+      controls.dispose();
+      scene.environment?.dispose();
+      pmrem.dispose();
       disposeMeshes(scene);
       renderer.dispose();
       webglLayer.removeChild(renderer.domElement);
@@ -215,66 +243,17 @@ export function VibeTV3DPreview({
     };
   }, [modelFailed]);
 
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !modelReady) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      yaw: rotationRef.current.yaw,
-      pitch: rotationRef.current.pitch,
-    };
-  };
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    rotationRef.current = {
-      yaw: clamp(drag.yaw + (event.clientX - drag.x) * 0.008, MAX_YAW),
-      pitch: clamp(drag.pitch - (event.clientY - drag.y) * 0.006, MAX_PITCH),
-    };
-    renderRef.current?.();
-  };
-  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    let { yaw, pitch } = rotationRef.current;
-    switch (event.key) {
-      case "ArrowLeft": yaw -= 0.12; break;
-      case "ArrowRight": yaw += 0.12; break;
-      case "ArrowUp": pitch += 0.08; break;
-      case "ArrowDown": pitch -= 0.08; break;
-      case "Home": yaw = 0; pitch = 0; break;
-      default: return;
-    }
-    event.preventDefault();
-    rotationRef.current = { yaw: clamp(yaw, MAX_YAW), pitch: clamp(pitch, MAX_PITCH) };
-    renderRef.current?.();
-  };
-
   if (modelFailed) {
     return <LiveVibeTVPreview device={device} displayFrame={displayFrame} updateOwnedDisconnect={updateOwnedDisconnect} usage={usage} />;
   }
 
   return (
     <div
-      aria-label="Interactive VibeTV preview. Drag or use the arrow keys to rotate; press Home to reset."
-      className={cn("relative aspect-[21/17] w-full max-w-[420px] touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}
-      onKeyDown={onKeyDown}
-      onPointerCancel={endDrag}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
+      aria-label="Interactive VibeTV preview. Drag to rotate."
+      className={cn("relative aspect-[21/17] w-full max-w-[420px] cursor-grab touch-none active:cursor-grabbing", className)}
       ref={stageRef}
       role="group"
-      tabIndex={0}
     >
-      <div aria-hidden className="pointer-events-none absolute bottom-[11%] left-1/2 h-[13%] w-[55%] -translate-x-1/2 rounded-full bg-black/10 blur-xl" />
       <div aria-hidden className="pointer-events-none absolute inset-0" ref={webglLayerRef} />
       <div className="pointer-events-none absolute inset-0" ref={cssLayerRef} />
       {!modelReady ? (

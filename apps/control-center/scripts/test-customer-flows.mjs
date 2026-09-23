@@ -9318,7 +9318,7 @@ async function testOverviewAgentSessions(browser, appUrl) {
   }).waitFor({ timeout: 10_000 });
   const cards = page.getByRole("region", { name: "Sessions", exact: true });
   await cards.getByText("Waiting for approval").waitFor();
-  assert(await cards.getByRole("listitem").count() === 3, "Each observed session needs its own row");
+  assert(await cards.getByRole("listitem").count() === 2, "Each active session needs its own row; idle sessions stay hidden");
   assert(await cards.getByRole("listitem").first().getByText("Needs you").count() === 1, "Needs-you session must sort first with a badge");
   assert(await cards.getByRole("listitem").first().locator('[aria-label^="Last activity"]').count() === 1, "Time must describe last observed activity");
   assert(await cards.getByText("Codex CLI", { exact: true }).count() === 2, "Same-agent sessions must not collapse");

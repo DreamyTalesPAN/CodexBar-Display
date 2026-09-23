@@ -18,18 +18,18 @@ function snapshot(): AgentSnapshot {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("AgentSessions", () => {
-  it("puts needs-you sessions first and labels the time as last observed activity", () => {
+  it("hides idle sessions, puts needs-you first and labels the time as last observed activity", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     render(<AgentSessions snapshot={{ ...snapshot(), sessions: [snapshot().sessions[1], snapshot().sessions[2], snapshot().sessions[0]] }} />);
     const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain("Waiting for approval");
     expect(rows[0].textContent).toContain("Needs you");
     expect(rows[1].textContent).toContain("Running a tool");
     expect(screen.getAllByText("Codex CLI")).toHaveLength(2);
     expect(screen.getByLabelText("Last activity 4m 12s ago")).toBeTruthy();
     expect(screen.queryByText("Last activity 4m 12s ago")).toBeNull();
-    expect(screen.getByText("Idle")).toBeTruthy();
+    expect(screen.queryByText("Claude Code")).toBeNull();
   });
   it("expires visible activity when no fresh status reaches the browser, and recovers", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
@@ -38,11 +38,13 @@ describe("AgentSessions", () => {
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
     expect(screen.getByText("Agent status unavailable")).toBeTruthy();
     view.rerender(<AgentSessions snapshot={{ ...snapshot(), generatedAt: now + 16_000 }} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
   it("distinguishes no observed sessions from a missing or unhealthy observer", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     const view = render(<AgentSessions snapshot={{ ...snapshot(), sessions: [] }} />);
+    expect(screen.getByText("Nothing running")).toBeTruthy();
+    view.rerender(<AgentSessions snapshot={{ ...snapshot(), sessions: [snapshot().sessions[2]] }} />);
     expect(screen.getByText("Nothing running")).toBeTruthy();
     view.rerender(<AgentSessions snapshot={{ ...snapshot(), health: "stale" }} />);
     expect(screen.getByText("Agent status unavailable")).toBeTruthy();

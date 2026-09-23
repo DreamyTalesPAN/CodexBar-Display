@@ -26,7 +26,6 @@ const phaseLabels: Record<string, string> = {
   waiting_for_review: "Waiting for review",
   done: "Finished",
   error: "Hit an error",
-  idle: "Idle",
   stale: "Status unavailable",
   unavailable: "Status unavailable",
 };
@@ -54,7 +53,9 @@ export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) 
   const available = snapshot?.health === "ready" &&
     snapshot.generatedAt >= now - 15_000 && snapshot.generatedAt <= now + 5_000;
   const sessions = available
-    ? [...snapshot.sessions].sort((a, b) => Number(needsYou(b.phase)) - Number(needsYou(a.phase)))
+    ? snapshot.sessions
+      .filter((session) => session.phase !== "idle")
+      .sort((a, b) => Number(needsYou(b.phase)) - Number(needsYou(a.phase)))
     : [];
 
   return (
@@ -79,7 +80,7 @@ export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) 
                   waiting && "bg-success text-success-foreground",
                 )}
               >
-                <span className={cn("min-w-0 truncate text-sm font-medium", waiting && "font-semibold", session.phase === "idle" && "text-muted-foreground")} title={name}>
+                <span className={cn("min-w-0 truncate text-sm font-medium", waiting && "font-semibold")} title={name}>
                   {name}
                 </span>
                 <span className={cn("col-span-2 row-start-2 flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-muted-foreground sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:flex-nowrap", waiting && "text-success-foreground")}>

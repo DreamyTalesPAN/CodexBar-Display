@@ -83,7 +83,7 @@ describe.each(["claude-creature", "clippy"])("%s animated agent states", (id) =>
     )) as ThemeRenderPack;
 
     expect(current).toBeDefined();
-    expect(pack.spec?.rev).toBe(current!.themeRev);
+    expect((pack.spec as { rev?: number } | undefined)?.rev).toBe(current!.themeRev);
     expect(sourceSpec.rev).toBe(current!.themeRev);
     expect(pack.specPath).toBe(current!.themeSpecPath);
     expect(manifest.themeSpec.path).toBe(current!.themeSpecPath);

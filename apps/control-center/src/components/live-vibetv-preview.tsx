@@ -264,7 +264,8 @@ const DEVICE_THEME_ALIASES: Record<string, string> = {
 type DecodedSprite = {
   width: number;
   height: number;
-  fps: number;
+  /** Time one frame stays on the real VibeTV; 0 for a still image. */
+  frameMs: number;
   frames: Array<Array<SpriteRect>>;
 };
 
@@ -1816,7 +1817,14 @@ function decodeSprite(raw: string): DecodedSprite | null {
     );
     frames.push(decodeRleRows(rows, width, palette));
   }
-  return { width, height, fps, frames };
+  // The ESP8266 decodes a CBA frame from flash 8 rows per loop pass, so
+  // detailed sprites play slower than their nominal fps. Fitted to the
+  // cbaLastFrameDurationMs that real devices report in /health.
+  const frameBytes = lines.slice(rowStart).reduce((sum, row) => sum + row.length + 1, 0) / frameCount;
+  const frameMs = frameCount > 1 && fps > 0
+    ? Math.max(1000 / fps, Math.ceil(height / 8) * 6.25 + frameBytes * 0.075)
+    : 0;
+  return { width, height, frameMs, frames };
 }
 
 function maximumAnimatedSpriteFps(
@@ -1824,8 +1832,8 @@ function maximumAnimatedSpriteFps(
 ): number {
   const maximumFps = Object.values(sprites).reduce(
     (currentMaximum, sprite) =>
-      sprite.frames.length > 1
-        ? Math.max(currentMaximum, sprite.fps)
+      sprite.frameMs > 0
+        ? Math.max(currentMaximum, 1000 / sprite.frameMs)
         : currentMaximum,
     0,
   );
@@ -1899,10 +1907,10 @@ function spriteFrameIndex(
   sprite: DecodedSprite,
   animationTick: number,
 ): number {
-  if (sprite.frames.length <= 1 || sprite.fps <= 0) {
+  if (sprite.frameMs <= 0) {
     return 0;
   }
-  return Math.floor((animationTick / 1000) * sprite.fps) % sprite.frames.length;
+  return Math.floor(animationTick / sprite.frameMs) % sprite.frames.length;
 }
 
 function scaleSpriteRects(
