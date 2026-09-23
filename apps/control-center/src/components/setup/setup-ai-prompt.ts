@@ -42,6 +42,8 @@ export type AiFixPromptInput = {
   screen: SetupStep;
   /** The log the failing screen is showing, which is not the event log. */
   setupLog?: string[];
+  /** The app runs on Windows: the prompt names the computer, not a Mac. */
+  windowsHost?: boolean;
 };
 
 /**
@@ -65,13 +67,22 @@ export function buildAiFixPrompt(input: AiFixPromptInput): string {
     .filter(Boolean);
   const lines = [
     "You are an AI support and coding agent. Your first and highest priority is",
-    "to get this VibeTV setup working on this Mac. Work with the existing local",
+    input.windowsHost
+      ? "to get this VibeTV setup working on this computer. Work with the existing local"
+      : "to get this VibeTV setup working on this Mac. Work with the existing local",
     "installation and state. Do not clone the repository or open a pull request.",
     "",
     `Repository: ${REPOSITORY}`,
     `Failing screen: ${input.screen} — ${SCREEN_SOURCE[input.screen]}`,
-    `Mac App: ${versionLabel(input.appVersion, input.appBuild)}${
-      input.osVersion ? ` · macOS ${clean(input.osVersion)}` : ""
+    `${input.windowsHost ? "App" : "Mac App"}: ${versionLabel(
+      input.appVersion,
+      input.appBuild,
+    )}${
+      !input.osVersion
+        ? ""
+        : input.windowsHost
+          ? " · Windows"
+          : ` · macOS ${clean(input.osVersion)}`
     }`,
     `Background service: ${versionLabel(
       input.companionVersion,

@@ -1,5 +1,6 @@
 "use client";
 
+import { copyForHost } from "@/lib/customer-platform";
 import { SetupDialog } from "./setup-dialog";
 
 export type SetupUsageCause =
@@ -58,11 +59,9 @@ export function SetupUsageDialog({
   windowsHost = false,
 }: SetupUsageDialogProps) {
   const { description, title } = setupUsageCauseCopy[cause];
-  const forHost = (text: string) =>
-    windowsHost ? text.replace("this Mac", "this computer") : text;
   return (
     <SetupDialog
-      description={forHost(description)}
+      description={copyForHost(description, windowsHost)}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ label: "Repair", onSelect: onRepair }}
@@ -73,7 +72,7 @@ export function SetupUsageDialog({
         label: "Create support report",
         onSelect: onCreateSupportReport,
       }}
-      title={forHost(title)}
+      title={copyForHost(title, windowsHost)}
     />
   );
 }

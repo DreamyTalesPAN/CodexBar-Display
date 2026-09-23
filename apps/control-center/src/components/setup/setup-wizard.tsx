@@ -804,6 +804,7 @@ export function SetupWizard(props: SetupWizardProps) {
               void chooseTransport("wifi");
             }}
             open={searchFailed && !wifiSetup}
+            windowsHost={props.windowsHost}
           />
         )}
         {/*
@@ -863,6 +864,7 @@ export function SetupWizard(props: SetupWizardProps) {
             }
             open
             reason={connect.failure.reason}
+            windowsHost={props.windowsHost}
           />
         ) : null}
         <SetupFirmwareUpdateFailedDialog

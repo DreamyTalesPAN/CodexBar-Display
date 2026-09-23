@@ -63,6 +63,19 @@ describe("buildAiFixPrompt", () => {
     expect(prompt).not.toContain("macOS");
   });
 
+  it("names the computer, not a Mac, in the Windows app", () => {
+    const prompt = buildAiFixPrompt({
+      ...base,
+      appVersion: "1.4.2",
+      osVersion: "windows",
+      windowsHost: true,
+    });
+
+    expect(prompt).toContain("working on this computer.");
+    expect(prompt).toContain("App: 1.4.2 · Windows");
+    expect(prompt).not.toContain("Mac");
+  });
+
   it("carries the log the screen is showing, which the event log is not", () => {
     const prompt = buildAiFixPrompt({
       ...base,

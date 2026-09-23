@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleAlert, Download, RefreshCw } from "lucide-react";
+import { copyForHost } from "@/lib/customer-platform";
 import { SetupDialog } from "./setup-dialog";
 
 /**
@@ -63,6 +64,8 @@ type BlockedDialogProps = {
   onResolve: () => void;
   open: boolean;
   reason: FirmwareBlockedReason;
+  /** The app runs on Windows, where "Mac App" reads "app". */
+  windowsHost?: boolean;
 };
 
 export function SetupFirmwareBlockedDialog({
@@ -71,16 +74,17 @@ export function SetupFirmwareBlockedDialog({
   onResolve,
   open,
   reason,
+  windowsHost = false,
 }: BlockedDialogProps) {
   const copy = FIRMWARE_BLOCKED_COPY[reason];
   return (
     <SetupDialog
-      description={copy.description}
+      description={copyForHost(copy.description, windowsHost)}
       icon={reason === "mac_app_update_required" ? Download : RefreshCw}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ busy, label: copy.action, onSelect: onResolve }}
-      title={copy.title}
+      title={copyForHost(copy.title, windowsHost)}
       tone={reason === "mac_app_update_required" ? "neutral" : "error"}
     />
   );

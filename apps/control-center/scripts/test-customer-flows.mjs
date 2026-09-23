@@ -5789,7 +5789,7 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   await usageDialog.getByRole("button", { name: "Close" }).click();
   await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
 
-  for (const tab of ["Settings", "Updates"]) {
+  for (const tab of ["Usage", "Settings", "Appearance", "Updates", "Support"]) {
     await clickNavigation(page, tab);
     await page.waitForTimeout(500);
     assert(

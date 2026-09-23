@@ -61,6 +61,7 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { copyForHost } from "@/lib/customer-platform";
 import {
   buildThemePack,
   createStarterThemeSpec,
@@ -185,6 +186,8 @@ export type ThemeStudioScreenProps = {
     payload: ThemeStudioSavePayload,
   ) => Promise<ThemeStudioSaveResult>;
   saveBlockedReason?: string;
+  /** The app runs on Windows, where "Mac App" reads "app". */
+  windowsHost?: boolean;
 };
 
 export function ThemeStudioScreen({
@@ -195,6 +198,7 @@ export function ThemeStudioScreen({
   onRecoveryDiscarded,
   onSaveToLibrary,
   saveBlockedReason,
+  windowsHost = false,
 }: ThemeStudioScreenProps = {}) {
   const usage = initialTheme?.usage || "live";
   const screensaver = usage === "screensaver";
@@ -1023,7 +1027,10 @@ export function ThemeStudioScreen({
     if (!onInstallTheme) {
       setDeviceStatus({
         tone: "attention",
-        message: "Open Theme Studio in the local Mac App to send this theme.",
+        message: copyForHost(
+          "Open Theme Studio in the local Mac App to send this theme.",
+          windowsHost,
+        ),
       });
       return;
     }
@@ -1054,7 +1061,7 @@ export function ThemeStudioScreen({
         tone: "ready",
         message: screensaver
           ? "Screensaver is ready on VibeTV."
-          : "Theme installed through the Mac App.",
+          : copyForHost("Theme installed through the Mac App.", windowsHost),
       });
     } catch (error) {
       setDeviceStatus({

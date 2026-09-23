@@ -94,7 +94,9 @@ import {
 } from "./provider-preferences-polling";
 import { isProviderItem } from "./provider-picker";
 import {
+  copyForHost,
   detectCustomerPlatformFromBrowser,
+  errorForHost,
   type CustomerPlatform,
 } from "@/lib/customer-platform";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
@@ -3919,8 +3921,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const logs = events.map((event) => ({
     id: event.id,
-    label: event.label,
-    detail: event.detail,
+    label: copyForHost(event.label, windowsHost),
+    detail: copyForHost(event.detail, windowsHost),
     timestamp: event.at,
   }));
   const effectiveFirmwareUpdate =
@@ -4666,6 +4668,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       })),
       screen: setupStep,
       setupLog,
+      windowsHost,
     });
 
   // The background service can die at any point, so its recovery is drawn
@@ -4725,7 +4728,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             label: item.label,
           }))}
           installingTheme={themeInstallStatus?.phase === "installing"}
-          themeError={setupThemeError}
+          themeError={errorForHost(setupThemeError, windowsHost)}
           themeErrorDismissible={themeInstallStatus?.phase === "error"}
           onDismissThemeError={() => {
             if (themeInstallStatus?.phase === "error") {
@@ -4789,10 +4792,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }}
           searchError={
             startupDeviceSearchState === "failed" && !needsRuntimeRecovery
-              ? lastError
+              ? errorForHost(lastError, windowsHost)
               : null
           }
-          providerError={providerDisplayError || providerPreferencesError}
+          providerError={errorForHost(
+            providerDisplayError || providerPreferencesError,
+            windowsHost,
+          )}
           onSearchDevices={() => void searchAndConnect()}
           onScanWiFiNetworks={scanSetupWiFiNetworks}
           onSelectConnectionMode={selectSetupConnectionMode}
@@ -4844,13 +4850,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             companionStatus={companionStatus}
             onRefresh={() => refreshUsage()}
             usage={usage}
-            usageError={usageError}
+            usageError={errorForHost(usageError, windowsHost)}
+            windowsHost={windowsHost}
           />
         ) : null}
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
-            actionError={lastError}
+            actionError={errorForHost(lastError, windowsHost)}
             onDismissError={() => {
               setLastError(null);
               setProviderDisplayError(null);
@@ -4932,6 +4939,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
             onSaveStandby={saveStandby}
+            windowsHost={windowsHost}
           />
         ) : null}
 
@@ -4965,11 +4973,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             device={device}
             diagnostics={supportDiagnostics}
             events={logs}
-            lastError={lastError}
+            lastError={errorForHost(lastError, windowsHost)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRunSetupAgain={resetSetup}
             supportReportBusy={supportReportBusy}
+            windowsHost={windowsHost}
           />
         ) : null}
       </ControlCenterShell>

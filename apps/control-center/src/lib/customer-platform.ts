@@ -56,3 +56,33 @@ export function detectCustomerPlatformFromBrowser(): CustomerPlatform {
     userAgentDataPlatform: userAgentData?.platform,
   });
 }
+
+/**
+ * The Windows app words "Mac App" as "app" and "this Mac" as "this computer".
+ * macOS text passes through untouched. Applied where text is shown, so it
+ * also covers messages the runtime sends, which still name the Mac.
+ */
+export function copyForHost(text: string, windowsHost: boolean): string {
+  if (!windowsHost) {
+    return text;
+  }
+  return text
+    .replace(/\bfrom Applications\b/g, "from the Start menu")
+    .replace(/(^|[.!?]\s+)Mac App\b/g, "$1App")
+    .replace(/\bMac App\b/g, "app")
+    .replace(/\b(this|This|your|Your) Mac\b/g, "$1 computer");
+}
+
+export function errorForHost<T extends { message: string; nextAction: string }>(
+  error: T | null | undefined,
+  windowsHost: boolean,
+): T | null {
+  if (!error || !windowsHost) {
+    return error ?? null;
+  }
+  return {
+    ...error,
+    message: copyForHost(error.message, true),
+    nextAction: copyForHost(error.nextAction, true),
+  };
+}
