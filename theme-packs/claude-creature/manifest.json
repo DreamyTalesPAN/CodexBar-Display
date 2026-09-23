@@ -3,17 +3,17 @@
   "schemaVersion": 1,
   "id": "claude-creature",
   "name": "Claude Creature",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "minFirmware": "1.0.40",
   "requiredCapabilities": [
     "usage-slots-v1",
     "agent-theme-states-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/claude--9-b93c35.json",
+    "path": "/themes/u/claude-10-7643a9.json",
     "file": "theme.json",
-    "bytes": 1232,
-    "sha256": "b93c3594cefed9f4c899b1f534e29ab426cf5f4123641664e34826d92971d0f5",
+    "bytes": 1233,
+    "sha256": "7643a9f2b8a67269d4c3a979afc29ec11d71da68836415500e39884ed79f9a3c",
     "contentType": "application/json"
   },
   "assets": [
@@ -32,24 +32,24 @@
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/cld-n3.cbi",
-      "file": "assets/cld-n3.cbi",
-      "bytes": 1172,
-      "sha256": "0c585b2d7c1b989b68be995fb98d299059f63cbdf5d28347500f42e613987ba4",
+      "path": "/themes/u/cld-n4.cba",
+      "file": "assets/cld-n4.cba",
+      "bytes": 28280,
+      "sha256": "c6a4676490941e1431ec7f2a17b895704b5931822720c5881168f7bb55c53248",
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/cld-d3.cbi",
-      "file": "assets/cld-d3.cbi",
-      "bytes": 1216,
-      "sha256": "69253fdfa121ea0d46dad34cd634d76e7a0f0dbce2f6d469075e0089b15aac91",
+      "path": "/themes/u/cld-d4.cba",
+      "file": "assets/cld-d4.cba",
+      "bytes": 13053,
+      "sha256": "96d6a1f582dae9bcc7ff5e9db6e5c390ee5db72a97cc9d79e9e8799574253268",
       "contentType": "text/plain"
     },
     {
-      "path": "/themes/u/cld-e3.cbi",
-      "file": "assets/cld-e3.cbi",
-      "bytes": 1279,
-      "sha256": "6d22ffca44df6400b3b502a7812adc2dd4813f7bc417d921136eff8915427d32",
+      "path": "/themes/u/cld-e4.cba",
+      "file": "assets/cld-e4.cba",
+      "bytes": 34774,
+      "sha256": "bfe1297cfa5c4a0405ca0bf1781771baf5cf603fe99c7976ecc5ba424d07fad5",
       "contentType": "text/plain"
     }
   ]

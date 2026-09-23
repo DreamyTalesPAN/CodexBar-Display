@@ -162,11 +162,17 @@ describe.each(themes)("%s legibility and fit (issue #258)", (themeId) => {
       readFileSync(path.join(root, "theme-packs", themeId, "manifest.json"), "utf8"),
     );
     const raw = readFileSync(path.join(root, "theme-packs", themeId, "theme.json"), "utf8");
-    const revision = 9;
+    const catalog = JSON.parse(readFileSync(
+      path.join(root, "dist/theme-packs/vibetv-theme-packs-v2.json"), "utf8",
+    )) as { themes: { id: string; themeRev: number; themeSpecPath: string }[] };
+    const published = catalog.themes.find((theme) => theme.id === themeId);
+    expect(published).toBeDefined();
+    const revision = published!.themeRev;
     expect(JSON.parse(raw).rev).toBe(revision);
     expect(manifest.themeSpec.path).toContain(`-${revision}-`);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(raw));
     // The published render pack has to match the tracked source revision.
-    expect(pack(themeId).specPath).toBe(manifest.themeSpec.path);
+    expect(pack(themeId).specPath).toBe(published!.themeSpecPath);
+    expect(manifest.themeSpec.path).toBe(published!.themeSpecPath);
   });
 });

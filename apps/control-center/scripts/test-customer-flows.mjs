@@ -72,9 +72,9 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/clippy.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      version: "1.1.1",
-      themeRev: 3,
-      themeSpecPath: "/themes/u/clippy-3-fe3fd4.json",
+      version: "1.2.0",
+      themeRev: 6,
+      themeSpecPath: "/themes/u/clippy-6-f70879.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -114,9 +114,9 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/claude-creature.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      version: "1.3.2",
-      themeRev: 9,
-      themeSpecPath: "/themes/u/claude--9-b93c35.json",
+      version: "1.3.3",
+      themeRev: 10,
+      themeSpecPath: "/themes/u/claude-10-7643a9.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -264,7 +264,7 @@ const companionDevice = {
   display: {
     themeSpec: {
       active: true,
-      path: "/themes/u/clippy-3-fe3fd4.json",
+      path: "/themes/u/clippy-6-f70879.json",
       renderOk: true,
     },
   },
@@ -5486,7 +5486,7 @@ async function testMissingCustomPreviewCanChooseTheme(browser, appUrl) {
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { ...companionDevice, activeTheme: "lost-custom", display: { themeSpec: { active: true, renderOk: true, path: "/themes/u/lost-custom.json" } } },
     deviceAfterThemeInstall: { ...companionDevice, activeTheme: "clippy", display: { themeSpec: { active: true, renderOk: true, path: renderPack.specPath } } },
-    installStatusSequence: [{ phase: "complete", progress: 100, logs: ["Theme is active on VibeTV."], result: { themeId: "clippy", name: "Clippy", activePath: renderPack.specPath, themeRev: 3 } }],
+    installStatusSequence: [{ phase: "complete", progress: 100, logs: ["Theme is active on VibeTV."], result: { themeId: "clippy", name: "Clippy", activePath: renderPack.specPath, themeRev: renderPack.spec.rev } }],
   });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await waitForCondition(() => missingPackReads > 0, "the missing custom preview should be requested");
@@ -13470,7 +13470,7 @@ async function testThemeThenUsageChoice(browser, appUrl) {
       device: themeMissingDevice,
       deviceAfterThemeInstall: companionDevice,
       installStatusSequence: [{ phase: "complete", message: "Theme is active on VibeTV.", progress: 100,
-        result: { themeId: "clippy", packId: "clippy", name: "Clippy", activePath: "/themes/u/clippy-3-fe3fd4.json", themeRev: 3 } }],
+        result: { themeId: "clippy", packId: "clippy", name: "Clippy", activePath: "/themes/u/clippy-6-f70879.json", themeRev: 6 } }],
       providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
       providerDisplay: { mode: "automatic", providerIds: [], configured: false, valid: false },
       preferencesResponse: { ok: true, items: [providerPreferenceFixture("codex", "Codex"),

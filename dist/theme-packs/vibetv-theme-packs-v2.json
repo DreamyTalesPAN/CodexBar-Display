@@ -6,32 +6,33 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.3.2",
-      "themeRev": 9,
-      "themeSpecPath": "/themes/u/claude--9-b93c35.json",
+      "version": "1.3.3",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/claude-10-7643a9.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1",
         "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.3.2.zip",
-      "sha256": "848609bdca4862acc5a665503356986da2b2007293a7705aa7b98726cdb53022",
-      "bytes": 6791
+      "downloadAsset": "vibetv-theme-claude-creature-v1.3.3.zip",
+      "sha256": "5954c5476b1cf7f030b74bc4557584d558ede5047de233ccbfa9996f107f1818",
+      "bytes": 15722
     },
     {
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.1.3",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/clippy-5-4f3746.json",
+      "version": "1.2.0",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/clippy-6-f70879.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "agent-theme-states-v1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.1.3.zip",
-      "sha256": "c1a8cbfc7f222d2250bca8a93915a6f73b338cdd4f81ce52eb40ded6473033a6",
-      "bytes": 18640
+      "downloadAsset": "vibetv-theme-clippy-v1.2.0.zip",
+      "sha256": "69b4be605a3b491ee26a447df53163e4bebd1facadb05e70db3a39cc3624c9c8",
+      "bytes": 63437
     },
     {
       "id": "mini-classic",
