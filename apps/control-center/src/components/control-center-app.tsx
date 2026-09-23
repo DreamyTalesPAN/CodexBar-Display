@@ -4722,7 +4722,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
           firmwareProgress={firmwareUpdateStatus?.progress}
           firmwareInstallLogs={
-            firmwareUpdateInProgress ? firmwareUpdateStatus.logs : undefined
+            firmwareUpdateInProgress
+              ? firmwareUpdateStatus.logs.map((line) =>
+                  copyForHost(line, windowsHost),
+                )
+              : undefined
           }
           displayProviders={displayableProviders.map((item) => ({
             id: item.providerId,
@@ -4809,7 +4813,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providers={setupProviders}
           selectedThemeId={selectedThemeId}
           step={settingsWiFiSetup ? "device" : setupStep}
-          themeInstallLogs={themeInstallStatus?.logs || []}
+          themeInstallLogs={(themeInstallStatus?.logs || []).map((line) =>
+            copyForHost(line, windowsHost),
+          )}
           themes={setupThemes}
           usage={usage}
           welcomeLines={setupWelcomeLines}
