@@ -62,6 +62,25 @@ func TestProbeProviderSetupSeparatesEngineVersionStates(t *testing.T) {
 	}
 }
 
+func TestProbeExactProviderReportsIncompatibleEngineOnItsRow(t *testing.T) {
+	skipMacCLIContract(t)
+	originalVersion := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = originalVersion })
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.17.0"), nil
+	}
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	writeExecutable(t, bin)
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "Codex")
+	if len(got.Providers) != 2 || got.Providers[1].ID != "codex" ||
+		got.Providers[1].Status != ProviderEngineIncompatible ||
+		got.Providers[1].Detail != "Usage engine 0.17 is too old. Version 0.23 or newer is required." {
+		t.Fatalf("the requested provider must carry the incompatible state: %+v", got.Providers)
+	}
+}
+
 func TestProbeProviderSetupReportsMissingEngine(t *testing.T) {
 	originalExecutable, originalApps, originalKnown := executablePathFn, systemAppBinaryPaths, knownBinaryPaths
 	t.Cleanup(func() {

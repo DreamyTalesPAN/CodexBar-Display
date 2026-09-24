@@ -376,6 +376,12 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		row := providerResult("codexbar", ProviderEngineIncompatible)
 		row.Detail = "Usage engine " + result.Engine.Version + " is too old. Version " + result.Engine.MinimumVersion + " or newer is required."
 		result.Providers = []ProviderReadiness{row}
+		if exactProvider != "" && exactProvider != "codexbar" {
+			// "Check again" on one provider must update that provider's row too.
+			exact := providerResult(exactProvider, ProviderEngineIncompatible)
+			exact.Detail = row.Detail
+			result.Providers = append(result.Providers, exact)
+		}
 		return result
 	}
 	result.Engine.Status = ProviderReady
