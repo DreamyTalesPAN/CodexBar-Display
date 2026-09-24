@@ -1097,7 +1097,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.setupStep("device_search", "Searching for VibeTV.", "", s.handleDeviceSearch))
 	mux.HandleFunc("/v1/device/select", s.setupStep("device_select", "Connecting to the selected VibeTV.", "VibeTV connected.", s.handleDeviceSelect))
-	mux.HandleFunc("/v1/device/repair", s.setupStep("device_pair", "Repairing the VibeTV connection.", "VibeTV connection repaired.", s.handleDeviceRepair))
+	mux.HandleFunc("/v1/device/repair", s.setupStep("device_pair", "Repairing the VibeTV connection.", "", s.handleDeviceRepair))
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.setupStep("device_pair", "Pairing with VibeTV.", "VibeTV paired.", s.handleDevicePair))
@@ -3385,7 +3385,18 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 		writeRepairError(w, err)
 		return
 	}
+	s.recordRepairResult(device)
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
+// recordRepairResult logs a repair as done only once VibeTV reports it paired;
+// a forced pair can answer before the device confirms it.
+func (s *Server) recordRepairResult(device deviceInfo) {
+	if device.Paired {
+		s.recordSetupEvent(setupEvent{Stage: "device_pair", Status: "succeeded", Message: "VibeTV connection repaired."})
+		return
+	}
+	s.recordSetupEvent(setupEvent{Stage: "device_pair", Status: "started", Message: "Waiting for VibeTV to finish pairing."})
 }
 
 func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Request) {
