@@ -263,6 +263,29 @@ func TestProviderCheckLogsReadyProviderByName(t *testing.T) {
 	}
 }
 
+// A too-old engine puts its own row first; the check still names the provider
+// the customer asked about.
+func TestProviderRetryNamesRequestedProviderWhenEngineIsTooOld(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		setup := incompatibleEngineSetup()
+		exact := setup.Providers[0]
+		exact.ID, exact.Label = id, "Claude"
+		setup.Providers = append(setup.Providers, exact)
+		return setup
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("retry: %d %s", rec.Code, rec.Body.String())
+	}
+	got := getSetupLog(t, server).Events
+	if len(got) != 2 || got[1].Stage != "provider_check" || !strings.HasPrefix(got[1].Message, "Claude: ") {
+		t.Fatalf("provider check lost the requested provider: %+v", got)
+	}
+	assertNoEngineName(t, getSetupLog(t, server))
+}
+
 func TestDiagnosticsIncludesUsageEngineAndSetupLog(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup { return incompatibleEngineSetup() }

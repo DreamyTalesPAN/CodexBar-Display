@@ -394,8 +394,12 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		providerRevision := s.currentProviderRevision(providerID)
 		setup = s.currentExactProviderSetup(ctx, providerID)
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
-		if len(setup.Providers) > 0 && setup.Providers[0].ID == providerID {
-			label = setup.Providers[0].Label
+		// A too-old engine puts its own row first; name the provider asked for.
+		for _, provider := range setup.Providers {
+			if strings.EqualFold(provider.ID, providerID) {
+				label = provider.Label
+				break
+			}
 		}
 	}
 	s.recordProviderSetupEvents(setup, label)
