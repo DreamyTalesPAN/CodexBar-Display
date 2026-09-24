@@ -39,8 +39,10 @@ const STAGE_LABELS: Record<string, string> = {
   connection_mode: "Connection",
   wifi_setup: "WiFi setup",
   usage_engine: "Usage engine",
+  provider_choice: "AI provider choice",
   provider_check: "AI provider check",
   provider_setup: "AI providers",
+  display_mode: "Display mode",
   firmware_update: "Firmware update",
   theme_install: "Theme install",
   setup_reset: "New setup",
@@ -201,8 +203,11 @@ function SetupEventRow({ event }: { event: SetupEvent }) {
           <span>{status.text}</span>
         </span>
         {event.count && event.count > 1 ? (
-          <span aria-label={"Repeated " + event.count + " times"}>
-            {"×" + event.count}
+          <span
+            aria-label={"Repeated " + event.count + " times"}
+            className="text-muted-foreground"
+          >
+            {event.count + " times"}
           </span>
         ) : null}
       </div>

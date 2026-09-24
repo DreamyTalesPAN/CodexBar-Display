@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
@@ -176,6 +177,90 @@ func TestProviderRetryLogsIncompatibleEngineOnce(t *testing.T) {
 		t.Fatalf("unexpected provider event: %+v", provider)
 	}
 	assertNoEngineName(t, got)
+}
+
+// The setup log names every customer choice on the provider steps: each
+// switch, the check that follows turning a provider on, and the display mode.
+func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	enabled := map[string]bool{"codex": true, "claude": false}
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: enabled["codex"], Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: enabled["claude"], Health: codexbar.ProviderHealthChecking},
+		}, nil
+	}
+	server.providerPreferences.set = func(_ context.Context, id string, value bool) error {
+		enabled[id] = value
+		return nil
+	}
+	probeDone := make(chan struct{})
+	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		defer close(probeDone)
+		return codexbar.ProviderSetup{Status: "setup_required", Providers: []codexbar.ProviderReadiness{{
+			ID: id, Label: "Claude", Status: codexbar.ProviderAuthRequired,
+			Detail: "This provider needs an active sign-in.", NextAction: "Open provider setup, sign in again, then check this provider.",
+		}}}
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+
+	patch := func(path, body string) int {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, path, strings.NewReader(body)))
+		return rec.Code
+	}
+	if code := patch("/v1/preferences/codexbar.providers.claude.enabled", `{"value":true}`); code != http.StatusOK {
+		t.Fatalf("turn on: %d", code)
+	}
+	select {
+	case <-probeDone:
+	case <-time.After(time.Second):
+		t.Fatal("provider check did not run")
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(getSetupLog(t, server).Events) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if code := patch("/v1/provider-display", `{"mode":"fixed","providerIds":["claude","codex"]}`); code != http.StatusConflict {
+		t.Fatalf("invalid display: %d", code)
+	}
+	if code := patch("/v1/provider-display", `{"mode":"fixed","providerIds":["codex"]}`); code != http.StatusOK {
+		t.Fatalf("fixed display: %d", code)
+	}
+	if code := patch("/v1/preferences/codexbar.providers.claude.enabled", `{"value":false}`); code != http.StatusOK {
+		t.Fatalf("turn off: %d", code)
+	}
+	if code := patch("/v1/provider-display", `{"mode":"automatic","providerIds":["codex"]}`); code != http.StatusOK {
+		t.Fatalf("automatic display: %d", code)
+	}
+
+	want := []setupEvent{
+		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned on."},
+		{Stage: "provider_check", Status: "failed", Message: "Claude: This provider needs an active sign-in.", Code: codexbar.ProviderAuthRequired, NextAction: "Open provider setup, sign in again, then check this provider."},
+		{Stage: "display_mode", Status: "failed", Message: "Always show needs one provider.", Code: "provider_display_fixed_invalid", NextAction: "Choose exactly one provider to show."},
+		{Stage: "display_mode", Status: "succeeded", Message: "Always show Codex."},
+		{Stage: "provider_choice", Status: "succeeded", Message: "Claude turned off."},
+		{Stage: "display_mode", Status: "succeeded", Message: "Automatic: VibeTV switches between your providers."},
+	}
+	got := getSetupLog(t, server).Events
+	if len(got) != len(want) {
+		t.Fatalf("unexpected setup log: %+v", got)
+	}
+	for i := range want {
+		g := got[i]
+		if g.Stage != want[i].Stage || g.Status != want[i].Status || g.Message != want[i].Message || g.Code != want[i].Code || g.NextAction != want[i].NextAction {
+			t.Fatalf("event %d: got %+v want %+v", i, g, want[i])
+		}
+	}
+}
+
+func TestProviderCheckLogsReadyProviderByName(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.recordProviderSetupEvents(codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{ID: "codex", Label: "Codex", Status: codexbar.ProviderReady}}}, "Codex")
+	got := getSetupLog(t, server).Events
+	if len(got) != 1 || got[0].Stage != "provider_check" || got[0].Status != "succeeded" || got[0].Message != "Codex is ready." {
+		t.Fatalf("unexpected ready event: %+v", got)
+	}
 }
 
 func TestDiagnosticsIncludesUsageEngineAndSetupLog(t *testing.T) {
