@@ -92,10 +92,12 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
+		s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "failed", Message: "Every enabled provider must be included for display.", Code: "provider_display_incomplete", NextAction: "Refresh providers and save Automatic again."})
 		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Refresh providers and save Automatic again.")
 		return
 	}
 	if code, message, nextAction := validateProviderDisplay(selection, settings); code != "" {
+		s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "failed", Message: message, Code: code, NextAction: nextAction})
 		writeError(w, http.StatusConflict, code, message, nextAction)
 		return
 	}
@@ -113,7 +115,22 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 	if s.renderDisplayStream != nil {
 		s.renderDisplayStream()
 	}
+	s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "succeeded", Message: providerDisplayMessage(selection, settings)})
 	writeJSON(w, http.StatusOK, providerDisplayResponse{OK: true, Selection: selection})
+}
+
+// providerDisplayMessage names the saved display choice in the customer's words.
+func providerDisplayMessage(selection providerDisplaySelection, settings []codexbar.ProviderSetting) string {
+	if selection.Mode == providerDisplayModeAutomatic {
+		return "Automatic: VibeTV switches between your providers."
+	}
+	name := "the chosen provider"
+	for _, setting := range settings {
+		if len(selection.ProviderIDs) == 1 && setting.ID == selection.ProviderIDs[0] && setting.Label != "" {
+			name = setting.Label
+		}
+	}
+	return "Always show " + name + "."
 }
 
 func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Request) {

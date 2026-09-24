@@ -206,6 +206,12 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	if descriptor.ID == "" {
 		return preferenceDescriptor{}, errPreferenceNotFound
 	}
+	// Logged before the check starts, so the switch always precedes its result.
+	choice := descriptor.Label + " turned off."
+	if enabled {
+		choice = descriptor.Label + " turned on."
+	}
+	a.server.recordSetupEvent(setupEvent{Stage: "provider_choice", Status: "succeeded", Message: choice})
 	if !enabled {
 		if a.server.wakeDisplayStream != nil {
 			a.server.wakeDisplayStream()
@@ -216,15 +222,19 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	// Activation must not keep the customer-facing PATCH open while CodexBar
 	// performs browser/OAuth work. The exact provider probe still starts
 	// immediately and remains scoped to source=auto inside CodexBar.
-	go a.server.verifyEnabledProvider(providerID, providerRevision)
+	go a.server.verifyEnabledProvider(providerID, descriptor.Label, providerRevision)
 	return descriptor, nil
 }
 
-func (s *Server) verifyEnabledProvider(providerID string, providerRevision uint64) {
+func (s *Server) verifyEnabledProvider(providerID, label string, providerRevision uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	setup := s.currentExactProviderSetup(ctx, providerID)
 	s.recordExactProviderSetup(providerID, providerRevision, setup)
+	// A check the customer already overtook by switching again is not news.
+	if s.currentProviderRevision(providerID) == providerRevision {
+		s.recordProviderSetupEvents(setup, label)
+	}
 }
 
 func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
@@ -330,6 +340,9 @@ func (s *Server) handlePreference(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
+			if descriptor.ProviderID != "" {
+				s.recordSetupEvent(setupEvent{Stage: "provider_choice", Status: "failed", Message: descriptor.Label + " could not be changed.", Code: "preference_write_failed", NextAction: "Try again in a moment."})
+			}
 			writeError(w, http.StatusBadGateway, "preference_write_failed", "This setting could not be updated.", "Try again in a moment.")
 			return
 		}
