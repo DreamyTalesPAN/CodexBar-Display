@@ -263,6 +263,17 @@ func TestProviderCheckLogsReadyProviderByName(t *testing.T) {
 	}
 }
 
+func TestRepairIsLoggedAsDoneOnlyWhenPaired(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.recordRepairResult(deviceInfo{Paired: false})
+	server.recordRepairResult(deviceInfo{Paired: true})
+	got := getSetupLog(t, server).Events
+	if len(got) != 2 || got[0].Status != "started" || got[0].Message != "Waiting for VibeTV to finish pairing." ||
+		got[1].Status != "succeeded" || got[1].Message != "VibeTV connection repaired." {
+		t.Fatalf("unexpected repair events: %+v", got)
+	}
+}
+
 // A too-old engine puts its own row first; the check still names the provider
 // the customer asked about.
 func TestProviderRetryNamesRequestedProviderWhenEngineIsTooOld(t *testing.T) {
