@@ -9614,17 +9614,22 @@ func (s *Server) waitForDisplayStreamMode(
 // it waits. Neither is a transient probe result -- a timeout or a momentary
 // engine error also arrives as the global setup_required, but the provider
 // could still deliver inside the wait window. Only the failures the reconciler
-// already protects as customer-owned settle the wait.
+// already protects as customer-owned settle the wait, plus an engine that is
+// too old: no retry inside the window can make it deliver.
 func providerSetupNeedsCustomerAction(setup codexbar.ProviderSetup) bool {
 	switch strings.TrimSpace(strings.ToLower(setup.Status)) {
 	case "", codexbar.ProviderReady, "checking":
 		return false
 	}
-	if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(setup.Engine.Status))) {
+	settles := func(status string) bool {
+		status = strings.TrimSpace(strings.ToLower(status))
+		return providerSetupFailureMustWin(status) || status == codexbar.ProviderEngineIncompatible
+	}
+	if settles(setup.Engine.Status) {
 		return true
 	}
 	for _, provider := range setup.Providers {
-		if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(provider.Status))) {
+		if settles(provider.Status) {
 			return true
 		}
 	}
