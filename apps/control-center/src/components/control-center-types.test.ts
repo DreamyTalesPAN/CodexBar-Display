@@ -582,6 +582,16 @@ describe("providerSetupNeedsEngineRecovery", () => {
     ).toBe(true);
   });
 
+  it("recovers an engine that is too old", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "engine_incompatible", version: "0.17.0", minimumVersion: "0.23.0" },
+        providers: [{ id: "codexbar", status: "engine_incompatible" }],
+      }),
+    ).toBe(true);
+  });
+
   it("asks for nothing while the usage service is ready or still checking", () => {
     expect(
       providerSetupNeedsEngineRecovery({

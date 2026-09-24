@@ -118,9 +118,24 @@ func (s *launchd) Status(ctx context.Context) (Status, error) {
 	return status, nil
 }
 
+// ParseStatus reads the service's own state and pid. launchctl print nests
+// blocks such as "resource coalition = {" with their own "state = active", so
+// only lines at the service's top level (brace depth <= 1) count.
 func ParseStatus(output string) (state, pid string) {
+	depth := 0
 	for _, raw := range strings.Split(output, "\n") {
 		line := strings.TrimSpace(raw)
+		if strings.HasSuffix(line, "{") {
+			depth++
+			continue
+		}
+		if line == "}" {
+			depth--
+			continue
+		}
+		if depth > 1 {
+			continue
+		}
 		if strings.HasPrefix(line, "state =") {
 			state = strings.TrimSpace(strings.TrimPrefix(line, "state ="))
 		}

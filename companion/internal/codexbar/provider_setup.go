@@ -10,12 +10,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
@@ -33,18 +35,23 @@ const (
 	ProviderTimeout               = "timeout"
 	ProviderConfigError           = "config_error"
 	ProviderEngineError           = "engine_error"
-	ProviderNotConfigured         = "not_configured"
+	// ProviderEngineIncompatible: the engine reported a readable version that
+	// is older than MinimumSupportedVersion. An unreadable version stays
+	// ProviderEngineError.
+	ProviderEngineIncompatible = "engine_incompatible"
+	ProviderNotConfigured      = "not_configured"
 )
 
 type configPathContextKey struct{}
 
 type EngineReadiness struct {
-	Status     string `json:"status"`
-	Version    string `json:"version,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Source     string `json:"source,omitempty"`
-	ConfigPath string `json:"configPath,omitempty"`
-	Writable   bool   `json:"configWritable"`
+	Status         string `json:"status"`
+	Version        string `json:"version,omitempty"`
+	MinimumVersion string `json:"minimumVersion,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Source         string `json:"source,omitempty"`
+	ConfigPath     string `json:"configPath,omitempty"`
+	Writable       bool   `json:"configWritable"`
 }
 
 type ProviderReadiness struct {
@@ -344,6 +351,7 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	}
 	result.Engine.Path = bin
 	result.Engine.Source = BinarySource(bin)
+	result.Engine.MinimumVersion = MinimumSupportedVersion()
 	configPath, configErr := EnsureConfig(home)
 	result.Engine.ConfigPath = configPath
 	result.Engine.Writable = configErr == nil
@@ -364,8 +372,16 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	result.Engine.Version = version.String()
 	minimum, _ := parseLooseVersion(minSupportedVersionString)
 	if version.Compare(minimum) < 0 {
-		result.Engine.Status = ProviderEngineError
-		result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderEngineError)}
+		result.Engine.Status = ProviderEngineIncompatible
+		row := providerResult("codexbar", ProviderEngineIncompatible)
+		row.Detail = "Usage engine " + result.Engine.Version + " is too old. Version " + result.Engine.MinimumVersion + " or newer is required."
+		result.Providers = []ProviderReadiness{row}
+		if exactProvider != "" && exactProvider != "codexbar" {
+			// "Check again" on one provider must update that provider's row too.
+			exact := providerResult(exactProvider, ProviderEngineIncompatible)
+			exact.Detail = row.Detail
+			result.Providers = append(result.Providers, exact)
+		}
 		return result
 	}
 	result.Engine.Status = ProviderReady
@@ -703,6 +719,9 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderConfigError:
 		result.Detail = "The usage service could not save or read its provider settings."
 		result.NextAction = "Repair the usage service, then check again."
+	case ProviderEngineIncompatible:
+		result.Detail = "The usage engine is too old."
+		result.NextAction = "Repair the usage engine, then check again."
 	case ProviderNotConfigured:
 		result.Detail = "No usable AI provider is configured yet."
 		result.NextAction = "Open provider setup and connect an AI provider."
@@ -724,12 +743,23 @@ func signInHost(url string) string {
 	return url
 }
 
+// BinarySource classifies the executable FindBinary selected; it never
+// resolves one itself.
 func BinarySource(bin string) string {
-	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_BIN")); explicit != "" && filepath.Clean(bin) == filepath.Clean(explicit) {
+	bin = filepath.Clean(bin)
+	under := func(dir string) bool { return strings.HasPrefix(bin, filepath.Clean(dir)+string(os.PathSeparator)) }
+	home, _ := os.UserHomeDir()
+	if home != "" && under(runtimepaths.Path(home, "CodexBar")) {
+		return "app_managed"
+	}
+	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_BIN")); explicit != "" && bin == filepath.Clean(explicit) {
 		return "override"
 	}
-	if executable, err := executablePathFn(); err == nil && strings.HasPrefix(filepath.Clean(bin), filepath.Dir(executable)+string(os.PathSeparator)) {
+	if executable, err := executablePathFn(); err == nil && under(filepath.Dir(executable)) {
 		return "bundled"
 	}
-	return "system"
+	if slices.Contains(systemAppBinaryPaths, bin) || home != "" && under(filepath.Join(home, "Applications", "CodexBar.app")) {
+		return "system"
+	}
+	return "path"
 }

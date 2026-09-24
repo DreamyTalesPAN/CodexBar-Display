@@ -157,7 +157,26 @@ func healthRuntimeOwner() string {
 			return label
 		}
 	}
-	return runtimepaths.DisplayStreamLaunchAgentLabel()
+	return shellRuntimeLabel()
+}
+
+// bundledRuntimeLabels are the runtimes the Mac App registers through
+// SMAppService; neither has a LaunchAgents plist.
+var bundledRuntimeLabels = []string{runtimepaths.ShellDisplayStreamLaunchAgentLabel, "shop.vibetv.control-center.preview-runtime"}
+
+// shellRuntimeLabel names the runtime a command run from a shell inspects.
+// Only the runtime process inherits the label environment, so on macOS a
+// loaded bundled runtime wins over the legacy LaunchAgent.
+func shellRuntimeLabel() string {
+	if runtime.GOOS == "windows" || strings.TrimSpace(os.Getenv(runtimepaths.DisplayStreamLaunchAgentLabelEnv)) != "" {
+		return runtimepaths.DisplayStreamLaunchAgentLabel()
+	}
+	for _, label := range bundledRuntimeLabels {
+		if _, err := doctorLaunchAgentPrintFn(label); err == nil {
+			return label
+		}
+	}
+	return runtimepaths.LegacyDisplayStreamLaunchAgentLabel
 }
 
 func printUsage() {
@@ -1033,7 +1052,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		return config, err
 	}
 
-	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
+	for _, label := range bundledRuntimeLabels {
 		if output, err := doctorLaunchAgentPrintFn(label); err == nil && doctorLaunchAgentStateHealthy(string(output)) {
 			cfg, err := runtimeconfig.Load(home)
 			if err != nil {
@@ -1156,9 +1175,8 @@ func parseDoctorLaunchAgentPath(output string) string {
 }
 
 func doctorLaunchAgentStateHealthy(output string) bool {
-	return strings.Contains(output, "state = running") ||
-		strings.Contains(output, "state = waiting") ||
-		strings.Contains(output, "state = spawn scheduled")
+	state, _ := service.ParseStatus(output)
+	return service.Healthy(state)
 }
 
 func doctorWiFiTarget(configTarget, plistTarget string) string {
@@ -1636,11 +1654,13 @@ func runService(args []string) error {
 		fmt.Println("background service: stopped and disabled")
 		return nil
 	case "status":
-		status, err := queryLaunchAgentStatus()
+		label := shellRuntimeLabel()
+		status, err := queryLaunchAgentStatus(label)
 		if err != nil {
 			return err
 		}
 		fmt.Println("codexbar-display service")
+		fmt.Printf("label: %s\n", label)
 		if status.Enabled {
 			fmt.Println("enabled: yes")
 		} else {
@@ -1651,8 +1671,8 @@ func runService(args []string) error {
 			fmt.Printf("pid: %s\n", status.PID)
 		}
 		if runtime.GOOS == "windows" {
-			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, runtimepaths.DisplayStreamLaunchAgentLabel()))
-		} else {
+			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, label))
+		} else if label == runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
 			fmt.Printf("plist: %s\n", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel))
 		}
 		return nil

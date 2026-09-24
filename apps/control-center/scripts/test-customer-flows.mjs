@@ -2352,6 +2352,9 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "permission_required",
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
+      // Customers never see the engine's product name (#334).
+      shownMessage:
+        "Safari cookie file is not readable. Enable Full Disk Access for usage engine.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2372,6 +2375,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.",
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
+      shownMessage: "Usage engine could not save the Codex provider settings.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2508,13 +2512,14 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
     const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
-    await providerDialog.getByText(fixture.reportedMessage, { exact: true })
+    const shownMessage = fixture.shownMessage ?? fixture.reportedMessage;
+    await providerDialog.getByText(shownMessage, { exact: true })
       .waitFor({ timeout: 10_000 });
     await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
       .waitFor({ timeout: 10_000 });
     await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
     assert(
-      (await page.getByText(fixture.reportedMessage, { exact: true }).count()) === 0,
+      (await page.getByText(shownMessage, { exact: true }).count()) === 0,
       `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
     );
     for (const action of fixture.rowActions) {

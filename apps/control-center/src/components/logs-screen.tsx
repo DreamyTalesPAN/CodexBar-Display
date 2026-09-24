@@ -39,6 +39,9 @@ import {
   type DeviceInfo,
   type SupportDiagnostics,
 } from "./control-center-types";
+import { formatCustomerSupportText } from "./customer-support-text";
+import { DiagnosticsPanel } from "./diagnostics-panel";
+import { SetupEventLog } from "./setup-event-log";
 import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
@@ -60,6 +63,8 @@ export type LogsScreenProps = {
   onLoadDiagnostics?: () => void;
   onRefresh?: () => void;
   onRunSetupAgain?: () => void;
+  onRepairUsageEngine?: () => void;
+  repairingUsageEngine?: boolean;
   busyAction?: string | null;
   supportReportBusy?: boolean;
 };
@@ -72,6 +77,8 @@ export function LogsScreen({
   onLoadDiagnostics,
   onRefresh,
   onRunSetupAgain,
+  onRepairUsageEngine,
+  repairingUsageEngine = false,
   busyAction,
   supportReportBusy = false,
 }: LogsScreenProps) {
@@ -153,6 +160,30 @@ export function LogsScreen({
 
       <Card size="sm">
         <CardHeader>
+          <CardTitle>Diagnostics</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DiagnosticsPanel
+            diagnostics={diagnostics}
+            onRepairUsageEngine={onRepairUsageEngine}
+            onRun={onLoadDiagnostics}
+            repairing={repairingUsageEngine}
+            running={supportReportBusy}
+          />
+        </CardContent>
+      </Card>
+
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>Setup log</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SetupEventLog />
+        </CardContent>
+      </Card>
+
+      <Card size="sm">
+        <CardHeader>
           <CardTitle>Recent activity</CardTitle>
           <CardDescription>Connection and setup changes from this session.</CardDescription>
           {onRefresh ? (
@@ -212,21 +243,6 @@ function SupportFact({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 break-words text-sm font-medium">{value}</dd>
     </div>
   );
-}
-
-function formatCustomerSupportText(value: string): string {
-  return value
-    .replace(/\bCompanion\s+API\b/gi, "Mac App")
-    .replace(/\bCompanion\b/g, "Mac App")
-    .replace(/\bbridge\b/gi, "Mac App")
-    .replace(/\bdaemon\b/gi, "Mac App")
-    .replace(/\blocal\s+API\b/gi, "Mac App")
-    .replace(/\bAPI\b/g, "app")
-    .replace(/\btarget\b/gi, "VibeTV address")
-    .replace(/\bCOMPANION_UNREACHABLE\b/g, "Mac App needs setup")
-    .replace(/\bCLIENT_ERROR\b/g, "Something needs attention")
-    .replace(/\bHTTP_\d+\b/g, "Connection failed")
-    .replace(/https?:\/\/\S+/g, "saved link");
 }
 
 function formatDeviceAddress(value?: string): string {

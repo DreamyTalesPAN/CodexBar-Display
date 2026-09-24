@@ -3887,6 +3887,18 @@ func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	if !providerSetupNeedsCustomerAction(engineBroken) {
 		t.Fatal("a missing engine must end the wait")
 	}
+	engineTooOld := codexbar.ProviderSetup{Status: "setup_required"}
+	engineTooOld.Engine.Status = codexbar.ProviderEngineIncompatible
+	if !providerSetupNeedsCustomerAction(engineTooOld) {
+		t.Fatal("an engine that is too old must end the wait")
+	}
+	engineTooOldRow := codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codexbar", Status: codexbar.ProviderEngineIncompatible}},
+	}
+	if !providerSetupNeedsCustomerAction(engineTooOldRow) {
+		t.Fatal("an engine row that is too old must end the wait")
+	}
 }
 
 // The wait reads the provider state the Companion already owns. A cold cache

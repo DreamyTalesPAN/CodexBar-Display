@@ -215,7 +215,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		setup.CheckedAt = now.UTC().Format(time.RFC3339Nano)
 	}
 	protectedByID := make(map[string]struct{}, len(setup.Providers))
-	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	engineFailed := engineUnusable(setup.Engine.Status)
 	blocksReady := engineFailed
 	if engineFailed {
 		protectedByID["codexbar"] = struct{}{}
@@ -311,7 +311,7 @@ func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready
 	if len(providers) == 0 {
 		return original
 	}
-	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	engineFailed := engineUnusable(setup.Engine.Status)
 	if !engineFailed {
 		setup.Status = codexbar.ProviderReady
 		setup.Engine.Status = codexbar.ProviderReady
@@ -387,13 +387,22 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
 	var setup codexbar.ProviderSetup
+	label := ""
 	if providerID == "" {
 		setup = s.currentProviderSetup(ctx, true)
 	} else {
 		providerRevision := s.currentProviderRevision(providerID)
 		setup = s.currentExactProviderSetup(ctx, providerID)
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
+		// A too-old engine puts its own row first; name the provider asked for.
+		for _, provider := range setup.Providers {
+			if strings.EqualFold(provider.ID, providerID) {
+				label = provider.Label
+				break
+			}
+		}
 	}
+	s.recordProviderSetupEvents(setup, label)
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}

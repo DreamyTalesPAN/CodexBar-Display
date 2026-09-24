@@ -2717,8 +2717,7 @@ func stopLaunchAgent(disable bool) error {
 
 type launchAgentStatus = service.Status
 
-func queryLaunchAgentStatus() (launchAgentStatus, error) {
-	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+func queryLaunchAgentStatus(label string) (launchAgentStatus, error) {
 	status, err := service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Status(context.Background())
 	if err != nil {
 		trimmed := strings.TrimSpace(status.Raw)
