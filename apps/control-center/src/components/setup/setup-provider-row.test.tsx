@@ -111,4 +111,18 @@ describe("provider popup guidance", () => {
   it.each(["healthy", "checking", "disabled"])("does not turn %s into an error", (health) => {
     expect(setupProviderIssueMessage({ health, label: "Codex" })).toBeNull();
   });
+
+  it("names an engine that is too old instead of a timed-out check", () => {
+    expect(setupProviderIssueMessage({ health: "engine_incompatible", label: "Codex" })).toBe(
+      "The usage engine is too old. Repair the usage engine, then check again.",
+    );
+    expect(render({ health: "engine_incompatible" })).toContain('aria-label="Check Claude Code again"');
+  });
+
+  it("keeps the engine's product name out of provider messages", () => {
+    expect(setupProviderIssueMessage({ health: "engine_incompatible", label: "Codex",
+      detail: "CodexBar 0.17.0 is too old. Version 0.23.0 or newer is required." })).toBe(
+      "Usage engine 0.17.0 is too old. Version 0.23.0 or newer is required.",
+    );
+  });
 });

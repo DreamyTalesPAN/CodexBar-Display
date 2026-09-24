@@ -799,6 +799,8 @@ func providerReadinessHealthState(status string) string {
 		return "config_error"
 	case codexbar.ProviderEngineError:
 		return "engine_error"
+	case codexbar.ProviderEngineIncompatible:
+		return "engine_incompatible"
 	case codexbar.ProviderNotConfigured:
 		return "setup_required"
 	default:
@@ -824,6 +826,8 @@ func providerReadinessMessage(status string) string {
 		return "Provider settings could not be read or saved."
 	case codexbar.ProviderEngineError:
 		return "The usage service needs attention."
+	case codexbar.ProviderEngineIncompatible:
+		return "The usage engine is too old."
 	default:
 		return "Finish setup for this provider."
 	}
@@ -845,6 +849,8 @@ func providerReadinessNextAction(status string) string {
 		return "Wait a moment, then check this provider again."
 	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
 		return "Repair the usage service, then check this provider again."
+	case codexbar.ProviderEngineIncompatible:
+		return "Repair the usage engine, then check again."
 	default:
 		return "Finish setup for this provider, then check again."
 	}

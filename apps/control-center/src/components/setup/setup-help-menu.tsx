@@ -1,12 +1,13 @@
 "use client";
 
-import { Check, CircleAlert, CircleHelp, FileText, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Check, CircleAlert, CircleHelp, FileText, ScrollText, Sparkles } from "lucide-react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { SupportDiagnostics } from "../control-center-types";
+import { SetupEventLog, SetupEventsContext } from "../setup-event-log";
 import { downloadSupportReport } from "../support-report";
 
 const OUTCOME_MS = 5000;
@@ -66,6 +67,8 @@ export function SetupHelpMenu({
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [showLog, setShowLog] = useState(false);
+  const setupLogAvailable = useContext(SetupEventsContext) !== null;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const outcomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -151,6 +154,7 @@ export function SetupHelpMenu({
         <div
           className={cn(
             "absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10",
+            showLog && "w-[min(420px,calc(100vw-2.5rem))]",
             SETUP_REVEAL,
           )}
           id="setup-help-menu"
@@ -194,6 +198,21 @@ export function SetupHelpMenu({
               </span>
             </Button>
           ) : null}
+          {setupLogAvailable ? (
+            <Button
+              aria-checked={showLog}
+              className="w-full justify-start font-medium"
+              onClick={() => setShowLog((previous) => !previous)}
+              role="menuitemcheckbox"
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <ScrollText aria-hidden data-icon="inline-start" />
+              <span>{showLog ? "Hide setup log" : "Show setup log"}</span>
+            </Button>
+          ) : null}
+          {showLog ? <SetupEventLog className="p-1 text-left" /> : null}
         </div>
       ) : null}
       <Button

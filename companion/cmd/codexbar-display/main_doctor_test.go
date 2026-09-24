@@ -12,6 +12,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
@@ -124,6 +125,46 @@ func TestHealthRuntimeOwnerUsesRunningBundledRuntime(t *testing.T) {
 				t.Fatalf("health runtime owner=%q, expected %q", got, want)
 			}
 		})
+	}
+}
+
+func TestReadDoctorRuntimeConfigRecognisesMacOS27BundledRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("LaunchAgent ownership is specific to the macOS runtime; Windows uses Scheduled Tasks")
+	}
+	restoreDoctorTestDeps(t)
+	testenv.Home(t, t.TempDir())
+	// Issue #475: nested coalition blocks follow the top-level state.
+	doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
+		if label == "shop.vibetv.control-center.runtime" {
+			return []byte("gui/501/shop.vibetv.control-center.runtime = {\n\tstate = running\n\tpid = 63912\n\tresource coalition = {\n\t\tstate = active\n\t}\n\tjetsam coalition = {\n\t\tstate = active\n\t}\n\tjob state = running\n}\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	cfg, err := readDoctorRuntimeConfig()
+	if err != nil || !cfg.configured || cfg.label != "shop.vibetv.control-center.runtime" {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+}
+
+func TestShellRuntimeLabelPrefersLoadedBundledRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows resolves the task from its installed configuration")
+	}
+	restoreDoctorTestDeps(t)
+	t.Setenv(runtimepaths.DisplayStreamLaunchAgentLabelEnv, "")
+	loaded := ""
+	doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
+		if label == loaded {
+			return []byte("state = active"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	for _, want := range append(bundledRuntimeLabels, runtimepaths.LegacyDisplayStreamLaunchAgentLabel) {
+		loaded = want
+		if got := shellRuntimeLabel(); got != want {
+			t.Fatalf("loaded %q resolved %q", want, got)
+		}
 	}
 }
 
