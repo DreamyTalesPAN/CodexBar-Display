@@ -1876,10 +1876,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		allProviders,
 		now,
 		deps,
-		func(provider string) bool {
-			enabled, known := collector.providerEnabledByInventory(provider)
-			return known && !enabled
-		},
+		collector.providerDisabledByCurrentInventory,
 		"select-provider",
 		"collector-empty",
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),

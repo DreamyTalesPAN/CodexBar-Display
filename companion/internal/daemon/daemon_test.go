@@ -6540,6 +6540,42 @@ func disabledProviders(ids ...string) func(string) bool {
 	}
 }
 
+func TestProviderDisabledByCurrentInventoryIgnoresAStaleInventory(t *testing.T) {
+	inventoryOK := true
+	codexEnabled := false
+	collector := &providerCollector{
+		now:            func() time.Time { return time.Date(2026, 9, 25, 8, 0, 0, 0, time.UTC) },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			if !inventoryOK {
+				return nil, errors.New("temporary inventory failure")
+			}
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: codexEnabled},
+				{ID: "claude", Enabled: true},
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+	if !collector.providerDisabledByCurrentInventory("codex") {
+		t.Fatalf("current inventory with codex off was not trusted")
+	}
+
+	// Codex is switched on again outside the app, and this collection's
+	// inventory read fails: the older map must not keep calling it off.
+	codexEnabled = true
+	inventoryOK = false
+	collector.collectOnce(context.Background())
+	if collector.providerDisabledByCurrentInventory("codex") {
+		t.Fatalf("stale inventory still reports codex off after a failed inventory read")
+	}
+}
+
 func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {
 	prepareFastTestEnv(t)
 	state := &runtimeState{

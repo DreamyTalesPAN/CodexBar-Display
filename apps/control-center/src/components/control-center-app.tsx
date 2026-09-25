@@ -3352,12 +3352,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!selection) {
           return true;
         }
-        // Only a change of mode retires the explanation. Turning another
+        // Only a saved change of mode retires the explanation. Turning another
         // provider on or off only widens or narrows the Automatic pool, and
         // the reason VibeTV switches automatically is still the same.
-        if (selection.mode !== "automatic" || previous?.mode !== "automatic") {
-          setProviderDisplayNotice(null);
-        }
+        const retiresNotice =
+          selection.mode !== "automatic" || previous?.mode !== "automatic";
         const optimistic = { ...selection, configured: true, valid: true };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;
@@ -3372,6 +3371,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerDisplayRef.current = payload.selection;
           setProviderDisplay(payload.selection);
           setProviderDisplayError(null);
+          if (retiresNotice) {
+            setProviderDisplayNotice(null);
+          }
           void refreshUsage({ quiet: true });
           return true;
         } catch (error) {

@@ -4550,6 +4550,6 @@ issue scope, or release permission never implies UI permission.
 
 ### 2026-09-25 — Review follow-up: the hint stays through unrelated provider toggles
 
-- User approval: Covered by Marcus's "ok" to the entry above. The review of PR #477 found that toggling another provider cleared the hint although the display mode did not change, and the live preview test showed the same; both contradict the approved result.
-- Approved customer-visible result: Unchanged from the entry above. The hint disappears when the display mode changes or when the provider it names is switched on again, because it would then be wrong. Turning another provider on or off only adjusts the Automatic pool and leaves it visible.
+- User approval: Covered by Marcus's "ok" to the entry above, which asked for a short hint when the switch happens. The review of PR #477 found that toggling another provider cleared the hint although the display mode did not change, and the live preview test showed the same.
+- Approved customer-visible result: The hint explains the automatic switch while this app window stays open. It disappears once a new display mode is saved or when the provider it names is switched on again, because it would then be wrong. Turning another provider on or off only adjusts the Automatic pool and leaves it visible, and a failed save leaves it in place. After the app is reopened, Automatic is simply the saved mode and no hint is shown.
 - Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.
