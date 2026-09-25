@@ -1946,14 +1946,17 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 }
 
 func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
-	if state == nil || !state.hasLastGood {
+	if state == nil {
 		return
 	}
 	cfg, ok := loadRuntimeConfig(deps)
-	if !ok || cfg.ProviderDisplay == nil {
+	if !ok || cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic" {
+		// Leaving Manual ends its fallback: a later Manual choice of the same
+		// provider is a new choice and must not inherit the fallback frame.
+		state.providerDisplayFallback = ""
 		return
 	}
-	if cfg.ProviderDisplay.Mode == "automatic" {
+	if !state.hasLastGood {
 		return
 	}
 	if state.providerDisplayFallback != "" &&

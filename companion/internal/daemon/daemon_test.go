@@ -6614,6 +6614,37 @@ func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {
 	}
 }
 
+func TestProviderDisplayFallbackEndsWhenAutomaticIsSaved(t *testing.T) {
+	prepareFastTestEnv(t)
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude", Session: 26},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	manualCodex := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	manualCodex.logf = func(string, ...any) {}
+	applyProviderDisplaySelection(state, []codexbar.ParsedFrame{testParsedFrame("claude", 30, 40, 3600)}, manualCodex, disabledProviders("codex"))
+
+	invalidateLastGoodOutsideProviderDisplay(state, providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "automatic",
+		ProviderIDs: []string{"claude"},
+	}))
+	if state.providerDisplayFallback != "" {
+		t.Fatalf("fallback=%q survived the switch to Automatic", state.providerDisplayFallback)
+	}
+
+	// Codex is on again and the customer picks Manual Codex anew: before a
+	// fetch succeeds, the Claude frame must not stand in for it.
+	invalidateLastGoodOutsideProviderDisplay(state, manualCodex)
+	if state.hasLastGood {
+		t.Fatalf("the Claude frame from the earlier fallback crossed a new Manual Codex choice")
+	}
+}
+
 func TestRunCycleFromCollectorSendsRemainingProviderWhenFixedProviderIsDisabled(t *testing.T) {
 	prepareFastTestEnv(t)
 	now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
