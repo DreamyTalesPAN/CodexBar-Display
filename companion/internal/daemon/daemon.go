@@ -1199,13 +1199,15 @@ func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
 	return latest.Compare(current) > 0
 }
 
-func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
+// providerDisabled reports whether authoritative inventory confirms a provider
+// is switched off. Nil means no inventory is known, which never confirms it.
+func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, providerDisabled func(string) bool, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
 	result := cycleResult{
 		selectionReason: emptyReason,
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
-	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerDisabled)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -1253,7 +1255,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	return result
 }
 
-func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) []codexbar.ParsedFrame {
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerDisabled func(string) bool) []codexbar.ParsedFrame {
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok || cfg.ProviderDisplay == nil {
 		return preferAvailableProviders(providers)
@@ -1282,8 +1284,10 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 	// A Manual provider that was turned off in CodexBar is no longer
 	// collected at all. Filtering by it would leave the device blank although
 	// other providers have usage, so fall back to them like Automatic until
-	// the pinned provider is collected again.
-	if len(filtered) == 0 && len(providers) > 0 {
+	// the pinned provider is switched on again. Only authoritative inventory
+	// may say it is off: CodexBar can omit an enabled provider for a cycle, and
+	// that must stay the pinned provider's unavailable state.
+	if len(filtered) == 0 && len(providers) > 0 && fixedSelectionDisabled(allowed, providerDisabled) {
 		if state != nil && state.providerDisplayFallback != selectionKey {
 			state.providerDisplayFallback = selectionKey
 			if deps.logf != nil {
@@ -1322,6 +1326,18 @@ func providerDisplaySelectionKey(providerIDs []string) string {
 		return ""
 	}
 	return "fixed:" + strings.Join(keys, ",")
+}
+
+func fixedSelectionDisabled(allowed map[string]struct{}, providerDisabled func(string) bool) bool {
+	if providerDisabled == nil || len(allowed) == 0 {
+		return false
+	}
+	for providerID := range allowed {
+		if !providerDisabled(providerID) {
+			return false
+		}
+	}
+	return true
 }
 
 func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
@@ -1831,6 +1847,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			allProviders,
 			deps.now(),
 			deps,
+			nil,
 			"select-provider",
 			"fetch-error",
 			"",
@@ -1859,6 +1876,10 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		allProviders,
 		now,
 		deps,
+		func(provider string) bool {
+			enabled, known := collector.providerEnabledByInventory(provider)
+			return known && !enabled
+		},
 		"select-provider",
 		"collector-empty",
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),

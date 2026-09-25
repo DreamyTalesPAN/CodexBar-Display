@@ -6437,7 +6437,7 @@ func TestApplyProviderDisplaySelectionUsesEveryCurrentlyEnabledAutomaticProvider
 		ProviderIDs: []string{"codex", "claude"},
 	})
 
-	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps)
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps, nil)
 	if len(got) != 2 || got[0].Frame.Provider != "claude" || got[1].Frame.Provider != "cursor" {
 		t.Fatalf("automatic selection=%+v want every currently enabled ready provider", got)
 	}
@@ -6455,7 +6455,7 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderWithoutFallback(t *testi
 		ProviderIDs: []string{"codex"},
 	})
 
-	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, deps)
+	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, deps, nil)
 	if len(got) != 1 || got[0].Frame.Provider != "codex" || !got[0].Frame.UsageUnavailable {
 		t.Fatalf("fixed selection silently fell back: %+v", got)
 	}
@@ -6486,7 +6486,7 @@ func TestApplyProviderDisplaySelectionFallsBackWhenFixedProviderIsNotCollected(t
 		ProviderIDs: []string{"codex"},
 	})
 
-	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps)
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps, disabledProviders("codex"))
 	if len(got) != 1 || got[0].Frame.Provider != "claude" {
 		t.Fatalf("fixed selection without its provider=%+v want fallback to claude", got)
 	}
@@ -6500,12 +6500,43 @@ func TestApplyProviderDisplaySelectionFallsBackWhenFixedProviderIsNotCollected(t
 	}
 
 	codex := testParsedFrame("codex", 10, 20, 3600)
-	got = applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude}, deps)
+	got = applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude}, deps, disabledProviders())
 	if len(got) != 1 || got[0].Frame.Provider != "codex" {
 		t.Fatalf("pinned provider back=%+v want codex only", got)
 	}
 	if state.providerDisplayFallback != "" || state.hasLastGood {
 		t.Fatalf("fallback=%q hasLastGood=%v want fallback ended and claude frame cleared", state.providerDisplayFallback, state.hasLastGood)
+	}
+}
+
+func TestApplyProviderDisplaySelectionKeepsFixedProviderOmittedWhileEnabled(t *testing.T) {
+	// CodexBar can omit an enabled provider for a cycle while another one
+	// succeeds. Without inventory saying it is off, Manual keeps its provider.
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	for name, disabled := range map[string]func(string) bool{
+		"no inventory":     nil,
+		"codex is enabled": disabledProviders(),
+	} {
+		state := &runtimeState{selector: codexbar.NewProviderSelector()}
+		got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps, disabled)
+		if len(got) != 0 || state.providerDisplayFallback != "" {
+			t.Fatalf("%s: got=%+v fallback=%q want the pinned provider kept", name, got, state.providerDisplayFallback)
+		}
+	}
+}
+
+func disabledProviders(ids ...string) func(string) bool {
+	return func(provider string) bool {
+		for _, id := range ids {
+			if id == provider {
+				return true
+			}
+		}
+		return false
 	}
 }
 
@@ -6522,7 +6553,7 @@ func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {
 		Mode:        "fixed",
 		ProviderIDs: []string{"codex"},
 	})
-	applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, codexDeps)
+	applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, codexDeps, disabledProviders("codex"))
 	if state.providerDisplayFallback == "" {
 		t.Fatalf("fallback not entered for the disabled Codex selection")
 	}
@@ -6540,22 +6571,35 @@ func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {
 	}
 }
 
-func TestRunCycleSendsRemainingProviderWhenFixedProviderIsDisabled(t *testing.T) {
+func TestRunCycleFromCollectorSendsRemainingProviderWhenFixedProviderIsDisabled(t *testing.T) {
 	prepareFastTestEnv(t)
 	now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
 	cfg := runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
 		Mode:        "fixed",
 		ProviderIDs: []string{"codex"},
 	}}
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: false},
+				{ID: "claude", Enabled: true},
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
 	var sentLine []byte
-	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+	err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, runtimeDeps{
 		now:         func() time.Time { return now },
 		homeDir:     func() (string, error) { return "/test-home", nil },
 		loadConfig:  func(string) (runtimeconfig.Config, error) { return cfg, nil },
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
-		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
-		},
 		sendLine: func(_ string, line []byte) error {
 			sentLine = append([]byte(nil), line...)
 			return nil
