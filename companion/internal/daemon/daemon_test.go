@@ -6490,8 +6490,8 @@ func TestApplyProviderDisplaySelectionFallsBackWhenFixedProviderIsNotCollected(t
 	if len(got) != 1 || got[0].Frame.Provider != "claude" {
 		t.Fatalf("fixed selection without its provider=%+v want fallback to claude", got)
 	}
-	if !state.providerDisplayFallback || !state.hasLastGood {
-		t.Fatalf("fallback=%v hasLastGood=%v want fallback kept with last-good frame", state.providerDisplayFallback, state.hasLastGood)
+	if state.providerDisplayFallback != "fixed:codex" || !state.hasLastGood {
+		t.Fatalf("fallback=%q hasLastGood=%v want fallback kept with last-good frame", state.providerDisplayFallback, state.hasLastGood)
 	}
 
 	invalidateLastGoodOutsideProviderDisplay(state, deps)
@@ -6504,8 +6504,39 @@ func TestApplyProviderDisplaySelectionFallsBackWhenFixedProviderIsNotCollected(t
 	if len(got) != 1 || got[0].Frame.Provider != "codex" {
 		t.Fatalf("pinned provider back=%+v want codex only", got)
 	}
-	if state.providerDisplayFallback || state.hasLastGood {
-		t.Fatalf("fallback=%v hasLastGood=%v want fallback ended and claude frame cleared", state.providerDisplayFallback, state.hasLastGood)
+	if state.providerDisplayFallback != "" || state.hasLastGood {
+		t.Fatalf("fallback=%q hasLastGood=%v want fallback ended and claude frame cleared", state.providerDisplayFallback, state.hasLastGood)
+	}
+}
+
+func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {
+	prepareFastTestEnv(t)
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude", Session: 26},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	codexDeps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, codexDeps)
+	if state.providerDisplayFallback == "" {
+		t.Fatalf("fallback not entered for the disabled Codex selection")
+	}
+
+	// The customer now pins Manual to Cursor. Before any fetch succeeds, the
+	// Claude frame from the Codex fallback must not be offered as last-good.
+	cursorDeps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"cursor"},
+	})
+	cursorDeps.logf = func(string, ...any) {}
+	invalidateLastGoodOutsideProviderDisplay(state, cursorDeps)
+	if state.hasLastGood || state.providerDisplayFallback != "" {
+		t.Fatalf("hasLastGood=%v fallback=%q want the old fallback frame cleared for the new Manual choice", state.hasLastGood, state.providerDisplayFallback)
 	}
 }
 

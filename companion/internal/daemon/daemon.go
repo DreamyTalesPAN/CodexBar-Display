@@ -263,10 +263,11 @@ type runtimeState struct {
 	lastActivity           string
 	lastActivityCause      string
 	deviceTarget           string
-	// providerDisplayFallback is true while a Manual selection names no
-	// provider that CodexBar still collects, so the runtime shows the
-	// remaining providers instead of a blank screen.
-	providerDisplayFallback bool
+	// providerDisplayFallback names the Manual selection that currently names
+	// no provider CodexBar still collects, so the runtime shows the remaining
+	// providers instead of a blank screen. Tied to that selection: a later
+	// Manual choice must not inherit the fallback frame.
+	providerDisplayFallback string
 }
 
 type cycleResult struct {
@@ -1271,6 +1272,7 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			allowed[providerID] = struct{}{}
 		}
 	}
+	selectionKey := providerDisplaySelectionKey(cfg.ProviderDisplay.ProviderIDs)
 	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
 	for _, provider := range providers {
 		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
@@ -1282,8 +1284,8 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 	// other providers have usage, so fall back to them like Automatic until
 	// the pinned provider is collected again.
 	if len(filtered) == 0 && len(providers) > 0 {
-		if state != nil && !state.providerDisplayFallback {
-			state.providerDisplayFallback = true
+		if state != nil && state.providerDisplayFallback != selectionKey {
+			state.providerDisplayFallback = selectionKey
 			if deps.logf != nil {
 				deps.logf("runtime event=provider-display-fallback reason=fixed-provider-not-collected\n")
 			}
@@ -1291,7 +1293,7 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 		return preferAvailableProviders(providers)
 	}
 	if state != nil && len(filtered) > 0 {
-		state.providerDisplayFallback = false
+		state.providerDisplayFallback = ""
 	}
 	if state != nil && state.hasLastGood {
 		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
@@ -1307,6 +1309,19 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 		}
 	}
 	return filtered
+}
+
+func providerDisplaySelectionKey(providerIDs []string) string {
+	keys := make([]string, 0, len(providerIDs))
+	for _, providerID := range providerIDs {
+		if key := normalizeProviderKey(providerID); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	return "fixed:" + strings.Join(keys, ",")
 }
 
 func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
@@ -1913,7 +1928,7 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 }
 
 func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
-	if state == nil || !state.hasLastGood || state.providerDisplayFallback {
+	if state == nil || !state.hasLastGood {
 		return
 	}
 	cfg, ok := loadRuntimeConfig(deps)
@@ -1923,6 +1938,11 @@ func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeD
 	if cfg.ProviderDisplay.Mode == "automatic" {
 		return
 	}
+	if state.providerDisplayFallback != "" &&
+		state.providerDisplayFallback == providerDisplaySelectionKey(cfg.ProviderDisplay.ProviderIDs) {
+		return
+	}
+	state.providerDisplayFallback = ""
 	provider := normalizeProviderKey(state.lastGood.Provider)
 	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
 		if normalizeProviderKey(providerID) == provider {

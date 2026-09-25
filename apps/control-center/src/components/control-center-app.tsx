@@ -3342,7 +3342,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return Promise.resolve(false);
       }
       providerDisplayRevisionRef.current += 1;
-      setProviderDisplayNotice(null);
       const write = async () => {
         const previous = providerDisplayRef.current;
         // Derived inside the queue, from what the writes ahead of it left
@@ -3353,6 +3352,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!selection) {
           return true;
         }
+        // Only a written change retires the explanation: a provider toggle
+        // that leaves the display choice as it is keeps it on screen.
+        setProviderDisplayNotice(null);
         const optimistic = { ...selection, configured: true, valid: true };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;

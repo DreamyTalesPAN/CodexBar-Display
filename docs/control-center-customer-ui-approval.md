@@ -4547,3 +4547,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Marcus reported that after pinning Manual to Codex and switching Codex off in Settings, the Manual preview read "No usage yet", no provider was checked, and VibeTV showed nothing although Claude had usage. Codex proposed keeping the pinned provider while it is on, switching the selection to Automatic when it is turned off, and saying so with a short hint. Marcus answered "ok".
 - Approved customer-visible result: While the Manual provider stays on, nothing changes. When the customer turns it off in Settings, Display mode switches to Automatic over the providers that are still on, and the Display mode section shows "<Provider> is off, so VibeTV now switches automatically." until the display choice changes again. VibeTV itself keeps showing the remaining providers instead of going blank, also when the provider is turned off outside this app. No other control, copy, or layout changes.
 - Scope: `control-center-types.ts`, `control-center-app.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, the daemon provider-display fallback in `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+### 2026-09-25 — Review follow-up: the hint stays through unrelated provider toggles
+
+- User approval: Covered by Marcus's "ok" to the entry above; the review of PR #477 found that toggling another provider cleared the hint although the display choice did not change, which contradicts the approved result.
+- Approved customer-visible result: Unchanged from the entry above. The hint now disappears only when a display choice is actually saved, so turning another provider on or off without changing the display mode leaves it visible.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.
