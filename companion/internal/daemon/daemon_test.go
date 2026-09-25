@@ -6470,6 +6470,79 @@ func providerDisplayTestDeps(display runtimeconfig.ProviderDisplayConfig) runtim
 	}
 }
 
+func TestApplyProviderDisplaySelectionFallsBackWhenFixedProviderIsNotCollected(t *testing.T) {
+	// Manual was pinned to Codex, then Codex was turned off in CodexBar: the
+	// collector no longer returns it at all. The device must keep showing the
+	// remaining provider instead of going blank.
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude", Session: 26},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps)
+	if len(got) != 1 || got[0].Frame.Provider != "claude" {
+		t.Fatalf("fixed selection without its provider=%+v want fallback to claude", got)
+	}
+	if !state.providerDisplayFallback || !state.hasLastGood {
+		t.Fatalf("fallback=%v hasLastGood=%v want fallback kept with last-good frame", state.providerDisplayFallback, state.hasLastGood)
+	}
+
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
+	if !state.hasLastGood {
+		t.Fatalf("fallback frame was cleared as outside the provider display")
+	}
+
+	codex := testParsedFrame("codex", 10, 20, 3600)
+	got = applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude}, deps)
+	if len(got) != 1 || got[0].Frame.Provider != "codex" {
+		t.Fatalf("pinned provider back=%+v want codex only", got)
+	}
+	if state.providerDisplayFallback || state.hasLastGood {
+		t.Fatalf("fallback=%v hasLastGood=%v want fallback ended and claude frame cleared", state.providerDisplayFallback, state.hasLastGood)
+	}
+}
+
+func TestRunCycleSendsRemainingProviderWhenFixedProviderIsDisabled(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
+	cfg := runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	}}
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+		now:         func() time.Time { return now },
+		homeDir:     func() (string, error) { return "/test-home", nil },
+		loadConfig:  func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
+		},
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("cycle with disabled Manual provider: %v", err)
+	}
+	if len(sentLine) == 0 {
+		t.Fatalf("no frame sent")
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error != "" || frame.Provider != "claude" || frame.Session != 26 {
+		t.Fatalf("sent frame=%+v want claude usage instead of a blank no-providers frame", frame)
+	}
+}
+
 type staticDashboardServe struct {
 	info codexbar.DashboardServeInfo
 }

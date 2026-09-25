@@ -637,8 +637,20 @@ describe("automaticPoolForEnabledProviders", () => {
     expect(
       automaticPoolForEnabledProviders(
         { ...automatic, mode: "fixed", providerIds: ["codex"] },
-        ["claude"],
+        ["codex", "claude"],
       ),
+    ).toBeNull();
+  });
+
+  it("switches Manual to Automatic when its provider is turned off", () => {
+    const manual = { ...automatic, mode: "fixed" as const, providerIds: ["codex"] };
+    expect(automaticPoolForEnabledProviders(manual, ["claude"])).toEqual({
+      mode: "automatic",
+      providerIds: ["claude"],
+    });
+    expect(automaticPoolForEnabledProviders(manual, [])).toBeNull();
+    expect(
+      automaticPoolForEnabledProviders({ ...manual, configured: false }, ["claude"]),
     ).toBeNull();
   });
 });

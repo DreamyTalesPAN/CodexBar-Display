@@ -263,6 +263,10 @@ type runtimeState struct {
 	lastActivity           string
 	lastActivityCause      string
 	deviceTarget           string
+	// providerDisplayFallback is true while a Manual selection names no
+	// provider that CodexBar still collects, so the runtime shows the
+	// remaining providers instead of a blank screen.
+	providerDisplayFallback bool
 }
 
 type cycleResult struct {
@@ -1267,6 +1271,28 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			allowed[providerID] = struct{}{}
 		}
 	}
+	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
+			filtered = append(filtered, provider)
+		}
+	}
+	// A Manual provider that was turned off in CodexBar is no longer
+	// collected at all. Filtering by it would leave the device blank although
+	// other providers have usage, so fall back to them like Automatic until
+	// the pinned provider is collected again.
+	if len(filtered) == 0 && len(providers) > 0 {
+		if state != nil && !state.providerDisplayFallback {
+			state.providerDisplayFallback = true
+			if deps.logf != nil {
+				deps.logf("runtime event=provider-display-fallback reason=fixed-provider-not-collected\n")
+			}
+		}
+		return preferAvailableProviders(providers)
+	}
+	if state != nil && len(filtered) > 0 {
+		state.providerDisplayFallback = false
+	}
 	if state != nil && state.hasLastGood {
 		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
 			state.lastGood = protocol.Frame{}
@@ -1278,12 +1304,6 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			if state.selector != nil {
 				state.selector.SetCurrentProvider("")
 			}
-		}
-	}
-	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
-	for _, provider := range providers {
-		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
-			filtered = append(filtered, provider)
 		}
 	}
 	return filtered
@@ -1893,7 +1913,7 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 }
 
 func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
-	if state == nil || !state.hasLastGood {
+	if state == nil || !state.hasLastGood || state.providerDisplayFallback {
 		return
 	}
 	cfg, ok := loadRuntimeConfig(deps)

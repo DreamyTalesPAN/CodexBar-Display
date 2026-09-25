@@ -458,6 +458,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
   const [providerDisplayError, setProviderDisplayError] =
     useState<ApiError | null>(null);
+  // Says why the display mode changed without the customer choosing it: the
+  // provider Manual was pinned to has been switched off.
+  const [providerDisplayNotice, setProviderDisplayNotice] = useState<
+    string | null
+  >(null);
   const [providerSelectionSetup, setProviderSelectionSetup] =
     useState<ProviderSelectionSetup | null>(null);
   const [pendingProviderCheckIds, setPendingProviderCheckIds] = useState<
@@ -1911,6 +1916,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       providerDisplayRef.current = null;
       setProviderDisplay(null);
       setProviderDisplayError(null);
+      setProviderDisplayNotice(null);
       // The latch that says the wizard has already handed the screen back.
       // Left standing, the rerun reaches its closing step and is treated as
       // finished before it renders, so the customer never sees VibeTV running.
@@ -3336,6 +3342,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return Promise.resolve(false);
       }
       providerDisplayRevisionRef.current += 1;
+      setProviderDisplayNotice(null);
       const write = async () => {
         const previous = providerDisplayRef.current;
         // Derived inside the queue, from what the writes ahead of it left
@@ -3422,11 +3429,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   /**
    * Keeps the Automatic pool equal to the set of switched-on providers.
    *
-   * Only for Automatic: a fixed selection names one provider on purpose, and
-   * widening it would undo the customer's choice. A fixed selection whose
-   * provider was just switched off is left alone too -- the companion refuses
-   * it, and refusing is what hands the customer back to the display step where
-   * they can pick another one.
+   * A fixed selection names one provider on purpose and stays as it is, until
+   * that provider is switched off: then VibeTV would be pinned to a provider
+   * that reports nothing, so the selection becomes Automatic over the
+   * providers still on, and the customer is told why.
    */
   const syncAutomaticProviderPool = useCallback(
     async (item: PreferenceDescriptor) => {
@@ -3441,11 +3447,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               preference.providerId && preference.value === true,
           )
           .map((preference) => preference.providerId as string);
+        const switched: { fromLabel: string | null } = { fromLabel: null };
         const updated = await updateProviderDisplay(
-          (current) =>
-            automaticPoolForEnabledProviders(current, enabledProviderIds),
+          (current) => {
+            const next = automaticPoolForEnabledProviders(
+              current,
+              enabledProviderIds,
+            );
+            if (next && current?.mode !== "automatic") {
+              const pinnedId = current?.providerIds[0];
+              switched.fromLabel =
+                (providerPreferencesRef.current || []).find(
+                  (preference) => preference.providerId === pinnedId,
+                )?.label || "Your provider";
+            }
+            return next;
+          },
           providerId,
         );
+        if (updated === true && switched.fromLabel) {
+          setProviderDisplayNotice(
+            `${switched.fromLabel} is off, so VibeTV now switches automatically.`,
+          );
+        }
         if (
           updated !== false &&
           providerPoolReconcileRetryRef.current === reconcile
@@ -4200,6 +4224,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
     display: providerDisplay,
     displayError: providerDisplayError,
+    displayNotice: providerDisplayNotice,
     displayPendingProviderId: pendingProviderDisplayId,
     items: providerPreferences,
     preferencesError: providerPreferencesError,
