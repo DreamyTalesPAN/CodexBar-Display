@@ -366,4 +366,21 @@ describe("SettingsScreen standby controls", () => {
 
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("says why Display mode switched to Automatic", () => {
+    const notice = "Codex is off, so VibeTV now switches automatically.";
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      display: { mode: "automatic", providerIds: ["claude"], configured: true, valid: true },
+      displayNotice: notice,
+      items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
+    });
+    const displaySection = html.slice(
+      html.indexOf(">Display mode</h2>"),
+      html.indexOf(">Screensaver</h2>"),
+    );
+
+    expect(displaySection).toContain(`role="status">${notice}</p>`);
+    expect(render(standbyDevice)).not.toContain("now switches automatically");
+  });
 });

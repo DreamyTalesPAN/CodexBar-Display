@@ -458,6 +458,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
   const [providerDisplayError, setProviderDisplayError] =
     useState<ApiError | null>(null);
+  // Says why the display mode changed without the customer choosing it: the
+  // provider Manual was pinned to has been switched off.
+  const [providerDisplayNotice, setProviderDisplayNotice] = useState<
+    { providerId: string; message: string } | null
+  >(null);
   const [providerSelectionSetup, setProviderSelectionSetup] =
     useState<ProviderSelectionSetup | null>(null);
   const [pendingProviderCheckIds, setPendingProviderCheckIds] = useState<
@@ -1911,6 +1916,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       providerDisplayRef.current = null;
       setProviderDisplay(null);
       setProviderDisplayError(null);
+      setProviderDisplayNotice(null);
       // The latch that says the wizard has already handed the screen back.
       // Left standing, the rerun reaches its closing step and is treated as
       // finished before it renders, so the customer never sees VibeTV running.
@@ -3346,6 +3352,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!selection) {
           return true;
         }
+        // Only a saved change of mode retires the explanation. Turning another
+        // provider on or off only widens or narrows the Automatic pool, and
+        // the reason VibeTV switches automatically is still the same.
+        const retiresNotice =
+          selection.mode !== "automatic" || previous?.mode !== "automatic";
         const optimistic = { ...selection, configured: true, valid: true };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;
@@ -3360,6 +3371,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerDisplayRef.current = payload.selection;
           setProviderDisplay(payload.selection);
           setProviderDisplayError(null);
+          if (retiresNotice) {
+            setProviderDisplayNotice(null);
+          }
           void refreshUsage({ quiet: true });
           return true;
         } catch (error) {
@@ -3422,11 +3436,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   /**
    * Keeps the Automatic pool equal to the set of switched-on providers.
    *
-   * Only for Automatic: a fixed selection names one provider on purpose, and
-   * widening it would undo the customer's choice. A fixed selection whose
-   * provider was just switched off is left alone too -- the companion refuses
-   * it, and refusing is what hands the customer back to the display step where
-   * they can pick another one.
+   * A fixed selection names one provider on purpose and stays as it is, until
+   * that provider is switched off: then VibeTV would be pinned to a provider
+   * that reports nothing, so the selection becomes Automatic over the
+   * providers still on, and the customer is told why.
    */
   const syncAutomaticProviderPool = useCallback(
     async (item: PreferenceDescriptor) => {
@@ -3435,17 +3448,49 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return;
       }
       const reconcile = async (): Promise<boolean> => {
-        const enabledProviderIds = (providerPreferencesRef.current || [])
-          .filter(
-            (preference) =>
-              preference.providerId && preference.value === true,
-          )
-          .map((preference) => preference.providerId as string);
+        const preferences = providerPreferencesRef.current || [];
+        const idsWhere = (value: boolean) =>
+          preferences
+            .filter(
+              (preference) =>
+                preference.providerId && preference.value === value,
+            )
+            .map((preference) => preference.providerId as string);
+        const enabledProviderIds = idsWhere(true);
+        const disabledProviderIds = idsWhere(false);
+        // The hint names a provider as off; once it is on again the hint is
+        // done, and switching it off later must not bring the old one back.
+        setProviderDisplayNotice((notice) =>
+          notice && enabledProviderIds.includes(notice.providerId)
+            ? null
+            : notice,
+        );
+        const switched = { providerId: null as string | null, label: "" };
         const updated = await updateProviderDisplay(
-          (current) =>
-            automaticPoolForEnabledProviders(current, enabledProviderIds),
+          (current) => {
+            const next = automaticPoolForEnabledProviders(
+              current,
+              enabledProviderIds,
+              disabledProviderIds,
+            );
+            if (next && current?.mode !== "automatic") {
+              const pinnedId = current?.providerIds[0] ?? "";
+              switched.providerId = pinnedId;
+              switched.label =
+                (providerPreferencesRef.current || []).find(
+                  (preference) => preference.providerId === pinnedId,
+                )?.label || "Your provider";
+            }
+            return next;
+          },
           providerId,
         );
+        if (updated === true && switched.providerId !== null) {
+          setProviderDisplayNotice({
+            providerId: switched.providerId,
+            message: `${switched.label} is off, so VibeTV now switches automatically.`,
+          });
+        }
         if (
           updated !== false &&
           providerPoolReconcileRetryRef.current === reconcile
@@ -4200,6 +4245,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
     display: providerDisplay,
     displayError: providerDisplayError,
+    // The hint names a provider as off, so it goes once that one is on again.
+    displayNotice:
+      providerDisplayNotice &&
+      !(providerPreferences || []).some(
+        (preference) =>
+          preference.providerId === providerDisplayNotice.providerId &&
+          preference.value === true,
+      )
+        ? providerDisplayNotice.message
+        : null,
     displayPendingProviderId: pendingProviderDisplayId,
     items: providerPreferences,
     preferencesError: providerPreferencesError,

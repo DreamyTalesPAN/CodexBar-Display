@@ -797,26 +797,36 @@ export function deviceCompletedThemeSetup(
  *
  * Maintains an existing selection; never creates one. Writing a pool before the
  * customer has made the choice marks the display configured and makes setup
- * skip the very step that asks for it. Only for Automatic: a fixed selection
- * names one provider on purpose, and widening it would undo the customer's
- * choice; a fixed selection whose provider was just switched off is left alone
- * too -- the companion refuses it, and refusing is what hands the customer
- * back to the display step where they can pick another one. An empty pool is a
- * selection the companion refuses, and switching off the last provider is a
- * real state -- it is what the provider step is for -- so the stored pool is
- * left as it is rather than written as one that cannot be stored.
+ * skip the very step that asks for it. A fixed selection names one provider on
+ * purpose, and widening it would undo the customer's choice -- until that
+ * provider is switched off. Kept as it is, the selection pins VibeTV to a
+ * provider that no longer reports anything, and the device went blank while
+ * other providers had usage. It then becomes Automatic over the providers that
+ * are still on. Only a provider listed as off counts: one missing from the
+ * inventory is unknown, and that Manual choice is left for the customer to
+ * resolve. An empty pool is a selection the companion refuses, and
+ * switching off the last provider is a real state -- it is what the provider
+ * step is for -- so the stored pool is left as it is rather than written as
+ * one that cannot be stored.
  */
 export function automaticPoolForEnabledProviders(
   display: ProviderDisplaySelection | null,
   enabledProviderIds: readonly string[],
+  disabledProviderIds: readonly string[] = [],
 ): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
-  if (display?.configured !== true || display.mode !== "automatic") {
+  if (display?.configured !== true) {
     return null;
   }
-  const currentPool = display.providerIds || [];
   const providerIds = [...new Set(enabledProviderIds)];
   if (providerIds.length === 0) {
     return null;
+  }
+  const currentPool = display.providerIds || [];
+  if (display.mode !== "automatic") {
+    return currentPool.length > 0 &&
+      currentPool.every((id) => disabledProviderIds.includes(id))
+      ? { mode: "automatic", providerIds }
+      : null;
   }
   if (
     providerIds.length === currentPool.length &&

@@ -255,6 +255,11 @@ export function SettingsScreen({
       <ItemSeparator className="my-0" />
 
       <SettingsSection title="Display mode">
+        {providerPicker.displayNotice ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            {providerPicker.displayNotice}
+          </p>
+        ) : null}
         <DisplayModeChoice
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}

@@ -263,6 +263,11 @@ type runtimeState struct {
 	lastActivity           string
 	lastActivityCause      string
 	deviceTarget           string
+	// providerDisplayFallback names the Manual selection that currently names
+	// no provider CodexBar still collects, so the runtime shows the remaining
+	// providers instead of a blank screen. Tied to that selection: a later
+	// Manual choice must not inherit the fallback frame.
+	providerDisplayFallback string
 }
 
 type cycleResult struct {
@@ -1194,13 +1199,15 @@ func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
 	return latest.Compare(current) > 0
 }
 
-func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
+// providerDisabled reports whether authoritative inventory confirms a provider
+// is switched off. Nil means no inventory is known, which never confirms it.
+func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, providerDisabled func(string) bool, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
 	result := cycleResult{
 		selectionReason: emptyReason,
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
-	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerDisabled)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -1248,7 +1255,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	return result
 }
 
-func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) []codexbar.ParsedFrame {
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerDisabled func(string) bool) []codexbar.ParsedFrame {
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok || cfg.ProviderDisplay == nil {
 		return preferAvailableProviders(providers)
@@ -1267,6 +1274,33 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			allowed[providerID] = struct{}{}
 		}
 	}
+	selectionKey := providerDisplaySelectionKey(cfg.ProviderDisplay.ProviderIDs)
+	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
+			filtered = append(filtered, provider)
+		}
+	}
+	// A Manual provider that was turned off in CodexBar is no longer
+	// collected at all. Filtering by it would leave the device blank although
+	// other providers have usage, so fall back to them like Automatic until
+	// the pinned provider is switched on again. Only authoritative inventory
+	// may say it is off: CodexBar can omit an enabled provider for a cycle, and
+	// that must stay the pinned provider's unavailable state.
+	if len(filtered) == 0 && len(providers) > 0 && fixedSelectionDisabled(allowed, providerDisabled) {
+		if state != nil && state.providerDisplayFallback != selectionKey {
+			state.providerDisplayFallback = selectionKey
+			if deps.logf != nil {
+				deps.logf("runtime event=provider-display-fallback reason=fixed-provider-not-collected\n")
+			}
+		}
+		return preferAvailableProviders(providers)
+	}
+	// Not confirmed off (any more): the pinned provider's own state applies,
+	// including a temporary omission, which stays visibly unavailable.
+	if state != nil {
+		state.providerDisplayFallback = ""
+	}
 	if state != nil && state.hasLastGood {
 		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
 			state.lastGood = protocol.Frame{}
@@ -1280,13 +1314,32 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			}
 		}
 	}
-	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
-	for _, provider := range providers {
-		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
-			filtered = append(filtered, provider)
+	return filtered
+}
+
+func providerDisplaySelectionKey(providerIDs []string) string {
+	keys := make([]string, 0, len(providerIDs))
+	for _, providerID := range providerIDs {
+		if key := normalizeProviderKey(providerID); key != "" {
+			keys = append(keys, key)
 		}
 	}
-	return filtered
+	if len(keys) == 0 {
+		return ""
+	}
+	return "fixed:" + strings.Join(keys, ",")
+}
+
+func fixedSelectionDisabled(allowed map[string]struct{}, providerDisabled func(string) bool) bool {
+	if providerDisabled == nil || len(allowed) == 0 {
+		return false
+	}
+	for providerID := range allowed {
+		if !providerDisabled(providerID) {
+			return false
+		}
+	}
+	return true
 }
 
 func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
@@ -1796,6 +1849,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			allProviders,
 			deps.now(),
 			deps,
+			nil,
 			"select-provider",
 			"fetch-error",
 			"",
@@ -1824,6 +1878,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		allProviders,
 		now,
 		deps,
+		collector.providerDisabledByCurrentInventory,
 		"select-provider",
 		"collector-empty",
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
@@ -1893,16 +1948,24 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 }
 
 func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
-	if state == nil || !state.hasLastGood {
+	if state == nil {
 		return
 	}
 	cfg, ok := loadRuntimeConfig(deps)
-	if !ok || cfg.ProviderDisplay == nil {
+	if !ok || cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic" {
+		// Leaving Manual ends its fallback: a later Manual choice of the same
+		// provider is a new choice and must not inherit the fallback frame.
+		state.providerDisplayFallback = ""
 		return
 	}
-	if cfg.ProviderDisplay.Mode == "automatic" {
+	if !state.hasLastGood {
 		return
 	}
+	if state.providerDisplayFallback != "" &&
+		state.providerDisplayFallback == providerDisplaySelectionKey(cfg.ProviderDisplay.ProviderIDs) {
+		return
+	}
+	state.providerDisplayFallback = ""
 	provider := normalizeProviderKey(state.lastGood.Provider)
 	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
 		if normalizeProviderKey(providerID) == provider {
