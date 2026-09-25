@@ -461,7 +461,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Says why the display mode changed without the customer choosing it: the
   // provider Manual was pinned to has been switched off.
   const [providerDisplayNotice, setProviderDisplayNotice] = useState<
-    string | null
+    { providerId: string; message: string } | null
   >(null);
   const [providerSelectionSetup, setProviderSelectionSetup] =
     useState<ProviderSelectionSetup | null>(null);
@@ -3352,9 +3352,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!selection) {
           return true;
         }
-        // Only a written change retires the explanation: a provider toggle
-        // that leaves the display choice as it is keeps it on screen.
-        setProviderDisplayNotice(null);
+        // Only a change of mode retires the explanation. Turning another
+        // provider on or off only widens or narrows the Automatic pool, and
+        // the reason VibeTV switches automatically is still the same.
+        if (selection.mode !== "automatic" || previous?.mode !== "automatic") {
+          setProviderDisplayNotice(null);
+        }
         const optimistic = { ...selection, configured: true, valid: true };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;
@@ -3449,7 +3452,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               preference.providerId && preference.value === true,
           )
           .map((preference) => preference.providerId as string);
-        const switched: { fromLabel: string | null } = { fromLabel: null };
+        const switched = { providerId: null as string | null, label: "" };
         const updated = await updateProviderDisplay(
           (current) => {
             const next = automaticPoolForEnabledProviders(
@@ -3457,8 +3460,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               enabledProviderIds,
             );
             if (next && current?.mode !== "automatic") {
-              const pinnedId = current?.providerIds[0];
-              switched.fromLabel =
+              const pinnedId = current?.providerIds[0] ?? "";
+              switched.providerId = pinnedId;
+              switched.label =
                 (providerPreferencesRef.current || []).find(
                   (preference) => preference.providerId === pinnedId,
                 )?.label || "Your provider";
@@ -3467,10 +3471,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           },
           providerId,
         );
-        if (updated === true && switched.fromLabel) {
-          setProviderDisplayNotice(
-            `${switched.fromLabel} is off, so VibeTV now switches automatically.`,
-          );
+        if (updated === true && switched.providerId !== null) {
+          setProviderDisplayNotice({
+            providerId: switched.providerId,
+            message: `${switched.label} is off, so VibeTV now switches automatically.`,
+          });
         }
         if (
           updated !== false &&
@@ -4226,7 +4231,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
     display: providerDisplay,
     displayError: providerDisplayError,
-    displayNotice: providerDisplayNotice,
+    // The hint names a provider as off, so it goes once that one is on again.
+    displayNotice:
+      providerDisplayNotice &&
+      !(providerPreferences || []).some(
+        (preference) =>
+          preference.providerId === providerDisplayNotice.providerId &&
+          preference.value === true,
+      )
+        ? providerDisplayNotice.message
+        : null,
     displayPendingProviderId: pendingProviderDisplayId,
     items: providerPreferences,
     preferencesError: providerPreferencesError,
