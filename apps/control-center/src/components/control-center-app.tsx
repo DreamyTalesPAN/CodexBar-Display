@@ -3448,18 +3448,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return;
       }
       const reconcile = async (): Promise<boolean> => {
-        const enabledProviderIds = (providerPreferencesRef.current || [])
-          .filter(
-            (preference) =>
-              preference.providerId && preference.value === true,
-          )
-          .map((preference) => preference.providerId as string);
+        const preferences = providerPreferencesRef.current || [];
+        const idsWhere = (value: boolean) =>
+          preferences
+            .filter(
+              (preference) =>
+                preference.providerId && preference.value === value,
+            )
+            .map((preference) => preference.providerId as string);
+        const enabledProviderIds = idsWhere(true);
+        const disabledProviderIds = idsWhere(false);
         const switched = { providerId: null as string | null, label: "" };
         const updated = await updateProviderDisplay(
           (current) => {
             const next = automaticPoolForEnabledProviders(
               current,
               enabledProviderIds,
+              disabledProviderIds,
             );
             if (next && current?.mode !== "automatic") {
               const pinnedId = current?.providerIds[0] ?? "";

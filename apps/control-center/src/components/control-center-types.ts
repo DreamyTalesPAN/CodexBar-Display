@@ -802,7 +802,9 @@ export function deviceCompletedThemeSetup(
  * provider is switched off. Kept as it is, the selection pins VibeTV to a
  * provider that no longer reports anything, and the device went blank while
  * other providers had usage. It then becomes Automatic over the providers that
- * are still on. An empty pool is a selection the companion refuses, and
+ * are still on. Only a provider listed as off counts: one missing from the
+ * inventory is unknown, and that Manual choice is left for the customer to
+ * resolve. An empty pool is a selection the companion refuses, and
  * switching off the last provider is a real state -- it is what the provider
  * step is for -- so the stored pool is left as it is rather than written as
  * one that cannot be stored.
@@ -810,6 +812,7 @@ export function deviceCompletedThemeSetup(
 export function automaticPoolForEnabledProviders(
   display: ProviderDisplaySelection | null,
   enabledProviderIds: readonly string[],
+  disabledProviderIds: readonly string[] = [],
 ): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
   if (display?.configured !== true) {
     return null;
@@ -820,9 +823,10 @@ export function automaticPoolForEnabledProviders(
   }
   const currentPool = display.providerIds || [];
   if (display.mode !== "automatic") {
-    return currentPool.some((id) => providerIds.includes(id))
-      ? null
-      : { mode: "automatic", providerIds };
+    return currentPool.length > 0 &&
+      currentPool.every((id) => disabledProviderIds.includes(id))
+      ? { mode: "automatic", providerIds }
+      : null;
   }
   if (
     providerIds.length === currentPool.length &&

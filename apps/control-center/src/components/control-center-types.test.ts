@@ -644,13 +644,18 @@ describe("automaticPoolForEnabledProviders", () => {
 
   it("switches Manual to Automatic when its provider is turned off", () => {
     const manual = { ...automatic, mode: "fixed" as const, providerIds: ["codex"] };
-    expect(automaticPoolForEnabledProviders(manual, ["claude"])).toEqual({
+    expect(automaticPoolForEnabledProviders(manual, ["claude"], ["codex"])).toEqual({
       mode: "automatic",
       providerIds: ["claude"],
     });
-    expect(automaticPoolForEnabledProviders(manual, [])).toBeNull();
+    expect(automaticPoolForEnabledProviders(manual, [], ["codex"])).toBeNull();
     expect(
-      automaticPoolForEnabledProviders({ ...manual, configured: false }, ["claude"]),
+      automaticPoolForEnabledProviders({ ...manual, configured: false }, ["claude"], ["codex"]),
     ).toBeNull();
+  });
+
+  it("leaves a Manual provider that is missing from the inventory alone", () => {
+    const manual = { ...automatic, mode: "fixed" as const, providerIds: ["retired"] };
+    expect(automaticPoolForEnabledProviders(manual, ["claude"], ["codex"])).toBeNull();
   });
 });

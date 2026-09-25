@@ -6574,6 +6574,13 @@ func TestProviderDisabledByCurrentInventoryIgnoresAStaleInventory(t *testing.T) 
 	if collector.providerDisabledByCurrentInventory("codex") {
 		t.Fatalf("stale inventory still reports codex off after a failed inventory read")
 	}
+
+	// A provider missing from the inventory, e.g. retired, is unknown, not off.
+	inventoryOK = true
+	collector.collectOnce(context.Background())
+	if collector.providerDisabledByCurrentInventory("retired") {
+		t.Fatalf("a provider missing from the inventory was treated as switched off")
+	}
 }
 
 func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {

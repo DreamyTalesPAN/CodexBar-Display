@@ -70,6 +70,9 @@ type providerCollector struct {
 	lastPersistedAt  time.Time
 	inventoryKnown   bool
 	inventoryEnabled map[string]struct{}
+	// inventoryDisabled holds providers the inventory lists as switched off.
+	// A provider missing from the inventory is unknown, not off.
+	inventoryDisabled map[string]struct{}
 	// inventoryCurrent is true when the latest collection read the inventory
 	// successfully. An older map may say a provider is off after it was
 	// switched on again.
@@ -496,6 +499,12 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 	enabledOrder, enabled := enabledProviderInventory(settings)
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
+	c.inventoryDisabled = make(map[string]struct{}, len(settings))
+	for _, setting := range settings {
+		if key := normalizeProviderKey(setting.ID); key != "" && !setting.Enabled {
+			c.inventoryDisabled[key] = struct{}{}
+		}
+	}
 	updated := !equalProviderOrder(c.order, enabledOrder)
 	c.order = enabledOrder
 	for key := range c.providers {
@@ -581,19 +590,19 @@ func (c *providerCollector) providerEnabledByInventory(provider string) (bool, b
 }
 
 // providerDisabledByCurrentInventory reports whether the latest collection's
-// own inventory read says the provider is switched off.
+// own inventory read lists the provider as switched off.
 func (c *providerCollector) providerDisabledByCurrentInventory(provider string) bool {
 	if c == nil {
 		return false
 	}
+	key := normalizeProviderKey(provider)
 	c.mu.RLock()
-	current := c.inventoryCurrent
-	c.mu.RUnlock()
-	if !current {
+	defer c.mu.RUnlock()
+	if !c.inventoryCurrent || key == "" {
 		return false
 	}
-	enabled, known := c.providerEnabledByInventory(provider)
-	return known && !enabled
+	_, disabled := c.inventoryDisabled[key]
+	return disabled
 }
 
 func equalProviderOrder(left, right []string) bool {
