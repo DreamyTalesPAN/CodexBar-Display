@@ -4560,3 +4560,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by Marcus's "ok" to the first entry of this date, which approved switching when the Manual provider is turned off. The review of PR #477 found that a Manual provider missing from the provider list entirely was treated as turned off too.
 - Approved customer-visible result: Only a Manual provider that the provider list shows as switched off triggers the switch to Automatic and the hint. A Manual provider that no longer appears in the list at all stays selected exactly as before this pull request.
 - Scope: `control-center-types.ts`, `control-center-app.tsx`, the matching daemon inventory check, their tests, and this approval record. Pull-request branch only.
+
+### 2026-09-25 — Review follow-up: an old hint does not come back
+
+- User approval: Covered by Marcus's "ok" to the first entry of this date. The review of PR #477 found that a hint hidden because its provider was switched on again reappeared when that provider was switched off later, although the display mode had not changed.
+- Approved customer-visible result: Switching the named provider on again ends the hint for good. Switching it off later while Automatic is already active shows no hint, because nothing switched.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.

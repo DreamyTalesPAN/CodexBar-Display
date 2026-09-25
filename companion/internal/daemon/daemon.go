@@ -1296,7 +1296,9 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 		}
 		return preferAvailableProviders(providers)
 	}
-	if state != nil && len(filtered) > 0 {
+	// Not confirmed off (any more): the pinned provider's own state applies,
+	// including a temporary omission, which stays visibly unavailable.
+	if state != nil {
 		state.providerDisplayFallback = ""
 	}
 	if state != nil && state.hasLastGood {

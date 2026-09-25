@@ -3458,6 +3458,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             .map((preference) => preference.providerId as string);
         const enabledProviderIds = idsWhere(true);
         const disabledProviderIds = idsWhere(false);
+        // The hint names a provider as off; once it is on again the hint is
+        // done, and switching it off later must not bring the old one back.
+        setProviderDisplayNotice((notice) =>
+          notice && enabledProviderIds.includes(notice.providerId)
+            ? null
+            : notice,
+        );
         const switched = { providerId: null as string | null, label: "" };
         const updated = await updateProviderDisplay(
           (current) => {

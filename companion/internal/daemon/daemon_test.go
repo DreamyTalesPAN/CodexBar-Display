@@ -6521,7 +6521,7 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderOmittedWhileEnabled(t *t
 		"no inventory":     nil,
 		"codex is enabled": disabledProviders(),
 	} {
-		state := &runtimeState{selector: codexbar.NewProviderSelector()}
+		state := &runtimeState{selector: codexbar.NewProviderSelector(), providerDisplayFallback: "fixed:codex"}
 		got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps, disabled)
 		if len(got) != 0 || state.providerDisplayFallback != "" {
 			t.Fatalf("%s: got=%+v fallback=%q want the pinned provider kept", name, got, state.providerDisplayFallback)
