@@ -256,7 +256,7 @@ export function VibeTV3DPreview({
   return (
     <div
       aria-label="Interactive VibeTV preview. Drag to rotate."
-      className={cn("relative aspect-[21/17] w-full max-w-[520px] cursor-grab touch-none active:cursor-grabbing", className)}
+      className={cn("relative aspect-[63/34] w-full max-w-[780px] cursor-grab touch-none active:cursor-grabbing", className)}
       ref={stageRef}
       role="group"
     >
