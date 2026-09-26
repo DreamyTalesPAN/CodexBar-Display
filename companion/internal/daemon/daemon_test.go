@@ -1688,12 +1688,12 @@ func TestRunWithDepsBootstrapsStickyProviderFromPersistedLastGood(t *testing.T) 
 func TestActivityUsesOnlyEngineEvenWhenQuotaChanges(t *testing.T) {
 	for _, phase := range []string{"working", "thinking", "tool_use", "compacting", "waiting_for_permission", "waiting_for_answer", "waiting_for_review", "done", "error", "stale", "idle", "unavailable"} {
 		state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return agentstatus.Snapshot{Health: "ready", Phase: phase} }}
-		frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, state)
+		frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, state, nil)
 		if frame.Activity != phase {
 			t.Fatalf("got %s want %s", frame.Activity, phase)
 		}
 	}
-	frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, &runtimeState{})
+	frame, _ := applyAgentActivity(protocol.Frame{Activity: "coding"}, &runtimeState{}, nil)
 	if frame.Activity != "unavailable" {
 		t.Fatal("quota inferred activity")
 	}
@@ -7099,4 +7099,43 @@ func TestStaleUsageRequiresValidEnabledAgentPresentation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestManualDisplayScopesAgentActivityToPinnedProvider(t *testing.T) {
+	prepareFastTestEnv(t)
+	snapshot := agentstatus.Snapshot{Health: "ready", Phase: "waiting_for_answer",
+		ProviderPhases: map[string]string{"claude": "waiting_for_answer", "codex": "working"},
+		Sources:        []agentstatus.Source{{ID: "claude-code", Name: "Claude Code", UsageProvider: "claude"}, {ID: "codex", Name: "Codex CLI", UsageProvider: "codex"}},
+		Sessions:       []agentstatus.Session{{ID: "a", Source: "claude-code", Phase: "waiting_for_answer"}, {ID: "b", Source: "codex", Phase: "working"}},
+	}
+	state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot { return snapshot }}
+	cfg := runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}, ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"codex"}}}
+	var sent protocol.Frame
+	deps := runtimeDeps{
+		loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		sendLine:   func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:       func(string, ...any) {},
+	}.withDefaults()
+	check := func(phase, name string) {
+		t.Helper()
+		result := cycleResult{frame: protocol.Frame{Provider: "codex", Session: 20, Weekly: 40}, usageFresh: true}
+		caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}
+		if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+			t.Fatal(err)
+		}
+		if sent.Provider != "codex" || sent.Activity != phase || sent.AgentName != name {
+			t.Fatalf("mismatched manual frame: %+v", sent)
+		}
+	}
+	check("working", "Codex CLI")
+	snapshot.ProviderPhases["codex"] = "idle"
+	snapshot.Sessions[1].Phase = "idle"
+	check("idle", "Codex CLI")
+	delete(snapshot.ProviderPhases, "codex")
+	check("unavailable", "Agent")
+	snapshot.Health = "stale"
+	check("unavailable", "Agent")
+	snapshot.Health = "ready"
+	cfg.ProviderDisplay.Mode = "automatic"
+	check("waiting_for_answer", "Claude Code")
 }

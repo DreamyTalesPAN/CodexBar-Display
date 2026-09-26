@@ -4,7 +4,7 @@ import { AgentActivitySettings, type AgentSettingsRequest } from "./agent-activi
 import { UsageModeChoice } from "./setup/setup-usage-mode-screen";
 import type { UsageDisplayMode } from "./setup/setup-display-previews";
 import { CircleArrowRight, Wifi } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Item, ItemSeparator } from "@/components/ui/item";
@@ -97,6 +97,15 @@ export function SettingsScreen({
   onSaveStandby,
   onStandbyBrightnessChange,
 }: SettingsScreenProps) {
+  // This card demonstrates Automatic across the enabled providers. It does
+  // not select a device provider or own usage; all readings come from props.
+  const [previewIndex, setPreviewIndex] = useState(0);
+  useEffect(() => {
+    if (automaticPreviews.length < 2) return;
+    const timer = window.setInterval(() => setPreviewIndex((index) =>
+      (index + 1) % automaticPreviews.length), 3000);
+    return () => window.clearInterval(timer);
+  }, [automaticPreviews.length]);
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
@@ -246,7 +255,7 @@ export function SettingsScreen({
         <DisplayModeChoice
           simplePreview
           usageMode={usageMode ?? undefined}
-          automaticPreview={automaticPreviews[0] ?? null}
+          automaticPreview={automaticPreviews[previewIndex % automaticPreviews.length] ?? null}
           manualPreview={
             automaticPreviews.find(
               (preview) =>

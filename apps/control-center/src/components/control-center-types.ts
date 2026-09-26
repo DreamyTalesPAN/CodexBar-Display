@@ -262,6 +262,7 @@ export type DeviceInfo = {
       renderOk?: boolean;
       renderError?: string;
       renderFailures?: number;
+      cbaLastFrameDurationMs?: number;
     };
   };
   standby?: {

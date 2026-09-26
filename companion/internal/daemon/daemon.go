@@ -1390,11 +1390,14 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 
 // The Clawd snapshot is the sole activity owner. Quota deltas and collection
 // timestamps remain usage facts and cannot keep an agent marked as working.
-func applyAgentActivity(frame protocol.Frame, state *runtimeState) (protocol.Frame, string) {
+func applyAgentActivity(frame protocol.Frame, state *runtimeState, display *runtimeconfig.ProviderDisplayConfig) (protocol.Frame, string) {
 	frame.Activity = "unavailable"
 	frame.AgentName = "Agent"
 	if state != nil && state.agentSnapshot != nil {
 		snapshot := state.agentSnapshot()
+		if display != nil && display.Mode == "fixed" {
+			snapshot = snapshot.ForProvider(normalizeProviderKey(frame.Provider))
+		}
 		if snapshot.Health == "ready" && agentstatus.ValidPhase(snapshot.Phase) {
 			frame.Activity = snapshot.Phase
 			frame.AgentName = snapshot.DisplayName()
@@ -1427,8 +1430,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame := result.frame
 	frame := authoritativeFrame.Normalize()
-	frame, result.activityDetail = applyAgentActivity(frame, state)
 	cfg, _ := loadRuntimeConfig(deps)
+	frame, result.activityDetail = applyAgentActivity(frame, state, cfg.ProviderDisplay)
 	settings := cfg.AgentActivitySettings()
 	if !settings.Enabled {
 		frame.Activity = "idle"

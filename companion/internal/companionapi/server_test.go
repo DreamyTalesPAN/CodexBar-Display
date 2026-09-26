@@ -13798,3 +13798,18 @@ func TestDisplayFrameLogPreservesAgentAndMotion(t *testing.T) {
 		t.Fatalf("preview lost acknowledged presentation: %+v", frame)
 	}
 }
+
+func TestDeviceHealthCarriesMeasuredAnimationPacing(t *testing.T) {
+	var health deviceHealth
+	if err := json.Unmarshal([]byte(`{"ok":true,"display":{"themeSpec":{"active":true,"cbaLastFrameDurationMs":417}}}`), &health); err != nil {
+		t.Fatal(err)
+	}
+	device := withDeviceHealth(deviceInfo{}, health)
+	data, err := json.Marshal(device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"cbaLastFrameDurationMs":417`) {
+		t.Fatalf("lost device timing: %s", data)
+	}
+}

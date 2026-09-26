@@ -150,20 +150,26 @@ export function VibeTV3DPreview({
     controls.maxAzimuthAngle = 1.2;
     controls.rotateSpeed = 0.6;
     let touchedAt = 0;
-    const touch = () => { touchedAt = performance.now(); };
-    controls.addEventListener("start", touch);
-    controls.addEventListener("end", touch);
+    let dragging = false;
+    controls.addEventListener("start", () => { dragging = true; });
+    controls.addEventListener("end", () => {
+      dragging = false;
+      touchedAt = performance.now();
+    });
 
     // Like the design: after 2.5 s without dragging, the device sways gently.
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const startedAt = performance.now();
     let frameRequest = 0;
+    let previousAt = startedAt;
     const loop = () => {
       frameRequest = requestAnimationFrame(loop);
       const now = performance.now();
-      if (!still && now - touchedAt > 2500) {
+      const elapsed = Math.min(now - previousAt, 100);
+      previousAt = now;
+      if (!still && !dragging && now - touchedAt > 2500) {
         const sway = Math.sin(((now - startedAt) / 1000) * 0.35) * 0.18;
-        modelPivot.rotation.y += (sway - modelPivot.rotation.y) * 0.02;
+        modelPivot.rotation.y += (sway - modelPivot.rotation.y) * (1 - Math.pow(0.98, elapsed / (1000 / 60)));
         screenPivot.rotation.y = modelPivot.rotation.y;
       }
       controls.update();
@@ -250,7 +256,7 @@ export function VibeTV3DPreview({
   return (
     <div
       aria-label="Interactive VibeTV preview. Drag to rotate."
-      className={cn("relative aspect-[21/17] w-full max-w-[420px] cursor-grab touch-none active:cursor-grabbing", className)}
+      className={cn("relative aspect-[21/17] w-full max-w-[520px] cursor-grab touch-none active:cursor-grabbing", className)}
       ref={stageRef}
       role="group"
     >

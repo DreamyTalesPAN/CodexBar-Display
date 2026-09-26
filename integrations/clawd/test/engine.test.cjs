@@ -203,3 +203,18 @@ test('done duration does not extend an uncompleted session exit',async t=>{
  engine.state.sessions.set('aborted',{agentId:'claude-code',endedAt:now,observation:{event:'sessionend',at:now}});
  now+=10000;assert.equal(engine.snapshot().sessions.length,0);
 });
+
+test('provider phases use the same lifecycle priority without another provider bleeding through',async t=>{
+ const {engine,event,post}=await fixture(t);
+ await event('SessionStart');await event('PreToolUse','one',{tool_name:'AskUserQuestion'});
+ await post({agent_id:'codex',session_id:'codex-one',event:'UserPromptSubmit',state:'working'});
+ let snapshot=engine.snapshot();
+ assert.equal(snapshot.phase,'waiting_for_answer');
+ assert.equal(snapshot.providerPhases.claude,'waiting_for_answer');
+ assert.equal(snapshot.providerPhases.codex,'working');
+ assert.equal(snapshot.providerPhases.gemini,'unavailable');
+ await event('UserPromptSubmit','two');
+ snapshot=engine.snapshot();
+ assert.equal(snapshot.providerPhases.claude,'waiting_for_answer');
+ assert.equal(snapshot.providerPhases.codex,'working');
+});

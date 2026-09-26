@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -46,16 +47,37 @@ type Source struct {
 	ExplicitThinking bool   `json:"explicitThinking"`
 }
 type Snapshot struct {
-	ObservationEpoch uint64    `json:"observationEpoch"`
-	SchemaVersion    int       `json:"schemaVersion"`
-	EngineVersion    string    `json:"engineVersion"`
-	UpstreamRevision string    `json:"upstreamRevision"`
-	Instance         string    `json:"instance"`
-	GeneratedAt      int64     `json:"generatedAt"`
-	Health           string    `json:"health"`
-	Phase            string    `json:"phase"`
-	Sessions         []Session `json:"sessions"`
-	Sources          []Source  `json:"sources"`
+	ObservationEpoch uint64            `json:"observationEpoch"`
+	SchemaVersion    int               `json:"schemaVersion"`
+	EngineVersion    string            `json:"engineVersion"`
+	UpstreamRevision string            `json:"upstreamRevision"`
+	Instance         string            `json:"instance"`
+	GeneratedAt      int64             `json:"generatedAt"`
+	Health           string            `json:"health"`
+	Phase            string            `json:"phase"`
+	ProviderPhases   map[string]string `json:"providerPhases,omitempty"`
+	Sessions         []Session         `json:"sessions"`
+	Sources          []Source          `json:"sources"`
+}
+
+// ForProvider uses the engine's own aggregate for a manually pinned provider.
+// Missing observations remain unavailable, never another provider's activity.
+func (s Snapshot) ForProvider(provider string) Snapshot {
+	s.Phase = s.ProviderPhases[provider]
+	if !ValidPhase(s.Phase) {
+		s.Phase = "unavailable"
+	}
+	var sessions []Session
+	for _, session := range s.Sessions {
+		for _, source := range s.Sources {
+			if source.ID == session.Source && source.UsageProvider == provider {
+				sessions = append(sessions, session)
+				break
+			}
+		}
+	}
+	s.Sessions = sessions
+	return s
 }
 
 // DisplayName labels only sources contributing to the engine's aggregate phase.
@@ -130,6 +152,14 @@ func decode(data []byte, now time.Time) (Snapshot, error) {
 	if s.SchemaVersion != 1 || s.Health != "ready" || !ValidPhase(s.Phase) || len(s.Sessions) > 20 || len(s.Sources) > 64 || len(s.Instance) > 64 || s.Instance == "" || len(s.EngineVersion) > 32 || len(s.UpstreamRevision) > 64 || s.GeneratedAt > now.Add(5*time.Second).UnixMilli() || s.GeneratedAt < now.Add(-15*time.Second).UnixMilli() {
 		return s, errors.New("invalid engine contract")
 	}
+	if len(s.ProviderPhases) > 64 {
+		return s, errors.New("invalid engine provider phases")
+	}
+	for provider, phase := range s.ProviderPhases {
+		if !sourcePattern.MatchString(provider) || !ValidPhase(phase) {
+			return s, errors.New("invalid engine provider phase")
+		}
+	}
 	seen := map[string]bool{}
 	for _, row := range s.Sessions {
 		if (row.ParentID != "" && !idPattern.MatchString(row.ParentID)) || !idPattern.MatchString(row.ID) || seen[row.ID] || !sourcePattern.MatchString(row.Source) || !ValidPhase(row.Phase) || len(row.Reason) > 64 || len(row.ErrorKind) > 16 || row.ObservedAt > s.GeneratedAt || row.ObservedAt < 0 || (row.CompletionID != "" && !idPattern.MatchString(row.CompletionID)) {
@@ -185,6 +215,7 @@ func (e *Engine) snapshotAt(now time.Time) Snapshot {
 	if (s.Instance == e.configurationInstance && s.ObservationEpoch < e.minObservationEpoch) || e.received.IsZero() || now.Sub(e.received) > 15*time.Second || now.Before(e.received) {
 		return Snapshot{SchemaVersion: 1, Health: "stale", Phase: "unavailable", Sessions: []Session{}, Sources: []Source{}}
 	}
+	s.ProviderPhases = maps.Clone(s.ProviderPhases)
 	s.Sessions = append([]Session{}, s.Sessions...)
 	s.Sources = append([]Source{}, s.Sources...)
 	return s

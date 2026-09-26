@@ -487,13 +487,14 @@ type deviceHealthInfo struct {
 }
 
 type themeSpecHealth struct {
-	Active           bool   `json:"active"`
-	Path             string `json:"path,omitempty"`
-	Hash             string `json:"hash,omitempty"`
-	RenderOK         *bool  `json:"renderOk,omitempty"`
-	RenderError      string `json:"renderError,omitempty"`
-	RenderErrorAsset string `json:"renderErrorAsset,omitempty"`
-	RenderFailures   uint64 `json:"renderFailures,omitempty"`
+	Active                 bool   `json:"active"`
+	Path                   string `json:"path,omitempty"`
+	Hash                   string `json:"hash,omitempty"`
+	RenderOK               *bool  `json:"renderOk,omitempty"`
+	RenderError            string `json:"renderError,omitempty"`
+	RenderErrorAsset       string `json:"renderErrorAsset,omitempty"`
+	RenderFailures         uint64 `json:"renderFailures,omitempty"`
+	CBALastFrameDurationMs uint64 `json:"cbaLastFrameDurationMs,omitempty"`
 }
 
 type statusResponse struct {
@@ -8383,13 +8384,14 @@ type deviceHealth struct {
 	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
-			Active           bool   `json:"active"`
-			Path             string `json:"path"`
-			Hash             string `json:"hash"`
-			RenderOK         *bool  `json:"renderOk"`
-			RenderError      string `json:"renderError"`
-			RenderErrorAsset string `json:"renderErrorAsset"`
-			RenderFailures   uint64 `json:"renderFailures"`
+			Active                 bool   `json:"active"`
+			Path                   string `json:"path"`
+			Hash                   string `json:"hash"`
+			RenderOK               *bool  `json:"renderOk"`
+			RenderError            string `json:"renderError"`
+			RenderErrorAsset       string `json:"renderErrorAsset"`
+			RenderFailures         uint64 `json:"renderFailures"`
+			CBALastFrameDurationMs uint64 `json:"cbaLastFrameDurationMs"`
 		} `json:"themeSpec"`
 	} `json:"display"`
 	Render struct {
@@ -9310,13 +9312,14 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
 			ThemeSpec: &themeSpecHealth{
-				Active:           health.Display.ThemeSpec.Active,
-				Path:             strings.TrimSpace(health.Display.ThemeSpec.Path),
-				Hash:             strings.TrimSpace(health.Display.ThemeSpec.Hash),
-				RenderOK:         health.Display.ThemeSpec.RenderOK,
-				RenderError:      strings.TrimSpace(health.Display.ThemeSpec.RenderError),
-				RenderErrorAsset: strings.TrimSpace(health.Display.ThemeSpec.RenderErrorAsset),
-				RenderFailures:   health.Display.ThemeSpec.RenderFailures,
+				Active:                 health.Display.ThemeSpec.Active,
+				Path:                   strings.TrimSpace(health.Display.ThemeSpec.Path),
+				Hash:                   strings.TrimSpace(health.Display.ThemeSpec.Hash),
+				RenderOK:               health.Display.ThemeSpec.RenderOK,
+				RenderError:            strings.TrimSpace(health.Display.ThemeSpec.RenderError),
+				RenderErrorAsset:       strings.TrimSpace(health.Display.ThemeSpec.RenderErrorAsset),
+				RenderFailures:         health.Display.ThemeSpec.RenderFailures,
+				CBALastFrameDurationMs: health.Display.ThemeSpec.CBALastFrameDurationMs,
 			},
 		}
 	}

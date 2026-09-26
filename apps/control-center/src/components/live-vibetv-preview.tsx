@@ -506,6 +506,7 @@ export function LiveVibeTVPreview({
   ) : pack?.spec && frame ? (
     <ThemeSpecSVG
       assets={pack.assets || {}}
+      deviceFrameMs={device?.display?.themeSpec?.cbaLastFrameDurationMs}
       frame={frame}
       spec={pack.spec}
       themeId={pack.themeId || themeId}
@@ -648,6 +649,7 @@ function serverReducedMotionSnapshot() { return false; }
 
 function ThemeSpecSVG({
   animate = true,
+  deviceFrameMs = 0,
   assets,
   frame,
   spec,
@@ -658,9 +660,15 @@ function ThemeSpecSVG({
   frame: FrameData;
   spec: ThemeSpec;
   themeId: string;
+  deviceFrameMs?: number;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const sprites = useMemo(() => decodeSpriteAssets(assets), [assets]);
+  const decodedSprites = useMemo(() => decodeSpriteAssets(assets), [assets]);
+  // Health polls change timing, not artwork. Keep the decoded frames intact.
+  const sprites = useMemo(() => Object.fromEntries(Object.entries(decodedSprites).map(([path, sprite]) =>
+    [path, sprite.frameMs > 0 && Number.isFinite(deviceFrameMs)
+      ? { ...sprite, frameMs: Math.max(sprite.frameMs, deviceFrameMs) } : sprite],
+  )), [decodedSprites, deviceFrameMs]);
   const primitives = spec.primitives || spec.p || [];
   const state = agentThemeState(frame.activity);
   const reducedMotion = useSyncExternalStore(subscribeReducedMotion, reducedMotionSnapshot, serverReducedMotionSnapshot);
@@ -1817,13 +1825,7 @@ function decodeSprite(raw: string): DecodedSprite | null {
     );
     frames.push(decodeRleRows(rows, width, palette));
   }
-  // The ESP8266 decodes a CBA frame from flash 8 rows per loop pass, so
-  // detailed sprites play slower than their nominal fps. Fitted to the
-  // cbaLastFrameDurationMs that real devices report in /health.
-  const frameBytes = lines.slice(rowStart).reduce((sum, row) => sum + row.length + 1, 0) / frameCount;
-  const frameMs = frameCount > 1 && fps > 0
-    ? Math.max(1000 / fps, Math.ceil(height / 8) * 6.25 + frameBytes * 0.075)
-    : 0;
+  const frameMs = frameCount > 1 && fps > 0 ? 1000 / fps : 0;
   return { width, height, frameMs, frames };
 }
 

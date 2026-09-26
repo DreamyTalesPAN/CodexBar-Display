@@ -9316,6 +9316,22 @@ async function testOverviewAgentSessions(browser, appUrl) {
   await page.getByRole("img", {
     name: /Rendered VibeTV theme clippy showing Codex, Session 27% used, Weekly 63% used/,
   }).waitFor({ timeout: 10_000 });
+  const stage = page.getByRole("group", { name: "Interactive VibeTV preview. Drag to rotate." });
+  const box = await stage.boundingBox();
+  assert(box.width >= 500, "Overview device must use the larger desktop stage");
+  const screenTransform = () => stage.locator('[style*="preserve-3d"] [style*="matrix3d"]').last().evaluate(el => el.style.transform);
+  const initial = await screenTransform();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2 + 20, { steps: 20 });
+  await page.waitForTimeout(2000);
+  const held = await screenTransform();
+  assert(held !== initial, "Dragging must rotate the device and its screen");
+  await page.waitForTimeout(3000);
+  assert(await screenTransform() === held, "Idle sway must not restart during a long drag");
+  await page.mouse.up();
+  await page.waitForTimeout(3100);
+  assert(await screenTransform() !== held, "Idle sway must resume after release");
   const cards = page.getByRole("region", { name: "Sessions", exact: true });
   await cards.getByText("Waiting for approval").waitFor();
   assert(await cards.getByRole("listitem").count() === 2, "Each active session needs its own row; idle sessions stay hidden");

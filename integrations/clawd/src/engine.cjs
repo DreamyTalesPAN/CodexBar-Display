@@ -108,8 +108,11 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
    if(session.endedAt && generatedAt-session.endedAt>=(session.observation?.completedAt?doneSeconds*1000:10000)) state.sessions.delete(id);
   }
   const sessions=[...state.sessions].map(([id,session])=>project(id,session,{now:generatedAt,doneMs:doneSeconds*1000})).sort((a,b)=>a.id.localeCompare(b.id));
-  const phase=priority.find(value=>sessions.some(session=>session.phase===value))||'unavailable';
-  return {schemaVersion:1,engineVersion:lock.engineVersion,upstreamRevision:lock.clawd.commit,instance,observationEpoch,generatedAt,health:'ready',phase,sessions,
+  const phaseFor=rows=>priority.find(value=>rows.some(session=>session.phase===value))||'unavailable';
+  const phase=phaseFor(sessions);
+  const providerPhases=Object.fromEntries([...new Set(Object.values(usageProviders))].map(provider=>
+   [provider,phaseFor(sessions.filter(session=>usageProviders[session.source]===provider))]));
+  return {schemaVersion:1,engineVersion:lock.engineVersion,upstreamRevision:lock.clawd.commit,instance,observationEpoch,generatedAt,health:'ready',phase,providerPhases,sessions,
    sources:getAllAgents().map(agent=>({id:agent.id,name:agent.name,usageProvider:usageProviders[agent.id],transport:agent.eventSource,capabilityLevel:agent.id==='codex'?'log-observed':integrations.profiles[agent.id]?'hook-adapter':'declared',explicitThinking:false}))};
  }
  const server=http.createServer(async(req,res)=>{

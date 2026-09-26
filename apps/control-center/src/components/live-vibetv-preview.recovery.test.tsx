@@ -235,3 +235,28 @@ describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
     expect(screen.queryByText(/preview unavailable/i)).toBeNull();
   });
 });
+
+it.each([0, 400])("paces the live sprite by the authored rate or measured device duration (%s ms)", async (duration) => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(0));
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const pack = {
+    ...matchingPack,
+    spec: { p: [{ t: "sp", x: 0, y: 0, w: 1, h: 1, a: "/pace.cba" }] },
+    assets: { "/pace.cba": { encoding: "text", contentType: "text/plain", data: "CBA1\n1 1 2 10\n2\n#ff0000\n#00ff00\na\nb\n" } },
+  };
+  vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(pack)));
+  const { container } = render(createElement(LiveVibeTVPreview, {
+    device: { ...connectedDevice, display: { themeSpec: { ...connectedDevice.display.themeSpec, cbaLastFrameDurationMs: duration } } },
+    displayFrame: renderableFrame, usage: null,
+  }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  const spriteColor = () => container.querySelector("svg rect:last-child")?.getAttribute("fill");
+  expect(spriteColor()).toBe("#ff0000");
+  const frameMs = duration || 100;
+  act(() => vi.advanceTimersByTime(frameMs - 1));
+  expect(spriteColor()).toBe("#ff0000");
+  act(() => vi.advanceTimersByTime(1));
+  expect(spriteColor()).toBe("#00ff00");
+  vi.restoreAllMocks();
+});

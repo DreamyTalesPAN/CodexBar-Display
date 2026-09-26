@@ -19,7 +19,7 @@ func validSnapshot(now time.Time) Snapshot {
 }
 func TestRejectInvalidContract(t *testing.T) {
 	now := time.Now()
-	for _, mutate := range []func(*Snapshot){func(s *Snapshot) { s.SchemaVersion = 2 }, func(s *Snapshot) { s.Phase = "invented" }, func(s *Snapshot) { s.Sessions[0].ID = "private/path" }, func(s *Snapshot) { s.GeneratedAt = now.Add(time.Minute).UnixMilli() }, func(s *Snapshot) { s.Sessions = make([]Session, 21) }} {
+	for _, mutate := range []func(*Snapshot){func(s *Snapshot) { s.ProviderPhases = map[string]string{"codex": "invented"} }, func(s *Snapshot) { s.ProviderPhases = map[string]string{"../invalid": "working"} }, func(s *Snapshot) { s.SchemaVersion = 2 }, func(s *Snapshot) { s.Phase = "invented" }, func(s *Snapshot) { s.Sessions[0].ID = "private/path" }, func(s *Snapshot) { s.GeneratedAt = now.Add(time.Minute).UnixMilli() }, func(s *Snapshot) { s.Sessions = make([]Session, 21) }} {
 		s := validSnapshot(now)
 		mutate(&s)
 		data, _ := json.Marshal(s)
@@ -46,9 +46,15 @@ func TestCollectorLossDoesNotKeepWorking(t *testing.T) {
 func TestSnapshotCopiesSlices(t *testing.T) {
 	now := time.Now()
 	e := &Engine{}
-	e.accept(validSnapshot(now), now)
+	value := validSnapshot(now)
+	value.ProviderPhases = map[string]string{"codex": "working"}
+	e.accept(value, now)
 	first := e.snapshotAt(now)
 	first.Sessions[0].Phase = "error"
+	first.ProviderPhases["codex"] = "error"
+	if e.snapshotAt(now).ProviderPhases["codex"] != "working" {
+		t.Fatal("shared provider phases")
+	}
 	if e.snapshotAt(now).Sessions[0].Phase != "working" {
 		t.Fatal("shared mutable state")
 	}
