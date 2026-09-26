@@ -112,7 +112,7 @@ describe("agent theme announcements", () => {
   });
 });
 
-it("repeats waiting alerts, mutes them without hiding status, and stops on completion", () => {
+it("repeats waiting alerts and mutes them without hiding status", () => {
  vi.useFakeTimers();
  try {
   const result=render(view("idle",{agentReminderSecs:300}));
@@ -125,7 +125,41 @@ it("repeats waiting alerts, mutes them without hiding status, and stops on compl
   expect(animate).toHaveBeenCalledTimes(2);
   expect(result.container.textContent).toContain("Codex needs you");
   result.rerender(view("done",{agentReminderSecs:0}));
-  act(()=>vi.advanceTimersByTime(600000));
+  act(()=>vi.advanceTimersByTime(4999));
   expect(animate).toHaveBeenCalledTimes(3);
  } finally {vi.useRealTimers();}
+});
+
+it.each([10, 30, 60, 120, 300])("repeats Done every five seconds throughout a %is hold, then stops", (seconds) => {
+  vi.useFakeTimers();
+  try {
+    const result = render(view("working"));
+    result.rerender(view("done"));
+    expect(animate).toHaveBeenCalledTimes(1);
+    for (let elapsed = 5; elapsed < seconds; elapsed += 5) {
+      act(() => vi.advanceTimersByTime(4999));
+      expect(animate).toHaveBeenCalledTimes(elapsed / 5);
+      // Normal usage refreshes must not postpone the next blink.
+      result.rerender(view("done", { weekly: elapsed }));
+      act(() => vi.advanceTimersByTime(1));
+      expect(animate).toHaveBeenCalledTimes(elapsed / 5 + 1);
+    }
+    result.rerender(view("idle"));
+    act(() => vi.advanceTimersByTime(30000));
+    expect(animate).toHaveBeenCalledTimes(seconds / 5);
+  } finally { vi.useRealTimers(); }
+});
+
+it.each([{ agentAlertsMuted: true }, { animationsDisabled: true }])("stops Done repeats when disabled: %j", (muted) => {
+  vi.useFakeTimers();
+  try {
+    const result = render(view("working"));
+    result.rerender(view("done"));
+    act(() => vi.advanceTimersByTime(5000));
+    expect(animate).toHaveBeenCalledTimes(2);
+    result.rerender(view("done", muted));
+    act(() => vi.advanceTimersByTime(30000));
+    expect(animate).toHaveBeenCalledTimes(2);
+    expect(cancel).toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
 });

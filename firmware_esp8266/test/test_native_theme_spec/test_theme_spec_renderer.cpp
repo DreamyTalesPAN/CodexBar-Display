@@ -2592,6 +2592,31 @@ void testAgentAnnouncementIsTwoHardPulses() {
   TEST_ASSERT_FALSE(a.Update("error", true, 0x00000216u));
 }
 
+void testDoneAnnouncementRepeatsUntilDoneEnds() {
+  codexbar_display::agentactivity::Announcement a;
+  TEST_ASSERT_FALSE(a.Update("working", true, 0));
+  TEST_ASSERT_TRUE(a.Update("done", true, 1000));
+  for (uint32_t at = 6000; at < 31000; at += 5000) {
+    TEST_ASSERT_FALSE(a.Update("done", true, at - 1));
+    TEST_ASSERT_TRUE(a.Update("done", true, at));
+    TEST_ASSERT_FALSE(a.Update("done", true, at + 200));
+    TEST_ASSERT_TRUE(a.Update("done", true, at + 350));
+    TEST_ASSERT_FALSE(a.Update("done", true, at + 550));
+  }
+  TEST_ASSERT_FALSE(a.Update("idle", true, 31000));
+  TEST_ASSERT_FALSE(a.Update("idle", true, 36000));
+  TEST_ASSERT_TRUE(a.Update("done", true, 37000));
+  TEST_ASSERT_FALSE(a.Update("done", false, 42000));
+  TEST_ASSERT_FALSE(a.Update("done", false, 47000));
+  TEST_ASSERT_TRUE(a.Update("working", true, 48000));
+  TEST_ASSERT_FALSE(a.Update("working", true, 53000));
+  // Unsigned elapsed time keeps the cadence across millis() rollover.
+  a = {};
+  TEST_ASSERT_FALSE(a.Update("working", true, 0xFFFFFEFFu));
+  TEST_ASSERT_TRUE(a.Update("done", true, 0xFFFFFF00u));
+  TEST_ASSERT_TRUE(a.Update("done", true, 0x00001288u));
+}
+
 void testAgentStateAssetsAndStatusKeepUsageIndependent() {
   const char* spec = R"JSON({"v":1,"id":"states","rev":1,"p":[
     {"t":"sp","x":0,"y":30,"w":40,"h":40,"sa":{"idle":"/i.cbi","coding":"/w.cba","needs_you":"/n.cba","done":"/d.cbi","error":"/e.cba"}},
@@ -3689,6 +3714,7 @@ int main() {
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testObservedIdleExpiresButLegacyIdleDoesNot);
   RUN_TEST(testAgentAnnouncementIsTwoHardPulses);
+  RUN_TEST(testDoneAnnouncementRepeatsUntilDoneEnds);
   RUN_TEST(testAgentReminderAndResetTextChanges);
   RUN_TEST(testAgentStateAssetsAndStatusKeepUsageIndependent);
   RUN_TEST(testAgentActivityExpiresWithoutChangingUsage);
