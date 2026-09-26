@@ -394,6 +394,11 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (process.argv.includes("--usage-history")) {
+      await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
+      console.log("usage history regression tests passed");
+      return;
+    }
     if (process.argv.includes("--agent-sessions")) {
       await testOverviewAgentSessions(browser, appContext.appUrl);
       console.log("overview agent session tests passed");
@@ -6551,6 +6556,17 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
   await tokenChartHeading.waitFor({
     timeout: 10_000,
   });
+  // Claude has one reported day after gaps in this fixture. A line alone
+  // silently hides that value; missing days must not become synthetic zeros.
+  const chart = page.getByRole("img", { name: /Daily tokens used over time/ });
+  await waitForCondition(
+    async () => (await chart.locator(".recharts-area-dot").count()) === 6,
+    "All six reported daily values, including Claude's isolated day, must be visible",
+  );
+  const dotCounts = await chart.locator(".recharts-area-dots").evaluateAll((areas) =>
+    areas.map((area) => area.querySelectorAll(".recharts-area-dot").length).sort(),
+  );
+  assert(JSON.stringify(dotCounts) === "[1,5]", "Only reported provider days should receive dots");
   await page
     .getByText("4,319,176,330", { exact: true })
     .waitFor({ timeout: 10_000 });

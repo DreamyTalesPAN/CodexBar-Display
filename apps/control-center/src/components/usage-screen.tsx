@@ -357,6 +357,7 @@ function TokenUsageOverTimePanel({
                     activeDot={{ r: 4 }}
                     connectNulls={false}
                     dataKey={item.dataKey}
+                    dot={{ r: 3, fill: `var(--color-${item.dataKey})` }}
                     fill={`var(--color-${item.dataKey})`}
                     fillOpacity={0.12}
                     isAnimationActive={false}
