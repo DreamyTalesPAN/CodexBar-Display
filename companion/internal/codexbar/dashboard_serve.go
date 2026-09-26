@@ -83,7 +83,9 @@ func StartDashboardServe(ctx context.Context, logf func(string, ...any)) Dashboa
 	if err == nil {
 		err = CheckDashboardSnapshotVersion(ctx, bin)
 	}
-	if err != nil {
+	// A failed probe is not proof of an unsupported version. Keep the
+	// supervisor alive so its existing backoff can retry after a busy startup.
+	if err != nil && !errors.Is(err, errVersionUnavailable) {
 		if logf != nil {
 			logf("codexbar-dashboard event=supervisor-unavailable err=%v\n", err)
 		}
@@ -196,6 +198,10 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 			return err
 		}
 		bin = resolved
+	}
+	if err := CheckDashboardSnapshotVersion(ctx, bin); err != nil {
+		s.setStopped("", err)
+		return err
 	}
 
 	port, err := allocateDashboardServePort()

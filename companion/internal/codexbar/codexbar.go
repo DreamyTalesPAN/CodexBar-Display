@@ -39,6 +39,7 @@ var (
 	ErrNoProviders             = errors.New("codexbar returned no providers")
 	ErrUnexpectedProviderShape = errors.New("unexpected provider payload")
 	errGlobalCLI               = errors.New("codexbar returned a global cli error")
+	errVersionUnavailable      = errors.New("could not determine CodexBar version")
 )
 
 var runUsageCommandFn = runUsageCommand
@@ -632,13 +633,15 @@ func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 		return looseVersion{}, errors.New("CodexBar binary path is empty")
 	}
 
-	if out, err := runVersionCommandFn(ctx, versionCheckTimeout, bin, "--version"); err == nil {
-		if version, ok := extractLooseVersion(string(out)); ok {
-			return version, nil
-		}
+	out, err := runVersionCommandFn(ctx, versionCheckTimeout, bin, "--version")
+	if err != nil {
+		return looseVersion{}, fmt.Errorf("%w from %s --version: %w", errVersionUnavailable, bin, err)
+	}
+	if version, ok := extractLooseVersion(string(out)); ok {
+		return version, nil
 	}
 
-	return looseVersion{}, fmt.Errorf("could not determine CodexBar version from %s --version", bin)
+	return looseVersion{}, fmt.Errorf("%w from %s --version", errVersionUnavailable, bin)
 }
 
 func extractLooseVersion(raw string) (looseVersion, bool) {

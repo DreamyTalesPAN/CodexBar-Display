@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -50,6 +51,50 @@ func TestStartDashboardServeSkipsCodexBarWithoutDashboardSnapshotAPI(t *testing.
 
 	if got := StartDashboardServe(context.Background(), nil); got != nil {
 		t.Fatalf("old CodexBar must not create a dashboard supervisor: %#v", got.Info())
+	}
+}
+
+func TestStartDashboardServeRetainsSupervisorAfterVersionTimeout(t *testing.T) {
+	t.Setenv("CODEXBAR_BIN", os.Args[0])
+	originalRunVersion := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = originalRunVersion })
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return nil, context.DeadlineExceeded
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	supervisor := StartDashboardServe(ctx, nil)
+	if supervisor == nil {
+		t.Fatal("a version timeout must not permanently disable dashboard collection")
+	}
+	if supervisor.Info().Running {
+		t.Fatal("an unverified version must not start a child")
+	}
+}
+
+func TestDashboardServeSupervisorRecoversAfterVersionTimeout(t *testing.T) {
+	recordPath := t.TempDir() + "/serve.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, time.Minute)
+	var probes atomic.Int32
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		if probes.Add(1) <= 2 {
+			return nil, context.DeadlineExceeded
+		}
+		return []byte("CodexBar 0.63.0\n"), nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		supervisor.Run(ctx)
+	}()
+	defer func() { cancel(); <-done }()
+	waitForDashboardServeHealthy(t, supervisor)
+	if probes.Load() != 3 {
+		t.Fatalf("expected recovery after two failed probes, got %d probes", probes.Load())
+	}
+	if records := readDashboardServeRecords(t, recordPath); len(records) != 1 {
+		t.Fatalf("only the verified version may start a child, got %d", len(records))
 	}
 }
 
@@ -327,6 +372,11 @@ func TestDashboardServeHelperProcess(t *testing.T) {
 
 func newTestDashboardServeSupervisor(t *testing.T, mode, recordPath string, refreshInterval time.Duration) *DashboardServeSupervisor {
 	t.Helper()
+	originalRunVersion := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = originalRunVersion })
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.63.0\n"), nil
+	}
 	supervisor, err := NewDashboardServeSupervisor(DashboardServeConfig{
 		Binary:          os.Args[0],
 		RefreshInterval: refreshInterval,
