@@ -81,20 +81,19 @@ func (s Snapshot) ForProvider(provider string) Snapshot {
 }
 
 // DisplayName labels only sources contributing to the engine's aggregate phase.
-// It does not choose a phase, quota provider, or session on the engine's behalf.
+// The latest observation leads, using the same ordering as ActiveProviders.
 func (s Snapshot) DisplayName() string {
-	sourceID := ""
+	var latest *Session
 	for _, session := range s.Sessions {
 		if session.Phase != s.Phase {
 			continue
 		}
-		if sourceID != "" && sourceID != session.Source {
-			return "Agent"
+		if latest == nil || session.ObservedAt > latest.ObservedAt || (session.ObservedAt == latest.ObservedAt && session.ID < latest.ID) {
+			latest = &session
 		}
-		sourceID = session.Source
 	}
 	for _, source := range s.Sources {
-		if source.ID == sourceID && strings.TrimSpace(source.Name) != "" && len(source.Name) <= 40 {
+		if latest != nil && source.ID == latest.Source && strings.TrimSpace(source.Name) != "" && len(source.Name) <= 40 {
 			return strings.Join(strings.Fields(source.Name), " ")
 		}
 	}

@@ -124,7 +124,12 @@ func TestDisplayNameFollowsObservedSourceNotQuota(t *testing.T) {
 		t.Fatal(got)
 	}
 	s.Sessions[1].Phase = "working"
-	if got := s.DisplayName(); got != "Agent" {
+	s.Sessions[1].ObservedAt = 2
+	if got := s.DisplayName(); got != "Claude Code" {
+		t.Fatal(got)
+	}
+	s.Sessions[0].ObservedAt = 3
+	if got := s.DisplayName(); got != "Codex" {
 		t.Fatal(got)
 	}
 	s.Sessions = s.Sessions[1:]

@@ -6,7 +6,9 @@ Copyright belongs to the Clawd on Desk contributors. License: AGPL-3.0-only;
 full upstream license and notices are retained in `upstream/`.
 
 VibeTV additions in `src/` and `test/` are an AGPL-3.0-only Clawd fork overlay.
-They compose Clawd's existing session runtime, log monitor and hook parser
+The small patches in `patches/` add Codex Desktop async-question records to
+the existing log monitor. `prepare.py` applies them to the pinned source.
+The overlay composes Clawd's existing session runtime, log monitor and hook parser
 without Electron, permission decisions, telemetry or quota collection. No
 upstream mascot, image or sound assets are loaded. The separate full source
 archive retains upstream assets as corresponding source.

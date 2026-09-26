@@ -45,6 +45,9 @@ def prepare_source():
                 target = source.joinpath(*parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.extractfile(member).read())
+    for patch in sorted((ROOT / 'patches').glob('*.patch')):
+        subprocess.run(['git', 'apply', '--no-index', '--unsafe-paths',
+                        '--directory=' + str(source), str(patch)], check=True)
     return source
 
 
@@ -62,7 +65,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     # Build into a caller-owned staging directory; the normal app updater owns
     # installation and atomic replacement of the containing application.
-    for name in ('src', 'test', 'upstream'):
+    for name in ('src', 'test', 'upstream', 'patches'):
         if (output / name).exists():
             shutil.rmtree(output / name)
         shutil.copytree(ROOT / name, output / name)
