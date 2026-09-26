@@ -87,7 +87,7 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
   loadCodexAgent:()=>{const config=upstream('agents/codex');return {...config,logConfig:{...config.logConfig,sessionDir:codexSessionsDir,pollIntervalMs:1000}};},
   showCodexUserInputBubble:input=>{
    const session=state.sessions.get(input.sessionId);
-   if(session?.observation) session.observation.wait={intent:'human-question',at:now(),callId:input.callId};
+   if(session?.observation) session.observation.wait={intent:'human-question',at:now(),callId:input.callId,async:input.async===true};
    return false;
   },
   clearCodexUserInputBubbles:(id,callId)=>{

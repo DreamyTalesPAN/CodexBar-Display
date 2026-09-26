@@ -52,6 +52,14 @@ test('real Codex log monitor retains async wait through acceptance, tools and re
  append(response({type:'function_call_output',call_id:'blocking-1',output:'{"answers":{}}'}));
  await until(()=>engine.snapshot().phase==='working');
  append(request());await until(()=>engine.snapshot().phase==='waiting_for_answer');
- append({type:'event_msg',timestamp:new Date().toISOString(),payload:{type:'turn_aborted',turn_id:'turn-1'}});
+ append({type:'event_msg',timestamp:new Date().toISOString(),payload:{type:'task_complete',turn_id:'turn-1'}});
+ await until(()=>[...engine.state.sessions.values()][0]?.observation?.completedAt);
+ assert.equal(engine.snapshot().phase,'waiting_for_answer','finishing work must not dismiss an unanswered async question');
+ await engine.close();engine=await createEngine({token,codexSessionsDir:dir});
+ await until(()=>engine.snapshot().phase==='waiting_for_answer');
+ append(answer());await until(()=>engine.snapshot().phase!=='waiting_for_answer');
+ append({type:'event_msg',timestamp:new Date().toISOString(),payload:{type:'task_started',turn_id:'turn-2'}});
+ append(request());await until(()=>engine.snapshot().phase==='waiting_for_answer');
+ append({type:'event_msg',timestamp:new Date().toISOString(),payload:{type:'turn_aborted',turn_id:'turn-2'}});
  await until(()=>engine.snapshot().phase!=='waiting_for_answer');
 });

@@ -47,7 +47,21 @@
  }
 --- a/agents/codex-log-monitor.js
 +++ b/agents/codex-log-monitor.js
-@@ -806,8 +806,11 @@
+@@ -795,8 +795,11 @@
+       const subtype = payload && typeof payload === "object" ? payload.type || "" : "";
+       const key = subtype ? obj.type + ":" + subtype : obj.type;
+       if (key === "event_msg:task_complete" || key === "event_msg:turn_aborted") {
+-        pending.clear();
+-        pendingTimestampMs.clear();
++        for (const [callId, request] of pending) {
++          if (key === "event_msg:task_complete" && request.async) continue;
++          pending.delete(callId);
++          pendingTimestampMs.delete(callId);
++        }
+         continue;
+       }
+       const record = parseCodexUserInputRecord(obj);
+@@ -806,8 +809,11 @@
          const ts = typeof obj.timestamp === "string" ? Date.parse(obj.timestamp) : NaN;
          pendingTimestampMs.set(record.callId, Number.isFinite(ts) ? ts : null);
        } else {
@@ -61,7 +75,7 @@
        }
      }
      const recentlyActive = latestEmbeddedTimestampMs !== null
-@@ -2013,18 +2016,21 @@
+@@ -2013,18 +2019,21 @@
        }
        return true;
      }
@@ -95,3 +109,25 @@
      }
      return true;
    }
+@@ -2044,8 +2053,9 @@
+   // non-initializing) transition, matching every other emit in this file.
+   _clearPendingUserInputsForTrackedSession(tracked, reason = "turn-terminal") {
+     if (!(tracked.pendingUserInputs instanceof Map) || tracked.pendingUserInputs.size === 0) return;
+-    const callIds = [...tracked.pendingUserInputs.keys()];
+-    tracked.pendingUserInputs.clear();
++    const callIds = [...tracked.pendingUserInputs.keys()].filter(callId =>
++      reason !== "turn-complete" || !tracked.pendingUserInputs.get(callId).async);
++    for (const callId of callIds) tracked.pendingUserInputs.delete(callId);
+     if (tracked.backfilling || tracked.initializingUserInputs || !this._onUserInputResolved) return;
+     for (const callId of callIds) {
+       this._onUserInputResolved(tracked.sessionId, callId, {
+--- a/src/agent-runtime-main.js
++++ b/src/agent-runtime-main.js
+@@ -609,6 +609,7 @@
+           const shown = showCodexUserInputBubble({
+             sessionId,
+             callId: request.callId,
++            async: request.async === true,
+             questions: request.questions,
+             autoResolutionMs: request.autoResolutionMs,
+             ...extra,

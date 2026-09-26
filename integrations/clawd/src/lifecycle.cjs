@@ -33,8 +33,8 @@ function observe(session,previous,event,state,opts={},now=Date.now()) {
  if(completions.has(name) && old?.completedAt) {session.observation=old;return;}
  session.observation={event:name,at,state};
  // Codex can keep working while an async question is still waiting for us.
- // Only a correlated answer or a terminal event clears the explicit wait.
- if(session.agentId==='codex' && old?.wait && !completions.has(name) && !['userinputresolved','event_msg:turn_aborted','sessionend'].includes(name)) session.observation.wait=old.wait;
+ // Async questions remain answerable after completion; abort still clears them.
+ if(session.agentId==='codex' && old?.wait && (!completions.has(name)||old.wait.async) && !['userinputresolved','event_msg:turn_aborted','sessionend'].includes(name)) session.observation.wait=old.wait;
  if(completions.has(name)) {
   session.observation.completedAt=at;
   session.observation.historical=opts.recapSuppressed===true;
