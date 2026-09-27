@@ -7139,3 +7139,56 @@ func TestManualDisplayScopesAgentActivityToPinnedProvider(t *testing.T) {
 	cfg.ProviderDisplay.Mode = "automatic"
 	check("waiting_for_answer", "Claude Code")
 }
+
+func TestTokenHistoryRetainsBothProvidersThroughIncompleteScans(t *testing.T) {
+	prepareFastTestEnv(t)
+	current := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	complete := true
+	total := int64(100)
+	collector := &providerCollector{
+		now: func() time.Time { return current }, logf: func(string, ...any) {},
+		snapshotMaxAge: 10 * time.Minute, providers: map[string]providerSnapshot{},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			done := true
+			return map[string]codexbar.ProviderTokenStats{
+				"codex": {HistoryCoverageEstablished: &complete, TotalTokens: total,
+					Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: total, Daily: []codexbar.ProviderCostDay{{Day: "2026-09-27", TotalTokens: total}}}},
+				"claude": {HistoryCoverageEstablished: &done, TotalTokens: 50,
+					Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 50, Daily: []codexbar.ProviderCostDay{{Day: "2026-09-27", TotalTokens: 50}}}},
+			}, true
+		},
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	original := collector.providers["codex"].TokenStatsCollected
+	complete = false
+	for _, partial := range []int64{0, 20, 0} {
+		total = partial
+		current = current.Add(time.Minute)
+		collector.collectTokenStatsOnce(context.Background())
+		got := collector.providers["codex"]
+		if got.Frame.TotalTokens != 100 || got.Meta.Cost.Last30DaysTokens != 100 || !got.TokenStatsCollected.Equal(original) {
+			t.Fatalf("partial scan replaced or renewed last-good Codex history: %#v", got)
+		}
+		if collector.tokenStatsSettled || got.TokenHistorySettled {
+			t.Fatal("identical incomplete scans must keep catch-up active")
+		}
+		if collector.providers["claude"].Frame.TotalTokens != 50 {
+			t.Fatal("Codex catch-up must not remove Claude history")
+		}
+	}
+	// Retention is bounded; incomplete results must not keep old totals fresh.
+	if snapshotWithFreshTokenStats(collector.providers["codex"], original.Add(11*time.Minute), 10*time.Minute).Meta.Cost != nil {
+		t.Fatal("incomplete scans extended the last-good lifetime")
+	}
+	complete, total = true, 200
+	collector.collectTokenStatsOnce(context.Background())
+	if got := collector.providers["codex"]; got.Frame.TotalTokens != 200 || !got.TokenHistorySettled || !collector.tokenStatsSettled {
+		t.Fatalf("completed scan did not restore current history: %#v", got)
+	}
+	// A completed empty history is authoritative, unlike an empty partial scan.
+	total = 0
+	collector.collectTokenStatsOnce(context.Background())
+	if collector.providers["codex"].Frame.TotalTokens != 0 {
+		t.Fatal("completed zero result was incorrectly retained as old usage")
+	}
+}

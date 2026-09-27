@@ -696,6 +696,20 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			continue
 		}
 		seen[key] = struct{}{}
+		if stats.HistoryCoverageEstablished != nil && !*stats.HistoryCoverageEstablished {
+			// An unfinished scan is neither a replacement history nor a known
+			// zero. Keep the bounded last-good result without renewing its age,
+			// and keep scanning even when two partial results happen to match.
+			settled = false
+			if snapshot, exists := c.providers[key]; exists {
+				if snapshot.TokenHistorySettled {
+					updated++
+				}
+				snapshot.TokenHistorySettled = false
+				c.providers[key] = snapshot
+			}
+			continue
+		}
 
 		snapshot, exists := c.providers[key]
 		if !exists && stats.Unavailable {
@@ -757,6 +771,9 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		// Without a cost history there is nothing that can still grow, so such
 		// a provider must not keep the collector scanning.
 		providerSettled := stats.Cost == nil || (hadPrevious && previousPrint == print)
+		if stats.HistoryCoverageEstablished != nil {
+			providerSettled = *stats.HistoryCoverageEstablished
+		}
 		settled = settled && providerSettled
 
 		c.providers[key] = providerSnapshot{
