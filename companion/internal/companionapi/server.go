@@ -2785,17 +2785,10 @@ func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
 	if len(providers) == 0 {
 		return false
 	}
-	var completedAt time.Time
+	// The collector checks freshness per provider. A retained history and a
+	// newly completed scan can legitimately have different timestamps.
 	for _, provider := range providers {
 		if !provider.TokenUsageReady && provider.Cost == nil {
-			return false
-		}
-		if provider.TokenStatsCollectedAt.IsZero() {
-			continue
-		}
-		if completedAt.IsZero() {
-			completedAt = provider.TokenStatsCollectedAt
-		} else if !provider.TokenStatsCollectedAt.Equal(completedAt) {
 			return false
 		}
 	}

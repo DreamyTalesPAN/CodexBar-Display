@@ -3327,7 +3327,7 @@ func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
 	}
 }
 
-func TestUsageWaitsForEveryProviderTokenResult(t *testing.T) {
+func TestUsageKeepsFreshHistoryFromDifferentScanTimes(t *testing.T) {
 	now := time.Date(2026, 7, 28, 13, 0, 0, 0, time.UTC)
 	usage := daemon.PersistedUsage{
 		SavedAt: now,
@@ -3353,17 +3353,22 @@ func TestUsageWaitsForEveryProviderTokenResult(t *testing.T) {
 	}
 
 	partial := usageResponseFromPersisted(now, usage)
-	if partial.TokenUsageReady {
-		t.Fatalf("partial provider scan published an incomplete aggregate: %+v", partial)
+	if !partial.TokenUsageReady || !partial.TokenUsageUpdating {
+		t.Fatalf("retained history must remain visible while catch-up runs: %+v", partial)
 	}
-	if partial.Providers[0].TotalTokens != 0 || partial.Providers[0].Cost != nil {
-		t.Fatalf("partial provider scan exposed incomplete totals: %+v", partial.Providers)
+	if partial.Providers[0].TotalTokens != 120 || partial.Providers[0].Cost == nil || partial.Providers[1].TotalTokens != 90 || partial.Providers[1].Cost == nil {
+		t.Fatalf("different scan times removed valid provider history: %+v", partial.Providers)
 	}
 
 	usage.Providers[1].TokenStatsCollectedAt = now
 	complete := usageResponseFromPersisted(now, usage)
 	if !complete.TokenUsageReady || complete.Providers[0].TotalTokens != 120 || complete.Providers[0].Cost == nil {
 		t.Fatalf("complete provider scan did not publish token totals: %+v", complete)
+	}
+	usage.Providers[1].TokenStatsCollectedAt = time.Time{}
+	usage.Providers[1].Meta.Cost = nil
+	if usageResponseFromPersisted(now, usage).TokenUsageReady {
+		t.Fatal("a provider without any token result must remain unavailable")
 	}
 }
 
