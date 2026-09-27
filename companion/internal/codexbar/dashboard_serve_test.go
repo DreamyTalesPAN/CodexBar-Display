@@ -372,6 +372,8 @@ func TestDashboardServeHelperProcess(t *testing.T) {
 
 func newTestDashboardServeSupervisor(t *testing.T, mode, recordPath string, refreshInterval time.Duration) *DashboardServeSupervisor {
 	t.Helper()
+	// Each test gives the same helper executable a different fake version.
+	lastInstalledVersion.Store(nil)
 	originalRunVersion := runVersionCommandFn
 	t.Cleanup(func() { runVersionCommandFn = originalRunVersion })
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {

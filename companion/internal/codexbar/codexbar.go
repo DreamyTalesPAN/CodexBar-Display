@@ -638,10 +638,33 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
+type installedVersionEntry struct {
+	path    string
+	file    os.FileInfo
+	version looseVersion
+}
+
+var lastInstalledVersion atomic.Pointer[installedVersionEntry]
+
+func sameVersionFile(a, b os.FileInfo) bool {
+	return a != nil && b != nil && os.SameFile(a, b) &&
+		a.Size() == b.Size() && a.ModTime().Equal(b.ModTime())
+}
+
 func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 	bin = strings.TrimSpace(bin)
 	if bin == "" {
 		return looseVersion{}, errors.New("CodexBar binary path is empty")
+	}
+	if err := ctx.Err(); err != nil {
+		return looseVersion{}, fmt.Errorf("%w: %w", errVersionUnavailable, err)
+	}
+	// Version metadata belongs to the executable, not to a usage refresh.
+	// Avoid spawning another CLI on every settings read; replacing or editing
+	// the executable invalidates this single bounded entry immediately.
+	file, _ := os.Stat(bin)
+	if cached := lastInstalledVersion.Load(); cached != nil && cached.path == bin && sameVersionFile(cached.file, file) {
+		return cached.version, nil
 	}
 
 	out, err := runVersionCommandFn(ctx, versionCheckTimeout, bin, "--version")
@@ -649,6 +672,10 @@ func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 		return looseVersion{}, fmt.Errorf("%w from %s --version: %w", errVersionUnavailable, bin, err)
 	}
 	if version, ok := extractLooseVersion(string(out)); ok {
+		current, _ := os.Stat(bin)
+		if sameVersionFile(file, current) {
+			lastInstalledVersion.Store(&installedVersionEntry{path: bin, file: current, version: version})
+		}
 		return version, nil
 	}
 

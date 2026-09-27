@@ -515,6 +515,66 @@ func TestUsageBarsShowUsedFromEnv(t *testing.T) {
 	}
 }
 
+func TestInstalledVersionReusesOnlyUnchangedExecutable(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("original"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = original })
+	calls := 0
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		calls++
+		if calls > 1 {
+			return nil, context.DeadlineExceeded
+		}
+		return []byte("CodexBar 0.63.0"), nil
+	}
+	for range 3 {
+		version, err := installedVersion(context.Background(), bin)
+		if err != nil || version.String() != "0.63" {
+			t.Fatalf("unchanged executable: version=%v err=%v", version, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("unchanged executable was probed %d times", calls)
+	}
+	// An atomic app update can preserve the old size and timestamp.
+	info, err := os.Stat(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := bin + ".new"
+	if err := os.WriteFile(replacement, []byte("replaced"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(replacement, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, bin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installedVersion(context.Background(), bin); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("replaced executable used the old version: %v", err)
+	}
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		calls++
+		return []byte("CodexBar 0.22.0"), nil
+	}
+	if err := CheckMinimumVersion(context.Background(), bin); err == nil {
+		t.Fatal("replacement with old version must still be rejected")
+	}
+	if calls != 3 {
+		t.Fatalf("failed probe was cached: calls=%d", calls)
+	}
+	if err := os.WriteFile(bin, []byte("changed in place"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installedVersion(context.Background(), bin); err != nil || calls != 4 {
+		t.Fatalf("in-place change must be probed: calls=%d err=%v", calls, err)
+	}
+}
+
 func TestCheckMinimumVersionRequiresCLIVersion(t *testing.T) {
 	orig := runVersionCommandFn
 	t.Cleanup(func() { runVersionCommandFn = orig })

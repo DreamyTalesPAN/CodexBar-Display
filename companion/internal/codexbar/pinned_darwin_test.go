@@ -45,6 +45,8 @@ func TestValidatePinnedCLIEnforcesTrustBeforeExecuting(t *testing.T) {
 	t.Cleanup(func() { pinnedRun = oldRun; runVersionCommandFn = oldVersion })
 	for _, failure := range []string{"signature", "identity", "gatekeeper", "version", ""} {
 		t.Run(failure, func(t *testing.T) {
+			// The fixture supplies a different fake version for the same file.
+			lastInstalledVersion.Store(nil)
 			versionCalled := false
 			pinnedRun = func(_ context.Context, name string, args ...string) ([]byte, error) {
 				if name == "/usr/bin/codesign" && args[0] == "--verify" && failure == "signature" {

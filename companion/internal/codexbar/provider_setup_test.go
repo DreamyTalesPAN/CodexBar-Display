@@ -922,6 +922,9 @@ func TestProviderVersionTimeoutDoesNotRequestEngineRepair(t *testing.T) {
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte("CodexBar 0.1.0"), nil
 	}
+	if err := os.WriteFile(bin, []byte("old executable"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if got := ProbeProviderSetup(context.Background(), t.TempDir()); got.Engine.Status != ProviderEngineError {
 		t.Fatalf("old engine must still require repair: %+v", got)
 	}
