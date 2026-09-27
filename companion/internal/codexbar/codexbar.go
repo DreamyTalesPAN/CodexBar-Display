@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
@@ -407,8 +408,11 @@ func commandTimeout() time.Duration {
 	return time.Duration(n) * time.Second
 }
 
+// Remember only the last confirmed display preference, never provider usage.
+// A failed defaults process must not change the user's chosen presentation.
+var lastUsageBarsShowUsed atomic.Pointer[bool]
+
 // UsageBarsShowUsed reflects CodexBar's "used vs remaining" display mode.
-// It defaults to "used" when the preference is unavailable.
 func UsageBarsShowUsed() bool {
 	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
 		return showUsed
@@ -419,18 +423,24 @@ func UsageBarsShowUsed() bool {
 	if runtime.GOOS != "darwin" {
 		return true
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	defer cancel()
-
-	out, err := exec.CommandContext(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed").Output()
-	if err != nil {
-		return true
-	}
-	if showUsed, ok := parseBoolPreference(out); ok {
+	if showUsed, ok := readUsageBarsShowUsed(); ok {
+		lastUsageBarsShowUsed.Store(&showUsed)
 		return showUsed
 	}
+	if previous := lastUsageBarsShowUsed.Load(); previous != nil {
+		return *previous
+	}
 	return true
+}
+
+func readUsageBarsShowUsed() (bool, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed").Output()
+	if err != nil {
+		return false, false
+	}
+	return parseBoolPreference(out)
 }
 
 // SetUsageBarsShowUsed writes the same preference read by CodexBar and the stream.
@@ -447,9 +457,10 @@ func SetUsageBarsShowUsed(ctx context.Context, showUsed bool) error {
 	if err := exec.CommandContext(ctx, "defaults", "write", "com.steipete.codexbar", "usageBarsShowUsed", "-bool", value).Run(); err != nil {
 		return err
 	}
-	if UsageBarsShowUsed() != showUsed {
+	if actual, ok := readUsageBarsShowUsed(); !ok || actual != showUsed {
 		return errors.New("usage display preference was not applied")
 	}
+	lastUsageBarsShowUsed.Store(&showUsed)
 	return nil
 }
 

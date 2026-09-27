@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1172,5 +1173,38 @@ fi
 	}
 	if err := SetUsageBarsShowUsed(context.Background(), false); err == nil {
 		t.Fatal("failed writes must be reported")
+	}
+}
+
+func TestUsageDisplayModeKeepsConfirmedPreferenceOnReadFailure(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS defaults contract")
+	}
+	previous := lastUsageBarsShowUsed.Swap(nil)
+	t.Cleanup(func() { lastUsageBarsShowUsed.Store(previous) })
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte("#!/bin/sh\n"+body+"\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, used := range []bool{false, true} {
+		write("echo " + strconv.FormatBool(used))
+		if UsageBarsShowUsed() != used {
+			t.Fatal("preference not read")
+		}
+		for _, broken := range []string{"exit 1", "echo invalid"} {
+			write(broken)
+			if UsageBarsShowUsed() != used {
+				t.Fatal("failed read changed confirmed display preference")
+			}
+		}
+		write(`[ "$1" = write ] && exit 0; exit 1`)
+		if err := SetUsageBarsShowUsed(context.Background(), used); err == nil {
+			t.Fatal("cached value must not pass an unavailable write readback")
+		}
 	}
 }
