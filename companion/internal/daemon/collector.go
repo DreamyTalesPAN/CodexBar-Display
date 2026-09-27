@@ -696,10 +696,11 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			continue
 		}
 		seen[key] = struct{}{}
-		if stats.HistoryCoverageEstablished != nil && !*stats.HistoryCoverageEstablished {
-			// An unfinished scan is neither a replacement history nor a known
-			// zero. Keep the bounded last-good result without renewing its age,
-			// and keep scanning even when two partial results happen to match.
+		if stats.HistoryCoverageEstablished != nil && !*stats.HistoryCoverageEstablished &&
+			stats.TotalTokens == 0 && stats.SessionTokens == 0 && stats.WeekTokens == 0 {
+			// An empty unfinished scan is not a known zero. Keep bounded
+			// last-good data without renewing its age. Non-empty progress is
+			// published below with CodexBar's explicit unsettled marker.
 			settled = false
 			if snapshot, exists := c.providers[key]; exists {
 				if snapshot.TokenHistorySettled {

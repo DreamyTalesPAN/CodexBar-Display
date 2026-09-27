@@ -88,8 +88,14 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).not.toContain('data-provider="cursor"');
   });
 
-  it("shows a missing theme as unavailable", () => {
-    expect(render()).toContain("Theme preview unavailable");
+  it("previews actual usage before the customer chooses a theme", () => {
+    const html = render();
+    expect(html).not.toContain("Theme preview unavailable");
+    expect(html).toContain("Codex");
+    expect(html).toContain("Claude");
+    expect(html).toContain("64");
+    expect(html).toContain("12");
+    expect(html).toContain("--");
   });
 
   it("offers one Continue action", () => {

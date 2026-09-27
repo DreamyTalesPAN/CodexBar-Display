@@ -7161,7 +7161,7 @@ func TestTokenHistoryRetainsBothProvidersThroughIncompleteScans(t *testing.T) {
 	collector.collectTokenStatsOnce(context.Background())
 	original := collector.providers["codex"].TokenStatsCollected
 	complete = false
-	for _, partial := range []int64{0, 20, 0} {
+	for _, partial := range []int64{0, 0, 0} {
 		total = partial
 		current = current.Add(time.Minute)
 		collector.collectTokenStatsOnce(context.Background())
@@ -7180,6 +7180,18 @@ func TestTokenHistoryRetainsBothProvidersThroughIncompleteScans(t *testing.T) {
 	if snapshotWithFreshTokenStats(collector.providers["codex"], original.Add(11*time.Minute), 10*time.Minute).Meta.Cost != nil {
 		t.Fatal("incomplete scans extended the last-good lifetime")
 	}
+	// A large history may take longer than retention to scan. Publish the
+	// source's real progress as provisional instead of hiding both providers.
+	current = original.Add(11 * time.Minute)
+	total = 20
+	collector.collectTokenStatsOnce(context.Background())
+	if got := collector.providers["codex"]; got.Frame.TotalTokens != 20 || got.TokenHistorySettled || collector.tokenStatsSettled || !got.TokenStatsCollected.Equal(current) {
+		t.Fatalf("non-empty source progress must remain visible as unsettled: %#v", got)
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	if collector.tokenStatsSettled {
+		t.Fatal("equal partial scans must not be treated as completed")
+	}
 	complete, total = true, 200
 	collector.collectTokenStatsOnce(context.Background())
 	if got := collector.providers["codex"]; got.Frame.TotalTokens != 200 || !got.TokenHistorySettled || !collector.tokenStatsSettled {
@@ -7190,5 +7202,50 @@ func TestTokenHistoryRetainsBothProvidersThroughIncompleteScans(t *testing.T) {
 	collector.collectTokenStatsOnce(context.Background())
 	if collector.providers["codex"].Frame.TotalTokens != 0 {
 		t.Fatal("completed zero result was incorrectly retained as old usage")
+	}
+}
+
+func TestAgentKeepsRecentUsageVisibleThroughTransientFetchFailure(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 27, 14, 0, 0, 0, time.UTC)
+	state := &runtimeState{agentSnapshot: func() agentstatus.Snapshot {
+		return agentstatus.Snapshot{Health: "ready", Phase: "working"}
+	}}
+	var sent protocol.Frame
+	var logged string
+	deps := runtimeDeps{
+		now: func() time.Time { return now },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true}}, nil
+		},
+		sendLine: func(_ string, line []byte) error { return json.Unmarshal(line, &sent) },
+		logf:     func(format string, args ...any) { logged += fmt.Sprintf(format, args...) },
+	}.withDefaults()
+	caps := protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true, SupportsUsageWindowsV1: true}
+	for _, tc := range []struct {
+		name            string
+		age             time.Duration
+		unavailable     bool
+		wantUnavailable bool
+	}{
+		{"recent retained usage", time.Minute, false, false},
+		{"expired usage", providerSnapshotMaxAge() + time.Second, false, true},
+		{"authoritative unavailable", time.Minute, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logged = ""
+			result := cycleResult{frame: protocol.Frame{Provider: "claude", Session: 20, Weekly: 40,
+				UsageUnavailable: tc.unavailable, UsageWindows: []protocol.UsageWindow{{ID: "session", Label: "Session", Percent: 20}}},
+				usageFresh: false, resetBasisAt: now.Add(-tc.age)}
+			if err := sendCycleResult(context.Background(), "/test", caps, 2048, state, deps, result); err != nil {
+				t.Fatal(err)
+			}
+			if sent.UsageUnavailable != tc.wantUnavailable || sent.Activity != "working" {
+				t.Fatalf("wrong retained usage visibility: %+v", sent)
+			}
+			if !strings.Contains(logged, fmt.Sprintf("usageUnavailable=%t", tc.wantUnavailable)) {
+				t.Fatal("preview log does not match actual device frame")
+			}
+		})
 	}
 }

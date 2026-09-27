@@ -276,20 +276,21 @@ export function PreviewTile({ preview, theme, usageMode, simple }: {
   theme?: SetupThemeOption;
   usageMode?: UsageDisplayMode;
 }) {
-  if (simple) return <SimpleUsagePreview preview={preview} usageMode={usageMode} />;
+  // Theme selection comes after Display Mode during setup.
+  if (simple || !theme) return <SimpleUsagePreview preview={preview} usageMode={usageMode} />;
   const frame = preview?.frame ?? buildFrameData(undefined, {
     label: preview?.providerLabel,
     sessionUnavailable: true, weeklyUnavailable: true,
   });
   return (
     <span className="block aspect-square w-full overflow-hidden bg-muted/50" data-slot="display-mode-preview">
-      {theme ? <ThemeRenderPreview
+      <ThemeRenderPreview
         animate
         className="h-full w-full border-0"
         themeId={theme.id}
         themeSpecPath={theme.themeSpecPath}
         frame={usageMode ? previewUsageMode(frame, usageMode) : frame}
-      /> : <span className="flex h-full items-center justify-center text-xs text-muted-foreground">Theme preview unavailable</span>}
+      />
     </span>
   );
 }

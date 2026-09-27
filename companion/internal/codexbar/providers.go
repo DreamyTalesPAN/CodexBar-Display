@@ -317,7 +317,11 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	if err := checkProviderSettingsVersion(ctx, bin); err != nil {
-		return nil, "", providerSettingsError(ProviderSettingsErrorVersion, err)
+		kind := ProviderSettingsErrorVersion
+		if errors.Is(err, errVersionUnavailable) {
+			kind = ProviderSettingsErrorUnavailable
+		}
+		return nil, "", providerSettingsError(kind, err)
 	}
 
 	timeout := commandTimeout()

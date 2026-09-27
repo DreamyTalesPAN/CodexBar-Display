@@ -3,6 +3,7 @@ package codexbar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -411,6 +412,21 @@ func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 	_, err := FetchProviderSettings(context.Background())
 	if err == nil || ProviderSettingsErrorKindOf(err) != ProviderSettingsErrorVersion {
 		t.Fatalf("expected version error, got %v", err)
+	}
+}
+
+func TestProviderSettingsVersionProbeFailureIsUnavailable(t *testing.T) {
+	for _, probeErr := range []error{context.DeadlineExceeded, nil} {
+		t.Run(fmt.Sprint(probeErr), func(t *testing.T) {
+			withProviderCommandTestBinary(t, "0.63.0")
+			runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+				return []byte("unreadable version"), probeErr
+			}
+			_, err := FetchProviderInventory(context.Background())
+			if err == nil || ProviderSettingsErrorKindOf(err) != ProviderSettingsErrorUnavailable {
+				t.Fatalf("probe failure must not tell customers to update: %v", err)
+			}
+		})
 	}
 }
 

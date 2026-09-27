@@ -5413,6 +5413,9 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 	for _, errorCode := range []string{"device_not_found", "provider_setup_required"} {
 		t.Run(errorCode, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+			var clock atomic.Int64
+			clock.Store(time.Now().UnixNano())
+			server.now = func() time.Time { return time.Unix(0, clock.Load()) }
 			hello := cableHelloForTest("cable-a")
 			hello.Features = []string{protocol.FeatureCableHealthV1}
 			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
@@ -5439,7 +5442,7 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 			// A cached hello is not live proof. Once the bounded existing grace expires,
 			// a failed health read must report the device offline again.
 			server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{}, errors.New("unplugged") }
-			server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
+			clock.Add(int64(deviceConnectedGraceWindow + time.Second))
 			rec = httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -5536,8 +5539,9 @@ func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *test
 			Detail:    "No provider is ready.",
 		}
 	}
-	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return clock }
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC).UnixNano())
+	server.now = func() time.Time { return time.Unix(0, clock.Load()) }
 
 	readStatus := func() statusResponse {
 		rec := httptest.NewRecorder()
@@ -5559,7 +5563,7 @@ func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *test
 	// One transient probe miss 10 seconds later must NOT flip the customer
 	// back to a disconnected/setup experience.
 	available.Store(false)
-	clock = clock.Add(10 * time.Second)
+	clock.Add(int64(10 * time.Second))
 	afterMiss := readStatus()
 	if !afterMiss.Device.Connected {
 		t.Fatalf("single probe miss flipped a just-seen device to disconnected: %+v", afterMiss.Device)
@@ -5569,20 +5573,20 @@ func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *test
 	}
 
 	// Still inside the grace window a minute later: keep Connected.
-	clock = clock.Add(50 * time.Second)
+	clock.Add(int64(50 * time.Second))
 	if got := readStatus(); !got.Device.Connected {
 		t.Fatalf("device inside the reconnect grace window must stay connected: %+v", got.Device)
 	}
 
 	// Well past the grace window the truth wins: disconnected.
-	clock = clock.Add(10 * time.Minute)
+	clock.Add(int64(10 * time.Minute))
 	if got := readStatus(); got.Device.Connected {
 		t.Fatalf("device unseen for minutes must not stay connected: %+v", got.Device)
 	}
 
 	// The device comes back: connected again on the next poll.
 	available.Store(true)
-	clock = clock.Add(5 * time.Second)
+	clock.Add(int64(5 * time.Second))
 	if got := readStatus(); !got.Device.Connected {
 		t.Fatalf("recovered device must reconnect on the next poll: %+v", got.Device)
 	}
@@ -5628,8 +5632,9 @@ func TestStatusConnectedStateStaysStableThroughMinutesOfIntermittentProbes(t *te
 			Detail:    "No provider is ready.",
 		}
 	}
-	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return clock }
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC).UnixNano())
+	server.now = func() time.Time { return time.Unix(0, clock.Load()) }
 
 	readConnected := func() bool {
 		rec := httptest.NewRecorder()
@@ -5652,7 +5657,7 @@ func TestStatusConnectedStateStaysStableThroughMinutesOfIntermittentProbes(t *te
 	}
 
 	poll := func() {
-		clock = clock.Add(pollEvery)
+		clock.Add(int64(pollEvery))
 		connected := readConnected()
 		if connected != last {
 			transitions++
