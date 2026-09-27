@@ -893,3 +893,36 @@ func TestAntigravityWeeklyUsageAlongsideUnavailableGemini(t *testing.T) {
 		t.Fatalf("unexpected health: %+v", health)
 	}
 }
+
+func TestProviderVersionTimeoutDoesNotRequestEngineRepair(t *testing.T) {
+	skipMacCLIContract(t)
+	original := runVersionCommandFn
+	originalUsage := runUsageCommandFn
+	t.Cleanup(func() { runVersionCommandFn = original; runUsageCommandFn = originalUsage })
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	writeExecutable(t, bin)
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	for _, probeErr := range []error{context.DeadlineExceeded, context.Canceled} {
+		runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) { return nil, probeErr }
+		got := ProbeProviderSetup(context.Background(), t.TempDir())
+		if got.Status != "checking" || got.Engine.Status != ProviderTimeout || len(got.Providers) != 1 || got.Providers[0].Status != ProviderTimeout {
+			t.Fatalf("temporary version failure requested repair: %+v", got)
+		}
+	}
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.63.0"), nil
+	}
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return nil, context.DeadlineExceeded
+	}
+	if got := ProbeProviderSetup(context.Background(), t.TempDir()); got.Status != "checking" {
+		t.Fatalf("temporary usage probe failure requested repair: %+v", got)
+	}
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.1.0"), nil
+	}
+	if got := ProbeProviderSetup(context.Background(), t.TempDir()); got.Engine.Status != ProviderEngineError {
+		t.Fatalf("old engine must still require repair: %+v", got)
+	}
+}
