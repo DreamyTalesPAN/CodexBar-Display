@@ -10,10 +10,14 @@ const token='test-only-token-'.repeat(3);
 const response=payload=>({type:'response_item',payload,timestamp:new Date().toISOString()});
 const request=(name='request_user_input_async',call_id='question-1')=>response({type:'function_call',name,call_id,arguments:JSON.stringify({questions:[name.endsWith('_async')?{title:'Private question',options:['Yes','No']}:{id:'one',question:'Private question',options:[]}]})});
 const answer=(id='question-1')=>response({type:'message',role:'user',content:[{type:'input_text',text:'<send_user_message_question_reply>\n'+JSON.stringify([{questionItemId:JSON.stringify(['request_user_input_async',id,0]),answer:'Private answer'}])+'\n</send_user_message_question_reply>'}]});
+const typedReply=()=>response({type:'message',role:'user',content:[{type:'input_text',text:'Continue, I handled it.'}],internal_chat_message_metadata_passthrough:{content_item_kinds:['user.text']}});
 async function until(check){for(let i=0;i<100;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,50));}assert.fail('observer did not reach expected phase');}
 
 test('async parser recognizes the actual Desktop schema and correlated answer',()=>{
  assert.equal(parse(request()).async,true);
+ assert.equal(parse(typedReply()).allAsync,true);
+ const malformed=typedReply();malformed.payload.content[0].text='<send_user_message_question_reply>broken</send_user_message_question_reply>';
+ assert.equal(parse(malformed),null);
  assert.equal(parse(answer()).callId,'question-1');
  assert.equal(parse(request('request_user_input')).phase,'request');
  for(const payload of [{type:'message',role:'assistant',content:answer().payload.content},{type:'message',role:'user',content:[{type:'input_text',text:'Just an ordinary message'}]},{type:'message',role:'user',content:[{type:'input_text',text:'<send_user_message_question_reply>broken</send_user_message_question_reply>'}]}]) assert.equal(parse(response(payload)),null);
@@ -46,9 +50,23 @@ test('real Codex log monitor retains async wait through acceptance, tools and re
  append(answer());
  await until(()=>engine.snapshot().phase==='working');
  assert.doesNotMatch(JSON.stringify(engine.snapshot()),/Private question|Private answer/);
+ // A genuine typed reply also resolves an async request, unlike injected context.
+ append(request());await until(()=>engine.snapshot().phase==='waiting_for_answer');
+ append(response({type:'message',role:'user',content:[{type:'input_text',text:'<environment_context>context only</environment_context>'}]}));
+ append(response({type:'function_call',call_id:'work-context',name:'exec_command',arguments:'{}'}));
+ await until(()=>[...engine.state.sessions.values()][0]?.observation?.event==='response_item:function_call');
+ assert.equal(engine.snapshot().phase,'waiting_for_answer');
+ append(typedReply());await until(()=>engine.snapshot().phase==='working');
+ await engine.close();engine=await createEngine({token,codexSessionsDir:dir});
+ append(response({type:'function_call',call_id:'work-after-restart',name:'exec_command',arguments:'{}'}));
+ await until(()=>engine.snapshot().phase==='tool_use');
  // The existing blocking question must still work, including its output.
  append(request('request_user_input','blocking-1'));
  await until(()=>engine.snapshot().phase==='waiting_for_answer');
+ append(typedReply());
+ append(response({type:'function_call',call_id:'blocking-work',name:'exec_command',arguments:'{}'}));
+ await until(()=>[...engine.state.sessions.values()][0]?.observation?.event==='response_item:function_call');
+ assert.equal(engine.snapshot().phase,'waiting_for_answer');
  append(response({type:'function_call_output',call_id:'blocking-1',output:'{"answers":{}}'}));
  await until(()=>engine.snapshot().phase==='working');
  append(request());await until(()=>engine.snapshot().phase==='waiting_for_answer');

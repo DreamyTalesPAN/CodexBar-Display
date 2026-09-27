@@ -1,6 +1,6 @@
 --- a/hooks/codex-user-input.js
 +++ b/hooks/codex-user-input.js
-@@ -78,14 +78,43 @@
+@@ -78,14 +78,50 @@
    if (!record || record.type !== "response_item") return null;
    const payload = record.payload;
    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
@@ -18,6 +18,13 @@
 +        }).filter(Boolean))];
 +        if (callIds.length) return { phase: "resolved", callId: callIds[0], callIds };
 +      } catch { /* malformed or unrelated text is not an answer */ }
++      return null;
++    }
++    // Desktop marks genuine typed messages explicitly. Environment/context
++    // records are also role=user, so role alone must not dismiss a question.
++    const kinds = payload.internal_chat_message_metadata_passthrough?.content_item_kinds;
++    if (Array.isArray(kinds) && kinds.includes("user.text")) {
++      return { phase: "resolved", allAsync: true };
 +    }
 +    return null;
 +  }
@@ -67,7 +74,7 @@
        } else {
 -        pending.delete(record.callId);
 -        pendingTimestampMs.delete(record.callId);
-+        for (const callId of record.callIds || [record.callId]) {
++        for (const callId of record.allAsync ? [...pending].filter(([, request]) => request.async).map(([id]) => id) : record.callIds || [record.callId]) {
 +          if (record.accepted && pending.get(callId)?.async) continue;
 +          pending.delete(callId);
 +          pendingTimestampMs.delete(callId);
@@ -91,7 +98,7 @@
 -        recapOccurredAt: turnExtra.recapOccurredAt ?? null,
 -        userInputReplay: this._isUserInputReplay(tracked, turnExtra),
 -      });
-+    for (const callId of record.callIds || [record.callId]) {
++    for (const callId of record.allAsync ? [...tracked.pendingUserInputs].filter(([, request]) => request.async).map(([id]) => id) : record.callIds || [record.callId]) {
 +      if (!tracked.pendingUserInputs.has(callId)) continue;
 +      const request = tracked.pendingUserInputs.get(callId);
 +      if (record.accepted && request.async) continue;
