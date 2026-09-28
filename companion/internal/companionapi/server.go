@@ -60,6 +60,7 @@ const (
 	deviceConnectionRetrying = "reconnecting"
 	deviceConnectionSetup    = "setup_required"
 	cableDeviceTarget        = "cable://vibetv"
+	cableRescueTarget        = "cable-rescue://vibetv"
 	deviceTimeout            = 15 * time.Second
 	deviceSearchWindow       = 30 * time.Second
 	cableTransitionWait      = 55 * time.Second
@@ -551,6 +552,9 @@ type themeInstallJobResponse struct {
 
 type firmwareUpdateRequest struct {
 	Force bool `json:"force,omitempty"`
+	// Rescue flashes a VibeTV whose firmware predates the Cable identity
+	// contract through its ROM loader, so it never needs WiFi first.
+	Rescue bool `json:"rescue,omitempty"`
 }
 
 type firmwareLatestResponse struct {
@@ -5365,8 +5369,11 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var hello protocol.DeviceHello
-	var ok bool
-	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+	ok := true
+	if req.Rescue {
+		// The device cannot pass the paired checks below: it has no identity
+		// yet. The updater finds exactly one such VibeTV and refuses the rest.
+	} else if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		_, hello, ok = s.requireCableControlDevice(w, cfg)
 	} else {
 		cfg, hello, ok = s.requireDevice(w, r)
@@ -5374,7 +5381,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" && !hello.HasFeature(protocol.FeatureCableTransferV1) {
+	if !req.Rescue && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" && !hello.HasFeature(protocol.FeatureCableTransferV1) {
 		writeError(
 			w,
 			http.StatusConflict,
@@ -5384,7 +5391,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
-	if strings.TrimSpace(cfg.DeviceToken) == "" {
+	if !req.Rescue && strings.TrimSpace(cfg.DeviceToken) == "" {
 		writeError(
 			w,
 			http.StatusForbidden,
@@ -5428,7 +5435,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
-	if strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "" {
+	if !req.Rescue && (strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "") {
 		writeError(
 			w,
 			http.StatusBadGateway,
@@ -6288,11 +6295,13 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		// Only a positively unconfigured device may skip render verification.
 		// Remember this before OTA: a theme lost during the update is a failure,
 		// and an unavailable/older health response is not proof of first setup.
-		cableUpdate := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
+		cableUpdate := req.Rescue || runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
 		var before deviceHealth
 		var probeReq *http.Request
 		var probeErr error
-		if cableUpdate {
+		if req.Rescue {
+			// Nothing to compare: the old firmware has no health over Cable.
+		} else if cableUpdate {
 			var port string
 			var hello protocol.DeviceHello
 			port, hello, probeErr = s.cableControlDevice(cfg)
@@ -6343,12 +6352,17 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		resumeStream()
 
 		snapshot, _ := s.firmwareUpdateJobSnapshot(jobID)
-		shouldVerify := err == nil || (snapshot.Result != nil && snapshot.Result.UploadAccepted)
+		// The rescue updater verifies its own result: only its success counts.
+		shouldVerify := err == nil || (!req.Rescue && snapshot.Result != nil && snapshot.Result.UploadAccepted)
 		if shouldVerify {
 			var outcome string
 			var attentionMessage string
 			var verifyErr error
-			if cableUpdate {
+			if req.Rescue {
+				// The updater already proved the new firmware and identity over
+				// Cable. Connecting it is the setup's Cable step.
+				outcome = "updated"
+			} else if cableUpdate {
 				outcome, attentionMessage, verifyErr = s.verifyCableFirmwareUpdateResult(ctx, jobID, cfg)
 			} else {
 				outcome, attentionMessage, verifyErr = s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
@@ -7398,6 +7412,9 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	target := publicTarget(cfg.DeviceTarget)
 	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		target = cableDeviceTarget
+	}
+	if req.Rescue {
+		target = cableRescueTarget
 	}
 	if target == "" {
 		return errors.New("device target is empty")

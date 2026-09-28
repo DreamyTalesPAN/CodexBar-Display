@@ -34,6 +34,7 @@ type Sender struct {
 	path          string
 	hello         protocol.DeviceHello
 	helloSeen     bool
+	helloAt       time.Time
 	capabilities  protocol.DeviceCapabilities
 	capsCollected bool
 }
@@ -148,6 +149,16 @@ func (s *Sender) deviceHelloLocked(ctx context.Context, path string, window time
 	if err := ctx.Err(); err != nil {
 		return protocol.DeviceHello{}, err
 	}
+	// Firmware from before the Cable identity contract says hello only while
+	// it boots and never answers a request. Waiting for one held this sender
+	// for the whole window and starved a concurrent search, so its boot hello
+	// stands for one window; after that a fresh open resets it into a new one.
+	if s.port != nil && s.path == path && s.helloSeen && isLegacyCableHello(s.hello) {
+		if time.Since(s.helloAt) < s.helloWindow {
+			return s.hello, nil
+		}
+		s.closeCurrentLocked()
+	}
 	if _, err := s.ensurePort(path); err != nil {
 		return protocol.DeviceHello{}, err
 	}
@@ -231,19 +242,21 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 		deadline = limit
 	}
 	var hello protocol.DeviceHello
+	var carry []byte
 	seen := false
 	for ctx.Err() == nil && time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if err := writeWithTimeout(s.port, helloRequestLine, min(s.writeTimeout, remaining)); err != nil {
 			break
 		}
-		hello, seen = readHelloFromPort(s.port, min(time.Second, time.Until(deadline)))
+		hello, seen = readHelloFromPort(s.port, min(time.Second, time.Until(deadline)), &carry)
 		if seen {
 			break
 		}
 	}
 	s.hello = hello.Normalize()
 	s.helloSeen = seen
+	s.helloAt = time.Now()
 	s.capabilities = protocol.UnknownDeviceCapabilities()
 	if seen {
 		s.capabilities = protocol.CapabilitiesFromHello(s.hello)

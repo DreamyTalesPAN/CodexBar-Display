@@ -565,6 +565,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
+  // A VibeTV on firmware from before USB-C support gets the current firmware
+  // over the cable right away, like any setup firmware update. Once per app
+  // run: after a failed rescue the search shows the error, which points to
+  // WiFi, instead of flashing the same VibeTV again and again.
+  const cableRescueAttemptedRef = useRef(false);
+  const cableRescueRef = useRef<(() => void) | null>(null);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
@@ -1448,6 +1454,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setDeviceCandidates([]);
     setDeviceSearchState("searching");
     setLastError(null);
+    let rescueCable = false;
     try {
       const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
         "/v1/device/search",
@@ -1480,6 +1487,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("not-found");
         setDeviceState("offline");
         setLastError(null);
+      } else if (
+        normalized.code === "cable_firmware_too_old" &&
+        !cableRescueAttemptedRef.current
+      ) {
+        cableRescueAttemptedRef.current = true;
+        rescueCable = true;
       } else {
         setDeviceSearchState("failed");
         setLastError(normalized);
@@ -1488,6 +1501,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (searchIsCurrent()) {
         setBusyAction(null);
       }
+    }
+    // After the search settled, so its busy reset cannot end the update.
+    if (rescueCable) {
+      cableRescueRef.current?.();
     }
   }, [handleCompanionUnavailableForRepair, runCompanion]);
 
@@ -2669,7 +2686,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [checkCompanion, refreshFirmwareUpdate, refreshHostedCompanionRelease]);
 
-  const installFirmwareUpdate = useCallback(async () => {
+  // rescue flashes a VibeTV whose firmware predates USB-C support over the
+  // cable. Checked strictly: button handlers pass their click event here.
+  const installFirmwareUpdate = useCallback(async (options?: { rescue?: boolean }) => {
+    const rescue = options?.rescue === true;
     const activeThemeUpgrade = resolveActiveThemeUpgrade(
       catalog.themes,
       device,
@@ -2690,7 +2710,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !activeThemeUpgrade.needsFirmwareCapability &&
       firmwareIsKnownCurrent,
     );
-    if (shouldUpgradeOnlyActiveTheme && activeThemeUpgrade.theme) {
+    if (!rescue && shouldUpgradeOnlyActiveTheme && activeThemeUpgrade.theme) {
       setBusyAction("firmware-update");
       setFirmwareUpdateStatus({
         phase: "installing",
@@ -2761,7 +2781,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         "/v1/updates/install",
         {
           method: "POST",
-          body: JSON.stringify({}),
+          body: JSON.stringify(rescue ? { rescue } : {}),
         },
       );
       if (!payload.job) {
@@ -2785,6 +2805,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             nextAction: "Keep VibeTV powered on, then try again.",
           }
         );
+      }
+      if (rescue) {
+        // Connecting the rescued VibeTV is the setup's Cable step.
+        return true;
       }
       if (finishedJob.phase === "attention") {
         const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
@@ -2996,6 +3020,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
     setDevice,
   ]);
+
+  useEffect(() => {
+    cableRescueRef.current = () =>
+      void installFirmwareUpdate({ rescue: true }).then((updated) =>
+        updated ? searchAndConnect() : setDeviceSearchState("failed"),
+      );
+  }, [installFirmwareUpdate, searchAndConnect]);
 
   const retryActiveThemeUpgrade = useCallback(async (): Promise<boolean> => {
     const activeThemeUpgrade = resolveActiveThemeUpgrade(

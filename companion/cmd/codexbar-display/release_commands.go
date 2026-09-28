@@ -82,6 +82,8 @@ var (
 	resolveCableFirmwarePortFn                         = usb.ResolveVibeTVControlPort
 	readCableFirmwareHelloFn                           = usb.ReadDeviceHello
 	transferCableFirmwareFn                            = usb.TransferFirmware
+	findLegacyCableVibeTVFn                            = usb.FindLegacyCableVibeTV
+	flashCableRescueFn                                 = usb.FlashESP8266AppImage
 	cableFirmwareVerifyTimeout                         = 120 * time.Second
 	cableFirmwareVerifyPollInterval                    = time.Second
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
@@ -108,6 +110,10 @@ var (
 // CLI updater and marks the child with this environment variable so the
 // writer-quiesce gate does not refuse its own parent.
 const firmwareUpdateParentPausedEnvVar = "VIBETV_UPDATE_PARENT_PAUSED"
+
+// cableRescueTarget flashes a VibeTV whose firmware predates the Cable
+// identity contract through its ROM loader. Only the rescue job passes it.
+const cableRescueTarget = "cable-rescue://vibetv"
 
 // otherRuntimeWriterAlive reports whether a local VibeTV runtime answers on
 // its Companion API port. A reachable /v1/runtime-health means a runtime is
@@ -574,12 +580,28 @@ func runInstallUpdate(args []string) (retErr error) {
 			Hint: "quit the VibeTV Mac App (or stop the companion daemon), then retry; pass --i-stopped-all-writers only after every device writer is stopped",
 		}
 	}
-	cableMode := strings.EqualFold(strings.TrimRight(strings.TrimSpace(*target), "/"), "cable://vibetv")
+	normalizedTarget := strings.TrimRight(strings.TrimSpace(*target), "/")
+	rescueMode := strings.EqualFold(normalizedTarget, cableRescueTarget)
+	cableMode := rescueMode || strings.EqualFold(normalizedTarget, "cable://vibetv")
 	base := "cable://vibetv"
 	var cablePort string
 	var deviceToken string
 	var hello protocol.DeviceHello
-	if cableMode {
+	if rescueMode {
+		// Firmware from before the Cable identity contract has neither a
+		// deviceId nor Cable transfer. The ROM loader rewrites it anyway.
+		var device usb.CableDevice
+		device, err = findLegacyCableVibeTVFn()
+		if err != nil {
+			// The parent released the port a moment ago; a reset from that
+			// handover can swallow the boot hello. One fresh probe decides.
+			device, err = findLegacyCableVibeTVFn()
+		}
+		if err != nil {
+			return &commandError{Op: "cable-rescue-device", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+		cablePort, hello = device.Port, device.Hello
+	} else if cableMode {
 		cfg, loadErr := runtimeconfig.Load(home)
 		if loadErr != nil {
 			return &commandError{Op: "load-cable-config", Code: errcode.UpgradeFlashFirmware, Err: loadErr}
@@ -709,7 +731,13 @@ func runInstallUpdate(args []string) (retErr error) {
 	fmt.Println("Uploading firmware...")
 	var uploadErr error
 	uploadInterrupted := false
-	if cableMode {
+	if rescueMode {
+		var image []byte
+		image, uploadErr = os.ReadFile(imagePath)
+		if uploadErr == nil {
+			uploadErr = flashCableRescueFn(ctx, cablePort, image)
+		}
+	} else if cableMode {
 		var image []byte
 		image, uploadErr = os.ReadFile(imagePath)
 		if uploadErr == nil {
@@ -809,6 +837,10 @@ func runInstallUpdate(args []string) (retErr error) {
 			Hint: "wait one minute, then reconnect VibeTV",
 		}
 	}
+	if rescueMode {
+		// The rescued firmware is the first to report the device identity.
+		deviceID = strings.TrimSpace(verifiedHello.DeviceID)
+	}
 	if helloErr != nil || !strings.EqualFold(strings.TrimSpace(verifiedHello.DeviceID), deviceID) {
 		return &commandError{
 			Op:   "post-update-device-identity",
@@ -855,7 +887,7 @@ func waitForCableFirmwareVersion(
 			var hello protocol.DeviceHello
 			hello, err = readCableFirmwareHelloFn(port)
 			if err == nil {
-				if !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
+				if strings.TrimSpace(deviceID) != "" && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
 					err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(deviceID), strings.TrimSpace(hello.DeviceID))
 				} else if normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(targetVersion) {
 					return hello, nil

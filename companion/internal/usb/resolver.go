@@ -185,9 +185,7 @@ func discoverVibeTVs(
 			foreignDeviceAnswered = true
 			continue
 		}
-		if hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
-			strings.TrimSpace(hello.DeviceID) == "" &&
-			strings.EqualFold(hello.Capabilities.Transport.Active, "usb") {
+		if isLegacyCableHello(hello) {
 			legacyCableFirmwareAnswered = true
 			if legacyCableFirmwareVersion == "" {
 				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
@@ -352,9 +350,7 @@ func resolveVibeTVCandidatesForControl(
 		// running firmware from before the Cable identity contract. It is a
 		// genuine VibeTV, so report it as upgradable instead of silently
 		// ignoring it.
-		if hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
-			strings.TrimSpace(hello.DeviceID) == "" &&
-			strings.EqualFold(hello.Capabilities.Transport.Active, "usb") {
+		if isLegacyCableHello(hello) {
 			legacyCableFirmwareAnswered = true
 			if legacyCableFirmwareVersion == "" {
 				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
@@ -419,6 +415,63 @@ func resolveVibeTVCandidatesForControl(
 			"",
 			"Leave exactly one matching VibeTV connected and retry.",
 			fmt.Errorf("multiple matching VibeTVs: %s", strings.Join(matches, ", ")),
+		)
+	}
+}
+
+// isLegacyCableHello reports a supported VibeTV whose firmware predates the
+// Cable identity contract: it answers over USB without a deviceId.
+func isLegacyCableHello(hello protocol.DeviceHello) bool {
+	return hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
+		strings.TrimSpace(hello.DeviceID) == "" &&
+		strings.EqualFold(hello.Capabilities.Transport.Active, "usb")
+}
+
+// FindLegacyCableVibeTV returns the one ESP8266 VibeTV connected by Cable
+// whose firmware predates the Cable identity contract. Only that device may
+// receive the Cable rescue update; anything else is refused.
+func FindLegacyCableVibeTV() (CableDevice, error) {
+	ports, err := ListPorts()
+	if err != nil {
+		return CableDevice{}, err
+	}
+	return findLegacyCableVibeTV(cableSerialCandidates(ports, runtime.GOOS), func(path string) (protocol.DeviceHello, error) {
+		sender := NewSender()
+		defer sender.Close()
+		return sender.DeviceHello(path)
+	})
+}
+
+func findLegacyCableVibeTV(candidates []string, readHello func(string) (protocol.DeviceHello, error)) (CableDevice, error) {
+	var found []CableDevice
+	for _, port := range candidates {
+		hello, err := readHello(port)
+		if err != nil {
+			continue
+		}
+		hello = hello.Normalize()
+		if isLegacyCableHello(hello) && strings.EqualFold(strings.TrimSpace(hello.Board), vibeTVBoardID) {
+			found = append(found, CableDevice{Port: port, Hello: hello})
+		}
+	}
+	switch len(found) {
+	case 1:
+		return found[0], nil
+	case 0:
+		return CableDevice{}, wrapTransportError(
+			errcode.TransportNoMatchingDevice,
+			"find-legacy-vibetv",
+			"",
+			"Connect the VibeTV that needs the update by Cable and retry.",
+			errors.New("no VibeTV with pre-Cable firmware answered hello"),
+		)
+	default:
+		return CableDevice{}, wrapTransportError(
+			errcode.TransportMultipleDevices,
+			"find-legacy-vibetv",
+			"",
+			"Leave exactly one VibeTV connected and retry.",
+			errors.New("more than one VibeTV with pre-Cable firmware answered hello"),
 		)
 	}
 }

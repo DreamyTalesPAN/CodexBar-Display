@@ -207,3 +207,40 @@ func TestDiscoverVibeTVsOnWindowsProbesCOMPorts(t *testing.T) {
 		t.Fatalf("Windows COM devices must be discovered: devices=%v err=%v", devices, err)
 	}
 }
+
+func TestFindLegacyCableVibeTVAcceptsOnlyOnePreIdentityESP8266(t *testing.T) {
+	legacy := cableHello("")
+	legacy.Capabilities.Transport.Mode = ""
+	legacy.Firmware = "1.0.39"
+	legacyLilygo := legacy
+	legacyLilygo.Board = lilygoVibeTVBoardID
+	hellos := map[string]protocol.DeviceHello{
+		"/dev/cu.usbserial-current": cableHello("14799300"),
+		"/dev/cu.usbserial-legacy":  legacy,
+		"/dev/cu.usbserial-lilygo":  legacyLilygo,
+		"/dev/cu.usbserial-foreign": {Kind: "hello", Board: "foreign-board"},
+	}
+	read := func(port string) (protocol.DeviceHello, error) {
+		hello, ok := hellos[port]
+		if !ok {
+			return protocol.DeviceHello{}, errors.New("silent")
+		}
+		return hello, nil
+	}
+
+	got, err := findLegacyCableVibeTV([]string{
+		"/dev/cu.usbserial-current", "/dev/cu.usbserial-silent", "/dev/cu.usbserial-legacy",
+		"/dev/cu.usbserial-lilygo", "/dev/cu.usbserial-foreign",
+	}, read)
+	if err != nil || got.Port != "/dev/cu.usbserial-legacy" || got.Hello.Firmware != "1.0.39" {
+		t.Fatalf("findLegacyCableVibeTV = %+v, %v", got, err)
+	}
+
+	if _, err := findLegacyCableVibeTV([]string{"/dev/cu.usbserial-current", "/dev/cu.usbserial-lilygo"}, read); errcode.Of(err) != errcode.TransportNoMatchingDevice {
+		t.Fatalf("without a legacy ESP8266: %v", err)
+	}
+	hellos["/dev/cu.usbserial-legacy2"] = legacy
+	if _, err := findLegacyCableVibeTV([]string{"/dev/cu.usbserial-legacy", "/dev/cu.usbserial-legacy2"}, read); errcode.Of(err) != errcode.TransportMultipleDevices {
+		t.Fatalf("with two legacy devices: %v", err)
+	}
+}

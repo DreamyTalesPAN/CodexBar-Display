@@ -503,6 +503,8 @@ async function main() {
         testCableBackUsesConnectedDeviceWithoutNewSearch,
         testFreshCableHasNoEmptyPicker,
         testMissingVibeTVOffersRetry,
+        testPreUsbCVibeTVIsUpdatedOverTheCable,
+        testFailedCableRescueRunsOnceAndPointsToWiFi,
         testLocalWifiSetupRescansAfterNoResults,
         testDeniedLocalNetworkShowsRecovery,
         testDiscoveredDualTransportCanRecoverWiFi,
@@ -1268,6 +1270,8 @@ async function testStartupStateMachine(browser, appUrl) {
   await testMultipleVibeTVsRequireAChoice(browser, appUrl);
   await testMissingVibeTVOffersRetry(browser, appUrl);
   await testDeniedLocalNetworkShowsRecovery(browser, appUrl);
+  await testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl);
+  await testFailedCableRescueRunsOnceAndPointsToWiFi(browser, appUrl);
 }
 
 async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
@@ -2301,6 +2305,92 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
 // wizard has nowhere to put it. What must still hold is that the app does not
 // dress a denied permission up as a missing VibeTV, and that the manual way in
 // stays reachable.
+const cableFirmwareTooOld = {
+  status: 409,
+  code: "cable_firmware_too_old",
+  message: "Your VibeTV needs a firmware update before it can use USB-C.",
+  nextAction: "Connect VibeTV to WiFi, install the update, then reconnect the cable.",
+};
+
+// A VibeTV on firmware from before USB-C support (#478) answers over the cable
+// without an identity. Setup updates it over the cable right away, like any
+// setup firmware update, and then searches again.
+async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const requests = [];
+  const updates = [];
+  let rescued = false;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchError: () => (rescued ? null : cableFirmwareTooOld),
+    searchDevices: [],
+    onUpdate: (postData) => {
+      updates.push(postData);
+      rescued = true;
+    },
+    onRequest: (pathname, method) => requests.push(`${method} ${pathname}`),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await waitForCondition(
+    () =>
+      requests.filter((request) => request === "POST /v1/device/search")
+        .length >= 2,
+    "Setup must search again after the cable update",
+  );
+  assert(
+    JSON.stringify(updates) === JSON.stringify(['{"rescue":true}']),
+    `The update must run once as a cable rescue, got ${JSON.stringify(updates)}`,
+  );
+  assert(
+    (await page
+      .getByRole("dialog", { name: "We couldn't search for your VibeTV" })
+      .count()) === 0,
+    "A VibeTV the app can update over the cable must not be reported as a failed search",
+  );
+  await page.close();
+}
+
+async function testFailedCableRescueRunsOnceAndPointsToWiFi(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const updates = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchError: cableFirmwareTooOld,
+    onUpdate: (postData) => updates.push(postData),
+    updateStatusSequence: [
+      {
+        phase: "error",
+        message: "Update failed.",
+        progress: 100,
+        logs: ["Preparing VibeTV update.", "Update failed."],
+        error: {
+          code: "firmware_update_failed",
+          message: "VibeTV update failed.",
+          nextAction: "Keep VibeTV powered on, then try again.",
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const failure = page.getByRole("dialog", {
+    name: "We couldn't search for your VibeTV",
+  });
+  await failure.getByText(/Keep VibeTV powered on/).waitFor({ timeout: 20_000 });
+  await failure.getByRole("button", { name: "Search again" }).click();
+  await failure.getByText(/Connect VibeTV to WiFi/).waitFor({ timeout: 20_000 });
+  assert(
+    updates.length === 1,
+    `A failed cable rescue must not flash again on its own, got ${updates.length}`,
+  );
+  await page.close();
+}
+
 async function testDeniedLocalNetworkShowsRecovery(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -11870,11 +11960,13 @@ async function routeCompanionOnline(
       if (searchDelayMs > 0 && !requestedTarget) {
         await new Promise((resolve) => setTimeout(resolve, searchDelayMs));
       }
-      if (searchError) {
+      const currentSearchError =
+        typeof searchError === "function" ? searchError() : searchError;
+      if (currentSearchError) {
         await route.fulfill({
-          status: 403,
+          status: currentSearchError.status || 403,
           contentType: "application/json",
-          body: JSON.stringify({ ok: false, error: searchError }),
+          body: JSON.stringify({ ok: false, error: currentSearchError }),
         });
         return;
       }

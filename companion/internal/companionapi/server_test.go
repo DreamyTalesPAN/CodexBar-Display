@@ -10783,6 +10783,49 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 	}
 }
 
+func TestFirmwareUpdateRescueStartsWithoutAPairedDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("the rescue updater finds the pre-identity VibeTV itself")
+		return "", errors.New("serial port belongs to updater")
+	}
+	parentPortClosed := make(chan struct{})
+	server.resetCableSender = func() { close(parentPortClosed) }
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+		select {
+		case <-parentPortClosed:
+		default:
+			t.Error("parent Cable handle must close before the rescue flashes")
+		}
+		if !req.Rescue {
+			t.Errorf("rescue request lost on the way to the updater: %+v", req)
+		}
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.44","observedFirmware":"1.0.44","target":"cable://vibetv","deviceId":"16197082","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{"rescue":true}`)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("rescue must start without pairing, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for range 100 {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "complete" || job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "complete" || job.Outcome != "updated" || job.Result == nil || job.Result.DeviceID != "16197082" {
+		t.Fatalf("rescue job = %+v", job)
+	}
+}
+
 func TestFirmwareUpdateRejectsUnsupportedCableTransferBeforePairing(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		ConnectionMode: "cable",
