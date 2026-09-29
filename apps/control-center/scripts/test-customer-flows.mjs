@@ -2319,31 +2319,64 @@ async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
+  await page.addInitScript(() => {
+    window.setupHeadings = [];
+    new MutationObserver(() => {
+      const heading = document.querySelector("main h1")?.textContent;
+      if (heading && window.setupHeadings.at(-1) !== heading) window.setupHeadings.push(heading);
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  });
+  // The rescue installs the current release, so the connect check finds nothing.
+  const device = { ...themeMissingDevice, target: "cable://vibetv", firmware: "1.0.33", capabilities: {
+    ...companionDevice.capabilities,
+    transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+  }};
   const requests = [];
   const updates = [];
-  let rescued = false;
-  await routeCompanionOnline(page, [], () => {}, {
+  const selections = [];
+  const companion = await routeCompanionOnline(page, [], () => {}, {
     device: { connected: false, paired: false },
-    searchError: () => (rescued ? null : cableFirmwareTooOld),
-    searchDevices: [],
-    onUpdate: (postData) => {
-      updates.push(postData);
-      rescued = true;
-    },
+    connectionModeChoiceRequired: false,
+    searchError: cableFirmwareTooOld,
+    onUpdate: (postData) => updates.push(postData),
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        outcome: "updated",
+        message: "Update complete.",
+        progress: 100,
+        logs: ["Preparing VibeTV update.", "Updating VibeTV: 100%.", "Update complete."],
+        result: { firmware: "1.0.33", observedFirmware: "1.0.33", target: "cable://vibetv", deviceId: device.deviceId, helloVerified: true },
+      },
+    ],
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
     onRequest: (pathname, method) => requests.push(`${method} ${pathname}`),
+  });
+  await page.route("**/v1/setup/connection-mode", async (route) => {
+    selections.push(route.request().postDataJSON());
+    companion.setDevice(device);
+    await route.fulfill({ json: { ok: true, status: "selected", device } });
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForCondition(
-    () =>
-      requests.filter((request) => request === "POST /v1/device/search")
-        .length >= 2,
-    "Setup must search again after the cable update",
-  );
+  // The rescue proved which VibeTV came back on the cable: setup connects it
+  // and goes on, without searching the whole network a second time.
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
   assert(
     JSON.stringify(updates) === JSON.stringify(['{"rescue":true}']),
     `The update must run once as a cable rescue, got ${JSON.stringify(updates)}`,
   );
+  assert(
+    requests.filter((request) => request === "POST /v1/device/search").length === 1,
+    `The rescued VibeTV must not be searched for again, got ${JSON.stringify(requests.filter((request) => request.endsWith("/v1/device/search")))}`,
+  );
+  assert(
+    selections.length === 1 && selections[0].mode === "cable" && selections[0].deviceId === device.deviceId,
+    `Setup must connect exactly the rescued VibeTV by Cable, got ${JSON.stringify(selections)}`,
+  );
+  const headings = await page.evaluate(() => window.setupHeadings);
+  assert(!headings.includes("How should VibeTV connect?"), `The rescued VibeTV must not ask for a connection method: ${JSON.stringify(headings)}`);
+  assert(!headings.includes("Choose your VibeTV"), `The rescued VibeTV must not show a picker: ${JSON.stringify(headings)}`);
   assert(
     (await page
       .getByRole("dialog", { name: "We couldn't search for your VibeTV" })

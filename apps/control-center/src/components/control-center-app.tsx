@@ -571,6 +571,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // WiFi, instead of flashing the same VibeTV again and again.
   const cableRescueAttemptedRef = useRef(false);
   const cableRescueRef = useRef<(() => void) | null>(null);
+  // The rescue proves which VibeTV came back on the cable. Setup connects that
+  // one instead of searching the whole network again after the restart.
+  const rescuedCableCandidateRef = useRef<DeviceCandidate | null>(null);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
@@ -2808,6 +2811,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (rescue) {
         // Connecting the rescued VibeTV is the setup's Cable step.
+        const deviceId = finishedJob.result?.deviceId?.trim();
+        rescuedCableCandidateRef.current = deviceId
+          ? {
+              target: "cable://vibetv",
+              transport: "cable",
+              deviceId,
+              firmware:
+                finishedJob.result?.observedFirmware ||
+                finishedJob.result?.firmware,
+            }
+          : null;
         return true;
       }
       if (finishedJob.phase === "attention") {
@@ -3023,9 +3037,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   useEffect(() => {
     cableRescueRef.current = () =>
-      void installFirmwareUpdate({ rescue: true }).then((updated) =>
-        updated ? searchAndConnect() : setDeviceSearchState("failed"),
-      );
+      void installFirmwareUpdate({ rescue: true }).then((updated) => {
+        const rescued = rescuedCableCandidateRef.current;
+        rescuedCableCandidateRef.current = null;
+        if (!updated) {
+          setDeviceSearchState("failed");
+        } else if (!rescued) {
+          void searchAndConnect();
+        } else {
+          // The one VibeTV on the cable, as a search would report it: setup
+          // connects it directly and goes on to the providers.
+          setDeviceCandidates([rescued]);
+          setDeviceSearchState("multiple");
+        }
+      });
   }, [installFirmwareUpdate, searchAndConnect]);
 
   const retryActiveThemeUpgrade = useCallback(async (): Promise<boolean> => {
