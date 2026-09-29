@@ -436,8 +436,8 @@ main() {
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.46.0.zip"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.46.0.manifest.json"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.63.0.zip"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.63.0.manifest.json"
   assert_file "${app}/Contents/Resources/CodexBar/CodexBar-LICENSE.txt"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
@@ -533,7 +533,7 @@ if environment.get("CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL") != agent.get("L
     raise SystemExit(
         "DMG runtime must expose its LaunchAgent label to the Companion API"
     )
-if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.46.0":
+if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.63.0":
     raise SystemExit(
         "DMG runtime must force the Companion to use VibeTV's pinned CodexBar"
     )
@@ -740,9 +740,9 @@ required_source = [
     "button.intrinsicContentSize.width + 32",
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
-    'codexBarPinnedVersion = "0.46.0"',
+    'codexBarPinnedVersion = "0.63.0"',
 
-    'CodexBar-macos-universal-0.46.0.zip',
+    'CodexBar-macos-universal-0.63.0.zip',
     'bootstrapCodexBar()',
 
 
@@ -1274,9 +1274,9 @@ PY
     || die "Sparkle distribution version must stay pinned"
   grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
     || die "Sparkle distribution checksum must stay pinned"
-  grep -qF 'VERSION="0.46.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'VERSION="0.63.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution version must stay pinned"
-  grep -qF 'SHA256="8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'SHA256="e53c76f7184fd061472a277550a9fecddfdc7ffd1f9749b490afbc95b72000d7"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
   grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/validate-macos-dmg.yml" \
     || die "the signed DMG workflow must verify the bundled CodexBar payload"
