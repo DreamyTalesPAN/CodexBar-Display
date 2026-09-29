@@ -28,6 +28,40 @@ func TestProviderSignInFeatureIsWindowsOnly(t *testing.T) {
 	}
 }
 
+// The setup guide button opens exactly one fixed page, and only on POST.
+func TestProviderSetupGuideOpensOnlyTheSetupPage(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	original := openProviderSignInFn
+	defer func() { openProviderSignInFn = original }()
+	var opened []string
+	openProviderSignInFn = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/providers/setup-guide", nil))
+	if rec.Code != http.StatusMethodNotAllowed || len(opened) != 0 {
+		t.Fatalf("GET must open nothing: status=%d opened=%v", rec.Code, opened)
+	}
+
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/setup-guide?url=https://example.com", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(opened) != 1 || opened[0] != "https://vibetv.shop/pages/setup" {
+		t.Fatalf("only the setup guide may open, opened=%v", opened)
+	}
+
+	openProviderSignInFn = func(string) error { return errors.New("no browser") }
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/setup-guide", nil))
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "vibetv.shop/pages/setup") {
+		t.Fatalf("a failed open must name the page: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // A browser-sign-in diagnosis from CodexBar wins: only the page it named opens,
 // never the tool's own login.
 func TestProviderSignInOpensOnlyThePageCodexBarNamed(t *testing.T) {

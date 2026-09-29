@@ -418,6 +418,24 @@ var openProviderSignInFn = func(url string) error {
 	return exec.Command(name, args...).Run()
 }
 
+// providerSetupGuideURL is the customer setup guide. It explains that every
+// provider reads its usage from the provider's own app on this computer.
+const providerSetupGuideURL = "https://vibetv.shop/pages/setup"
+
+// handleProviderSetupGuide opens the setup guide in the customer's default
+// browser. The page is fixed; the request carries nothing. The Control Center
+// cannot open it itself: the Windows window would navigate away from the app.
+func (s *Server) handleProviderSetupGuide(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if err := openProviderSignInFn(providerSetupGuideURL); err != nil {
+		writeError(w, http.StatusInternalServerError, "provider_setup_guide_failed", "The browser could not be opened.", "Open "+providerSetupGuideURL+" in your browser.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "url": providerSetupGuideURL})
+}
+
 // handleProviderSignIn starts the sign-in for one provider. When CodexBar
 // named a browser page for the provider's current browser_sign_in_required
 // state, only that page opens. Otherwise the provider's own tool signs in:

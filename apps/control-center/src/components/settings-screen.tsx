@@ -405,6 +405,11 @@ export function SettingsScreen({
               ? (provider) => void providerPicker.onOpenSignIn?.(provider)
               : undefined
           }
+          onOpenSetupGuide={
+            providerPicker.onOpenSetupGuide
+              ? () => void providerPicker.onOpenSetupGuide?.()
+              : undefined
+          }
           onToggle={(provider, enabled) =>
             void providerPicker.onPreferenceChange(provider, enabled)
           }

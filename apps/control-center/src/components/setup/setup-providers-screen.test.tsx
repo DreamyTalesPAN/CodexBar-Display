@@ -169,6 +169,46 @@ describe("SetupProvidersScreen", () => {
     ]);
   });
 
+  // A signed-out provider the app cannot sign in says what the customer has
+  // to do (its own app, installed and signed in), keeps the provider's own
+  // message and links the setup guide.
+  it("tells a signed-out provider without a sign-in to use its own app", () => {
+    const onOpenSetupGuide = vi.fn();
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    renderDom(<SetupProvidersScreen usage={usage} providers={[claude, failed]}
+      onOpenSetupGuide={onOpenSetupGuide} onOpenSignIn={vi.fn()}
+      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText(
+      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app on this computer. Make sure it is installed and signed in, then click Check again.",
+    )).toBeTruthy();
+    expect(dialog.getByText("No available fetch strategy for copilot.")).toBeTruthy();
+    fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
+    expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
+    expect(dialog.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
+  });
+
+  it("keeps the notice off for sign-in providers, other states and the Mac", () => {
+    const claudeSignedOut = provider({ providerId: "claude", label: "Claude",
+      health: "auth_required", message: "Sign in to Claude." });
+    const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
+      health: "timeout", message: "The provider check timed out." });
+    const signedOut = { ...copilot, value: true };
+    for (const [item, guide] of [
+      [claudeSignedOut, vi.fn()], [timedOut, vi.fn()], [signedOut, undefined],
+    ] as const) {
+      const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
+        onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+        pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+      const dialog = within(screen.getByRole("dialog"));
+      expect(dialog.getByText(item.health.message)).toBeTruthy();
+      expect(dialog.queryByRole("button", { name: "Open setup guide" })).toBeNull();
+      unmount();
+    }
+  });
+
   // The sign-in action belongs to one of the four signed-out tools the
   // Companion can start, and to a browser sign-in with a page to open; a
   // healthy or timed-out row has none.

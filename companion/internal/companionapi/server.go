@@ -1101,6 +1101,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
 	mux.HandleFunc("/v1/providers/sign-in", s.handleProviderSignIn)
+	mux.HandleFunc("/v1/providers/setup-guide", s.handleProviderSetupGuide)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)

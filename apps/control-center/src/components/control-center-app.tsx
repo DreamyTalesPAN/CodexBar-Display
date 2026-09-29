@@ -3380,6 +3380,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   useEffect(() => () => providerSignInFollowUpRef.current?.stop(), []);
 
+  // The setup guide opens in the customer's browser through the companion; the
+  // app window itself must not navigate away.
+  const openProviderSetupGuide = useCallback(async () => {
+    try {
+      await runCompanion("/v1/providers/setup-guide", { method: "POST" });
+      setProviderPreferencesError(null);
+    } catch (error) {
+      setProviderPreferencesError(
+        normalizeCaughtError(error, "The setup guide could not be opened."),
+      );
+    }
+  }, [runCompanion]);
+
   const updateProviderDisplay = useCallback(
     (
       next:
@@ -4268,6 +4281,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     pendingPreferenceIds,
     onCheck: checkProvider,
     onOpenSignIn: providerSignInEnabled ? openProviderSignIn : undefined,
+    onOpenSetupGuide: providerSignInEnabled ? openProviderSetupGuide : undefined,
     onDisplayChange: updateProviderDisplay,
     onPreferenceChange: updateProviderPreference,
   };
@@ -4865,6 +4879,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onProviderOpenSignIn={
             providerSignInEnabled
               ? (provider) => void openProviderSignIn(provider)
+              : undefined
+          }
+          onProviderOpenSetupGuide={
+            providerSignInEnabled
+              ? () => void openProviderSetupGuide()
               : undefined
           }
           onProviderToggle={(provider, enabled) =>
