@@ -551,6 +551,22 @@ describe("SetupWizard: direct connection", () => {
     expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
   });
 
+  it("words the Companion's connection failure for the Windows app", async () => {
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" };
+    const connect = vi.fn().mockRejectedValue({
+      message: "The Mac App did not answer.",
+      nextAction: "Restart the Mac App on this Mac, then try again.",
+    });
+    render(<SetupWizard {...baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple", deviceCandidates: [wifi], windowsHost: true,
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    })} />);
+    const dialog = await screen.findByRole("dialog", { name: "The app did not answer." });
+    expect(dialog.textContent).toContain("Restart the app on this computer, then try again.");
+    expect(dialog.textContent).not.toContain("Mac");
+  });
+
   it.each([1, 2])("recovers saved Cable through an explicit choice among %i discovered WiFi devices without provisioning", async (count) => {
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "known-device", transport: "wifi" };
     const connect = vi.fn().mockResolvedValue({ firmware: "1.0.43" });

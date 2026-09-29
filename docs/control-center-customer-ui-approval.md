@@ -4613,3 +4613,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: On 2026-09-28 Paul asked to fix every valid finding of the automated Codex review on this pull request. The review found that "Try update again" after a successful rescue started a second rescue that cannot find the already updated VibeTV.
 - Approved customer-visible result: No screen, dialog, button, or text changes. When the USB rescue wrote and verified the firmware but connecting by Cable failed, the existing "Firmware update did not finish" dialog's "Try update again" now repeats only the Cable connection for the VibeTV the rescue verified, instead of failing every retry; it never writes the firmware a second time. Every other screen and text is unchanged.
 - Scope: `control-center-app.tsx`, the customer flow test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — Setup connection failures use the Windows wording
+
+- User approval: On 2026-09-28 Paul asked to fix every valid finding of the automated Codex review on this pull request, and approved on this branch that the Windows app never speaks of a Mac. The review found that the setup's connection-failure dialog still showed the Companion's own "Mac App" and "this Mac" wording on Windows.
+- Approved customer-visible result: On Windows, the setup dialog for a failed connection and the firmware "attention needed" dialog word "Mac App" as "app" and "this Mac" as "this computer", like every other Windows text. On macOS nothing changes. No other screen or text changes.
+- Scope: `setup-wizard.tsx`, its test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.

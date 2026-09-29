@@ -13,6 +13,7 @@ import type {
 } from "../control-center-types";
 import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
+import { copyForHost } from "@/lib/customer-platform";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
 import {
@@ -834,9 +835,10 @@ export function SetupWizard(props: SetupWizardProps) {
           title="We couldn't search for your VibeTV"
         />
         <SetupConnectFailedDialog
+          // The failure copies the Companion's own words, which name the Mac.
           description={
             connect.failure?.kind === "connect"
-              ? connect.failure.description
+              ? copyForHost(connect.failure.description, Boolean(props.windowsHost))
               : ""
           }
           onEnterAddressManually={() => {
@@ -850,7 +852,9 @@ export function SetupWizard(props: SetupWizardProps) {
           }}
           open={connect.failure?.kind === "connect"}
           title={
-            connect.failure?.kind === "connect" ? connect.failure.title : ""
+            connect.failure?.kind === "connect"
+              ? copyForHost(connect.failure.title, Boolean(props.windowsHost))
+              : ""
           }
         />
         {connect.failure?.kind === "firmware-blocked" ? (
@@ -873,7 +877,7 @@ export function SetupWizard(props: SetupWizardProps) {
         <SetupFirmwareUpdateFailedDialog
           attentionMessage={
             connect.failure?.kind === "firmware-attention"
-              ? connect.failure.description
+              ? copyForHost(connect.failure.description, Boolean(props.windowsHost))
               : undefined
           }
           onCreateSupportReport={() => void onCreateSupportReport()}
