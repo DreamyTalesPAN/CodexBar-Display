@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -17,12 +18,14 @@ type fakeROM struct {
 	ignoredSyncs int
 	rejectBlock  int
 	rejections   int
+	silentBlock  int
+	silences     int
 	begin        []byte
 	written      map[uint32][]byte
 }
 
 func newFakeROM() *fakeROM {
-	return &fakeROM{rejectBlock: -1, written: map[uint32][]byte{}}
+	return &fakeROM{rejectBlock: -1, silentBlock: -1, written: map[uint32][]byte{}}
 }
 
 func (f *fakeROM) Read(p []byte) (int, error) {
@@ -76,6 +79,12 @@ func (f *fakeROM) handle(packet []byte) {
 	case romCmdFlashData:
 		seq := binary.LittleEndian.Uint32(data[4:])
 		block := data[16:]
+		if int(seq) == f.silentBlock && f.silences > 0 {
+			// The block is written, but its reply never arrives in time.
+			f.silences--
+			f.written[seq] = append([]byte(nil), block...)
+			return
+		}
 		if int(seq) == f.rejectBlock && f.rejections > 0 {
 			f.rejections--
 			status = 1
@@ -183,6 +192,28 @@ func TestROMLoaderStartsTheWholeWriteAgainAfterAFailedBlock(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.Join(rom.lines, " "), "DTR=0 RTS=1 RTS=0") {
 		t.Fatalf("no boot after the successful attempt: %v", rom.lines)
+	}
+}
+
+func TestROMLoaderRestartsTheWholeWriteAfterABlockTimeout(t *testing.T) {
+	rom := newFakeROM()
+	rom.silentBlock, rom.silences = 1, 1
+	loader := &romLoader{port: rom, sleep: func(time.Duration) {}}
+	if err := loader.flash(context.Background(), testAppImage(3*romFlashBlockSize)); !errors.Is(err, errROMResponseTimeout) {
+		t.Fatalf("a block timeout must end this write, got %v", err)
+	}
+	if _, ok := rom.written[2]; ok {
+		t.Fatal("wrote the next block after an unanswered one")
+	}
+
+	rom = newFakeROM()
+	rom.silentBlock, rom.silences = 1, 1
+	loader = &romLoader{port: rom, sleep: func(time.Duration) {}}
+	if err := loader.flashAndBoot(context.Background(), testAppImage(3*romFlashBlockSize)); err != nil {
+		t.Fatalf("a fresh loader entry should finish the write: %v", err)
+	}
+	if strings.Count(strings.Join(rom.lines, " "), "DTR=0 RTS=1 DTR=1 RTS=0 DTR=0") != 2 {
+		t.Fatalf("the write must restart from a fresh loader entry: %v", rom.lines)
 	}
 }
 

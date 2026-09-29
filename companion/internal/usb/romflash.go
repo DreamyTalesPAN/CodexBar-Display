@@ -37,7 +37,12 @@ const (
 
 var romSyncPayload = append([]byte{0x07, 0x07, 0x12, 0x20}, bytes.Repeat([]byte{0x55}, 32)...)
 
-var errROMResponseTimeout = errors.New("ROM loader response timeout")
+var (
+	errROMResponseTimeout = errors.New("ROM loader response timeout")
+	// errROMRejected is a reply the loader sent for the request itself, so
+	// repeating that request keeps requests and replies paired.
+	errROMRejected = errors.New("ROM loader rejected command")
+)
 
 // FlashESP8266AppImage writes an ESP8266 app image at offset 0 through the ROM
 // loader on path and resets the chip into it. Settings, themes, and WiFi
@@ -145,9 +150,13 @@ func (l *romLoader) flash(ctx context.Context, image []byte) error {
 		block := bytes.Repeat([]byte{0xff}, romFlashBlockSize)
 		copy(block, image[seq*romFlashBlockSize:])
 		data := append(romWords(romFlashBlockSize, uint32(seq), 0, 0), block...)
+		// Only an explicit rejection is retried in place. After a timeout a
+		// late reply could be taken for the next block's, so the whole write
+		// restarts from a fresh loader entry instead.
 		var err error
 		for range romWriteBlockAttempts {
-			if err = l.command(romCmdFlashData, data, romChecksum(block), romCommandTimeout); err == nil {
+			err = l.command(romCmdFlashData, data, romChecksum(block), romCommandTimeout)
+			if !errors.Is(err, errROMRejected) {
 				break
 			}
 		}
@@ -190,7 +199,7 @@ func (l *romLoader) command(op byte, data []byte, checksum uint32, timeout time.
 		}
 		// ESP8266 ROM replies end with two status bytes: status, error.
 		if status := frame[8+size-2]; status != 0 {
-			return fmt.Errorf("ROM loader rejected command 0x%02x (error 0x%02x)", op, frame[8+size-1])
+			return fmt.Errorf("%w 0x%02x (error 0x%02x)", errROMRejected, op, frame[8+size-1])
 		}
 		return nil
 	}

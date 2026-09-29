@@ -325,7 +325,14 @@ export function SetupProvidersScreen({
         // second one, and each of those forces a live provider read before it
         // writes anything -- so the customer paid for the same slow check twice
         // and either answer could move the step or raise a refusal on its own.
-        disabled={continuing || !setupProvidersCanContinue(providers, usage)}
+        // Also closed while a switch is still saving: Continue derives the
+        // display choice from the switches, and a refused write rolls one back
+        // after that choice was made.
+        disabled={
+          continuing ||
+          pendingPreferenceIds.size > 0 ||
+          !setupProvidersCanContinue(providers, usage)
+        }
         onClick={onContinue}
         type="button"
       >

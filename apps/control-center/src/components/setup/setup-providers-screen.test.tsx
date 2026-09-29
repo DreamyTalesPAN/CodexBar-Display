@@ -543,7 +543,21 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
-  it("finds a provider by label, by its message and by its id", () => {
+  it("closes Continue while a provider switch is still saving", () => {
+    // Continue with one provider on skips Display Mode (#423). Deriving that
+    // from a switch whose write can still be refused pinned VibeTV to the
+    // wrong provider when the write rolled back.
+    const html = render({
+      pendingPreferenceIds: new Set([copilot.id]),
+      providers: [claude, copilot],
+    });
+
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
+    it("finds a provider by label, by its message and by its id", () => {
     expect(setupProviderMatchesQuery(copilot, "github")).toBe(true);
     expect(setupProviderMatchesQuery(copilot, "sign in")).toBe(true);
     expect(setupProviderMatchesQuery(copilot, "copilot")).toBe(true);

@@ -443,15 +443,23 @@ func FindLegacyCableVibeTV() (CableDevice, error) {
 }
 
 func findLegacyCableVibeTV(candidates []string, readHello func(string) (protocol.DeviceHello, error)) (CableDevice, error) {
-	var found []CableDevice
+	// Probe every port at once: a silent one holds its read for the whole
+	// hello window, and Windows lists many COM ports that never answer.
+	results := make(chan CableDevice, len(candidates))
 	for _, port := range candidates {
-		hello, err := readHello(port)
-		if err != nil {
-			continue
-		}
-		hello = hello.Normalize()
-		if isLegacyCableHello(hello) && strings.EqualFold(strings.TrimSpace(hello.Board), vibeTVBoardID) {
-			found = append(found, CableDevice{Port: port, Hello: hello})
+		go func() {
+			hello, err := readHello(port)
+			if err != nil {
+				hello = protocol.DeviceHello{}
+			}
+			results <- CableDevice{Port: port, Hello: hello.Normalize()}
+		}()
+	}
+	var found []CableDevice
+	for range candidates {
+		device := <-results
+		if isLegacyCableHello(device.Hello) && strings.EqualFold(strings.TrimSpace(device.Hello.Board), vibeTVBoardID) {
+			found = append(found, device)
 		}
 	}
 	switch len(found) {
