@@ -18,6 +18,8 @@ export type ApiError = {
   code: string;
   message: string;
   nextAction: string;
+  /** The VibeTV the error is about, when setup can still act on it. */
+  device?: DeviceCandidate;
 };
 
 export type CompanionStatus = "unknown" | "online" | "missing";
@@ -203,6 +205,11 @@ export type DeviceCandidate = {
   networkMode?: "station" | "setup" | string;
   known?: boolean;
   active?: boolean;
+  /**
+   * Firmware from before USB-C support: it answers over the cable without an
+   * identity, and only the Cable rescue update can bring it to current.
+   */
+  rescue?: boolean;
 };
 
 export type WiFiNetwork = {

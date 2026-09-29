@@ -85,6 +85,8 @@ export type SetupWizardProps = {
   displaySavePending: boolean;
   /** Percent of the running firmware install, for the frozen log line. */
   firmwareProgress?: number;
+  /** Share of the firmware really written, for the counting update line. */
+  firmwareWrittenPercent?: number;
   /** A running update restored from the Companion after reopening the app. */
   firmwareInstallLogs?: string[];
   installingTheme: boolean;
@@ -729,7 +731,7 @@ export function SetupWizard(props: SetupWizardProps) {
           candidates={visibleCandidates}
           connecting={connecting}
           connectPhase={connect.state.phase}
-          logLines={connectLogLines(connect.state)}
+          logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           onConnect={startConnect}
           onBack={
             connect.state.phase === "idle" &&

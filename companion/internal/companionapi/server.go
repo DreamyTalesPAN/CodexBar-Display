@@ -301,6 +301,8 @@ type apiError struct {
 	Code       string `json:"code"`
 	Message    string `json:"message"`
 	NextAction string `json:"nextAction"`
+	// Device is the VibeTV the error is about, when setup can still act on it.
+	Device *deviceSearchEntry `json:"device,omitempty"`
 }
 
 type errorResponse struct {
@@ -4790,7 +4792,23 @@ func writeCableResolutionError(w http.ResponseWriter, err error) {
 	case errcode.TransportForeignDevice:
 		writeError(w, http.StatusConflict, "foreign_serial_device", "The connected USB device is not a VibeTV.", "Disconnect it and connect VibeTV with a data-capable Cable.")
 	case errcode.TransportCableFirmwareTooOld:
-		writeError(w, http.StatusConflict, "cable_firmware_too_old", "Your VibeTV needs a firmware update before it can use USB-C.", "Connect VibeTV to WiFi, install the update, then reconnect the cable.")
+		// Setup updates this VibeTV over the Cable like any other firmware
+		// update, so it gets the board and firmware to check the release with.
+		failure := apiError{
+			Code:       "cable_firmware_too_old",
+			Message:    "Your VibeTV needs a firmware update before it can use USB-C.",
+			NextAction: "Connect VibeTV to WiFi, install the update, then reconnect the cable.",
+		}
+		var legacy *usb.LegacyCableFirmwareError
+		if errors.As(err, &legacy) {
+			failure.Device = &deviceSearchEntry{
+				Target:    cableDeviceTarget,
+				Transport: "cable",
+				Board:     legacy.Board,
+				Firmware:  legacy.Firmware,
+			}
+		}
+		writeJSON(w, http.StatusConflict, errorResponse{OK: false, Error: failure})
 	default:
 		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Set up VibeTV over WiFi and install the latest firmware — USB-C setup needs newer firmware than shipped units have. If it is already up to date, check that your cable carries data, not just power.")
 	}

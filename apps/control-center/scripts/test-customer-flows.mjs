@@ -504,7 +504,7 @@ async function main() {
         testFreshCableHasNoEmptyPicker,
         testMissingVibeTVOffersRetry,
         testPreUsbCVibeTVIsUpdatedOverTheCable,
-        testFailedCableRescueRunsOnceAndPointsToWiFi,
+        testFailedCableRescueDoesNotFlashAgainOnItsOwn,
         testLocalWifiSetupRescansAfterNoResults,
         testDeniedLocalNetworkShowsRecovery,
         testDiscoveredDualTransportCanRecoverWiFi,
@@ -1271,7 +1271,7 @@ async function testStartupStateMachine(browser, appUrl) {
   await testMissingVibeTVOffersRetry(browser, appUrl);
   await testDeniedLocalNetworkShowsRecovery(browser, appUrl);
   await testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl);
-  await testFailedCableRescueRunsOnceAndPointsToWiFi(browser, appUrl);
+  await testFailedCableRescueDoesNotFlashAgainOnItsOwn(browser, appUrl);
 }
 
 async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
@@ -2310,11 +2310,13 @@ const cableFirmwareTooOld = {
   code: "cable_firmware_too_old",
   message: "Your VibeTV needs a firmware update before it can use USB-C.",
   nextAction: "Connect VibeTV to WiFi, install the update, then reconnect the cable.",
+  device: { target: "cable://vibetv", transport: "cable", board: companionDevice.board, firmware: "1.0.39" },
 };
 
 // A VibeTV on firmware from before USB-C support (#478) answers over the cable
-// without an identity. Setup updates it over the cable right away, like any
-// setup firmware update, and then searches again.
+// without an identity. Setup connects it like the one VibeTV on the cable: the
+// connect step installs the current firmware over the cable, like any setup
+// firmware update, then connects the VibeTV the update verified.
 async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -2386,13 +2388,14 @@ async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
   await page.close();
 }
 
-async function testFailedCableRescueRunsOnceAndPointsToWiFi(browser, appUrl) {
+async function testFailedCableRescueDoesNotFlashAgainOnItsOwn(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
   const updates = [];
   await routeCompanionOnline(page, [], () => {}, {
     device: { connected: false, paired: false },
+    connectionModeChoiceRequired: false,
     searchError: cableFirmwareTooOld,
     onUpdate: (postData) => updates.push(postData),
     updateStatusSequence: [
@@ -2411,12 +2414,13 @@ async function testFailedCableRescueRunsOnceAndPointsToWiFi(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // The same dialog as any failed setup firmware update: trying again is the
+  // customer's call, never a loop of its own.
   const failure = page.getByRole("dialog", {
-    name: "We couldn't search for your VibeTV",
+    name: "Firmware update did not finish",
   });
-  await failure.getByText(/Keep VibeTV powered on/).waitFor({ timeout: 20_000 });
-  await failure.getByRole("button", { name: "Search again" }).click();
-  await failure.getByText(/Connect VibeTV to WiFi/).waitFor({ timeout: 20_000 });
+  await failure.getByRole("button", { name: "Try update again" }).waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(2_000);
   assert(
     updates.length === 1,
     `A failed cable rescue must not flash again on its own, got ${updates.length}`,

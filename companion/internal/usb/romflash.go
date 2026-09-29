@@ -21,6 +21,12 @@ const (
 	romCmdFlashData  = 0x03
 	romCmdSync       = 0x08
 
+	// The ROM loader detects the baud rate from the first sync. Measured on a
+	// VibeTV (CH340): 230400 halves the write to about 27 seconds and connects
+	// at once; 460800 barely writes faster, because each block's flash write
+	// then dominates, and needs many connect attempts; 921600 never syncs.
+	romBaudRate = 230400
+
 	romFlashBlockSize  = 0x400
 	romFlashSectorSize = 0x1000
 	// eagle.flash.4m2m.ld: the sketch lives below 0x100000.
@@ -52,7 +58,9 @@ func FlashESP8266AppImage(ctx context.Context, path string, image []byte, progre
 	if len(image) == 0 || image[0] != 0xe9 || len(image) > romMaxAppImageSize {
 		return errors.New("firmware is not an ESP8266 app image")
 	}
-	port, err := serialOpener{openFn: serialOpen}.Open(path, openMode())
+	mode := openMode()
+	mode.BaudRate = romBaudRate
+	port, err := serialOpener{openFn: serialOpen}.Open(path, mode)
 	if err != nil {
 		return wrapTransportError(
 			errcode.TransportSerialOpen,

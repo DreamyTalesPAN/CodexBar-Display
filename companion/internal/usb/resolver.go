@@ -157,8 +157,7 @@ func discoverVibeTVs(
 ) ([]CableDevice, error) {
 	devices := make([]CableDevice, 0)
 	foreignDeviceAnswered := false
-	legacyCableFirmwareAnswered := false
-	legacyCableFirmwareVersion := ""
+	var legacy *LegacyCableFirmwareError
 	seen := make(map[string]struct{})
 	type probeResult struct {
 		port  string
@@ -186,10 +185,7 @@ func discoverVibeTVs(
 			continue
 		}
 		if isLegacyCableHello(hello) {
-			legacyCableFirmwareAnswered = true
-			if legacyCableFirmwareVersion == "" {
-				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
-			}
+			legacy = legacy.remember(hello)
 			continue
 		}
 		mode := strings.ToLower(strings.TrimSpace(hello.Capabilities.Transport.Mode))
@@ -218,20 +214,13 @@ func discoverVibeTVs(
 			errors.New("a non-VibeTV serial device answered hello"),
 		)
 	}
-	if len(devices) == 0 && legacyCableFirmwareAnswered {
-		detail := "VibeTV answered over Cable without a deviceId"
-		if legacyCableFirmwareVersion != "" {
-			detail = fmt.Sprintf(
-				"VibeTV firmware %s answered over Cable without a deviceId",
-				legacyCableFirmwareVersion,
-			)
-		}
+	if len(devices) == 0 && legacy != nil {
 		return nil, wrapTransportError(
 			errcode.TransportCableFirmwareTooOld,
 			"discover-vibetvs",
 			"",
 			"Update VibeTV over WiFi first, then reconnect the Cable.",
-			errors.New(detail),
+			legacy,
 		)
 	}
 	return devices, nil
@@ -333,8 +322,7 @@ func resolveVibeTVCandidatesForControl(
 ) (string, error) {
 	matches := make([]string, 0, 1)
 	foreignDeviceAnswered := false
-	legacyCableFirmwareAnswered := false
-	legacyCableFirmwareVersion := ""
+	var legacy *LegacyCableFirmwareError
 	for _, candidate := range candidates {
 		hello, err := readHello(candidate)
 		if err != nil {
@@ -351,10 +339,7 @@ func resolveVibeTVCandidatesForControl(
 		// genuine VibeTV, so report it as upgradable instead of silently
 		// ignoring it.
 		if isLegacyCableHello(hello) {
-			legacyCableFirmwareAnswered = true
-			if legacyCableFirmwareVersion == "" {
-				legacyCableFirmwareVersion = strings.TrimSpace(hello.Firmware)
-			}
+			legacy = legacy.remember(hello)
 		}
 		if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) ||
 			hello.DeviceID == "" ||
@@ -381,20 +366,13 @@ func resolveVibeTVCandidatesForControl(
 				errors.New("a non-VibeTV serial device answered hello"),
 			)
 		}
-		if legacyCableFirmwareAnswered {
-			detail := "VibeTV answered over Cable without a deviceId"
-			if legacyCableFirmwareVersion != "" {
-				detail = fmt.Sprintf(
-					"VibeTV firmware %s answered over Cable without a deviceId",
-					legacyCableFirmwareVersion,
-				)
-			}
+		if legacy != nil {
 			return "", wrapTransportError(
 				errcode.TransportCableFirmwareTooOld,
 				"resolve-vibetv",
 				explicit,
 				"Update VibeTV over WiFi first, then reconnect the Cable.",
-				errors.New(detail),
+				legacy,
 			)
 		}
 		detail := "no matching Cable VibeTV answered hello"
@@ -425,6 +403,31 @@ func isLegacyCableHello(hello protocol.DeviceHello) bool {
 	return hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
 		strings.TrimSpace(hello.DeviceID) == "" &&
 		strings.EqualFold(hello.Capabilities.Transport.Active, "usb")
+}
+
+// LegacyCableFirmwareError is a VibeTV whose firmware predates the Cable
+// identity contract, with the board and firmware its boot hello reported.
+type LegacyCableFirmwareError struct {
+	Board    string
+	Firmware string
+}
+
+func (e *LegacyCableFirmwareError) Error() string {
+	if e.Firmware == "" {
+		return "VibeTV answered over Cable without a deviceId"
+	}
+	return fmt.Sprintf("VibeTV firmware %s answered over Cable without a deviceId", e.Firmware)
+}
+
+// remember keeps the first legacy VibeTV that answered.
+func (e *LegacyCableFirmwareError) remember(hello protocol.DeviceHello) *LegacyCableFirmwareError {
+	if e != nil {
+		return e
+	}
+	return &LegacyCableFirmwareError{
+		Board:    strings.TrimSpace(hello.Board),
+		Firmware: strings.TrimSpace(hello.Firmware),
+	}
 }
 
 // FindLegacyCableVibeTV returns the one ESP8266 VibeTV connected by Cable

@@ -27,6 +27,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
@@ -13816,5 +13817,33 @@ func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
 	}
 	if got := refusals(); got != 2 {
 		t.Fatalf("a refused theme-install hold must be counted too, got %d", got)
+	}
+}
+
+type legacyCableSearchError struct{ legacy *usb.LegacyCableFirmwareError }
+
+func (e legacyCableSearchError) Error() string           { return e.legacy.Error() }
+func (e legacyCableSearchError) Unwrap() error           { return e.legacy }
+func (e legacyCableSearchError) ErrorCode() errcode.Code { return errcode.TransportCableFirmwareTooOld }
+
+// Setup updates a VibeTV from before USB-C support like any other firmware
+// update, so the search tells it which board and firmware to check.
+func TestDeviceSearchReportsTheLegacyCableVibeTVForItsUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return nil }
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+		return nil, legacyCableSearchError{&usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}}
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+	var got struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
+	if rec.Code != http.StatusConflict || got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !reflect.DeepEqual(*got.Error.Device, want) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

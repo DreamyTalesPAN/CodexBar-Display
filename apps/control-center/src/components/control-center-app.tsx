@@ -139,6 +139,8 @@ import { UsageScreen } from "./usage-screen";
 import { startUsageSurfacePolling } from "./usage-surface-polling";
 
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
+// What the Companion calls the VibeTV connected by Cable.
+const CABLE_DEVICE_TARGET = "cable://vibetv";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 // The Mac App bounds the search itself: cable discovery, then a 30s WiFi
@@ -565,15 +567,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
-  // A VibeTV on firmware from before USB-C support gets the current firmware
-  // over the cable right away, like any setup firmware update. Once per app
-  // run: after a failed rescue the search shows the error, which points to
-  // WiFi, instead of flashing the same VibeTV again and again.
+  // A VibeTV on firmware from before USB-C support is offered as the VibeTV
+  // on the cable, and connecting it installs the current firmware first, like
+  // any setup firmware update. Once per app run: a later search shows the
+  // error, which points to WiFi, instead of flashing it again and again.
   const cableRescueAttemptedRef = useRef(false);
-  const cableRescueRef = useRef<(() => void) | null>(null);
-  // The rescue proves which VibeTV came back on the cable. Setup connects that
-  // one instead of searching the whole network again after the restart.
-  const rescuedCableCandidateRef = useRef<DeviceCandidate | null>(null);
+  // The rescue proves which VibeTV came back on the cable; connecting it by
+  // Cable is the last part of its update.
+  const rescuedDeviceIdRef = useRef<string | null>(null);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
@@ -1457,7 +1458,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setDeviceCandidates([]);
     setDeviceSearchState("searching");
     setLastError(null);
-    let rescueCable = false;
     try {
       const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
         "/v1/device/search",
@@ -1495,7 +1495,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         !cableRescueAttemptedRef.current
       ) {
         cableRescueAttemptedRef.current = true;
-        rescueCable = true;
+        setDeviceCandidates([
+          {
+            ...normalized.device,
+            target: CABLE_DEVICE_TARGET,
+            transport: "cable",
+            rescue: true,
+          },
+        ]);
+        setDeviceSearchState("multiple");
       } else {
         setDeviceSearchState("failed");
         setLastError(normalized);
@@ -1504,10 +1512,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (searchIsCurrent()) {
         setBusyAction(null);
       }
-    }
-    // After the search settled, so its busy reset cannot end the update.
-    if (rescueCable) {
-      cableRescueRef.current?.();
     }
   }, [handleCompanionUnavailableForRepair, runCompanion]);
 
@@ -2811,17 +2815,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (rescue) {
         // Connecting the rescued VibeTV is the setup's Cable step.
-        const deviceId = finishedJob.result?.deviceId?.trim();
-        rescuedCableCandidateRef.current = deviceId
-          ? {
-              target: "cable://vibetv",
-              transport: "cable",
-              deviceId,
-              firmware:
-                finishedJob.result?.observedFirmware ||
-                finishedJob.result?.firmware,
-            }
-          : null;
+        rescuedDeviceIdRef.current =
+          finishedJob.result?.deviceId?.trim() || null;
         return true;
       }
       if (finishedJob.phase === "attention") {
@@ -3034,24 +3029,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
     setDevice,
   ]);
-
-  useEffect(() => {
-    cableRescueRef.current = () =>
-      void installFirmwareUpdate({ rescue: true }).then((updated) => {
-        const rescued = rescuedCableCandidateRef.current;
-        rescuedCableCandidateRef.current = null;
-        if (!updated) {
-          setDeviceSearchState("failed");
-        } else if (!rescued) {
-          void searchAndConnect();
-        } else {
-          // The one VibeTV on the cable, as a search would report it: setup
-          // connects it directly and goes on to the providers.
-          setDeviceCandidates([rescued]);
-          setDeviceSearchState("multiple");
-        }
-      });
-  }, [installFirmwareUpdate, searchAndConnect]);
 
   const retryActiveThemeUpgrade = useCallback(async (): Promise<boolean> => {
     const activeThemeUpgrade = resolveActiveThemeUpgrade(
@@ -4658,6 +4635,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           nextAction: "Check the internet connection, then try again.",
         };
       }
+      if (connected.rescue) {
+        // Always an update: the current firmware is what makes USB-C work.
+        return {
+          from: connected.firmware || update.installedFirmware || "",
+          to: update.latestFirmware || "current",
+        };
+      }
       return hasFirmwareUpdate(update) && update?.latestFirmware
         ? {
             from: update.installedFirmware || connected.firmware || "",
@@ -4666,6 +4650,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : null;
     },
     connect: async (candidate) => {
+      if (candidate.rescue) {
+        // Nothing to connect yet: its firmware cannot take a Cable identity.
+        return { board: candidate.board, firmware: candidate.firmware, rescue: true };
+      }
       if (candidate.transport === "cable") {
         const selected = await selectSetupConnectionMode(
           "cable",
@@ -4689,8 +4677,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // race the transport worker's restart and discard that fresh identity.
       return { board: connected.board, firmware: connected.firmware };
     },
-    installFirmware: async () => {
+    installFirmware: async (connected) => {
       lastFirmwareErrorRef.current = null;
+      if (connected.rescue) {
+        rescuedDeviceIdRef.current = null;
+        if (!(await installFirmwareUpdate({ rescue: true }))) {
+          throw (
+            lastFirmwareErrorRef.current ?? {
+              code: "firmware_update_failed",
+              message: "Firmware update did not finish.",
+              nextAction:
+                "Unplug VibeTV from power, plug it back in, then try again.",
+            }
+          );
+        }
+        // The VibeTV the rescue verified, connected by Cable like any other.
+        const selected = await selectSetupConnectionMode(
+          "cable",
+          rescuedDeviceIdRef.current || undefined,
+        );
+        if (selected.status !== "selected") {
+          throw {
+            code: "cable_connection_failed",
+            message: "VibeTV did not finish connecting by Cable.",
+            nextAction:
+              "Keep the selected VibeTV connected by Cable and retry.",
+          };
+        }
+        return;
+      }
       if (!(await installFirmwareUpdate())) {
         throw (
           lastFirmwareErrorRef.current ?? {
@@ -4777,6 +4792,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           displayMode={providerDisplay?.mode ?? "automatic"}
           displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
           firmwareProgress={firmwareUpdateStatus?.progress}
+          firmwareWrittenPercent={
+            firmwareUpdateInProgress
+              ? firmwareWrittenPercent(firmwareUpdateStatus.logs)
+              : undefined
+          }
           firmwareInstallLogs={
             firmwareUpdateInProgress
               ? firmwareUpdateStatus.logs.map((line) =>
@@ -5176,6 +5196,7 @@ function normalizeError(error: unknown, status: number): ApiError {
       code: maybeError.code || `HTTP_${status}`,
       message: maybeError.message || "Request failed.",
       nextAction: maybeError.nextAction || "Try again.",
+      ...(maybeError.device ? { device: maybeError.device } : {}),
     };
   }
   return {
@@ -5383,6 +5404,17 @@ function clampProgress(value: number | undefined): number {
     return 5;
   }
   return Math.max(5, Math.min(100, Math.round(value)));
+}
+
+/** The share the Cable rescue reported as really written, from its log. */
+function firmwareWrittenPercent(logs: string[] = []): number | undefined {
+  for (let index = logs.length - 1; index >= 0; index -= 1) {
+    const match = /^Updating VibeTV: (\d{1,3})%\.$/.exec(logs[index]);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+  return undefined;
 }
 
 function normalizeCaughtError(
