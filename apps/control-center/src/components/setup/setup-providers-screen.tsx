@@ -48,6 +48,8 @@ type SetupProvidersScreenProps = {
   pendingPreferenceIds: Set<string>;
   providers: ProviderItem[];
   usage: UsageSnapshot | null;
+  /** The app runs on Windows, where "this Mac" reads "this computer". */
+  windowsHost?: boolean;
 };
 
 /** How many provider rows are on screen before the customer asks for more. */
@@ -288,6 +290,7 @@ export function SetupProvidersScreen({
   pendingPreferenceIds,
   providers,
   usage,
+  windowsHost = false,
 }: SetupProvidersScreenProps) {
   if (loading) {
     return (
@@ -295,6 +298,7 @@ export function SetupProvidersScreen({
         aiFixPrompt={aiFixPrompt}
         onBack={onBack}
         onCreateSupportReport={onCreateSupportReport}
+        windowsHost={windowsHost}
       />
     );
   }
@@ -305,6 +309,7 @@ export function SetupProvidersScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
 
@@ -325,7 +330,14 @@ export function SetupProvidersScreen({
         // second one, and each of those forces a live provider read before it
         // writes anything -- so the customer paid for the same slow check twice
         // and either answer could move the step or raise a refusal on its own.
-        disabled={continuing || !setupProvidersCanContinue(providers, usage)}
+        // Also closed while a switch is still saving: Continue derives the
+        // display choice from the switches, and a refused write rolls one back
+        // after that choice was made.
+        disabled={
+          continuing ||
+          pendingPreferenceIds.size > 0 ||
+          !setupProvidersCanContinue(providers, usage)
+        }
         onClick={onContinue}
         type="button"
       >
@@ -339,9 +351,10 @@ function SetupProvidersLoadingScreen({
   aiFixPrompt,
   onBack,
   onCreateSupportReport,
+  windowsHost,
 }: Pick<
   SetupProvidersScreenProps,
-  "aiFixPrompt" | "onBack" | "onCreateSupportReport"
+  "aiFixPrompt" | "onBack" | "onCreateSupportReport" | "windowsHost"
 >) {
   const [stillCheckingCount, setStillCheckingCount] = useState(0);
 
@@ -356,7 +369,9 @@ function SetupProvidersLoadingScreen({
   const lines: SetupLogLine[] = [
     {
       id: "provider-usage",
-      text: "reading provider usage on this Mac",
+      text: windowsHost
+        ? "reading provider usage on this computer"
+        : "reading provider usage on this Mac",
       tone: stillCheckingCount > 0 ? "done" : undefined,
     },
     ...Array.from({ length: stillCheckingCount }, (_, index) => ({
@@ -372,6 +387,7 @@ function SetupProvidersLoadingScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
       <SetupWizardSubtitle>

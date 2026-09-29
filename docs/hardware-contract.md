@@ -422,6 +422,12 @@ unexplained transport error instead of an authentication failure.
 - Fresh setup and automatic fallback after a lasting WiFi failure use the same
   writable setup form. The setup flow stores the selected home WiFi credentials
   and restarts the device.
+- While a phone or computer is joined to `VibeTV-Setup`, the background WiFi
+  retry is paused so the access point stays up for the setup form. Retries
+  resume a few seconds after the last client leaves (issue #453).
+- Saving or clearing WiFi credentials restarts the device only after the
+  EEPROM write is confirmed; a failed write answers with an error and keeps the
+  device running (issue #204).
 - Saving a different network changes only the WiFi SSID/password. A paired
   device keeps its device ID, pairing token, themes/assets, active theme,
   brightness, and other settings.

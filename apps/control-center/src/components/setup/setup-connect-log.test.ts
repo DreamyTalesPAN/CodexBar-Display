@@ -57,6 +57,19 @@ describe("connectLogLines", () => {
     );
   });
 
+  it("counts the update line up while the written share is known", () => {
+    const state: ConnectState = {
+      ...base,
+      firmwareFrom: "1.0.39",
+      firmwareTo: "1.0.43",
+      phase: "updating-firmware",
+    };
+    expect(connectLogLines(state, 40).map((line) => line.text)).toContain(
+      "updating firmware · 40% — keep VibeTV powered on",
+    );
+    expect(texts(state)).toContain("updating firmware — keep VibeTV powered on");
+  });
+
   it("freezes the update line at the percent it stopped on", () => {
     const state: ConnectState = {
       ...base,

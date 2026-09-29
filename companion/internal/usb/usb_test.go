@@ -79,6 +79,30 @@ func TestDeviceHelloDoesNotCacheLegacyReadyAsIdentity(t *testing.T) {
 	}
 }
 
+func TestDeviceHelloDoesNotWaitOnPreIdentityFirmwareWithinOneWindow(t *testing.T) {
+	legacy := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","firmware":"1.0.39","capabilities":{"transport":{"active":"usb"}}}` + "\n")
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{legacy}
+	opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: 200 * time.Millisecond})
+	defer sender.Close()
+	if _, err := sender.DeviceHello("/dev/mock"); err != nil {
+		t.Fatal(err)
+	}
+	writes := len(port.writePayloads)
+	// 1.0.39 never answers a hello request; asking again would hold the
+	// sender for the whole window.
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.Firmware != "1.0.39" || len(port.writePayloads) != writes {
+		t.Fatalf("within the window: hello=%+v err=%v writes=%d->%d", hello, err, writes, len(port.writePayloads))
+	}
+	time.Sleep(250 * time.Millisecond)
+	port.readQueue = [][]byte{legacy}
+	if _, err := sender.DeviceHello("/dev/mock"); err != nil || opener.openCounts["/dev/mock"] != 2 {
+		t.Fatalf("after the window a fresh open must renew the boot hello: err=%v opens=%d", err, opener.openCounts["/dev/mock"])
+	}
+}
+
 func TestDeviceHelloRevalidatesStableIdentityOnSamePath(t *testing.T) {
 	port := newMockSerialPort()
 	opener := &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}}
@@ -180,9 +204,24 @@ func TestReadHelloKeepsFullSupplierCapabilityLine(t *testing.T) {
 		line = line[n:]
 	}
 
-	hello, ok := readHelloFromPort(port, 100*time.Millisecond)
+	hello, ok := readHelloFromPort(port, 100*time.Millisecond, nil)
 	if !ok || hello.DeviceID != "16199051" {
 		t.Fatalf("expected full supplier-sized hello, got ok=%t hello=%+v", ok, hello)
+	}
+}
+
+func TestReadHelloFromPortKeepsALineThatSpansTwoWindows(t *testing.T) {
+	line := `{"kind":"hello","board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte("boot noise\n" + line[:30])}
+	var carry []byte
+	if _, ok := readHelloFromPort(port, 20*time.Millisecond, &carry); ok {
+		t.Fatal("half a hello must not parse")
+	}
+	port.readQueue = [][]byte{[]byte(line[30:] + "\n")}
+	hello, ok := readHelloFromPort(port, 20*time.Millisecond, &carry)
+	if !ok || hello.Firmware != "1.0.39" {
+		t.Fatalf("hello cut at a window boundary was lost: ok=%t hello=%+v", ok, hello)
 	}
 }
 
@@ -792,6 +831,7 @@ type mockSerialPort struct {
 	writeErr      error
 	writeDelay    time.Duration
 	closeCalls    int
+	rtsPulses     int
 }
 
 func newMockSerialPort() *mockSerialPort {
@@ -850,7 +890,14 @@ func (m *mockSerialPort) Close() error {
 func (m *mockSerialPort) SetReadTimeout(time.Duration) error { return nil }
 func (m *mockSerialPort) ResetInputBuffer() error            { return nil }
 func (m *mockSerialPort) SetDTR(bool) error                  { return nil }
-func (m *mockSerialPort) SetRTS(bool) error                  { return nil }
+func (m *mockSerialPort) SetRTS(on bool) error {
+	if on {
+		m.mu.Lock()
+		m.rtsPulses++
+		m.mu.Unlock()
+	}
+	return nil
+}
 
 func TestDeviceHelloRetriesLostBootRequestWithoutReopening(t *testing.T) {
 	port := newMockSerialPort()
@@ -896,5 +943,46 @@ func TestDeviceHelloWaitsForFailedWiFiJoinBeforeSetup(t *testing.T) {
 	}
 	if opener.openCount("/dev/mock") != 1 || port.closeCalls != 0 {
 		t.Fatal("waiting must not restart the boot by reopening USB")
+	}
+}
+
+// Windows does not reset the board when the port opens. A VibeTV on firmware
+// from before the Cable identity contract only says hello while it boots, so
+// the sender resets a silent board once to hear it.
+func TestDeviceHelloResetsASilentBoardOnceToHearItsBootHello(t *testing.T) {
+	legacy := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","firmware":"1.0.39","capabilities":{"transport":{"active":"usb"}}}` + "\n")
+	port := newMockSerialPort()
+	port.readHook = func(int) {
+		port.mu.Lock()
+		defer port.mu.Unlock()
+		if port.rtsPulses > 0 && len(port.readQueue) == 0 {
+			port.readQueue = [][]byte{legacy}
+		}
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:           &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:            func(time.Duration) {},
+		HelloWindow:      2 * time.Second,
+		SilentResetAfter: 50 * time.Millisecond,
+	})
+	defer sender.Close()
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.Firmware != "1.0.39" || port.rtsPulses != 1 {
+		t.Fatalf("hello=%+v err=%v resets=%d", hello, err, port.rtsPulses)
+	}
+}
+
+func TestDeviceHelloNeverResetsABoardThatAnswers(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"5804508","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:           &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:            func(time.Duration) {},
+		HelloWindow:      time.Second,
+		SilentResetAfter: time.Nanosecond,
+	})
+	defer sender.Close()
+	if _, err := sender.DeviceHello("/dev/mock"); err != nil || port.rtsPulses != 0 {
+		t.Fatalf("err=%v resets=%d", err, port.rtsPulses)
 	}
 }

@@ -64,6 +64,7 @@ function render(
   picker: ProviderPickerProps = providerPicker,
   brightness: number | null = 70,
   connectionMode: "cable" | "wifi" = "cable",
+  windowsHost = false,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
@@ -82,9 +83,22 @@ function render(
       onSaveStandby={vi.fn()}
       onStandbyBrightnessChange={vi.fn()}
       providerPicker={picker}
+      windowsHost={windowsHost}
     />,
   );
 }
+
+// Issues #438/#460: the Windows app must not speak of "this Mac". The Mac
+// wording is pinned by the tests below and must not change at all.
+describe("SettingsScreen on Windows", () => {
+  it("says this computer where the Mac app says this Mac", () => {
+    const html = render(standbyDevice, savedStandby, providerPicker, 70, "cable", true);
+
+    expect(html).toContain("Requires a data cable connected to this computer.");
+    expect(html).toContain("Connect this computer to another VibeTV.");
+    expect(html).not.toContain("Mac");
+  });
+});
 
 describe("SettingsScreen standby controls", () => {
   it("labels unsupported brightness without a loading state", () => {

@@ -503,6 +503,9 @@ async function main() {
         testCableBackUsesConnectedDeviceWithoutNewSearch,
         testFreshCableHasNoEmptyPicker,
         testMissingVibeTVOffersRetry,
+        testPreUsbCVibeTVIsUpdatedOverTheCable,
+        testFailedCableRescueDoesNotFlashAgainOnItsOwn,
+        testCableRescueRetryOnlyRepeatsTheCableStep,
         testLocalWifiSetupRescansAfterNoResults,
         testDeniedLocalNetworkShowsRecovery,
         testDiscoveredDualTransportCanRecoverWiFi,
@@ -537,6 +540,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testWindowsAppDoesNotSpeakOfAMac(browser, appContext.appUrl);
       console.log("control-center startup timeout test passed");
       return;
     }
@@ -910,6 +914,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testWindowsAppDoesNotSpeakOfAMac(browser, appContext.appUrl);
     await testInitialHealthyStatusRaceAvoidsRepair(browser, appContext.appUrl);
     await testDelayedSettingsDoesNotResetActiveTab(browser, appContext.appUrl);
     await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
@@ -1266,6 +1271,9 @@ async function testStartupStateMachine(browser, appUrl) {
   await testMultipleVibeTVsRequireAChoice(browser, appUrl);
   await testMissingVibeTVOffersRetry(browser, appUrl);
   await testDeniedLocalNetworkShowsRecovery(browser, appUrl);
+  await testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl);
+  await testFailedCableRescueDoesNotFlashAgainOnItsOwn(browser, appUrl);
+  await testCableRescueRetryOnlyRepeatsTheCableStep(browser, appUrl);
 }
 
 async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
@@ -2123,12 +2131,28 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     "A ready provider must let the first-time setup continue",
   );
   await providersContinue.click();
-  const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
-  await displayScreen.waitFor({ timeout: 15_000 });
-  await displayScreen.getByRole("button", { name: "Continue" }).click();
   await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({
     timeout: 15_000,
   });
+  // One provider switched on leaves nothing to choose (issue #423): it is
+  // saved as the one VibeTV shows, and Display Mode is never drawn.
+  assert(
+    (await page.getByRole("heading", { name: SETUP_DISPLAY_SCREEN }).count()) ===
+      0,
+    "One enabled provider must skip Display Mode",
+  );
+  const displayWrites = requests.filter(
+    (request) => request === "PATCH /v1/provider-display",
+  );
+  assert(
+    displayWrites.length === 1,
+    `The sole provider must be saved once, got ${JSON.stringify(requests)}`,
+  );
+  assert(
+    requests.indexOf("PATCH /v1/provider-display") <
+      requests.indexOf("POST /v1/setup/providers/complete"),
+    `The sole provider must be saved before completion, got ${JSON.stringify(requests)}`,
+  );
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
@@ -2283,6 +2307,183 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
 // wizard has nowhere to put it. What must still hold is that the app does not
 // dress a denied permission up as a missing VibeTV, and that the manual way in
 // stays reachable.
+const cableFirmwareTooOld = {
+  status: 409,
+  code: "cable_firmware_too_old",
+  message: "Your VibeTV needs a firmware update before it can use USB-C.",
+  nextAction: "Connect VibeTV to WiFi, install the update, then reconnect the cable.",
+  device: { target: "cable://vibetv", transport: "cable", board: companionDevice.board, firmware: "1.0.39" },
+};
+
+// A VibeTV on firmware from before USB-C support (#478) answers over the cable
+// without an identity. Setup connects it like the one VibeTV on the cable: the
+// connect step installs the current firmware over the cable, like any setup
+// firmware update, then connects the VibeTV the update verified.
+async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  await page.addInitScript(() => {
+    window.setupHeadings = [];
+    new MutationObserver(() => {
+      const heading = document.querySelector("main h1")?.textContent;
+      if (heading && window.setupHeadings.at(-1) !== heading) window.setupHeadings.push(heading);
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  });
+  // The rescue installs the current release, so the connect check finds nothing.
+  const device = { ...themeMissingDevice, target: "cable://vibetv", firmware: "1.0.33", capabilities: {
+    ...companionDevice.capabilities,
+    transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+  }};
+  const requests = [];
+  const updates = [];
+  const selections = [];
+  const companion = await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    connectionModeChoiceRequired: false,
+    searchError: cableFirmwareTooOld,
+    onUpdate: (postData) => updates.push(postData),
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        outcome: "updated",
+        message: "Update complete.",
+        progress: 100,
+        logs: ["Preparing VibeTV update.", "Updating VibeTV: 100%.", "Update complete."],
+        result: { firmware: "1.0.33", observedFirmware: "1.0.33", target: "cable://vibetv", deviceId: device.deviceId, helloVerified: true },
+      },
+    ],
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
+    onRequest: (pathname, method) => requests.push(`${method} ${pathname}`),
+  });
+  await page.route("**/v1/setup/connection-mode", async (route) => {
+    selections.push(route.request().postDataJSON());
+    companion.setDevice(device);
+    await route.fulfill({ json: { ok: true, status: "selected", device } });
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // The rescue proved which VibeTV came back on the cable: setup connects it
+  // and goes on, without searching the whole network a second time.
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert(
+    JSON.stringify(updates) === JSON.stringify(['{"rescue":true}']),
+    `The update must run once as a cable rescue, got ${JSON.stringify(updates)}`,
+  );
+  assert(
+    requests.filter((request) => request === "POST /v1/device/search").length === 1,
+    `The rescued VibeTV must not be searched for again, got ${JSON.stringify(requests.filter((request) => request.endsWith("/v1/device/search")))}`,
+  );
+  assert(
+    selections.length === 1 && selections[0].mode === "cable" && selections[0].deviceId === device.deviceId,
+    `Setup must connect exactly the rescued VibeTV by Cable, got ${JSON.stringify(selections)}`,
+  );
+  const headings = await page.evaluate(() => window.setupHeadings);
+  assert(!headings.includes("How should VibeTV connect?"), `The rescued VibeTV must not ask for a connection method: ${JSON.stringify(headings)}`);
+  assert(!headings.includes("Choose your VibeTV"), `The rescued VibeTV must not show a picker: ${JSON.stringify(headings)}`);
+  assert(
+    (await page
+      .getByRole("dialog", { name: "We couldn't search for your VibeTV" })
+      .count()) === 0,
+    "A VibeTV the app can update over the cable must not be reported as a failed search",
+  );
+  await page.close();
+}
+
+// The rescue wrote and verified the firmware, but connecting by Cable did not
+// finish. Trying again only repeats the Cable step: the updated VibeTV no
+// longer answers like pre-USB-C firmware, so a second rescue could not find it.
+async function testCableRescueRetryOnlyRepeatsTheCableStep(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const device = { ...themeMissingDevice, target: "cable://vibetv", firmware: "1.0.33", capabilities: {
+    ...companionDevice.capabilities,
+    transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+  }};
+  const updates = [];
+  const selections = [];
+  const companion = await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    connectionModeChoiceRequired: false,
+    searchError: cableFirmwareTooOld,
+    onUpdate: (postData) => updates.push(postData),
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        outcome: "updated",
+        message: "Update complete.",
+        progress: 100,
+        logs: ["Preparing VibeTV update.", "Updating VibeTV: 100%.", "Update complete."],
+        result: { firmware: "1.0.33", observedFirmware: "1.0.33", target: "cable://vibetv", deviceId: device.deviceId, helloVerified: true },
+      },
+    ],
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
+  });
+  await page.route("**/v1/setup/connection-mode", async (route) => {
+    selections.push(route.request().postDataJSON());
+    if (selections.length === 1) {
+      await route.fulfill({ status: 409, json: { ok: false, error: {
+        code: "cable_device_not_found", message: "Cable VibeTV did not answer.", nextAction: "Reconnect the data cable and try again.",
+      } } });
+      return;
+    }
+    companion.setDevice(device);
+    await route.fulfill({ json: { ok: true, status: "selected", device } });
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const failure = page.getByRole("dialog", { name: "Firmware update did not finish" });
+  await failure.getByRole("button", { name: "Try update again" }).click({ timeout: 20_000 });
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert(updates.length === 1, `The retry must not flash the rescued VibeTV again, got ${updates.length}`);
+  assert(
+    selections.length === 2 && selections.every((selection) => selection.mode === "cable" && selection.deviceId === device.deviceId),
+    `The retry must connect the rescued VibeTV by Cable, got ${JSON.stringify(selections)}`,
+  );
+  await page.close();
+}
+
+async function testFailedCableRescueDoesNotFlashAgainOnItsOwn(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const updates = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    connectionModeChoiceRequired: false,
+    searchError: cableFirmwareTooOld,
+    onUpdate: (postData) => updates.push(postData),
+    updateStatusSequence: [
+      {
+        phase: "error",
+        message: "Update failed.",
+        progress: 100,
+        logs: ["Preparing VibeTV update.", "Update failed."],
+        error: {
+          code: "firmware_update_failed",
+          message: "VibeTV update failed.",
+          nextAction: "Keep VibeTV powered on, then try again.",
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  // The same dialog as any failed setup firmware update: trying again is the
+  // customer's call, never a loop of its own.
+  const failure = page.getByRole("dialog", {
+    name: "Firmware update did not finish",
+  });
+  await failure.getByRole("button", { name: "Try update again" }).waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(2_000);
+  assert(
+    updates.length === 1,
+    `A failed cable rescue must not flash again on its own, got ${updates.length}`,
+  );
+  await page.close();
+}
+
 async function testDeniedLocalNetworkShowsRecovery(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -5706,6 +5907,79 @@ async function testUsageServiceFailureAfterSetupOffersRecovery(
     timeout: 10_000,
   });
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+// Issues #438/#460: on Windows the app named itself a Mac App and asked to
+// finish AI setup "on this Mac". The runtime names its platform; both native
+// shells replace the user agent, so nothing else can.
+async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  // WebView2 keeps reporting Windows here even though the shell replaces the
+  // user agent. The first status answer is held back, so the welcome log is
+  // drawn before the runtime has named its platform.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      get: () => "Win32",
+    });
+  });
+  let usageBroken = false;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: companionDevice,
+    companionRuntime: { version: "1.0.32", os: "windows" },
+    firstStatusDelayMs: 3_000,
+    onStatusProviderSetup: () =>
+      usageBroken
+        ? {
+            status: "setup_required",
+            engine: { status: "ready" },
+            providers: [{ id: "codexbar", status: "timeout" }],
+          }
+        : readyProviderSetup(),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const welcome = setupScreen(page, SETUP_WELCOME_SCREEN);
+  await welcome
+    .getByText("reading provider usage on this computer")
+    .waitFor({ timeout: 10_000 });
+  assert(
+    !(await welcome.innerText()).includes("Mac"),
+    "The Windows welcome step must not name a Mac before the runtime answers",
+  );
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  const main = page.getByRole("main");
+  await main.getByText("App", { exact: true }).first().waitFor();
+  assert(
+    !(await main.innerText()).includes("Mac"),
+    "The Windows Overview must not name a Mac",
+  );
+
+  usageBroken = true;
+  const usageDialog = page.getByRole("dialog", {
+    name: "Finish AI setup on this computer",
+  });
+  await usageDialog.waitFor({ timeout: 20_000 });
+  assert(
+    !(await usageDialog.innerText()).includes("Mac"),
+    "The Windows usage dialog must not name a Mac",
+  );
+  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
+
+  for (const tab of ["Usage", "Settings", "Appearance", "Updates", "Support"]) {
+    await clickNavigation(page, tab);
+    await page.waitForTimeout(500);
+    assert(
+      !(await main.innerText()).includes("Mac"),
+      `The Windows ${tab} screen must not name a Mac`,
+    );
+  }
   await page.close();
 }
 
@@ -11779,11 +12053,13 @@ async function routeCompanionOnline(
       if (searchDelayMs > 0 && !requestedTarget) {
         await new Promise((resolve) => setTimeout(resolve, searchDelayMs));
       }
-      if (searchError) {
+      const currentSearchError =
+        typeof searchError === "function" ? searchError() : searchError;
+      if (currentSearchError) {
         await route.fulfill({
-          status: 403,
+          status: currentSearchError.status || 403,
           contentType: "application/json",
-          body: JSON.stringify({ ok: false, error: searchError }),
+          body: JSON.stringify({ ok: false, error: currentSearchError }),
         });
         return;
       }
