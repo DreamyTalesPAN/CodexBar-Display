@@ -46,8 +46,9 @@ var (
 
 // FlashESP8266AppImage writes an ESP8266 app image at offset 0 through the ROM
 // loader on path and resets the chip into it. Settings, themes, and WiFi
-// credentials live above the sketch area and are not touched.
-func FlashESP8266AppImage(ctx context.Context, path string, image []byte) error {
+// credentials live above the sketch area and are not touched. progress, when
+// set, receives the written share in steps of ten percent.
+func FlashESP8266AppImage(ctx context.Context, path string, image []byte, progress func(percent int)) error {
 	if len(image) == 0 || image[0] != 0xe9 || len(image) > romMaxAppImageSize {
 		return errors.New("firmware is not an ESP8266 app image")
 	}
@@ -62,7 +63,7 @@ func FlashESP8266AppImage(ctx context.Context, path string, image []byte) error 
 		)
 	}
 	defer func() { _ = closePortBestEffort(port, path, closeTimeout) }()
-	loader := &romLoader{port: port, sleep: time.Sleep}
+	loader := &romLoader{port: port, sleep: time.Sleep, progress: progress}
 	return loader.flashAndBoot(ctx, image)
 }
 
@@ -86,9 +87,10 @@ func (l *romLoader) flashAndBoot(ctx context.Context, image []byte) error {
 }
 
 type romLoader struct {
-	port    SerialPort
-	sleep   func(time.Duration)
-	pending []byte
+	port     SerialPort
+	sleep    func(time.Duration)
+	progress func(percent int)
+	pending  []byte
 }
 
 func (l *romLoader) connect(ctx context.Context) error {
@@ -143,6 +145,7 @@ func (l *romLoader) flash(ctx context.Context, image []byte) error {
 	if err := l.command(romCmdFlashBegin, begin, 0, eraseTimeout); err != nil {
 		return fmt.Errorf("erase flash: %w", err)
 	}
+	reported := 0
 	for seq := range blocks {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -162,6 +165,10 @@ func (l *romLoader) flash(ctx context.Context, image []byte) error {
 		}
 		if err != nil {
 			return fmt.Errorf("write flash block %d of %d: %w", seq+1, blocks, err)
+		}
+		if step := (seq + 1) * 10 / blocks; l.progress != nil && step > reported {
+			reported = step
+			l.progress(step * 10)
 		}
 	}
 	return nil

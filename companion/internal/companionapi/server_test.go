@@ -12977,6 +12977,30 @@ func TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme(t *testing.T) {
 	}
 }
 
+// The Cable rescue writes for about a minute. Its progress must reach the
+// customer, and each step must replace the last instead of pushing the
+// earlier setup lines out of the twelve-line log.
+func TestFirmwareUpdateRescueProgressReplacesTheUpdateLine(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	job := server.createFirmwareUpdateJob(runtimeconfig.Config{})
+	writer := &firmwareUpdateProgressWriter{server: server, jobID: job.ID}
+	for _, line := range []string{"Checking device...", "Uploading firmware...", "Writing firmware: 10%", "Writing firmware: 60%"} {
+		writer.noteLine(line)
+	}
+	got, _ := server.firmwareUpdateJobSnapshot(job.ID)
+	if last := got.Logs[len(got.Logs)-1]; last != "Updating VibeTV: 60%." || got.Message != last {
+		t.Fatalf("logs=%q message=%q", got.Logs, got.Message)
+	}
+	if strings.Count(strings.Join(got.Logs, "\n"), "Updating VibeTV") != 1 || got.Progress != 65+60*17/100 {
+		t.Fatalf("progress must replace one line and advance the bar: logs=%q progress=%d", got.Logs, got.Progress)
+	}
+	writer.noteLine("Restarting VibeTV...")
+	got, _ = server.firmwareUpdateJobSnapshot(job.ID)
+	if got.Logs[len(got.Logs)-2] != "Updating VibeTV: 60%." || got.Logs[len(got.Logs)-1] != "Restarting VibeTV." {
+		t.Fatalf("the next step must follow the last progress line: %q", got.Logs)
+	}
+}
+
 // Hardware, 2026-08-07: after a stalled upload the updater's own diagnosis of
 // why the stored theme was not restored existed only on the child process's
 // stdout. noteLine dropped every line customerFirmwareUpdateProgress did not

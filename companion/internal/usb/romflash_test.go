@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -159,6 +160,20 @@ func TestROMLoaderWritesAppImageAndBootsIt(t *testing.T) {
 	}
 }
 
+func TestROMLoaderReportsProgressInTenPercentSteps(t *testing.T) {
+	var reported []int
+	loader := &romLoader{port: newFakeROM(), sleep: func(time.Duration) {}, progress: func(percent int) {
+		reported = append(reported, percent)
+	}}
+	if err := loader.flash(context.Background(), testAppImage(25*romFlashBlockSize)); err != nil {
+		t.Fatal(err)
+	}
+	want := []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}
+	if fmt.Sprint(reported) != fmt.Sprint(want) {
+		t.Fatalf("progress = %v, want %v", reported, want)
+	}
+}
+
 func TestROMLoaderRetriesARejectedBlockThenFails(t *testing.T) {
 	rom := newFakeROM()
 	rom.rejectBlock, rom.rejections = 1, romWriteBlockAttempts-1
@@ -249,7 +264,7 @@ func TestROMEraseSizeMatchesEsptool(t *testing.T) {
 
 func TestFlashESP8266AppImageRejectsWhatIsNotAnAppImage(t *testing.T) {
 	for _, image := range [][]byte{nil, {0x1f, 0x8b, 0x08}, append([]byte{0xe9}, make([]byte, romMaxAppImageSize)...)} {
-		if err := FlashESP8266AppImage(context.Background(), "/dev/null-vibetv", image); err == nil ||
+		if err := FlashESP8266AppImage(context.Background(), "/dev/null-vibetv", image, nil); err == nil ||
 			!strings.Contains(err.Error(), "not an ESP8266 app image") {
 			t.Fatalf("FlashESP8266AppImage(%d bytes) = %v", len(image), err)
 		}

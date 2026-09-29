@@ -7002,6 +7002,13 @@ func customerFirmwareUpdateProgress(line string, job *firmwareUpdateJob) (string
 		return "Preparing VibeTV.", 50, true
 	case strings.HasPrefix(line, "Uploading firmware"):
 		return "Updating VibeTV.", 65, true
+	case strings.HasPrefix(line, "Writing firmware:"):
+		// The Cable rescue writes for about a minute; say how far it got.
+		percent, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Writing firmware:")), "%"))
+		if err != nil || percent < 0 || percent > 100 {
+			return "", 0, false
+		}
+		return fmt.Sprintf("Updating VibeTV: %d%%.", percent), 65 + percent*17/100, true
 	case strings.HasPrefix(line, "Restarting VibeTV"):
 		return "Restarting VibeTV.", 82, true
 	case strings.HasPrefix(line, "Done: firmware"):
@@ -7032,6 +7039,13 @@ func appendFirmwareUpdateJobLog(job *firmwareUpdateJob, message string) {
 		return
 	}
 	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
+		return
+	}
+	// A progress line replaces the update line before it, so the earlier
+	// steps stay in the log instead of scrolling out.
+	if last := len(job.Logs) - 1; last >= 0 && strings.HasPrefix(message, "Updating VibeTV:") &&
+		strings.HasPrefix(job.Logs[last], "Updating VibeTV") {
+		job.Logs[last] = message
 		return
 	}
 	job.Logs = append(job.Logs, message)

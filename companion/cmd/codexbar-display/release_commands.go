@@ -735,7 +735,9 @@ func runInstallUpdate(args []string) (retErr error) {
 		var image []byte
 		image, uploadErr = os.ReadFile(imagePath)
 		if uploadErr == nil {
-			uploadErr = flashCableRescueFn(ctx, cablePort, image)
+			uploadErr = flashCableRescueFn(ctx, cablePort, image, func(percent int) {
+				fmt.Printf("Writing firmware: %d%%\n", percent)
+			})
 		}
 	} else if cableMode {
 		var image []byte

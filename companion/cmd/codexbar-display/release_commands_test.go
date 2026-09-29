@@ -1058,8 +1058,9 @@ func TestRunInstallUpdateCableRescueFlashesPreIdentityVibeTVOnAFreshSystem(t *te
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
 	}
 	var flashedPort, flashedImage string
-	flashCableRescueFn = func(_ context.Context, port string, image []byte) error {
+	flashCableRescueFn = func(_ context.Context, port string, image []byte, progress func(int)) error {
 		flashedPort, flashedImage = port, string(image)
+		progress(50)
 		*firmwareVersion = "1.0.1"
 		return nil
 	}
@@ -1072,6 +1073,9 @@ func TestRunInstallUpdateCableRescueFlashesPreIdentityVibeTVOnAFreshSystem(t *te
 	}
 	if flashedPort != "/dev/mock-legacy" || flashedImage != "cable firmware" {
 		t.Fatalf("flashed %q with %q", flashedPort, flashedImage)
+	}
+	if !strings.Contains(output, "Writing firmware: 50%") {
+		t.Fatalf("rescue progress was not reported:\n%s", output)
 	}
 	if !strings.Contains(output, "Done: firmware 1.0.1 installed") ||
 		!strings.Contains(output, `"stage":"verifying_health","phase":"installing","firmware":"1.0.1","observedFirmware":"1.0.1","target":"cable://vibetv","deviceId":"device-cable"`) {
@@ -1087,7 +1091,7 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *te
 		probes++
 		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 	}
-	flashCableRescueFn = func(context.Context, string, []byte) error {
+	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
 		t.Fatal("rescue flashed without a pre-identity VibeTV")
 		return nil
 	}
