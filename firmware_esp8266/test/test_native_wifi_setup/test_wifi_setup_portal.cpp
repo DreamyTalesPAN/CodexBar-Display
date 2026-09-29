@@ -410,6 +410,20 @@ void test_setup_client_joining_interrupts_running_attempt() {
       static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(35000))));
 }
 
+void test_setup_client_joining_interrupts_attempt_while_busy() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
+
+  // An asset upload makes the loop busy; the joined client still wins.
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::Interrupted),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(7000, true, true, false, true))));
+  TEST_ASSERT_FALSE(state.attemptInProgress);
+}
+
 void test_setup_client_does_not_hide_a_successful_connection() {
   wifi_recovery::State state;
   wifi_recovery::EnterSetup(state, 0);
@@ -466,6 +480,7 @@ int main(int, char**) {
   RUN_TEST(test_recovery_connected_later_leaves_setup_state);
   RUN_TEST(test_joined_setup_client_holds_retries_until_it_leaves);
   RUN_TEST(test_setup_client_joining_interrupts_running_attempt);
+  RUN_TEST(test_setup_client_joining_interrupts_attempt_while_busy);
   RUN_TEST(test_setup_client_does_not_hide_a_successful_connection);
   return UNITY_END();
 }

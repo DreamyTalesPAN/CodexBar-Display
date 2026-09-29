@@ -57,6 +57,20 @@ inline Action Tick(State& state, const Inputs& inputs) {
     return Action::None;
   }
 
+  // A station attempt moves the single radio's channel, and the setup access
+  // point follows it: the customer is dropped mid-entry (issue #453). While
+  // someone is joined, no attempt starts, a running one stops, and the next
+  // one waits a full interval after they leave. This holds while busy too: an
+  // upload does not stop a running attempt from dropping the client.
+  if (inputs.setupClientConnected && !inputs.connected) {
+    const bool interrupted = state.attemptInProgress;
+    state.attemptInProgress = false;
+    state.attemptStartedAtMs = 0;
+    state.retryScheduled = true;
+    state.retryDueAtMs = inputs.nowMs + kRetryIntervalMs;
+    return interrupted ? Action::Interrupted : Action::None;
+  }
+
   if (inputs.busy) {
     return Action::None;
   }
@@ -64,19 +78,6 @@ inline Action Tick(State& state, const Inputs& inputs) {
   if (inputs.connected) {
     state = {};
     return Action::Connected;
-  }
-
-  // A station attempt moves the single radio's channel, and the setup access
-  // point follows it: the customer is dropped mid-entry (issue #453). While
-  // someone is joined, no attempt starts, a running one stops, and the next
-  // one waits a full interval after they leave.
-  if (inputs.setupClientConnected) {
-    const bool interrupted = state.attemptInProgress;
-    state.attemptInProgress = false;
-    state.attemptStartedAtMs = 0;
-    state.retryScheduled = true;
-    state.retryDueAtMs = inputs.nowMs + kRetryIntervalMs;
-    return interrupted ? Action::Interrupted : Action::None;
   }
 
   if (state.attemptInProgress) {
