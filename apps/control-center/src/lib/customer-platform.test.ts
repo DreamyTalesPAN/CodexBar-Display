@@ -3,6 +3,7 @@ import {
   copyForHost,
   detectCustomerPlatform,
   errorForHost,
+  statusForHost,
 } from "./customer-platform";
 
 describe("copyForHost", () => {
@@ -99,5 +100,35 @@ describe("detectCustomerPlatform", () => {
       detectCustomerPlatform({ userAgent: "Mozilla/5.0 (X11; Linux x86_64)" }),
     ).toBe("unknown");
     expect(detectCustomerPlatform({})).toBe("unknown");
+  });
+});
+
+describe("statusForHost", () => {
+  // A firmware or theme job that loses the background service carries the
+  // runtime's "Mac App ... from Applications" recovery in its status.
+  const status = {
+    phase: "error" as const,
+    startedAt: "2026-09-29T08:00:00Z",
+    message: "Mac App did not answer.",
+    error: "Open VibeTV Control Center again from Applications.",
+    failure: {
+      code: "companion_unavailable",
+      message: "Mac App did not answer.",
+      nextAction: "Open VibeTV Control Center again from Applications.",
+    },
+    logs: ["Preparing VibeTV update.", "Mac App did not answer."],
+  };
+
+  it("words the whole status for Windows", () => {
+    const worded = statusForHost(status, true);
+    expect(JSON.stringify(worded)).not.toMatch(/Mac|Applications/);
+    expect(worded?.error).toBe("Open VibeTV Control Center again from the Start menu.");
+    expect(worded?.failure?.code).toBe("companion_unavailable");
+    expect(worded?.logs[1]).toBe("App did not answer.");
+  });
+
+  it("leaves the macOS status untouched", () => {
+    expect(statusForHost(status, false)).toBe(status);
+    expect(statusForHost(null, true)).toBeNull();
   });
 });

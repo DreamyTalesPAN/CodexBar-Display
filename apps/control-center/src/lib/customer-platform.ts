@@ -86,3 +86,29 @@ export function errorForHost<T extends { message: string; nextAction: string }>(
     nextAction: copyForHost(error.nextAction, true),
   };
 }
+
+/**
+ * Words a firmware or theme job status for the host. The runtime's own errors
+ * and log lines still name the Mac, so the whole status is reworded, not only
+ * the fixed copy around it.
+ */
+export function statusForHost<
+  T extends {
+    error?: string;
+    failure?: { message: string; nextAction: string };
+    logs: string[];
+    message?: string;
+  },
+>(status: T | null | undefined, windowsHost: boolean): T | null | undefined {
+  if (!status || !windowsHost) {
+    return status;
+  }
+  const word = (text?: string) => (text === undefined ? undefined : copyForHost(text, true));
+  return {
+    ...status,
+    error: word(status.error),
+    failure: errorForHost(status.failure, true) ?? undefined,
+    logs: status.logs.map((line) => copyForHost(line, true)),
+    message: word(status.message),
+  };
+}

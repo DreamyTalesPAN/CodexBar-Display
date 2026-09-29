@@ -39,6 +39,7 @@ import {
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import { statusForHost } from "@/lib/customer-platform";
 import type { CompanionInfo } from "./control-center-types";
 import { SetupDialog } from "./setup/setup-dialog";
 
@@ -155,7 +156,9 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const visibleUpdateStatus = staleFirmwareFailure ? undefined : updateStatus;
+  const visibleUpdateStatus = staleFirmwareFailure
+    ? undefined
+    : statusForHost(updateStatus, windowsHost);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,

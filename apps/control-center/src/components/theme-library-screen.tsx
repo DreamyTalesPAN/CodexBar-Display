@@ -60,6 +60,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { cn } from "@/lib/utils";
+import { statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import {
   createBlankThemeSpec,
@@ -623,7 +624,7 @@ export function ThemeLibraryScreen({
                   device={device}
                   displayThemeId={displayTheme?.themeId}
                   item={theme}
-                  installStatus={installStatus}
+                  installStatus={statusForHost(installStatus, windowsHost)}
                   key={theme.themeId}
                   lastInstall={lastInstall}
                   loadingEditorThemeId={loadingEditorThemeId}
