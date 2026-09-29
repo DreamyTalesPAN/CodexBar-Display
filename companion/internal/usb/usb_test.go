@@ -831,6 +831,7 @@ type mockSerialPort struct {
 	writeErr      error
 	writeDelay    time.Duration
 	closeCalls    int
+	rtsPulses     int
 }
 
 func newMockSerialPort() *mockSerialPort {
@@ -889,7 +890,14 @@ func (m *mockSerialPort) Close() error {
 func (m *mockSerialPort) SetReadTimeout(time.Duration) error { return nil }
 func (m *mockSerialPort) ResetInputBuffer() error            { return nil }
 func (m *mockSerialPort) SetDTR(bool) error                  { return nil }
-func (m *mockSerialPort) SetRTS(bool) error                  { return nil }
+func (m *mockSerialPort) SetRTS(on bool) error {
+	if on {
+		m.mu.Lock()
+		m.rtsPulses++
+		m.mu.Unlock()
+	}
+	return nil
+}
 
 func TestDeviceHelloRetriesLostBootRequestWithoutReopening(t *testing.T) {
 	port := newMockSerialPort()
@@ -935,5 +943,46 @@ func TestDeviceHelloWaitsForFailedWiFiJoinBeforeSetup(t *testing.T) {
 	}
 	if opener.openCount("/dev/mock") != 1 || port.closeCalls != 0 {
 		t.Fatal("waiting must not restart the boot by reopening USB")
+	}
+}
+
+// Windows does not reset the board when the port opens. A VibeTV on firmware
+// from before the Cable identity contract only says hello while it boots, so
+// the sender resets a silent board once to hear it.
+func TestDeviceHelloResetsASilentBoardOnceToHearItsBootHello(t *testing.T) {
+	legacy := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","firmware":"1.0.39","capabilities":{"transport":{"active":"usb"}}}` + "\n")
+	port := newMockSerialPort()
+	port.readHook = func(int) {
+		port.mu.Lock()
+		defer port.mu.Unlock()
+		if port.rtsPulses > 0 && len(port.readQueue) == 0 {
+			port.readQueue = [][]byte{legacy}
+		}
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:           &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:            func(time.Duration) {},
+		HelloWindow:      2 * time.Second,
+		SilentResetAfter: 50 * time.Millisecond,
+	})
+	defer sender.Close()
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil || hello.Firmware != "1.0.39" || port.rtsPulses != 1 {
+		t.Fatalf("hello=%+v err=%v resets=%d", hello, err, port.rtsPulses)
+	}
+}
+
+func TestDeviceHelloNeverResetsABoardThatAnswers(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"hello","deviceId":"5804508","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:           &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:            func(time.Duration) {},
+		HelloWindow:      time.Second,
+		SilentResetAfter: time.Nanosecond,
+	})
+	defer sender.Close()
+	if _, err := sender.DeviceHello("/dev/mock"); err != nil || port.rtsPulses != 0 {
+		t.Fatalf("err=%v resets=%d", err, port.rtsPulses)
 	}
 }

@@ -140,10 +140,7 @@ func (l *romLoader) enterLoader(delay time.Duration) {
 }
 
 func (l *romLoader) hardReset() {
-	_ = l.port.SetDTR(false)
-	_ = l.port.SetRTS(true)
-	l.sleep(100 * time.Millisecond)
-	_ = l.port.SetRTS(false)
+	resetBoard(l.port, l.sleep)
 }
 
 func (l *romLoader) flash(ctx context.Context, image []byte) error {

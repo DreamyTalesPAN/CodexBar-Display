@@ -33,10 +33,13 @@ const (
 	// Opening supplier USB can reset the device. A failed 20-second WiFi
 	// join measured 21.8 seconds until setup answered hello. Keep one port
 	// open through that boot, with a bounded reserve for initialization.
-	helloReadWindow      = 30 * time.Second
-	wifiScanReadWindow   = 12 * time.Second
-	helloReadStepTimeout = 80 * time.Millisecond
-	helloReadBufferBytes = 2048
+	helloReadWindow = 30 * time.Second
+	// A WiFi-mode VibeTV can stay silent through a 20-second WiFi join, so a
+	// reset after this long still leaves it the rest of the hello window.
+	silentBoardResetAfter = 2 * time.Second
+	wifiScanReadWindow    = 12 * time.Second
+	helloReadStepTimeout  = 80 * time.Millisecond
+	helloReadBufferBytes  = 2048
 )
 
 var helloRequestLine = []byte("{\"kind\":\"request\",\"op\":\"hello\"}\n")

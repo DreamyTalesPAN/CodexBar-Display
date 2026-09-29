@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,9 @@ type SenderConfig struct {
 	SettleDuration time.Duration
 	HelloWindow    time.Duration
 	WriteTimeout   time.Duration
+	// SilentResetAfter resets a board that has not said hello for this long
+	// after the port opened. Zero means the platform default; negative never.
+	SilentResetAfter time.Duration
 }
 
 type Sender struct {
@@ -29,6 +33,9 @@ type Sender struct {
 	settleDuration time.Duration
 	helloWindow    time.Duration
 	writeTimeout   time.Duration
+	// silentResetAfter is zero where opening the port already resets the
+	// board, as on macOS.
+	silentResetAfter time.Duration
 
 	port          SerialPort
 	path          string
@@ -65,12 +72,18 @@ func NewSenderWithConfig(cfg SenderConfig) *Sender {
 		writeLimit = writeTimeout
 	}
 
+	silentReset := cfg.SilentResetAfter
+	if silentReset == 0 && runtime.GOOS == "windows" {
+		silentReset = silentBoardResetAfter
+	}
+
 	return &Sender{
-		opener:         opener,
-		sleep:          sleep,
-		settleDuration: settle,
-		helloWindow:    window,
-		writeTimeout:   writeLimit,
+		opener:           opener,
+		sleep:            sleep,
+		settleDuration:   settle,
+		helloWindow:      window,
+		writeTimeout:     writeLimit,
+		silentResetAfter: max(silentReset, 0),
 	}
 }
 
@@ -244,6 +257,8 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 	var hello protocol.DeviceHello
 	var carry []byte
 	seen := false
+	openedAt := time.Now()
+	reset := false
 	for ctx.Err() == nil && time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if err := writeWithTimeout(s.port, helloRequestLine, min(s.writeTimeout, remaining)); err != nil {
@@ -252,6 +267,14 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 		hello, seen = readHelloFromPort(s.port, min(time.Second, time.Until(deadline)), &carry)
 		if seen {
 			break
+		}
+		// macOS resets the board whenever the port opens; Windows does not
+		// have to. Firmware from before the Cable identity contract only says
+		// hello while it boots, so a board that stays silent is reset once,
+		// the way opening the port does on macOS.
+		if !reset && s.silentResetAfter > 0 && time.Since(openedAt) >= s.silentResetAfter {
+			reset = true
+			resetBoard(s.port, s.sleep)
 		}
 	}
 	s.hello = hello.Normalize()
