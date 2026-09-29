@@ -2,13 +2,26 @@ package usb
 
 import (
 	"context"
+	"syscall"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	serial "go.bug.st/serial"
 )
 
-var serialOpen = serial.Open
+var serialOpen = openSerialPort
+
+// openSerialPort opens a port that child processes do not inherit.
+func openSerialPort(path string, mode *serial.Mode) (serial.Port, error) {
+	syscall.ForkLock.RLock()
+	defer syscall.ForkLock.RUnlock()
+	port, err := serial.Open(path, mode)
+	if err == nil {
+		closeOnExecForPath(path)
+	}
+	return port, err
+}
+
 var defaultDiscoverer PortDiscoverer = systemDiscoverer{}
 var defaultSender = NewSender()
 
