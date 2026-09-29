@@ -90,7 +90,7 @@ if [[ "${1:-} ${2:-}" == "config providers" ]]; then
   exit 0
 fi
 if [[ "${1:-} ${2:-}" == "config enable" ]]; then echo '{"enabled":true}'; exit 0; fi
-echo "codexbar-stub 0.46.0"
+echo "codexbar-stub 0.63.0"
 STUB
 chmod +x "$WORK/codexbar-stub"
 export CODEXBAR_BIN="$WORK/codexbar-stub"
