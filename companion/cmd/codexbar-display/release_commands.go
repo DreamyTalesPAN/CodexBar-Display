@@ -807,7 +807,13 @@ func runInstallUpdate(args []string) (retErr error) {
 	var verifiedHello protocol.DeviceHello
 	var helloErr error
 	if cableMode {
-		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, cableFirmwareVerifyTimeout)
+		// A rescued VibeTV has no identity to resolve by yet. Its own port is
+		// the only proof, or another connected VibeTV could answer for it.
+		rescuedPort := ""
+		if rescueMode {
+			rescuedPort = cablePort
+		}
+		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, rescuedPort, cableFirmwareVerifyTimeout)
 	} else {
 		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
 		if err == nil {
@@ -873,7 +879,8 @@ func runInstallUpdate(args []string) (retErr error) {
 func waitForCableFirmwareVersion(
 	ctx context.Context,
 	targetVersion,
-	deviceID string,
+	deviceID,
+	port string,
 	timeout time.Duration,
 ) (protocol.DeviceHello, error) {
 	deadline := time.Now().Add(timeout)
@@ -882,12 +889,17 @@ func waitForCableFirmwareVersion(
 		if err := ctx.Err(); err != nil {
 			return protocol.DeviceHello{}, err
 		}
-		port, err := resolveCableFirmwarePortFn("", deviceID)
+		resolved, err := port, error(nil)
+		if resolved == "" {
+			resolved, err = resolveCableFirmwarePortFn("", deviceID)
+		}
 		if err == nil {
 			var hello protocol.DeviceHello
-			hello, err = readCableFirmwareHelloFn(port)
+			hello, err = readCableFirmwareHelloFn(resolved)
 			if err == nil {
-				if strings.TrimSpace(deviceID) != "" && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
+				if strings.TrimSpace(hello.DeviceID) == "" {
+					err = errors.New("cable VibeTV has not reported its identity yet")
+				} else if strings.TrimSpace(deviceID) != "" && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
 					err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(deviceID), strings.TrimSpace(hello.DeviceID))
 				} else if normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(targetVersion) {
 					return hello, nil

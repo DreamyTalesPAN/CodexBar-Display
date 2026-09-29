@@ -1042,11 +1042,17 @@ func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
 func TestRunInstallUpdateCableRescueFlashesPreIdentityVibeTVOnAFreshSystem(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
-	resolveCableFirmwarePortFn = func(explicit, expectedDeviceID string) (string, error) {
-		if explicit != "" || expectedDeviceID != "" {
-			t.Fatalf("rescue verification must accept the identity the new firmware reports, got explicit=%q id=%q", explicit, expectedDeviceID)
+	resolveCableFirmwarePortFn = func(string, string) (string, error) {
+		// Another connected VibeTV could answer a resolver; only the rescued
+		// port proves the rescued device.
+		t.Fatal("rescue verification must stay on the flashed port")
+		return "", nil
+	}
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if port != "/dev/mock-legacy" {
+			t.Fatalf("rescue verification read %q, want the flashed port", port)
 		}
-		return "/dev/mock-cable", nil
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: "esp8266-smalltv-st7789", Firmware: *firmwareVersion}, nil
 	}
 	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
