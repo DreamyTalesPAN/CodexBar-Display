@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -515,6 +516,7 @@ func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.
 		return []byte("CodexBar 0.56.8"), nil
 	}
 	var probeDeadlines []bool
+	var mu sync.Mutex
 	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
 			return []byte(`[
@@ -523,7 +525,9 @@ func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.
 			]`), nil
 		}
 		_, hasDeadline := ctx.Deadline()
+		mu.Lock()
 		probeDeadlines = append(probeDeadlines, hasDeadline)
+		mu.Unlock()
 		provider := args[3]
 		return []byte(`[{"provider":"` + provider + `","usage":{"primary":{"usedPercent":5}}}]`), nil
 	}
