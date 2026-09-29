@@ -90,7 +90,7 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 	if timeout > perProviderProbeTimeout {
 		timeout = perProviderProbeTimeout
 	}
-	return probeEnabledProviders(ctx, inventory, func(setting ProviderSetting) ([]byte, error) {
+	return probeEnabledProviders(ctx, timeout, inventory, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
 		args := append([]string{"usage", "--json", "--provider", setting.ID}, extra...)
 		return runUsageCommandFn(ctx, timeout, bin, args...)
 	})
@@ -100,17 +100,22 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 // maxParallelProviderProbes at a time, and joins the answers in inventory
 // order. One after another, each capped provider added its full cap to the
 // check: two slow providers already outlasted the Control Center's request.
-// Side by side, a full check takes as long as its slowest provider, which
-// ProviderCheckBudget covers.
+// Side by side, a full check takes as long as its slowest provider.
+//
+// The whole join shares one budget of timeout, so it always fits
+// ProviderCheckBudget: a provider that waits for a free slot gets only the
+// time left, and one that cannot start before the budget ends is reported
+// unavailable instead of opening a second round.
 //
 // A switched-on provider whose probe produced no JSON is reported
 // unavailable, not dropped from the answer. Once the caller gave up, no
 // further probe starts.
-func probeEnabledProviders(ctx context.Context, settings []ProviderSetting, probe func(ProviderSetting) ([]byte, error)) ([]byte, error) {
+func probeEnabledProviders(ctx context.Context, timeout time.Duration, settings []ProviderSetting, probe func(ProviderSetting, time.Duration) ([]byte, error)) ([]byte, error) {
 	type answer struct {
 		items []json.RawMessage
 		err   error
 	}
+	deadline := time.Now().Add(timeout)
 	answers := make([]answer, len(settings))
 	slots := make(chan struct{}, maxParallelProviderProbes)
 	var wg sync.WaitGroup
@@ -130,7 +135,13 @@ func probeEnabledProviders(ctx context.Context, settings []ProviderSetting, prob
 			if ctx.Err() != nil {
 				return
 			}
-			out, runErr := probe(settings[i])
+			var out []byte
+			var runErr error
+			if left := time.Until(deadline); left > 0 {
+				out, runErr = probe(settings[i], left)
+			} else {
+				runErr = context.DeadlineExceeded
+			}
 			answers[i].err = runErr
 			var root any
 			if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
@@ -311,7 +322,7 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 	// reports it unavailable with the reason. Whether a probe may still start
 	// follows the caller's own context, as before; the probe itself runs
 	// under the detached one.
-	return probeEnabledProviders(ctx, settings, func(setting ProviderSetting) ([]byte, error) {
+	return probeEnabledProviders(ctx, timeout, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
 		args := append([]string{"usage", "--json", "--provider", setting.ID}, statusArgs...)
 		return runProviderCommandFn(probeCtx, timeout, bin, args...)
 	})

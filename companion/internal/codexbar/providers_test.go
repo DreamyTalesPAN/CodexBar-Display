@@ -3,6 +3,7 @@ package codexbar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -282,7 +283,9 @@ func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
 		t.Fatalf("expected one probe per enabled provider, got %d", len(timeouts))
 	}
 	for i, timeout := range timeouts {
-		if timeout != perProviderProbeTimeout {
+		// The shared join budget starts at the cap, so a probe gets at most
+		// the cap and, with a free slot, practically all of it.
+		if timeout > perProviderProbeTimeout || timeout < perProviderProbeTimeout-time.Second {
 			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
 		}
 	}
@@ -334,7 +337,9 @@ func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T
 	// Without the shared deadline the collector's 300 s timeout must not
 	// become the per-probe budget; a hanging CLI is capped per provider.
 	for i, timeout := range timeouts {
-		if timeout != perProviderProbeTimeout {
+		// The shared join budget starts at the cap, so a probe gets at most
+		// the cap and, with a free slot, practically all of it.
+		if timeout > perProviderProbeTimeout || timeout < perProviderProbeTimeout-time.Second {
 			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
 		}
 	}
@@ -439,6 +444,49 @@ func TestRunUsageAllEnabledProbesWindowsProvidersSideBySide(t *testing.T) {
 	for _, frame := range frames {
 		if frame.Frame.UsageUnavailable {
 			t.Fatalf("both probes must succeed side by side, got %#v", frames)
+		}
+	}
+}
+
+// More switched-on providers than parallel slots must not open a second round
+// of full caps: the join shares one budget, a provider that waits for a slot
+// gets only the time left, and one that cannot start in time is reported
+// unavailable. The whole join therefore ends within its budget.
+func TestProbeEnabledProvidersSharesOneBudgetAcrossSlots(t *testing.T) {
+	settings := make([]ProviderSetting, maxParallelProviderProbes+1)
+	for i := range settings {
+		settings[i] = ProviderSetting{ID: fmt.Sprintf("p%d", i), Label: fmt.Sprintf("P%d", i), Enabled: true}
+	}
+	const budget = 200 * time.Millisecond
+	var mu sync.Mutex
+	var timeouts []time.Duration
+	started := time.Now()
+	raw, err := probeEnabledProviders(context.Background(), budget, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+		mu.Lock()
+		timeouts = append(timeouts, timeout)
+		mu.Unlock()
+		// A hanging CLI: it only returns when its own cap runs out.
+		time.Sleep(timeout)
+		return nil, context.DeadlineExceeded
+	})
+	if elapsed := time.Since(started); elapsed > budget+150*time.Millisecond {
+		t.Fatalf("join took %s, beyond its %s budget", elapsed, budget)
+	}
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	for i, timeout := range timeouts {
+		if timeout > budget {
+			t.Fatalf("probe %d got %s, more than the shared %s budget", i, timeout, budget)
+		}
+	}
+	health := parseProviderHealth(raw)
+	if len(health) != len(settings) {
+		t.Fatalf("every switched-on provider must be answered, got %d of %d", len(health), len(settings))
+	}
+	for id, state := range health {
+		if state.health != ProviderHealthUnavailable {
+			t.Fatalf("%s must be unavailable, got %#v", id, state)
 		}
 	}
 }
