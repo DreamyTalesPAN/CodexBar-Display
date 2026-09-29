@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  PreferenceValue,
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
@@ -57,13 +56,11 @@ const PROVIDER_PAGE_SIZE = 10;
 export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
 
 /**
- * The providers VibeTV offers. CodexBar's inventory is 65 deep; VibeTV
- * launches with the four it has been checked against, and the rest stay in
- * CodexBar's own settings untouched (their on/off values are not rewritten).
- * Applied where the app hands its provider list to setup and Settings, so the
- * list itself stays generic.
+ * The providers whose sign-in the Companion can start (provider_sign_in_launch.go).
+ * Every other provider in CodexBar's inventory is listed too; its row keeps
+ * the switch, the provider's own message and "Check again".
  */
-export const OFFERED_PROVIDER_IDS = [
+export const SIGN_IN_PROVIDER_IDS = [
   "codex",
   "claude",
   "cursor",
@@ -71,30 +68,12 @@ export const OFFERED_PROVIDER_IDS = [
 ];
 
 /**
- * A provider the customer already switched on stays visible even when it is
- * outside the offered four. Hiding an enabled provider leaves its switch on
- * with no row to turn it off, and the Companion then refuses an Automatic
- * display that omits it (`provider_display_incomplete`), which strands the
- * customer on a step they cannot complete.
- */
-export function offeredProviders<
-  T extends { providerId: string; value?: PreferenceValue },
->(providers: T[]): T[] {
-  return providers.filter(
-    (provider) =>
-      OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase()) ||
-      provider.value === true,
-  );
-}
-
-/**
  * Health states in which the row offers to start the provider's sign-in.
  *
- * The offered four are the ones the Companion knows how to sign in. A
- * provider that is only listed because the customer had switched it on has no
- * sign-in the Companion can start, so offering the button there would give
- * the customer an action that can only fail. Those rows keep the switch and
- * "Check again", and the provider's own message says what to do.
+ * Only the four in SIGN_IN_PROVIDER_IDS have a sign-in the Companion can
+ * start. Any other provider would get an action that can only fail, so its
+ * row keeps the switch and "Check again", and the provider's own message
+ * says what to do.
  */
 export function setupProviderOffersSignIn(
   provider: Pick<ProviderItem, "health" | "providerId">,
@@ -110,7 +89,7 @@ export function setupProviderOffersSignIn(
     return Boolean(signInUrl);
   }
   if (
-    !OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
+    !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
   ) {
     return false;
   }

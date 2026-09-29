@@ -105,7 +105,6 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
-  offeredProviders,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
@@ -143,6 +142,10 @@ const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const CABLE_DEVICE_TARGET = "cable://vibetv";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
+// One exact provider check may take 45 s in the Companion (inventory plus a
+// 40 s probe) and the handler allows 50 s; the request must outlast both or
+// the row reports a failure while CodexBar is still answering.
+const PROVIDER_CHECK_REQUEST_TIMEOUT_MS = 60_000;
 // The Mac App bounds the search itself: cable discovery, then a 30s WiFi
 // window (deviceSearchWindow in companionapi) plus a settling pass. Measured
 // 38s with a shipped device attached by cable. Aborting at 40s raced that
@@ -3274,6 +3277,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           await runCompanion(
             `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
             { method: "POST" },
+            { timeoutMs: PROVIDER_CHECK_REQUEST_TIMEOUT_MS },
           );
           // A poll may have started while the check was running. Require one
           // read from after the successful retry before clearing the pending
@@ -3809,7 +3813,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     try {
       const payload = await runCompanion<{
         providerSetup?: ProviderSetupInfo;
-      }>("/v1/providers/retry", { method: "POST" });
+      }>(
+        "/v1/providers/retry",
+        { method: "POST" },
+        { timeoutMs: PROVIDER_CHECK_REQUEST_TIMEOUT_MS },
+      );
       await refreshProviderPreferences({ quiet: true });
       if (setupGeneration === setupGenerationRef.current) {
         const setup = payload.providerSetup || null;
@@ -4244,9 +4252,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
-  // Windows launches with the four providers it was checked against and with
-  // the sign-in button; the Mac app keeps CodexBar's full provider inventory
-  // and its existing rows exactly as they are today.
+  // Windows adds the sign-in button for the providers the Companion can sign
+  // in; the Mac app keeps its existing rows exactly as they are today. Both
+  // list every provider CodexBar reports.
   const providerSignInEnabled =
     companionInfo?.features?.providerSignInEnabled === true;
   const providerPickerProps = {
@@ -4565,10 +4573,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // device unready; that is install progress, not a new customer setup.
   const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
 
-  const allSetupProviders = (providerPreferences || []).filter(isProviderItem);
-  const setupProviders = providerSignInEnabled
-    ? offeredProviders(allSetupProviders)
-    : allSetupProviders;
+  const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
   // and into the Manual list, where pinning to it produced a blank device.

@@ -13,10 +13,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
-  OFFERED_PROVIDER_IDS,
   PROVIDER_LOADING_LOG_INTERVAL_MS,
+  SIGN_IN_PROVIDER_IDS,
   SetupProvidersScreen,
-  offeredProviders,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
   setupProviderOffersSignIn,
@@ -159,60 +158,15 @@ describe("SetupProvidersScreen", () => {
     expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
   });
 
-  // VibeTV launches with the four providers it has been checked against. The
-  // rest of CodexBar's inventory keeps its saved values but is not offered.
-  it("offers only Codex, Claude, Cursor and Antigravity", () => {
-    expect(OFFERED_PROVIDER_IDS).toEqual([
+  // The Companion can start the sign-in of these four only; every other
+  // provider is listed without a sign-in button.
+  it("starts a sign-in only for Codex, Claude, Cursor and Antigravity", () => {
+    expect(SIGN_IN_PROVIDER_IDS).toEqual([
       "codex",
       "claude",
       "cursor",
       "antigravity",
     ]);
-    const offered = offeredProviders([
-      claude,
-      copilot,
-      provider({ health: "healthy", label: "Codex", providerId: "Codex" }),
-      provider({ health: "disabled", label: "Cursor", providerId: "cursor" }),
-      provider({
-        health: "disabled",
-        label: "Gemini",
-        providerId: "gemini",
-        value: false,
-      }),
-      provider({
-        health: "disabled",
-        label: "Antigravity",
-        providerId: "antigravity",
-      }),
-    ]);
-    expect(offered.map((item) => item.label)).toEqual([
-      "Claude Code",
-      "Codex",
-      "Cursor",
-      "Antigravity",
-    ]);
-  });
-
-  // Hiding a provider the customer already switched on would leave its switch
-  // on with no row to turn it off, and the Companion then refuses an Automatic
-  // display that omits it. An enabled provider therefore stays visible.
-  it("keeps an enabled provider outside the offered four visible", () => {
-    const offered = offeredProviders([
-      provider({ health: "healthy", label: "Codex", providerId: "codex" }),
-      provider({
-        health: "healthy",
-        label: "Gemini",
-        providerId: "gemini",
-        value: true,
-      }),
-      provider({
-        health: "disabled",
-        label: "Copilot",
-        providerId: "copilot",
-        value: false,
-      }),
-    ]);
-    expect(offered.map((item) => item.label)).toEqual(["Codex", "Gemini"]);
   });
 
   // The sign-in action belongs to one of the four signed-out tools the

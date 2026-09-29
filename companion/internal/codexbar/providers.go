@@ -21,9 +21,16 @@ var runProviderCommandFn = runUsageCommand
 // A variable so the Windows path is testable on the Mac.
 var providerProbePerProvider = runtime.GOOS == "windows"
 
-// perProviderProbeTimeout caps one Windows provider probe, matching the
-// 18 s the setup probe grants each provider.
-const perProviderProbeTimeout = 18 * time.Second
+// perProviderProbeTimeout caps one provider probe. 18 s timed out real
+// customers: the Windows Claude probe alone may take 24 s plus a trust
+// rerun, and a Mac Claude check through Claude Code reported "The provider
+// check timed out." while the provider was working.
+const perProviderProbeTimeout = 40 * time.Second
+
+// ProviderCheckBudget is the longest a caller waits for one provider check:
+// the 5 s inventory read plus one probe. Request and refresh contexts that
+// wrap a check must be at least this long.
+const ProviderCheckBudget = perProviderProbeTimeout + 5*time.Second
 
 // withoutDeadline drops the caller's deadline but keeps its values and its
 // explicit cancellation: a client that disconnects or a Companion that shuts

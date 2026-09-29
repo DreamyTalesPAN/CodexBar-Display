@@ -242,6 +242,18 @@ func TestRunUsageAllEnabledKeepsSilentProviderVisibleOnWindows(t *testing.T) {
 // The collector hands runUsageAllEnabled its 300 s default timeout. One
 // hanging provider CLI must not hold every provider after it for that long,
 // so each sequential usage probe is capped like the health join.
+// The Windows Claude probe runs up to 24 s and may rerun after the folder
+// trust prompt; a Mac Claude check through Claude Code timed out at 18 s for
+// a customer whose provider was working. The cap must leave room for both.
+func TestPerProviderProbeTimeoutOutlastsSlowClaudeCheck(t *testing.T) {
+	if perProviderProbeTimeout < 40*time.Second {
+		t.Fatalf("per-provider cap %s is below the 40 s a slow Claude check needs", perProviderProbeTimeout)
+	}
+	if ProviderCheckBudget <= perProviderProbeTimeout {
+		t.Fatalf("check budget %s must cover the inventory read plus one probe (%s)", ProviderCheckBudget, perProviderProbeTimeout)
+	}
+}
+
 func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
 	originalMode := providerProbePerProvider
 	t.Cleanup(func() { providerProbePerProvider = originalMode })
@@ -269,9 +281,10 @@ func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
 	}
 }
 
-// The background health refresh hands runProviderHealthProbe a shared 25 s
-// deadline. On Windows the probes run one after another with 18 s each, so
-// the second provider must not inherit the almost spent parent deadline.
+// The background health refresh hands runProviderHealthProbe a shared
+// deadline. On Windows the probes run one after another with their own cap
+// each, so the second provider must not inherit the almost spent parent
+// deadline.
 func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T) {
 	originalMode := providerProbePerProvider
 	t.Cleanup(func() { providerProbePerProvider = originalMode })

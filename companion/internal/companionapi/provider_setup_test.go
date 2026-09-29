@@ -23,6 +23,18 @@ import (
 // answers it, so an omitted flag stays omitted.
 func providerEnabled(value bool) *bool { return &value }
 
+// A handler that gives up before one provider check can finish reports
+// "The provider check timed out." for a provider that is working, and the
+// Control Center request must in turn outlast the handler (60 s).
+func TestProviderCheckTimeoutOutlastsOneProviderCheck(t *testing.T) {
+	if providerCheckTimeout <= codexbar.ProviderCheckBudget {
+		t.Fatalf("handler timeout %s must exceed one provider check %s", providerCheckTimeout, codexbar.ProviderCheckBudget)
+	}
+	if providerCheckTimeout >= 60*time.Second {
+		t.Fatalf("handler timeout %s must stay below the Control Center's 60 s provider check request", providerCheckTimeout)
+	}
+}
+
 func TestStatusIncludesProviderSetup(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {

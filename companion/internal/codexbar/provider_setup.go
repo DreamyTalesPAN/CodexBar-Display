@@ -377,15 +377,15 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	}
 	result.Engine.Status = ProviderReady
 
-	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
+	probeCtx, cancel := context.WithTimeout(configuredCtx, ProviderCheckBudget)
 	defer cancel()
-	// Windows probes every switched-on provider one by one with its own 18 s
-	// budget (runUsageAllEnabled), so a shared ceiling -- the 20 s here or
-	// the 25 s the setup handlers put on ctx -- would hand the second
+	// Windows probes every switched-on provider one by one with its own
+	// budget (runUsageAllEnabled), so a shared ceiling -- the one here or
+	// the one the setup handlers put on ctx -- would hand the second
 	// provider an almost spent context and report it unavailable. The
 	// aggregate path therefore drops every inherited deadline while keeping
 	// the caller's cancellation; each CLI call still carries its own
-	// timeout, so the total stays bounded by inventory + 18 s per provider.
+	// timeout, so the total stays bounded by inventory + one cap per provider.
 	aggregateCtx := probeCtx
 	if providerProbePerProvider {
 		var stop context.CancelFunc
@@ -416,14 +416,14 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		out, commandErr = runUsageCommandFn(probeCtx, 18*time.Second, bin,
+		out, commandErr = runUsageCommandFn(probeCtx, perProviderProbeTimeout, bin,
 			"usage", "--json",
 			"--provider", exactProvider,
 			"--source", "auto",
 			"--web-timeout", "8",
 		)
 	} else {
-		out, commandErr = runUsageAllEnabled(aggregateCtx, 18*time.Second, bin, "--web-timeout", "8")
+		out, commandErr = runUsageAllEnabled(aggregateCtx, perProviderProbeTimeout, bin, "--web-timeout", "8")
 	}
 	if exactProvider == "" {
 		result.Providers = providerReadinessFromOutput(out, commandErr, aggregateCtx.Err())

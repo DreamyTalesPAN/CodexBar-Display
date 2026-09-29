@@ -16,6 +16,11 @@ import (
 
 const providerSetupCacheTTL = 30 * time.Second
 
+// providerCheckTimeout bounds a request or refresh that waits for provider
+// checks. It must outlast one full provider check, or the handler reports
+// a timeout while CodexBar is still answering.
+const providerCheckTimeout = codexbar.ProviderCheckBudget + 5*time.Second
+
 type providerSetupResponse struct {
 	OK            bool                   `json:"ok"`
 	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
@@ -81,7 +86,7 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 	if s.providerSetupRefresh.CompareAndSwap(false, true) {
 		go func() {
 			defer s.providerSetupRefresh.Store(false)
-			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
 			defer cancel()
 			_ = s.currentProviderSetup(ctx, false)
 		}()
@@ -387,7 +392,7 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
 	defer cancel()
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
 	var setup codexbar.ProviderSetup
