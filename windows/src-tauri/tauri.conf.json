@@ -19,6 +19,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "DreamyTales GmbH",
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
     "icon": ["icons/icon.ico"],
