@@ -3770,6 +3770,38 @@ func TestInspectDisplayStreamDetectsLaterErrorInSameSecond(t *testing.T) {
 	}
 }
 
+// Windows stamps the error frame and the cycle error it belongs to with the
+// same instant (CI, TestColdWarm/signed_out). The error must still count.
+func TestInspectDisplayStreamCountsAnErrorStampedWithItsFrame(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-time.Second)
+	frameAt := startedAt.Add(100 * time.Millisecond)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
+			frameAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=virtual source=collector fresh=false usageMode= provider= label= session=0 weekly=0`,
+			frameAt.Format(time.RFC3339Nano) + ` cycle error: code=runtime/no-providers op=fetch-usage retry=30s err=runtime/no-providers (fetch-usage): fetch codexbar usage: codexbar returned no providers`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	if stream.Healthy || stream.ErrorCode != "provider_setup_required" {
+		t.Fatalf("an error stamped with its frame was ignored: %+v", stream)
+	}
+}
+
 func TestInspectDisplayStreamReportsPairingErrorBeforeFirstFrame(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)

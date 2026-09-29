@@ -9603,7 +9603,10 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 		stream.Detail = "Display stream is sending to another VibeTV."
 		return stream
 	}
-	if errorOK && errorAt.After(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
+	// A cycle that fails sends its error frame first and logs the error after
+	// it. Windows' clock often stamps both with the same instant, so an error
+	// at the frame's time still belongs after it.
+	if errorOK && !errorAt.Before(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
 		stream.Detail = errorDetail
 		stream.ErrorCode = errorCode
 		return stream
