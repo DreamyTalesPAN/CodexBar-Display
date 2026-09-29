@@ -117,6 +117,7 @@ export type SetupWizardProps = {
   themeRetryLabel?: string;
   onProviderCheck: (provider: ProviderItem) => void;
   onProviderOpenSignIn?: (provider: ProviderItem) => void;
+  onProviderOpenSetupGuide?: () => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
   /**
    * Resolving false keeps the customer on the step: the companion can refuse
@@ -913,6 +914,7 @@ export function SetupWizard(props: SetupWizardProps) {
           onBack={goBack}
           onCheckAgain={props.onProviderCheck}
           onOpenSignIn={props.onProviderOpenSignIn}
+          onOpenSetupGuide={props.onProviderOpenSetupGuide}
           continuing={providersContinuing}
           onContinue={() => {
             // Not goForward() first: coming back here from the theme step

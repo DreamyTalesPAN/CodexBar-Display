@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  PreferenceValue,
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
@@ -37,6 +36,7 @@ type SetupProvidersScreenProps = {
   onContinue: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onOpenSignIn?: (provider: ProviderItem) => void;
+  onOpenSetupGuide?: () => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** The completion this step asked for has not answered yet. */
   continuing?: boolean;
@@ -57,13 +57,11 @@ const PROVIDER_PAGE_SIZE = 10;
 export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
 
 /**
- * The providers VibeTV offers. CodexBar's inventory is 65 deep; VibeTV
- * launches with the four it has been checked against, and the rest stay in
- * CodexBar's own settings untouched (their on/off values are not rewritten).
- * Applied where the app hands its provider list to setup and Settings, so the
- * list itself stays generic.
+ * The providers whose sign-in the Companion can start (provider_sign_in_launch.go).
+ * Every other provider in CodexBar's inventory is listed too; its row keeps
+ * the switch, the provider's own message and "Check again".
  */
-export const OFFERED_PROVIDER_IDS = [
+export const SIGN_IN_PROVIDER_IDS = [
   "codex",
   "claude",
   "cursor",
@@ -71,30 +69,12 @@ export const OFFERED_PROVIDER_IDS = [
 ];
 
 /**
- * A provider the customer already switched on stays visible even when it is
- * outside the offered four. Hiding an enabled provider leaves its switch on
- * with no row to turn it off, and the Companion then refuses an Automatic
- * display that omits it (`provider_display_incomplete`), which strands the
- * customer on a step they cannot complete.
- */
-export function offeredProviders<
-  T extends { providerId: string; value?: PreferenceValue },
->(providers: T[]): T[] {
-  return providers.filter(
-    (provider) =>
-      OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase()) ||
-      provider.value === true,
-  );
-}
-
-/**
  * Health states in which the row offers to start the provider's sign-in.
  *
- * The offered four are the ones the Companion knows how to sign in. A
- * provider that is only listed because the customer had switched it on has no
- * sign-in the Companion can start, so offering the button there would give
- * the customer an action that can only fail. Those rows keep the switch and
- * "Check again", and the provider's own message says what to do.
+ * Only the four in SIGN_IN_PROVIDER_IDS have a sign-in the Companion can
+ * start. Any other provider would get an action that can only fail, so its
+ * row keeps the switch and "Check again", and the provider's own message
+ * says what to do.
  */
 export function setupProviderOffersSignIn(
   provider: Pick<ProviderItem, "health" | "providerId">,
@@ -110,17 +90,38 @@ export function setupProviderOffersSignIn(
     return Boolean(signInUrl);
   }
   if (
-    !OFFERED_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
+    !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
   ) {
     return false;
   }
   return state === "auth_required" || state === "setup_required";
 }
 
+/**
+ * The prerequisite notice for a signed-out provider the app cannot sign in
+ * itself: CodexBar reads its usage from the provider's own app, so that app
+ * has to be installed and signed in on this computer.
+ */
+export function setupProviderNeedsOwnApp(
+  provider: Pick<ProviderItem, "health" | "providerId">,
+): boolean {
+  const { state } = provider.health;
+  return (
+    (state === "auth_required" || state === "setup_required") &&
+    !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
+  );
+}
+
+export function setupProviderOwnAppNotice(label: string): string {
+  return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
+}
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
   onOpenSignIn?: (provider: ProviderItem) => void;
+  /** Present where the provider notice may link the setup guide (Windows). */
+  onOpenSetupGuide?: () => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
@@ -141,6 +142,7 @@ export function ProviderList({
   className,
   onCheckAgain,
   onOpenSignIn,
+  onOpenSetupGuide,
   onToggle,
   pendingCheckIds,
   pendingPreferenceIds,
@@ -177,6 +179,8 @@ export function ProviderList({
   // everyone who does not know what to search for.
   const visible = matching.slice(0, shown);
   const remaining = matching.length - visible.length;
+  const ownAppNotice =
+    issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
@@ -184,7 +188,11 @@ export function ProviderList({
         <SetupDialog
           open
           title={issue.provider.label}
-          description={issue.message}
+          description={
+            ownAppNotice
+              ? setupProviderOwnAppNotice(issue.provider.label)
+              : issue.message
+          }
           icon={TriangleAlert}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
           primaryAction={{ label: "OK", onSelect: dismissIssue }}
@@ -192,7 +200,21 @@ export function ProviderList({
             label: `Copy provider message for ${issue.provider.label}`,
             onSelect: () => { void navigator.clipboard?.writeText(issue.provider.health.reported!); },
           } : undefined}
-        />
+        >
+          {ownAppNotice ? (
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-muted-foreground">{issue.message}</p>
+              <Button
+                className="h-auto px-0"
+                onClick={onOpenSetupGuide}
+                type="button"
+                variant="link"
+              >
+                Open setup guide
+              </Button>
+            </div>
+          ) : null}
+        </SetupDialog>
       ) : null}
       <div className="relative w-full">
         <Search
@@ -283,6 +305,7 @@ export function SetupProvidersScreen({
   onContinue,
   onCreateSupportReport,
   onOpenSignIn,
+  onOpenSetupGuide,
   onToggle,
   continuing = false,
   loading = false,
@@ -317,6 +340,7 @@ export function SetupProvidersScreen({
         className="mt-4"
         onCheckAgain={onCheckAgain}
         onOpenSignIn={onOpenSignIn}
+        onOpenSetupGuide={onOpenSetupGuide}
         onToggle={onToggle}
         pendingCheckIds={pendingCheckIds}
         pendingPreferenceIds={pendingPreferenceIds}

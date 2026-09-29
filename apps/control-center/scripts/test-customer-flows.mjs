@@ -6926,7 +6926,7 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           },
         },
         disabledProviderPreferenceFixture("antigravity", "Antigravity"),
-        // Not offered by VibeTV: they stay in CodexBar's settings, off this page.
+        // No sign-in the Companion can start: listed with their switch only.
         disabledProviderPreferenceFixture("copilot", "GitHub Copilot"),
         disabledProviderPreferenceFixture("gemini", "Gemini"),
         disabledProviderPreferenceFixture("opencode", "OpenCode"),
@@ -6980,16 +6980,15 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
     .getByText("Cursor", { exact: true })
     .waitFor({ timeout: 10_000 });
 
-  // The list is flat, as it is in the wizard, and holds only the providers
-  // VibeTV offers. The rest of CodexBar's inventory never reaches the page.
+  // The list is flat, as it is in the wizard, and holds every provider
+  // CodexBar reports, on Windows as on the Mac.
   await panel
     .getByText("Antigravity", { exact: true })
     .waitFor({ timeout: 10_000 });
-  for (const notOffered of ["GitHub Copilot", "Gemini", "OpenCode"]) {
-    assert(
-      (await panel.getByText(notOffered, { exact: true }).count()) === 0,
-      `${notOffered} is not offered by VibeTV and must not be listed`,
-    );
+  for (const listed of ["GitHub Copilot", "Gemini", "OpenCode"]) {
+    await panel
+      .getByText(listed, { exact: true })
+      .waitFor({ timeout: 10_000 });
   }
 
   const search = panel.getByLabel("Search providers");

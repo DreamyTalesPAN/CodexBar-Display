@@ -221,7 +221,7 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 }
 
 func (s *Server) verifyEnabledProvider(providerID string, providerRevision uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
 	defer cancel()
 	setup := s.currentExactProviderSetup(ctx, providerID)
 	s.recordExactProviderSetup(providerID, providerRevision, setup)
@@ -497,7 +497,7 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
 		defer cancel()
 		settings, err := s.providerPreferences.load(ctx)
 
