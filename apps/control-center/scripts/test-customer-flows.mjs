@@ -505,6 +505,7 @@ async function main() {
         testMissingVibeTVOffersRetry,
         testPreUsbCVibeTVIsUpdatedOverTheCable,
         testFailedCableRescueDoesNotFlashAgainOnItsOwn,
+        testCableRescueRetryOnlyRepeatsTheCableStep,
         testLocalWifiSetupRescansAfterNoResults,
         testDeniedLocalNetworkShowsRecovery,
         testDiscoveredDualTransportCanRecoverWiFi,
@@ -1272,6 +1273,7 @@ async function testStartupStateMachine(browser, appUrl) {
   await testDeniedLocalNetworkShowsRecovery(browser, appUrl);
   await testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl);
   await testFailedCableRescueDoesNotFlashAgainOnItsOwn(browser, appUrl);
+  await testCableRescueRetryOnlyRepeatsTheCableStep(browser, appUrl);
 }
 
 async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
@@ -2384,6 +2386,60 @@ async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
       .getByRole("dialog", { name: "We couldn't search for your VibeTV" })
       .count()) === 0,
     "A VibeTV the app can update over the cable must not be reported as a failed search",
+  );
+  await page.close();
+}
+
+// The rescue wrote and verified the firmware, but connecting by Cable did not
+// finish. Trying again only repeats the Cable step: the updated VibeTV no
+// longer answers like pre-USB-C firmware, so a second rescue could not find it.
+async function testCableRescueRetryOnlyRepeatsTheCableStep(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const device = { ...themeMissingDevice, target: "cable://vibetv", firmware: "1.0.33", capabilities: {
+    ...companionDevice.capabilities,
+    transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+  }};
+  const updates = [];
+  const selections = [];
+  const companion = await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    connectionModeChoiceRequired: false,
+    searchError: cableFirmwareTooOld,
+    onUpdate: (postData) => updates.push(postData),
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        outcome: "updated",
+        message: "Update complete.",
+        progress: 100,
+        logs: ["Preparing VibeTV update.", "Updating VibeTV: 100%.", "Update complete."],
+        result: { firmware: "1.0.33", observedFirmware: "1.0.33", target: "cable://vibetv", deviceId: device.deviceId, helloVerified: true },
+      },
+    ],
+    providerSelectionSetup: { providerSelectionRequired: true, providerSelectionComplete: false },
+  });
+  await page.route("**/v1/setup/connection-mode", async (route) => {
+    selections.push(route.request().postDataJSON());
+    if (selections.length === 1) {
+      await route.fulfill({ status: 409, json: { ok: false, error: {
+        code: "cable_device_not_found", message: "Cable VibeTV did not answer.", nextAction: "Reconnect the data cable and try again.",
+      } } });
+      return;
+    }
+    companion.setDevice(device);
+    await route.fulfill({ json: { ok: true, status: "selected", device } });
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const failure = page.getByRole("dialog", { name: "Firmware update did not finish" });
+  await failure.getByRole("button", { name: "Try update again" }).click({ timeout: 20_000 });
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert(updates.length === 1, `The retry must not flash the rescued VibeTV again, got ${updates.length}`);
+  assert(
+    selections.length === 2 && selections.every((selection) => selection.mode === "cable" && selection.deviceId === device.deviceId),
+    `The retry must connect the rescued VibeTV by Cable, got ${JSON.stringify(selections)}`,
   );
   await page.close();
 }

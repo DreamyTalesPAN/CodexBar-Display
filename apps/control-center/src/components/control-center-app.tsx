@@ -4680,8 +4680,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     installFirmware: async (connected) => {
       lastFirmwareErrorRef.current = null;
       if (connected.rescue) {
-        rescuedDeviceIdRef.current = null;
-        if (!(await installFirmwareUpdate({ rescue: true }))) {
+        // A retry after the rescue itself succeeded only repeats the Cable
+        // step: the updated VibeTV no longer answers like pre-USB-C firmware,
+        // so a second rescue could not find it.
+        if (
+          !rescuedDeviceIdRef.current &&
+          !(await installFirmwareUpdate({ rescue: true }))
+        ) {
           throw (
             lastFirmwareErrorRef.current ?? {
               code: "firmware_update_failed",
@@ -4704,6 +4709,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               "Keep the selected VibeTV connected by Cable and retry.",
           };
         }
+        rescuedDeviceIdRef.current = null;
         return;
       }
       if (!(await installFirmwareUpdate())) {
