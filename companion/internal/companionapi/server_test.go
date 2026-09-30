@@ -10734,7 +10734,8 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	}
 
 	var got firmwareUpdateJobResponse
-	for attempt := 0; attempt < 50; attempt++ {
+	// Up to 5 s: validating the gzip image can take a while on a busy Windows runner.
+	for attempt := 0; attempt < 500; attempt++ {
 		rec = httptest.NewRecorder()
 		req = httptest.NewRequest(http.MethodGet, "/v1/updates/install/status?jobId="+started.Job.ID, nil)
 		server.Handler().ServeHTTP(rec, req)
