@@ -13,8 +13,10 @@ handlers.
   power cycle immediately before the update starts a fresh, unaggregated
   association. Run `codexbar-display net-probe --target http://<ip>` when an
   OTA stalls.
-- Firmware `1.0.39` and newer can always establish a new current token through
-  an explicit local-WiFi Connect before authenticated OTA.
+- Firmware with cable-only pairing (#489) establishes or returns the token only
+  over the USB cable; `/api/pair` answers `404`. Legacy firmware from `1.0.39`
+  up to that change can still establish a new token through an explicit
+  local-WiFi Connect before authenticated OTA.
 - Firmware upload always requires the current pairing token. The firmware does
   not accept an unsigned upload merely because pairing itself is open.
 - The unauthenticated `GET /update` page never embeds a pairing token or a
