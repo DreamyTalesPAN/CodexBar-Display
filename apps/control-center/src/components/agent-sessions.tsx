@@ -26,8 +26,6 @@ const phaseLabels: Record<string, string> = {
   waiting_for_review: "Waiting for review",
   done: "Finished",
   error: "Hit an error",
-  stale: "Status unavailable",
-  unavailable: "Status unavailable",
 };
 
 function elapsed(milliseconds: number) {
@@ -49,9 +47,10 @@ export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) 
     return () => window.clearInterval(timer);
   }, []);
 
-  // Match the observer's 15-second lease even if a status request hangs.
-  const available = snapshot?.health === "ready" &&
-    snapshot.generatedAt >= now - 15_000 && snapshot.generatedAt <= now + 5_000;
+  // The Companion already reports an expired observation as stale. A second
+  // clock here marked a healthy snapshot unavailable whenever status polling
+  // paused, such as while the window was hidden or a theme installed.
+  const available = snapshot?.health === "ready";
   const sessions = available
     ? snapshot.sessions
       .filter((session) => session.phase !== "idle")

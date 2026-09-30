@@ -21,6 +21,12 @@ vi.mock("./vibetv-3d-preview", () => ({
   ),
 }));
 
+// Resolve the lazily loaded preview to the mock above, synchronously.
+vi.mock("next/dynamic", async () => {
+  const { VibeTV3DPreview } = await import("./vibetv-3d-preview");
+  return { default: () => VibeTV3DPreview };
+});
+
 describe("OverviewScreen", () => {
   it("shows only the device preview and live session surface", () => {
     const now = Date.now();

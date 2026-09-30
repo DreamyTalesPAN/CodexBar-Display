@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { AgentSessions, type AgentSnapshot } from "./agent-sessions";
 import type {
   CompanionStatus,
@@ -8,7 +9,12 @@ import type {
 } from "./control-center-types";
 import { deviceIsCustomerConnected } from "./control-center-types";
 import type { DisplayFrameSnapshot } from "./live-vibetv-preview";
-import { VibeTV3DPreview } from "./vibetv-3d-preview";
+
+// three.js and the model loaders are only needed on the Overview, not in setup.
+const VibeTV3DPreview = dynamic(
+  () => import("./vibetv-3d-preview").then((module) => module.VibeTV3DPreview),
+  { ssr: false },
+);
 
 type OverviewScreenProps = {
   agents?: AgentSnapshot | null;

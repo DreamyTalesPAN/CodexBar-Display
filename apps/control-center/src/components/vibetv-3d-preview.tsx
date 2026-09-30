@@ -80,7 +80,6 @@ export function VibeTV3DPreview({
   const webglLayerRef = useRef<HTMLDivElement>(null);
   const cssLayerRef = useRef<HTMLDivElement>(null);
   const [screenHost, setScreenHost] = useState<HTMLDivElement | null>(null);
-  const [modelReady, setModelReady] = useState(false);
   const [modelFailed, setModelFailed] = useState(false);
 
   useEffect(() => {
@@ -140,6 +139,9 @@ export function VibeTV3DPreview({
     ground.receiveShadow = true;
     scene.add(ground);
 
+    // Only a moving scene is drawn again. The screen inside is live DOM and
+    // animates on its own, so a still device needs no WebGL frames at all.
+    let dirty = true;
     const controls = new OrbitControls(camera, stage);
     controls.enableZoom = false;
     controls.enablePan = false;
@@ -167,14 +169,17 @@ export function VibeTV3DPreview({
       const now = performance.now();
       const elapsed = Math.min(now - previousAt, 100);
       previousAt = now;
-      if (!still && !dragging && now - touchedAt > 2500) {
+      const swaying = !still && !dragging && now - touchedAt > 2500;
+      if (swaying) {
         const sway = Math.sin(((now - startedAt) / 1000) * 0.35) * 0.18;
         modelPivot.rotation.y += (sway - modelPivot.rotation.y) * (1 - Math.pow(0.98, elapsed / (1000 / 60)));
         screenPivot.rotation.y = modelPivot.rotation.y;
       }
-      controls.update();
-      renderer.render(scene, camera);
-      cssRenderer.render(cssScene, camera);
+      if (controls.update() || swaying || dirty) {
+        dirty = false;
+        renderer.render(scene, camera);
+        cssRenderer.render(cssScene, camera);
+      }
     };
 
     const resize = () => {
@@ -184,6 +189,7 @@ export function VibeTV3DPreview({
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
       cssRenderer.setSize(width, height);
+      dirty = true;
     };
     const observer = new ResizeObserver(resize);
     observer.observe(stage);
@@ -228,8 +234,8 @@ export function VibeTV3DPreview({
         screen.rotation.x = GLASS_TILT;
         screen.scale.set(GLASS_WIDTH * MM / SCREEN_PX, GLASS_HEIGHT * MM / SCREEN_PX, 1);
         screenPivot.add(screen);
+        dirty = true;
         setScreenHost(host);
-        setModelReady(true);
       },
       undefined,
       () => { if (!disposed) setModelFailed(true); },
@@ -243,6 +249,9 @@ export function VibeTV3DPreview({
       scene.environment?.dispose();
       pmrem.dispose();
       disposeMeshes(scene);
+      // Every Overview visit mounts a new scene; release this context now
+      // instead of waiting for the browser's per-page context limit.
+      renderer.forceContextLoss();
       renderer.dispose();
       webglLayer.removeChild(renderer.domElement);
       cssLayer.removeChild(cssRenderer.domElement);
@@ -262,7 +271,7 @@ export function VibeTV3DPreview({
     >
       <div aria-hidden className="pointer-events-none absolute inset-0" ref={webglLayerRef} />
       <div className="pointer-events-none absolute inset-0" ref={cssLayerRef} />
-      {!modelReady ? (
+      {!screenHost ? (
         <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground" role="status">
           Loading VibeTV preview…
         </div>

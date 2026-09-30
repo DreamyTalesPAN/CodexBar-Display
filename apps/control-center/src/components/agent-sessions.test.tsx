@@ -31,13 +31,11 @@ describe("AgentSessions", () => {
     expect(screen.queryByText("Last activity 4m 12s ago")).toBeNull();
     expect(screen.queryByText("Claude Code")).toBeNull();
   });
-  it("expires visible activity when no fresh status reaches the browser, and recovers", () => {
+  // Freshness is the Companion's: it answers an expired observation as stale.
+  it("keeps a healthy snapshot while status polling pauses", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
-    const view = render(<AgentSessions snapshot={snapshot()} />);
+    render(<AgentSessions snapshot={snapshot()} />);
     act(() => vi.advanceTimersByTime(16_000));
-    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
-    expect(screen.getByText("Agent status unavailable")).toBeTruthy();
-    view.rerender(<AgentSessions snapshot={{ ...snapshot(), generatedAt: now + 16_000 }} />);
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
   it("distinguishes no observed sessions from a missing or unhealthy observer", () => {
