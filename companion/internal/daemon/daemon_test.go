@@ -4583,10 +4583,11 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go collector.run(ctx)
-	waitForCondition(t, time.Second, func() bool {
+	// Generous bounds: a loaded Windows runner can take over a second to start.
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 1
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -4594,10 +4595,10 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 2
 	})
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		collector.tokenStatsMu.Lock()
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
@@ -4628,7 +4629,7 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	clockNanos.Add(int64(tokenStatsScanCooldown - time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	waitForCondition(t, time.Second, func() bool {
+	waitForCondition(t, 5*time.Second, func() bool {
 		return tokenFetches.Load() == 3
 	})
 	cancel()
