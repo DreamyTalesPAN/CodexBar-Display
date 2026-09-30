@@ -9284,11 +9284,11 @@ func TestDeviceFactoryResetErasesCableDeviceAndForgetsPairing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DeviceToken != "" {
-		t.Fatalf("pairing token survived the factory reset: %+v", cfg)
+	if cfg.DeviceToken != "" || cfg.DeviceID != "" || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("local binding survived the factory reset: %+v", cfg)
 	}
-	if known, ok := cfg.KnownDevice("device-cable"); ok && known.DeviceToken != "" {
-		t.Fatalf("erased device kept its pairing token: %+v", cfg.KnownDevices)
+	if _, ok := cfg.KnownDevice("device-cable"); ok {
+		t.Fatalf("erased device is still remembered: %+v", cfg.KnownDevices)
 	}
 	if other, ok := cfg.KnownDevice("other-device"); !ok || other.DeviceToken != "other-token" {
 		t.Fatalf("another VibeTV was forgotten: %+v", cfg.KnownDevices)

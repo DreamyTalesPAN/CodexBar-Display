@@ -3575,9 +3575,13 @@ func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadGateway, "factory_reset_failed", "VibeTV could not be erased.", "Keep VibeTV connected by the USB cable, then try again.")
 		return
 	}
-	// The device no longer knows its pairing token, so the Mac forgets it too.
+	// The device no longer knows its pairing token, so the Mac forgets the
+	// whole binding now, like "Run setup again", instead of relying on a
+	// second request from the app that may never arrive.
 	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
-		current.DeviceToken = ""
+		current.ResetDeviceBinding()
+		current.SetProviderSelectionSetupComplete(false)
+		current.ProviderDisplay = nil
 		known := current.KnownDevices[:0]
 		for _, device := range current.KnownDevices {
 			if !strings.EqualFold(device.DeviceID, hello.DeviceID) {
@@ -3592,6 +3596,8 @@ func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request
 	if s.resetCableSender != nil {
 		s.resetCableSender()
 	}
+	s.clearDisplayVerification("")
+	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, struct {
 		OK bool `json:"ok"`
 	}{OK: true})
