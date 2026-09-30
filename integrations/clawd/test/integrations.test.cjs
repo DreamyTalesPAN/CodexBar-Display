@@ -125,6 +125,34 @@ test('one master choice enables every supported hook adapter, then removes only 
  } finally { for(const [profile,file] of previous) {if(file)profile.file=file;else delete profile.file;} }
 });
 
+test('switching on never creates the folder of a client that is not installed', {skip:process.platform==='win32'}, t => {
+ const opts = fixture(t);
+ const home = path.join(opts.directory,'home');
+ fs.mkdirSync(path.join(home,'.claude-code'),{recursive:true});
+ const previousHome = process.env.HOME;process.env.HOME = home;
+ const previous = new Map(Object.values(profiles).map(profile => [profile, profile.file]));
+ for (const [id, profile] of Object.entries(profiles)) profile.file = () => path.join(home,'.'+id,'settings.json');
+ try {
+  require('../src/integrations.cjs').configureAll(true,{...opts,settingsPath:undefined});
+  assert.deepEqual(fs.readdirSync(home),['.claude-code']);
+  assert.ok(fs.existsSync(profiles['claude-code'].file()));
+ } finally {
+  process.env.HOME = previousHome;
+  for(const [profile,file] of previous) {if(file)profile.file=file;else delete profile.file;}
+ }
+});
+
+test('switching off leaves a settings file without VibeTV hooks byte-identical', t => {
+ const opts = fixture(t);
+ for (const id of Object.keys(profiles)) {
+  const original = JSON.stringify(profiles[id].group ? {vibetv:{}} : {hooks:{}}, null, 4);
+  fs.writeFileSync(opts.settingsPath, original, {mode:0o644});
+  configure(id, false, opts);
+  assert.equal(fs.readFileSync(opts.settingsPath,'utf8'), original, id);
+  assert.equal(fs.existsSync(opts.settingsPath+'.vibetv-backup'), false, id);
+ }
+});
+
 test('a blocked last adapter leaves every other config untouched', t => {
  const opts = fixture(t);
  const previous = new Map(Object.values(profiles).map(profile => [profile, profile.file]));

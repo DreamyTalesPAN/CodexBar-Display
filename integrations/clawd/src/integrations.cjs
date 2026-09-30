@@ -101,6 +101,10 @@ function prepare(agentId, enabled, options) {
     catch (linkError) { if (linkError.code !== 'ENOENT') throw linkError; }
   }
   const originalBytes = fs.existsSync(file) ? fs.readFileSync(file) : null;
+  // Like upstream's installers, never create a client's folder: a client that
+  // is not installed gets no hooks until an engine start finds it.
+  const home = path.relative(os.homedir(), file).split(path.sep)[0];
+  if (!options.settingsPath && originalBytes === null && home && home !== '..' && !fs.existsSync(path.join(os.homedir(), home))) return;
   const settings = readSettings(file);
   if (enabled && blocked(settings)) throw Error('agent-hooks-disabled');
   const before = JSON.stringify(settings);
@@ -108,6 +112,8 @@ function prepare(agentId, enabled, options) {
     const existing = settings.vibetv;
     if (existing != null && (!existing || typeof existing !== 'object' || Array.isArray(existing))) throw Error('invalid-agent-hooks');
     const group = existing || {};
+    // An empty container the customer already had is theirs to keep.
+    const keepEmpty = existing && Object.keys(existing).length === 0;
     for (const [event, entries] of Object.entries(group)) {
       if (!Array.isArray(entries)) continue;
       const cleaned = cleanEntries(entries, false);
@@ -121,9 +127,10 @@ function prepare(agentId, enabled, options) {
         group[event] = [...(group[event] || []), ...entries];
       }
     }
-    if (Object.keys(group).length) settings.vibetv = group;
+    if (Object.keys(group).length || keepEmpty) settings.vibetv = group;
     else delete settings.vibetv;
   } else {
+  const keepEmpty = settings.hooks != null && Object.keys(settings.hooks).length === 0;
   if (!settings.hooks) settings.hooks = {};
   for (const [event, entries] of Object.entries(settings.hooks)) {
     // Keep upstream's metadata keys (Gemini enabled/disabled) untouched.
@@ -143,7 +150,7 @@ function prepare(agentId, enabled, options) {
       settings.hooks[event] = [...entries, entryFor(agentId, event, options)];
     }
   }
-  if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+  if (Object.keys(settings.hooks).length === 0 && !keepEmpty) delete settings.hooks;
   }
   if (JSON.stringify(settings) === before) return;
   let writtenBytes;
