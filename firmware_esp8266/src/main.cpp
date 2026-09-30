@@ -8,7 +8,6 @@
 #include <MD5Builder.h>
 #include <Updater.h>
 #include <coredecls.h>
-#include <libb64/cdecode.h>
 #include <time.h>
 
 #include "../../firmware_shared/app_runtime.h"
@@ -82,7 +81,6 @@ constexpr unsigned long kCableTransferTimeoutMs = 15000UL;
 // cable-transfer-v1 sends at most 128 bytes per chunk as hex, v2 up to 1 KB as
 // base64. Either line stays inside the 2048-byte serial frame.
 constexpr size_t kCableTransferChunkBytes = 1024;
-constexpr size_t kCableTransferBase64Bytes = ((kCableTransferChunkBytes + 2) / 3) * 4;
 constexpr unsigned long kSerialBaudRate = 115200UL;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
@@ -3778,18 +3776,7 @@ void handleOtaResult(const char* target) {
   otaUploadNeedsReboot = false;
 }
 
-int hexNibble(char value) {
-  if (value >= '0' && value <= '9') {
-    return value - '0';
-  }
-  if (value >= 'a' && value <= 'f') {
-    return value - 'a' + 10;
-  }
-  if (value >= 'A' && value <= 'F') {
-    return value - 'A' + 10;
-  }
-  return -1;
-}
+using codexbar_display::esp8266::cable_transfer::HexNibble;
 
 bool decodeTransferHash(const char* encoded, uint8_t* out) {
   constexpr size_t kHashBytes = 16;
@@ -3797,8 +3784,8 @@ bool decodeTransferHash(const char* encoded, uint8_t* out) {
     return false;
   }
   for (size_t i = 0; i < kHashBytes; ++i) {
-    const int high = hexNibble(encoded[i * 2]);
-    const int low = hexNibble(encoded[i * 2 + 1]);
+    const int high = HexNibble(encoded[i * 2]);
+    const int low = HexNibble(encoded[i * 2 + 1]);
     if (high < 0 || low < 0) {
       return false;
     }
@@ -3826,7 +3813,7 @@ bool parseChunkChecksum(const char* encoded, uint32_t& checksum) {
   }
   checksum = 0;
   for (size_t i = 0; i < 8; ++i) {
-    const int nibble = hexNibble(encoded[i]);
+    const int nibble = HexNibble(encoded[i]);
     if (nibble < 0) {
       return false;
     }
@@ -4020,37 +4007,10 @@ bool writeCableTransferChunk(JsonDocument& doc) {
     emitSerialError("transfer-rejected");
     return true;
   }
-  const char* encodedBase64 = doc["b64"] | "";
-  // libb64 writes up to two bytes past an unpadded chunk plus a terminator.
-  static uint8_t decoded[kCableTransferChunkBytes + 3];
-  size_t decodedBytes = 0;
-  if (encodedBase64[0] != '\0') {
-    const size_t encodedBytes = strlen(encodedBase64);
-    if (encodedBytes > kCableTransferBase64Bytes) {
-      emitSerialError("transfer-rejected");
-      return true;
-    }
-    const int length = base64_decode_chars(
-        encodedBase64, static_cast<int>(encodedBytes), reinterpret_cast<char*>(decoded));
-    decodedBytes = length > 0 ? static_cast<size_t>(length) : 0;
-  } else {
-    const size_t encodedBytes = strlen(encoded);
-    if (encodedBytes > kCableTransferChunkBytes * 2 || encodedBytes % 2 != 0) {
-      emitSerialError("transfer-rejected");
-      return true;
-    }
-    decodedBytes = encodedBytes / 2;
-    for (size_t i = 0; i < decodedBytes; ++i) {
-      const int high = hexNibble(encoded[i * 2]);
-      const int low = hexNibble(encoded[i * 2 + 1]);
-      if (high < 0 || low < 0) {
-        emitSerialError("transfer-rejected");
-        return true;
-      }
-      decoded[i] = static_cast<uint8_t>((high << 4) | low);
-    }
-  }
-  if (decodedBytes == 0 || decodedBytes > kCableTransferChunkBytes) {
+  static uint8_t decoded[kCableTransferChunkBytes];
+  const size_t decodedBytes = codexbar_display::esp8266::cable_transfer::DecodeChunk(
+      encoded, doc["b64"] | "", decoded, sizeof(decoded));
+  if (decodedBytes == 0) {
     emitSerialError("transfer-rejected");
     return true;
   }

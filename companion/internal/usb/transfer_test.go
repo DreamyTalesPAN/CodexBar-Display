@@ -180,9 +180,28 @@ func (p *ackDroppingPort) Write(data []byte) (int, error) {
 	return n, err
 }
 
+func TestSenderAssetTransferSendsAnUnacknowledgedChunkAgain(t *testing.T) {
+	port := &ackDroppingPort{mockSerialPort: newMockSerialPort(), drops: 1}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	payload := make([]byte, cableTransferChunkBytes+1)
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload, TransferOptions{}); err != nil {
+		t.Fatalf("theme asset transfer with a lost acknowledgement: %v", err)
+	}
+	if port.chunkSends != 3 {
+		t.Fatalf("chunk sends=%d want 3", port.chunkSends)
+	}
+	if !bytes.Contains(bytes.Join(port.writePayloads, nil), []byte("}\n\n{")) {
+		t.Fatal("the repeat must follow a bare newline that ends any partial line")
+	}
+}
+
 func TestSenderFastTransferSendsAnUnacknowledgedChunkAgain(t *testing.T) {
 	payload := make([]byte, cableTransferFastChunkBytes+10)
-	port := &ackDroppingPort{mockSerialPort: newMockSerialPort(), drops: cableTransferFastChunkAttempts - 1}
+	port := &ackDroppingPort{mockSerialPort: newMockSerialPort(), drops: cableTransferChunkAttempts - 1}
 	sender := NewSenderWithConfig(SenderConfig{
 		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
 		Sleep:       func(time.Duration) {},
@@ -191,13 +210,13 @@ func TestSenderFastTransferSendsAnUnacknowledgedChunkAgain(t *testing.T) {
 	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", payload, TransferOptions{Fast: true}); err != nil {
 		t.Fatalf("fast transfer with lost acknowledgements: %v", err)
 	}
-	if port.chunkSends != 2+cableTransferFastChunkAttempts-1 {
+	if port.chunkSends != 2+cableTransferChunkAttempts-1 {
 		t.Fatalf("chunk sends=%d", port.chunkSends)
 	}
 }
 
 func TestSenderFastTransferStopsAfterTheLastAttempt(t *testing.T) {
-	port := &ackDroppingPort{mockSerialPort: newMockSerialPort(), drops: cableTransferFastChunkAttempts}
+	port := &ackDroppingPort{mockSerialPort: newMockSerialPort(), drops: cableTransferChunkAttempts}
 	sender := NewSenderWithConfig(SenderConfig{
 		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
 		Sleep:       func(time.Duration) {},
@@ -207,8 +226,8 @@ func TestSenderFastTransferStopsAfterTheLastAttempt(t *testing.T) {
 	if !errors.Is(err, ErrCableTransferInterrupted) {
 		t.Fatalf("want interrupted transfer, got %v", err)
 	}
-	if port.chunkSends != cableTransferFastChunkAttempts {
-		t.Fatalf("chunk sends=%d want %d", port.chunkSends, cableTransferFastChunkAttempts)
+	if port.chunkSends != cableTransferChunkAttempts {
+		t.Fatalf("chunk sends=%d want %d", port.chunkSends, cableTransferChunkAttempts)
 	}
 }
 
@@ -254,13 +273,14 @@ func TestSenderAbortsWhenDeviceRejectsChunkBeforeAcknowledgement(t *testing.T) {
 	if !errors.Is(err, ErrCableTransferInterrupted) {
 		t.Fatalf("rejected in-flight chunk must report interrupted transfer: %v", err)
 	}
-	if len(port.writePayloads) != 3 {
-		t.Fatalf("writes=%d want start, chunk and abort", len(port.writePayloads))
+	// Start, three attempts at the chunk with a bare newline between them, abort.
+	if len(port.writePayloads) != 2*cableTransferChunkAttempts+1 {
+		t.Fatalf("writes=%d want start, %d chunk attempts and abort", len(port.writePayloads), cableTransferChunkAttempts)
 	}
 	var abort struct {
 		Op string `json:"op"`
 	}
-	if err := json.Unmarshal(port.writePayloads[2], &abort); err != nil {
+	if err := json.Unmarshal(port.writePayloads[len(port.writePayloads)-1], &abort); err != nil {
 		t.Fatal(err)
 	}
 	if abort.Op != "transfer-abort" {
