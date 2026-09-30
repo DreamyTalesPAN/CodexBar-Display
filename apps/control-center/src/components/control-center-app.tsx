@@ -689,10 +689,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
 
-  const operationRecoveryGraceActive =
-    firmwareUpdateStatus?.phase === "installing" ||
-    themeInstallStatus?.phase === "installing";
-
   const acceptDeviceSnapshot = useCallback(
     (next: DeviceInfo) => {
       setDeviceRecoveryGate(
@@ -721,13 +717,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       next: DeviceInfo | null | undefined,
       sourcePoll: string,
       countFailure = false,
+      // Only the same status answer can vouch for a running job: after a
+      // Companion restart the job is gone, while the UI may still hold
+      // "installing" and would otherwise never count a miss again.
+      operationInProgress = false,
     ) => {
       const transition = applyDeviceRecoveryStatus(
         deviceRecoveryGateRef.current,
         {
           countFailure,
           device: next,
-          operationInProgress: operationRecoveryGraceActive,
+          operationInProgress,
         },
       );
       setDeviceRecoveryGate(transition.state);
@@ -781,7 +781,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markDeviceLost,
       mergeDevice,
-      operationRecoveryGraceActive,
       setDevice,
       setDeviceRecoveryGate,
     ],
@@ -1422,7 +1421,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           firmwareUpdateStatusFromJob(payload.firmwareUpdate),
         );
       }
-      applyPolledDeviceSnapshot(payload.device, "/v1/status", true);
+      applyPolledDeviceSnapshot(
+        payload.device,
+        "/v1/status",
+        true,
+        payload.firmwareUpdate?.phase === "installing" ||
+          payload.themeInstall?.phase === "installing",
+      );
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;
