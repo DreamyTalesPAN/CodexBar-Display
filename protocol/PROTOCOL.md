@@ -79,12 +79,13 @@ messages:
 
 - `transfer-chunk` with `b64` (standard base64, up to 1024 decoded bytes)
   instead of `data`. The chunk checksum is unchanged.
-- `baud` on a firmware `transfer-start` (230400, 460800 or 921600). The device
-  sends `ready` at 115200 and then switches; the Mac switches after reading it.
+- `baud` on a firmware `transfer-start` (only 230400). The device sends
+  `ready` at 115200 and then switches; the Mac switches after reading it.
   Abort, a rejected transfer or the inactivity bound switches the device back
-  to 115200, and a completed firmware transfer restarts it at 115200.
+  to 115200, and a completed firmware transfer restarts it at 115200. A
+  rejection is still sent at the faster rate, before the device switches back.
 
-The Mac asks for 230400 (460800 lost bytes on a real VibeTV). The device
+460800 lost bytes on a real VibeTV, so the device accepts only 230400. The device
 rejects malformed base64 and hex (a lost or foreign character, misplaced
 padding, more than one chunk) before the checksum.
 

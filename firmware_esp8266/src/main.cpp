@@ -3935,8 +3935,7 @@ bool startCableTransfer(JsonDocument& doc) {
   uint8_t expectedDigest[16];
   const bool baudRateSupported =
       baudRate == 0 ||
-      (target == CableTransferSink::kFirmware &&
-       (baudRate == 230400UL || baudRate == 460800UL || baudRate == 921600UL));
+      (target == CableTransferSink::kFirmware && baudRate == 230400UL);
   if (target == CableTransferSink::kNone || !baudRateSupported ||
       !decodeTransferHash(expectedHash, expectedDigest)) {
     emitSerialError("transfer-rejected");
@@ -3963,14 +3962,14 @@ bool startCableTransfer(JsonDocument& doc) {
         !ensureAssetParentDirs(assetUploadPath) ||
         (LittleFS.exists(kAssetUploadTemporaryPath) &&
          !LittleFS.remove(kAssetUploadTemporaryPath))) {
-      resetCableTransfer(true);
       emitSerialError("transfer-rejected");
+      resetCableTransfer(true);
       return true;
     }
     assetUploadFile = LittleFS.open(kAssetUploadTemporaryPath, "w");
     if (!assetUploadFile) {
-      resetCableTransfer(true);
       emitSerialError("transfer-rejected");
+      resetCableTransfer(true);
       return true;
     }
   } else {
@@ -3982,8 +3981,8 @@ bool startCableTransfer(JsonDocument& doc) {
     drawUpdateStatus("Loading firmware");
     waitStatusRendered = true;
     if (!Update.begin(expectedBytes, U_FLASH)) {
-      resetCableTransfer(true);
       emitSerialError("transfer-rejected");
+      resetCableTransfer(true);
       return true;
     }
   }
@@ -4038,8 +4037,8 @@ bool writeCableTransferChunk(JsonDocument& doc) {
     wrote = Update.write(decoded, bytes) == bytes;
   }
   if (!wrote) {
-    resetCableTransfer(true);
     emitSerialError("transfer-rejected");
+    resetCableTransfer(true);
     return true;
   }
 
@@ -4062,8 +4061,8 @@ bool finishCableTransfer(JsonDocument& doc) {
   if (!codexbar_display::esp8266::cable_transfer::CanFinish(
           cableTransfer.flow,
           memcmp(actualDigest, cableTransfer.expectedHash, sizeof(actualDigest)) == 0)) {
-    resetCableTransfer(true);
     emitSerialError("transfer-rejected");
+    resetCableTransfer(true);
     return true;
   }
 
@@ -4108,8 +4107,8 @@ bool finishCableTransfer(JsonDocument& doc) {
     otaUploadSucceeded = committed;
   }
   if (!committed) {
-    resetCableTransfer(true);
     emitSerialError("transfer-rejected");
+    resetCableTransfer(true);
     return true;
   }
 
