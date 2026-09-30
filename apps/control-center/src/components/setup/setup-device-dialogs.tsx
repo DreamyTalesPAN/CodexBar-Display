@@ -122,7 +122,7 @@ type NotFoundDialogProps = {
   onOpenChange: (open: boolean) => void;
   onScanAgain: () => void;
   onUseCable: () => void;
-  onSetUpWiFi: () => void;
+  onUseWiFi: () => void;
   open: boolean;
   /** The app runs on Windows, where "your Mac" reads "your computer". */
   windowsHost?: boolean;
@@ -135,13 +135,13 @@ export function SetupDeviceNotFoundDialog({
   onOpenChange,
   onScanAgain,
   onUseCable,
-  onSetUpWiFi,
+  onUseWiFi,
   open,
   windowsHost = false,
 }: NotFoundDialogProps) {
   return (
     <SetupDialog
-      description="Pick the way that fits your desk, then scan again."
+      description="Setup runs over the USB cable. Connect it, then scan again."
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ busy, label: "Scan again", onSelect: onScanAgain }}
@@ -175,15 +175,17 @@ export function SetupDeviceNotFoundDialog({
           <button
             className="text-left"
             disabled={busy}
-            onClick={onSetUpWiFi}
+            onClick={onUseWiFi}
             type="button"
           >
             <ItemMedia variant="icon">
               <Wifi />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Set up WiFi with your phone</ItemTitle>
-              <ItemDescription>Four steps, no cable needed.</ItemDescription>
+              <ItemTitle>Already on WiFi</ItemTitle>
+              <ItemDescription>
+                For a VibeTV that is already set up on your WiFi.
+              </ItemDescription>
             </ItemContent>
           </button>
         </Item>
@@ -192,8 +194,11 @@ export function SetupDeviceNotFoundDialog({
   );
 }
 
-/** The phone path stays a dismissible dialog while discovery continues. */
-export function SetupWiFiPhoneDialog({
+/**
+ * Setup and pairing run only over the USB cable (issue #489); WiFi comes
+ * afterwards, sent over that cable. Stays dismissible while discovery continues.
+ */
+export function SetupCableHelpDialog({
   onEnterAddressManually,
   onScanAgain,
   scanning = false,
@@ -206,11 +211,11 @@ export function SetupWiFiPhoneDialog({
   return (
     <>
       <Button onClick={() => setOpen(true)} type="button" variant="link">
-        Set up WiFi with your phone
+        How to connect VibeTV
       </Button>
       <SetupDialog
-        description="Set it up with your phone — VibeTV opens its own network for that."
-        icon={Wifi}
+        description="Setup runs over the USB cable. You can switch to WiFi afterwards."
+        icon={Cable}
         tone="neutral"
         onOpenChange={setOpen}
         open={open}
@@ -226,23 +231,16 @@ export function SetupWiFiPhoneDialog({
             onEnterAddressManually();
           },
         }}
-        title="Connect to WiFi"
+        title="Connect the USB cable"
       >
         <ol className="flex flex-col gap-4 text-left text-sm leading-relaxed">
           {[
             <>
-              Plug VibeTV into power and wait for the{" "}
-              <strong>VibeTV-Setup</strong> network.
+              Plug VibeTV into this computer with the USB cable that came with
+              it.
             </>,
-            <>
-              On your phone, join the WiFi network <strong>VibeTV-Setup</strong>
-              .
-            </>,
-            <>
-              Open <strong className="font-mono">192.168.4.1</strong> and choose
-              your home WiFi.
-            </>,
-            <>Wait until VibeTV says “WiFi connected”, then scan again here.</>,
+            <>Wait until the VibeTV screen lights up, then scan again here.</>,
+            <>To use WiFi, choose it after VibeTV is connected.</>,
           ].map((step, index) => (
             <li className="flex items-start gap-3" key={index}>
               <span

@@ -543,7 +543,7 @@ describe("SetupWizard: direct connection", () => {
     await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
     fireEvent.click(await screen.findByRole("button", { name: "Close" }));
     rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} deviceCandidates={[wifi]} />);
-    fireEvent.click(await screen.findByRole("button", { name: /Set up WiFi with your phone/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Already on WiFi/ }));
     fireEvent.click(await screen.findByRole("radio", { name: /wifi-device/ }));
     expect(connect).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -580,7 +580,7 @@ describe("SetupWizard: direct connection", () => {
     });
     render(<SetupWizard {...props} />);
     expect(connect).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
     if (count === 2) {
       expect(connect).not.toHaveBeenCalled();
       fireEvent.click(await screen.findByRole("radio", { name: /known-device/ }));
@@ -934,7 +934,7 @@ describe("SetupWizard: WiFi recovery dialogs", () => {
         fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
         fireEvent.click(screen.getByRole("button", { name: "Connect" }));
       } else {
-        fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ }));
+        fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
       }
     }
     chooseWiFi();
@@ -956,7 +956,7 @@ describe("SetupWizard: WiFi recovery dialogs", () => {
       onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
     });
     render(<SetupWizard {...props} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ })); });
     await act(() => vi.advanceTimersByTimeAsync(60_000));
     const dialog = screen.getByRole("dialog", { name: "WiFi setup failed" });
     expect(dialog.textContent).toContain("VibeTV did not reconnect.");

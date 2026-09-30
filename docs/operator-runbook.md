@@ -250,7 +250,7 @@ Per device:
 
 During normal operation the display uses explicit support states:
 - `Starting`: boot is running before WiFi mode is known.
-- `Download Mac App` with `app.vibetv.shop`: fresh setup is waiting for the Mac App; the open `VibeTV-Setup` AP runs in the background. Older firmware may show `SETUP WIFI` and the setup IP.
+- `Connect USB cable` with `app.vibetv.shop`: fresh setup or a lost WiFi network is waiting for the USB cable. There is no setup AP. Older firmware may show `Download Mac App` or `SETUP WIFI` and open `VibeTV-Setup`.
 - `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
 - `WiFi connected!` with `Now go to:` and `app.vibetv.shop`: WiFi is connected and the device gives the customer the hosted Control Center URL.
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
@@ -259,18 +259,18 @@ During normal operation the display uses explicit support states:
 - `Update Mac App` / `app.vibetv.shop`: the Mac App reported an incompatible usage app version or payload format.
 - `Update available` / `app.vibetv.shop`: a firmware update is available. ThemeSpec themes receive the same alternating text through their provider-label binding.
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
-- `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
-Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, current firmware must show `Download Mac App` and `app.vibetv.shop`. Verify the open `VibeTV-Setup` AP independently.
+Current firmware has no HTTP WiFi reset. A device provisioned over WiFi keeps
+the provisioning network until the customer sends a new one over the cable;
+a cable factory reset follows in a separate pull request (issue #489).
 
-The Mac App guides Cable or WiFi setup. When WiFi provisioning is needed
-without USB data, it tells the customer to join `VibeTV-Setup` on a phone and
-open `192.168.4.1`.
+The Mac App guides setup over the USB cable. WiFi details and pairing are sent
+only over the cable.
 
 Smoke checklist for #53:
 - Boot device and confirm the first screen says `Starting`.
-- Clear WiFi and confirm `Download Mac App` / `app.vibetv.shop` on the display
-  and the open `VibeTV-Setup` network in a separate WiFi scan.
+- Without reachable WiFi, confirm `Connect USB cable` / `app.vibetv.shop` on the
+  display and no `VibeTV-Setup` network in a separate WiFi scan.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
 - After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.

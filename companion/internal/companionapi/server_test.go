@@ -13879,3 +13879,13 @@ func TestDeviceSearchReportsTheLegacyCableVibeTVForItsUpdate(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// Issue #489: current firmware has no WiFi pairing endpoint. Its 404 must tell
+// the customer to use the cable instead of a generic retry.
+func TestWiFiPairingNotFoundAsksForCable(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writePairingError(rec, &pairingAuthorizationError{statusCode: http.StatusNotFound, err: errors.New("404")}, "1.0.61")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"cable_pairing_required"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}

@@ -289,8 +289,7 @@ When the ESP8266 is connected to WiFi, it serves:
 - Sprite render diagnostics: a CBI/CBA asset that cannot be decoded sets `display.themeSpec.renderOk` to `false` with a stable `renderError` code and names the failing theme asset in `renderErrorAsset`. Codes are `cbi_header_invalid`, `cbi_palette_invalid`, `cbi_truncated`, `cbi_row_invalid`, `cba_render_failed`, `sprite_asset_missing`, `sprite_header_unsupported`, `sprite_unreadable`, and the transient `low_heap_cba_buffer` and `cba_buffer_contention`. The two transient codes leave `renderFailures` unchanged, because neither one decoded the asset: `low_heap_cba_buffer` means the frame buffer could not be allocated and has its own `cbaBufferAllocationFailures` counter, while `cba_buffer_contention` means a theme has more animated sprites contending for the single shared frame buffer than can make progress, so none of them completes a frame. Uploads reject a malformed sprite before it is promoted, so a stored sprite that fails to render indicates damage after the write rather than a bad upload.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
-- `POST /reset-wifi`: with the current pairing token, clears saved WiFi credentials and restarts the device into setup mode.
-- `POST /api/pair`: creates or rotates the local LAN pairing token. Starting with firmware `1.0.39`, an explicit local-WiFi Connect may always replace the previous token; the most recently connected Mac wins. Firmware `1.0.38` retains its legacy 30-minute recovery window. Include `api=1` for a JSON response (`{"ok":true,"token":"..."}`).
+- WiFi credentials, WiFi reset and pairing have no HTTP endpoint (issue #489). They are set only over the USB cable with the Cable Serial `configure-wifi` and `pair` commands. Legacy firmware still serves `POST /api/pair`, `POST /reset-wifi` and `POST /save`; current firmware answers them with `404`.
 - `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Standby fields: `sb` enables standby (`0`/`1`), `st` sets the inactivity timeout in minutes, `sbr` sets the brightness that applies only while the screensaver shows, and `ss` selects the screensaver slot by stored ThemeSpec path (empty clears it). Every field is optional and at least one must be present; out-of-range numbers are clamped rather than rejected, while an unusable `ss` path returns `400`. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect.
 - `GET /assets`: returns mounted filesystem status and stored `/themes/` asset paths/sizes. Internal firmware control files are never listed.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
@@ -308,15 +307,16 @@ Standby behavior:
 - `POST /theme/active` during standby ends standby and keeps the newly chosen live theme.
 
 Pairing/auth:
-- Firmware `1.0.39` accepts every local-WiFi `/api/pair` request and immediately replaces the previous token. It has no physical pairing gesture or pairing window.
-- Firmware `1.0.38` remains compatible with its legacy first-pair and three-power-cycle 30-minute recovery window.
+- The USB cable is the authorization. Pairing runs only over Cable Serial `pair`, which returns the existing token or creates one. Nothing on the local WiFi can create, rotate or read a token.
+- Without a token (never paired over the cable), every protected WiFi write is rejected.
+- Legacy firmware up to the version before this change still accepts local-WiFi `/api/pair`; the Companion keeps using it there. Current firmware answers `404`, and the Companion reports `cable_pairing_required`.
 - Protected WiFi write APIs require `X-VibeTV-Token: <token>`. The legacy RAW
   compatibility sender is not a current WiFi API fallback; see
   `docs/firmware-ota-contract.md`.
-- Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, `POST /screensaver/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
+- Protected write APIs include `POST /frame`, `POST /api/settings`, `POST /assets`, `DELETE /assets`, `POST /theme/active`, `POST /screensaver/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
 - The unauthenticated device page never renders the pairing token. Firmware `1.0.39` WiFi `/hello` reports `capabilities.auth.paired` and `tokenHeader`; legacy firmware may additionally report pairing-window fields. No firmware reports the token value.
-- Fresh setup and automatic WiFi fallback use the same open, writable setup portal. Saving WiFi preserves device authentication, themes, and settings.
+- There is no setup access point or captive portal. A device that cannot reach its saved WiFi shows `Connect USB cable` and keeps retrying the saved network; new WiFi details arrive over the cable. Saving WiFi preserves device authentication, themes, and settings.
 
 Installable customer themes use VibeTV Theme Packs: a directory or `.zip` with `manifest.json`, one ThemeSpec JSON file, and optional asset files. See `docs/theme-packs.md`.
 
@@ -330,7 +330,7 @@ Example:
 
 ```bash
 curl http://192.168.178.123/hello
-TOKEN="$(curl -fsS -X POST -d api=1 http://192.168.178.123/api/pair | jq -r .token)"
+# TOKEN comes from Cable Serial `pair` over the USB cable.
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -F asset=@theme.json 'http://192.168.178.123/assets?path=/themes/u/cozy-1-a1b2c3.json'
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -H 'Content-Type: text/plain' --data '{"path":"/themes/u/cozy-1-a1b2c3.json"}' \
   http://192.168.178.123/theme/active

@@ -6,7 +6,7 @@ exclusive VibeTV connection modes.
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- Fresh hardware starts in WiFi setup with USB control available. The display shows only the Mac App download address. The Mac App opens phone WiFi instructions if discovery finds no device. The connection selector appears when Cable and WiFi discovery both succeed. Open VibeTV-Setup networks count as WiFi discoveries alongside devices already on the local network.
+- Fresh hardware waits for the USB cable. The display shows `Connect USB cable` and the Mac App address. Setup and pairing run only over the cable (issue #489); there is no setup access point. The Mac App shows cable instructions if discovery finds no device. The connection selector appears when Cable and WiFi discovery both succeed.
 - WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
 - The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
 - Updated legacy devices preserve WiFi credentials and pairing, use `wifi`, and support switching to Cable. Previously stored `legacy-wifi-only` is migrated to `wifi`.
@@ -28,8 +28,8 @@ used as device identity.
 ## Transport and Protocol Contract
 - CH340 USB-UART serial at `115200` baud.
 - WiFi HTTP on port 80 after the device joins the customer WiFi network.
-- Cable and WiFi are exclusive stable modes. Cable turns the radio, AP, captive
-  DNS, and HTTP server off. WiFi ignores serial application data.
+- Cable and WiFi are exclusive stable modes. Cable turns the radio and HTTP
+  server off. WiFi ignores serial application data.
 - Host sends newline-delimited JSON frames over Cable or as the body of
   `POST /frame` in WiFi mode.
 - Firmware exposes `GET /hello` over WiFi with the same hello shape as USB.
@@ -90,10 +90,9 @@ its new transport:
 
 Cable starts a switch with the serial request `set-connection-mode`; WiFi uses
 authenticated `POST /api/connection-mode`. A confirmation removes `/cm` and
-makes the target stable. A Cable-to-WiFi switch without credentials keeps the
-existing `VibeTV-Setup` portal open for a bounded ten-minute customer-entry
-window. Saving credentials reboots into the normal 60-second association and
-identity-confirmation window. A failed WiFi association or expired setup or
+makes the target stable. WiFi credentials arrive with the cable request
+`configure-wifi`, which reboots into the normal 60-second association and
+identity-confirmation window. A failed WiFi association or expired
 confirmation window restores the previous mode and reboots once.
 
 Until a scheduled restart completes, firmware withholds serial hello, returns
@@ -220,7 +219,7 @@ GIF/CBA animations move on the panel and the dock-path test before it can close.
 The connection-mode byte is appended to the existing `/s` record. Shorter
 records remain readable.
 
-- No stored mode becomes `wifi`; without saved credentials this opens `VibeTV-Setup`.
+- No stored mode becomes `wifi`; without saved credentials the device shows `Connect USB cable` and waits for the cable.
 - Stored `legacy-wifi-only` becomes `wifi`, preserving the existing network.
 - Stored `cable` and `wifi` selections survive restarts unchanged.
 - Cable selection shuts down WiFi and the AP. WiFi can be configured over the
@@ -402,47 +401,42 @@ unexplained transport error instead of an authentication failure.
 
 ## WiFi Setup Contract
 - Devices ship with firmware installed.
-- Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
-- Setup UI is served at `http://192.168.4.1` through the setup access point and captive DNS.
-- The device setup screen first offers `Download Mac App` at `app.vibetv.shop`.
-  The access point stays available in the background. After an empty discovery,
-  the Mac App tells customers to join `VibeTV-Setup` and open `192.168.4.1`.
+- The USB cable is the authorization (issue #489). WiFi credentials and pairing
+  are set only over the cable with the serial `configure-wifi` and `pair`
+  requests. There is no setup access point, captive portal, or HTTP endpoint
+  for WiFi credentials, WiFi reset, or pairing.
+- Fresh or failed WiFi devices show `Connect USB cable` with `app.vibetv.shop`
+  and keep retrying a saved network in the background. After an empty
+  discovery, the Mac App tells customers to connect the USB cable.
 - The Mac App discovers USB devices and devices reachable on the local network.
   It does not scan nearby WiFi network names or request location authorization.
   A device found only over USB connects directly by Cable; the connection-method
   chooser appears only when that device is also found on the local network.
   USB customers can switch to WiFi later in Settings. No internet connection is
-  required for discovery. The existing phone instructions, re-scan and manual IP
-  entry handle devices not yet on the network.
+  required for discovery. The cable instructions, re-scan and manual IP entry
+  handle devices not yet on the network.
   Downloading/opening the Mac App does not depend on first joining home WiFi.
-- The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
-  and keeps manual SSID entry available for hidden networks.
+- The cable `scan-wifi` request lists only 2.4 GHz scan results; the Mac App
+  supports an explicit re-scan and manual SSID entry for hidden networks.
 - `Troubleshooting: vibetv.shop/pages/setup` links to the public support page
   delivered by issue #192 at `https://vibetv.shop/pages/setup`.
-- Fresh setup and automatic fallback after a lasting WiFi failure use the same
-  writable setup form. The setup flow stores the selected home WiFi credentials
-  and restarts the device.
-- While a phone or computer is joined to `VibeTV-Setup`, the background WiFi
-  retry is paused so the access point stays up for the setup form. Retries
-  resume a few seconds after the last client leaves (issue #453).
-- Saving or clearing WiFi credentials restarts the device only after the
-  EEPROM write is confirmed; a failed write answers with an error and keeps the
-  device running (issue #204).
+- Saving WiFi credentials restarts the device only after the EEPROM write is
+  confirmed; a failed write answers with an error and keeps the device running
+  (issue #204).
 - Saving a different network changes only the WiFi SSID/password. A paired
   device keeps its device ID, pairing token, themes/assets, active theme,
   brightness, and other settings.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
 - Connected devices expose read-only status on their current IP. Customer-facing writes are performed by the authenticated Control Center.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
-- Starting with firmware `1.0.39`, connected devices accept an explicit local-WiFi `POST /api/pair` without the previous token; the latest Mac wins. Other WiFi write APIs require `X-VibeTV-Token`. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
+- WiFi write APIs require `X-VibeTV-Token`; a device never paired over the cable rejects all of them. Nothing on the local network can create, rotate or read the token. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
 - Firmware and filesystem uploads always require the current pairing token,
-  including on fresh devices and while `VibeTV-Setup` is active. The public
+  including on fresh devices. The public
   `/update` page never embeds that token or exposes a direct upload form.
 - Companion runtime discovers the current device IP and verifies the stable `deviceId`; it does not use a hostname default.
-- Saved WiFi credentials can be cleared by an authenticated Control Center request.
 - If a connected device loses WiFi, it retries in station mode first. After a
-  lasting failure it returns to the same open, writable `VibeTV-Setup` portal,
-  where the customer can choose the new network without resetting the device.
+  lasting failure it shows `Connect USB cable` and keeps retrying; the customer
+  sends the new network over the cable without resetting the device.
 - Short or repeated power interruptions never clear saved WiFi credentials on
   firmware `1.0.39` and newer. Firmware `1.0.38` retains its legacy
   three-power-cycle WiFi recovery solely so old devices can reconnect and

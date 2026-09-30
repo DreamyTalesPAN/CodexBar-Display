@@ -20,7 +20,6 @@ enum class ConnectionMode : uint8_t {
 
 constexpr size_t kConnectionTransitionRecordBytes = 5;
 constexpr unsigned long kConnectionTransitionConfirmationMs = 60000UL;
-constexpr unsigned long kConnectionTransitionSetupMs = 10UL * 60UL * 1000UL;
 
 struct ConnectionTransition {
   ConnectionMode previous = ConnectionMode::kUnspecified;
@@ -45,8 +44,9 @@ inline ConnectionMode ResolveInitialConnectionMode(
   if (stored == ConnectionMode::kCable || stored == ConnectionMode::kWifi) {
     return stored;
   }
-  // First boot keeps phone setup available; old WiFi installations gain the
-  // same Cable switching support while preserving their credentials.
+  // Old WiFi installations keep WiFi and gain Cable switching while
+  // preserving their credentials. Without a network the device waits for the
+  // USB cable; there is no setup access point.
   return ConnectionMode::kWifi;
 }
 
@@ -80,11 +80,6 @@ inline bool CanBeginConnectionTransition(ConnectionMode current, ConnectionMode 
 inline bool CanConfigureWifiOverCable(ConnectionMode mode, bool setupMode) {
   return mode == ConnectionMode::kCable ||
          (mode == ConnectionMode::kWifi && setupMode);
-}
-
-inline unsigned long ConnectionTransitionTimeoutMs(bool setupMode) {
-  return setupMode ? kConnectionTransitionSetupMs
-                   : kConnectionTransitionConfirmationMs;
 }
 
 inline void EncodeConnectionTransition(

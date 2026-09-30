@@ -25,13 +25,10 @@ USB data. WiFi works with power-only connections too.
 
 ## 1. Power VibeTV
 
-Plug VibeTV into your Mac with a data cable for Cable operation, or into USB
-power for WiFi. Current firmware shows `Download Mac App` and `app.vibetv.shop`.
-The setup WiFi runs in the background; you do not need to join it before
-opening the Mac App.
-
-Older firmware may show `VibeTV-Setup` instead. It needs WiFi for its first
-firmware update; the Mac App guides that path too.
+Plug VibeTV into your Mac with the USB data cable that came with it. Setup and
+pairing run only over this cable. Current firmware shows `Connect USB cable`
+and `app.vibetv.shop` until the Mac App connects. You can switch to WiFi
+afterwards; the Mac App sends your network details over the cable.
 
 ## 2. Open Control Center
 
@@ -75,13 +72,11 @@ when the step is really done, not when a button was pressed.
 1. A welcome screen with nothing to press. It shows what it is doing: starting
    the background service, reading provider usage on this Mac, and looking for
    your VibeTV.
-2. The app looks for Cable devices, devices already on your local WiFi, and
-   the open `VibeTV-Setup` network. When both connection paths are found, choose
-   Cable or WiFi. Select your device if more than one is found. For WiFi, the
-   app can send your network details over a working data cable. Otherwise,
-   follow its phone WiFi instructions: join `VibeTV-Setup`, open
-   `http://192.168.4.1`, and choose your 2.4 GHz network. Return your phone to
-   your normal WiFi afterward. Leave VibeTV powered during any required update.
+2. The app looks for Cable devices and devices already set up on your local
+   WiFi. When both connection paths are found, choose Cable or WiFi. Select
+   your device if more than one is found. For WiFi, the app sends your network
+   details over the cable. If nothing is found, connect the USB cable and scan
+   again. Leave VibeTV powered during any required update.
 3. `Choose AI providers` — switch on the tools whose usage VibeTV should show.
    At least one has to be switched on and working before you can continue.
 4. `Display Mode` — `Automatic` rotates through your providers, `Manual` pins
@@ -134,8 +129,7 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 | Display | Meaning | What to do |
 | --- | --- | --- |
 | `Starting` | VibeTV is booting. | Wait. |
-| `Download Mac App` / `app.vibetv.shop` | VibeTV is ready for setup. | Download and open the Mac App. |
-| `SETUP WIFI` / `VibeTV-Setup` (older firmware) | VibeTV needs WiFi setup. | Follow the Mac App’s WiFi instructions. |
+| `Connect USB cable` / `app.vibetv.shop` | VibeTV needs setup or new WiFi details. | Connect it to your Mac with the USB cable and open the Mac App. |
 | `Connecting WiFi` | VibeTV is joining your home WiFi. | Wait. |
 | `WiFi connected!` / `app.vibetv.shop` | VibeTV is on WiFi. | Open Control Center on your Mac. |
 | `Open App` / `app.vibetv.shop` | VibeTV is waiting for fresh Mac data. | Open Control Center and connect VibeTV. |
@@ -143,7 +137,6 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 | `Update Mac App` | The Mac App needs an update. | Use the update step in Control Center. |
 | `Update available` | A device update is available. | Open Control Center and follow the update step. |
 | `Update running` | VibeTV is updating. | Do not unplug power. |
-| `WiFi reset` | Saved WiFi settings are being cleared. | Follow WiFi setup in the Mac App after restart. |
 
 ## If Something Does Not Work
 
@@ -153,24 +146,19 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 - If Control Center says the Mac App is not running, make sure `VibeTV Control
   Center` is in `Applications` and open it again.
 - If Control Center cannot find VibeTV over Cable, check that the cable carries
-  data. For WiFi, follow the setup instructions or make sure both devices are
-  on the same local network.
+  data. For WiFi, make sure both devices are on the same local network.
 - If `.local` does not work, use the IP address shown on VibeTV.
-- If the app asks for WiFi setup, complete its instructions and scan again.
+- If VibeTV shows `Connect USB cable`, connect the cable and scan again.
 - If the app shows one clear action, use that action before trying support
   commands.
 
 ## Change WiFi
 
-Use Settings to switch between Cable and WiFi. When network details are
-needed and USB data is available, enter them in the Mac App. Otherwise, if
-VibeTV cannot reconnect to its saved network, wait for the `VibeTV-Setup`
-network to appear. Join it on a phone, open `192.168.4.1`, and choose
-the new 2.4 GHz network. This changes only the WiFi name and password. Existing
+Use Settings to switch between Cable and WiFi. WiFi details can be changed
+only over the USB cable: if VibeTV cannot reconnect to its saved network, it
+shows `Connect USB cable`. Connect it to your Mac and choose the new 2.4 GHz
+network in the Mac App. This changes only the WiFi name and password. Existing
 pairing, themes, brightness, and other VibeTV settings stay unchanged.
-
-An authenticated WiFi reset remains available as an explicit support action
-while the paired VibeTV is reachable. It is not needed for a normal WiFi change.
 
 ## Important
 

@@ -157,12 +157,13 @@ Devices must expose either the GeekMagic factory update page or the VibeTV OTA e
 
 ## WiFi Setup Recovery
 
-- An authenticated `POST /reset-wifi` clears saved WiFi credentials and restarts into setup mode while the device is reachable on the local network.
-- If saved credentials fail, the device returns to the same open, writable
-  `VibeTV-Setup` portal used for first setup. Saving a replacement network does
-  not clear pairing, themes, brightness, or other settings.
+- WiFi credentials and pairing are written only over the USB cable (issue #489).
+  There is no HTTP WiFi reset, setup access point or local-WiFi pairing.
+- If saved credentials fail, the device shows `Connect USB cable` and keeps
+  retrying. Sending a replacement network over the cable does not clear
+  pairing, themes, brightness, or other settings.
 - Repeated early power interruptions do not clear WiFi credentials.
-- Firmware `1.0.39` accepts an explicit local-WiFi Connect without the previous
-  token. The new token is still required before using any OTA endpoint.
+- A lost token is recovered by pairing over the cable, which returns the
+  existing token. The token is required before using any OTA endpoint.
 - Firmware `1.0.38` keeps its legacy three-power-cycle WiFi recovery and
   30-minute pairing window so that it can be connected and updated.

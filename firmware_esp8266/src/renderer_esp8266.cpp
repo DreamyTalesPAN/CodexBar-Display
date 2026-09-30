@@ -240,11 +240,6 @@ void RendererESP8266::DrawStatus(
 #endif
 }
 
-void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx) {
-  // The Mac App owns setup guidance; the access point remains available behind it.
-  DrawStatus(ctx, "VIBE TV", "Download Mac App", "app.vibetv.shop");
-}
-
 void RendererESP8266::DrawConnectedSetupInstructions(
     app::RuntimeContext& ctx,
     const String& host,

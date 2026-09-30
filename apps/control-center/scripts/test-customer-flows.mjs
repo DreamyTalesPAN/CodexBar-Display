@@ -2277,15 +2277,15 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const dialog = setupNotFoundDialog(page);
   await dialog.waitFor({ timeout: 10_000 });
-  await dialog.getByRole("heading", { name: "Connect to WiFi", exact: true }).waitFor();
-  await dialog.getByText("192.168.4.1", { exact: true }).waitFor();
-  assert(await dialog.locator("ol li").count() === 4, "Empty discovery must open the phone WiFi steps directly");
-  assert(await dialog.getByRole("button", { name: /Use the cable/ }).count() === 0, "Fresh setup must not require a second transport choice before WiFi instructions");
+  await dialog.getByRole("heading", { name: "Connect the USB cable", exact: true }).waitFor();
+  assert(await dialog.locator("ol li").count() === 3, "Empty discovery must open the USB cable steps directly");
+  assert(await dialog.getByText("192.168.4.1").count() === 0, "Setup must never point to a VibeTV-Setup network (#489)");
+  assert(await dialog.getByRole("button", { name: /Use the cable/ }).count() === 0, "Fresh setup must not require a second transport choice before the cable instructions");
   const scanAgain = dialog.getByRole("button", { name: "Scan again" });
   const manualEntry = dialog.getByRole("button", { name: "Enter IP manually" });
   await scanAgain.waitFor();
   await manualEntry.waitFor();
-  await captureMigrationScreenshot(page, "12-fresh-no-usb-wifi-instructions.png");
+  await captureMigrationScreenshot(page, "12-fresh-no-usb-cable-instructions.png");
   assert(
     (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
       0,
@@ -3495,9 +3495,9 @@ async function assertKnownDeviceMacAppOutage(page) {
   );
   assert(
     (await page
-      .getByText("Plug in your VibeTV and wait for the VibeTV-Setup network.")
+      .getByRole("heading", { name: "Connect the USB cable" })
       .count()) === 0,
-    "A known-device Mac App outage must not show WiFi onboarding",
+    "A known-device Mac App outage must not show first-run cable onboarding",
   );
   assert(
     Boolean(
@@ -13262,7 +13262,7 @@ function setupAddressDialog(page) {
 }
 
 function setupNotFoundDialog(page) {
-  return page.getByRole("dialog", { name: /^(We couldn't find your VibeTV|Connect to WiFi)$/ });
+  return page.getByRole("dialog", { name: /^(We couldn't find your VibeTV|Connect the USB cable)$/ });
 }
 
 async function waitForSetupDeviceStep(page, timeout = 10_000) {

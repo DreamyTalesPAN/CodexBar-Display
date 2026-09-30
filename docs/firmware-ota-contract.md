@@ -45,10 +45,11 @@ handlers.
 | Bootable state | WiFi OTA path |
 | --- | --- |
 | Home WiFi and current token | Authenticated `install-update`. |
-| Firmware 1.0.39 on home WiFi but local token lost or rejected | Press Connect. The firmware replaces the token, then authenticated `install-update` can proceed. |
+| Current firmware on home WiFi but local token lost or rejected | Connect the USB cable and press Connect. Cable pairing returns the token, then authenticated `install-update` can proceed. |
+| Firmware 1.0.39 up to the last version before cable-only pairing, token lost | Press Connect. The firmware replaces the token over WiFi, then authenticated `install-update` can proceed. |
 | Firmware 1.0.38 on home WiFi but local token lost or rejected | Complete the legacy three-power-cycle WiFi recovery, reconnect the device to home WiFi, press Connect within 30 minutes, then update to current firmware. |
-| Saved home WiFi unavailable | Wait for the ordinary open `VibeTV-Setup` portal, save the new WiFi, then press Connect. |
-| Fresh unpaired device | Complete WiFi setup, press Connect, then run authenticated `install-update`. |
+| Saved home WiFi unavailable | VibeTV shows `Connect USB cable`. Connect the cable and send the new WiFi from the Mac App. |
+| Fresh unpaired device | Connect the USB cable, press Connect (pairs over the cable), then run authenticated `install-update`. |
 | Paired device after a WiFi change | The existing token remains valid; discover the new IP and run authenticated `install-update`. |
 
 The ESP8266 firmware does not verify a cryptographic firmware signature on the

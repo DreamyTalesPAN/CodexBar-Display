@@ -47,7 +47,6 @@ class RendererESP8266 : public app::Renderer {
   void DrawSplash(app::RuntimeContext& ctx) override;
   void TickSplash(app::RuntimeContext& ctx) override;
   void DrawStatus(app::RuntimeContext& ctx, const String& title, const String& line1, const String& line2);
-  void DrawSetupInstructions(app::RuntimeContext& ctx);
   void DrawConnectedSetupInstructions(app::RuntimeContext& ctx, const String& host, const String& fallbackIp);
   void DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text);
   // Which notice surface the active theme offers: label swap, overlay bar, or

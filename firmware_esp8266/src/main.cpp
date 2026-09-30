@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <DNSServer.h>
 #include <EEPROM.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
@@ -20,12 +19,10 @@
 #include "standby_settings.h"
 #include "standby_state.h"
 #include "screensaver_preview.h"
-#include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "sprite_asset_validator_file.h"
 #include "renderer_esp8266.h"
-#include "wifi_recovery_policy.h"
-#include "wifi_setup_portal.h"
+#include "wifi_scan.h"
 
 #ifndef CODEXBAR_DISPLAY_BOARD_ID
 #define CODEXBAR_DISPLAY_BOARD_ID "esp8266-unknown"
@@ -47,10 +44,8 @@ namespace {
 codexbar_display::app::RuntimeContext runtimeCtx;
 codexbar_display::esp8266::RendererESP8266 renderer;
 ESP8266WebServer webServer(80);
-DNSServer dnsServer;
 
 constexpr int kMaxFrameBytes = 2048;
-constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kWifiCredsMagic = 0x56544231UL;  // VTB1
 constexpr uint32_t kBootDiagnosticsMagic = 0x56544244UL;  // VTBD
 constexpr size_t kWifiSsidBytes = 33;
@@ -90,8 +85,6 @@ constexpr uint8_t kMinBrightnessPercent =
     codexbar_display::esp8266::device_settings::kMinBrightnessPercent;
 constexpr uint8_t kMaxBrightnessPercent =
     codexbar_display::esp8266::device_settings::kMaxBrightnessPercent;
-const char kSetupApSsid[] = "VibeTV-Setup";
-const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
@@ -246,10 +239,9 @@ screensaver_preview::State screensaverPreviewState;
 // activeThemeSpecPath (commitStoredThemeSpec), so the preview captures the
 // really-drawn live theme before it takes the screen.
 String screensaverPreviewLivePath;
-codexbar_display::esp8266::wifi_setup::State setupWifiState;
+codexbar_display::esp8266::wifi_scan::State setupWifiState;
 WifiCredentials savedWifiCredentials;
 bool savedWifiCredentialsAvailable = false;
-codexbar_display::esp8266::wifi_recovery::State wifiSetupRecoveryState;
 bool rebootPending = false;
 void applyWifiInteropPhyMode();
 void scheduleReboot(const char* reason);
@@ -258,7 +250,6 @@ unsigned long lastFrameAcceptedAtMs = 0;
 bool pendingHttpRender = false;
 codexbar_display::core::SerialConsumeEvent pendingHttpRenderEvent;
 bool frameStaleStatusRendered = false;
-bool captiveDnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
@@ -631,7 +622,7 @@ void maintainConnectionTransition() {
     return;
   }
   if ((millis() - connectionTransitionStartedAtMs) >=
-      device_settings::ConnectionTransitionTimeoutMs(setupMode)) {
+      device_settings::kConnectionTransitionConfirmationMs) {
     (void)rollbackConnectionTransition("confirmation_timeout");
   }
 }
@@ -791,38 +782,10 @@ String requestAuthToken() {
   return token;
 }
 
+// The USB cable is the only way to pair: an unpaired device accepts no WiFi
+// write at all, and a paired one only with its current token.
 bool requestHasValidAuth() {
-  if (!deviceAuthConfigured()) {
-    return true;
-  }
-  return requestAuthToken() == deviceAuthToken;
-}
-
-bool requestHasCurrentDeviceToken() {
   return deviceAuthConfigured() && requestAuthToken() == deviceAuthToken;
-}
-
-bool requestHasValidOtaAuth() {
-  return codexbar_display::esp8266::WifiSecurityPolicy::AllowsFirmwareUpload(
-      deviceAuthConfigured(),
-      requestHasCurrentDeviceToken());
-}
-
-bool authorizeWifiCredentialWrite() {
-  if (codexbar_display::esp8266::WifiSecurityPolicy::AllowsCredentialWrite(
-          setupMode,
-          deviceAuthConfigured(),
-          requestHasCurrentDeviceToken())) {
-    return true;
-  }
-  addCorsHeaders();
-  if (deviceAuthConfigured()) {
-    webServer.sendHeader("WWW-Authenticate", "VibeTV token");
-    webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
-  } else {
-    webServer.send(403, "text/plain; charset=utf-8", "physical setup confirmation required");
-  }
-  return false;
 }
 
 bool requireWriteAuth() {
@@ -1128,12 +1091,6 @@ void drawWifiConnectingStatus(const String& ssid) {
   recordRenderFull("status", micros() - renderStartUs);
 }
 
-void drawWifiResetStatus(const String& line2) {
-  const unsigned long renderStartUs = micros();
-  renderer.DrawStatus(runtimeCtx, "VIBE TV RESET", "WiFi reset", line2);
-  recordRenderFull("status", micros() - renderStartUs);
-}
-
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 void loadActiveStoredThemeSpecCache();
 #endif
@@ -1168,68 +1125,6 @@ void drawUpdateStatus(const String& line2) {
 
 bool statusScreenLocked() {
   return otaUploadInProgress || rebootPending;
-}
-
-bool wifiSetupRecoveryBusy() {
-  return statusScreenLocked() || assetUploadInProgress || setupWifiState.scanInProgress;
-}
-
-void finishWifiSetupRecovery() {
-  if (captiveDnsStarted) {
-    dnsServer.stop();
-    captiveDnsStarted = false;
-    Serial.println("captive_dns_stopped reason=wifi_reconnected");
-  }
-  WiFi.softAPdisconnect(true);
-  WiFi.mode(WIFI_STA);
-  setupMode = false;
-  resetWifiReconnectState();
-  startHttpServer();
-  drawWaitingForCompanionStatus();
-  Serial.printf("wifi_setup_retry_connected ip=%s\n", WiFi.localIP().toString().c_str());
-}
-
-void maintainWifiSetupRecovery() {
-  const unsigned long nowMs = millis();
-  codexbar_display::esp8266::wifi_recovery::Inputs inputs;
-  inputs.nowMs = static_cast<uint32_t>(nowMs);
-  inputs.setupMode = setupMode;
-  inputs.credentialsAvailable = savedWifiCredentialsAvailable;
-  inputs.busy = wifiSetupRecoveryBusy();
-  inputs.connected = WiFi.status() == WL_CONNECTED;
-  inputs.setupClientConnected = WiFi.softAPgetStationNum() > 0;
-
-  const codexbar_display::esp8266::wifi_recovery::Action action =
-      codexbar_display::esp8266::wifi_recovery::Tick(wifiSetupRecoveryState, inputs);
-  switch (action) {
-    case codexbar_display::esp8266::wifi_recovery::Action::StartAttempt:
-      WiFi.mode(WIFI_AP_STA);
-      applyWifiInteropPhyMode();
-      WiFi.begin(savedWifiCredentials.ssid, savedWifiCredentials.password);
-      Serial.printf("wifi_setup_retry_started ssid=%s\n", savedWifiCredentials.ssid);
-      break;
-    case codexbar_display::esp8266::wifi_recovery::Action::Timeout:
-      WiFi.disconnect(false);
-      WiFi.mode(WIFI_AP_STA);
-      applyWifiInteropPhyMode();
-      WiFi.softAP(kSetupApSsid);
-      Serial.printf("wifi_setup_retry_failed status=%d next_retry_ms=%lu\n",
-                    static_cast<int>(WiFi.status()),
-                    static_cast<unsigned long>(
-                        codexbar_display::esp8266::wifi_recovery::kRetryIntervalMs));
-      break;
-    case codexbar_display::esp8266::wifi_recovery::Action::Connected:
-      finishWifiSetupRecovery();
-      break;
-    case codexbar_display::esp8266::wifi_recovery::Action::Interrupted:
-      // Stop the station attempt only; restarting the access point would
-      // drop the customer who is joined to it.
-      WiFi.disconnect(false);
-      Serial.println("wifi_setup_retry_paused reason=setup_client");
-      break;
-    case codexbar_display::esp8266::wifi_recovery::Action::None:
-      break;
-  }
 }
 
 void resetWifiReconnectState() {
@@ -1509,7 +1404,19 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
 }
 
 String htmlEscape(const String& raw) {
-  return codexbar_display::esp8266::wifi_setup::HtmlEscape(raw);
+  String escaped;
+  escaped.reserve(raw.length() + 12);
+  for (size_t i = 0; i < raw.length(); ++i) {
+    switch (raw[i]) {
+      case '&': escaped += F("&amp;"); break;
+      case '<': escaped += F("&lt;"); break;
+      case '>': escaped += F("&gt;"); break;
+      case '"': escaped += F("&quot;"); break;
+      case '\'': escaped += F("&#39;"); break;
+      default: escaped += raw[i]; break;
+    }
+  }
+  return escaped;
 }
 
 String updateStatusHTML(bool compact) {
@@ -1580,28 +1487,6 @@ bool saveWifiCredentials(const String& ssid, const String& password) {
   // pairing window, but the bytes stay reserved for storage compatibility.
   EEPROM.put(kLegacyPairingMarkerOffset, static_cast<uint32_t>(0));
   return EEPROM.commit();
-}
-
-bool clearWifiCredentials() {
-  EEPROM.begin(kEepromBytes);
-  for (size_t i = 0; i < kWifiCredsBytes; ++i) {
-    EEPROM.write(i, 0);
-  }
-  if (!EEPROM.commit()) {
-    Serial.println("wifi_credentials_clear_failed reason=eeprom_commit");
-    return false;
-  }
-  Serial.println("wifi_credentials_cleared");
-  return true;
-}
-
-void clearSdkWifiCredentials() {
-  WiFi.persistent(true);
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true);
-  delay(150);
-  WiFi.persistent(false);
-  Serial.println("wifi_sdk_credentials_cleared");
 }
 
 uint32_t incrementBootResetCounter() {
@@ -1692,20 +1577,16 @@ bool connectToSdkWifiConfig() {
   return true;
 }
 
-bool scanSetupNetworks(bool automatic) {
-  using namespace codexbar_display::esp8266::wifi_setup;
-  const bool started = automatic ? BeginAutomaticScan(setupWifiState) : BeginScan(setupWifiState);
-  if (!started) {
-    Serial.printf(
-        "wifi_setup_scan_ignored reason=%s\n",
-        automatic ? "automatic_already_started" : "already_running");
+bool scanSetupNetworks() {
+  using namespace codexbar_display::esp8266::wifi_scan;
+  if (!BeginScan(setupWifiState)) {
+    Serial.println("wifi_setup_scan_ignored reason=already_running");
     return false;
   }
-  const bool recoveryAttemptInterrupted = automatic && wifiSetupRecoveryState.attemptInProgress;
 
   Serial.println("wifi_setup_scan_started");
   int networks = -2;
-  WiFi.mode(setupMode ? WIFI_AP_STA : WIFI_STA);
+  WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   delay(150);
@@ -1731,16 +1612,8 @@ bool scanSetupNetworks(bool automatic) {
   }
   WiFi.scanDelete();
   FinishScan(setupWifiState, networks);
-  if (recoveryAttemptInterrupted) {
-    codexbar_display::esp8266::wifi_recovery::RescheduleAfterInterruption(
-        wifiSetupRecoveryState,
-        static_cast<uint32_t>(millis()));
-    Serial.println("wifi_setup_recovery_rescheduled reason=automatic_scan");
-  }
-  if (setupMode) {
-    WiFi.mode(WIFI_AP);
-  } else if (!codexbar_display::esp8266::device_settings::UsesWifi(
-                 deviceSettings.connectionMode)) {
+  if (!codexbar_display::esp8266::device_settings::UsesWifi(
+          deviceSettings.connectionMode)) {
     WiFi.mode(WIFI_OFF);
   }
   Serial.printf(
@@ -1779,7 +1652,7 @@ String connectedPageHTML() {
   if (deviceAuthConfigured()) {
     html += F("<p class='muted'>Paired. Manage this VibeTV in Control Center.</p>");
   } else {
-    html += F("<p class='muted'>Open Control Center to finish pairing after Wi-Fi setup.</p>");
+    html += F("<p class='muted'>Connect VibeTV to your Mac with the USB cable to pair it.</p>");
   }
   html += F("</section>");
   return html;
@@ -1787,123 +1660,7 @@ String connectedPageHTML() {
 
 void handleRoot() {
   webServer.keepAlive(false);
-  if (setupMode) {
-    codexbar_display::esp8266::wifi_setup::SendSetupPage(
-        webServer,
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress);
-    return;
-  }
   webServer.send(200, "text/html; charset=utf-8", connectedPageHTML());
-}
-
-void redirectToSetupRoot() {
-  webServer.keepAlive(false);
-  webServer.sendHeader("Location", String("http://") + kSetupAddress + "/", true);
-  webServer.send(302, "text/plain; charset=utf-8", "");
-}
-
-void handleCaptivePortalProbe() {
-  webServer.keepAlive(false);
-  if (setupMode) {
-    codexbar_display::esp8266::wifi_setup::SendSetupPage(
-        webServer,
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress);
-    return;
-  }
-  redirectToSetupRoot();
-}
-
-void handleSaveWifi() {
-  webServer.keepAlive(false);
-  if (!authorizeWifiCredentialWrite()) {
-    return;
-  }
-  String ssid = webServer.arg("custom_ssid");
-  ssid.trim();
-  if (ssid.length() == 0) {
-    ssid = webServer.arg("ssid");
-    ssid.trim();
-  }
-  String password = webServer.arg("password");
-  if (ssid.length() == 0) {
-    codexbar_display::esp8266::wifi_setup::SetConnectionError(
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::ConnectionError::MissingSsid);
-    codexbar_display::esp8266::wifi_setup::SendSetupPage(
-        webServer,
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress,
-        400);
-    return;
-  }
-  if (ssid.length() >= kWifiSsidBytes || password.length() >= kWifiPasswordBytes) {
-    codexbar_display::esp8266::wifi_setup::SetConnectionError(
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::ConnectionError::InvalidCredentials);
-    codexbar_display::esp8266::wifi_setup::SendSetupPage(
-        webServer,
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress,
-        400);
-    return;
-  }
-
-  codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
-  if (!saveWifiCredentials(ssid, password)) {
-    webServer.send(500, "text/plain; charset=utf-8", "WiFi settings could not be saved");
-    return;
-  }
-  Serial.printf("wifi_credentials_saved ssid=%s\n", ssid.c_str());
-  webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>Saved. Vibe TV is restarting.</p>");
-  delay(500);
-  clearSdkWifiCredentials();
-  persistResetTrustForRestart();
-  ESP.restart();
-}
-
-void handleSetupWifiScan() {
-  webServer.keepAlive(false);
-  if (!setupMode) {
-    redirectToSetupRoot();
-    return;
-  }
-
-  codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
-  const bool automatic = webServer.arg("automatic") == "1";
-  scanSetupNetworks(automatic);
-  webServer.sendHeader("Location", "/", true);
-  webServer.send(303, "text/plain; charset=utf-8", "");
-}
-
-void handleResetWifi() {
-  webServer.keepAlive(false);
-  if (webServer.method() != HTTP_POST) {
-    webServer.send(405, "text/plain; charset=utf-8", "method not allowed");
-    return;
-  }
-
-  if (!authorizeWifiCredentialWrite()) {
-    return;
-  }
-
-  if (!clearWifiCredentials()) {
-    webServer.send(500, "text/plain; charset=utf-8", "WiFi settings could not be cleared");
-    return;
-  }
-  webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>WiFi settings cleared. Vibe TV is restarting setup.</p>");
-  drawWifiResetStatus("Restarting");
-  waitStatusRendered = true;
-  delay(500);
-  clearSdkWifiCredentials();
-  delay(250);
-  persistResetTrustForRestart();
-  ESP.restart();
 }
 
 void addCorsHeaders() {
@@ -2203,7 +1960,7 @@ bool handleSerialControlLine(const String& line) {
   } else if (strcmp(op, "scan-wifi") == 0) {
     const char* expectedDeviceID = doc["deviceId"] | "";
     if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
-        serialRequestBusy() || !scanSetupNetworks(false)) {
+        serialRequestBusy() || !scanSetupNetworks()) {
       emitSerialError("wifi-scan-rejected");
     } else {
       String out = "{\"kind\":\"wifi-networks\",\"deviceId\":\"";
@@ -2644,26 +2401,6 @@ void handleSettingsAPI() {
   appendSettingsJSON(out);
   out += "}";
   webServer.send(200, "application/json", out);
-}
-
-void handlePairingAPI() {
-  addCorsHeaders();
-  const String token = generateAuthToken();
-  if (!saveDeviceAuthToken(token)) {
-    webServer.send(500, "text/plain; charset=utf-8", "pairing token save failed");
-    return;
-  }
-  if (webServer.hasArg("api")) {
-    String out;
-    out.reserve(100);
-    out += "{\"ok\":true,\"token\":\"";
-    out += jsonEscape(token);
-    out += "\"}";
-    webServer.send(200, "application/json", out);
-    return;
-  }
-  webServer.sendHeader("Location", "/");
-  webServer.send(303);
 }
 
 void handleAssetsList() {
@@ -3698,7 +3435,7 @@ void handleOtaUpload(int command, const char* target) {
         upload.contentLength,
         maxSize,
         ESP.getFreeSketchSpace());
-    if (!requestHasValidOtaAuth()) {
+    if (!requestHasValidAuth()) {
       setOtaError("unauthorized");
       return;
     }
@@ -4209,15 +3946,6 @@ void startHttpServer() {
     return;
   }
   webServer.on("/", HTTP_GET, handleRoot);
-  webServer.on("/hotspot-detect.html", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/generate_204", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/gen_204", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/fwlink", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/connecttest.txt", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/ncsi.txt", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/save", HTTP_POST, handleSaveWifi);
-  webServer.on("/scan", HTTP_POST, handleSetupWifiScan);
-  webServer.on("/reset-wifi", HTTP_POST, handleResetWifi);
   webServer.on("/hello", HTTP_GET, handleHello);
   webServer.on("/health", HTTP_GET, handleHealth);
   webServer.on("/api/settings", HTTP_POST, handleSettingsAPI);
@@ -4226,7 +3954,6 @@ void startHttpServer() {
       "/api/connection-mode/confirm",
       HTTP_POST,
       handleConnectionModeConfirmation);
-  webServer.on("/api/pair", HTTP_POST, handlePairingAPI);
   webServer.on("/assets", HTTP_GET, handleAssetsList);
   webServer.on(
       "/assets",
@@ -4262,10 +3989,6 @@ void startHttpServer() {
       webServer.send(204, "text/plain", "");
       return;
     }
-    if (setupMode) {
-      handleCaptivePortalProbe();
-      return;
-    }
     webServer.send(404, "text/plain; charset=utf-8", "not found");
   });
   webServer.collectHeaders(kDeviceAuthHeader);
@@ -4274,26 +3997,17 @@ void startHttpServer() {
   Serial.println("http_server_started port=80");
 }
 
-void startSetupAccessPoint() {
+// WiFi mode without a network. There is no setup access point: the customer
+// connects the USB cable and the Mac App sends new WiFi details over it. The
+// saved network keeps being retried in the background.
+void enterWifiSetup() {
   setupMode = true;
   pendingHttpRender = false;
   resetWifiReconnectState();
-  codexbar_display::esp8266::wifi_recovery::EnterSetup(
-      wifiSetupRecoveryState,
-      static_cast<uint32_t>(millis()));
-  codexbar_display::esp8266::wifi_setup::ResetPortalState(setupWifiState);
-  WiFi.setAutoReconnect(false);
-  WiFi.disconnect(false);
-  WiFi.mode(WIFI_AP_STA);
-  applyWifiInteropPhyMode();
-  WiFi.softAP(kSetupApSsid);
-  Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
-  dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
-  captiveDnsStarted = true;
-  Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
-  startHttpServer();
+  wifiReconnectAttemptAtMs = millis();
+  Serial.println("wifi_setup_waiting_for_cable");
   const unsigned long renderStartUs = micros();
-  renderer.DrawSetupInstructions(runtimeCtx);
+  renderer.DrawStatus(runtimeCtx, "VIBE TV", "Connect USB cable", kCustomerAppHost);
   recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
 }
@@ -4303,11 +4017,25 @@ void maintainWifiConnection() {
           deviceSettings.connectionMode)) {
     return;
   }
-  if (setupMode) {
-    maintainWifiSetupRecovery();
+  if (rebootPending) {
     return;
   }
-  if (rebootPending) {
+  const unsigned long nowMs = millis();
+  if (setupMode) {
+    if (WiFi.status() == WL_CONNECTED) {
+      setupMode = false;
+      resetWifiReconnectState();
+      startHttpServer();
+      drawWaitingForCompanionStatus();
+      Serial.printf("wifi_setup_retry_connected ip=%s\n", WiFi.localIP().toString().c_str());
+    } else if (savedWifiCredentialsAvailable && !setupWifiState.scanInProgress &&
+               (nowMs - wifiReconnectAttemptAtMs) >= kWifiConnectTimeoutMs) {
+      wifiReconnectAttemptAtMs = nowMs;
+      WiFi.mode(WIFI_STA);
+      applyWifiInteropPhyMode();
+      WiFi.begin(savedWifiCredentials.ssid, savedWifiCredentials.password);
+      Serial.printf("wifi_setup_retry_started ssid=%s\n", savedWifiCredentials.ssid);
+    }
     return;
   }
   if (WiFi.status() == WL_CONNECTED) {
@@ -4328,7 +4056,6 @@ void maintainWifiConnection() {
     return;
   }
 
-  const unsigned long nowMs = millis();
   if (wifiDisconnectedAtMs == 0) {
     wifiDisconnectedAtMs = nowMs;
     wifiReconnectAttemptAtMs = 0;
@@ -4353,8 +4080,8 @@ void maintainWifiConnection() {
   }
 
   if ((nowMs - wifiDisconnectedAtMs) >= kWifiReconnectFallbackMs) {
-    Serial.println("wifi_reconnect_failed action=setup_ap");
-    startSetupAccessPoint();
+    Serial.println("wifi_reconnect_failed action=cable_setup");
+    enterWifiSetup();
   }
 }
 
@@ -4484,7 +4211,7 @@ void setup() {
     if (connectionTransitionPending) {
       connectionTransitionStartedAtMs = millis();
     }
-    startSetupAccessPoint();
+    enterWifiSetup();
   }
 }
 
@@ -4668,9 +4395,6 @@ void loop() {
   (void)renderDurationUs;
 #endif
 
-  if (captiveDnsStarted) {
-    dnsServer.processNextRequest();
-  }
   if (rebootPending && static_cast<long>(millis() - rebootAtMs) >= 0) {
     Serial.println("reboot_now");
     delay(100);

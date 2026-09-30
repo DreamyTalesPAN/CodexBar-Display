@@ -8844,8 +8844,11 @@ func pairingAuthorizationStatus(err error) (int, bool) {
 }
 
 func isPairingAuthorizationStatus(statusCode int) bool {
+	// Current firmware has no WiFi pairing endpoint (404): only the USB cable
+	// issues a token.
 	return statusCode == http.StatusUnauthorized ||
 		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusNotFound ||
 		statusCode == http.StatusTooManyRequests
 }
 
@@ -9062,6 +9065,14 @@ func writePairingError(w http.ResponseWriter, err error, firmware string) {
 	}
 
 	switch statusCode {
+	case http.StatusNotFound:
+		writeError(
+			w,
+			http.StatusConflict,
+			"cable_pairing_required",
+			"VibeTV pairs only over the USB cable.",
+			"Connect VibeTV to this Mac with the USB cable, then press Connect.",
+		)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		writeError(
 			w,
