@@ -106,9 +106,11 @@ func (f *fakeROM) reply(op, status byte) {
 
 func (f *fakeROM) Close() error                       { return nil }
 func (f *fakeROM) SetReadTimeout(time.Duration) error { return nil }
-func (f *fakeROM) ResetInputBuffer() error            { return nil }
-func (f *fakeROM) SetDTR(v bool) error                { f.lines = append(f.lines, lineState("DTR", v)); return nil }
-func (f *fakeROM) SetRTS(v bool) error                { f.lines = append(f.lines, lineState("RTS", v)); return nil }
+func (f *fakeROM) SetMode(*serial.Mode) error         { return nil }
+
+func (f *fakeROM) ResetInputBuffer() error { return nil }
+func (f *fakeROM) SetDTR(v bool) error     { f.lines = append(f.lines, lineState("DTR", v)); return nil }
+func (f *fakeROM) SetRTS(v bool) error     { f.lines = append(f.lines, lineState("RTS", v)); return nil }
 
 func lineState(name string, v bool) string {
 	if v {

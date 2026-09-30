@@ -225,10 +225,20 @@ printf '%s\n' "$*" >> "${FAKE_OPEN_LOG:?}"
 exit 0
 EOF
 
+  # The installer stops whatever codexbar-display listens on 127.0.0.1:47832.
+  # With the real lsof that is the developer's own running VibeTV service: each
+  # case SIGTERMed it, and the Mac App on this machine reported its background
+  # service dead and restarted it.
+  cat > "${fake_bin}/lsof" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+
   chmod +x \
     "${fake_bin}/codesign" \
     "${fake_bin}/curl" \
     "${fake_bin}/launchctl" \
+    "${fake_bin}/lsof" \
     "${fake_bin}/open" \
     "${fake_bin}/shasum" \
     "${fake_bin}/uname" \

@@ -184,7 +184,6 @@ export type SupportReportClientState = {
     failedNormalChecks: number;
     pickerReason?: string | null;
     normalFailureLimit: number;
-    operationFailureLimit: number;
   };
   providerSetup?: ProviderSetupInfo | null;
   lastError?: ApiError | null;

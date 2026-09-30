@@ -344,7 +344,7 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	if err := checkProviderSettingsVersion(ctx, bin); err != nil {
-		return nil, "", providerSettingsError(ProviderSettingsErrorVersion, err)
+		return nil, "", err
 	}
 
 	timeout := commandTimeout()
@@ -407,17 +407,21 @@ func providerToggleArgs(action, providerID string) []string {
 	return []string{"config", action, "--provider", providerID}
 }
 
+// Only a version that was read and is too old asks for a newer Mac App. A
+// `--version` that did not answer in time -- CodexBar starting cold next to a
+// cost refresh, right after the background service restarted -- is the
+// settings being unavailable for a moment, not the app being outdated.
 func checkProviderSettingsVersion(ctx context.Context, bin string) error {
 	version, err := installedVersion(ctx, bin)
 	if err != nil {
-		return err
+		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	minimum, err := parseLooseVersion(minProviderSettingsVersion)
 	if err != nil {
-		return err
+		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	if version.Compare(minimum) < 0 {
-		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minProviderSettingsVersion)
+		return providerSettingsError(ProviderSettingsErrorVersion, fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minProviderSettingsVersion))
 	}
 	return nil
 }

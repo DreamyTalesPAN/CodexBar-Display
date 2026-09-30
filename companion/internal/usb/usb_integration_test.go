@@ -205,6 +205,8 @@ func (p *pseudoTTYPort) SetReadTimeout(timeout time.Duration) error {
 	return nil
 }
 
+func (p *pseudoTTYPort) SetMode(*serial.Mode) error { return nil }
+
 func (p *pseudoTTYPort) ResetInputBuffer() error {
 	return nil
 }

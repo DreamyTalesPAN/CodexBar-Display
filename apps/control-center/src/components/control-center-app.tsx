@@ -73,7 +73,6 @@ import {
   deviceRecoveryConfirmedLoss,
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
-  DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
   resetDeviceRecoveryGate,
   selectRecoveryDevice,
   type DeviceRecoveryGateState,
@@ -457,6 +456,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [brightness, setBrightness] = useState<number | null>(null);
   const [standby, setStandby] = useState<StandbySettings | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  // The firmware update or theme install this window runs itself. It ends
+  // with its own job poll, so unlike a job the Companion stopped reporting
+  // after a restart it cannot go stale.
+  const ownDeviceOperationRef = useRef(false);
+  useEffect(() => {
+    ownDeviceOperationRef.current =
+      busyAction === "firmware-update" || busyAction === "install";
+  }, [busyAction]);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
@@ -690,10 +697,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
 
-  const operationRecoveryGraceActive =
-    firmwareUpdateStatus?.phase === "installing" ||
-    themeInstallStatus?.phase === "installing";
-
   const acceptDeviceSnapshot = useCallback(
     (next: DeviceInfo) => {
       setDeviceRecoveryGate(
@@ -722,13 +725,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       next: DeviceInfo | null | undefined,
       sourcePoll: string,
       countFailure = false,
+      // A running job must be vouched for now: by the same status answer or
+      // by this window's own operation. A remembered "installing" survives a
+      // Companion restart and would otherwise never count a miss again.
+      operationInProgress = false,
     ) => {
       const transition = applyDeviceRecoveryStatus(
         deviceRecoveryGateRef.current,
         {
           countFailure,
           device: next,
-          operationInProgress: operationRecoveryGraceActive,
+          operationInProgress,
         },
       );
       setDeviceRecoveryGate(transition.state);
@@ -782,7 +789,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markDeviceLost,
       mergeDevice,
-      operationRecoveryGraceActive,
       setDevice,
       setDeviceRecoveryGate,
     ],
@@ -1423,7 +1429,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           firmwareUpdateStatusFromJob(payload.firmwareUpdate),
         );
       }
-      applyPolledDeviceSnapshot(payload.device, "/v1/status", true);
+      applyPolledDeviceSnapshot(
+        payload.device,
+        "/v1/status",
+        true,
+        ownDeviceOperationRef.current ||
+          payload.firmwareUpdate?.phase === "installing" ||
+          payload.themeInstall?.phase === "installing",
+      );
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;
@@ -3734,7 +3747,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 deviceRecoveryGateRef.current.failedNormalChecks,
               pickerReason: deviceRecoveryPickerReason,
               normalFailureLimit: DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
-              operationFailureLimit: DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
             },
             providerSetup,
             lastError,
