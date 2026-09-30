@@ -430,9 +430,15 @@ unexplained transport error instead of an authentication failure.
 - Connected devices expose read-only status on their current IP. Customer-facing writes are performed by the authenticated Control Center.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
 - WiFi write APIs require `X-VibeTV-Token`; a device never paired over the cable rejects all of them. Nothing on the local network can create, rotate or read the token. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
-- Firmware and filesystem uploads always require the current pairing token,
-  including on fresh devices. The public
-  `/update` page never embeds that token or exposes a direct upload form.
+- Firmware is written only over the USB cable (Cable transfer with the current
+  pairing token and matching `deviceId`). Current firmware has no `/update`
+  page and no WiFi firmware or filesystem upload (#489).
+- A factory reset runs only over the USB cable (Cable Serial `factory-reset`).
+  It erases WiFi credentials (VibeTV EEPROM record and ESP8266 SDK copy), the
+  pairing token, settings and themes, then restarts; the device then shows
+  `Connect USB cable`.
+- The pairing token is 128 bits from the ESP8266 hardware random number
+  generator (`ESP.random`), hex encoded.
 - Companion runtime discovers the current device IP and verifies the stable `deviceId`; it does not use a hostname default.
 - If a connected device loses WiFi, it retries in station mode first. After a
   lasting failure it shows `Connect USB cable` and keeps retrying; the customer

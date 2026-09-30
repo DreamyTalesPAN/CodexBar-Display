@@ -175,6 +175,44 @@ func validCablePairingToken(token string) bool {
 	return true
 }
 
+func readFactoryResetFromPort(port SerialPort, window time.Duration, deviceID string) error {
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string `json:"kind"`
+			Status   string `json:"status"`
+			DeviceID string `json:"deviceId"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = errors.New("device rejected the factory reset")
+			return true
+		case "factory-reset":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) {
+				responseErr = errors.New("device acknowledged the factory reset for a different identity")
+			} else if !strings.EqualFold(strings.TrimSpace(reply.Status), "done") {
+				responseErr = errors.New("device could not erase all saved data")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return responseErr
+	}
+	if !seen {
+		return errors.New("device did not acknowledge the factory reset")
+	}
+	return nil
+}
+
 func readSettingsFromPort(port SerialPort, window time.Duration, deviceID string) (protocol.DeviceSettings, error) {
 	var settings protocol.DeviceSettings
 	var responseErr error

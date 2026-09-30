@@ -328,7 +328,7 @@ bool testAssetDeleteProtectsStandbyLiveTheme(const std::string& source) {
 
 bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
   const std::size_t standbyStart = source.find("void maintainStandby()");
-  const std::size_t standbyEnd = source.find("\nvoid handleUpdatePage()", standbyStart);
+  const std::size_t standbyEnd = source.find("\nvoid resetOtaUpdaterAfterFailure()", standbyStart);
   if (!expect(
           standbyStart != std::string::npos && standbyEnd != std::string::npos,
           "standby state machine must remain discoverable")) {
@@ -349,7 +349,7 @@ bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
 
 bool testUsageWakeRestoresLiveThemeBeforeDroppingPath(const std::string& source) {
   const std::size_t standbyStart = source.find("void maintainStandby()");
-  const std::size_t standbyEnd = source.find("\nvoid handleUpdatePage()", standbyStart);
+  const std::size_t standbyEnd = source.find("\nvoid resetOtaUpdaterAfterFailure()", standbyStart);
   if (!expect(
           standbyStart != std::string::npos && standbyEnd != std::string::npos,
           "standby state machine must remain discoverable")) {

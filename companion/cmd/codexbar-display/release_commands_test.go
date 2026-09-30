@@ -3388,3 +3388,22 @@ func TestRunInstallUpdateRestoresStoredThemeLostOnTheRebootAfterAnAbortedUpload(
 		t.Fatalf("activated the wrong theme path: %q", got)
 	}
 }
+
+func TestMultipartUploadReportsCableOnlyFirmwareWithoutWriteWarning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("firmware"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := uploadFirmwareOTAMultipart(context.Background(), server.URL, imagePath, "token")
+	if !errors.Is(err, errFirmwareUpdateCableOnly) {
+		t.Fatalf("expected cable-only update error, got %v", err)
+	}
+	if errors.Is(err, errFirmwareUploadMayHaveWritten) || firmwareUploadConnectionInterrupted(err) {
+		t.Fatalf("a missing WiFi update route must not look like a partial write: %v", err)
+	}
+}

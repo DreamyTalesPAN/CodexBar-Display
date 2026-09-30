@@ -24,7 +24,7 @@ expect_board=""
 skip_build=0
 skip_manufacturer_ota=0
 skip_firmware_ota=1
-skip_filesystem_ota=0
+skip_filesystem_ota=1
 skip_health=0
 skip_asset_check=0
 skip_smoke=0
@@ -106,7 +106,10 @@ Flow toggles:
                         Also upload firmware.bin to the VibeTV updater after boot.
                         Off by default because the normal first pass uses
                         GeekMagic manufacturer OTA for firmware.
-  --skip-filesystem     Do not upload littlefs.bin to VibeTV.
+                        Current VibeTV firmware has no WiFi updater (#489);
+                        use this only for legacy firmware.
+  --skip-filesystem     Do not upload littlefs.bin to VibeTV. Default: current
+                        VibeTV firmware has no WiFi filesystem updater (#489).
   --skip-health         Do not require /health during post-flash polling.
   --skip-asset-check    Do not require theme assets to be visible through /assets.
   --skip-smoke          Do not send the missing-theme test frame.

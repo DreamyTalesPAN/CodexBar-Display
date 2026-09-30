@@ -216,6 +216,7 @@ type Server struct {
 	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
+	factoryResetCable      func(string, string) error
 	scanCableWiFi          func(string, string) ([]protocol.WiFiNetwork, error)
 	sendCableLine          func(string, []byte) error
 	prepareCableTheme      func(context.Context, string, string, string, string) error
@@ -1004,6 +1005,7 @@ func New(opts Options) (*Server, error) {
 		readCableSettings:      usb.ReadSettings,
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
+		factoryResetCable:      usb.FactoryReset,
 		scanCableWiFi:          usb.ScanWiFi,
 		sendCableLine:          usb.SendLine,
 		prepareCableTheme:      usb.PrepareThemeInstall,
@@ -1109,6 +1111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
+	mux.HandleFunc("/v1/device/factory-reset", s.handleDeviceFactoryReset)
 	mux.HandleFunc("/v1/setup/connection-mode", s.handleSetupConnectionMode)
 	mux.HandleFunc("/v1/setup/wifi-networks", s.handleSetupWiFiNetworks)
 	mux.HandleFunc("/v1/setup/wifi", s.handleSetupWiFi)
@@ -3529,6 +3532,69 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		ConnectionModeChoiceRequired: true,
 		Setup:                        setupProgress{ProviderSelectionRequired: true},
 	})
+}
+
+// handleDeviceFactoryReset erases the Cable VibeTV: WiFi details, pairing
+// token, settings and themes. It only runs over the USB cable, so nobody on
+// the WiFi network can wipe or take over the device.
+func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+		return
+	}
+	if s.rejectActiveThemeInstall(w) {
+		return
+	}
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		defer s.pauseDisplayStream(false)
+	}
+	cfg, err := s.configForMaintenance()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
+		writeError(w, http.StatusConflict, "factory_reset_cable_required", "VibeTV can only be erased over the USB cable.", "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then try again.")
+		return
+	}
+	port, hello, ok := s.requireCableControlDevice(w, cfg)
+	if !ok {
+		return
+	}
+	if err := s.factoryResetCable(port, hello.DeviceID); err != nil {
+		writeError(w, http.StatusBadGateway, "factory_reset_failed", "VibeTV could not be erased.", "Keep VibeTV connected by the USB cable, then try again.")
+		return
+	}
+	// The device no longer knows its pairing token, so the Mac forgets it too.
+	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.DeviceToken = ""
+		known := current.KnownDevices[:0]
+		for _, device := range current.KnownDevices {
+			if !strings.EqualFold(device.DeviceID, hello.DeviceID) {
+				known = append(known, device)
+			}
+		}
+		current.KnownDevices = known
+	}); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if s.resetCableSender != nil {
+		s.resetCableSender()
+	}
+	writeJSON(w, http.StatusOK, struct {
+		OK bool `json:"ok"`
+	}{OK: true})
 }
 
 func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Request) {
@@ -7339,6 +7405,13 @@ func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 			Code:       "firmware_update_cable_interrupted",
 			Message:    "Cable update was interrupted.",
 			NextAction: "Reconnect VibeTV with a data-capable Cable, wait for it to start, then try the update once.",
+		}
+	}
+	if strings.TrimSpace(retryPolicy) == "cable_required" {
+		return apiError{
+			Code:       "firmware_update_cable_required",
+			Message:    "VibeTV installs updates only over the USB cable.",
+			NextAction: "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then update again.",
 		}
 	}
 	return apiError{

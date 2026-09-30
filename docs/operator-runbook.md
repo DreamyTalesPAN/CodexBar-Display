@@ -62,9 +62,20 @@ cd companion
 This installs the companion runtime and writes a WiFi LaunchAgent. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
 It does not require USB serial.
 
-### WiFi firmware update path
+### Firmware update path
 
-Use this for normal devices. It downloads the latest published firmware manifest and installs the matching release asset over WiFi:
+Current firmware (#489) installs updates only over the USB cable. Connect the
+cable, switch the Mac App to USB-C, then update in the app or run:
+
+```bash
+codexbar-display install-update \
+  --target cable://vibetv \
+  --confirm-live-update
+```
+
+A WiFi target on current firmware fails with "VibeTV installs updates only
+over the USB cable." and writes nothing. The WiFi form below applies only to
+legacy firmware that still has the WiFi updater:
 
 ```bash
 codexbar-display install-update \

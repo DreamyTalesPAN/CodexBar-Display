@@ -47,6 +47,12 @@ the frame parser.
   each network is encrypted. An empty list is a valid completed scan.
 - `set-connection-mode` and `confirm-connection-mode` start and confirm the
   bounded mode transactions defined in the hardware contract.
+- `{"kind":"request","op":"factory-reset","deviceId":"14799300"}` erases the
+  WiFi credentials (VibeTV copy and ESP8266 SDK copy), the pairing token,
+  settings and themes, replies `{"kind":"factory-reset","status":"done"|"failed","deviceId":"..."}`
+  and restarts. It is rejected with `factory-reset-rejected` for a different
+  identity or while a transfer, upload or reboot is active. It has no HTTP
+  equivalent.
 
 ### Cable bulk transfer v1
 
@@ -313,7 +319,7 @@ Pairing/auth:
 - Protected WiFi write APIs require `X-VibeTV-Token: <token>`. The legacy RAW
   compatibility sender is not a current WiFi API fallback; see
   `docs/firmware-ota-contract.md`.
-- Protected write APIs include `POST /frame`, `POST /api/settings`, `POST /assets`, `DELETE /assets`, `POST /theme/active`, `POST /screensaver/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
+- Protected write APIs include `POST /frame`, `POST /api/settings`, `POST /assets`, `DELETE /assets`, `POST /theme/active` and `POST /screensaver/active`. Current firmware has no WiFi firmware/filesystem upload path (`/update*` answers `404`); firmware is written only through the Cable transfer, which requires the current token and matching `deviceId`. Legacy firmware still serves token-protected `/update/firmware` and `/update/filesystem`.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
 - The unauthenticated device page never renders the pairing token. Firmware `1.0.39` WiFi `/hello` reports `capabilities.auth.paired` and `tokenHeader`; legacy firmware may additionally report pairing-window fields. No firmware reports the token value.
 - There is no setup access point or captive portal. A device that cannot reach its saved WiFi shows `Connect USB cable` and keeps retrying the saved network; new WiFi details arrive over the cable. Saving WiFi preserves device authentication, themes, and settings.

@@ -4,6 +4,14 @@ This contract defines the supported customer update path for ESP8266 VibeTV
 devices. It applies to the Control Center, the Companion CLI, and firmware OTA
 handlers.
 
+**Current firmware (#489) installs updates only over the USB cable.** It has
+no WiFi update route: `GET /update`, `POST /update/firmware` and
+`POST /update/filesystem` answer `404`. The Companion reports that `404`
+as `firmware_update_cable_required` ("VibeTV installs updates only over the
+USB cable."), never as a possibly written upload, so no power cycle is asked
+for. The WiFi rules below apply only to legacy firmware that still has the
+WiFi updater, and to its one update to current firmware.
+
 ## Safety invariants
 
 - The radio must run 802.11g (`docs/hardware-contract.md`, "WiFi PHY mode").
@@ -19,8 +27,8 @@ handlers.
   local-WiFi Connect before authenticated OTA.
 - Firmware upload always requires the current pairing token. The firmware does
   not accept an unsigned upload merely because pairing itself is open.
-- The unauthenticated `GET /update` page never embeds a pairing token or a
-  browser upload form. It points to the authenticated `install-update` path.
+- Legacy firmware only: the unauthenticated `GET /update` page never embeds a
+  pairing token or a browser upload form. Current firmware has no such page.
 - Pin the device URL and `deviceId` before downloading or uploading firmware.
 - Treat device URL, `deviceId`, and pairing token as one identity tuple. When a
   target changes, update all three together; never reuse an unverified token
@@ -46,23 +54,23 @@ handlers.
 
 | Bootable state | WiFi OTA path |
 | --- | --- |
-| Home WiFi and current token | Authenticated `install-update`. |
-| Current firmware on home WiFi but local token lost or rejected | Connect the USB cable and press Connect. Cable pairing returns the token, then authenticated `install-update` can proceed. |
+| Current firmware (cable-only updates) | Connect the USB cable, switch to USB-C in Settings, then update. There is no WiFi path. |
+| Legacy firmware on home WiFi and current token | Authenticated `install-update`. |
 | Firmware 1.0.39 up to the last version before cable-only pairing, token lost | Press Connect. The firmware replaces the token over WiFi, then authenticated `install-update` can proceed. |
 | Firmware 1.0.38 on home WiFi but local token lost or rejected | Complete the legacy three-power-cycle WiFi recovery, reconnect the device to home WiFi, press Connect within 30 minutes, then update to current firmware. |
 | Saved home WiFi unavailable | VibeTV shows `Connect USB cable`. Connect the cable and send the new WiFi from the Mac App. |
-| Fresh unpaired device | Connect the USB cable, press Connect (pairs over the cable), then run authenticated `install-update`. |
-| Paired device after a WiFi change | The existing token remains valid; discover the new IP and run authenticated `install-update`. |
+| Fresh unpaired device | Connect the USB cable, press Connect (pairs over the cable), then update over the cable. |
 
 The ESP8266 firmware does not verify a cryptographic firmware signature on the
 device. Manifest SHA-256 validation therefore remains a sender-side release
-check, while the current pairing token is the mandatory receiver-side upload
-authorization. Open pairing never authorizes a firmware upload directly.
+check. On current firmware the receiver-side authorization is the physical USB
+cable plus the current pairing token and the matching `deviceId`; nothing on
+the WiFi network can write firmware.
 
 ## Current transports
 
-- **WiFi:** authenticated multipart `POST /update/firmware` is the current
-  firmware receiver path.
+- **WiFi (legacy firmware only):** authenticated multipart
+  `POST /update/firmware`. Current firmware answers `404`.
 - **Cable:** the newline-delimited serial bulk-transfer protocol in
   `protocol/PROTOCOL.md` is the current Cable path. It is stop-and-wait, uses a
   128-byte candidate chunk, validates a per-chunk MD5 prefix and a complete MD5,

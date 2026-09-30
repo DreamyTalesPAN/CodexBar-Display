@@ -217,10 +217,7 @@ bool waitStatusRendered = false;
 bool themeInstallStatusVisible = false;
 unsigned long themeInstallStatusActivityMs = 0;
 String lastConnectedSetupIp;
-bool otaUploadSucceeded = false;
 bool otaUploadInProgress = false;
-bool otaUploadNeedsReboot = false;
-String otaUploadError;
 bool assetUploadSucceeded = false;
 bool assetUploadInProgress = false;
 String assetUploadError;
@@ -721,15 +718,14 @@ bool validAuthToken(const String& value) {
 }
 
 String generateAuthToken() {
-  uint32_t seed = ESP.getCycleCount() ^ micros() ^ (static_cast<uint32_t>(ESP.getChipId()) << 8);
-  randomSeed(seed);
+  // 128 bits from the ESP8266 hardware random number generator.
+  uint8_t bytes[16];
+  ESP.random(bytes, sizeof(bytes));
   String token;
-  token.reserve(32);
-  for (uint8_t i = 0; i < 4; ++i) {
-    uint32_t value = static_cast<uint32_t>(random(0x10000)) << 16;
-    value |= static_cast<uint32_t>(random(0x10000));
-    char chunk[9];
-    snprintf(chunk, sizeof(chunk), "%08lx", static_cast<unsigned long>(value));
+  token.reserve(sizeof(bytes) * 2);
+  for (uint8_t value : bytes) {
+    char chunk[3];
+    snprintf(chunk, sizeof(chunk), "%02x", value);
     token += chunk;
   }
   return token;
@@ -1433,7 +1429,7 @@ String updateStatusHTML(bool compact) {
       html += htmlEscape(firmwareUpdate.latestVersion);
       html += F("</code>");
     }
-    html += F("</span><a class='update-link' href='/update'>Install update</a>");
+    html += F("</span><span>Update with the Mac app over the USB cable.</span>");
     html += compact ? F("</div>") : F("</section>");
     return html;
   }
@@ -1647,7 +1643,7 @@ String connectedPageHTML() {
     html += kCustomerAppHost;
     html += F("</a> on your Mac and follow the main button.</p></section>");
   }
-  html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a></p>");
+  html += F("<p><a href='/health'>Status</a></p>");
   html += F("<section><h2>Pairing</h2>");
   if (deviceAuthConfigured()) {
     html += F("<p class='muted'>Paired. Manage this VibeTV in Control Center.</p>");
@@ -1832,6 +1828,30 @@ bool serialRequestBusy() {
          assetUploadInProgress || rebootPending;
 }
 
+void enterOtaSafeMode();
+
+// Erases everything a customer stored on the device: WiFi credentials (our
+// EEPROM copy and the SDK copy), pairing token, settings and themes.
+void factoryResetAndRestart() {
+  EEPROM.begin(kEepromBytes);
+  for (size_t i = 0; i < kEepromBytes; ++i) {
+    EEPROM.write(i, 0);
+  }
+  bool erased = EEPROM.commit();
+  erased = ESP.eraseConfig() && erased;
+  enterOtaSafeMode();
+  erased = LittleFS.format() && erased;
+  String out = "{\"kind\":\"factory-reset\",\"status\":\"";
+  out += erased ? "done" : "failed";
+  out += "\",\"deviceId\":\"";
+  out += deviceID;
+  out += "\"}";
+  Serial.println(out);
+  Serial.flush();
+  delay(100);
+  ESP.restart();
+}
+
 bool handleSerialControlLine(const String& line) {
   JsonDocument doc;
   if (deserializeJson(doc, line)) {
@@ -2008,6 +2028,14 @@ bool handleSerialControlLine(const String& line) {
     } else {
       emitSerialConnectionMode("switching", target, true);
       scheduleReboot("wifi_credentials_saved");
+    }
+  } else if (strcmp(op, "factory-reset") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
+    if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+        serialRequestBusy()) {
+      emitSerialError("factory-reset-rejected");
+    } else {
+      factoryResetAndRestart();
     }
   } else {
     emitSerialError("unsupported-request");
@@ -3366,22 +3394,6 @@ void maintainStandby() {
 }
 
 
-void handleUpdatePage() {
-  webServer.keepAlive(false);
-  webServer.send(
-      200,
-      "text/html; charset=utf-8",
-      F("<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'><title>VibeTV Update</title><h1>VibeTV Update</h1><p>Open the VibeTV App on your Mac to check and install updates.</p><p><a href='/'>Back</a></p>"));
-}
-
-void setOtaError(const String& message) {
-  otaUploadError = message;
-  Serial.printf("ota_error message=%s\n", otaUploadError.c_str());
-  if (Update.hasError()) {
-    Update.printError(Serial);
-  }
-}
-
 void resetOtaUpdaterAfterFailure() {
   if (Update.isRunning()) {
     Update.end(false);
@@ -3389,128 +3401,25 @@ void resetOtaUpdaterAfterFailure() {
   Update.clearError();
 }
 
-size_t otaMaxSizeForCommand(int command) {
-  if (command == U_FS) {
-    return static_cast<size_t>(FS_end - FS_start);
-  }
+size_t firmwareUpdateMaxSize() {
   return static_cast<size_t>((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000);
 }
 
-void enterOtaSafeMode(int command, WiFiClient* otaClient) {
-  (void)command;
+void enterOtaSafeMode() {
   firmwareUpdateNoticeDirty = false;
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
   WiFiUDP::stopAll();
-  if (otaClient != nullptr) {
-    WiFiClient::stopAllExcept(otaClient);
-  } else {
-    WiFiClient::stopAll();
-  }
+  WiFiClient::stopAll();
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
-}
-
-void handleOtaUpload(int command, const char* target) {
-  HTTPUpload& upload = webServer.upload();
-
-  if (upload.status == UPLOAD_FILE_START) {
-    if (assetUploadInProgress || otaUploadInProgress || rebootPending) {
-      otaUploadSucceeded = false;
-      otaUploadInProgress = true;
-      otaUploadNeedsReboot = false;
-      otaUploadError = "another upload is active";
-      return;
-    }
-    otaUploadSucceeded = false;
-    otaUploadInProgress = true;
-    otaUploadNeedsReboot = false;
-    otaUploadError = "";
-    const size_t maxSize = otaMaxSizeForCommand(command);
-    Serial.printf(
-        "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu free_sketch_space=%zu\n",
-        target,
-        upload.filename.c_str(),
-        upload.contentLength,
-        maxSize,
-        ESP.getFreeSketchSpace());
-    if (!requestHasValidAuth()) {
-      setOtaError("unauthorized");
-      return;
-    }
-    enterOtaSafeMode(command, &webServer.client());
-    otaUploadNeedsReboot = true;
-    const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
-    drawUpdateStatus(targetLabel);
-    waitStatusRendered = true;
-    if (!Update.begin(maxSize, command)) {
-      setOtaError(Update.getErrorString());
-      resetOtaUpdaterAfterFailure();
-    }
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-      setOtaError(Update.getErrorString());
-      resetOtaUpdaterAfterFailure();
-    }
-    ESP.wdtFeed();
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (otaUploadError.length() == 0 && Update.end(true)) {
-      otaUploadSucceeded = true;
-      Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
-    } else if (otaUploadError.length() == 0) {
-      setOtaError(Update.getErrorString());
-      resetOtaUpdaterAfterFailure();
-    }
-  } else if (upload.status == UPLOAD_FILE_ABORTED) {
-    setOtaError("upload aborted");
-    resetOtaUpdaterAfterFailure();
-    Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
-  }
-  yield();
 }
 
 void scheduleReboot(const char* reason) {
   rebootPending = true;
   rebootAtMs = millis() + kRebootDelayMs;
   Serial.printf("reboot_scheduled reason=%s delay_ms=%lu\n", reason, kRebootDelayMs);
-}
-
-void handleOtaResult(const char* target) {
-  webServer.keepAlive(false);
-  if (otaUploadError == "unauthorized") {
-    otaUploadInProgress = false;
-    otaUploadNeedsReboot = false;
-    addCorsHeaders();
-    webServer.sendHeader("WWW-Authenticate", "VibeTV token");
-    webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
-    return;
-  }
-  if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
-    otaUploadInProgress = false;
-    const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
-    Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
-    webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
-    if (otaUploadNeedsReboot) {
-      scheduleReboot("ota_failure");
-    }
-    otaUploadNeedsReboot = false;
-    return;
-  }
-
-  String html;
-  html.reserve(500);
-  html += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>VibeTV Update</title></head><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:32px'>";
-  html += "<h1>Update successful</h1><p>";
-  html += target;
-  html += " was written. Vibe TV is restarting.</p></body></html>";
-  webServer.send(200, "text/html; charset=utf-8", html);
-  drawUpdateStatus("Restarting");
-  waitStatusRendered = true;
-  scheduleReboot(target);
-  otaUploadInProgress = false;
-  otaUploadNeedsReboot = false;
 }
 
 using codexbar_display::esp8266::cable_transfer::HexNibble;
@@ -3598,8 +3507,6 @@ void resetCableTransfer(bool discard) {
       resetOtaUpdaterAfterFailure();
     }
     otaUploadInProgress = false;
-    otaUploadNeedsReboot = false;
-    otaUploadSucceeded = false;
   }
   cableTransfer = CableTransferState{};
 }
@@ -3666,7 +3573,7 @@ bool startCableTransfer(JsonDocument& doc) {
     target = CableTransferSink::kAsset;
   } else if (strcmp(sink, "firmware") == 0 &&
              activation[0] == '\0' &&
-             expectedBytes <= otaMaxSizeForCommand(U_FLASH)) {
+             expectedBytes <= firmwareUpdateMaxSize()) {
     target = CableTransferSink::kFirmware;
   }
   uint8_t expectedDigest[16];
@@ -3710,11 +3617,8 @@ bool startCableTransfer(JsonDocument& doc) {
       return true;
     }
   } else {
-    otaUploadSucceeded = false;
     otaUploadInProgress = true;
-    otaUploadNeedsReboot = true;
-    otaUploadError = "";
-    enterOtaSafeMode(U_FLASH, nullptr);
+    enterOtaSafeMode();
     drawUpdateStatus("Loading firmware");
     waitStatusRendered = true;
     if (!Update.begin(expectedBytes, U_FLASH)) {
@@ -3841,7 +3745,6 @@ bool finishCableTransfer(JsonDocument& doc) {
 #endif
   } else if (cableTransfer.sink == CableTransferSink::kFirmware) {
     committed = Update.end(false);
-    otaUploadSucceeded = committed;
   }
   if (!committed) {
     emitSerialError("transfer-rejected");
@@ -3855,7 +3758,6 @@ bool finishCableTransfer(JsonDocument& doc) {
     finishAssetUploadRequest();
   } else {
     otaUploadInProgress = false;
-    otaUploadNeedsReboot = false;
     cableTransfer = CableTransferState{};
     Serial.flush();
     delay(100);
@@ -3964,25 +3866,6 @@ void startHttpServer() {
   webServer.on("/theme/active", HTTP_POST, handleThemeActive);
   webServer.on("/screensaver/active", HTTP_POST, handleScreensaverActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
-  webServer.on("/update", HTTP_GET, handleUpdatePage);
-  webServer.on(
-      "/update/firmware",
-      HTTP_POST,
-      []() {
-        handleOtaResult("firmware");
-      },
-      []() {
-        handleOtaUpload(U_FLASH, "firmware");
-      });
-  webServer.on(
-      "/update/filesystem",
-      HTTP_POST,
-      []() {
-        handleOtaResult("filesystem");
-      },
-      []() {
-        handleOtaUpload(U_FS, "filesystem");
-      });
   webServer.onNotFound([]() {
     if (webServer.method() == HTTP_OPTIONS) {
       addCorsHeaders();

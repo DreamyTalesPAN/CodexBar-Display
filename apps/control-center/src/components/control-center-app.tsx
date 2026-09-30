@@ -258,7 +258,7 @@ type FirmwareUpdateJob = {
   phase: "installing" | "complete" | "attention" | "error";
   stage?: string;
   outcome?: string;
-  retryPolicy?: "power_cycle" | "reconnect_cable";
+  retryPolicy?: "power_cycle" | "reconnect_cable" | "cable_required";
   message?: string;
   progress?: number;
   startedAt?: string;
@@ -2040,6 +2040,37 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
     setDeviceRecoveryGate,
   ]);
+
+  // Erases the Cable VibeTV (WiFi details, pairing, settings, themes) and then
+  // starts setup again, because the pairing on this Mac is gone as well.
+  const eraseDevice = useCallback(async () => {
+    setBusyAction("erase-device");
+    setLastError(null);
+    try {
+      await runCompanion<{ ok?: boolean }>(
+        "/v1/device/factory-reset",
+        { method: "POST" },
+        { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
+      );
+      addEvent({
+        label: "VibeTV erased",
+        detail: "WiFi details, pairing, settings and themes were removed.",
+        tone: "unknown",
+      });
+    } catch (error) {
+      const normalized = normalizeCaughtError(error, "VibeTV was not erased.");
+      setLastError(normalized);
+      addEvent({
+        label: "VibeTV was not erased",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
+      setBusyAction(null);
+      return;
+    }
+    setBusyAction(null);
+    await resetSetup();
+  }, [addEvent, resetSetup, runCompanion]);
 
   const saveBrightness = useCallback(
     async (value: number) => {
@@ -5015,6 +5046,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={resetSetup}
+            onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}

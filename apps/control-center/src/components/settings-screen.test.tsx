@@ -101,6 +101,35 @@ describe("SettingsScreen on Windows", () => {
 });
 
 describe("SettingsScreen standby controls", () => {
+  it("offers Erase VibeTV only over the USB cable", () => {
+    const props = {
+      automaticPreviews: [],
+      brightness: 70,
+      busyAction: null,
+      device: standbyDevice,
+      standby: savedStandby,
+      onBrightnessChange: vi.fn(),
+      onChooseScreensaver: vi.fn(),
+      onConnectionModeChange: vi.fn(),
+      onDismissError: vi.fn(),
+      onEraseDevice: vi.fn(),
+      onResetSetup: vi.fn(),
+      onSaveBrightness: vi.fn(),
+      onSaveStandby: vi.fn(),
+      onStandbyBrightnessChange: vi.fn(),
+      providerPicker,
+    };
+    const cable = renderToStaticMarkup(
+      <SettingsScreen {...props} connectionMode="cable" />,
+    );
+    const wifi = renderToStaticMarkup(
+      <SettingsScreen {...props} connectionMode="wifi" />,
+    );
+
+    expect(cable).toContain("Erase VibeTV");
+    expect(wifi).not.toContain("Erase VibeTV");
+  });
+
   it("labels unsupported brightness without a loading state", () => {
     const html = render(
       {
