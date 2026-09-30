@@ -1,12 +1,14 @@
 package usb
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -140,6 +142,73 @@ func TestSenderFastFirmwareTransferUsesLargeBase64ChunksAtHigherBaud(t *testing.
 	}
 	if port.closeCalls != 1 {
 		t.Fatal("firmware transfer must close the port so the next open is at the normal rate")
+	}
+}
+
+// ackDroppingPort answers like a VibeTV but loses the answer to the first
+// `drops` chunk requests, the way a byte lost at the faster rate does.
+type ackDroppingPort struct {
+	*mockSerialPort
+	drops      int
+	chunkSends int
+}
+
+func (p *ackDroppingPort) Write(data []byte) (int, error) {
+	n, err := p.mockSerialPort.Write(data)
+	var request struct {
+		Op  string `json:"op"`
+		Seq int    `json:"seq"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(data), &request) != nil {
+		return n, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch request.Op {
+	case "transfer-start":
+		p.readQueue = append(p.readQueue, []byte(`{"kind":"transfer","status":"ready","next":0}`+"\n"))
+	case "transfer-chunk":
+		p.chunkSends++
+		if p.drops > 0 {
+			p.drops--
+			return n, err
+		}
+		p.readQueue = append(p.readQueue, []byte(fmt.Sprintf(`{"kind":"transfer","status":"chunk","next":%d}`+"\n", request.Seq+1)))
+	case "transfer-finish":
+		p.readQueue = append(p.readQueue, []byte(`{"kind":"transfer","status":"complete","next":2}`+"\n"))
+	}
+	return n, err
+}
+
+func TestSenderFastTransferSendsAnUnacknowledgedChunkAgain(t *testing.T) {
+	payload := make([]byte, cableTransferFastChunkBytes+10)
+	port := &ackDroppingPort{mockSerialPort: newMockSerialPort(), drops: cableTransferFastChunkAttempts - 1}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", payload, TransferOptions{Fast: true}); err != nil {
+		t.Fatalf("fast transfer with lost acknowledgements: %v", err)
+	}
+	if port.chunkSends != 2+cableTransferFastChunkAttempts-1 {
+		t.Fatalf("chunk sends=%d", port.chunkSends)
+	}
+}
+
+func TestSenderFastTransferStopsAfterTheLastAttempt(t *testing.T) {
+	port := &ackDroppingPort{mockSerialPort: newMockSerialPort(), drops: cableTransferFastChunkAttempts}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", []byte("firmware"), TransferOptions{Fast: true})
+	if !errors.Is(err, ErrCableTransferInterrupted) {
+		t.Fatalf("want interrupted transfer, got %v", err)
+	}
+	if port.chunkSends != cableTransferFastChunkAttempts {
+		t.Fatalf("chunk sends=%d want %d", port.chunkSends, cableTransferFastChunkAttempts)
 	}
 }
 

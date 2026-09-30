@@ -84,6 +84,11 @@ messages:
   Abort, a rejected transfer or the inactivity bound switches the device back
   to 115200, and a completed firmware transfer restarts it at 115200.
 
+The Mac asks for 230400 (460800 lost bytes on a real VibeTV) and waits two
+seconds per fast chunk. A chunk without a clean answer is sent again after a
+bare newline that ends any partial line; the device acknowledges the repeat as
+a duplicate. Three attempts stay inside the 15-second inactivity bound.
+
 The Mac sends a firmware release's gzip image unchanged; the ESP8266 updater
 stores it and unpacks it on the next boot.
 

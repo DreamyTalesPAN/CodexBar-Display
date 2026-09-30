@@ -21,8 +21,16 @@ const (
 	// rate for the length of the transfer. The line stays under the device's
 	// 2048-byte serial frame.
 	cableTransferFastChunkBytes = 1024
-	cableTransferFastBaudRate   = 460800
-	cableTransferBaudSettle     = 20 * time.Millisecond
+	// 460800 lost bytes on a real VibeTV within the first 60 KB; the UART
+	// FIFO then fills in under 3 ms. 230400 doubles that margin.
+	cableTransferFastBaudRate = 230400
+	cableTransferBaudSettle   = 20 * time.Millisecond
+	// A fast chunk that gets no clean answer is sent again. Every attempt
+	// together stays inside the VibeTV's 15-second idle bound, after which it
+	// drops back to the normal rate and the transfer cannot continue.
+	cableTransferFastChunkAttempts = 3
+	cableTransferFastAckWindow     = 2 * time.Second
+	cableTransferFastDrainWindow   = 300 * time.Millisecond
 )
 
 // TransferOptions tunes one Cable transfer. Fast is only for a VibeTV that
@@ -203,7 +211,13 @@ func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string,
 			request.Data = hex.EncodeToString(chunk)
 		}
 		sequence++
-		if err := s.sendTransferRequestLocked(pathName, request, "chunk", sequence); err != nil {
+		var err error
+		if options.Fast {
+			err = s.sendFastChunkLocked(pathName, request, sequence)
+		} else {
+			err = s.sendTransferRequestLocked(pathName, request, "chunk", sequence)
+		}
+		if err != nil {
 			return fmt.Errorf("%w: %w", ErrCableTransferInterrupted, err)
 		}
 		if options.Progress != nil {
@@ -248,7 +262,35 @@ func (s *Sender) sendTransferRequestLocked(pathName string, request any, status 
 	return nil
 }
 
+// sendFastChunkLocked sends one chunk at the faster rate, where a single lost
+// or damaged byte leaves a line the VibeTV cannot read or an answer the Mac
+// cannot read. The VibeTV acknowledges a repeated chunk without writing it
+// again, so the same chunk is simply sent once more.
+func (s *Sender) sendFastChunkLocked(pathName string, request any, next int) error {
+	for attempt := 1; ; attempt++ {
+		reply, err := s.sendTransferRequestWithinLocked(pathName, request, min(s.helloWindow, cableTransferFastAckWindow))
+		if err == nil && reply.Status == "chunk" && reply.Next == next {
+			return nil
+		}
+		if err == nil {
+			err = fmt.Errorf("cable transfer returned unexpected acknowledgement")
+		}
+		if attempt == cableTransferFastChunkAttempts || s.port == nil {
+			return err
+		}
+		// End a line the VibeTV may still be holding, and drop its answer to it.
+		if writeErr := writeWithTimeout(s.port, []byte("\n"), s.writeTimeout); writeErr != nil {
+			return err
+		}
+		readPortLines(s.port, min(s.helloWindow, cableTransferFastDrainWindow), func(string) bool { return false })
+	}
+}
+
 func (s *Sender) sendTransferRequestForReplyLocked(pathName string, request any) (transferReply, error) {
+	return s.sendTransferRequestWithinLocked(pathName, request, s.helloWindow)
+}
+
+func (s *Sender) sendTransferRequestWithinLocked(pathName string, request any, window time.Duration) (transferReply, error) {
 	line, err := json.Marshal(request)
 	if err != nil {
 		return transferReply{}, err
@@ -266,7 +308,7 @@ func (s *Sender) sendTransferRequestForReplyLocked(pathName string, request any)
 	}
 
 	var reply transferReply
-	seen := readPortLines(s.port, s.helloWindow, func(line string) bool {
+	seen := readPortLines(s.port, window, func(line string) bool {
 		if json.Unmarshal([]byte(line), &reply) != nil {
 			return false
 		}
