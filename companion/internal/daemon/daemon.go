@@ -1439,7 +1439,10 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.AgentAlertsMuted = settings.Muted(deps.now())
 	frame.AgentReminderSecs = 0
-	if !frame.AgentAlertsMuted && strings.HasPrefix(frame.Activity, "waiting_for_") {
+	// Claude sends nothing between approving a tool and its result, so an
+	// approval still looks like it is waiting while the tool runs. Remind only
+	// for questions and reviews until that gap is observable.
+	if !frame.AgentAlertsMuted && strings.HasPrefix(frame.Activity, "waiting_for_") && frame.Activity != "waiting_for_permission" {
 		frame.AgentReminderSecs = settings.ReminderSeconds()
 	}
 	// Usage failures remain in the cycle result/API. A valid independent agent

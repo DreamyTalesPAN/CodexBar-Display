@@ -6945,6 +6945,7 @@ func TestAgentPreferencesReachDeviceWithoutChangingUsage(t *testing.T) {
 		{"quiet", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "22"}, "waiting_for_answer", true, 0, "waiting_for_answer"},
 		{"waiting", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "15", Quiet: "off"}, "waiting_for_answer", false, 900, "waiting_for_answer"},
 		{"working", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}, "working", false, 0, "working"},
+		{"tool approval", runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}, "waiting_for_permission", false, 0, "waiting_for_permission"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prepareFastTestEnv(t)

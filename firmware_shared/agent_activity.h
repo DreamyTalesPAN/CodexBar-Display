@@ -52,9 +52,8 @@ struct Announcement {
     const State state = DisplayState(phase);
     const bool eligible = enabled &&
         state != State::Idle && state != State::Unknown;
-    // Done repeats only while the observer keeps that phase on screen.
-    const uint32_t repeatMs = state == State::Done ? 5000UL :
-        state == State::NeedsYou ? static_cast<uint32_t>(reminderSecs) * 1000UL : 0;
+    // Only a session that needs you is announced again, after its reminder.
+    const uint32_t repeatMs = state == State::NeedsYou ? static_cast<uint32_t>(reminderSecs) * 1000UL : 0;
     if (!initialized || !eligible) startedAt = now;
     if (initialized && state != previous) {
       running = eligible;

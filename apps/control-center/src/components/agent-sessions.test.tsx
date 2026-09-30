@@ -18,31 +18,32 @@ function snapshot(): AgentSnapshot {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("AgentSessions", () => {
-  it("hides idle sessions, puts needs-you first and labels the time as last observed activity", () => {
+  it("mutes idle sessions last, puts needs-you first and labels the time as last observed activity", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     render(<AgentSessions snapshot={{ ...snapshot(), sessions: [snapshot().sessions[1], snapshot().sessions[2], snapshot().sessions[0]] }} />);
     const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0].textContent).toContain("Waiting for approval");
     expect(rows[0].textContent).toContain("Needs you");
     expect(rows[1].textContent).toContain("Running a tool");
+    expect(rows[2].textContent).toContain("Claude Code");
+    expect(rows[2].textContent).toContain("Idle");
+    expect(rows[2].className).toContain("opacity-50");
+    expect(rows[1].className).not.toContain("opacity-50");
     expect(screen.getAllByText("Codex CLI")).toHaveLength(2);
     expect(screen.getByLabelText("Last activity 4m 12s ago")).toBeTruthy();
     expect(screen.queryByText("Last activity 4m 12s ago")).toBeNull();
-    expect(screen.queryByText("Claude Code")).toBeNull();
   });
   // Freshness is the Companion's: it answers an expired observation as stale.
   it("keeps a healthy snapshot while status polling pauses", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     render(<AgentSessions snapshot={snapshot()} />);
     act(() => vi.advanceTimersByTime(16_000));
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
   });
   it("distinguishes no observed sessions from a missing or unhealthy observer", () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     const view = render(<AgentSessions snapshot={{ ...snapshot(), sessions: [] }} />);
-    expect(screen.getByText("Nothing running")).toBeTruthy();
-    view.rerender(<AgentSessions snapshot={{ ...snapshot(), sessions: [snapshot().sessions[2]] }} />);
     expect(screen.getByText("Nothing running")).toBeTruthy();
     view.rerender(<AgentSessions snapshot={{ ...snapshot(), health: "stale" }} />);
     expect(screen.getByText("Agent status unavailable")).toBeTruthy();

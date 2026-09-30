@@ -131,11 +131,11 @@ func TestDisplayNameFollowsObservedSourceNotQuota(t *testing.T) {
 		t.Fatal(got)
 	}
 	s.Sessions[1].Phase = "working"
-	s.Sessions[1].ObservedAt = 2
+	s.Sessions[1].StateSince = 2
 	if got := s.DisplayName(); got != "Claude Code" {
 		t.Fatal(got)
 	}
-	s.Sessions[0].ObservedAt = 3
+	s.Sessions[0].StateSince = 3
 	if got := s.DisplayName(); got != "Codex" {
 		t.Fatal(got)
 	}
@@ -211,9 +211,9 @@ func TestActiveProvidersFollowAggregatePhaseAndRecency(t *testing.T) {
 	s := Snapshot{Health: "ready", Phase: "waiting_for_answer", Sources: []Source{
 		{ID: "codex", UsageProvider: "codex"}, {ID: "claude-code", UsageProvider: "claude"},
 	}, Sessions: []Session{
-		{ID: "a", Source: "codex", Phase: "working", ObservedAt: 99},
-		{ID: "b", Source: "claude-code", Phase: "waiting_for_answer", ObservedAt: 10},
-		{ID: "c", Source: "unknown", Phase: "waiting_for_answer", ObservedAt: 100},
+		{ID: "a", Source: "codex", Phase: "working", StateSince: 99},
+		{ID: "b", Source: "claude-code", Phase: "waiting_for_answer", StateSince: 10},
+		{ID: "c", Source: "unknown", Phase: "waiting_for_answer", StateSince: 100},
 	}}
 	if got := s.ActiveProviders(); len(got) != 1 || got[0] != "claude" {
 		t.Fatalf("wait lost priority: %v", got)
@@ -222,7 +222,7 @@ func TestActiveProvidersFollowAggregatePhaseAndRecency(t *testing.T) {
 	if got := s.ActiveProviders(); len(got) != 2 || got[0] != "codex" {
 		t.Fatalf("recency lost: %v", got)
 	}
-	s.Sessions[1].ObservedAt = 99
+	s.Sessions[1].StateSince = 99
 	if got := s.ActiveProviders(); got[0] != "codex" {
 		t.Fatalf("tie unstable: %v", got)
 	}
@@ -278,5 +278,40 @@ func TestConfigureFencesBufferedPreToggleObservations(t *testing.T) {
 	engine.accept(newer, time.Now())
 	if engine.Snapshot().Phase != "working" {
 		t.Fatal("old generation blocked the restarted engine")
+	}
+}
+
+// Automatic follows state changes: a working agent's tool calls do not move
+// it ahead of another working agent, but needing you, finishing or failing do.
+func TestActiveProvidersSwitchOnStateChangesNotToolCalls(t *testing.T) {
+	now := time.Now()
+	e := &Engine{settings: func() runtimeconfig.AgentActivitySettings { return runtimeconfig.AgentActivitySettings{Enabled: true} }}
+	claude, codex := strings.Repeat("a", 32), strings.Repeat("b", 32)
+	s := Snapshot{SchemaVersion: 1, Health: "ready", Phase: "working", Sources: []Source{
+		{ID: "codex", Name: "Codex", UsageProvider: "codex"}, {ID: "claude-code", Name: "Claude Code", UsageProvider: "claude"},
+	}}
+	at := int64(0)
+	observe := func(phase string, codexPhase string, codexAt int64) Snapshot {
+		at++
+		s.Sessions = []Session{{ID: claude, Source: "claude-code", Phase: phase, ObservedAt: at}, {ID: codex, Source: "codex", Phase: codexPhase, ObservedAt: codexAt}}
+		e.accept(s, now)
+		return e.snapshotAt(now)
+	}
+	observe("working", "idle", 0)
+	// Codex starts working after Claude, so it leads.
+	if got := observe("working", "working", 10).ActiveProviders(); got[0] != "codex" {
+		t.Fatalf("new working agent did not lead: %v", got)
+	}
+	// Claude's tool calls and further activity keep Codex in front.
+	for _, phase := range []string{"tool_use", "working", "thinking", "tool_use", "working"} {
+		snapshot := observe(phase, "working", 10)
+		if got := snapshot.ActiveProviders(); got[0] != "codex" || snapshot.DisplayName() != "Codex" {
+			t.Fatalf("%s moved the display: %v %s", phase, got, snapshot.DisplayName())
+		}
+	}
+	// Claude needing you is a state change and takes over.
+	s.Phase = "waiting_for_permission"
+	if got := observe("waiting_for_permission", "working", 10).ActiveProviders(); got[0] != "claude" {
+		t.Fatalf("needs-you did not lead: %v", got)
 	}
 }

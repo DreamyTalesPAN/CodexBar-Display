@@ -29,12 +29,15 @@ import (
 )
 
 type Session struct {
-	ID           string `json:"id"`
-	ParentID     string `json:"parentId,omitempty"`
-	Source       string `json:"source"`
-	Phase        string `json:"phase"`
-	Reason       string `json:"reason"`
-	ObservedAt   int64  `json:"observedAt"`
+	ID         string `json:"id"`
+	ParentID   string `json:"parentId,omitempty"`
+	Source     string `json:"source"`
+	Phase      string `json:"phase"`
+	Reason     string `json:"reason"`
+	ObservedAt int64  `json:"observedAt"`
+	// StateSince is when the session entered its DisplayState, kept across
+	// observations by the Engine. Order follows it, not every tool call.
+	StateSince   int64  `json:"stateSince,omitempty"`
 	CompletionID string `json:"completionId,omitempty"`
 	ErrorKind    string `json:"errorKind,omitempty"`
 }
@@ -80,28 +83,54 @@ func (s Snapshot) ForProvider(provider string) Snapshot {
 	return s
 }
 
-// DisplayName labels only sources contributing to the engine's aggregate phase.
-// The latest observation leads, using the same ordering as ActiveProviders.
-func (s Snapshot) DisplayName() string {
-	var latest *Session
+// DisplayState groups phases the way VibeTV shows them: working, needs_you,
+// done, error or idle. A tool call inside a working turn changes the phase but
+// not the state.
+func DisplayState(phase string) string {
+	switch phase {
+	case "working", "thinking", "tool_use", "compacting":
+		return "working"
+	case "waiting_for_permission", "waiting_for_answer", "waiting_for_review":
+		return "needs_you"
+	}
+	return phase
+}
+
+// leading returns the sessions in the aggregate's state, the most recent state
+// change first; stable IDs resolve equal times. Sessions that only report more
+// activity in an unchanged state keep their place.
+func (s Snapshot) leading() []Session {
+	var sessions []Session
 	for _, session := range s.Sessions {
-		if session.Phase != s.Phase {
-			continue
-		}
-		if latest == nil || session.ObservedAt > latest.ObservedAt || (session.ObservedAt == latest.ObservedAt && session.ID < latest.ID) {
-			latest = &session
+		if DisplayState(session.Phase) == DisplayState(s.Phase) {
+			sessions = append(sessions, session)
 		}
 	}
-	for _, source := range s.Sources {
-		if latest != nil && source.ID == latest.Source && strings.TrimSpace(source.Name) != "" && len(source.Name) <= 40 {
-			return strings.Join(strings.Fields(source.Name), " ")
+	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].StateSince != sessions[j].StateSince {
+			return sessions[i].StateSince > sessions[j].StateSince
+		}
+		return sessions[i].ID < sessions[j].ID
+	})
+	return sessions
+}
+
+// DisplayName labels the session leading the aggregate state, in the same
+// order as ActiveProviders.
+func (s Snapshot) DisplayName() string {
+	if sessions := s.leading(); len(sessions) > 0 {
+		for _, source := range s.Sources {
+			if source.ID == sessions[0].Source && strings.TrimSpace(source.Name) != "" && len(source.Name) <= 40 {
+				return strings.Join(strings.Fields(source.Name), " ")
+			}
 		}
 	}
 	return "Agent"
 }
 
-// ActiveProviders follows the engine's aggregate priority. Within that phase,
-// the most recently observed session leads; stable IDs resolve equal timestamps.
+// ActiveProviders follows the engine's aggregate priority. Within that state,
+// the session whose state changed last leads, so Automatic switches when an
+// agent starts working, needs you, finishes or fails, not on every tool call.
 // Passive or unhealthy observations never move the display.
 func (s Snapshot) ActiveProviders() []string {
 	if s.Health != "ready" || !ValidPhase(s.Phase) {
@@ -111,18 +140,8 @@ func (s Snapshot) ActiveProviders() []string {
 	case "idle", "stale", "unavailable":
 		return nil
 	}
-	sessions := append([]Session(nil), s.Sessions...)
-	sort.Slice(sessions, func(i, j int) bool {
-		if sessions[i].ObservedAt != sessions[j].ObservedAt {
-			return sessions[i].ObservedAt > sessions[j].ObservedAt
-		}
-		return sessions[i].ID < sessions[j].ID
-	})
 	var providers []string
-	for _, session := range sessions {
-		if session.Phase != s.Phase {
-			continue
-		}
+	for _, session := range s.leading() {
 		for _, source := range s.Sources {
 			if source.ID == session.Source && source.UsageProvider != "" && !slices.Contains(providers, source.UsageProvider) {
 				providers = append(providers, source.UsageProvider)
@@ -192,7 +211,7 @@ type Engine struct {
 // carries anything that only changed its timestamp.
 func (s Snapshot) presentation() string {
 	var b strings.Builder
-	b.WriteString(s.Health + "|" + s.Phase + "|" + s.DisplayName())
+	b.WriteString(s.Health + "|" + DisplayState(s.Phase) + "|" + s.DisplayName())
 	for _, provider := range s.ActiveProviders() {
 		b.WriteString("|" + provider)
 	}
@@ -200,7 +219,7 @@ func (s Snapshot) presentation() string {
 		b.WriteString("|" + provider + "=" + s.ProviderPhases[provider])
 	}
 	for _, row := range s.Sessions {
-		b.WriteString("|" + row.ID + ":" + row.Phase)
+		b.WriteString("|" + row.ID + ":" + DisplayState(row.Phase))
 	}
 	return b.String()
 }
@@ -211,6 +230,16 @@ func (e *Engine) accept(value Snapshot, now time.Time) {
 	enabled := e.currentSettings().Enabled
 	renewLease := enabled && value.Health == "ready" && ValidPhase(value.Phase) && value.Phase != "stale" && value.Phase != "unavailable"
 	e.mu.Lock()
+	for i := range value.Sessions {
+		row := &value.Sessions[i]
+		row.StateSince = row.ObservedAt
+		for _, old := range e.value.Sessions {
+			if old.ID == row.ID && DisplayState(old.Phase) == DisplayState(row.Phase) {
+				row.StateSince = old.StateSince
+				break
+			}
+		}
+	}
 	changed := enabled && (e.value.presentation() != value.presentation() || !slices.Equal(e.value.Sources, value.Sources))
 	e.value = value
 	e.received = now

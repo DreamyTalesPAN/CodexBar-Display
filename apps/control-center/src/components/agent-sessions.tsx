@@ -26,6 +26,7 @@ const phaseLabels: Record<string, string> = {
   waiting_for_review: "Waiting for review",
   done: "Finished",
   error: "Hit an error",
+  idle: "Idle",
 };
 
 function elapsed(milliseconds: number) {
@@ -51,10 +52,10 @@ export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) 
   // clock here marked a healthy snapshot unavailable whenever status polling
   // paused, such as while the window was hidden or a theme installed.
   const available = snapshot?.health === "ready";
+  // Needs-you first, idle last; idle sessions stay listed but muted.
+  const rank = (phase: string) => (needsYou(phase) ? 0 : phase === "idle" ? 2 : 1);
   const sessions = available
-    ? snapshot.sessions
-      .filter((session) => session.phase !== "idle")
-      .sort((a, b) => Number(needsYou(b.phase)) - Number(needsYou(a.phase)))
+    ? [...snapshot.sessions].sort((a, b) => rank(a.phase) - rank(b.phase))
     : [];
 
   return (
@@ -77,6 +78,7 @@ export function AgentSessions({ snapshot }: { snapshot: AgentSnapshot | null }) 
                   "grid min-h-[52px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-0.5 px-4 py-2 sm:grid-cols-[150px_minmax(0,1fr)_72px]",
                   index > 0 && "border-t border-border",
                   waiting && "bg-success text-success-foreground",
+                  session.phase === "idle" && "opacity-50",
                 )}
               >
                 <span className={cn("min-w-0 truncate text-sm font-medium", waiting && "font-semibold")} title={name}>

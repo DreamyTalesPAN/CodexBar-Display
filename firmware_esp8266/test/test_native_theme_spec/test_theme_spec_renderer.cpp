@@ -2592,16 +2592,15 @@ void testAgentAnnouncementIsTwoHardPulses() {
   TEST_ASSERT_FALSE(a.Update("error", true, 0x00000216u));
 }
 
-void testDoneAnnouncementRepeatsUntilDoneEnds() {
+void testDoneAnnouncementBlinksOnceOnArrival() {
   codexbar_display::agentactivity::Announcement a;
   TEST_ASSERT_FALSE(a.Update("working", true, 0));
   TEST_ASSERT_TRUE(a.Update("done", true, 1000));
+  TEST_ASSERT_FALSE(a.Update("done", true, 1200));
+  TEST_ASSERT_TRUE(a.Update("done", true, 1350));
   for (uint32_t at = 6000; at < 31000; at += 5000) {
-    TEST_ASSERT_FALSE(a.Update("done", true, at - 1));
-    TEST_ASSERT_TRUE(a.Update("done", true, at));
-    TEST_ASSERT_FALSE(a.Update("done", true, at + 200));
-    TEST_ASSERT_TRUE(a.Update("done", true, at + 350));
-    TEST_ASSERT_FALSE(a.Update("done", true, at + 550));
+    TEST_ASSERT_FALSE(a.Update("done", true, at));
+    TEST_ASSERT_FALSE(a.Update("done", true, at + 350));
   }
   TEST_ASSERT_FALSE(a.Update("idle", true, 31000));
   TEST_ASSERT_FALSE(a.Update("idle", true, 36000));
@@ -2610,11 +2609,11 @@ void testDoneAnnouncementRepeatsUntilDoneEnds() {
   TEST_ASSERT_FALSE(a.Update("done", false, 47000));
   TEST_ASSERT_TRUE(a.Update("working", true, 48000));
   TEST_ASSERT_FALSE(a.Update("working", true, 53000));
-  // Unsigned elapsed time keeps the cadence across millis() rollover.
+  // Unsigned elapsed time keeps the reminder cadence across millis() rollover.
   a = {};
   TEST_ASSERT_FALSE(a.Update("working", true, 0xFFFFFEFFu));
-  TEST_ASSERT_TRUE(a.Update("done", true, 0xFFFFFF00u));
-  TEST_ASSERT_TRUE(a.Update("done", true, 0x00001288u));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, 0xFFFFFF00u, 5));
+  TEST_ASSERT_TRUE(a.Update("waiting_for_answer", true, 0x00001288u, 5));
 }
 
 void testAgentStateAssetsAndStatusKeepUsageIndependent() {
@@ -3714,7 +3713,7 @@ int main() {
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testObservedIdleExpiresButLegacyIdleDoesNot);
   RUN_TEST(testAgentAnnouncementIsTwoHardPulses);
-  RUN_TEST(testDoneAnnouncementRepeatsUntilDoneEnds);
+  RUN_TEST(testDoneAnnouncementBlinksOnceOnArrival);
   RUN_TEST(testAgentReminderAndResetTextChanges);
   RUN_TEST(testAgentStateAssetsAndStatusKeepUsageIndependent);
   RUN_TEST(testAgentActivityExpiresWithoutChangingUsage);

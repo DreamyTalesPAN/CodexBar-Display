@@ -693,8 +693,7 @@ function ThemeSpecSVG({
       ], { duration: 550 });
     };
     if (changed) blink();
-    const repeatMs = state === "done" ? 5000
-      : state === "needs_you" ? (frame.agentReminderSecs ?? 0) * 1000 : 0;
+    const repeatMs = state === "needs_you" ? (frame.agentReminderSecs ?? 0) * 1000 : 0;
     const timer = repeatMs > 0 ? window.setInterval(blink, repeatMs) : undefined;
     return () => { animation?.cancel(); window.clearInterval(timer); };
   }, [state, motionEnabled, hasAgentStatus, themeId, frame.agentAlertsMuted, frame.agentReminderSecs]);
