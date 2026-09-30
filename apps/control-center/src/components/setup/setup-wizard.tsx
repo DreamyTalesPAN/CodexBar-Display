@@ -851,6 +851,12 @@ export function SetupWizard(props: SetupWizardProps) {
             connect.reset();
             searchAgain();
           }}
+          onUseCable={
+            connect.failure?.kind === "connect" &&
+            connect.failure.code === "cable_pairing_required"
+              ? () => void chooseTransport("cable")
+              : undefined
+          }
           open={connect.failure?.kind === "connect"}
           title={
             connect.failure?.kind === "connect"

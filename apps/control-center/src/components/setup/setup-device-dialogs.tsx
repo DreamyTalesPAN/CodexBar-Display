@@ -264,6 +264,8 @@ type ConnectFailedDialogProps = {
   onEnterAddressManually: () => void;
   onOpenChange: (open: boolean) => void;
   onSearchAgain: () => void;
+  /** Set when only the USB cable can pair this VibeTV (#489). */
+  onUseCable?: () => void;
   open: boolean;
   title: string;
 };
@@ -275,6 +277,7 @@ export function SetupConnectFailedDialog({
   onEnterAddressManually,
   onOpenChange,
   onSearchAgain,
+  onUseCable,
   open,
   title,
 }: ConnectFailedDialogProps) {
@@ -284,7 +287,11 @@ export function SetupConnectFailedDialog({
       icon={CircleAlert}
       onOpenChange={onOpenChange}
       open={open}
-      primaryAction={{ busy, label: "Search again", onSelect: onSearchAgain }}
+      primaryAction={
+        onUseCable
+          ? { busy, label: "Use the cable", onSelect: onUseCable }
+          : { busy, label: "Search again", onSelect: onSearchAgain }
+      }
       secondaryAction={{
         label: "Enter IP manually",
         onSelect: onEnterAddressManually,

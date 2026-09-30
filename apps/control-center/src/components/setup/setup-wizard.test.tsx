@@ -567,6 +567,25 @@ describe("SetupWizard: direct connection", () => {
     expect(dialog.textContent).not.toContain("Mac");
   });
 
+  it("sends a VibeTV that pairs only over the cable to the cable (#489)", async () => {
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" };
+    const connect = vi.fn().mockRejectedValue({
+      code: "cable_pairing_required",
+      message: "VibeTV pairs only over the USB cable.",
+      nextAction: "Connect VibeTV to this Mac with the USB cable, then press Connect.",
+    });
+    const props = baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple", deviceCandidates: [wifi],
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    render(<SetupWizard {...props} />);
+    const dialog = await screen.findByRole("dialog", { name: "VibeTV pairs only over the USB cable." });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use the cable" }));
+    await waitFor(() => expect(props.onSearchDevices).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog", { name: "VibeTV pairs only over the USB cable." })).toBeNull();
+  });
+
   it.each([1, 2])("recovers saved Cable through an explicit choice among %i discovered WiFi devices without provisioning", async (count) => {
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "known-device", transport: "wifi" };
     const connect = vi.fn().mockResolvedValue({ firmware: "1.0.43" });
