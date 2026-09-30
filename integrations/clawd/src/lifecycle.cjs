@@ -17,7 +17,7 @@ const phases = {
  'event_msg:patch_apply_end':'working', 'event_msg:custom_tool_call_output':'working',
  'event_msg:agent_reasoning':'thinking', 'event_msg:turn_aborted':'idle',
  elicitation:'waiting_for_answer',
- userinputresolved:'working', subagentstart:'working', subagentstop:'working',
+ subagentstart:'working', subagentstop:'working',
 };
 const waits={'tool-approval':'waiting_for_permission','human-question':'waiting_for_answer','plan-review':'waiting_for_review'};
 const housekeeping=new Set(['notification','event_msg:token_count','stale-cleanup']);
@@ -34,7 +34,7 @@ function observe(session,previous,event,state,opts={},now=Date.now()) {
  session.observation={event:name,at,state};
  // Codex can keep working while an async question is still waiting for us.
  // Async questions remain answerable after completion; abort still clears them.
- if(session.agentId==='codex' && old?.wait && (!completions.has(name)||old.wait.async) && !['userinputresolved','event_msg:turn_aborted','sessionend'].includes(name)) session.observation.wait=old.wait;
+ if(session.agentId==='codex' && old?.wait && (!completions.has(name)||old.wait.async) && !['event_msg:turn_aborted','sessionend'].includes(name)) session.observation.wait=old.wait;
  if(completions.has(name)) {
   session.observation.completedAt=at;
   session.observation.historical=opts.recapSuppressed===true;
@@ -56,6 +56,9 @@ function project(id,session,{now=Date.now(),doneMs=30000,staleMs=300000,isProces
   phase=!evidence.historical && now-evidence.completedAt<doneMs?'done':'idle';
   reason='turn-complete';
  }
+ // An error is an outcome like done: it stays on screen as long, then the
+ // session is idle instead of outranking every working session for good.
+ if(phase==='error' && now-(evidence.at||0)>=doneMs) {phase='idle';reason='error-shown';}
  if(evidence?.wait) {phase=waits[evidence.wait.intent] || 'unavailable';reason='explicit-interaction';}
  // Only Clawd's identified, previously reachable agent process is evidence.
  // A hook launcher/source PID is frequently transient, especially on Windows.

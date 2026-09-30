@@ -61,3 +61,9 @@ test('quiet live agent remains active, dead agent cannot stay working',()=>{
  session.sourcePid=456;session.agentPid=null;
  assert.equal(project('s',session,{now:900000,isProcessAlive:()=>true}).phase,'stale');
 });
+
+test('an error stays visible for the done duration, then the session is idle',()=>{
+ const session={agentId:'claude-code',observation:{event:'posttoolusefailure',at:1000,state:'error'}};
+ assert.equal(project('s',session,{now:30999,doneMs:30000}).phase,'error');
+ assert.equal(project('s',session,{now:31000,doneMs:30000}).phase,'idle');
+});

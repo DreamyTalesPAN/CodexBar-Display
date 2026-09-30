@@ -19,7 +19,7 @@ const noop=()=>{};
 // Explicit source identities, not model/account inference. Unmapped clients
 // still report lifecycle but cannot select an unrelated provider's quota.
 const usageProviders={'codex':'codex','claude-code':'claude','gemini-cli':'gemini','antigravity-cli':'antigravity','copilot-cli':'copilot'};
-const priority=['waiting_for_permission','waiting_for_answer','waiting_for_review','error','compacting','tool_use','thinking','working','done','stale','idle','unavailable'];
+const priority=['waiting_for_permission','waiting_for_answer','waiting_for_review','error','compacting','tool_use','thinking','working','done','stale','idle'];
 async function createEngine({token,port=0,codexSessionsDir=null,integrationOptions=null,hooksEnabled=true,doneSeconds=30,now=Date.now}={}) {
  if(typeof token!=='string'||token.length<32) throw Error('engine-token-required');
  function setDoneSeconds(value) {
@@ -49,10 +49,15 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
   // Route explicit child events before updating the parent. Clawd's visual
   // parent bookkeeping can clear its completed-turn flag on SubagentStop;
   // that must not undo an independently completed or waiting parent session.
+  // A finished child ends like a session and leaves at once: upstream cleans
+  // up its timers, and its slot in the bounded map is free again instead of
+  // many children evicting a waiting parent.
   if(opts.subagentId) {
    const childId=id+':subagent:'+opts.subagentId;
-   const childEvent=String(event).toLowerCase()==='subagentstart'?'UserPromptSubmit':String(event).toLowerCase()==='subagentstop'?'Stop':event;
+   const stop=String(event).toLowerCase()==='subagentstop';
+   const childEvent=String(event).toLowerCase()==='subagentstart'?'UserPromptSubmit':stop?'SessionEnd':event;
    const accepted=update(childId,value,childEvent,{...opts,subagentId:null,subagentType:null});
+   if(stop) {state.sessions.delete(childId);return accepted;}
    const child=state.sessions.get(childId);
    if(child) child.parentObservationId=digest(child.agentId+':'+id);
    return accepted;
@@ -92,9 +97,9 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
   },
   clearCodexUserInputBubbles:(id,callId)=>{
    const session=state.sessions.get(id);
-   if(session?.observation?.wait&&(!callId||session.observation.wait.callId===callId)) {
-    observe(session,null,'UserInputResolved','working',{},now());
-   }
+   // Only the question ends. A synthetic event stamped with our receive time
+   // would outrank the log's own earlier timestamps and drop the completion.
+   if(session?.observation?.wait&&(!callId||session.observation.wait.callId===callId)) delete session.observation.wait;
   },
  });
  ctx.updateSession=runtime.updateSessionFromServer;
@@ -107,8 +112,11 @@ async function createEngine({token,port=0,codexSessionsDir=null,integrationOptio
    reconcileWait(id,session,update,generatedAt);
    if(session.endedAt && generatedAt-session.endedAt>=(session.observation?.completedAt?doneSeconds*1000:10000)) state.sessions.delete(id);
   }
-  const sessions=[...state.sessions].map(([id,session])=>project(id,session,{now:generatedAt,doneMs:doneSeconds*1000})).sort((a,b)=>a.id.localeCompare(b.id));
-  const phaseFor=rows=>priority.find(value=>rows.some(session=>session.phase===value))||'unavailable';
+  // Codex log observation keeps running while Agent activity is off, so
+  // switching on is current at once; nothing observed is shown until then.
+  const sessions=hooksEnabled?[...state.sessions].map(([id,session])=>project(id,session,{now:generatedAt,doneMs:doneSeconds*1000})).sort((a,b)=>a.id.localeCompare(b.id)):[];
+  // Observation is healthy here, so no live session means nothing is running.
+  const phaseFor=rows=>priority.find(value=>rows.some(session=>session.phase===value))||'idle';
   const phase=phaseFor(sessions);
   const providerPhases=Object.fromEntries([...new Set(Object.values(usageProviders))].map(provider=>
    [provider,phaseFor(sessions.filter(session=>usageProviders[session.source]===provider))]));

@@ -109,9 +109,22 @@ test('late child completion cannot restart a completed parent',async t=>{
  assert.equal(engine.snapshot().sessions[0].phase,'done');
  await event('SubagentStop','one',{agent_id:'background-summary',agent_type:'summary'});
  const sessions=engine.snapshot().sessions;
- const parent=sessions.find(row=>!row.parentId);
- assert.equal(parent.phase,'done');
- assert.ok(sessions.some(row=>row.parentId===parent.id));
+ assert.deepEqual(sessions.map(row=>row.phase),['done']);
+});
+
+test('finished subagents cannot evict a waiting parent',async t=>{
+ let now=Date.now();
+ const engine=await createEngine({token,now:()=>now});t.after(()=>engine.close());
+ const event=(name,extra={})=>fetch(engine.url+'/state',{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify(buildObservation('claude-code',name,{session_id:'one',tool_name:'Bash',...extra},()=>({})))});
+ await event('SessionStart');await event('UserPromptSubmit');await event('PreToolUse');await event('PermissionRequest');
+ for(let i=0;i<22;i++) {
+  await event('SubagentStart',{agent_id:'child-'+i,agent_type:'reviewer'});
+  await event('SubagentStop',{agent_id:'child-'+i,agent_type:'reviewer'});
+ }
+ now+=10000;
+ const snapshot=engine.snapshot();
+ assert.deepEqual(snapshot.sessions.map(row=>row.phase),['waiting_for_permission']);
+ assert.equal(snapshot.phase,'waiting_for_permission');
 });
 
 test('manual native denial settles only its exact waiting tool from transcript evidence',async t=>{
@@ -204,6 +217,11 @@ test('done duration does not extend an uncompleted session exit',async t=>{
  now+=10000;assert.equal(engine.snapshot().sessions.length,0);
 });
 
+test('a healthy engine without sessions reports nothing running',async t=>{
+ const engine=await createEngine({token});t.after(()=>engine.close());
+ assert.equal(engine.snapshot().phase,'idle');
+});
+
 test('provider phases use the same lifecycle priority without another provider bleeding through',async t=>{
  const {engine,event,post}=await fixture(t);
  await event('SessionStart');await event('PreToolUse','one',{tool_name:'AskUserQuestion'});
@@ -212,7 +230,7 @@ test('provider phases use the same lifecycle priority without another provider b
  assert.equal(snapshot.phase,'waiting_for_answer');
  assert.equal(snapshot.providerPhases.claude,'waiting_for_answer');
  assert.equal(snapshot.providerPhases.codex,'working');
- assert.equal(snapshot.providerPhases.gemini,'unavailable');
+ assert.equal(snapshot.providerPhases.gemini,'idle');
  await event('UserPromptSubmit','two');
  snapshot=engine.snapshot();
  assert.equal(snapshot.providerPhases.claude,'waiting_for_answer');
