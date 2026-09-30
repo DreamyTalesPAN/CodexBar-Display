@@ -344,6 +344,23 @@ func TestWiFiTransportPairDeviceDoesNotRetryAuthorizationFailures(t *testing.T) 
 	}
 }
 
+// Issue #489: current firmware has no WiFi pairing endpoint. Theme installs and
+// other WiFi retries must stop at once and point to the cable.
+func TestWiFiTransportPairDeviceAsksForCableWhenWiFiPairingIsGone(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	_, err := transport.PairDevice(server.URL)
+	if err == nil || !strings.Contains(err.Error(), "USB cable") || attempts.Load() != 1 {
+		t.Fatalf("err=%v attempts=%d want one attempt with cable guidance", err, attempts.Load())
+	}
+}
+
 func TestWiFiTransportResolveTargetAddsHTTPDefault(t *testing.T) {
 	transport := NewWiFiTransportWithClient(nil)
 	target, err := transport.ResolvePort("192.168.178.123")
