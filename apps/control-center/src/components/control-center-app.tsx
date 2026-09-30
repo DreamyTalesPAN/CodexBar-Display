@@ -456,6 +456,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [brightness, setBrightness] = useState<number | null>(null);
   const [standby, setStandby] = useState<StandbySettings | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  // The firmware update or theme install this window runs itself. It ends
+  // with its own job poll, so unlike a job the Companion stopped reporting
+  // after a restart it cannot go stale.
+  const ownDeviceOperationRef = useRef(false);
+  useEffect(() => {
+    ownDeviceOperationRef.current =
+      busyAction === "firmware-update" || busyAction === "install";
+  }, [busyAction]);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
@@ -717,9 +725,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       next: DeviceInfo | null | undefined,
       sourcePoll: string,
       countFailure = false,
-      // Only the same status answer can vouch for a running job: after a
-      // Companion restart the job is gone, while the UI may still hold
-      // "installing" and would otherwise never count a miss again.
+      // A running job must be vouched for now: by the same status answer or
+      // by this window's own operation. A remembered "installing" survives a
+      // Companion restart and would otherwise never count a miss again.
       operationInProgress = false,
     ) => {
       const transition = applyDeviceRecoveryStatus(
@@ -1425,7 +1433,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         payload.device,
         "/v1/status",
         true,
-        payload.firmwareUpdate?.phase === "installing" ||
+        ownDeviceOperationRef.current ||
+          payload.firmwareUpdate?.phase === "installing" ||
           payload.themeInstall?.phase === "installing",
       );
     } catch (error) {

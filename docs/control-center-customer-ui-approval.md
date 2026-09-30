@@ -4647,5 +4647,5 @@ issue scope, or release permission never implies UI permission.
 ## 2026-09-30 — Recovery grace only for a job the Companion still reports
 
 - User approval: Paul enabled Auto-fix for this pull request, which covers addressing its automated review findings. The Codex review found that after a Companion restart the UI could keep a stale "installing" firmware status and then never count a missed device poll again.
-- Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while the same `/v1/status` answer reports an installing firmware or theme job. When the Companion no longer reports one, missed polls count again and device recovery can open as before. No copy, control, layout or visual change.
+- Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while this window runs its own firmware update or theme install, or while the same `/v1/status` answer reports an installing job. When the Companion no longer reports one, missed polls count again and device recovery can open as before. No copy, control, layout or visual change.
 - Scope: `control-center-app.tsx`. This approves the pull request only, not merge, release, or a device operation.
