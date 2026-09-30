@@ -941,13 +941,13 @@ func TestRunInstallUpdateCableHappyPath(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte, progress func(int, int)) error {
+	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte, options usb.TransferOptions) error {
 		if port != "/dev/mock-cable" || deviceID != "device-cable" || token != "pair-token" || string(image) != "cable firmware" {
 			t.Fatalf("unexpected Cable transfer port=%q id=%q token=%q image=%q", port, deviceID, token, image)
 		}
-		progress(1, 4)
-		progress(1, 4)
-		progress(4, 4)
+		options.Progress(1, 4)
+		options.Progress(1, 4)
+		options.Progress(4, 4)
 		*firmwareVersion = "1.0.1"
 		return nil
 	}
@@ -966,13 +966,63 @@ func TestRunInstallUpdateCableHappyPath(t *testing.T) {
 	}
 }
 
+func TestRunInstallUpdateCableSendsGzipImageFastWhenSupported(t *testing.T) {
+	home, _, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable",
+		DeviceToken:    "pair-token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, _ = writer.Write([]byte("cable firmware"))
+	_ = writer.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.json":
+			_, _ = fmt.Fprintf(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin.gz","firmwareUrl":"%s/firmware.bin.gz","sha256":"%s"}]}`, "http://"+r.Host, sha256String(compressed.String()))
+		case "/firmware.bin.gz":
+			_, _ = w.Write(compressed.Bytes())
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "device-cable",
+			Board:    "esp8266-smalltv-st7789",
+			Firmware: *firmwareVersion,
+			Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableTransferV2},
+		}, nil
+	}
+	transferCableFirmwareFn = func(_ context.Context, _, _, _ string, image []byte, options usb.TransferOptions) error {
+		if !bytes.Equal(image, compressed.Bytes()) {
+			t.Fatalf("Cable transfer did not send the gzip image as released: %q", image)
+		}
+		if !options.Fast {
+			t.Fatal("a VibeTV with cable-transfer-v2 must get the fast transfer")
+		}
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	if _, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", server.URL + "/manifest.json", "--skip-launchagent-pause"})
+	}); err != nil {
+		t.Fatalf("Cable update: %v", err)
+	}
+}
+
 func TestRunInstallUpdateCableAlreadyCurrentSkipsTransfer(t *testing.T) {
 	home, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	*firmwareVersion = "1.0.1"
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, func(int, int)) error {
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, usb.TransferOptions) error {
 		t.Fatal("already-current Cable firmware must not transfer")
 		return nil
 	}
@@ -991,7 +1041,7 @@ func TestRunInstallUpdateCableReportsInterruptedTransferWithoutRetry(t *testing.
 		t.Fatal(err)
 	}
 	transferCalls := 0
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, func(int, int)) error {
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, usb.TransferOptions) error {
 		transferCalls++
 		return fmt.Errorf("%w: Cable disconnected", usb.ErrCableTransferInterrupted)
 	}
@@ -1030,7 +1080,7 @@ func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, func(int, int)) error { return nil }
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, usb.TransferOptions) error { return nil }
 	cableFirmwareVerifyTimeout = 5 * time.Millisecond
 	cableFirmwareVerifyPollInterval = time.Millisecond
 

@@ -3,9 +3,12 @@ package usb
 import (
 	"context"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +36,7 @@ func TestSenderTransfersAssetWithOneAcknowledgedChunkInFlight(t *testing.T) {
 		HelloWindow: 10 * time.Millisecond,
 	})
 
-	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload, nil); err != nil {
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload, TransferOptions{}); err != nil {
 		t.Fatalf("transfer asset: %v", err)
 	}
 	if len(port.writePayloads) != 4 {
@@ -78,6 +81,88 @@ func TestSenderTransfersAssetWithOneAcknowledgedChunkInFlight(t *testing.T) {
 	}
 }
 
+func TestSenderFastFirmwareTransferUsesLargeBase64ChunksAtHigherBaud(t *testing.T) {
+	payload := make([]byte, cableTransferFastChunkBytes+10)
+	for i := range payload {
+		payload[i] = byte(i * 7)
+	}
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{
+		[]byte(`{"kind":"transfer","status":"ready","next":0}` + "\n"),
+		[]byte(`{"kind":"transfer","status":"chunk","next":1}` + "\n"),
+		[]byte(`{"kind":"transfer","status":"chunk","next":2}` + "\n"),
+		[]byte(`{"kind":"transfer","status":"complete","next":2}` + "\n"),
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	var sent []int
+	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", payload, TransferOptions{
+		Fast:     true,
+		Progress: func(done, _ int) { sent = append(sent, done) },
+	})
+	if err != nil {
+		t.Fatalf("fast firmware transfer: %v", err)
+	}
+	var start struct {
+		Baud int `json:"baud"`
+	}
+	if err := json.Unmarshal(port.writePayloads[0], &start); err != nil {
+		t.Fatal(err)
+	}
+	if start.Baud != cableTransferFastBaudRate {
+		t.Fatalf("start baud=%d want %d", start.Baud, cableTransferFastBaudRate)
+	}
+	if !reflect.DeepEqual(port.baudRates, []int{cableTransferFastBaudRate}) {
+		t.Fatalf("port switched to %v, want only the fast rate after ready", port.baudRates)
+	}
+	for index, want := range [][]byte{payload[:cableTransferFastChunkBytes], payload[cableTransferFastChunkBytes:]} {
+		var chunk struct {
+			Data     string `json:"data"`
+			Base64   string `json:"b64"`
+			Checksum string `json:"checksum"`
+		}
+		if err := json.Unmarshal(port.writePayloads[index+1], &chunk); err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(chunk.Base64)
+		if err != nil || chunk.Data != "" || string(decoded) != string(want) || chunk.Checksum != chunkChecksum(want) {
+			t.Fatalf("unexpected fast chunk %d: data=%q decoded=%d bytes err=%v", index, chunk.Data, len(decoded), err)
+		}
+		if len(port.writePayloads[index+1]) > 2048 {
+			t.Fatalf("chunk line is %d bytes, over the device frame", len(port.writePayloads[index+1]))
+		}
+	}
+	if !reflect.DeepEqual(sent, []int{cableTransferFastChunkBytes, len(payload)}) {
+		t.Fatalf("progress=%v", sent)
+	}
+	if port.closeCalls != 1 {
+		t.Fatal("firmware transfer must close the port so the next open is at the normal rate")
+	}
+}
+
+func TestSenderFastAssetTransferKeepsTheNormalBaud(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{
+		[]byte(`{"kind":"transfer","status":"ready","next":0}` + "\n"),
+		[]byte(`{"kind":"transfer","status":"chunk","next":1}` + "\n"),
+		[]byte(`{"kind":"transfer","status":"complete","next":1}` + "\n"),
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", []byte("asset"), TransferOptions{Fast: true}); err != nil {
+		t.Fatalf("fast asset transfer: %v", err)
+	}
+	if strings.Contains(string(port.writePayloads[0]), `"baud"`) || len(port.baudRates) != 0 {
+		t.Fatalf("asset transfer changed the baud rate: %s %v", port.writePayloads[0], port.baudRates)
+	}
+}
+
 func TestSenderAbortsWhenDeviceRejectsChunkBeforeAcknowledgement(t *testing.T) {
 	payload := []byte("payload")
 	digest := md5.Sum(payload)
@@ -93,7 +178,7 @@ func TestSenderAbortsWhenDeviceRejectsChunkBeforeAcknowledgement(t *testing.T) {
 		HelloWindow: 10 * time.Millisecond,
 	})
 
-	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", payload, nil)
+	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", payload, TransferOptions{})
 	if err == nil {
 		t.Fatal("expected rejected chunk")
 	}
@@ -145,10 +230,10 @@ func TestSenderCanTransferAfterRejectedTransfer(t *testing.T) {
 		HelloWindow: 10 * time.Millisecond,
 	})
 
-	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/first.cba", "", []byte("first"), nil); err == nil {
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/first.cba", "", []byte("first"), TransferOptions{}); err == nil {
 		t.Fatal("expected first transfer to fail")
 	}
-	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/second.cba", "theme", []byte("second"), nil); err != nil {
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/second.cba", "theme", []byte("second"), TransferOptions{}); err != nil {
 		t.Fatalf("second transfer: %v", err)
 	}
 	if opener.openCount("/dev/mock") != 2 {
@@ -164,7 +249,7 @@ func TestSenderReportsMissingStartAcknowledgementAsInterrupted(t *testing.T) {
 		HelloWindow: time.Millisecond,
 	})
 
-	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", []byte("firmware"), nil)
+	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", []byte("firmware"), TransferOptions{})
 	if !errors.Is(err, ErrCableTransferInterrupted) {
 		t.Fatalf("missing ready acknowledgement must report interrupted transfer: %v", err)
 	}
@@ -193,7 +278,7 @@ func TestSenderAbortsWhenContextIsCanceledAfterAcknowledgedChunk(t *testing.T) {
 	})
 	payload := make([]byte, cableTransferChunkBytes+1)
 
-	err := sender.Transfer(ctx, "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload, nil)
+	err := sender.Transfer(ctx, "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload, TransferOptions{})
 	if !errors.Is(err, ErrCableTransferInterrupted) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled transfer must be interrupted: %v", err)
 	}

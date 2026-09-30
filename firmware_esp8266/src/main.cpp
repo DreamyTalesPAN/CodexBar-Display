@@ -8,6 +8,7 @@
 #include <MD5Builder.h>
 #include <Updater.h>
 #include <coredecls.h>
+#include <libb64/cdecode.h>
 #include <time.h>
 
 #include "../../firmware_shared/app_runtime.h"
@@ -37,7 +38,7 @@
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 const char kThemeFeatureJSON[] =
-    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-health-v1\"]";
+    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-transfer-v2\",\"cable-health-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif
@@ -78,7 +79,11 @@ constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kDeviceClockPollMs = 2000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr unsigned long kCableTransferTimeoutMs = 15000UL;
-constexpr size_t kCableTransferChunkBytes = 128;
+// cable-transfer-v1 sends at most 128 bytes per chunk as hex, v2 up to 1 KB as
+// base64. Either line stays inside the 2048-byte serial frame.
+constexpr size_t kCableTransferChunkBytes = 1024;
+constexpr size_t kCableTransferBase64Bytes = ((kCableTransferChunkBytes + 2) / 3) * 4;
+constexpr unsigned long kSerialBaudRate = 115200UL;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
 constexpr uint8_t kDefaultBrightnessPercent =
@@ -205,6 +210,8 @@ struct CableTransferState {
   CableTransferActivation activation = CableTransferActivation::kNone;
   MD5Builder hash;
   uint8_t expectedHash[16] = {};
+  // Non-zero while a v2 firmware transfer runs at a faster serial rate.
+  unsigned long baudRate = 0;
 };
 
 namespace deviceclock = codexbar_display::deviceclock;
@@ -3837,10 +3844,22 @@ void emitCableTransferReply(const char* status) {
   Serial.println(out);
 }
 
+void restoreSerialBaudRate() {
+  if (cableTransfer.baudRate == 0) {
+    return;
+  }
+  Serial.flush();
+  Serial.updateBaudRate(kSerialBaudRate);
+  cableTransfer.baudRate = 0;
+}
+
 void resetCableTransfer(bool discard) {
 	if (!cableTransfer.flow.active) {
     return;
   }
+  // An aborted, rejected, or idle transfer always falls back to the rate the
+  // Mac opens the port with.
+  restoreSerialBaudRate();
   if (cableTransfer.sink == CableTransferSink::kAsset) {
     if (assetUploadFile) {
       assetUploadFile.close();
@@ -3867,6 +3886,7 @@ bool startCableTransfer(JsonDocument& doc) {
   const char* sink = doc["sink"] | "";
   const char* activation = doc["activate"] | "";
   const char* expectedHash = doc["hash"] | "";
+  const unsigned long baudRate = doc["baud"] | 0UL;
 	const int expectedBytesValue = doc["bytes"] | 0;
 	const size_t expectedBytes = expectedBytesValue > 0
 	    ? static_cast<size_t>(expectedBytesValue)
@@ -3926,7 +3946,11 @@ bool startCableTransfer(JsonDocument& doc) {
     target = CableTransferSink::kFirmware;
   }
   uint8_t expectedDigest[16];
-  if (target == CableTransferSink::kNone ||
+  const bool baudRateSupported =
+      baudRate == 0 ||
+      (target == CableTransferSink::kFirmware &&
+       (baudRate == 230400UL || baudRate == 460800UL || baudRate == 921600UL));
+  if (target == CableTransferSink::kNone || !baudRateSupported ||
       !decodeTransferHash(expectedHash, expectedDigest)) {
     emitSerialError("transfer-rejected");
     return true;
@@ -3977,6 +4001,12 @@ bool startCableTransfer(JsonDocument& doc) {
     }
   }
   emitCableTransferReply("ready");
+  if (baudRate != 0) {
+    // "ready" leaves at the old rate; the Mac switches once it has read it.
+    Serial.flush();
+    Serial.updateBaudRate(baudRate);
+    cableTransfer.baudRate = baudRate;
+  }
   return true;
 }
 
@@ -3990,23 +4020,39 @@ bool writeCableTransferChunk(JsonDocument& doc) {
     emitSerialError("transfer-rejected");
     return true;
   }
-  const size_t encodedBytes = strlen(encoded);
-  if (encodedBytes == 0 || encodedBytes > kCableTransferChunkBytes * 2 ||
-      encodedBytes % 2 != 0) {
-    emitSerialError("transfer-rejected");
-    return true;
-  }
-
-  uint8_t decoded[kCableTransferChunkBytes];
-  const size_t decodedBytes = encodedBytes / 2;
-  for (size_t i = 0; i < decodedBytes; ++i) {
-    const int high = hexNibble(encoded[i * 2]);
-    const int low = hexNibble(encoded[i * 2 + 1]);
-    if (high < 0 || low < 0) {
+  const char* encodedBase64 = doc["b64"] | "";
+  // libb64 writes up to two bytes past an unpadded chunk plus a terminator.
+  static uint8_t decoded[kCableTransferChunkBytes + 3];
+  size_t decodedBytes = 0;
+  if (encodedBase64[0] != '\0') {
+    const size_t encodedBytes = strlen(encodedBase64);
+    if (encodedBytes > kCableTransferBase64Bytes) {
       emitSerialError("transfer-rejected");
       return true;
     }
-    decoded[i] = static_cast<uint8_t>((high << 4) | low);
+    const int length = base64_decode_chars(
+        encodedBase64, static_cast<int>(encodedBytes), reinterpret_cast<char*>(decoded));
+    decodedBytes = length > 0 ? static_cast<size_t>(length) : 0;
+  } else {
+    const size_t encodedBytes = strlen(encoded);
+    if (encodedBytes > kCableTransferChunkBytes * 2 || encodedBytes % 2 != 0) {
+      emitSerialError("transfer-rejected");
+      return true;
+    }
+    decodedBytes = encodedBytes / 2;
+    for (size_t i = 0; i < decodedBytes; ++i) {
+      const int high = hexNibble(encoded[i * 2]);
+      const int low = hexNibble(encoded[i * 2 + 1]);
+      if (high < 0 || low < 0) {
+        emitSerialError("transfer-rejected");
+        return true;
+      }
+      decoded[i] = static_cast<uint8_t>((high << 4) | low);
+    }
+  }
+  if (decodedBytes == 0 || decodedBytes > kCableTransferChunkBytes) {
+    emitSerialError("transfer-rejected");
+    return true;
   }
   const auto decision = codexbar_display::esp8266::cable_transfer::CheckChunk(
       cableTransfer.flow,
@@ -4406,7 +4452,7 @@ void setup() {
   // the ring for the frame contract (plus its otherwise unusable sentinel
   // slot) before the UART allocates it.
   Serial.setRxBufferSize(kMaxFrameBytes + 1);
-  Serial.begin(115200);
+  Serial.begin(kSerialBaudRate);
   delay(200);
   bootResetReasonJSON = "\"";
   bootResetReasonJSON += jsonEscape(ESP.getResetReason());

@@ -3,17 +3,35 @@ package usb
 import (
 	"context"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 )
 
-const cableTransferChunkBytes = 128
+const (
+	cableTransferChunkBytes = 128
+	// cable-transfer-v2: 1 KB base64 chunks, and firmware at a faster baud
+	// rate for the length of the transfer. The line stays under the device's
+	// 2048-byte serial frame.
+	cableTransferFastChunkBytes = 1024
+	cableTransferFastBaudRate   = 460800
+	cableTransferBaudSettle     = 20 * time.Millisecond
+)
+
+// TransferOptions tunes one Cable transfer. Fast is only for a VibeTV that
+// advertises cable-transfer-v2; Progress, when set, hears the bytes the device
+// has accepted after every chunk.
+type TransferOptions struct {
+	Fast     bool
+	Progress func(sent, total int)
+}
 
 var ErrCableTransferInterrupted = errors.New("cable transfer interrupted")
 
@@ -66,8 +84,7 @@ func (s *Sender) PrepareThemeInstall(ctx context.Context, pathName, deviceID, to
 	return nil
 }
 
-// progress, when set, hears the bytes the device has accepted after every chunk.
-func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string, sink TransferSink, destination, activation string, payload []byte, progress func(sent, total int)) error {
+func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string, sink TransferSink, destination, activation string, payload []byte, options TransferOptions) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if ctx == nil {
@@ -119,6 +136,7 @@ func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string,
 		Activate string       `json:"activate,omitempty"`
 		Bytes    int          `json:"bytes"`
 		Hash     string       `json:"hash"`
+		Baud     int          `json:"baud,omitempty"`
 	}{
 		Kind:     "request",
 		Op:       "transfer-start",
@@ -130,19 +148,38 @@ func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string,
 		Bytes:    len(payload),
 		Hash:     digestHex,
 	}
+	chunkBytes := cableTransferChunkBytes
+	if options.Fast {
+		chunkBytes = cableTransferFastChunkBytes
+		if sink == TransferSinkFirmware {
+			start.Baud = cableTransferFastBaudRate
+		}
+	}
 	if err := s.sendTransferRequestLocked(pathName, start, "ready", 0); err != nil {
 		if errors.Is(err, errCableTransferRejected) {
 			return err
 		}
 		return fmt.Errorf("%w: %w", ErrCableTransferInterrupted, err)
 	}
+	// The VibeTV answers "ready" at the old rate and switches after it. The
+	// port is closed after the transfer, success or not, so the next open is
+	// back at the normal rate, and the VibeTV falls back when the transfer
+	// ends, is aborted, or goes idle.
+	if start.Baud != 0 {
+		mode := openMode()
+		mode.BaudRate = start.Baud
+		if err := s.port.SetMode(mode); err != nil {
+			return fmt.Errorf("%w: %w", ErrCableTransferInterrupted, err)
+		}
+		s.sleep(cableTransferBaudSettle)
+	}
 
 	sequence := 0
-	for offset := 0; offset < len(payload); offset += cableTransferChunkBytes {
+	for offset := 0; offset < len(payload); offset += chunkBytes {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("%w: %w", ErrCableTransferInterrupted, err)
 		}
-		end := offset + cableTransferChunkBytes
+		end := offset + chunkBytes
 		if end > len(payload) {
 			end = len(payload)
 		}
@@ -151,21 +188,26 @@ func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string,
 			Kind     string `json:"kind"`
 			Op       string `json:"op"`
 			Seq      int    `json:"seq"`
-			Data     string `json:"data"`
+			Data     string `json:"data,omitempty"`
+			Base64   string `json:"b64,omitempty"`
 			Checksum string `json:"checksum"`
 		}{
 			Kind:     "request",
 			Op:       "transfer-chunk",
 			Seq:      sequence,
-			Data:     hex.EncodeToString(chunk),
 			Checksum: chunkChecksum(chunk),
+		}
+		if options.Fast {
+			request.Base64 = base64.StdEncoding.EncodeToString(chunk)
+		} else {
+			request.Data = hex.EncodeToString(chunk)
 		}
 		sequence++
 		if err := s.sendTransferRequestLocked(pathName, request, "chunk", sequence); err != nil {
 			return fmt.Errorf("%w: %w", ErrCableTransferInterrupted, err)
 		}
-		if progress != nil {
-			progress(end, len(payload))
+		if options.Progress != nil {
+			options.Progress(end, len(payload))
 		}
 	}
 	if err := ctx.Err(); err != nil {
