@@ -78,6 +78,13 @@ func TestSessionChangesWakeWithUnchangedAggregate(t *testing.T) {
 	if wakes != 2 {
 		t.Fatal("session transition failed to wake", wakes)
 	}
+	// A new observation time alone is not something the display shows.
+	changed.Sessions = append([]Session{}, changed.Sessions...)
+	changed.Sessions[0].ObservedAt--
+	e.accept(changed, now)
+	if wakes != 2 {
+		t.Fatal("observation timestamp woke the display", wakes)
+	}
 }
 
 func TestConfigureUsesAuthenticatedLocalEngineAndReturnsItsSnapshot(t *testing.T) {
@@ -189,10 +196,11 @@ func TestLeaseRenewalStopsWhenDisabledOrUnavailable(t *testing.T) {
 				if wakes != want {
 					t.Fatal("disabled activity renewed the lease")
 				}
+				// The display ignores observations while the switch is off.
 				s.Health = "stopped"
 				e.accept(s, now.Add(11*time.Second))
-				if wakes != want+1 {
-					t.Fatal("health change did not clear previous presentation")
+				if wakes != want {
+					t.Fatal("disabled observation woke the display")
 				}
 			})
 		}

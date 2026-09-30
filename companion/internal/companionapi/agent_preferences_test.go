@@ -97,3 +97,25 @@ func TestAgentMasterFailuresDoNotPersistSuccess(t *testing.T) {
 		})
 	}
 }
+
+// A missing or crashed engine must never trap the customer with Agent activity
+// on: switching off is saved, and the engine removes its hooks on next start.
+func TestAgentMasterOffPersistsWhenEngineIsUnreachable(t *testing.T) {
+	cfg := runtimeconfig.Config{AgentActivity: &runtimeconfig.AgentActivitySettings{Enabled: true, Blink: true, Reminder: "5", Quiet: "off"}}
+	s := newTestServer(t, cfg)
+	s.loadConfig = func(string) (runtimeconfig.Config, error) { return cfg, nil }
+	s.saveConfig = func(_ string, next runtimeconfig.Config) error { cfg = next; return nil }
+	calls := 0
+	s.configureAgents = func(context.Context, bool) (agentstatus.Snapshot, error) {
+		calls++
+		return agentstatus.Snapshot{}, errors.New("engine unavailable")
+	}
+	rendered := false
+	s.renderDisplayStream = func() { rendered = true }
+	if _, err := (agentPreferenceAdapter{server: s}).Write(context.Background(), "vibetv.agents.enabled", false); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AgentActivitySettings().Enabled || calls != 1 || !rendered {
+		t.Fatalf("enabled=%v calls=%d rendered=%v", cfg.AgentActivitySettings().Enabled, calls, rendered)
+	}
+}

@@ -854,10 +854,6 @@ type usageProviderInfo struct {
 	WeekTokens            int64                    `json:"weekTokens,omitempty"`
 	TotalTokens           int64                    `json:"totalTokens,omitempty"`
 	Activity              string                   `json:"activity,omitempty"`
-	AgentName             string                   `json:"agentName,omitempty"`
-	AgentAlertsMuted      bool                     `json:"agentAlertsMuted,omitempty"`
-	AgentReminderSecs     int                      `json:"agentReminderSecs,omitempty"`
-	AnimationsDisabled    bool                     `json:"animationsDisabled,omitempty"`
 	Stale                 bool                     `json:"stale"`
 	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
 	SessionUnavailable    bool                     `json:"sessionUnavailable,omitempty"`
@@ -2841,8 +2837,6 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		WeekTokens:            frame.WeekTokens,
 		TotalTokens:           frame.TotalTokens,
 		Activity:              strings.TrimSpace(frame.Activity),
-		AgentName:             frame.AgentName,
-		AnimationsDisabled:    frame.AnimationsDisabled,
 		Stale:                 snapshot.Stale,
 		UsageUnavailable:      snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
 		SessionUnavailable:    snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
@@ -2902,8 +2896,6 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		WeekTokens:         frame.WeekTokens,
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
-		AgentName:          frame.AgentName,
-		AnimationsDisabled: frame.AnimationsDisabled,
 		Stale:              parsed.Stale,
 		UsageUnavailable:   parsed.Stale || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
 		SessionUnavailable: parsed.Stale || frame.UsageUnavailable || frame.SessionUnavailable,

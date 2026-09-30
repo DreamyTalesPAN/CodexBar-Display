@@ -186,10 +186,32 @@ type Engine struct {
 	minObservationEpoch   uint64
 }
 
+// presentation is what a render can show. Every hook or log event moves a
+// session's ObservedAt, so comparing whole sessions woke the display stream
+// once a second while agents were busy; the 5-second lease renewal already
+// carries anything that only changed its timestamp.
+func (s Snapshot) presentation() string {
+	var b strings.Builder
+	b.WriteString(s.Health + "|" + s.Phase + "|" + s.DisplayName())
+	for _, provider := range s.ActiveProviders() {
+		b.WriteString("|" + provider)
+	}
+	for _, provider := range slices.Sorted(maps.Keys(s.ProviderPhases)) {
+		b.WriteString("|" + provider + "=" + s.ProviderPhases[provider])
+	}
+	for _, row := range s.Sessions {
+		b.WriteString("|" + row.ID + ":" + row.Phase)
+	}
+	return b.String()
+}
+
 func (e *Engine) accept(value Snapshot, now time.Time) {
-	renewLease := e.currentSettings().Enabled && value.Health == "ready" && ValidPhase(value.Phase) && value.Phase != "stale" && value.Phase != "unavailable"
+	// The display ignores observations while Agent activity is off, so they
+	// neither wake it nor renew its lease. Switching on renders on its own.
+	enabled := e.currentSettings().Enabled
+	renewLease := enabled && value.Health == "ready" && ValidPhase(value.Phase) && value.Phase != "stale" && value.Phase != "unavailable"
 	e.mu.Lock()
-	changed := e.value.Phase != value.Phase || e.value.Health != value.Health || !slices.Equal(e.value.Sessions, value.Sessions) || !slices.Equal(e.value.Sources, value.Sources)
+	changed := enabled && (e.value.presentation() != value.presentation() || !slices.Equal(e.value.Sources, value.Sources))
 	e.value = value
 	e.received = now
 	// Renew the firmware's 15-second lease even during a quiet, steady phase.

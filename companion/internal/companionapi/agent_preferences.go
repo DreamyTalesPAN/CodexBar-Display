@@ -50,11 +50,15 @@ func (a agentPreferenceAdapter) Write(ctx context.Context, id string, value any)
 	if err != nil {
 		return preferenceDescriptor{}, err
 	}
-	if id == "vibetv.agents.enabled" {
+	// Switching on must install every observer before it reports success.
+	// Switching off must always succeed: the engine removes VibeTV's hooks now
+	// when it answers, and otherwise from the saved choice on its next start.
+	enabling := id == "vibetv.agents.enabled" && value.(bool)
+	if enabling {
 		if a.server.configureAgents == nil {
 			return preferenceDescriptor{}, errors.New("agent activity is unavailable")
 		}
-		if _, err := a.server.configureAgents(ctx, value.(bool)); err != nil {
+		if _, err := a.server.configureAgents(ctx, true); err != nil {
 			return preferenceDescriptor{}, err
 		}
 	}
@@ -75,11 +79,14 @@ func (a agentPreferenceAdapter) Write(ctx context.Context, id string, value any)
 		cfg.AgentActivity = &s
 	})
 	if err != nil {
-		if id == "vibetv.agents.enabled" {
+		if enabling {
 			_, rollbackErr := a.server.configureAgents(context.WithoutCancel(ctx), previous.AgentActivitySettings().Enabled)
 			err = errors.Join(err, rollbackErr)
 		}
 		return preferenceDescriptor{}, err
+	}
+	if id == "vibetv.agents.enabled" && !enabling && a.server.configureAgents != nil {
+		_, _ = a.server.configureAgents(ctx, false)
 	}
 	if a.server.renderDisplayStream != nil {
 		a.server.renderDisplayStream()
