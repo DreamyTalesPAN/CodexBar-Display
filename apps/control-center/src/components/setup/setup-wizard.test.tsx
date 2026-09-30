@@ -403,6 +403,10 @@ describe("SetupWizard: initial provider scan", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
+    expect(props.onDisplayContinue).toHaveBeenCalledWith({
+      mode: "fixed",
+      providerIds: ["claude"],
+    });
     expect(onProvidersContinue).toHaveBeenCalledTimes(1);
     expect(shownStep()).toBe("Choose AI providers");
     expect(
@@ -566,6 +570,22 @@ describe("SetupWizard: direct connection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(connect).toHaveBeenLastCalledWith(wifi));
     expect(props.onSelectConnectionMode).not.toHaveBeenCalled();
+  });
+
+  it("words the Companion's connection failure for the Windows app", async () => {
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" };
+    const connect = vi.fn().mockRejectedValue({
+      message: "The Mac App did not answer.",
+      nextAction: "Restart the Mac App on this Mac, then try again.",
+    });
+    render(<SetupWizard {...baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple", deviceCandidates: [wifi], windowsHost: true,
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    })} />);
+    const dialog = await screen.findByRole("dialog", { name: "The app did not answer." });
+    expect(dialog.textContent).toContain("Restart the app on this computer, then try again.");
+    expect(dialog.textContent).not.toContain("Mac");
   });
 
   it.each([1, 2])("recovers saved Cable through an explicit choice among %i discovered WiFi devices without provisioning", async (count) => {
@@ -880,6 +900,47 @@ describe("SetupWizard: direct connection", () => {
 });
 
 describe("SetupWizard: WiFi recovery dialogs", () => {
+  // Issue #440: the customer's latest Cable/WiFi choice wins over a late answer.
+  it.each(["resolve", "reject"] as const)(
+    "keeps Cable when the earlier WiFi selection %ss late",
+    async (outcome) => {
+      let settle: { resolve: (value: unknown) => void; reject: (error: unknown) => void } | null = null;
+      const onSelectConnectionMode = vi.fn(
+        () => new Promise((resolve, reject) => { settle = { resolve, reject }; }),
+      );
+      const cable: DeviceCandidate = { target: "cable://vibetv", deviceId: "same", transport: "cable" };
+      const connect = vi.fn().mockResolvedValue({ board: "esp8266_smalltv_st7789", firmware: "1.0.43" });
+      const props = baseProps({
+        step: "device",
+        connectionModeChoiceRequired: true,
+        deviceSearchState: "multiple",
+        deviceCandidates: [cable, { target: "http://192.168.1.42", deviceId: "same", transport: "wifi" }],
+        connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+        onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+        onSelectConnectionMode: onSelectConnectionMode as unknown as SetupWizardProps["onSelectConnectionMode"],
+      });
+      render(<SetupWizard {...props} />);
+      fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+      await waitFor(() => expect(onSelectConnectionMode).toHaveBeenCalledWith("wifi", "same"));
+
+      fireEvent.click(screen.getByRole("button", { name: "Use Cable instead" }));
+      await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
+
+      await act(async () => {
+        if (outcome === "resolve") {
+          settle!.resolve({ status: "wifi_credentials_required", deviceId: "same" });
+        } else {
+          settle!.reject({ code: "cable_missing", message: "VibeTV is not connected by Cable." });
+        }
+      });
+
+      expect(screen.queryByRole("heading", { name: "Connect VibeTV to WiFi" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "WiFi setup failed" })).toBeNull();
+      expect(props.onScanWiFiNetworks).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["choice", "not-found"])("shows a rejected WiFi selection from %s and allows retry", async (entry) => {
     const failure = { code: "cable_missing", message: "VibeTV is not connected by Cable.", nextAction: "Reconnect the Cable and retry." };
     const onSelectConnectionMode = vi.fn().mockRejectedValue(failure);
@@ -1097,6 +1158,17 @@ describe("SetupWizard: one enabled provider", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
     expect(save).toHaveBeenCalledWith({ mode: "fixed", providerIds: ["claude"] });
     expect(shownStep()).toBe("Choose your theme");
+  });
+
+  it("offers Display Mode again once a second provider joins after the skip", async () => {
+    const props = baseProps({ step: "usage", providers: [provider()], onProvidersContinue: vi.fn(async () => true) });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose your theme");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    rerender(<SetupWizard {...props} providers={[provider(), provider("claude", "Claude")]} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Continue" })); });
+    expect(shownStep()).toBe("Display Mode");
   });
 });
 
@@ -1951,6 +2023,29 @@ describe("SetupWizard with a broken usage service", () => {
 
     expect(onDismissUsageFailure).toHaveBeenCalledTimes(1);
   });
+
+  // Issue #438: the Windows app must not ask to finish setup "on this Mac".
+  it.each(["checking", "not_set_up", "setup_incomplete", "unknown"] as const)(
+    "says this computer on Windows (%s)",
+    (cause) => {
+      render(
+        <SetupWizard
+          {...baseProps({
+            step: "welcome",
+            usageFailure: cause,
+            onRepairUsageService: vi.fn(),
+            windowsHost: true,
+          })}
+        />,
+      );
+
+      const dialog = screen.getByRole("dialog");
+      expect(dialog.textContent).not.toContain("Mac");
+      if (cause === "setup_incomplete") {
+        expect(screen.getByText("Finish AI setup on this computer")).toBeTruthy();
+      }
+    },
+  );
 });
 
 describe("SetupWizard: usage choice", () => {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -126,8 +127,11 @@ func TestFetchProviderSettingsProbesEachEnabledProviderOnWindows(t *testing.T) {
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
 	var calls [][]string
+	var mu sync.Mutex
 	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		mu.Lock()
 		calls = append(calls, append([]string(nil), args...))
+		mu.Unlock()
 		switch {
 		case reflect.DeepEqual(args, providerInventoryArgs()):
 			return []byte(`[
@@ -243,6 +247,18 @@ func TestRunUsageAllEnabledKeepsSilentProviderVisibleOnWindows(t *testing.T) {
 // The collector hands runUsageAllEnabled its 300 s default timeout. One
 // hanging provider CLI must not hold every provider after it for that long,
 // so each sequential usage probe is capped like the health join.
+// The Windows Claude probe runs up to 24 s and may rerun after the folder
+// trust prompt; a Mac Claude check through Claude Code timed out at 18 s for
+// a customer whose provider was working. The cap must leave room for both.
+func TestPerProviderProbeTimeoutOutlastsSlowClaudeCheck(t *testing.T) {
+	if perProviderProbeTimeout < 40*time.Second {
+		t.Fatalf("per-provider cap %s is below the 40 s a slow Claude check needs", perProviderProbeTimeout)
+	}
+	if ProviderCheckBudget <= perProviderProbeTimeout {
+		t.Fatalf("check budget %s must cover the inventory read plus one probe (%s)", ProviderCheckBudget, perProviderProbeTimeout)
+	}
+}
+
 func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
 	originalMode := providerProbePerProvider
 	t.Cleanup(func() { providerProbePerProvider = originalMode })
@@ -250,11 +266,14 @@ func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
 	original := runUsageCommandFn
 	t.Cleanup(func() { runUsageCommandFn = original })
 	var timeouts []time.Duration
+	var mu sync.Mutex
 	runUsageCommandFn = func(_ context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
 		if reflect.DeepEqual(args, providerInventoryArgs()) {
 			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
 		}
+		mu.Lock()
 		timeouts = append(timeouts, timeout)
+		mu.Unlock()
 		return []byte(`[{"provider":"` + args[3] + `","usage":{"primary":{"usedPercent":8}}}]`), nil
 	}
 	if _, err := runUsageAllEnabled(context.Background(), 300*time.Second, "codexbar", "--web-timeout", "8"); err != nil {
@@ -264,15 +283,18 @@ func TestRunUsageAllEnabledCapsEachWindowsProbe(t *testing.T) {
 		t.Fatalf("expected one probe per enabled provider, got %d", len(timeouts))
 	}
 	for i, timeout := range timeouts {
-		if timeout != perProviderProbeTimeout {
+		// The shared join budget starts at the cap, so a probe gets at most
+		// the cap and, with a free slot, practically all of it.
+		if timeout > perProviderProbeTimeout || timeout < perProviderProbeTimeout-time.Second {
 			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
 		}
 	}
 }
 
-// The background health refresh hands runProviderHealthProbe a shared 25 s
-// deadline. On Windows the probes run one after another with 18 s each, so
-// the second provider must not inherit the almost spent parent deadline.
+// The background health refresh hands runProviderHealthProbe a shared
+// deadline. On Windows the probes run one after another with their own cap
+// each, so the second provider must not inherit the almost spent parent
+// deadline.
 func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T) {
 	originalMode := providerProbePerProvider
 	t.Cleanup(func() { providerProbePerProvider = originalMode })
@@ -281,10 +303,13 @@ func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T
 	t.Cleanup(func() { runProviderCommandFn = original })
 	var deadlines []bool
 	var timeouts []time.Duration
+	var mu sync.Mutex
 	runProviderCommandFn = func(ctx context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
 		_, hasDeadline := ctx.Deadline()
+		mu.Lock()
 		deadlines = append(deadlines, hasDeadline)
 		timeouts = append(timeouts, timeout)
+		mu.Unlock()
 		return []byte(`[{"provider":"` + args[3] + `","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":8}}}]`), nil
 	}
 	parent, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -312,47 +337,157 @@ func TestRunProviderHealthProbeGivesEachWindowsProviderItsOwnBudget(t *testing.T
 	// Without the shared deadline the collector's 300 s timeout must not
 	// become the per-probe budget; a hanging CLI is capped per provider.
 	for i, timeout := range timeouts {
-		if timeout != perProviderProbeTimeout {
+		// The shared join budget starts at the cap, so a probe gets at most
+		// the cap and, with a free slot, practically all of it.
+		if timeout > perProviderProbeTimeout || timeout < perProviderProbeTimeout-time.Second {
 			t.Fatalf("probe %d ran with %s instead of the per-provider cap %s", i, timeout, perProviderProbeTimeout)
 		}
 	}
 }
 
 // Dropping the shared deadline must not drop the caller's cancellation: a
-// disconnected client or a shutting-down Companion still ends the sequential
-// Windows probes instead of leaving them running for minutes.
+// disconnected client or a shutting-down Companion still ends the running
+// Windows probes instead of leaving them running for minutes, and no probe
+// starts once the caller gave up.
 func TestRunProviderHealthProbeStopsWhenCallerCancels(t *testing.T) {
 	originalMode := providerProbePerProvider
 	t.Cleanup(func() { providerProbePerProvider = originalMode })
 	providerProbePerProvider = true
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
-	parent, cancel := context.WithCancel(context.Background())
-	var cancelled []bool
-	runProviderCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
-		// Record before cancelling: the forwarded cancellation is
-		// asynchronous and may reach ctx before this probe returns.
-		cancelled = append(cancelled, ctx.Err() != nil)
-		if args[3] == "codex" {
-			cancel()
-			<-ctx.Done()
-		}
-		return nil, ctx.Err()
-	}
 	settings := []ProviderSetting{
 		{ID: "codex", Label: "Codex", Enabled: true},
 		{ID: "claude", Label: "Claude", Enabled: true},
 	}
-	raw, err := runProviderHealthProbe(parent, perProviderProbeTimeout, "codexbar", settings)
-	if len(cancelled) != 1 || cancelled[0] {
-		t.Fatalf("no probe must start after the caller cancelled, got %v", cancelled)
+
+	// A running probe ends when the caller cancels.
+	parent, cancel := context.WithCancel(context.Background())
+	var mu sync.Mutex
+	started := 0
+	runProviderCommandFn = func(ctx context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		mu.Lock()
+		started++
+		if started == len(settings) {
+			cancel()
+		}
+		mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
-	// The answer already collected is kept; only claude was never asked.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = runProviderHealthProbe(parent, perProviderProbeTimeout, "codexbar", settings)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("running probes must end when the caller cancels")
+	}
+
+	// Once the caller gave up, no probe starts.
+	gone, cancelGone := context.WithCancel(context.Background())
+	cancelGone()
+	probes := 0
+	runProviderCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		mu.Lock()
+		probes++
+		mu.Unlock()
+		return nil, nil
+	}
+	if _, err := runProviderHealthProbe(gone, perProviderProbeTimeout, "codexbar", settings); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled caller must get its cancellation back, got %v", err)
+	}
+	if probes != 0 {
+		t.Fatalf("no probe must start after the caller cancelled, got %d", probes)
+	}
+}
+
+// Two switched-on providers that each need most of the per-provider cap must
+// finish inside one ProviderCheckBudget: one after another they took about
+// 80 s and the Control Center's 60 s request gave up first. Each fake probe
+// only returns once both have started, so one-at-a-time probing would stall.
+func TestRunUsageAllEnabledProbesWindowsProvidersSideBySide(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	var bothStarted sync.WaitGroup
+	bothStarted.Add(2)
+	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if reflect.DeepEqual(args, providerInventoryArgs()) {
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
+		}
+		bothStarted.Done()
+		waited := make(chan struct{})
+		go func() { bothStarted.Wait(); close(waited) }()
+		select {
+		case <-waited:
+		case <-time.After(5 * time.Second):
+			return nil, errors.New("probes ran one after another")
+		}
+		return []byte(`[{"provider":"` + args[3] + `","usage":{"primary":{"usedPercent":8}}}]`), nil
+	}
+	raw, err := runUsageAllEnabled(context.Background(), perProviderProbeTimeout, "codexbar", "--web-timeout", "8")
 	if err != nil {
-		t.Fatalf("partial answer must be returned, got %v", err)
+		t.Fatalf("usage join: %v", err)
 	}
-	if health := parseProviderHealth(raw); len(health) != 1 || health["codex"].health != ProviderHealthUnavailable {
-		t.Fatalf("expected only the probed provider in the answer, got %#v", health)
+	frames, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parse joined usage: %v", err)
+	}
+	// The answer keeps inventory order however the probes finish.
+	if len(frames) != 2 || frames[0].Provider != "codex" || frames[1].Provider != "claude" {
+		t.Fatalf("expected both providers in inventory order, got %#v", frames)
+	}
+	for _, frame := range frames {
+		if frame.Frame.UsageUnavailable {
+			t.Fatalf("both probes must succeed side by side, got %#v", frames)
+		}
+	}
+}
+
+// More switched-on providers than parallel slots must not open a second round
+// of full caps: the join shares one budget, a provider that waits for a slot
+// gets only the time left, and one that cannot start in time is reported
+// unavailable. The whole join therefore ends within its budget.
+func TestProbeEnabledProvidersSharesOneBudgetAcrossSlots(t *testing.T) {
+	settings := make([]ProviderSetting, maxParallelProviderProbes+1)
+	for i := range settings {
+		settings[i] = ProviderSetting{ID: fmt.Sprintf("p%d", i), Label: fmt.Sprintf("P%d", i), Enabled: true}
+	}
+	const budget = 200 * time.Millisecond
+	var mu sync.Mutex
+	var timeouts []time.Duration
+	started := time.Now()
+	raw, err := probeEnabledProviders(context.Background(), budget, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+		mu.Lock()
+		timeouts = append(timeouts, timeout)
+		mu.Unlock()
+		// A hanging CLI: it only returns when its own cap runs out.
+		time.Sleep(timeout)
+		return nil, context.DeadlineExceeded
+	})
+	if elapsed := time.Since(started); elapsed > budget+150*time.Millisecond {
+		t.Fatalf("join took %s, beyond its %s budget", elapsed, budget)
+	}
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	for i, timeout := range timeouts {
+		if timeout > budget {
+			t.Fatalf("probe %d got %s, more than the shared %s budget", i, timeout, budget)
+		}
+	}
+	health := parseProviderHealth(raw)
+	if len(health) != len(settings) {
+		t.Fatalf("every switched-on provider must be answered, got %d of %d", len(health), len(settings))
+	}
+	for id, state := range health {
+		if state.health != ProviderHealthUnavailable {
+			t.Fatalf("%s must be unavailable, got %#v", id, state)
+		}
 	}
 }
 

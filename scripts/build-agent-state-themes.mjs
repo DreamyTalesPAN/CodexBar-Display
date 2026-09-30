@@ -244,7 +244,7 @@ async function finish(id, spec, version, generated) {
     ]),
   ];
   manifest.themeSpec = {
-    path: `/themes/u/${{ "tiny-office": "to", "mini-classic": "mini-cl", "claude-creature": "claude", clippy: "clippy", synthwave: "synthwa", "pixel-battery": "pba" }[id]}-${spec.rev}-${hash(raw).slice(0, 6)}.json`,
+    path: `/themes/u/${{ "tiny-office": "to", "mini-classic": "mini", "claude-creature": "claude", clippy: "clippy", synthwave: "synthwa", "pixel-battery": "pba" }[id]}-${spec.rev}-${hash(raw).slice(0, 6)}.json`,
     file: "theme.json",
     bytes: Buffer.byteLength(raw),
     sha256: hash(raw),
@@ -331,7 +331,7 @@ const mini = JSON.parse(
 mini.p = mini.p.filter(
   (p) => !p.a?.startsWith("/themes/u/mi-") || p.a === "/themes/u/mi-eyes.cba",
 );
-mini.rev = 9;
+mini.rev = 10;
 const props = {},
   sa = { idle: "/themes/u/mi-blank.cbi" };
 props["mi-blank.cbi"] = encode(1, 1, [["#000000"]], 0);
@@ -405,7 +405,7 @@ mini.p.push({
   a: sa.idle,
   sa,
 });
-await finish("mini-classic", mini, "1.2.2", props);
+await finish("mini-classic", mini, "1.2.3", props);
 
 // Keep the original animated Creature poses for idle and coding. The three
 // additional states use authored clawd-tank RLE frames and cadence.

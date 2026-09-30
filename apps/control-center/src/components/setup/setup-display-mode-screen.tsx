@@ -57,6 +57,8 @@ type SetupDisplayModeScreenProps = {
   onBack?: () => void;
   onContinue: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  /** The app runs on Windows; the Help menu words its outcomes for it. */
+  windowsHost?: boolean;
   onSelectMode: (mode: ProviderDisplaySelection["mode"]) => void;
   onSelectProvider: (providerId: string) => void;
   providers: SetupDisplayModeProvider[];
@@ -75,6 +77,7 @@ export function SetupDisplayModeScreen({
   onBack,
   onContinue,
   onCreateSupportReport,
+  windowsHost,
   onSelectMode,
   onSelectProvider,
   providers,
@@ -88,6 +91,7 @@ export function SetupDisplayModeScreen({
       aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <SetupWizardTitle>Display Mode</SetupWizardTitle>
       <SetupWizardSubtitle>

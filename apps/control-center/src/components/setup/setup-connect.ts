@@ -20,6 +20,8 @@ export type ConnectedDevice = {
   board?: string;
   firmware?: string;
   ready?: boolean;
+  /** Needs the Cable rescue update before it can be connected at all. */
+  rescue?: boolean;
 };
 
 export type SetupConnectSteps = {
@@ -32,7 +34,7 @@ export type SetupConnectSteps = {
     device: ConnectedDevice,
   ) => Promise<{ from: string; to: string } | null>;
   connect: (candidate: DeviceCandidate) => Promise<ConnectedDevice>;
-  installFirmware: () => Promise<void>;
+  installFirmware: (device: ConnectedDevice) => Promise<void>;
 };
 
 const IDLE: ConnectState = { address: "", phase: "idle" };
@@ -142,7 +144,7 @@ export function useSetupConnect(
       });
 
       try {
-        await steps.installFirmware();
+        await steps.installFirmware(connected);
       } catch (error) {
         const api = error as ApiError;
         if (api?.code === "firmware_update_attention") {

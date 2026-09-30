@@ -124,6 +124,8 @@ type NotFoundDialogProps = {
   onUseCable: () => void;
   onSetUpWiFi: () => void;
   open: boolean;
+  /** The app runs on Windows, where "your Mac" reads "your computer". */
+  windowsHost?: boolean;
 };
 
 /** 02c — neither Cable nor WiFi discovery found a VibeTV. */
@@ -135,6 +137,7 @@ export function SetupDeviceNotFoundDialog({
   onUseCable,
   onSetUpWiFi,
   open,
+  windowsHost = false,
 }: NotFoundDialogProps) {
   return (
     <SetupDialog
@@ -162,7 +165,8 @@ export function SetupDeviceNotFoundDialog({
             <ItemContent>
               <ItemTitle>Use the cable</ItemTitle>
               <ItemDescription>
-                Plug VibeTV into your Mac with the cable that came with it.
+                Plug VibeTV into your {windowsHost ? "computer" : "Mac"} with
+                the cable that came with it.
               </ItemDescription>
             </ItemContent>
           </button>

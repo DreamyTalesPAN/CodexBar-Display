@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
@@ -2574,6 +2576,10 @@ func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 	if got.Companion.Runtime.Version != got.Companion.Version {
 		t.Fatalf("legacy version alias must remain the runtime version: companion=%q runtime=%q", got.Companion.Version, got.Companion.Runtime.Version)
 	}
+	// The app words itself for the platform from this, not from the user agent.
+	if got.Companion.Runtime.OS != runtime.GOOS {
+		t.Fatalf("runtime must report its platform: got %q want %q", got.Companion.Runtime.OS, runtime.GOOS)
+	}
 	if got.Companion.Update.InstalledVersion != "1.0.98" || !got.Companion.Update.UpdateAvailable {
 		t.Fatalf("Mac App update check must compare the app version: %+v", got.Companion.Update)
 	}
@@ -3782,6 +3788,38 @@ func TestInspectDisplayStreamDetectsLaterErrorInSameSecond(t *testing.T) {
 	}
 	if stream.Detail != "Display stream could not send to VibeTV and is reconnecting." {
 		t.Fatalf("unexpected same-second stream error detail %q", stream.Detail)
+	}
+}
+
+// Windows stamps the error frame and the cycle error it belongs to with the
+// same instant (CI, TestColdWarm/signed_out). The error must still count.
+func TestInspectDisplayStreamCountsAnErrorStampedWithItsFrame(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-time.Second)
+	frameAt := startedAt.Add(100 * time.Millisecond)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
+			frameAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi deviceId=virtual source=collector fresh=false usageMode= provider= label= session=0 weekly=0`,
+			frameAt.Format(time.RFC3339Nano) + ` cycle error: code=runtime/no-providers op=fetch-usage retry=30s err=runtime/no-providers (fetch-usage): fetch codexbar usage: codexbar returned no providers`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	if stream.Healthy || stream.ErrorCode != "provider_setup_required" {
+		t.Fatalf("an error stamped with its frame was ignored: %+v", stream)
 	}
 }
 
@@ -10814,6 +10852,49 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 	}
 }
 
+func TestFirmwareUpdateRescueStartsWithoutAPairedDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("the rescue updater finds the pre-identity VibeTV itself")
+		return "", errors.New("serial port belongs to updater")
+	}
+	parentPortClosed := make(chan struct{})
+	server.resetCableSender = func() { close(parentPortClosed) }
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+		select {
+		case <-parentPortClosed:
+		default:
+			t.Error("parent Cable handle must close before the rescue flashes")
+		}
+		if !req.Rescue {
+			t.Errorf("rescue request lost on the way to the updater: %+v", req)
+		}
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.44","observedFirmware":"1.0.44","target":"cable://vibetv","deviceId":"16197082","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{"rescue":true}`)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("rescue must start without pairing, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for range 100 {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "complete" || job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "complete" || job.Outcome != "updated" || job.Result == nil || job.Result.DeviceID != "16197082" {
+		t.Fatalf("rescue job = %+v", job)
+	}
+}
+
 func TestFirmwareUpdateRejectsUnsupportedCableTransferBeforePairing(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		ConnectionMode: "cable",
@@ -12965,6 +13046,30 @@ func TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme(t *testing.T) {
 	}
 }
 
+// The Cable rescue writes for about a minute. Its progress must reach the
+// customer, and each step must replace the last instead of pushing the
+// earlier setup lines out of the twelve-line log.
+func TestFirmwareUpdateRescueProgressReplacesTheUpdateLine(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	job := server.createFirmwareUpdateJob(runtimeconfig.Config{})
+	writer := &firmwareUpdateProgressWriter{server: server, jobID: job.ID}
+	for _, line := range []string{"Checking device...", "Uploading firmware...", "Writing firmware: 10%", "Writing firmware: 60%"} {
+		writer.noteLine(line)
+	}
+	got, _ := server.firmwareUpdateJobSnapshot(job.ID)
+	if last := got.Logs[len(got.Logs)-1]; last != "Updating VibeTV: 60%." || got.Message != last {
+		t.Fatalf("logs=%q message=%q", got.Logs, got.Message)
+	}
+	if strings.Count(strings.Join(got.Logs, "\n"), "Updating VibeTV") != 1 || got.Progress != 65+60*17/100 {
+		t.Fatalf("progress must replace one line and advance the bar: logs=%q progress=%d", got.Logs, got.Progress)
+	}
+	writer.noteLine("Restarting VibeTV...")
+	got, _ = server.firmwareUpdateJobSnapshot(job.ID)
+	if got.Logs[len(got.Logs)-2] != "Updating VibeTV: 60%." || got.Logs[len(got.Logs)-1] != "Restarting VibeTV." {
+		t.Fatalf("the next step must follow the last progress line: %q", got.Logs)
+	}
+}
+
 // Hardware, 2026-08-07: after a stalled upload the updater's own diagnosis of
 // why the stored theme was not restored existed only on the child process's
 // stdout. noteLine dropped every line customerFirmwareUpdateProgress did not
@@ -13821,5 +13926,33 @@ func TestDeviceHealthCarriesMeasuredAnimationPacing(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"cbaLastFrameDurationMs":417`) {
 		t.Fatalf("lost device timing: %s", data)
+	}
+}
+
+type legacyCableSearchError struct{ legacy *usb.LegacyCableFirmwareError }
+
+func (e legacyCableSearchError) Error() string           { return e.legacy.Error() }
+func (e legacyCableSearchError) Unwrap() error           { return e.legacy }
+func (e legacyCableSearchError) ErrorCode() errcode.Code { return errcode.TransportCableFirmwareTooOld }
+
+// Setup updates a VibeTV from before USB-C support like any other firmware
+// update, so the search tells it which board and firmware to check.
+func TestDeviceSearchReportsTheLegacyCableVibeTVForItsUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return nil }
+	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+		return nil, legacyCableSearchError{&usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}}
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+	var got struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
+	if rec.Code != http.StatusConflict || got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !reflect.DeepEqual(*got.Error.Device, want) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

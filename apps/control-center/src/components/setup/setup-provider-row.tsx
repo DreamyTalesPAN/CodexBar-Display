@@ -92,6 +92,12 @@ type SetupProviderRowProps = {
    * has nothing to start.
    */
   onOpenSignIn?: () => void;
+  /**
+   * Present on Windows for a signed-out provider the app cannot sign in
+   * itself: its usage comes from the provider's own app, so the notice says so
+   * and links the setup guide.
+   */
+  onOpenSetupGuide?: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -112,6 +118,7 @@ export function SetupProviderRow({
   detail,
   reportedMessage,
   onOpenSignIn,
+  onOpenSetupGuide,
   onToggle,
   saving = false,
 }: SetupProviderRowProps) {
@@ -204,7 +211,17 @@ export function SetupProviderRow({
       </ItemActions>
       {hasNotice ? (
         <div data-slot="provider-notice" className="-mx-4 flex basis-[calc(100%+2rem)] items-center gap-3 border-t border-border px-4 pt-3 text-left">
-          <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{guidance}</p>
+          {onOpenSetupGuide ? (
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-1 text-xs leading-normal text-muted-foreground">
+              <p>{`VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`}</p>
+              <p>{guidance}</p>
+              <Button className="h-auto px-0 text-xs" onClick={onOpenSetupGuide} type="button" variant="link">
+                Open setup guide
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{guidance}</p>
+          )}
           {((variant !== "unsupported" && variant !== "stale") || copyReportedMessage) ? (
             <div className="flex shrink-0 items-center justify-end gap-2">{actions}</div>
           ) : null}
