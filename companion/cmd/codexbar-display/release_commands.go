@@ -742,13 +742,15 @@ func runInstallUpdate(args []string) (retErr error) {
 	} else if cableMode {
 		// The release's gzip image is about 30% smaller, and the ESP8266
 		// updater stores it as is and unpacks it on the next boot, so it goes
-		// over the Cable unchanged. The unpacked image stays for the rescue
-		// path and WiFi, and for a release without one.
-		var image []byte
-		image, uploadErr = os.ReadFile(imagePath + ".gz")
-		if uploadErr != nil {
-			image, uploadErr = os.ReadFile(imagePath)
+		// over the Cable unchanged. Only when this run downloaded and checked
+		// the .gz: the version folder can still hold one from an earlier
+		// manifest. The unpacked image stays for the rescue path and WiFi.
+		cableImagePath := imagePath
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(artifact.Asset)), ".gz") {
+			cableImagePath += ".gz"
 		}
+		var image []byte
+		image, uploadErr = os.ReadFile(cableImagePath)
 		if uploadErr == nil {
 			// The same line the rescue path prints, which the Companion already
 			// turns into the percentage the setup log and Updates screen show.

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"io"
 	"net"
 	"net/http"
@@ -939,6 +940,15 @@ func TestRunInstallUpdateCableHappyPath(t *testing.T) {
 		DeviceID:       "device-cable",
 		DeviceToken:    "pair-token",
 	}); err != nil {
+		t.Fatal(err)
+	}
+	// A .gz left from an earlier manifest for the same version was never
+	// checked against this manifest's raw image.
+	staleDir := filepath.Join(runtimepaths.Root(home), "updates", "firmware", "1.0.1")
+	if err := os.MkdirAll(staleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDir, "firmware.bin.gz"), []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte, options usb.TransferOptions) error {

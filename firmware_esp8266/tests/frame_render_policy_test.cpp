@@ -147,7 +147,7 @@ bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
 bool testSetupSizesSerialRxBufferForFrameContract(const std::string& source) {
   const std::size_t setupStart = source.find("void setup()");
   const std::size_t buffer = source.find("Serial.setRxBufferSize(kMaxFrameBytes + 1);", setupStart);
-  const std::size_t begin = source.find("Serial.begin(115200);", setupStart);
+  const std::size_t begin = source.find("Serial.begin(kSerialBaudRate);", setupStart);
   return expect(
       setupStart != std::string::npos && buffer != std::string::npos &&
           begin != std::string::npos && buffer < begin,
