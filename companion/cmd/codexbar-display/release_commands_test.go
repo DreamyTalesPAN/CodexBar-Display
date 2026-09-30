@@ -1577,6 +1577,26 @@ func TestEnsureFirmwareUpdateDeviceTokenPairsOnlyOnceWhenFreshTokenIsRejected(t 
 	}
 }
 
+// Issue #489: current firmware has no WiFi pairing endpoint, so a missing token
+// must send the operator to the cable instead of reporting a bare 404.
+func TestEnsureFirmwareUpdateDeviceTokenAsksForCableWhenWiFiPairingIsGone(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	_, err := ensureFirmwareUpdateDeviceToken(context.Background(), t.TempDir(), server.URL, "device-a")
+	if err == nil || !strings.Contains(err.Error(), "USB cable") {
+		t.Fatalf("expected cable pairing guidance, got %v", err)
+	}
+}
+
 func TestFirmwareOTAAuthErrorDoesNotClassifyTransportAddressAsStatus(t *testing.T) {
 	for _, port := range []string{"40165", "40312"} {
 		err := &url.Error{Op: "Get", URL: "http://127.0.0.1:" + port + "/hello", Err: io.EOF}

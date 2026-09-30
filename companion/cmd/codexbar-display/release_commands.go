@@ -1102,6 +1102,10 @@ func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) 
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// Current firmware pairs only over the USB cable (#489).
+		return "", errors.New("VibeTV pairs only over the USB cable: connect it to this Mac, press Connect in the Mac App, then run the update again")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("POST /api/pair returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
