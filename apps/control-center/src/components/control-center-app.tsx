@@ -5022,6 +5022,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             device,
             firmwareUpdateStatus?.phase,
             companionInfo?.app?.version,
+            windowsHost,
           )} />
         ) : undefined}
         updateAvailable={anyUpdateAvailable}

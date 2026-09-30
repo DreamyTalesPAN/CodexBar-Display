@@ -16,12 +16,13 @@ export function overviewConnectionStatus(
   device: DeviceInfo | null,
   firmwareUpdatePhase?: string,
   appVersion?: string,
+  windowsHost = false,
 ): Props {
   if (companionStatus === "missing") {
-    return { label: "Mac App offline", compactLabel: "Offline", ready: false };
+    return { label: windowsHost ? "App offline" : "Mac App offline", compactLabel: "Offline", ready: false };
   }
   if (companionStatus !== "online") {
-    return { label: "Connecting to Mac App", compactLabel: "Connecting", ready: false };
+    return { label: windowsHost ? "Connecting to app" : "Connecting to Mac App", compactLabel: "Connecting", ready: false };
   }
   if (deviceIsCustomerConnected(device)) {
     return { label: appVersion ? `Online · v${appVersion}` : "Online", compactLabel: "Online", ready: true };

@@ -20,4 +20,11 @@ describe("overviewConnectionStatus", () => {
     expect(overviewConnectionStatus("online", disconnected, "error", "1.0.33").label).toBe("VibeTV not connected");
     expect(overviewConnectionStatus("missing", disconnected, undefined, "1.0.33").label).toBe("Mac App offline");
   });
+
+  // Issues #438/#460: the Windows app must not call itself a Mac App.
+  it("names the app for the platform", () => {
+    expect(overviewConnectionStatus("missing", null, undefined, undefined, true).label).toBe("App offline");
+    expect(overviewConnectionStatus("unknown", null, undefined, undefined, true).label).toBe("Connecting to app");
+    expect(overviewConnectionStatus("unknown", null).label).toBe("Connecting to Mac App");
+  });
 });
