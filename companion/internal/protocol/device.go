@@ -17,6 +17,7 @@ const (
 	DefaultMinBrightness      = 10
 	DefaultMaxBrightness      = 100
 	FeatureCableTransferV1    = "cable-transfer-v1"
+	FeatureCableTransferV2    = "cable-transfer-v2"
 	FeatureCableHealthV1      = "cable-health-v1"
 )
 

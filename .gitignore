@@ -47,3 +47,6 @@ temp/
 .claude/settings.local.json
 
 windows/src-tauri/agent-engine/
+# Python bytecode from local script tests
+__pycache__/
+*.pyc

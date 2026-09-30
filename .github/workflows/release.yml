@@ -54,6 +54,8 @@ jobs:
     permissions:
       actions: read
       contents: write
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -152,3 +154,114 @@ jobs:
           ./scripts/verify-release-canary.sh \
             --version "${VERSION}" \
             --firmware-config validated/assets/publish/firmware/firmware-manifest.json
+
+  # Microsoft Store (EXE/MSI) needs a versioned HTTPS URL that answers
+  # directly; GitHub release downloads redirect and are rejected. The public
+  # installer is mirrored once per version and never overwritten, so a Store
+  # submission keeps pointing at immutable bytes. This is its own job so a
+  # failed mirror can be re-run alone after the release already exists.
+  mirror-store-package:
+    needs: publish-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      # Azure sign-in uses OIDC federation; no storage key exists in GitHub.
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.publish-release.outputs.version }}
+      STORE_ACCOUNT: vibetvdownloads
+      STORE_CONTAINER: windows
+    steps:
+      - name: Checkout the Store submission script from the candidate source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/submit-microsoft-store.py
+          sparse-checkout-cone-mode: false
+
+      - name: Download the approved candidate payload
+        uses: actions/download-artifact@v4
+        with:
+          name: vibetv-validated-publish
+          path: validated
+
+      - name: Download the public installer and match the approved hash
+        id: installer
+        run: |
+          set -euo pipefail
+          gh release download "v${VERSION}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern VibeTV-Control-Center-Setup.exe --dir store
+          expected="$(python3 - validated/publish-payload.json <<'PY'
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          matches = [item["sha256"] for item in payload["artifacts"]
+                     if item["name"] == "VibeTV-Control-Center-Setup.exe"]
+          if len(matches) != 1:
+              raise SystemExit("approved payload must list exactly one Windows installer")
+          print(matches[0])
+          PY
+          )"
+          actual="$(sha256sum store/VibeTV-Control-Center-Setup.exe | cut -d' ' -f1)"
+          [[ "$actual" == "$expected" ]] \
+            || { echo "error: public installer does not match the approved candidate" >&2; exit 1; }
+          echo "sha256=${expected}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Azure for the Store download mirror
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_SIGNING_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SIGNING_SUBSCRIPTION_ID }}
+
+      - name: Mirror the verified Windows installer for the Microsoft Store
+        id: mirror
+        env:
+          EXPECTED_SHA256: ${{ steps.installer.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          installer="store/VibeTV-Control-Center-Setup.exe"
+          blob="v${VERSION}/VibeTV-Control-Center-Setup.exe"
+          url="https://${STORE_ACCOUNT}.blob.core.windows.net/${STORE_CONTAINER}/${blob}"
+          exists="$(az storage blob exists --auth-mode login \
+            --account-name "$STORE_ACCOUNT" --container-name "$STORE_CONTAINER" \
+            --name "$blob" --query exists -o tsv --only-show-errors)"
+          if [[ "$exists" == "true" ]]; then
+            echo "Store mirror already exists; verifying its bytes instead of re-uploading"
+          else
+            az storage blob upload \
+              --auth-mode login \
+              --account-name "$STORE_ACCOUNT" \
+              --container-name "$STORE_CONTAINER" \
+              --name "$blob" \
+              --file "$installer" \
+              --content-type application/vnd.microsoft.portable-executable \
+              --overwrite false \
+              --only-show-errors
+          fi
+          read -r status redirects < <(curl -sS -o store-check.exe -w '%{http_code} %{num_redirects}\n' "$url")
+          [[ "$status" == 200 && "$redirects" == 0 ]] \
+            || { echo "error: Store URL answered ${status} after ${redirects} redirects" >&2; exit 1; }
+          [[ "$(sha256sum store-check.exe | cut -d' ' -f1)" == "$EXPECTED_SHA256" ]] \
+            || { echo "error: Store mirror bytes differ from the approved installer" >&2; exit 1; }
+          echo "Microsoft Store package URL: ${url}" >> "$GITHUB_STEP_SUMMARY"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+      # Replaces the manual Partner Center step: point the Store listing at
+      # the new mirror URL and submit it for certification. Sign-in uses the
+      # same OIDC federation (Partner Center "Manager" role), so no Store key
+      # exists in GitHub. If an older submission is still in review, this
+      # step fails and can be re-run once that review is finished.
+      - name: Submit the new installer to the Microsoft Store
+        env:
+          STORE_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
+          STORE_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          STORE_SELLER_ID: "96319640"
+          STORE_PRODUCT_ID: d4931da5-d263-43b4-a2b7-2872ce593e9d
+          PACKAGE_URL: ${{ steps.mirror.outputs.url }}
+        run: |
+          set -euo pipefail
+          python3 scripts/submit-microsoft-store.py --package-url "$PACKAGE_URL" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -740,10 +740,30 @@ func runInstallUpdate(args []string) (retErr error) {
 			})
 		}
 	} else if cableMode {
+		// The release's gzip image is about 30% smaller, and the ESP8266
+		// updater stores it as is and unpacks it on the next boot, so it goes
+		// over the Cable unchanged. Only when this run downloaded and checked
+		// the .gz: the version folder can still hold one from an earlier
+		// manifest. The unpacked image stays for the rescue path and WiFi.
+		cableImagePath := imagePath
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(artifact.Asset)), ".gz") {
+			cableImagePath += ".gz"
+		}
 		var image []byte
-		image, uploadErr = os.ReadFile(imagePath)
+		image, uploadErr = os.ReadFile(cableImagePath)
 		if uploadErr == nil {
-			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image)
+			// The same line the rescue path prints, which the Companion already
+			// turns into the percentage the setup log and Updates screen show.
+			lastPercent := -1
+			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image, usb.TransferOptions{
+				Fast: hello.HasFeature(protocol.FeatureCableTransferV2),
+				Progress: func(sent, total int) {
+					if percent := sent * 100 / total; percent != lastPercent {
+						lastPercent = percent
+						fmt.Printf("Writing firmware: %d%%\n", percent)
+					}
+				},
+			})
 		}
 		uploadInterrupted = errors.Is(uploadErr, usb.ErrCableTransferInterrupted)
 	} else {

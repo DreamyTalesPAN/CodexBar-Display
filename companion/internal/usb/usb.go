@@ -56,6 +56,7 @@ type SerialPort interface {
 	ResetInputBuffer() error
 	SetDTR(bool) error
 	SetRTS(bool) error
+	SetMode(*serial.Mode) error
 }
 
 type PortOpener interface {
@@ -133,11 +134,11 @@ func PrepareThemeInstall(ctx context.Context, port, deviceID, token, slot string
 }
 
 func TransferAsset(ctx context.Context, port, deviceID, token, destination, activation string, payload []byte) error {
-	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkAsset, destination, activation, payload)
+	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkAsset, destination, activation, payload, TransferOptions{})
 }
 
-func TransferFirmware(ctx context.Context, port, deviceID, token string, payload []byte) error {
-	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkFirmware, "", "", payload)
+func TransferFirmware(ctx context.Context, port, deviceID, token string, payload []byte, options TransferOptions) error {
+	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkFirmware, "", "", payload, options)
 }
 
 func CloseDefaultSender() {

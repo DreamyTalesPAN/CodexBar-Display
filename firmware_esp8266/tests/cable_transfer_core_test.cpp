@@ -1,5 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <string>
 
 #include "../src/cable_transfer_core.h"
 
@@ -12,7 +14,66 @@ void require(bool condition, const char* message) {
   }
 }
 
+std::string encodeBase64(const uint8_t* data, size_t length) {
+  static const char kAlphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  for (size_t i = 0; i < length; i += 3) {
+    const uint32_t group = (uint32_t(data[i]) << 16) |
+                           (i + 1 < length ? uint32_t(data[i + 1]) << 8 : 0) |
+                           (i + 2 < length ? uint32_t(data[i + 2]) : 0);
+    out += kAlphabet[(group >> 18) & 63];
+    out += kAlphabet[(group >> 12) & 63];
+    out += i + 1 < length ? kAlphabet[(group >> 6) & 63] : '=';
+    out += i + 2 < length ? kAlphabet[group & 63] : '=';
+  }
+  return out;
+}
+
+void testDecodeChunk() {
+  uint8_t source[1024];
+  for (size_t i = 0; i < sizeof(source); ++i) {
+    source[i] = static_cast<uint8_t>(i * 37 + 11);
+  }
+  uint8_t out[1024];
+
+  // Every padding shape, and a full v2 chunk, survive the round trip.
+  const size_t lengths[] = {1, 2, 3, 4, 5, 1024};
+  for (size_t length : lengths) {
+    const std::string encoded = encodeBase64(source, length);
+    require(transfer::DecodeChunk("", encoded.c_str(), out, sizeof(out)) == length,
+            "base64 chunk must decode to its exact length");
+    require(std::memcmp(out, source, length) == 0, "base64 chunk must decode to its bytes");
+  }
+  require(transfer::DecodeChunk("", encodeBase64(source, 1024).c_str(), out, 1023) == 0,
+          "a chunk larger than the buffer must be rejected, not truncated");
+
+  // A byte lost or damaged on the wire must never decode to something.
+  const std::string good = encodeBase64(source, 6);
+  require(transfer::DecodeChunk("", good.substr(1).c_str(), out, sizeof(out)) == 0,
+          "base64 with a lost character must be rejected");
+  std::string damaged = good;
+  damaged[3] = '*';
+  require(transfer::DecodeChunk("", damaged.c_str(), out, sizeof(out)) == 0,
+          "base64 with a foreign character must be rejected");
+  require(transfer::DecodeChunk("", "QQ=A", out, sizeof(out)) == 0,
+          "padding must only close the last group");
+  require(transfer::DecodeChunk("", "QQ==QUFB", out, sizeof(out)) == 0,
+          "padding must not appear before the last group");
+
+  // cable-transfer-v1 hex, which older Mac apps still send.
+  require(transfer::DecodeChunk("00ff7A", "", out, sizeof(out)) == 3 &&
+              out[0] == 0x00 && out[1] == 0xff && out[2] == 0x7a,
+          "hex chunk must decode");
+  require(transfer::DecodeChunk("0ff", "", out, sizeof(out)) == 0, "odd hex must be rejected");
+  require(transfer::DecodeChunk("0g", "", out, sizeof(out)) == 0, "foreign hex must be rejected");
+  require(transfer::DecodeChunk("", "", out, sizeof(out)) == 0, "an empty chunk must be rejected");
+  require(transfer::DecodeChunk("0011", "", out, 1) == 0, "hex over capacity must be rejected");
+}
+
 int main() {
+  testDecodeChunk();
+
   transfer::State state;
   transfer::Begin(state, 8, 100);
 

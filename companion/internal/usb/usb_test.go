@@ -832,6 +832,7 @@ type mockSerialPort struct {
 	writeDelay    time.Duration
 	closeCalls    int
 	rtsPulses     int
+	baudRates     []int
 }
 
 func newMockSerialPort() *mockSerialPort {
@@ -888,8 +889,15 @@ func (m *mockSerialPort) Close() error {
 }
 
 func (m *mockSerialPort) SetReadTimeout(time.Duration) error { return nil }
-func (m *mockSerialPort) ResetInputBuffer() error            { return nil }
-func (m *mockSerialPort) SetDTR(bool) error                  { return nil }
+func (m *mockSerialPort) SetMode(mode *serial.Mode) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.baudRates = append(m.baudRates, mode.BaudRate)
+	return nil
+}
+
+func (m *mockSerialPort) ResetInputBuffer() error { return nil }
+func (m *mockSerialPort) SetDTR(bool) error       { return nil }
 func (m *mockSerialPort) SetRTS(on bool) error {
 	if on {
 		m.mu.Lock()

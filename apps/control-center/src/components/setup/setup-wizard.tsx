@@ -921,9 +921,12 @@ export function SetupWizard(props: SetupWizardProps) {
           Last. A failed firmware check landing on top of "Finish AI setup on
           this Mac" left a customer with two stacked cards and neither
           answerable. A scan that could not be made is a failure of this step
-          too, so its dialog wins the same way.
+          too, so its dialog wins the same way. A running connect sequence
+          holds it back as well: its firmware install owns the screen, and a
+          Repair pressed mid-update restarts the service running it.
         */}
-        {connect.failure ||
+        {connectInFlight ||
+        connect.failure ||
         wifiError ||
         searchFailed ||
         (props.searchError && !searchErrorDismissed) ||

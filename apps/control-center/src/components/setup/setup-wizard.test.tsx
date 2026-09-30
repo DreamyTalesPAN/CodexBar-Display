@@ -2006,6 +2006,41 @@ describe("SetupWizard with a broken usage service", () => {
     expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
   });
 
+  // A usage incident raised mid-update offered Repair, which restarts the
+  // background service that is running the firmware install.
+  it("holds it back while the connect sequence installs firmware", async () => {
+    let finishInstall: () => void = () => {};
+    const props = baseProps({
+      step: "device",
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      usageFailure: "setup_incomplete",
+      onRepairUsageService: vi.fn(),
+      connectSteps: {
+        connect: vi.fn(async () => ({})),
+        checkFirmware: vi.fn(async () => ({ from: "1.0.0", to: "1.1.0" })),
+        installFirmware: vi.fn(
+          () => new Promise<void>((resolve) => (finishInstall = resolve)),
+        ),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+
+    await act(async () => finishInstall());
+    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+  });
+
   it("lets the customer put the incident away", () => {
     const onDismissUsageFailure = vi.fn();
     render(
