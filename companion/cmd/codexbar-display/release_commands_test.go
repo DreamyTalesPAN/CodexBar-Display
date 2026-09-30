@@ -941,10 +941,13 @@ func TestRunInstallUpdateCableHappyPath(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte) error {
+	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte, progress func(int, int)) error {
 		if port != "/dev/mock-cable" || deviceID != "device-cable" || token != "pair-token" || string(image) != "cable firmware" {
 			t.Fatalf("unexpected Cable transfer port=%q id=%q token=%q image=%q", port, deviceID, token, image)
 		}
+		progress(1, 4)
+		progress(1, 4)
+		progress(4, 4)
 		*firmwareVersion = "1.0.1"
 		return nil
 	}
@@ -958,6 +961,9 @@ func TestRunInstallUpdateCableHappyPath(t *testing.T) {
 	if !strings.Contains(output, `"uploadAccepted":true`) || !strings.Contains(output, `"observedFirmware":"1.0.1"`) {
 		t.Fatalf("Cable update did not report accepted and verified firmware:\n%s", output)
 	}
+	if strings.Count(output, "Writing firmware: 25%") != 1 || !strings.Contains(output, "Writing firmware: 100%") {
+		t.Fatalf("Cable update did not report upload progress once per percent:\n%s", output)
+	}
 }
 
 func TestRunInstallUpdateCableAlreadyCurrentSkipsTransfer(t *testing.T) {
@@ -966,7 +972,7 @@ func TestRunInstallUpdateCableAlreadyCurrentSkipsTransfer(t *testing.T) {
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error {
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, func(int, int)) error {
 		t.Fatal("already-current Cable firmware must not transfer")
 		return nil
 	}
@@ -985,7 +991,7 @@ func TestRunInstallUpdateCableReportsInterruptedTransferWithoutRetry(t *testing.
 		t.Fatal(err)
 	}
 	transferCalls := 0
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error {
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, func(int, int)) error {
 		transferCalls++
 		return fmt.Errorf("%w: Cable disconnected", usb.ErrCableTransferInterrupted)
 	}
@@ -1024,7 +1030,7 @@ func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error { return nil }
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, func(int, int)) error { return nil }
 	cableFirmwareVerifyTimeout = 5 * time.Millisecond
 	cableFirmwareVerifyPollInterval = time.Millisecond
 

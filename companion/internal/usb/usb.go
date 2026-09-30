@@ -133,11 +133,11 @@ func PrepareThemeInstall(ctx context.Context, port, deviceID, token, slot string
 }
 
 func TransferAsset(ctx context.Context, port, deviceID, token, destination, activation string, payload []byte) error {
-	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkAsset, destination, activation, payload)
+	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkAsset, destination, activation, payload, nil)
 }
 
-func TransferFirmware(ctx context.Context, port, deviceID, token string, payload []byte) error {
-	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkFirmware, "", "", payload)
+func TransferFirmware(ctx context.Context, port, deviceID, token string, payload []byte, progress func(sent, total int)) error {
+	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkFirmware, "", "", payload, progress)
 }
 
 func CloseDefaultSender() {

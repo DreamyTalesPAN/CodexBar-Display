@@ -33,7 +33,7 @@ func TestSenderTransfersAssetWithOneAcknowledgedChunkInFlight(t *testing.T) {
 		HelloWindow: 10 * time.Millisecond,
 	})
 
-	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload); err != nil {
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload, nil); err != nil {
 		t.Fatalf("transfer asset: %v", err)
 	}
 	if len(port.writePayloads) != 4 {
@@ -93,7 +93,7 @@ func TestSenderAbortsWhenDeviceRejectsChunkBeforeAcknowledgement(t *testing.T) {
 		HelloWindow: 10 * time.Millisecond,
 	})
 
-	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", payload)
+	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", payload, nil)
 	if err == nil {
 		t.Fatal("expected rejected chunk")
 	}
@@ -145,10 +145,10 @@ func TestSenderCanTransferAfterRejectedTransfer(t *testing.T) {
 		HelloWindow: 10 * time.Millisecond,
 	})
 
-	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/first.cba", "", []byte("first")); err == nil {
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/first.cba", "", []byte("first"), nil); err == nil {
 		t.Fatal("expected first transfer to fail")
 	}
-	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/second.cba", "theme", []byte("second")); err != nil {
+	if err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/second.cba", "theme", []byte("second"), nil); err != nil {
 		t.Fatalf("second transfer: %v", err)
 	}
 	if opener.openCount("/dev/mock") != 2 {
@@ -164,7 +164,7 @@ func TestSenderReportsMissingStartAcknowledgementAsInterrupted(t *testing.T) {
 		HelloWindow: time.Millisecond,
 	})
 
-	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", []byte("firmware"))
+	err := sender.Transfer(context.Background(), "/dev/mock", "14799300", "paired-token", TransferSinkFirmware, "", "", []byte("firmware"), nil)
 	if !errors.Is(err, ErrCableTransferInterrupted) {
 		t.Fatalf("missing ready acknowledgement must report interrupted transfer: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestSenderAbortsWhenContextIsCanceledAfterAcknowledgedChunk(t *testing.T) {
 	})
 	payload := make([]byte, cableTransferChunkBytes+1)
 
-	err := sender.Transfer(ctx, "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload)
+	err := sender.Transfer(ctx, "/dev/mock", "14799300", "paired-token", TransferSinkAsset, "/themes/u/test.cba", "theme", payload, nil)
 	if !errors.Is(err, ErrCableTransferInterrupted) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled transfer must be interrupted: %v", err)
 	}

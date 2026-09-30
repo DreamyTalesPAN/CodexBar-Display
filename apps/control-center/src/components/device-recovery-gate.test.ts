@@ -3,7 +3,6 @@ import {
   applyDeviceRecoveryStatus,
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
-  DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
   deviceRecoveryConfirmedLoss,
   selectRecoveryDevice,
 } from "./device-recovery-gate";
@@ -91,12 +90,13 @@ describe("device recovery gate", () => {
     expect(result.state.failedNormalChecks).toBe(0);
   });
 
-  it("uses a longer grace while firmware or theme operations are running", () => {
+  it("never counts misses while a firmware or theme operation is running", () => {
     let state = selectRecoveryDevice(createDeviceRecoveryGateState(), {
       deviceId: "stable-a",
     });
 
-    for (let index = 1; index < DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT; index += 1) {
+    // A USB firmware upload keeps the VibeTV unreachable for minutes.
+    for (let index = 0; index < 100; index += 1) {
       const result = applyDeviceRecoveryStatus(state, {
         device: null,
         operationInProgress: true,
@@ -104,12 +104,12 @@ describe("device recovery gate", () => {
       expect(result.openPicker).toBe(false);
       state = result.state;
     }
+    expect(state.failedNormalChecks).toBe(0);
 
-    const threshold = applyDeviceRecoveryStatus(state, {
-      device: null,
-      operationInProgress: true,
-    });
-    expect(threshold.openPicker).toBe(true);
+    for (let index = 1; index < DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT; index += 1) {
+      state = applyDeviceRecoveryStatus(state, { device: null }).state;
+    }
+    expect(applyDeviceRecoveryStatus(state, { device: null }).openPicker).toBe(true);
   });
 
   it("auto-closes a confirmed-loss picker when the preferred VibeTV reappears", () => {

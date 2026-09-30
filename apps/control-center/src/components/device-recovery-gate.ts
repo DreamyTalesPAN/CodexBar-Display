@@ -1,7 +1,6 @@
 import type { DeviceInfo } from "./control-center-types";
 
 export const DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT = 3;
-export const DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT = 12;
 
 export type DeviceRecoveryPickerReason = "confirmed-loss";
 
@@ -104,7 +103,11 @@ export function applyDeviceRecoveryStatus(
     };
   }
 
-  if (status.countFailure === false) {
+  // A running firmware or theme job owns its own outcome. A USB firmware
+  // upload takes about five minutes with the VibeTV unreachable throughout,
+  // so counting those misses declared it lost mid-update and started a
+  // search the Companion refuses while the update runs.
+  if (status.countFailure === false || status.operationInProgress) {
     return {
       acceptDevice: acceptConfiguredDevice,
       closePicker: false,
@@ -114,11 +117,9 @@ export function applyDeviceRecoveryStatus(
   }
 
   const failedNormalChecks = state.failedNormalChecks + 1;
-  const failureLimit = status.operationInProgress
-    ? DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT
-    : DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT;
   const openPicker =
-    failedNormalChecks >= failureLimit && state.pickerReason !== "confirmed-loss";
+    failedNormalChecks >= DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT &&
+    state.pickerReason !== "confirmed-loss";
 
   return {
     acceptDevice: acceptConfiguredDevice,

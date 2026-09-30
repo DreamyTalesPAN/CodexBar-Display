@@ -66,7 +66,8 @@ func (s *Sender) PrepareThemeInstall(ctx context.Context, pathName, deviceID, to
 	return nil
 }
 
-func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string, sink TransferSink, destination, activation string, payload []byte) error {
+// progress, when set, hears the bytes the device has accepted after every chunk.
+func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string, sink TransferSink, destination, activation string, payload []byte, progress func(sent, total int)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if ctx == nil {
@@ -162,6 +163,9 @@ func (s *Sender) Transfer(ctx context.Context, pathName, deviceID, token string,
 		sequence++
 		if err := s.sendTransferRequestLocked(pathName, request, "chunk", sequence); err != nil {
 			return fmt.Errorf("%w: %w", ErrCableTransferInterrupted, err)
+		}
+		if progress != nil {
+			progress(end, len(payload))
 		}
 	}
 	if err := ctx.Err(); err != nil {

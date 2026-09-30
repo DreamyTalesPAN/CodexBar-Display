@@ -743,7 +743,15 @@ func runInstallUpdate(args []string) (retErr error) {
 		var image []byte
 		image, uploadErr = os.ReadFile(imagePath)
 		if uploadErr == nil {
-			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image)
+			// The same line the rescue path prints, which the Companion already
+			// turns into the percentage the setup log and Updates screen show.
+			lastPercent := -1
+			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image, func(sent, total int) {
+				if percent := sent * 100 / total; percent != lastPercent {
+					lastPercent = percent
+					fmt.Printf("Writing firmware: %d%%\n", percent)
+				}
+			})
 		}
 		uploadInterrupted = errors.Is(uploadErr, usb.ErrCableTransferInterrupted)
 	} else {

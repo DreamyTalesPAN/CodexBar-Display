@@ -550,6 +550,17 @@ func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 	}
 }
 
+func TestFetchProviderSettingsTreatsUnreadableVersionAsUnavailable(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.63.0")
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return nil, context.DeadlineExceeded
+	}
+	_, err := FetchProviderSettings(context.Background())
+	if ProviderSettingsErrorKindOf(err) != ProviderSettingsErrorUnavailable {
+		t.Fatalf("expected unavailable error, got %v", err)
+	}
+}
+
 func TestSetProviderEnabledUsesExactProcessArguments(t *testing.T) {
 	withProviderCommandTestBinary(t, "0.63.0")
 	originalMode := providerProbePerProvider
