@@ -11,26 +11,21 @@ namespace agentactivity {
 enum class State : uint8_t { Unknown, Idle, Working, NeedsYou, Done, Error };
 inline State DisplayState(const char* phase) {
   if (phase == nullptr) return State::Unknown;
-  static const struct { const char* phase; State state; } phases[] = {
-    {"idle", State::Idle},
-    {"coding", State::Working}, {"working", State::Working},
-    {"thinking", State::Working}, {"tool_use", State::Working},
-    {"compacting", State::Working},
-    {"waiting_for_permission", State::NeedsYou},
-    {"waiting_for_answer", State::NeedsYou},
-    {"waiting_for_review", State::NeedsYou},
-    {"done", State::Done}, {"error", State::Error},
-  };
-  for (const auto& item : phases) {
-    if (std::strcmp(phase, item.phase) == 0) return item.state;
+  // The observer's three waiting phases (permission, answer, review).
+  if (std::strncmp(phase, "waiting_for_", 12) == 0) return State::NeedsYou;
+  if (std::strcmp(phase, "idle") == 0) return State::Idle;
+  if (std::strcmp(phase, "done") == 0) return State::Done;
+  if (std::strcmp(phase, "error") == 0) return State::Error;
+  for (const char* working : {"coding", "working", "thinking", "tool_use", "compacting"}) {
+    if (std::strcmp(phase, working) == 0) return State::Working;
   }
   return State::Unknown;
 }
 inline bool IsWorking(const char* value) { return DisplayState(value) == State::Working; }
 
+// Stale already renders as unknown, like an expired lease, so it needs none.
 inline bool HasLease(const char* value) {
-  if (value == nullptr || std::strcmp(value, "coding") == 0) return false;
-  return DisplayState(value) > State::Idle || std::strcmp(value, "stale") == 0;
+  return value != nullptr && std::strcmp(value, "coding") != 0 && DisplayState(value) > State::Idle;
 }
 inline void StatusText(const char* phase, const char* name, char* out, size_t size) {
   const State state = DisplayState(phase);
