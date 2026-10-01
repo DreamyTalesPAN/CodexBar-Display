@@ -21,7 +21,6 @@ import { buildThemePack } from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
-  checkForMacAppUpdate,
   companionRequestUrl,
   finishCodexBarRecovery,
   isLocalCompanionOrigin,
@@ -4925,7 +4924,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onSearchDevices={() => void searchAndConnect()}
           onScanWiFiNetworks={scanSetupWiFiNetworks}
           onSelectConnectionMode={selectSetupConnectionMode}
-          onUpdateMacApp={checkForMacAppUpdate}
           displaySavePending={pendingProviderDisplayId !== null}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}
