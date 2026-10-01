@@ -589,20 +589,35 @@ func (c *providerCollector) providerEnabledByInventory(provider string) (bool, b
 	return enabled, true
 }
 
-// providerDisabledByCurrentInventory reports whether the latest collection's
-// own inventory read lists the provider as switched off.
-func (c *providerCollector) providerDisabledByCurrentInventory(provider string) bool {
+// providerOffByInventory reports whether the last inventory read lists the
+// provider as switched off, and whether that read belongs to the latest
+// collection. An older map may say a provider is off after it was switched on
+// again, so only a current read may start a fallback; a failed read in between
+// must not end one that is already running.
+func (c *providerCollector) providerOffByInventory(provider string) (off, current bool) {
 	if c == nil {
-		return false
+		return false, false
 	}
 	key := normalizeProviderKey(provider)
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if !c.inventoryCurrent || key == "" {
+	if !c.inventoryKnown || key == "" {
+		return false, false
+	}
+	_, off = c.inventoryDisabled[key]
+	return off, c.inventoryCurrent
+}
+
+// inventoryPending is true until the first collection since start has read
+// the inventory or settled without it. Until then nothing can confirm that a
+// Manual provider is off.
+func (c *providerCollector) inventoryPending() bool {
+	if c == nil || c.fetchInventory == nil {
 		return false
 	}
-	_, disabled := c.inventoryDisabled[key]
-	return disabled
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return !c.inventoryKnown && !c.firstCollectDone
 }
 
 func equalProviderOrder(left, right []string) bool {

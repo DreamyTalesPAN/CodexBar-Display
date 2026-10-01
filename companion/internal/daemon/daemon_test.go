@@ -6494,7 +6494,7 @@ func TestApplyProviderDisplaySelectionFallsBackWhenFixedProviderIsNotCollected(t
 		t.Fatalf("fallback=%q hasLastGood=%v want fallback kept with last-good frame", state.providerDisplayFallback, state.hasLastGood)
 	}
 
-	invalidateLastGoodOutsideProviderDisplay(state, deps)
+	invalidateLastGoodOutsideProviderDisplay(state, deps, nil, false)
 	if !state.hasLastGood {
 		t.Fatalf("fallback frame was cleared as outside the provider display")
 	}
@@ -6517,7 +6517,7 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderOmittedWhileEnabled(t *t
 		Mode:        "fixed",
 		ProviderIDs: []string{"codex"},
 	})
-	for name, disabled := range map[string]func(string) bool{
+	for name, disabled := range map[string]providerOffFunc{
 		"no inventory":     nil,
 		"codex is enabled": disabledProviders(),
 	} {
@@ -6529,14 +6529,24 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderOmittedWhileEnabled(t *t
 	}
 }
 
-func disabledProviders(ids ...string) func(string) bool {
-	return func(provider string) bool {
+func disabledProviders(ids ...string) providerOffFunc {
+	return func(provider string) (bool, bool) {
 		for _, id := range ids {
 			if id == provider {
-				return true
+				return true, true
 			}
 		}
-		return false
+		return false, true
+	}
+}
+
+// olderInventoryDisabled is an inventory whose last successful read listed ids
+// as off, while the latest collection's own read failed.
+func olderInventoryDisabled(ids ...string) providerOffFunc {
+	current := disabledProviders(ids...)
+	return func(provider string) (bool, bool) {
+		off, _ := current(provider)
+		return off, false
 	}
 }
 
@@ -6562,8 +6572,8 @@ func TestProviderDisabledByCurrentInventoryIgnoresAStaleInventory(t *testing.T) 
 		},
 	}
 	collector.collectOnce(context.Background())
-	if !collector.providerDisabledByCurrentInventory("codex") {
-		t.Fatalf("current inventory with codex off was not trusted")
+	if off, current := collector.providerOffByInventory("codex"); !off || !current {
+		t.Fatalf("off=%v current=%v want the current inventory with codex off trusted", off, current)
 	}
 
 	// Codex is switched on again outside the app, and this collection's
@@ -6571,14 +6581,14 @@ func TestProviderDisabledByCurrentInventoryIgnoresAStaleInventory(t *testing.T) 
 	codexEnabled = true
 	inventoryOK = false
 	collector.collectOnce(context.Background())
-	if collector.providerDisabledByCurrentInventory("codex") {
-		t.Fatalf("stale inventory still reports codex off after a failed inventory read")
+	if _, current := collector.providerOffByInventory("codex"); current {
+		t.Fatalf("an older inventory was reported as current after a failed inventory read")
 	}
 
 	// A provider missing from the inventory, e.g. retired, is unknown, not off.
 	inventoryOK = true
 	collector.collectOnce(context.Background())
-	if collector.providerDisabledByCurrentInventory("retired") {
+	if off, _ := collector.providerOffByInventory("retired"); off {
 		t.Fatalf("a provider missing from the inventory was treated as switched off")
 	}
 }
@@ -6608,7 +6618,7 @@ func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {
 		ProviderIDs: []string{"cursor"},
 	})
 	cursorDeps.logf = func(string, ...any) {}
-	invalidateLastGoodOutsideProviderDisplay(state, cursorDeps)
+	invalidateLastGoodOutsideProviderDisplay(state, cursorDeps, nil, false)
 	if state.hasLastGood || state.providerDisplayFallback != "" {
 		t.Fatalf("hasLastGood=%v fallback=%q want the old fallback frame cleared for the new Manual choice", state.hasLastGood, state.providerDisplayFallback)
 	}
@@ -6632,14 +6642,14 @@ func TestProviderDisplayFallbackEndsWhenAutomaticIsSaved(t *testing.T) {
 	invalidateLastGoodOutsideProviderDisplay(state, providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
 		Mode:        "automatic",
 		ProviderIDs: []string{"claude"},
-	}))
+	}), nil, false)
 	if state.providerDisplayFallback != "" {
 		t.Fatalf("fallback=%q survived the switch to Automatic", state.providerDisplayFallback)
 	}
 
 	// Codex is on again and the customer picks Manual Codex anew: before a
 	// fetch succeeds, the Claude frame must not stand in for it.
-	invalidateLastGoodOutsideProviderDisplay(state, manualCodex)
+	invalidateLastGoodOutsideProviderDisplay(state, manualCodex, nil, false)
 	if state.hasLastGood {
 		t.Fatalf("the Claude frame from the earlier fallback crossed a new Manual Codex choice")
 	}
@@ -6689,6 +6699,151 @@ func TestRunCycleFromCollectorSendsRemainingProviderWhenFixedProviderIsDisabled(
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Error != "" || frame.Provider != "claude" || frame.Session != 26 {
 		t.Fatalf("sent frame=%+v want claude usage instead of a blank no-providers frame", frame)
+	}
+}
+
+// manualCodexFallbackFixture is Manual pinned to Codex, Codex switched off in
+// CodexBar, Claude with usage. fetchOK and inventoryOK switch the two CodexBar
+// reads on and off.
+func manualCodexFallbackFixture(now *time.Time, fetchOK, inventoryOK *bool, sent *[]byte) (*providerCollector, runtimeDeps) {
+	cfg := runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	}}
+	collector := &providerCollector{
+		now:            func() time.Time { return *now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			if !*fetchOK {
+				return nil, context.DeadlineExceeded
+			}
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			if !*inventoryOK {
+				return nil, errors.New("temporary inventory failure")
+			}
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: false},
+				{ID: "claude", Enabled: true},
+			}, nil
+		},
+	}
+	deps := runtimeDeps{
+		now:         func() time.Time { return *now },
+		homeDir:     func() (string, error) { return "/test-home", nil },
+		loadConfig:  func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			*sent = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	}
+	return collector, deps
+}
+
+func TestProviderDisplayFallbackSurvivesAFailedCodexBarRead(t *testing.T) {
+	// A running fallback must not turn into a no-providers screen because one
+	// CodexBar read failed: the inventory read alone, or both reads (a
+	// timeout uses up the context the inventory read shares).
+	for name, fetchOK := range map[string]bool{"inventory read fails": true, "both reads fail": false} {
+		t.Run(name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
+			fetch, inventory := true, true
+			var sent []byte
+			collector, deps := manualCodexFallbackFixture(&now, &fetch, &inventory, &sent)
+			state := &runtimeState{selector: codexbar.NewProviderSelector()}
+			collector.collectOnce(context.Background())
+			if err := runCycleFromCollector(context.Background(), "", state, collector, deps); err != nil {
+				t.Fatalf("first cycle: %v", err)
+			}
+			if frame := decodeFrameLine(t, sent); frame.Error != "" || frame.Provider != "claude" {
+				t.Fatalf("first frame=%+v want the claude fallback", frame)
+			}
+
+			now = now.Add(time.Minute)
+			fetch, inventory = fetchOK, false
+			collector.collectOnce(context.Background())
+			sent = nil
+			if err := runCycleFromCollector(context.Background(), "", state, collector, deps); err != nil {
+				t.Fatalf("cycle after the failed read: %v", err)
+			}
+			// Nothing sent keeps the claude frame on the device; whatever is
+			// sent must be that frame, not a no-providers screen.
+			if len(sent) > 0 {
+				if frame := decodeFrameLine(t, sent); frame.Error != "" || frame.Provider != "claude" {
+					t.Fatalf("frame after the failed read=%+v want the claude fallback kept", frame)
+				}
+			}
+			if !state.hasLastGood {
+				t.Fatalf("claude fallback frame dropped by a failed read")
+			}
+			if state.providerDisplayFallback != "fixed:codex" {
+				t.Fatalf("fallback=%q ended by a failed read", state.providerDisplayFallback)
+			}
+		})
+	}
+}
+
+func TestProviderDisplayFallbackDoesNotStartFromAnOlderInventory(t *testing.T) {
+	// Only a current read may start a fallback: the older map may say off for
+	// a provider that has been switched on again since.
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps, olderInventoryDisabled("codex"))
+	if len(got) != 0 || state.providerDisplayFallback != "" {
+		t.Fatalf("got=%+v fallback=%q want no fallback from an older inventory", got, state.providerDisplayFallback)
+	}
+}
+
+func TestProviderDisplayFallbackFrameSurvivesARestart(t *testing.T) {
+	// The fallback is kept in memory only. After a restart the saved Claude
+	// frame must stay while CodexBar has not answered yet, and while the
+	// inventory still lists Codex as off.
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
+	fetch, inventory := true, true
+	var sent []byte
+	collector, deps := manualCodexFallbackFixture(&now, &fetch, &inventory, &sent)
+	state := initializeRuntimeState(now, Options{}, deps.withDefaults())
+	collector.collectOnce(context.Background())
+	if err := runCycleFromCollector(context.Background(), "", state, collector, deps); err != nil {
+		t.Fatalf("first cycle: %v", err)
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); !ok {
+		t.Fatalf("fallback frame was not saved")
+	}
+
+	// Restart while CodexBar is still starting.
+	now = now.Add(time.Minute)
+	fetch, inventory = false, false
+	collector, deps = manualCodexFallbackFixture(&now, &fetch, &inventory, &sent)
+	restarted := initializeRuntimeState(now, Options{}, deps.withDefaults())
+	if !restarted.hasLastGood {
+		t.Fatalf("saved fallback frame not loaded on restart")
+	}
+	invalidateLastGoodOutsideProviderDisplay(restarted, deps, collector.providerOffByInventory, collector.inventoryPending())
+	if !restarted.hasLastGood {
+		t.Fatalf("saved fallback frame dropped before CodexBar answered")
+	}
+
+	// CodexBar answers and still lists Codex as off.
+	fetch, inventory = true, true
+	collector.collectOnce(context.Background())
+	invalidateLastGoodOutsideProviderDisplay(restarted, deps, collector.providerOffByInventory, collector.inventoryPending())
+	if !restarted.hasLastGood {
+		t.Fatalf("saved fallback frame dropped although Codex is still off")
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); !ok {
+		t.Fatalf("saved fallback frame deleted although Codex is still off")
 	}
 }
 
