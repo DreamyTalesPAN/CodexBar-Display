@@ -90,7 +90,6 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     pendingCheckIds: new Set<string>(),
     pendingPreferenceIds: new Set<string>(),
     providersLoading: false,
-    onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
     // Two switched on: with one, the display step is skipped (issue #423).
     providers: [provider(), provider("claude", "Claude")],

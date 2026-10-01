@@ -76,6 +76,34 @@ func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
 	}
 }
 
+// DO NOT weaken this test. A customer app must update VibeTV only to the
+// firmware of its own release; reading the latest release's manifest let an
+// older app fall behind a fresh release and strand the customer mid-setup.
+func TestPinFirmwareManifestToAppRelease(t *testing.T) {
+	const envKey = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	for _, tc := range []struct {
+		name, customer, version, override, want string
+	}{
+		{"customer install pins its release", "1", "1.0.59", "", "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.59/firmware-manifest.json"},
+		{"build metadata is not part of the tag", "1", "1.0.61+35452196724", "", "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.61/firmware-manifest.json"},
+		{"explicit override wins", "1", "1.0.59", "http://127.0.0.1:9/m.json", "http://127.0.0.1:9/m.json"},
+		{"dev build keeps latest", "", "1.0.59", "", ""},
+		{"unknown version keeps latest", "1", "", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("VIBETV_DISABLE_MAC_APP_SELF_UPDATE", tc.customer)
+			t.Setenv("VIBETV_MAC_APP_VERSION", tc.version)
+			t.Setenv(envKey, tc.override)
+			if err := pinFirmwareManifestToAppRelease(); err != nil {
+				t.Fatal(err)
+			}
+			if got := os.Getenv(envKey); got != tc.want {
+				t.Fatalf("%s=%q want %q", envKey, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseDaemonCommandOptionsAllowsAPIFallback(t *testing.T) {
 	opts, err := parseDaemonCommandOptions([]string{
 		"--transport", "wifi",

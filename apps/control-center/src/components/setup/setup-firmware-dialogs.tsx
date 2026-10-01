@@ -1,28 +1,24 @@
 "use client";
 
-import { CircleAlert, Download, RefreshCw } from "lucide-react";
+import { CircleAlert, RefreshCw } from "lucide-react";
 import { copyForHost } from "@/lib/customer-platform";
 import { SetupDialog } from "./setup-dialog";
 
 /**
- * Why the firmware step could not finish: the companion refuses the install
- * outright in three of these, and in the fourth the check itself never
- * answered. The connect flow shows the customer what to do instead of moving
- * on without the update, or without knowing whether one was needed.
+ * Why the firmware step could not finish: either the check itself never
+ * answered, or the app was restarting. The connect flow shows the customer
+ * what to do instead of moving on without the update, or without knowing
+ * whether one was needed. A newer app release never blocks it: the app
+ * installs the firmware of its own release.
  */
 export type FirmwareBlockedReason =
   | "firmware_check_failed"
-  | "mac_app_update_required"
-  | "mac_app_release_check_failed"
   | "mac_app_restarting";
 
 export function firmwareBlockedReason(
   code: string | undefined,
 ): FirmwareBlockedReason | null {
-  return code === "firmware_check_failed" ||
-    code === "mac_app_update_required" ||
-    code === "mac_app_release_check_failed" ||
-    code === "mac_app_restarting"
+  return code === "firmware_check_failed" || code === "mac_app_restarting"
     ? code
     : null;
 }
@@ -38,18 +34,6 @@ export const FIRMWARE_BLOCKED_COPY: Record<
     action: "Try again",
     description: "Check the internet connection, then try again.",
     title: "Could not check VibeTV's firmware",
-  },
-  // The Mac App and the firmware of a release belong together, so an older app
-  // is not allowed to push newer firmware. The customer can settle it here.
-  mac_app_update_required: {
-    action: "Update",
-    description: "Update the Mac App first, then VibeTV can update too.",
-    title: "Your Mac App is out of date",
-  },
-  mac_app_release_check_failed: {
-    action: "Try again",
-    description: "Check the internet connection, then try again.",
-    title: "Could not check the Mac App",
   },
   mac_app_restarting: {
     action: "Try again",
@@ -80,12 +64,12 @@ export function SetupFirmwareBlockedDialog({
   return (
     <SetupDialog
       description={copyForHost(copy.description, windowsHost)}
-      icon={reason === "mac_app_update_required" ? Download : RefreshCw}
+      icon={RefreshCw}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ busy, label: copy.action, onSelect: onResolve }}
       title={copyForHost(copy.title, windowsHost)}
-      tone={reason === "mac_app_update_required" ? "neutral" : "error"}
+      tone="error"
     />
   );
 }
