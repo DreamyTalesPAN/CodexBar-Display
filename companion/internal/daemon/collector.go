@@ -33,7 +33,9 @@ type providerSnapshot struct {
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
-	Terminal            bool                       `json:"-"`
+	// Terminal survives a restart: a reload must not turn a known terminal
+	// error back into stale data that keeps an old last-good frame alive.
+	Terminal bool `json:"terminal,omitempty"`
 }
 
 type persistedProviderSnapshots struct {

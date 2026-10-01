@@ -138,3 +138,42 @@ func TestRunCycleFromCollectorSoleProviderTerminalErrorDropsLastGood(t *testing.
 		})
 	}
 }
+
+// A restart between clearing the provider snapshot and clearing the separate
+// last-good frame must still drop that frame, even if CodexBar does not answer
+// the first fetch after the restart.
+func TestTerminalVerdictSurvivesRestartAndDropsLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	frames := []codexbar.ParsedFrame{testParsedFrame("gemini", 73, 21, 3600)}
+	collector := terminalTestCollector(&now, &frames)
+	collector.collectOnce(context.Background())
+	now = now.Add(time.Minute)
+	frames = []codexbar.ParsedFrame{terminalTestFrame("gemini", true)}
+	collector.collectOnce(context.Background())
+	if err := persistProviderSnapshots(collector.providers, now); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+
+	loaded, _, ok := loadPersistedProviderSnapshotsAnyAge()
+	if !ok || !loaded["gemini"].Terminal {
+		t.Fatalf("terminal verdict lost on reload: ok=%v %#v", ok, loaded["gemini"])
+	}
+
+	restarted := terminalTestCollector(&now, &frames)
+	restarted.providers = loaded
+	restarted.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, context.DeadlineExceeded
+	}
+	restarted.collectOnce(context.Background())
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "gemini", Session: 73, Weekly: 21},
+		lastGoodAt:  now,
+		hasLastGood: true,
+	}
+	invalidateLastGoodTerminal(state, restarted.providerFrames(now), runtimeDeps{logf: func(string, ...any) {}})
+	if state.hasLastGood {
+		t.Fatalf("obsolete Gemini last-good survived the restart")
+	}
+}
