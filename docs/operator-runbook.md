@@ -110,11 +110,14 @@ unset VIBETV_TOKEN
 ```
 
 An HTTP `401`/`403`, an empty token, or a different `deviceId` means the stored
-pairing cannot be trusted for that target. On firmware `1.0.39` and newer,
+pairing cannot be trusted for that target. Current firmware (#489) pairs only
+over the USB cable: connect the cable, switch to USB-C in the Mac App and use
+Settings → "Run setup again"; the WiFi repair below returns `404` there.
+On legacy firmware from `1.0.39` up to the last release before #489,
 explicit Connect replaces the token. Firmware `1.0.38` must first complete its
 legacy three-power-cycle WiFi recovery and return to home WiFi; Connect must
-then run within 30 minutes. In either case, with explicit approval for this
-device, use:
+then run within 30 minutes. For these legacy versions only, with explicit
+approval for this device, use:
 
 ```bash
 curl -fsS --max-time 90 \
