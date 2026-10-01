@@ -1204,14 +1204,14 @@ func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
 // Nil means no inventory is known, which never confirms it.
 type providerOffFunc func(provider string) (off, current bool)
 
-func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, providerOff providerOffFunc, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
+func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, providerOff providerOffFunc, inventoryPending bool, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
 	result := cycleResult{
 		selectionReason: emptyReason,
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
 	invalidateLastGoodTerminal(state, allProviders, deps)
-	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerOff)
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerOff, inventoryPending)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -1259,7 +1259,9 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	return result
 }
 
-func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc) []codexbar.ParsedFrame {
+// inventoryPending is true until the first collection since start has read
+// the inventory; until then a saved fallback frame is kept, not cleared.
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc, inventoryPending bool) []codexbar.ParsedFrame {
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok || cfg.ProviderDisplay == nil {
 		return preferAvailableProviders(providers)
@@ -1302,6 +1304,11 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			}
 		}
 		return preferAvailableProviders(providers)
+	}
+	// After a restart nothing can confirm the pinned provider is off until the
+	// first inventory read; the saved frame of a fallback stays until then.
+	if inventoryPending {
+		return filtered
 	}
 	// Not confirmed off (any more): the pinned provider's own state applies,
 	// including a temporary omission, which stays visibly unavailable.
@@ -1858,6 +1865,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			deps.now(),
 			deps,
 			nil,
+			false,
 			"select-provider",
 			"fetch-error",
 			"",
@@ -1872,7 +1880,8 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
-	invalidateLastGoodOutsideProviderDisplay(state, deps, collector.providerOffByInventory, collector.inventoryPending())
+	inventoryPending := collector.inventoryPending()
+	invalidateLastGoodOutsideProviderDisplay(state, deps, collector.providerOffByInventory, inventoryPending)
 	invalidateLastGoodDisabledByInventory(state, collector, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
@@ -1887,6 +1896,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		now,
 		deps,
 		collector.providerOffByInventory,
+		inventoryPending,
 		"select-provider",
 		"collector-empty",
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
