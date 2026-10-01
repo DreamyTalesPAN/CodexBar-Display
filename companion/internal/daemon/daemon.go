@@ -1204,14 +1204,14 @@ func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
 // Nil means no inventory is known, which never confirms it.
 type providerOffFunc func(provider string) (off, current bool)
 
-func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, providerOff providerOffFunc, inventoryPending bool, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
+func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, providerOff providerOffFunc, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
 	result := cycleResult{
 		selectionReason: emptyReason,
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
 	invalidateLastGoodTerminal(state, allProviders, deps)
-	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerOff, inventoryPending)
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerOff)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -1259,9 +1259,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	return result
 }
 
-// inventoryPending is true until the first collection since start has read
-// the inventory; until then a saved fallback frame is kept, not cleared.
-func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc, inventoryPending bool) []codexbar.ParsedFrame {
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc) []codexbar.ParsedFrame {
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok || cfg.ProviderDisplay == nil {
 		return preferAvailableProviders(providers)
@@ -1304,11 +1302,6 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			}
 		}
 		return preferAvailableProviders(providers)
-	}
-	// After a restart nothing can confirm the pinned provider is off until the
-	// first inventory read; the saved frame of a fallback stays until then.
-	if inventoryPending {
-		return filtered
 	}
 	// Not confirmed off (any more): the pinned provider's own state applies,
 	// including a temporary omission, which stays visibly unavailable.
@@ -1828,7 +1821,7 @@ func nextClockTransition(now time.Time) *protocol.ClockSchedule {
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
-	invalidateLastGoodOutsideProviderDisplay(state, deps, nil, false)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
@@ -1865,7 +1858,6 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			deps.now(),
 			deps,
 			nil,
-			false,
 			"select-provider",
 			"fetch-error",
 			"",
@@ -1880,8 +1872,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
-	inventoryPending := collector.inventoryPending()
-	invalidateLastGoodOutsideProviderDisplay(state, deps, collector.providerOffByInventory, inventoryPending)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 	invalidateLastGoodDisabledByInventory(state, collector, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
@@ -1896,7 +1887,6 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		now,
 		deps,
 		collector.providerOffByInventory,
-		inventoryPending,
 		"select-provider",
 		"collector-empty",
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
@@ -1965,9 +1955,7 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
 }
 
-// providerOff and inventoryPending come from the collector; without one (nil,
-// false) a last-good outside the Manual selection is always cleared.
-func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps, providerOff providerOffFunc, inventoryPending bool) {
+func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
 	if state == nil {
 		return
 	}
@@ -1985,24 +1973,13 @@ func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeD
 		state.providerDisplayFallback == providerDisplaySelectionKey(cfg.ProviderDisplay.ProviderIDs) {
 		return
 	}
+	state.providerDisplayFallback = ""
 	provider := normalizeProviderKey(state.lastGood.Provider)
-	allowed := make(map[string]struct{}, len(cfg.ProviderDisplay.ProviderIDs))
 	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
-		if key := normalizeProviderKey(providerID); key != "" {
-			allowed[key] = struct{}{}
+		if normalizeProviderKey(providerID) == provider {
+			return
 		}
 	}
-	if _, permitted := allowed[provider]; permitted {
-		state.providerDisplayFallback = ""
-		return
-	}
-	// The fallback lives in memory only. After a restart the saved frame of
-	// the fallback provider is still the right one to show while the pinned
-	// provider is off, or until the first inventory read can tell.
-	if inventoryPending || fixedSelectionDisabled(allowed, providerOff, true) {
-		return
-	}
-	state.providerDisplayFallback = ""
 
 	state.lastGood = protocol.Frame{}
 	state.lastGoodAt = time.Time{}

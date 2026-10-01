@@ -626,18 +626,6 @@ func (c *providerCollector) providerOffByInventory(provider string) (off, curren
 	return off, c.inventoryMissedReads == 0
 }
 
-// inventoryPending is true until the first collection since start has read
-// the inventory or settled without it. Until then nothing can confirm that a
-// Manual provider is off.
-func (c *providerCollector) inventoryPending() bool {
-	if c == nil || c.fetchInventory == nil {
-		return false
-	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return !c.inventoryKnown && !c.firstCollectDone
-}
-
 func equalProviderOrder(left, right []string) bool {
 	if len(left) != len(right) {
 		return false

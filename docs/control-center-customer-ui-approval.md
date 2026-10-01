@@ -4680,8 +4680,8 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Switching the named provider on again ends the hint for good. Switching it off later while Automatic is already active shows no hint, because nothing switched.
 - Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.
 
-## 2026-10-01 — Review follow-up: the automatic switch survives a failed CodexBar read and a restart
+## 2026-10-01 — Review follow-up: the automatic switch survives one failed CodexBar read
 
-- User approval: On 2026-10-01 Paul asked to review this pull request together with #474, test it on this Mac with the connected VibeTV, and fix every issue found directly. The review found that while the switch was active, one failed CodexBar read or a runtime restart before CodexBar answered replaced the remaining provider's usage on VibeTV with the no-providers screen.
-- Approved customer-visible result: No screen, dialog, button, or text changes. Once VibeTV has switched to the providers that are still on, it keeps showing them through a single failed CodexBar read and after a restart of the background service, exactly as approved in the first entry of 2026-09-25.
+- User approval: On 2026-10-01 Paul asked to review this pull request together with #474, test it on this Mac with the connected VibeTV, and fix every issue found directly. The review found that while the switch was active, a single failed CodexBar read replaced the remaining provider's usage on VibeTV with the no-providers screen.
+- Approved customer-visible result: No screen, dialog, button, or text changes. Once VibeTV has switched to the providers that are still on, it keeps showing them through one failed CodexBar read. A second failed read in a row ends the switch, because the Manual provider may have been switched on again meanwhile. After a restart of the background service the strict behaviour decided on 2026-09-25 stays: until CodexBar confirms the Manual provider is off, nothing else is shown in its place.
 - Scope: `companion/internal/daemon/collector.go`, `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
