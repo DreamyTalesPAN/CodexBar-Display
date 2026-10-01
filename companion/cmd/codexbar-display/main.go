@@ -359,7 +359,9 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 // latest one. App and firmware of a release belong together, so an app only
 // ever installs the firmware it shipped with, and publishing a newer release
 // cannot strand an older app halfway through setup. An explicit manifest
-// override (bench and rehearsal setups) wins.
+// override (bench and rehearsal setups) wins. A build whose release is not
+// published (CI builds, a candidate before its release) keeps the latest
+// manifest, as before.
 func pinFirmwareManifestToAppRelease() error {
 	if os.Getenv("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1" ||
 		strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL")) != "" {
@@ -369,10 +371,23 @@ func pinFirmwareManifestToAppRelease() error {
 	if err != nil {
 		return nil
 	}
-	return os.Setenv(
-		"CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL",
-		githubReleaseAssetURL(defaultReleaseRepo, "v"+version.String(), "firmware-manifest.json"),
-	)
+	manifestURL := githubReleaseAssetURL(defaultReleaseRepo, "v"+version.String(), "firmware-manifest.json")
+	if firmwareManifestMissing(manifestURL) {
+		return nil
+	}
+	return os.Setenv("CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL", manifestURL)
+}
+
+// firmwareManifestMissing reports only a definitive 404. Any other answer,
+// including no network at startup, keeps the pin.
+var firmwareManifestMissing = func(manifestURL string) bool {
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Head(manifestURL)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusNotFound
 }
 
 func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {

@@ -81,6 +81,11 @@ func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
 // older app fall behind a fresh release and strand the customer mid-setup.
 func TestPinFirmwareManifestToAppRelease(t *testing.T) {
 	const envKey = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	published := firmwareManifestMissing
+	t.Cleanup(func() { firmwareManifestMissing = published })
+	firmwareManifestMissing = func(manifestURL string) bool {
+		return strings.Contains(manifestURL, "/v9999.0.1/")
+	}
 	for _, tc := range []struct {
 		name, customer, version, override, want string
 	}{
@@ -89,6 +94,7 @@ func TestPinFirmwareManifestToAppRelease(t *testing.T) {
 		{"explicit override wins", "1", "1.0.59", "http://127.0.0.1:9/m.json", "http://127.0.0.1:9/m.json"},
 		{"dev build keeps latest", "", "1.0.59", "", ""},
 		{"unknown version keeps latest", "1", "", "", ""},
+		{"unpublished release keeps latest", "1", "9999.0.1", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("VIBETV_DISABLE_MAC_APP_SELF_UPDATE", tc.customer)
