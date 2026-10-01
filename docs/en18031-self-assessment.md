@@ -145,8 +145,8 @@ Manual on hardware (open, to be run before release):
   automated.
 - **Support period:** to be stated in the declaration of conformity and on the
   product page (proposal: security updates for at least 5 years from sale).
-- **Vulnerability contact:** security@vibetv.shop *(placeholder — address to be
-  created and published on vibetv.shop)*.
+- **Vulnerability contact:** hello@vibetv.shop. Still to be published as the
+  security contact on vibetv.shop.
 - **RNG caveat:** the ESP8266 hardware RNG is documented as truly random while
   the radio is on. USB pairing can run with the radio off. The lab should
   confirm whether this is acceptable or whether pairing must mix in radio
@@ -163,4 +163,3 @@ choose not to set or use a password". VibeTV has no user password at all: the
 the network interface only carries display data behind a random 128 bit token.
 Please confirm that this satisfies AUM-1/ACM for Art. 3(3)(d)/(e), or whether a
 notified-body assessment is required instead of self-declaration.
-
