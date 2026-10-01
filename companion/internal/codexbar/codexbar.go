@@ -1432,14 +1432,14 @@ func providerPayloadHasError(payload map[string]any) bool {
 	}
 }
 
-// providerErrorIsTerminal reports CodexBar's explicit end-of-support
-// statement for a provider. CodexBar exports provider failures as
-// {code, kind, message} without a typed reason, so its own sentence is the
-// contract: GeminiConsumerTierMigration.deprecationError, byte-identical in
-// the bundled 0.46.0 and in 0.63.0. Every other error is transient here and
-// keeps the bounded last-good quota.
+// providerErrorIsTerminal reports CodexBar's own end-of-support statement for
+// a provider. CodexBar exports provider failures as {code, kind, message}
+// without a typed reason, so the one central classification decides: whatever
+// classifyProviderError calls unsupported (today both Gemini CLI OAuth
+// shutdown sentences) voids the retained quota. Every other error is transient
+// here and keeps the bounded last-good quota.
 func providerErrorIsTerminal(detail string) bool {
-	return strings.Contains(strings.ToLower(detail), "no longer supports gemini cli oauth")
+	return classifyProviderError(detail) == ProviderUnsupported
 }
 
 const (

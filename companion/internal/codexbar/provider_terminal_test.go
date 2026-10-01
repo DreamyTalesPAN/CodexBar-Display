@@ -45,3 +45,23 @@ func TestDashboardProviderCarriesTerminalError(t *testing.T) {
 		t.Fatalf("transient dashboard error marked terminal: %#v", got)
 	}
 }
+
+// Terminal follows the central classification, so both bundled Gemini CLI
+// OAuth shutdown sentences void the retained quota, while a sentence that only
+// mentions Antigravity beside a real repair stays transient.
+func TestProviderErrorIsTerminalFollowsUnsupportedClassification(t *testing.T) {
+	for _, detail := range []string{geminiConsumerShutdown, geminiRefreshShutdown} {
+		if !providerErrorIsTerminal(detail) {
+			t.Fatalf("shutdown sentence not terminal: %q", detail)
+		}
+	}
+	for _, detail := range []string{
+		"Gemini CLI is outdated. Reinstall or update Gemini CLI. Individual accounts should use CodexBar's Antigravity provider instead. Workspace and education accounts should keep using Gemini.",
+		"Not logged in to Gemini. Run 'gemini' in Terminal to authenticate.",
+		"Gemini quota API request timed out.",
+	} {
+		if providerErrorIsTerminal(detail) {
+			t.Fatalf("recoverable error marked terminal: %q", detail)
+		}
+	}
+}
