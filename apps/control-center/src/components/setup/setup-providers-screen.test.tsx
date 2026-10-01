@@ -143,6 +143,21 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("does not open a stale provider's message by itself, only from its warning icon", () => {
+    // Right after the runtime restarts, every enabled provider is stale until
+    // CodexBar answers again. That recovers by itself and needs no click.
+    const stale = provider({ providerId: "codex", label: "Codex", health: "stale",
+      message: "Live usage is unavailable; the last successful reading is still saved." });
+    renderDom(<SetupProvidersScreen usage={usage} providers={[stale, claude]}
+      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
+    expect(within(screen.getByRole("dialog")).getByText(stale.health.message)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
     const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
     renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}
