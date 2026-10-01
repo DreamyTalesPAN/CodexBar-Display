@@ -1029,7 +1029,11 @@ void clearFirmwareUpdateNotice() {
 }
 
 void maintainFirmwareUpdateNotice() {
+  // The screensaver is not where an update is announced: screensavers have no
+  // notice slot, so every phase toggle forced a full repaint of the whole
+  // screensaver about every 1.5 s. The notice returns with the live theme.
   if (!firmwareUpdate.noticeEnabled ||
+      standbyState.active ||
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||

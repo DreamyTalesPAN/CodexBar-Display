@@ -499,6 +499,19 @@ bool testLiveThemeSlotUsesItsOwnedPathPolicy(const std::string& source) {
       "the live slot must reject screensaver-owned ThemeSpec paths when reading and persisting");
 }
 
+bool testUpdateNoticeStaysOffTheScreensaver(const std::string& source) {
+  const std::size_t start = source.find("void maintainFirmwareUpdateNotice()");
+  const std::size_t gateEnd = source.find("clearFirmwareUpdateNotice();", start);
+  if (!expect(start != std::string::npos && gateEnd != std::string::npos,
+              "firmware update notice maintenance must remain discoverable")) {
+    return false;
+  }
+  const std::string gate = source.substr(start, gateEnd - start);
+  return expect(
+      gate.find("standbyState.active") != std::string::npos,
+      "the firmware update notice must stay off while the screensaver is up");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -528,7 +541,8 @@ int main(int argc, char** argv) {
       !testScreensaverPreviewLeavesBlockerScreensAlone(source) ||
       !testPreviewYieldsToWhoeverTakesTheDisplay(source) ||
       !testScreensaverSelectionValidatesBeforePersisting(source) ||
-      !testLiveThemeSlotUsesItsOwnedPathPolicy(source)) {
+      !testLiveThemeSlotUsesItsOwnedPathPolicy(source) ||
+      !testUpdateNoticeStaysOffTheScreensaver(source)) {
     return 1;
   }
 
