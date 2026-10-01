@@ -60,8 +60,9 @@ var (
 	reportedLetter = regexp.MustCompile(`[A-Za-z]`)
 	// CodexBar runs inside VibeTV and the customer never sees it, so its
 	// Gemini migration remedy names the provider by itself: "Enable
-	// Antigravity", not "Enable CodexBar's Antigravity provider".
-	reportedCodexBarAntigravity = regexp.MustCompile(`(?i)\bCodexBar's Antigravity provider\b`)
+	// Antigravity", not "Enable CodexBar's Antigravity provider". The Windows
+	// app bundles Win-CodexBar, so its name is covered too.
+	reportedCodexBarAntigravity = regexp.MustCompile(`(?i)\b(?:Win-)?CodexBar's Antigravity provider\b`)
 )
 
 const reportedRedacted = "[redacted]"

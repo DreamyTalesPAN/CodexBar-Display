@@ -230,6 +230,10 @@ func TestReportedProviderMessageNamesAntigravityWithoutCodexBar(t *testing.T) {
 			want: "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
 		},
 		{
+			in:   "Could not refresh Gemini OAuth credentials from Gemini CLI. Enable Win-CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.",
+			want: "Could not refresh Gemini OAuth credentials from Gemini CLI. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
+		},
+		{
 			in:   "Individual accounts should use CodexBar's Antigravity provider instead. Workspace and education accounts should keep using Gemini.",
 			want: "Individual accounts should use Antigravity instead. Workspace and education accounts should keep using Gemini.",
 		},
