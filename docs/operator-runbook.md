@@ -272,8 +272,10 @@ During normal operation the display uses explicit support states:
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
 
 Current firmware has no HTTP WiFi reset. A device provisioned over WiFi keeps
-the provisioning network until the customer sends a new one over the cable;
-a cable factory reset follows in a separate pull request (issue #489).
+the provisioning network. Before packaging, connect it by USB cable, switch
+to USB-C in the Mac App Settings and use "Reset to factory settings" (Companion
+`POST /v1/device/factory-reset`); VibeTV then forgets its WiFi, pairing,
+settings and themes and shows `Connect USB cable`.
 
 The Mac App guides setup over the USB cable. WiFi details and pairing are sent
 only over the cable.

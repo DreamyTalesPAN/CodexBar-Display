@@ -112,7 +112,8 @@ Flow toggles:
                         VibeTV firmware has no WiFi filesystem updater (#489).
   --skip-health         Do not require /health during post-flash polling.
   --skip-asset-check    Do not require theme assets to be visible through /assets.
-  --skip-smoke          Do not send the missing-theme test frame.
+  --skip-smoke          Do not send the missing-theme test frame. Default
+                        without --device-token: unpaired firmware rejects it.
   --allow-reboot-close  Treat curl exit 52/56 during OTA as a reboot close.
                         This is the default; post-upload checks still decide pass/fail.
   --strict-upload-response
@@ -771,6 +772,13 @@ flash_package() {
   else
     log "skip: filesystem OTA"
     post_upload_checks "final runtime verification" "$health_url" "$hello_url" "$assets_url" "required"
+  fi
+
+  # Current firmware rejects /frame from an unpaired device, and pairing runs
+  # only over the USB cable (#489), so a fresh unit has no token here.
+  if [[ "$skip_smoke" != "1" && -z "$device_token" ]]; then
+    log "skip: smoke frame needs --device-token; pairing runs only over the USB cable (#489)"
+    skip_smoke=1
   fi
 
   if [[ "$skip_smoke" != "1" ]]; then
