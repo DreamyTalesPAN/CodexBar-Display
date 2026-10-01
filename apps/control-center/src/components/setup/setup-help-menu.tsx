@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { copyForHost } from "@/lib/customer-platform";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { SupportDiagnostics } from "../control-center-types";
 import { downloadSupportReport } from "../support-report";
@@ -50,6 +51,8 @@ type SetupHelpMenuProps = {
   aiFixPrompt?: () => string;
   /** Resolves with the collected report, or null when nothing could be read. */
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  /** The app runs on Windows, where "Mac App" reads "app". */
+  windowsHost?: boolean;
 };
 
 /**
@@ -62,6 +65,7 @@ type SetupHelpMenuProps = {
 export function SetupHelpMenu({
   aiFixPrompt,
   onCreateSupportReport,
+  windowsHost = false,
 }: SetupHelpMenuProps) {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -173,7 +177,9 @@ export function SetupHelpMenu({
               <span>Ask AI to fix</span>
             </Button>
           ) : null}
-          {outcome ? <HelpOutcome outcome={outcome} /> : null}
+          {outcome ? (
+            <HelpOutcome outcome={outcome} windowsHost={windowsHost} />
+          ) : null}
           {onCreateSupportReport && !belongsToReport(outcome) ? (
             <Button
               className="w-full justify-start font-medium"
@@ -217,7 +223,13 @@ export function SetupHelpMenu({
   );
 }
 
-function HelpOutcome({ outcome }: { outcome: Outcome }) {
+function HelpOutcome({
+  outcome,
+  windowsHost,
+}: {
+  outcome: Outcome;
+  windowsHost: boolean;
+}) {
   const failed = outcome === "failed";
   const copy = HELP_OUTCOME_COPY[outcome];
   return (
@@ -239,7 +251,9 @@ function HelpOutcome({ outcome }: { outcome: Outcome }) {
       )}
       <div className="flex flex-col gap-0.5">
         <span className="text-sm font-medium">{copy.title}</span>
-        <span className="text-xs leading-snug">{copy.detail}</span>
+        <span className="text-xs leading-snug">
+          {copyForHost(copy.detail, windowsHost)}
+        </span>
       </div>
     </div>
   );

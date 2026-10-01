@@ -45,3 +45,7 @@ temp/
 
 # Claude Code personal settings (shared config belongs in .claude/settings.json)
 .claude/settings.local.json
+
+# Python bytecode from local script tests
+__pycache__/
+*.pyc

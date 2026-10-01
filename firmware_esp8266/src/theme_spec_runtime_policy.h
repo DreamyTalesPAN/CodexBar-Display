@@ -112,6 +112,19 @@ class ThemeSpecRuntimePolicy {
     return fps > 0 ? (1000UL / static_cast<unsigned long>(fps)) : 0;
   }
 
+  // Frames a CBA must decode cleanly before its render error is retired.
+  // An animating asset must prove every frame, because corruption can sit in
+  // a later frame while frame zero still decodes. A non-animating asset never
+  // advances past frame zero -- AnimatedAssetDue() stops for frameCount <= 1
+  // or fps <= 0 -- so requiring the full table would pin /health at
+  // renderOk: false forever even after the asset renders correctly.
+  static int CleanFramesRequiredForRecovery(int frameCount, int fps) {
+    if (frameCount <= 1 || fps <= 0) {
+      return 1;
+    }
+    return frameCount;
+  }
+
   static uint32_t CbaBufferBytes(int width, int height) {
     if (width <= 0 || height <= 0 ||
         width > kMaxCbaBufferWidth || height > kMaxCbaBufferHeight) {

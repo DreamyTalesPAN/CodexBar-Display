@@ -70,6 +70,8 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   }
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
   snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
+  snapshot.themeSpecRenderErrorAsset =
+      snapshot.themeSpecActive ? display::ThemeSpecRenderErrorAsset() : "";
   snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
   const display::ThemeSpecRuntimeStats themeSpecStats = display::ThemeSpecRuntimeStatsSnapshot();
   snapshot.cbaCompletedFrames = themeSpecStats.cbaCompletedFrames;

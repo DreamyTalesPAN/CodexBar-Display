@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"io"
 	"net"
 	"net/http"
@@ -941,10 +942,22 @@ func TestRunInstallUpdateCableHappyPath(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte) error {
+	// A .gz left from an earlier manifest for the same version was never
+	// checked against this manifest's raw image.
+	staleDir := filepath.Join(runtimepaths.Root(home), "updates", "firmware", "1.0.1")
+	if err := os.MkdirAll(staleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDir, "firmware.bin.gz"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte, options usb.TransferOptions) error {
 		if port != "/dev/mock-cable" || deviceID != "device-cable" || token != "pair-token" || string(image) != "cable firmware" {
 			t.Fatalf("unexpected Cable transfer port=%q id=%q token=%q image=%q", port, deviceID, token, image)
 		}
+		options.Progress(1, 4)
+		options.Progress(1, 4)
+		options.Progress(4, 4)
 		*firmwareVersion = "1.0.1"
 		return nil
 	}
@@ -958,6 +971,59 @@ func TestRunInstallUpdateCableHappyPath(t *testing.T) {
 	if !strings.Contains(output, `"uploadAccepted":true`) || !strings.Contains(output, `"observedFirmware":"1.0.1"`) {
 		t.Fatalf("Cable update did not report accepted and verified firmware:\n%s", output)
 	}
+	if strings.Count(output, "Writing firmware: 25%") != 1 || !strings.Contains(output, "Writing firmware: 100%") {
+		t.Fatalf("Cable update did not report upload progress once per percent:\n%s", output)
+	}
+}
+
+func TestRunInstallUpdateCableSendsGzipImageFastWhenSupported(t *testing.T) {
+	home, _, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable",
+		DeviceToken:    "pair-token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, _ = writer.Write([]byte("cable firmware"))
+	_ = writer.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.json":
+			_, _ = fmt.Fprintf(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin.gz","firmwareUrl":"%s/firmware.bin.gz","sha256":"%s"}]}`, "http://"+r.Host, sha256String(compressed.String()))
+		case "/firmware.bin.gz":
+			_, _ = w.Write(compressed.Bytes())
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "device-cable",
+			Board:    "esp8266-smalltv-st7789",
+			Firmware: *firmwareVersion,
+			Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableTransferV2},
+		}, nil
+	}
+	transferCableFirmwareFn = func(_ context.Context, _, _, _ string, image []byte, options usb.TransferOptions) error {
+		if !bytes.Equal(image, compressed.Bytes()) {
+			t.Fatalf("Cable transfer did not send the gzip image as released: %q", image)
+		}
+		if !options.Fast {
+			t.Fatal("a VibeTV with cable-transfer-v2 must get the fast transfer")
+		}
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	if _, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", server.URL + "/manifest.json", "--skip-launchagent-pause"})
+	}); err != nil {
+		t.Fatalf("Cable update: %v", err)
+	}
 }
 
 func TestRunInstallUpdateCableAlreadyCurrentSkipsTransfer(t *testing.T) {
@@ -966,7 +1032,7 @@ func TestRunInstallUpdateCableAlreadyCurrentSkipsTransfer(t *testing.T) {
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error {
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, usb.TransferOptions) error {
 		t.Fatal("already-current Cable firmware must not transfer")
 		return nil
 	}
@@ -985,7 +1051,7 @@ func TestRunInstallUpdateCableReportsInterruptedTransferWithoutRetry(t *testing.
 		t.Fatal(err)
 	}
 	transferCalls := 0
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error {
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, usb.TransferOptions) error {
 		transferCalls++
 		return fmt.Errorf("%w: Cable disconnected", usb.ErrCableTransferInterrupted)
 	}
@@ -1024,7 +1090,7 @@ func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
 		t.Fatal(err)
 	}
-	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error { return nil }
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte, usb.TransferOptions) error { return nil }
 	cableFirmwareVerifyTimeout = 5 * time.Millisecond
 	cableFirmwareVerifyPollInterval = time.Millisecond
 
@@ -1037,6 +1103,79 @@ func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
 	if !strings.Contains(output, `"retryPolicy":"power_cycle"`) || !strings.Contains(output, `"uploadAccepted":true`) {
 		t.Fatalf("accepted Cable update must require a power cycle before retry:\n%s", output)
 	}
+}
+
+func TestRunInstallUpdateCableRescueFlashesPreIdentityVibeTVOnAFreshSystem(t *testing.T) {
+	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	resolveCableFirmwarePortFn = func(string, string) (string, error) {
+		// Another connected VibeTV could answer a resolver; only the rescued
+		// port proves the rescued device.
+		t.Fatal("rescue verification must stay on the flashed port")
+		return "", nil
+	}
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if port != "/dev/mock-legacy" {
+			t.Fatalf("rescue verification read %q, want the flashed port", port)
+		}
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: "esp8266-smalltv-st7789", Firmware: *firmwareVersion}, nil
+	}
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
+	}
+	var flashedPort, flashedImage string
+	flashCableRescueFn = func(_ context.Context, port string, image []byte, progress func(int)) error {
+		flashedPort, flashedImage = port, string(image)
+		progress(50)
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err != nil {
+		t.Fatalf("Cable rescue failed: %v\n%s", err, output)
+	}
+	if flashedPort != "/dev/mock-legacy" || flashedImage != "cable firmware" {
+		t.Fatalf("flashed %q with %q", flashedPort, flashedImage)
+	}
+	if !strings.Contains(output, "Writing firmware: 50%") {
+		t.Fatalf("rescue progress was not reported:\n%s", output)
+	}
+	if !strings.Contains(output, "Done: firmware 1.0.1 installed") ||
+		!strings.Contains(output, `"stage":"verifying_health","phase":"installing","firmware":"1.0.1","observedFirmware":"1.0.1","target":"cable://vibetv","deviceId":"device-cable"`) {
+		t.Fatalf("rescue did not verify the new firmware and identity:\n%s", output)
+	}
+}
+
+func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *testing.T) {
+	_, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	probes := 0
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		probes++
+		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
+	}
+	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
+		t.Fatal("rescue flashed without a pre-identity VibeTV")
+		return nil
+	}
+
+	err := runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	if err == nil || !strings.Contains(err.Error(), "pre-Cable firmware") || probes != 2 {
+		t.Fatalf("expected rescue refusal after one fresh probe, got %v after %d probes", err, probes)
+	}
+}
+
+func pinCableRescue(t *testing.T) {
+	t.Helper()
+	previousFind := findLegacyCableVibeTVFn
+	previousFlash := flashCableRescueFn
+	t.Cleanup(func() {
+		findLegacyCableVibeTVFn = previousFind
+		flashCableRescueFn = previousFlash
+	})
 }
 
 func prepareCableFirmwareUpdateTest(t *testing.T) (string, string, *string) {

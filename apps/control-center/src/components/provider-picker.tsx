@@ -29,6 +29,8 @@ export type ProviderPickerProps = {
   onCheck: (item: PreferenceDescriptor) => void | Promise<void>;
   /** Opens the provider's browser sign-in page through the companion. */
   onOpenSignIn?: (item: PreferenceDescriptor) => void | Promise<void>;
+  /** Opens the customer setup guide in the default browser (Windows). */
+  onOpenSetupGuide?: () => void | Promise<void>;
   onDisplayChange: (
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
     providerId: string,

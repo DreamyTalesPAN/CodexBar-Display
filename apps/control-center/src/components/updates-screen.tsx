@@ -39,6 +39,7 @@ import {
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import { statusForHost } from "@/lib/customer-platform";
 import type { CompanionInfo } from "./control-center-types";
 import { SetupDialog } from "./setup/setup-dialog";
 
@@ -91,6 +92,8 @@ export type UpdatesScreenProps = {
   updateStatus?: FirmwareUpdateStatus | null;
   supportReportBusy?: boolean;
   themeUpdateAvailable?: boolean;
+  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  windowsHost?: boolean;
 };
 
 export function UpdatesScreen({
@@ -109,6 +112,7 @@ export function UpdatesScreen({
   updateStatus,
   supportReportBusy = false,
   themeUpdateAvailable = false,
+  windowsHost = false,
 }: UpdatesScreenProps) {
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
@@ -152,7 +156,9 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const visibleUpdateStatus = staleFirmwareFailure ? undefined : updateStatus;
+  const visibleUpdateStatus = staleFirmwareFailure
+    ? undefined
+    : statusForHost(updateStatus, windowsHost);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -241,12 +247,16 @@ export function UpdatesScreen({
       <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
-          description="Software running on this Mac."
+          description={
+            windowsHost
+              ? "Software running on this computer."
+              : "Software running on this Mac."
+          }
           installedLabel="Installed"
           installedValue={companionInstalled}
           latestLabel="Available"
           latestValue={companionAvailable}
-          title="Mac App"
+          title={windowsHost ? "App" : "Mac App"}
           updateAvailable={macAppUpdateAvailable || macAppMigrationReady}
         />
 
@@ -264,13 +274,21 @@ export function UpdatesScreen({
               <ShieldCheck aria-hidden />
               <AlertTitle>
                 {macAppMustUpdateFirst
-                  ? "Update Mac App first"
-                  : "Checking Mac App"}
+                  ? windowsHost
+                    ? "Update the app first"
+                    : "Update Mac App first"
+                  : windowsHost
+                    ? "Checking the app"
+                    : "Checking Mac App"}
               </AlertTitle>
               <AlertDescription>
                 {macAppMustUpdateFirst
-                  ? "Update the Mac App first. The VibeTV firmware update comes next."
-                  : "Waiting for the Mac App update check. The VibeTV update unlocks when it finishes."}
+                  ? windowsHost
+                    ? "Update the app first. The VibeTV firmware update comes next."
+                    : "Update the Mac App first. The VibeTV firmware update comes next."
+                  : windowsHost
+                    ? "Waiting for the app update check. The VibeTV update unlocks when it finishes."
+                    : "Waiting for the Mac App update check. The VibeTV update unlocks when it finishes."}
               </AlertDescription>
             </Alert>
           ) : null}

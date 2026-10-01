@@ -11,9 +11,11 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
-func readHelloFromPort(port SerialPort, window time.Duration) (protocol.DeviceHello, bool) {
+// carry keeps a line that spans two read windows. Without it a boot hello
+// arriving at a window boundary was cut in half and never recognized.
+func readHelloFromPort(port SerialPort, window time.Duration, carry *[]byte) (protocol.DeviceHello, bool) {
 	var hello protocol.DeviceHello
-	seen := readPortLines(port, window, func(line string) bool {
+	seen := readPortLinesCarry(port, window, carry, func(line string) bool {
 		var ok bool
 		hello, ok = parseDeviceHelloLine(line)
 		return ok
@@ -301,6 +303,10 @@ func readWiFiNetworksFromPort(port SerialPort, window time.Duration, deviceID st
 }
 
 func readPortLines(port SerialPort, window time.Duration, accept func(string) bool) bool {
+	return readPortLinesCarry(port, window, nil, accept)
+}
+
+func readPortLinesCarry(port SerialPort, window time.Duration, carry *[]byte, accept func(string) bool) bool {
 	if port == nil || window <= 0 || accept == nil {
 		return false
 	}
@@ -308,6 +314,10 @@ func readPortLines(port SerialPort, window time.Duration, accept func(string) bo
 	deadline := time.Now().Add(window)
 	chunk := make([]byte, 128)
 	buffer := make([]byte, 0, helloReadBufferBytes)
+	if carry != nil {
+		buffer = append(buffer, *carry...)
+		defer func() { *carry = append((*carry)[:0], buffer...) }()
+	}
 	for time.Now().Before(deadline) {
 		n, _ := port.Read(chunk)
 		if n <= 0 {

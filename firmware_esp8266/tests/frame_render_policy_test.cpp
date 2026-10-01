@@ -147,7 +147,7 @@ bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
 bool testSetupSizesSerialRxBufferForFrameContract(const std::string& source) {
   const std::size_t setupStart = source.find("void setup()");
   const std::size_t buffer = source.find("Serial.setRxBufferSize(kMaxFrameBytes + 1);", setupStart);
-  const std::size_t begin = source.find("Serial.begin(115200);", setupStart);
+  const std::size_t begin = source.find("Serial.begin(kSerialBaudRate);", setupStart);
   return expect(
       setupStart != std::string::npos && buffer != std::string::npos &&
           begin != std::string::npos && buffer < begin,
@@ -174,6 +174,33 @@ bool testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(const std::stri
           ack < flush && flush < persist && persist < restart &&
           finish.find("scheduleReboot(\"firmware_cable\")") == std::string::npos,
       "Cable firmware transfer must flush its completion ACK before restarting immediately");
+}
+
+// A transfer running at a faster Cable rate must send its rejection before
+// resetCableTransfer() drops back to 115200, or the Mac, still listening at
+// the faster rate, reads noise and reports an interrupted Cable instead.
+bool testCableTransferRejectsBeforeRestoringBaudRate(const std::string& source) {
+  const std::size_t start = source.find("bool startCableTransfer(");
+  const std::size_t end = source.find("\nvoid maintainCableTransfer()", start);
+  if (!expect(
+          start != std::string::npos && end != std::string::npos,
+          "Cable transfer handlers must remain discoverable")) {
+    return false;
+  }
+  const std::string handlers = source.substr(start, end - start);
+  const std::string resetFirst =
+      "resetCableTransfer(true);\n";
+  std::size_t rejects = 0;
+  for (std::size_t at = handlers.find(resetFirst); at != std::string::npos;
+       at = handlers.find(resetFirst, at + 1)) {
+    const std::size_t next = handlers.find_first_not_of(" \t\n", at + resetFirst.size());
+    if (handlers.compare(next, 36, "emitSerialError(\"transfer-rejected\")") == 0) {
+      ++rejects;
+    }
+  }
+  return expect(
+      rejects == 0,
+      "a Cable transfer must emit transfer-rejected before resetCableTransfer restores 115200");
 }
 
 bool testCableThemeTransferKeepsCleanupOutsideUploads(const std::string& source) {
@@ -490,6 +517,7 @@ int main(int argc, char** argv) {
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testSetupSizesSerialRxBufferForFrameContract(source) ||
       !testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(source) ||
+      !testCableTransferRejectsBeforeRestoringBaudRate(source) ||
       !testCableThemeTransferKeepsCleanupOutsideUploads(source) ||
       !testDeferredCableScreensaverCleanupRunsAfterRenderRelease(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
