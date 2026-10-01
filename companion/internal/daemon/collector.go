@@ -33,6 +33,9 @@ type providerSnapshot struct {
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
+	// Terminal survives a restart: a reload must not turn a known terminal
+	// error back into stale data that keeps an old last-good frame alive.
+	Terminal bool `json:"terminal,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -422,13 +425,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists {
-				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
+				if !parsed.Terminal && !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					lastGood.Retained = true
 					c.providers[key] = lastGood
 					updated = true
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
+				if parsed.Terminal {
+					lastGood = snapshotWithUsageCleared(lastGood)
+				}
+				lastGood.Terminal = parsed.Terminal
 				c.providers[key] = lastGood
 			} else {
 				c.providers[key] = providerSnapshot{
@@ -436,6 +443,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Frame:     frame,
 					Source:    strings.TrimSpace(parsed.Source),
 					Collected: parsedCollectedAt,
+					Terminal:  parsed.Terminal,
 				}
 			}
 			updated = true
@@ -818,6 +826,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			TokenStatsCollected: now,
 			TokenHistorySettled: providerSettled,
 			ActivityObservedAt:  activityObservedAt,
+			Terminal:            snapshot.Terminal,
 		}
 		updated++
 	}
@@ -997,7 +1006,10 @@ func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, m
 	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
 		clearSnapshotTokenStats(&snapshot)
 	}
+	return snapshotWithUsageCleared(snapshot)
+}
 
+func snapshotWithUsageCleared(snapshot providerSnapshot) providerSnapshot {
 	frame := snapshot.Frame.Normalize()
 	frame.UsageUnavailable = true
 	frame.SessionUnavailable = true
@@ -1051,6 +1063,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
 			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Terminal:           snapshot.Terminal,
 		})
 	}
 	return frames
