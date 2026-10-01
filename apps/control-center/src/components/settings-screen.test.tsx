@@ -101,7 +101,7 @@ describe("SettingsScreen on Windows", () => {
 });
 
 describe("SettingsScreen standby controls", () => {
-  it("offers Erase VibeTV only over the USB cable", () => {
+  it("offers the factory reset only over the USB cable", () => {
     const props = {
       automaticPreviews: [],
       brightness: 70,
@@ -126,8 +126,8 @@ describe("SettingsScreen standby controls", () => {
       <SettingsScreen {...props} connectionMode="wifi" />,
     );
 
-    expect(cable).toContain("Erase VibeTV");
-    expect(wifi).not.toContain("Erase VibeTV");
+    expect(cable).toContain("Reset to factory settings");
+    expect(wifi).not.toContain("Reset to factory settings");
   });
 
   it("labels unsupported brightness without a loading state", () => {

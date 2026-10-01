@@ -131,7 +131,7 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 | `Starting` | VibeTV is booting. | Wait. |
 | `Connect USB cable` / `app.vibetv.shop` | VibeTV needs setup or new WiFi details. | Connect it to your Mac with the USB cable and open the Mac App. |
 | `Connecting WiFi` | VibeTV is joining your home WiFi. | Wait. |
-| `WiFi connected!` / `app.vibetv.shop` | VibeTV is on WiFi. | Open Control Center on your Mac. |
+| `Waiting for app` | VibeTV is connected and waits for the app. | Open the app on your computer. |
 | `Open App` / `app.vibetv.shop` | VibeTV is waiting for fresh Mac data. | Open Control Center and connect VibeTV. |
 | `Install Mac App` | The Mac App is missing. | Use the setup step in Control Center. |
 | `Update Mac App` | The Mac App needs an update. | Use the update step in Control Center. |

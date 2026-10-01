@@ -1075,7 +1075,7 @@ void drawWaitingForCompanionStatus() {
     stationIp = "";
   }
   const unsigned long renderStartUs = micros();
-  renderer.DrawConnectedSetupInstructions(runtimeCtx, kCustomerAppHost, stationIp);
+  renderer.DrawConnectedSetupInstructions(runtimeCtx, stationIp);
   recordRenderFull("connected_setup", micros() - renderStartUs);
   lastConnectedSetupIp = stationIp;
   waitStatusRendered = true;
@@ -4074,7 +4074,10 @@ void setup() {
     WiFi.disconnect(false);
     WiFi.mode(WIFI_OFF);
     const unsigned long renderStartUs = micros();
-    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Open Mac App", kCustomerAppHost);
+    // Cable mode is only ever chosen in the app, so it is already installed.
+    // A setup hint here flashed on every restart, e.g. after switching back
+    // from WiFi, and read as if VibeTV had gone back to setup.
+    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Waiting for app", "");
     recordRenderFull("cable_setup", micros() - renderStartUs);
     waitStatusRendered = true;
     return;

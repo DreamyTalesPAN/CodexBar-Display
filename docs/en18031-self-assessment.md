@@ -132,7 +132,7 @@ Manual on hardware (open, to be run before release):
 3. `POST /frame` without / with a wrong token → `401`.
 4. Update over USB succeeds; update started with a WiFi target → clear
    "USB cable" message, device unchanged.
-5. "Erase VibeTV" → device shows "Connect USB cable", `/hello` reports not
+5. "Reset to factory settings" → device shows "Connect USB cable", `/hello` reports not
    paired, old token rejected, old WiFi not joined.
 6. Serial log during WiFi setup contains no password; the token appears only
    in the pairing reply.

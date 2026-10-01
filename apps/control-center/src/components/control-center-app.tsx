@@ -2053,15 +2053,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
       );
       addEvent({
-        label: "VibeTV erased",
+        label: "VibeTV reset to factory settings",
         detail: "WiFi details, pairing, settings and themes were removed.",
         tone: "unknown",
       });
     } catch (error) {
-      const normalized = normalizeCaughtError(error, "VibeTV was not erased.");
+      const normalized = normalizeCaughtError(error, "VibeTV was not reset.");
       setLastError(normalized);
       addEvent({
-        label: "VibeTV was not erased",
+        label: "VibeTV was not reset",
         detail: normalized.nextAction,
         tone: "attention",
       });

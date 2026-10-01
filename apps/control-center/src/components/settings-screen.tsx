@@ -410,7 +410,9 @@ export function SettingsScreen({
                 <Spinner data-icon="inline-start" />
               ) : null}
               <span>
-                {busyAction === "erase-device" ? "Erasing" : "Erase VibeTV"}
+                {busyAction === "erase-device"
+                  ? "Resetting"
+                  : "Reset to factory settings"}
               </span>
             </Button>
           </div>
@@ -424,14 +426,14 @@ export function SettingsScreen({
           >
             <DialogContent showCloseButton={false}>
               <DialogHeader>
-                <DialogTitle>Erase VibeTV?</DialogTitle>
+                <DialogTitle>Reset VibeTV to factory settings?</DialogTitle>
                 <DialogDescription>
                   VibeTV forgets its WiFi details, pairing, settings and themes, then setup starts again. Use this before you give VibeTV away.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
                 <Button onClick={() => setEraseRequested(false)} type="button" variant="outline">
-                  Keep VibeTV
+                  Cancel
                 </Button>
                 <Button
                   disabled={localActionBusy}
@@ -442,7 +444,7 @@ export function SettingsScreen({
                   type="button"
                   variant="destructive"
                 >
-                  Erase VibeTV
+                  Reset
                 </Button>
               </DialogFooter>
             </DialogContent>

@@ -263,7 +263,7 @@ During normal operation the display uses explicit support states:
 - `Starting`: boot is running before WiFi mode is known.
 - `Connect USB cable` with `app.vibetv.shop`: fresh setup or a lost WiFi network is waiting for the USB cable. There is no setup AP. Older firmware may show `Download Mac App` or `SETUP WIFI` and open `VibeTV-Setup`.
 - `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
-- `WiFi connected!` with `Now go to:` and `app.vibetv.shop`: WiFi is connected and the device gives the customer the hosted Control Center URL.
+- `Waiting for app` with the device IP: WiFi is connected and the device waits for the app to stream. In cable mode the same screen appears without an IP.
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
 - `Open App` / `app.vibetv.shop`: the device previously had data, but no fresh frame arrived for more than two minutes, or the Mac App reported a recoverable runtime problem.
 - `Install Mac App` / `app.vibetv.shop`: the device received a runtime frame saying the Mac App binary is missing.
@@ -283,7 +283,7 @@ Smoke checklist for #53:
 - Without reachable WiFi, confirm `Connect USB cable` / `app.vibetv.shop` on the
   display and no `VibeTV-Setup` network in a separate WiFi scan.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
-- After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
+- After WiFi connects, confirm the waiting screen shows only `VIBE TV`, `Waiting for app`, and the IP.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
 - Send a frame with `update.available=true` and confirm the customer-facing update text alternates between `Update available` and `app.vibetv.shop`.
 - Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update available` and `app.vibetv.shop`.

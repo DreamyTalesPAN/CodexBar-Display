@@ -426,7 +426,7 @@ unexplained transport error instead of an authentication failure.
 - Saving a different network changes only the WiFi SSID/password. A paired
   device keeps its device ID, pairing token, themes/assets, active theme,
   brightness, and other settings.
-- Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
+- Connected devices expose their current IP in `/hello` discovery, show `Waiting for app` plus their IP, serve read-only status on that IP, and wait for the Mac App.
 - Connected devices expose read-only status on their current IP. Customer-facing writes are performed by the authenticated Control Center.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
 - WiFi write APIs require `X-VibeTV-Token`; a device never paired over the cable rejects all of them. Nothing on the local network can create, rotate or read the token. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
