@@ -507,9 +507,30 @@ bool testUpdateNoticeStaysOffTheScreensaver(const std::string& source) {
     return false;
   }
   const std::string gate = source.substr(start, gateEnd - start);
+  if (!expect(gate.find("screensaverOwnsDisplay()") != std::string::npos,
+              "the firmware update notice must stay off while the screensaver is up")) {
+    return false;
+  }
+  const std::size_t ownsStart = source.find("bool screensaverOwnsDisplay()");
+  const std::size_t ownsEnd = source.find("\n}\n", ownsStart);
+  if (!expect(ownsStart != std::string::npos && ownsEnd != std::string::npos,
+              "screensaver display ownership must remain discoverable")) {
+    return false;
+  }
+  const std::string owns = source.substr(ownsStart, ownsEnd - ownsStart);
+  if (!expect(owns.find("standbyState.active") != std::string::npos &&
+                  owns.find("screensaverPreviewState.showing") != std::string::npos,
+              "standby and the screensaver preview must both keep the update notice off")) {
+    return false;
+  }
+  // The full render that enters standby draws the notice unconditionally after
+  // the theme; the draw gate itself must refuse while a screensaver is up.
+  const std::size_t showStart = source.find("bool shouldShowFirmwareUpdateNotice()");
+  const std::size_t showEnd = source.find("\n}\n", showStart);
   return expect(
-      gate.find("standbyState.active") != std::string::npos,
-      "the firmware update notice must stay off while the screensaver is up");
+      showStart != std::string::npos && showEnd != std::string::npos &&
+          source.substr(showStart, showEnd - showStart).find("!screensaverOwnsDisplay()") != std::string::npos,
+      "the update notice must not be drawn over the first screensaver frame");
 }
 
 }  // namespace
