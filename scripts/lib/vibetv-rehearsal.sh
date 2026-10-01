@@ -164,6 +164,25 @@ rehearsal::is_cable_target() {
   [[ "${1:-$REHEARSAL_DEVICE_TARGET}" == cable://* ]]
 }
 
+# The direct serial read needs pyserial, which a clean bench Mac lacks. Same
+# fallback as scripts/vibetv-hw-selftest.sh: a private venv under the state dir.
+REHEARSAL_SERIAL_PYTHON=""
+rehearsal::resolve_serial_python() {
+  [[ -z "$REHEARSAL_SERIAL_PYTHON" ]] || return 0
+  if python3 -c 'import serial' >/dev/null 2>&1; then
+    REHEARSAL_SERIAL_PYTHON=python3
+    return 0
+  fi
+  local venv="$REHEARSAL_STATE_DIR/venv"
+  if [[ ! -x "$venv/bin/python" ]]; then
+    rehearsal::info 'creating a pyserial venv for the cable VibeTV'
+    python3 -m venv "$venv" >/dev/null 2>&1 && "$venv/bin/pip" -q install pyserial >/dev/null 2>&1
+  fi
+  "$venv/bin/python" -c 'import serial' >/dev/null 2>&1 \
+    || rehearsal::die 'could not provide pyserial, which a cable VibeTV needs'
+  REHEARSAL_SERIAL_PYTHON="$venv/bin/python"
+}
+
 rehearsal::device_hello() {
   local target="$1" timeout="${2:-8}"
   if rehearsal::is_cable_target "$target"; then
@@ -186,7 +205,8 @@ print(json.dumps({"kind": "hello", "deviceId": device["deviceId"],
                   "firmware": device.get("firmware"), "board": device.get("board")}))
 ' 2>/dev/null && return 0
 
-  python3 - "$timeout" <<'PY' 2>/dev/null
+  rehearsal::resolve_serial_python
+  "$REHEARSAL_SERIAL_PYTHON" - "$timeout" <<'PY' 2>/dev/null
 import glob, json, sys, time
 import serial
 
@@ -223,6 +243,12 @@ PY
 # is what keeps a second rehearsal from re-scanning the whole subnet.
 rehearsal::discover_device() {
   local remembered="$REHEARSAL_STATE_DIR/device-target"
+
+  # Resolved up front: a missing pyserial must stop the run here, not surface
+  # after the flash as a three-minute wait that reads "unconfirmed".
+  if rehearsal::is_cable_target; then
+    rehearsal::resolve_serial_python
+  fi
 
   if [[ -n "$REHEARSAL_DEVICE_TARGET" ]]; then
     rehearsal::device_hello "$REHEARSAL_DEVICE_TARGET" >/dev/null \
