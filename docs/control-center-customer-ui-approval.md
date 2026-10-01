@@ -4655,3 +4655,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul enabled Auto-fix for this pull request, which covers fixing its failing CI. The customer flow "Firmware update must refresh the active slot theme exactly once" failed because the previous entry's change took the grace only from the status answer.
 - Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while this window runs its own firmware update or theme install, or while the same `/v1/status` answer reports an installing job. A job only remembered from an earlier status answer no longer suspends counting. No copy, control, layout or visual change.
 - Scope: `control-center-app.tsx`. This approves the pull request only, not merge, release, or a device operation.
+
+## 2026-10-01 — A stale provider no longer opens its message by itself
+
+- User approval: On 2026-10-01 Paul reported that starting the app opened a "Codex — Live usage is unavailable; the last successful reading is still saved." dialog on Choose AI providers. That state appears for every enabled provider while CodexBar starts after the runtime restarted, and it recovers by itself.
+- Approved customer-visible result: A provider row in the "stale" state (last reading still shown, live usage briefly unavailable) keeps its warning icon, but its message no longer opens as a dialog by itself on Choose AI providers or in Settings → AI providers. Clicking the warning icon still shows it. Every other provider message (sign-in, unsupported, outage, permission, no usage) opens exactly as before.
+- Scope: `setup-providers-screen.tsx` (the provider list shared by setup and Settings), its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
