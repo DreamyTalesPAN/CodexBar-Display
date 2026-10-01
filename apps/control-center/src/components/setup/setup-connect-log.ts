@@ -29,7 +29,11 @@ export type ConnectState = {
  * Derives the whole log from the current state instead of appending to it, so
  * a retry or a re-render can never duplicate or drop a line.
  */
-export function connectLogLines(state: ConnectState): SetupLogLine[] {
+export function connectLogLines(
+  state: ConnectState,
+  /** Share of the firmware really written, when the update reports it. */
+  writtenPercent?: number,
+): SetupLogLine[] {
   const { phase } = state;
   if (phase === "idle") {
     return [];
@@ -65,7 +69,9 @@ export function connectLogLines(state: ConnectState): SetupLogLine[] {
       text:
         phase === "failed"
           ? `updating firmware — stopped at ${state.updateProgress ?? 0}%`
-          : "updating firmware — keep VibeTV powered on",
+          : writtenPercent === undefined
+            ? "updating firmware — keep VibeTV powered on"
+            : `updating firmware · ${writtenPercent}% — keep VibeTV powered on`,
     });
   }
 

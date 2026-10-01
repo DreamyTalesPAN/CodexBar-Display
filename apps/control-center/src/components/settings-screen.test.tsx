@@ -64,6 +64,7 @@ function render(
   picker: ProviderPickerProps = providerPicker,
   brightness: number | null = 70,
   connectionMode: "cable" | "wifi" = "cable",
+  windowsHost = false,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
@@ -82,9 +83,22 @@ function render(
       onSaveStandby={vi.fn()}
       onStandbyBrightnessChange={vi.fn()}
       providerPicker={picker}
+      windowsHost={windowsHost}
     />,
   );
 }
+
+// Issues #438/#460: the Windows app must not speak of "this Mac". The Mac
+// wording is pinned by the tests below and must not change at all.
+describe("SettingsScreen on Windows", () => {
+  it("says this computer where the Mac app says this Mac", () => {
+    const html = render(standbyDevice, savedStandby, providerPicker, 70, "cable", true);
+
+    expect(html).toContain("Requires a data cable connected to this computer.");
+    expect(html).toContain("Connect this computer to another VibeTV.");
+    expect(html).not.toContain("Mac");
+  });
+});
 
 describe("SettingsScreen standby controls", () => {
   it("labels unsupported brightness without a loading state", () => {
@@ -246,10 +260,10 @@ describe("SettingsScreen standby controls", () => {
         provider("claude", "Claude Code", true),
         provider("cursor", "Cursor", false),
         provider("codex", "Codex", true),
-        // Switched on but outside the offered four: it keeps its row so the
-        // customer can still turn it off, and it sorts with the enabled group.
+        // Switched on without a sign-in the Companion can start: it is listed
+        // and sorts with the enabled group.
         provider("openai", "OpenAI", true),
-        // Off and outside the offered four: Windows does not offer it here.
+        // Off: listed with the other switched-off providers.
         provider("gemini", "Gemini", false),
       ],
     });
@@ -260,18 +274,17 @@ describe("SettingsScreen standby controls", () => {
       "OpenAI",
       "Antigravity",
       "Cursor",
+      "Gemini",
     ].map((label) => providerSection.indexOf(`>${label}</`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
-    expect(providerSection).not.toContain(">Gemini</");
     expect(positions).toEqual(
       [...positions].sort((left, right) => left - right),
     );
   });
 
-  // The Mac app is unchanged by the Windows launch decision: without the
-  // companion's sign-in action every provider CodexBar reports stays on the
-  // page, including the ones Windows does not offer yet.
+  // Without the companion's sign-in action (the Mac app) every provider
+  // CodexBar reports stays on the page as it does today.
   it("keeps every provider in Settings on a companion without the sign-in action", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,

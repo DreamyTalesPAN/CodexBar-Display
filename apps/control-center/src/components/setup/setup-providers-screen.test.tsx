@@ -13,10 +13,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
-  OFFERED_PROVIDER_IDS,
   PROVIDER_LOADING_LOG_INTERVAL_MS,
+  SIGN_IN_PROVIDER_IDS,
   SetupProvidersScreen,
-  offeredProviders,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
   setupProviderOffersSignIn,
@@ -159,60 +158,55 @@ describe("SetupProvidersScreen", () => {
     expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
   });
 
-  // VibeTV launches with the four providers it has been checked against. The
-  // rest of CodexBar's inventory keeps its saved values but is not offered.
-  it("offers only Codex, Claude, Cursor and Antigravity", () => {
-    expect(OFFERED_PROVIDER_IDS).toEqual([
+  // The Companion can start the sign-in of these four only; every other
+  // provider is listed without a sign-in button.
+  it("starts a sign-in only for Codex, Claude, Cursor and Antigravity", () => {
+    expect(SIGN_IN_PROVIDER_IDS).toEqual([
       "codex",
       "claude",
       "cursor",
       "antigravity",
     ]);
-    const offered = offeredProviders([
-      claude,
-      copilot,
-      provider({ health: "healthy", label: "Codex", providerId: "Codex" }),
-      provider({ health: "disabled", label: "Cursor", providerId: "cursor" }),
-      provider({
-        health: "disabled",
-        label: "Gemini",
-        providerId: "gemini",
-        value: false,
-      }),
-      provider({
-        health: "disabled",
-        label: "Antigravity",
-        providerId: "antigravity",
-      }),
-    ]);
-    expect(offered.map((item) => item.label)).toEqual([
-      "Claude Code",
-      "Codex",
-      "Cursor",
-      "Antigravity",
-    ]);
   });
 
-  // Hiding a provider the customer already switched on would leave its switch
-  // on with no row to turn it off, and the Companion then refuses an Automatic
-  // display that omits it. An enabled provider therefore stays visible.
-  it("keeps an enabled provider outside the offered four visible", () => {
-    const offered = offeredProviders([
-      provider({ health: "healthy", label: "Codex", providerId: "codex" }),
-      provider({
-        health: "healthy",
-        label: "Gemini",
-        providerId: "gemini",
-        value: true,
-      }),
-      provider({
-        health: "disabled",
-        label: "Copilot",
-        providerId: "copilot",
-        value: false,
-      }),
-    ]);
-    expect(offered.map((item) => item.label)).toEqual(["Codex", "Gemini"]);
+  // A signed-out provider the app cannot sign in says what the customer has
+  // to do (its own app, installed and signed in), keeps the provider's own
+  // message and links the setup guide.
+  it("tells a signed-out provider without a sign-in to use its own app", () => {
+    const onOpenSetupGuide = vi.fn();
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    renderDom(<SetupProvidersScreen usage={usage} providers={[claude, failed]}
+      onOpenSetupGuide={onOpenSetupGuide} onOpenSignIn={vi.fn()}
+      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText(
+      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app on this computer. Make sure it is installed and signed in, then click Check again.",
+    )).toBeTruthy();
+    expect(dialog.getByText("No available fetch strategy for copilot.")).toBeTruthy();
+    fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
+    expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
+    expect(dialog.getByRole("button", { name: "Copy provider message for GitHub Copilot" })).toBeTruthy();
+  });
+
+  it("keeps the notice off for sign-in providers, other states and the Mac", () => {
+    const claudeSignedOut = provider({ providerId: "claude", label: "Claude",
+      health: "auth_required", message: "Sign in to Claude." });
+    const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
+      health: "timeout", message: "The provider check timed out." });
+    const signedOut = { ...copilot, value: true };
+    for (const [item, guide] of [
+      [claudeSignedOut, vi.fn()], [timedOut, vi.fn()], [signedOut, undefined],
+    ] as const) {
+      const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
+        onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+        pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+      const dialog = within(screen.getByRole("dialog"));
+      expect(dialog.getByText(item.health.message)).toBeTruthy();
+      expect(dialog.queryByRole("button", { name: "Open setup guide" })).toBeNull();
+      unmount();
+    }
   });
 
   // The sign-in action belongs to one of the four signed-out tools the
@@ -271,6 +265,11 @@ describe("SetupProvidersScreen", () => {
 
     expect(html).toContain("This can take up to 5 minutes. We&#x27;re sorry.");
     expect(html).toContain("reading provider usage on this Mac");
+
+    // Issue #438: Windows reads usage on this computer, not on a Mac.
+    const windows = render({ loading: true, providers: [], windowsHost: true });
+    expect(windows).toContain("reading provider usage on this computer");
+    expect(windows).not.toContain("this Mac");
     expect(html).not.toContain("still checking, hang tight");
     expect(html).toMatch(
       /<input[^>]*disabled=""[^>]*placeholder="Search providers"/,
@@ -538,7 +537,21 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
-  it("finds a provider by label, by its message and by its id", () => {
+  it("closes Continue while a provider switch is still saving", () => {
+    // Continue with one provider on skips Display Mode (#423). Deriving that
+    // from a switch whose write can still be refused pinned VibeTV to the
+    // wrong provider when the write rolled back.
+    const html = render({
+      pendingPreferenceIds: new Set([copilot.id]),
+      providers: [claude, copilot],
+    });
+
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
+    it("finds a provider by label, by its message and by its id", () => {
     expect(setupProviderMatchesQuery(copilot, "github")).toBe(true);
     expect(setupProviderMatchesQuery(copilot, "sign in")).toBe(true);
     expect(setupProviderMatchesQuery(copilot, "copilot")).toBe(true);

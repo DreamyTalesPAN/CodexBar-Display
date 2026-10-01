@@ -18,6 +18,8 @@ export type ApiError = {
   code: string;
   message: string;
   nextAction: string;
+  /** The VibeTV the error is about, when setup can still act on it. */
+  device?: DeviceCandidate;
 };
 
 export type CompanionStatus = "unknown" | "online" | "missing";
@@ -40,6 +42,8 @@ export type CompanionInfo = {
     executable?: string;
     pid?: number;
     listenerOwner?: string;
+    /** The platform the runtime runs on, e.g. "darwin" or "windows". */
+    os?: string;
   };
   update?: CompanionReleaseInfo;
   features?: {
@@ -55,6 +59,7 @@ export type ProviderReadinessStatus =
   | "auth_required"
   | "browser_sign_in_required"
   | "permission_required"
+  | "unsupported"
   | "no_usage_available"
   | "timeout"
   | "config_error"
@@ -179,7 +184,6 @@ export type SupportReportClientState = {
     failedNormalChecks: number;
     pickerReason?: string | null;
     normalFailureLimit: number;
-    operationFailureLimit: number;
   };
   providerSetup?: ProviderSetupInfo | null;
   lastError?: ApiError | null;
@@ -201,6 +205,11 @@ export type DeviceCandidate = {
   networkMode?: "station" | "setup" | string;
   known?: boolean;
   active?: boolean;
+  /**
+   * Firmware from before USB-C support: it answers over the cable without an
+   * identity, and only the Cable rescue update can bring it to current.
+   */
+  rescue?: boolean;
 };
 
 export type WiFiNetwork = {
@@ -475,6 +484,7 @@ export type PreferenceHealthState =
   | "auth_required"
   | "browser_sign_in_required"
   | "setup_required"
+  | "unsupported"
   | "stale"
   | "service_outage"
   | "unavailable"

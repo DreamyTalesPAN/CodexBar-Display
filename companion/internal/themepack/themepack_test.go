@@ -357,6 +357,202 @@ func TestLoadRejectsMalformedSpriteAsset(t *testing.T) {
 	}
 }
 
+// Every sprite in a pack is written to the device, so an unreferenced one must
+// be rejected before any device write instead of failing later in the renderer.
+func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/good.cbi"}]}`
+	for _, tc := range []struct {
+		name string
+		data string
+		want string
+		ext  string
+	}{
+		{name: "truncated", data: "CBI1\n1 2\n1\n#FFFFFF\na\n", want: "want 2"},
+		{name: "unsupported header", data: "CBI2\n1 1\n1\n#FFFFFF\na\n", want: "unsupported header"},
+		{name: "invalid dimensions", data: "CBI1\n0 1\n1\n#FFFFFF\na\n", want: "width/height must be > 0"},
+		{name: "frame table mismatch", data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\n", want: "want 2", ext: ".cba"},
+		// The firmware caps a sprite edge and the row line buffer. A pack the
+		// app declares valid must not fail only once the install has started
+		// writing to the device.
+		{
+			name: "dimension beyond the firmware limit",
+			data: "CBI1\n481 1\n1\n#FFFFFF\n481a\n",
+			want: "width/height must be <= 480",
+		},
+		{
+			name: "row beyond the firmware line buffer",
+			data: "CBI1\n480 1\n1\n#FFFFFF\n" + strings.Repeat("1a", 480) + "\n",
+			want: "exceeds 512 bytes",
+		},
+		// The firmware counts raw bytes before trimming, so a row padded with
+		// whitespace must be rejected here too rather than only at upload.
+		{
+			name: "row padded past the firmware line buffer",
+			data: "CBI1\n1 1\n1\n#FFFFFF\n" + strings.Repeat(" ", 600) + "a\n",
+			want: "exceeds 512 bytes",
+		},
+		// A run length that overflows int wraps to a small value and would
+		// otherwise pass, while the firmware's pre-multiply bound rejects it.
+		{
+			name: "run length overflowing the parser",
+			data: "CBI1\n1 1\n1\n#FFFFFF\n18446744073709551617a\n",
+			want: "invalid RLE run",
+		},
+		// The firmware picks the animated path from the .cba suffix alone, so
+		// a payload stored under the wrong extension installs and then never
+		// draws.
+		{
+			name: "animated payload stored as .cbi",
+			data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\na\n",
+			want: "contains a CBA1 payload",
+		},
+		// The device validator holds a header line in a 64-byte token buffer
+		// while rows are streamed, so a long numeric token passes every other
+		// check and fails only at upload.
+		{
+			name: "header token past the device token buffer",
+			data: "CBI1\n4 " + strings.Repeat("0", 70) + "1\n1\n#FFFFFF\n4a\n",
+			want: "max 63 for a header line",
+		},
+		// Both firmware readers drop a lone CR without ending the line, so a
+		// CR-only file is one unparsable line on the device. Splitting it here
+		// would accept a pack the device rejects mid-install.
+		{
+			name: "carriage-return-only line endings",
+			data: "CBI1\r1 1\r1\r#FFFFFF\ra\r",
+			want: "unsupported header",
+		},
+		// The firmware header parser reads digits only, so a signed value is
+		// rejected on the device. Accepting it here would start an install
+		// that fails partway through.
+		{
+			name: "signed sprite dimensions",
+			data: "CBI1\n+1 +1\n1\n#FFFFFF\na\n",
+			want: "must be numeric",
+		},
+		{
+			name: "signed palette size",
+			data: "CBI1\n1 1\n+1\n#FFFFFF\na\n",
+			want: "palette size must be 1..26",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ext := tc.ext
+			if ext == "" {
+				ext = ".cbi"
+			}
+			dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+				{path: "/themes/u/good.cbi", file: "assets/good.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+				{path: "/themes/u/extra" + ext, file: "assets/extra" + ext, data: tc.data},
+			})
+
+			_, err := Load(dir)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected unreferenced sprite rejection containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// A CBA is composed in a full-frame buffer, so its rendered size is capped at
+// 80x80 even though a source sprite may be up to 480px. A pack that renders
+// larger must be rejected before installation starts writing to the device.
+// The firmware compares asset suffixes against lowercase literals, so an
+// uppercase extension silently changes how the device treats the file.
+func TestLoadRejectsUppercaseSpriteExtension(t *testing.T) {
+	spec := `{"v":1,"id":"upper-ext","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/a.CBA"}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/a.CBA", file: "assets/a.CBA", data: "CBA1\n1 1 2 4\n1\n#FFFFFF\na\na\n"},
+	})
+
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "extension must be lowercase") {
+		t.Fatalf("expected uppercase extension rejection, got %v", err)
+	}
+}
+
+// Only animated assets are classified by their suffix. A static sprite is
+// dispatched from its CBI1 header, and the pack format imposes no lowercase
+// rule on other files, so rejecting either would refuse a renderable pack.
+func TestLoadAcceptsUppercaseExtensionOnStaticAndUnclassifiedAssets(t *testing.T) {
+	spec := `{"v":1,"id":"upper-other","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/icon.CBI"}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/icon.CBI", file: "assets/icon.CBI", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+		{path: "/themes/u/notes.TXT", file: "assets/notes.TXT", data: "readme\n"},
+	})
+
+	if _, err := Load(dir); err != nil {
+		t.Fatalf("expected an uppercase static sprite extension to load, got %v", err)
+	}
+}
+
+// ReadTrimmedLine() collapses an interior whitespace run to one separator, so
+// a header padded between its fields is renderable and must not be rejected
+// only by the app.
+func TestLoadAcceptsHeaderWithCollapsibleSeparators(t *testing.T) {
+	spec := `{"v":1,"id":"padded-header","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":4,"h":1,"a":"/themes/u/p.cbi"}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/p.cbi", file: "assets/p.cbi", data: "CBI1\n4" + strings.Repeat(" ", 100) + "1\n1\n#FFFFFF\n4a\n"},
+	})
+
+	if _, err := Load(dir); err != nil {
+		t.Fatalf("a header the device collapses and renders must load: %v", err)
+	}
+}
+
+func TestLoadRejectsAnimatedSpriteRenderedAboveBufferLimit(t *testing.T) {
+	oversizedFrame := "CBA1\n100 100 2 4\n1\n#FFFFFF\n" +
+		strings.Repeat("100a\n", 200)
+	smallFrame := "CBA1\n40 40 2 4\n1\n#FFFFFF\n" + strings.Repeat("40a\n", 80)
+
+	for _, tc := range []struct {
+		name    string
+		spec    string
+		data    string
+		wantErr bool
+	}{
+		{
+			// Omitted primitive dimensions mean the asset draws at its own
+			// size, so the source dimensions decide the buffer.
+			name:    "asset larger than the buffer with implicit size",
+			spec:    `{"v":1,"id":"big-cba","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"a":"/themes/u/anim.cba"}]}`,
+			data:    oversizedFrame,
+			wantErr: true,
+		},
+		{
+			// A small asset scaled up past the buffer fails the same way.
+			name:    "small asset rendered above the buffer",
+			spec:    `{"v":1,"id":"scaled-cba","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":100,"h":100,"a":"/themes/u/anim.cba"}]}`,
+			data:    smallFrame,
+			wantErr: true,
+		},
+		{
+			// A large source asset explicitly scaled into the buffer is fine.
+			name:    "large asset scaled into the buffer",
+			spec:    `{"v":1,"id":"scaled-down-cba","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":80,"h":80,"a":"/themes/u/anim.cba"}]}`,
+			data:    oversizedFrame,
+			wantErr: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := writeThemePackWithSpec(t, tc.spec, []themePackTestAsset{
+				{path: "/themes/u/anim.cba", file: "assets/anim.cba", data: tc.data},
+			})
+
+			_, err := Load(dir)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "renders animated sprite") {
+					t.Fatalf("expected render-size rejection, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("pack scaled into the buffer should load: %v", err)
+			}
+		})
+	}
+}
+
 func TestRepositoryThemePacksLoadWithRenderableAssets(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "theme-packs")
 	entries, err := os.ReadDir(root)

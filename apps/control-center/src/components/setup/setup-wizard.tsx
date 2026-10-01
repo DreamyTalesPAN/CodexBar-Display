@@ -13,6 +13,7 @@ import type {
 } from "../control-center-types";
 import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
+import { copyForHost } from "@/lib/customer-platform";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
 import {
@@ -67,6 +68,8 @@ export type SetupWizardProps = {
   onRepairUsageService?: () => void;
   /** The customer put the incident away; it returns only if a new one starts. */
   onDismissUsageFailure?: () => void;
+  /** The app runs on Windows, where "this Mac" reads "this computer". */
+  windowsHost?: boolean;
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
   connectionMode: string;
@@ -83,6 +86,8 @@ export type SetupWizardProps = {
   displaySavePending: boolean;
   /** Percent of the running firmware install, for the frozen log line. */
   firmwareProgress?: number;
+  /** Share of the firmware really written, for the counting update line. */
+  firmwareWrittenPercent?: number;
   /** A running update restored from the Companion after reopening the app. */
   firmwareInstallLogs?: string[];
   installingTheme: boolean;
@@ -112,6 +117,7 @@ export type SetupWizardProps = {
   themeRetryLabel?: string;
   onProviderCheck: (provider: ProviderItem) => void;
   onProviderOpenSignIn?: (provider: ProviderItem) => void;
+  onProviderOpenSetupGuide?: () => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
   /**
    * Resolving false keeps the customer on the step: the companion can refuse
@@ -202,6 +208,9 @@ export function SetupWizard(props: SetupWizardProps) {
   // continuation pairs the VibeTV and can start a firmware install, so without
   // this Cancel left both to happen anyway.
   const manualAttemptRef = useRef(0);
+  // The customer's latest Cable/WiFi choice. A WiFi switch answers late, and
+  // an answer to a choice they have since replaced must not bring it back.
+  const transportChoiceRef = useRef(0);
   const directAttempt = useRef("");
   const manualLookupInFlightRef = useRef(false);
   const [searchErrorDismissed, setSearchErrorDismissed] = useState(false);
@@ -289,7 +298,16 @@ export function SetupWizard(props: SetupWizardProps) {
   // into the wizard for the length of every display save.
   const step =
     props.displaySavePending && derived === "theme" ? "display" : derived;
-  const back = previousSetupStep(step);
+  // Issue #423: with exactly one provider switched on there is nothing to
+  // choose on the display step, so it is skipped in both directions. The
+  // toggles decide, not which providers happen to have data.
+  const enabledProviders = props.providers.filter((provider) => provider.value);
+  const soleProvider = enabledProviders.length === 1 ? enabledProviders[0] : null;
+  // The skip chose for the customer. Once a second provider is on, the choice
+  // is theirs again, so the next Continue shows the display step.
+  const displayChoiceSkipped = useRef(false);
+  const back =
+    step === "theme" && soleProvider ? "providers" : previousSetupStep(step);
   // Counted so a write started before a Back press cannot undo it: the display
   // save can still be running when the customer leaves, and its continuation
   // used to release the override and carry them forward from the step they had
@@ -298,6 +316,9 @@ export function SetupWizard(props: SetupWizardProps) {
   const goBack = back
     ? () => {
         navigations.current += 1;
+        if (step === "theme" && back === "providers") {
+          displayChoiceSkipped.current = true;
+        }
         if (back === "theme") {
           props.onReturnToThemes();
           return;
@@ -404,6 +425,7 @@ export function SetupWizard(props: SetupWizardProps) {
 
   const chooseTransport = useCallback(
     async (transport: SetupTransport) => {
+      const choice = ++transportChoiceRef.current;
       resetConnect();
       setWiFiError(null);
       setPreferredTransport(transport);
@@ -439,6 +461,7 @@ export function SetupWizard(props: SetupWizardProps) {
       try {
         result = await onSelectConnectionMode("wifi", cable?.deviceId);
       } catch (error) {
+        if (choice !== transportChoiceRef.current) return;
         const failure = error as ApiError;
         setWiFiError(
           [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
@@ -449,6 +472,7 @@ export function SetupWizard(props: SetupWizardProps) {
         setNotFoundDismissed(false);
         return;
       }
+      if (choice !== transportChoiceRef.current) return;
       if (result.status === "wifi_credentials_required") {
         setWiFiSetup({
           phase: "credentials",
@@ -648,6 +672,7 @@ export function SetupWizard(props: SetupWizardProps) {
         }}
         onRepair={props.onRepairUsageService}
         open
+        windowsHost={props.windowsHost}
       />
     ) : null;
 
@@ -655,6 +680,7 @@ export function SetupWizard(props: SetupWizardProps) {
     aiFixPrompt: () =>
       aiFixPrompt(connectLogLines(connect.state).map((line) => line.text)),
     onCreateSupportReport,
+    windowsHost: props.windowsHost,
   };
 
   const restoredInstallLogs = !connectInFlight && props.firmwareInstallLogs
@@ -707,7 +733,7 @@ export function SetupWizard(props: SetupWizardProps) {
           candidates={visibleCandidates}
           connecting={connecting}
           connectPhase={connect.state.phase}
-          logLines={connectLogLines(connect.state)}
+          logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           onConnect={startConnect}
           onBack={
             connect.state.phase === "idle" &&
@@ -715,6 +741,7 @@ export function SetupWizard(props: SetupWizardProps) {
             preferredTransport !== "choose" &&
             wifiSetup?.phase !== "waiting"
               ? () => {
+                  transportChoiceRef.current += 1;
                   setPreferredTransport("choose");
                   setConnectionDeviceId(null);
                   setWiFiSetup(null);
@@ -782,6 +809,7 @@ export function SetupWizard(props: SetupWizardProps) {
               void chooseTransport("wifi");
             }}
             open={searchFailed && !wifiSetup}
+            windowsHost={props.windowsHost}
           />
         )}
         {/*
@@ -808,9 +836,10 @@ export function SetupWizard(props: SetupWizardProps) {
           title="We couldn't search for your VibeTV"
         />
         <SetupConnectFailedDialog
+          // The failure copies the Companion's own words, which name the Mac.
           description={
             connect.failure?.kind === "connect"
-              ? connect.failure.description
+              ? copyForHost(connect.failure.description, Boolean(props.windowsHost))
               : ""
           }
           onEnterAddressManually={() => {
@@ -824,7 +853,9 @@ export function SetupWizard(props: SetupWizardProps) {
           }}
           open={connect.failure?.kind === "connect"}
           title={
-            connect.failure?.kind === "connect" ? connect.failure.title : ""
+            connect.failure?.kind === "connect"
+              ? copyForHost(connect.failure.title, Boolean(props.windowsHost))
+              : ""
           }
         />
         {connect.failure?.kind === "firmware-blocked" ? (
@@ -841,12 +872,13 @@ export function SetupWizard(props: SetupWizardProps) {
             }
             open
             reason={connect.failure.reason}
+            windowsHost={props.windowsHost}
           />
         ) : null}
         <SetupFirmwareUpdateFailedDialog
           attentionMessage={
             connect.failure?.kind === "firmware-attention"
-              ? connect.failure.description
+              ? copyForHost(connect.failure.description, Boolean(props.windowsHost))
               : undefined
           }
           onCreateSupportReport={() => void onCreateSupportReport()}
@@ -861,9 +893,12 @@ export function SetupWizard(props: SetupWizardProps) {
           Last. A failed firmware check landing on top of "Finish AI setup on
           this Mac" left a customer with two stacked cards and neither
           answerable. A scan that could not be made is a failure of this step
-          too, so its dialog wins the same way.
+          too, so its dialog wins the same way. A running connect sequence
+          holds it back as well: its firmware install owns the screen, and a
+          Repair pressed mid-update restarts the service running it.
         */}
-        {connect.failure ||
+        {connectInFlight ||
+        connect.failure ||
         wifiError ||
         searchFailed ||
         (props.searchError && !searchErrorDismissed) ||
@@ -882,6 +917,7 @@ export function SetupWizard(props: SetupWizardProps) {
           onBack={goBack}
           onCheckAgain={props.onProviderCheck}
           onOpenSignIn={props.onProviderOpenSignIn}
+          onOpenSetupGuide={props.onProviderOpenSetupGuide}
           continuing={providersContinuing}
           onContinue={() => {
             // Not goForward() first: coming back here from the theme step
@@ -889,7 +925,27 @@ export function SetupWizard(props: SetupWizardProps) {
             // customer on to a screen that cannot render it.
             setProvidersContinuing(true);
             const navigation = navigations.current;
-            void Promise.resolve(props.onProvidersContinue())
+            const complete = async () => {
+              if (soleProvider) {
+                const saved = await props.onDisplayContinue({
+                  mode: "fixed",
+                  providerIds: [soleProvider.providerId],
+                });
+                if (saved === false || navigation !== navigations.current) {
+                  return false;
+                }
+                setDisplayDraft(null);
+                displayChoiceSkipped.current = true;
+              }
+              const done = await props.onProvidersContinue();
+              if (done !== false && typeof done !== "string" &&
+                  !soleProvider && displayChoiceSkipped.current) {
+                displayChoiceSkipped.current = false;
+                return "display" as const;
+              }
+              return done;
+            };
+            void complete()
               .then((done) => {
                 if (done === false || navigation !== navigations.current) {
                   return;
@@ -912,6 +968,7 @@ export function SetupWizard(props: SetupWizardProps) {
           loading={props.providersLoading}
           providers={props.providers}
           usage={props.usage}
+          windowsHost={props.windowsHost}
         />
         <SetupStepFailedDialog
           error={props.providerError}

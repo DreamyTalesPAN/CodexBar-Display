@@ -32,7 +32,6 @@ import {
 } from "./setup/setup-display-mode-screen";
 import {
   ProviderList,
-  offeredProviders,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
@@ -68,6 +67,8 @@ export type SettingsScreenProps = {
   providerPicker: ProviderPickerProps;
   onSaveStandby: (value: StandbySettings) => void;
   onStandbyBrightnessChange: (value: number) => void;
+  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  windowsHost?: boolean;
 };
 
 export function SettingsScreen({
@@ -87,7 +88,9 @@ export function SettingsScreen({
   providerPicker,
   onSaveStandby,
   onStandbyBrightnessChange,
+  windowsHost = false,
 }: SettingsScreenProps) {
+  const thisHost = windowsHost ? "this computer" : "this Mac";
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
@@ -123,14 +126,8 @@ export function SettingsScreen({
     (!deviceIsCustomerConnected(device) && !deviceCanSwitchToCable(device)) ||
     localActionBusy;
 
-  // The shortened list and the sign-in button ship together as one Windows
-  // launch decision, and the companion only hands down the sign-in action
-  // there. Without it this is the Mac app, which keeps CodexBar's full
-  // provider inventory exactly as it is today.
-  const allProviders = (providerPicker.items || []).filter(isProviderItem);
-  const providers = providerPicker.onOpenSignIn
-    ? offeredProviders(allProviders)
-    : allProviders;
+  // Every provider CodexBar reports is listed, on Windows as on the Mac.
+  const providers = (providerPicker.items || []).filter(isProviderItem);
   // Manual pins the device to exactly one provider, so it may only offer ones
   // that can actually produce a reading. Offering every switched-on provider,
   // as the design board's wording does, lets a customer pin VibeTV to a
@@ -168,7 +165,7 @@ export function SettingsScreen({
           role="group"
         >
           {([
-            { mode: "cable", label: "USB-C", description: "Requires a data cable connected to this Mac.", Icon: CircleArrowRight, supported: cableSupported },
+            { mode: "cable", label: "USB-C", description: `Requires a data cable connected to ${thisHost}.`, Icon: CircleArrowRight, supported: cableSupported },
             { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", Icon: Wifi, supported: wifiSupported },
           ] as const).map(({ mode, label, description, Icon, supported }) => (
             <Item
@@ -202,7 +199,7 @@ export function SettingsScreen({
               <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
               <DialogDescription>
                 {requestedMode === "cable"
-                  ? "Connect VibeTV to this Mac with a data cable. WiFi stays on until the app confirms the cable connection. Your saved network, themes, providers and brightness stay saved."
+                  ? `Connect VibeTV to ${thisHost} with a data cable. WiFi stays on until the app confirms the cable connection. Your saved network, themes, providers and brightness stay saved.`
                   : "VibeTV connects to your saved WiFi network. If network details are needed, WiFi setup opens. Themes, providers and brightness stay saved."}
               </DialogDescription>
             </DialogHeader>
@@ -378,7 +375,7 @@ export function SettingsScreen({
       <ItemSeparator className="my-0" />
 
       <SettingsSection
-        description="Connect this Mac to another VibeTV."
+        description={`Connect ${thisHost} to another VibeTV.`}
         title="Setup"
       >
         <div>
@@ -406,6 +403,11 @@ export function SettingsScreen({
           onOpenSignIn={
             providerPicker.onOpenSignIn
               ? (provider) => void providerPicker.onOpenSignIn?.(provider)
+              : undefined
+          }
+          onOpenSetupGuide={
+            providerPicker.onOpenSetupGuide
+              ? () => void providerPicker.onOpenSetupGuide?.()
               : undefined
           }
           onToggle={(provider, enabled) =>

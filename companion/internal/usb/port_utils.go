@@ -82,6 +82,15 @@ func setControlLinesLow(port SerialPort) {
 	_ = port.SetRTS(false)
 }
 
+// resetBoard pulses the auto-reset circuit into a normal boot: RTS holds EN
+// low while DTR keeps IO0 high.
+func resetBoard(port SerialPort, sleep func(time.Duration)) {
+	_ = port.SetDTR(false)
+	_ = port.SetRTS(true)
+	sleep(100 * time.Millisecond)
+	_ = port.SetRTS(false)
+}
+
 func closePortBestEffort(port SerialPort, path string, timeout time.Duration) error {
 	if port == nil {
 		return nil

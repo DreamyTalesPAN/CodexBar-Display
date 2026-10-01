@@ -63,6 +63,27 @@ describe("buildAiFixPrompt", () => {
     expect(prompt).not.toContain("macOS");
   });
 
+  it("names the computer, not a Mac, in the Windows app", () => {
+    const prompt = buildAiFixPrompt({
+      ...base,
+      appVersion: "1.4.2",
+      events: [event("1", "Mac App needs setup", "Restart the Mac App.")],
+      lastError: {
+        code: "COMPANION_UNREACHABLE",
+        message: "Mac App did not answer.",
+        nextAction: "Open it again from Applications.",
+      },
+      osVersion: "windows",
+      windowsHost: true,
+    });
+
+    expect(prompt).toContain("working on this computer.");
+    expect(prompt).toContain("App: 1.4.2 · Windows");
+    expect(prompt).toContain("COMPANION_UNREACHABLE — app did not answer.");
+    expect(prompt).toContain("from the Start menu");
+    expect(prompt).not.toContain("Mac");
+  });
+
   it("carries the log the screen is showing, which the event log is not", () => {
     const prompt = buildAiFixPrompt({
       ...base,

@@ -34,6 +34,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { copyForHost } from "@/lib/customer-platform";
 import {
   deviceIsReady,
   type DeviceInfo,
@@ -62,6 +63,8 @@ export type LogsScreenProps = {
   onRunSetupAgain?: () => void;
   busyAction?: string | null;
   supportReportBusy?: boolean;
+  /** The app runs on Windows, where "Mac App" reads "app". */
+  windowsHost?: boolean;
 };
 
 export function LogsScreen({
@@ -74,8 +77,11 @@ export function LogsScreen({
   onRunSetupAgain,
   busyAction,
   supportReportBusy = false,
+  windowsHost = false,
 }: LogsScreenProps) {
   const deviceConnected = deviceIsReady(device);
+  const supportText = (value: string) =>
+    copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
     <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
@@ -85,7 +91,10 @@ export function LogsScreen({
             <CardTitle>Connected VibeTV</CardTitle>
             <CardDescription>
               {deviceConnected
-                ? "The VibeTV currently controlled by this Mac."
+                ? copyForHost(
+                    "The VibeTV currently controlled by this Mac.",
+                    windowsHost,
+                  )
                 : "No VibeTV is currently connected."}
             </CardDescription>
             <CardAction>
@@ -168,8 +177,8 @@ export function LogsScreen({
           {lastError ? (
             <Alert>
               <AlertTriangle aria-hidden />
-              <AlertTitle>{formatCustomerSupportText(lastError.message)}</AlertTitle>
-              <AlertDescription>{formatCustomerSupportText(lastError.nextAction)}</AlertDescription>
+              <AlertTitle>{supportText(lastError.message)}</AlertTitle>
+              <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
             </Alert>
           ) : null}
           {events.length ? (
@@ -179,8 +188,8 @@ export function LogsScreen({
                   <Item className="rounded-none border-0" key={event.id} size="sm">
                     <ItemMedia variant="icon"><Activity aria-hidden /></ItemMedia>
                     <ItemContent>
-                      <ItemTitle>{formatCustomerSupportText(event.label)}</ItemTitle>
-                      {event.detail ? <ItemDescription className="line-clamp-none break-words">{formatCustomerSupportText(event.detail)}</ItemDescription> : null}
+                      <ItemTitle>{supportText(event.label)}</ItemTitle>
+                      {event.detail ? <ItemDescription className="line-clamp-none break-words">{supportText(event.detail)}</ItemDescription> : null}
                     </ItemContent>
                     <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                       <Clock size={14} aria-hidden />

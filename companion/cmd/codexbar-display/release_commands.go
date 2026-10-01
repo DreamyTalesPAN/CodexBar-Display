@@ -82,6 +82,8 @@ var (
 	resolveCableFirmwarePortFn                         = usb.ResolveVibeTVControlPort
 	readCableFirmwareHelloFn                           = usb.ReadDeviceHello
 	transferCableFirmwareFn                            = usb.TransferFirmware
+	findLegacyCableVibeTVFn                            = usb.FindLegacyCableVibeTV
+	flashCableRescueFn                                 = usb.FlashESP8266AppImage
 	cableFirmwareVerifyTimeout                         = 120 * time.Second
 	cableFirmwareVerifyPollInterval                    = time.Second
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
@@ -108,6 +110,10 @@ var (
 // CLI updater and marks the child with this environment variable so the
 // writer-quiesce gate does not refuse its own parent.
 const firmwareUpdateParentPausedEnvVar = "VIBETV_UPDATE_PARENT_PAUSED"
+
+// cableRescueTarget flashes a VibeTV whose firmware predates the Cable
+// identity contract through its ROM loader. Only the rescue job passes it.
+const cableRescueTarget = "cable-rescue://vibetv"
 
 // otherRuntimeWriterAlive reports whether a local VibeTV runtime answers on
 // its Companion API port. A reachable /v1/runtime-health means a runtime is
@@ -574,12 +580,28 @@ func runInstallUpdate(args []string) (retErr error) {
 			Hint: "quit the VibeTV Mac App (or stop the companion daemon), then retry; pass --i-stopped-all-writers only after every device writer is stopped",
 		}
 	}
-	cableMode := strings.EqualFold(strings.TrimRight(strings.TrimSpace(*target), "/"), "cable://vibetv")
+	normalizedTarget := strings.TrimRight(strings.TrimSpace(*target), "/")
+	rescueMode := strings.EqualFold(normalizedTarget, cableRescueTarget)
+	cableMode := rescueMode || strings.EqualFold(normalizedTarget, "cable://vibetv")
 	base := "cable://vibetv"
 	var cablePort string
 	var deviceToken string
 	var hello protocol.DeviceHello
-	if cableMode {
+	if rescueMode {
+		// Firmware from before the Cable identity contract has neither a
+		// deviceId nor Cable transfer. The ROM loader rewrites it anyway.
+		var device usb.CableDevice
+		device, err = findLegacyCableVibeTVFn()
+		if err != nil {
+			// The parent released the port a moment ago; a reset from that
+			// handover can swallow the boot hello. One fresh probe decides.
+			device, err = findLegacyCableVibeTVFn()
+		}
+		if err != nil {
+			return &commandError{Op: "cable-rescue-device", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+		cablePort, hello = device.Port, device.Hello
+	} else if cableMode {
 		cfg, loadErr := runtimeconfig.Load(home)
 		if loadErr != nil {
 			return &commandError{Op: "load-cable-config", Code: errcode.UpgradeFlashFirmware, Err: loadErr}
@@ -709,11 +731,39 @@ func runInstallUpdate(args []string) (retErr error) {
 	fmt.Println("Uploading firmware...")
 	var uploadErr error
 	uploadInterrupted := false
-	if cableMode {
+	if rescueMode {
 		var image []byte
 		image, uploadErr = os.ReadFile(imagePath)
 		if uploadErr == nil {
-			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image)
+			uploadErr = flashCableRescueFn(ctx, cablePort, image, func(percent int) {
+				fmt.Printf("Writing firmware: %d%%\n", percent)
+			})
+		}
+	} else if cableMode {
+		// The release's gzip image is about 30% smaller, and the ESP8266
+		// updater stores it as is and unpacks it on the next boot, so it goes
+		// over the Cable unchanged. Only when this run downloaded and checked
+		// the .gz: the version folder can still hold one from an earlier
+		// manifest. The unpacked image stays for the rescue path and WiFi.
+		cableImagePath := imagePath
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(artifact.Asset)), ".gz") {
+			cableImagePath += ".gz"
+		}
+		var image []byte
+		image, uploadErr = os.ReadFile(cableImagePath)
+		if uploadErr == nil {
+			// The same line the rescue path prints, which the Companion already
+			// turns into the percentage the setup log and Updates screen show.
+			lastPercent := -1
+			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image, usb.TransferOptions{
+				Fast: hello.HasFeature(protocol.FeatureCableTransferV2),
+				Progress: func(sent, total int) {
+					if percent := sent * 100 / total; percent != lastPercent {
+						lastPercent = percent
+						fmt.Printf("Writing firmware: %d%%\n", percent)
+					}
+				},
+			})
 		}
 		uploadInterrupted = errors.Is(uploadErr, usb.ErrCableTransferInterrupted)
 	} else {
@@ -779,7 +829,13 @@ func runInstallUpdate(args []string) (retErr error) {
 	var verifiedHello protocol.DeviceHello
 	var helloErr error
 	if cableMode {
-		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, cableFirmwareVerifyTimeout)
+		// A rescued VibeTV has no identity to resolve by yet. Its own port is
+		// the only proof, or another connected VibeTV could answer for it.
+		rescuedPort := ""
+		if rescueMode {
+			rescuedPort = cablePort
+		}
+		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, rescuedPort, cableFirmwareVerifyTimeout)
 	} else {
 		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
 		if err == nil {
@@ -808,6 +864,10 @@ func runInstallUpdate(args []string) (retErr error) {
 			Err:  helloErr,
 			Hint: "wait one minute, then reconnect VibeTV",
 		}
+	}
+	if rescueMode {
+		// The rescued firmware is the first to report the device identity.
+		deviceID = strings.TrimSpace(verifiedHello.DeviceID)
 	}
 	if helloErr != nil || !strings.EqualFold(strings.TrimSpace(verifiedHello.DeviceID), deviceID) {
 		return &commandError{
@@ -841,7 +901,8 @@ func runInstallUpdate(args []string) (retErr error) {
 func waitForCableFirmwareVersion(
 	ctx context.Context,
 	targetVersion,
-	deviceID string,
+	deviceID,
+	port string,
 	timeout time.Duration,
 ) (protocol.DeviceHello, error) {
 	deadline := time.Now().Add(timeout)
@@ -850,12 +911,17 @@ func waitForCableFirmwareVersion(
 		if err := ctx.Err(); err != nil {
 			return protocol.DeviceHello{}, err
 		}
-		port, err := resolveCableFirmwarePortFn("", deviceID)
+		resolved, err := port, error(nil)
+		if resolved == "" {
+			resolved, err = resolveCableFirmwarePortFn("", deviceID)
+		}
 		if err == nil {
 			var hello protocol.DeviceHello
-			hello, err = readCableFirmwareHelloFn(port)
+			hello, err = readCableFirmwareHelloFn(resolved)
 			if err == nil {
-				if !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
+				if strings.TrimSpace(hello.DeviceID) == "" {
+					err = errors.New("cable VibeTV has not reported its identity yet")
+				} else if strings.TrimSpace(deviceID) != "" && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
 					err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(deviceID), strings.TrimSpace(hello.DeviceID))
 				} else if normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(targetVersion) {
 					return hello, nil

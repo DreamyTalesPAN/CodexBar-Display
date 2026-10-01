@@ -72,6 +72,31 @@ hardware measurements required by #302.
    15-second inactivity bound discards the temporary asset or ends the inactive
    firmware update without changing the bootable image.
 
+### Cable bulk transfer v2
+
+A device that advertises `cable-transfer-v2` also accepts, on the same
+messages:
+
+- `transfer-chunk` with `b64` (standard base64, up to 1024 decoded bytes)
+  instead of `data`. The chunk checksum is unchanged.
+- `baud` on a firmware `transfer-start` (only 230400). The device sends
+  `ready` at 115200 and then switches; the Mac switches after reading it.
+  Abort, a rejected transfer or the inactivity bound switches the device back
+  to 115200, and a completed firmware transfer restarts it at 115200. A
+  rejection is still sent at the faster rate, before the device switches back.
+
+460800 lost bytes on a real VibeTV, so the device accepts only 230400. The device
+rejects malformed base64 and hex (a lost or foreign character, misplaced
+padding, more than one chunk) before the checksum.
+
+For v1 and v2 alike, the Mac waits two seconds per chunk. A chunk without a
+clean answer is sent again after a bare newline that ends any partial line; the
+device acknowledges the repeat as a duplicate. Three attempts stay inside the
+15-second inactivity bound.
+
+The Mac sends a firmware release's gzip image unchanged; the ESP8266 updater
+stores it and unpacks it on the next boot.
+
 Transfer JSON is consumed before the normal frame parser. Firmware never logs
 the pairing token or payload bytes, and transfer replies are JSON objects with
 `kind:"transfer"`; ordinary debug lines remain non-JSON and are ignored by the
@@ -261,6 +286,7 @@ When the ESP8266 is connected to WiFi, it serves:
 
 - `GET /hello`: returns the same Device Hello JSON shape as Cable Serial. For WiFi, `capabilities.transport.active` is `wifi`. `supported` contains both `usb` and `wifi` only on cutover-capable devices; a migrated legacy device contains only `wifi`.
 - `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts. The `settings.standby` object reports the persisted standby configuration: `enabled`, `timeoutMinutes`, `brightnessPercent`, and `screensaverPath` (the selected slot reference, or `null` when nothing is selected). All of it survives a reboot. The top-level `standby` object reports live state instead of configuration: `active` (the screensaver is on screen right now) and `idleSecs` (seconds since the last frame that moved the usage numbers). Live state never appears in `/hello`, which is a boot snapshot.
+- Sprite render diagnostics: a CBI/CBA asset that cannot be decoded sets `display.themeSpec.renderOk` to `false` with a stable `renderError` code and names the failing theme asset in `renderErrorAsset`. Codes are `cbi_header_invalid`, `cbi_palette_invalid`, `cbi_truncated`, `cbi_row_invalid`, `cba_render_failed`, `sprite_asset_missing`, `sprite_header_unsupported`, `sprite_unreadable`, and the transient `low_heap_cba_buffer` and `cba_buffer_contention`. The two transient codes leave `renderFailures` unchanged, because neither one decoded the asset: `low_heap_cba_buffer` means the frame buffer could not be allocated and has its own `cbaBufferAllocationFailures` counter, while `cba_buffer_contention` means a theme has more animated sprites contending for the single shared frame buffer than can make progress, so none of them completes a frame. Uploads reject a malformed sprite before it is promoted, so a stored sprite that fails to render indicates damage after the write rather than a bad upload.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: with the current pairing token, clears saved WiFi credentials and restarts the device into setup mode.
@@ -345,7 +371,7 @@ WiFi:
   "firmware": "1.0.0",
   "deviceId": "14799300",
   "networkMode": "off",
-  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "cable-transfer-v1", "cable-health-v1"],
+  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {

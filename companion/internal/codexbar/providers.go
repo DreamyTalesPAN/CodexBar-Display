@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,9 +22,21 @@ var runProviderCommandFn = runUsageCommand
 // A variable so the Windows path is testable on the Mac.
 var providerProbePerProvider = runtime.GOOS == "windows"
 
-// perProviderProbeTimeout caps one Windows provider probe, matching the
-// 18 s the setup probe grants each provider.
-const perProviderProbeTimeout = 18 * time.Second
+// perProviderProbeTimeout caps one provider probe. 18 s timed out real
+// customers: the Windows Claude probe alone may take 24 s plus a trust
+// rerun, and a Mac Claude check through Claude Code reported "The provider
+// check timed out." while the provider was working.
+const perProviderProbeTimeout = 40 * time.Second
+
+// ProviderCheckBudget is the longest a caller waits for one provider check:
+// the 5 s inventory read plus one probe. Request and refresh contexts that
+// wrap a check must be at least this long.
+const ProviderCheckBudget = perProviderProbeTimeout + 5*time.Second
+
+// maxParallelProviderProbes matches Win-CodexBar's own refresh
+// (MAX_CONCURRENT_PROVIDER_FETCHES = 8), which also asks the switched-on
+// providers side by side.
+const maxParallelProviderProbes = 8
 
 // withoutDeadline drops the caller's deadline but keeps its values and its
 // explicit cancellation: a client that disconnects or a Companion that shuts
@@ -57,8 +70,8 @@ func providerInventoryArgs() []string {
 // CLI does that with a plain "usage --json". Win-CodexBar 0.56.8 defaults to
 // Claude only and its "--provider all" walks all 69 providers, which does not
 // finish inside the probe timeout (#415). Windows therefore reads the
-// inventory and asks each switched-on provider one by one, then joins the
-// answers into the same JSON array the Mac CLI returns.
+// inventory and asks each switched-on provider on its own, side by side, then
+// joins the answers into the same JSON array the Mac CLI returns.
 func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, extra ...string) ([]byte, error) {
 	if !providerProbePerProvider {
 		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
@@ -77,43 +90,89 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 	if timeout > perProviderProbeTimeout {
 		timeout = perProviderProbeTimeout
 	}
-	joined := make([]json.RawMessage, 0, len(inventory))
-	var lastErr error
-	for i := range inventory {
-		if !inventory[i].Enabled {
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			// The caller gave up; do not start further probes.
-			if len(joined) == 0 {
-				return nil, err
-			}
-			break
-		}
-		args := append([]string{"usage", "--json", "--provider", inventory[i].ID}, extra...)
-		out, runErr := runUsageCommandFn(ctx, timeout, bin, args...)
-		if runErr != nil {
-			lastErr = runErr
-		}
-		var root any
-		if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
-			// Same rule as the health join: a switched-on provider whose
-			// probe produced no JSON is reported unavailable, not dropped
-			// from the answer.
-			if encoded, encodeErr := json.Marshal(silentProbePayload(inventory[i], runErr)); encodeErr == nil {
-				joined = append(joined, encoded)
-			}
-			continue
-		}
-		for _, item := range extractProviderList(root) {
-			encoded, encodeErr := json.Marshal(item)
-			if encodeErr == nil {
-				joined = append(joined, encoded)
-			}
-		}
+	return probeEnabledProviders(ctx, timeout, inventory, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+		args := append([]string{"usage", "--json", "--provider", setting.ID}, extra...)
+		return runUsageCommandFn(ctx, timeout, bin, args...)
+	})
+}
+
+// probeEnabledProviders runs probe for every switched-on provider, up to
+// maxParallelProviderProbes at a time, and joins the answers in inventory
+// order. One after another, each capped provider added its full cap to the
+// check: two slow providers already outlasted the Control Center's request.
+// Side by side, a full check takes as long as its slowest provider.
+//
+// The whole join shares one budget of timeout, so it always fits
+// ProviderCheckBudget: a provider that waits for a free slot gets only the
+// time left, and one that cannot start before the budget ends is reported
+// unavailable instead of opening a second round.
+//
+// A switched-on provider whose probe produced no JSON is reported
+// unavailable, not dropped from the answer. Once the caller gave up, no
+// further probe starts.
+func probeEnabledProviders(ctx context.Context, timeout time.Duration, settings []ProviderSetting, probe func(ProviderSetting, time.Duration) ([]byte, error)) ([]byte, error) {
+	type answer struct {
+		items []json.RawMessage
+		err   error
 	}
-	if len(joined) == 0 && lastErr != nil {
-		return nil, lastErr
+	deadline := time.Now().Add(timeout)
+	answers := make([]answer, len(settings))
+	slots := make(chan struct{}, maxParallelProviderProbes)
+	var wg sync.WaitGroup
+	for i := range settings {
+		if !settings[i].Enabled {
+			continue
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-slots }()
+			if ctx.Err() != nil {
+				return
+			}
+			var out []byte
+			var runErr error
+			if left := time.Until(deadline); left > 0 {
+				out, runErr = probe(settings[i], left)
+			} else {
+				runErr = context.DeadlineExceeded
+			}
+			answers[i].err = runErr
+			var root any
+			if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
+				if encoded, encodeErr := json.Marshal(silentProbePayload(settings[i], runErr)); encodeErr == nil {
+					answers[i].items = []json.RawMessage{encoded}
+				}
+				return
+			}
+			for _, item := range extractProviderList(root) {
+				if encoded, encodeErr := json.Marshal(item); encodeErr == nil {
+					answers[i].items = append(answers[i].items, encoded)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	joined := make([]json.RawMessage, 0, len(settings))
+	var lastErr error
+	for _, answer := range answers {
+		if answer.err != nil {
+			lastErr = answer.err
+		}
+		joined = append(joined, answer.items...)
+	}
+	if len(joined) == 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
 	}
 	return json.Marshal(joined)
 }
@@ -141,9 +200,12 @@ const (
 	// endpoint only answers a browser session. See ProviderBrowserSignInRequired.
 	ProviderHealthBrowserSignIn ProviderHealthState = "browser_sign_in_required"
 	ProviderHealthSetupRequired ProviderHealthState = "setup_required"
-	ProviderHealthNoUsage       ProviderHealthState = "no_usage_available"
-	ProviderHealthUnavailable   ProviderHealthState = "unavailable"
-	ProviderHealthChecking      ProviderHealthState = "checking"
+	// ProviderHealthUnsupported mirrors ProviderUnsupported: the account lost
+	// access to the provider, so no sign-in or repair on this row resolves it.
+	ProviderHealthUnsupported ProviderHealthState = "unsupported"
+	ProviderHealthNoUsage     ProviderHealthState = "no_usage_available"
+	ProviderHealthUnavailable ProviderHealthState = "unavailable"
+	ProviderHealthChecking    ProviderHealthState = "checking"
 )
 
 type ProviderServiceState string
@@ -236,7 +298,7 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 // them. Win-CodexBar 0.56.8 answers that call for Claude only and leaves the
 // other switched-on providers out entirely, so they would stay "checking"
 // forever and block the provider step (#437). Windows therefore probes each
-// switched-on provider one by one, exactly like runUsageAllEnabled, and joins
+// switched-on provider on its own, exactly like runUsageAllEnabled, and joins
 // the answers into the array the Mac CLI returns.
 func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin string, settings []ProviderSetting) ([]byte, error) {
 	statusArgs := []string{"--status", "--web-timeout", "8"}
@@ -255,47 +317,15 @@ func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin stri
 	if timeout > perProviderProbeTimeout {
 		timeout = perProviderProbeTimeout
 	}
-	joined := make([]json.RawMessage, 0, len(settings))
-	var lastErr error
-	for i := range settings {
-		if !settings[i].Enabled {
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			// The caller gave up (client gone, Companion shutting down);
-			// do not start further probes.
-			if len(joined) == 0 {
-				return nil, err
-			}
-			break
-		}
-		args := append([]string{"usage", "--json", "--provider", settings[i].ID}, statusArgs...)
-		out, runErr := runProviderCommandFn(probeCtx, timeout, bin, args...)
-		if runErr != nil {
-			lastErr = runErr
-		}
-		var root any
-		if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
-			// A probe that timed out or exited without JSON must not leave
-			// this provider "checking" behind a healthy neighbour: report it
-			// as unavailable with the reason, so the combined refresh keeps
-			// the per-provider failure instead of dropping it.
-			if encoded, encodeErr := json.Marshal(silentProbePayload(settings[i], runErr)); encodeErr == nil {
-				joined = append(joined, encoded)
-			}
-			continue
-		}
-		for _, item := range extractProviderList(root) {
-			encoded, encodeErr := json.Marshal(item)
-			if encodeErr == nil {
-				joined = append(joined, encoded)
-			}
-		}
-	}
-	if len(joined) == 0 && lastErr != nil {
-		return nil, lastErr
-	}
-	return json.Marshal(joined)
+	// A probe that timed out or exited without JSON must not leave its
+	// provider "checking" behind a healthy neighbour: probeEnabledProviders
+	// reports it unavailable with the reason. Whether a probe may still start
+	// follows the caller's own context, as before; the probe itself runs
+	// under the detached one.
+	return probeEnabledProviders(ctx, timeout, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+		args := append([]string{"usage", "--json", "--provider", setting.ID}, statusArgs...)
+		return runProviderCommandFn(probeCtx, timeout, bin, args...)
+	})
 }
 
 // FetchProviderInventory returns CodexBar's authoritative dynamic provider
@@ -314,7 +344,7 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	if err := checkProviderSettingsVersion(ctx, bin); err != nil {
-		return nil, "", providerSettingsError(ProviderSettingsErrorVersion, err)
+		return nil, "", err
 	}
 
 	timeout := commandTimeout()
@@ -377,17 +407,21 @@ func providerToggleArgs(action, providerID string) []string {
 	return []string{"config", action, "--provider", providerID}
 }
 
+// Only a version that was read and is too old asks for a newer Mac App. A
+// `--version` that did not answer in time -- CodexBar starting cold next to a
+// cost refresh, right after the background service restarted -- is the
+// settings being unavailable for a moment, not the app being outdated.
 func checkProviderSettingsVersion(ctx context.Context, bin string) error {
 	version, err := installedVersion(ctx, bin)
 	if err != nil {
-		return err
+		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	minimum, err := parseLooseVersion(minProviderSettingsVersion)
 	if err != nil {
-		return err
+		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	if version.Compare(minimum) < 0 {
-		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minProviderSettingsVersion)
+		return providerSettingsError(ProviderSettingsErrorVersion, fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minProviderSettingsVersion))
 	}
 	return nil
 }
@@ -549,6 +583,11 @@ func providerHealthErrorText(value any) string {
 }
 
 func classifyProviderHealth(raw string) ProviderHealthState {
+	// Share the terminal diagnosis with the setup path, ahead of the auth
+	// markers below: the shutdown message contains "oauth" and "sign in".
+	if classifyProviderError(raw) == ProviderUnsupported {
+		return ProviderHealthUnsupported
+	}
 	message := strings.ToLower(raw)
 	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "cookie", "token"} {
 		if strings.Contains(message, marker) {

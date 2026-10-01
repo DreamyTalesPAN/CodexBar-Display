@@ -10,6 +10,8 @@ type SetupWelcomeScreenProps = {
   lines: SetupLogLine[];
   aiFixPrompt?: () => string;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
+  /** The app runs on Windows; the Help menu words its outcomes for it. */
+  windowsHost?: boolean;
   /**
    * Offered while the WiFi search runs. Deliberately a departure from the
    * artboard, which gives this step no controls at all: the search owns up to
@@ -28,6 +30,7 @@ export function SetupWelcomeScreen({
   lines,
   aiFixPrompt,
   onCreateSupportReport,
+  windowsHost,
   onEnterAddressManually,
 }: SetupWelcomeScreenProps) {
   return (
@@ -35,6 +38,7 @@ export function SetupWelcomeScreen({
       label="Welcome"
       aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
+      windowsHost={windowsHost}
     >
       <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
         Welcome to
