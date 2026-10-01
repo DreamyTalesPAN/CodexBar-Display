@@ -145,8 +145,8 @@ Manual on hardware (open, to be run before release):
   automated.
 - **Support period:** to be stated in the declaration of conformity and on the
   product page (proposal: security updates for at least 5 years from sale).
-- **Vulnerability contact:** hello@vibetv.shop. Still to be published as the
-  security contact on vibetv.shop.
+- **Vulnerability contact:** hello@vibetv.shop (subject "Security"), published
+  on https://vibetv.shop/policies/contact-information since 2026-10-01.
 - **RNG caveat:** the ESP8266 hardware RNG is documented as truly random while
   the radio is on. USB pairing can run with the radio off. The lab should
   confirm whether this is acceptable or whether pairing must mix in radio
