@@ -41,6 +41,7 @@ UI, and only the rendered screen shows that.
 - `scripts/vibetv-rehearse-cold-start.sh` -- wipes every VibeTV and CodexBar trace from this Mac, then installs the Mac App and firmware from the candidate under test. No update path: the "unboxed today, already on the new build" state.
 - `scripts/vibetv-rehearse-warm-start.sh` -- restores today's public customer state (current public Mac App + released firmware), then publishes the candidate so both updates appear in the Updates tab. You drive the visible customer flow yourself: Mac App through Sparkle first, then firmware.
 - Shared logic lives in `scripts/lib/vibetv-rehearsal.sh`. Both take `--main`, `--pr <number>`, `--run-id`, `--device-target`, `--companion-override`, `--keep-codexbar`, `--restore`, `--yes`; warm start also takes `--skip-firmware-baseline`.
+- A VibeTV on the USB cable has no address: pass `--device-target cable://vibetv`. Firmware then goes over the cable with this Mac's pairing, so cold start flashes before the purge.
 
 `--main` is what a release is validated with: the current `main` tip is the
 candidate, tested against the published customer state. It resolves the release

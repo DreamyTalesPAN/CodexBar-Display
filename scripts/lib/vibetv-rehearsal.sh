@@ -96,7 +96,8 @@ Usage: $(basename "$0") [options]
                          release: its release candidate is the candidate
   --pr <number>          Pull request whose merge-gate candidate to install (default: $REHEARSAL_PR)
   --run-id <id>          Use an explicit candidate run instead of resolving one
-  --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72 (default: autodetect)
+  --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72, or
+                         cable://vibetv for a VibeTV on the USB cable (default: autodetect)
   --restore-from <run>   Restore a named run under ~/.vibetv-rehearsal/runs
                          instead of the newest one with a backup
   --companion-override <path>
@@ -159,9 +160,62 @@ rehearsal::open_run_dir() {
 
 # --------------------------------------------------------------- device helpers
 
+rehearsal::is_cable_target() {
+  [[ "${1:-$REHEARSAL_DEVICE_TARGET}" == cable://* ]]
+}
+
 rehearsal::device_hello() {
   local target="$1" timeout="${2:-8}"
+  if rehearsal::is_cable_target "$target"; then
+    rehearsal::cable_hello "$timeout"
+    return
+  fi
   curl -fsS --connect-timeout "$timeout" -m "$timeout" "${target%/}/hello" 2>/dev/null || return 1
+}
+
+# A Cable VibeTV has no address. While the runtime runs it holds the serial port
+# exclusively, so it is asked; once it is stopped, the device answers directly.
+rehearsal::cable_hello() {
+  local timeout="$1"
+  curl -fsS -m 3 http://127.0.0.1:47832/v1/device 2>/dev/null | python3 -c '
+import json, sys
+device = json.load(sys.stdin).get("device") or {}
+if not device.get("connected") or not device.get("deviceId"):
+    sys.exit(1)
+print(json.dumps({"kind": "hello", "deviceId": device["deviceId"],
+                  "firmware": device.get("firmware"), "board": device.get("board")}))
+' 2>/dev/null && return 0
+
+  python3 - "$timeout" <<'PY' 2>/dev/null
+import glob, json, sys, time
+import serial
+
+deadline = time.time() + float(sys.argv[1])
+ports = sorted(glob.glob("/dev/cu.usbserial*") + glob.glob("/dev/cu.wchusbserial*"))
+for path in ports:
+    port = serial.Serial()
+    port.port, port.baudrate, port.timeout = path, 115200, 0.2
+    port.dtr = port.rts = False  # opening must not reset the board
+    try:
+        port.open()
+    except Exception:
+        continue
+    buffer = b""
+    port.write(b'{"kind":"request","op":"hello"}\n')
+    while time.time() < deadline:
+        buffer += port.read(4096)
+        *lines, buffer = buffer.split(b"\n")
+        for line in lines:
+            try:
+                hello = json.loads(line)
+            except Exception:
+                continue
+            if hello.get("kind") == "hello" and hello.get("deviceId"):
+                print(json.dumps(hello))
+                sys.exit(0)
+    port.close()
+sys.exit(1)
+PY
 }
 
 # Finds the VibeTV: explicit flag, remembered target, stored config, then a
