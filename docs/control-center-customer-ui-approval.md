@@ -4655,3 +4655,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul enabled Auto-fix for this pull request, which covers fixing its failing CI. The customer flow "Firmware update must refresh the active slot theme exactly once" failed because the previous entry's change took the grace only from the status answer.
 - Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while this window runs its own firmware update or theme install, or while the same `/v1/status` answer reports an installing job. A job only remembered from an earlier status answer no longer suspends counting. No copy, control, layout or visual change.
 - Scope: `control-center-app.tsx`. This approves the pull request only, not merge, release, or a device operation.
+
+## 2026-10-01 — The Gemini message names Antigravity without CodexBar
+
+- User approval: On 2026-10-01 Paul asked that the Gemini message "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh." no longer name CodexBar, so that it only says to enable Antigravity.
+- Approved customer-visible result: Wherever the app shows or copies CodexBar's Gemini migration message (the provider message dialog in setup and Settings and its Copy button), "CodexBar's Antigravity provider" reads "Antigravity": "… Enable Antigravity, sign in to Antigravity or run `agy`, then refresh." The rest of the sentence is unchanged.
+- Scope: `companion/internal/companionapi/provider_reported.go` (the one place the reported provider message leaves the Companion), its test, the matching Control Center test fixture, and this approval record. The Companion's classification of the message still reads CodexBar's original sentence. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
