@@ -5,7 +5,8 @@
 
 // Pins issue #204: a Wi-Fi credential write is confirmed and followed by a
 // restart only after EEPROM.commit() reported success. The EEPROM driver
-// cannot be faked natively, so the order is checked in the source.
+// cannot be faked natively, so the order is checked in the source. Since
+// issue #489 credentials are written only over the USB cable.
 
 namespace {
 
@@ -33,39 +34,17 @@ std::string functionBody(const std::string& source, const char* signature) {
   return source.substr(start, end == std::string::npos ? std::string::npos : end - start);
 }
 
-bool testClearReportsCommitResult(const std::string& source) {
-  const std::string clear = functionBody(source, "bool clearWifiCredentials() {");
-  return expect(!clear.empty(), "clearWifiCredentials must return bool") &&
-         expect(clear.find("if (!EEPROM.commit())") != std::string::npos,
-                "clearWifiCredentials must check EEPROM.commit()") &&
-         expect(clear.find("return false;") != std::string::npos,
-                "clearWifiCredentials must report a failed commit");
-}
-
-bool testResetConfirmsOnlyAfterVerifiedClear(const std::string& source) {
-  const std::string reset = functionBody(source, "void handleResetWifi() {");
-  const std::size_t clear = reset.find("if (!clearWifiCredentials())");
-  const std::size_t failure = reset.find("webServer.send(500", clear);
-  const std::size_t success = reset.find("webServer.send(200");
-  const std::size_t restart = reset.find("ESP.restart()");
-  return expect(clear != std::string::npos,
-                "handleResetWifi must check the clear result") &&
-         expect(failure != std::string::npos && failure < success,
-                "a failed clear must answer 500 before any success") &&
-         expect(success != std::string::npos && clear < success && success < restart,
-                "handleResetWifi may confirm and restart only after a verified clear");
-}
-
 bool testSaveConfirmsOnlyAfterVerifiedCommit(const std::string& source) {
   const std::string save = functionBody(source, "bool saveWifiCredentials(");
-  const std::string handler = functionBody(source, "void handleSaveWifi() {");
-  const std::size_t check = handler.find("if (!saveWifiCredentials(ssid, password))");
-  const std::size_t success = handler.find("webServer.send(200");
-  const std::size_t restart = handler.find("ESP.restart()");
+  const std::size_t configure = source.find("strcmp(op, \"configure-wifi\") == 0");
+  const std::size_t check = source.find("!saveWifiCredentials(ssid, password)", configure);
+  const std::size_t success = source.find("emitSerialConnectionMode(\"switching\"", check);
+  const std::size_t restart = source.find("scheduleReboot(\"wifi_credentials_saved\")", success);
   return expect(save.find("return EEPROM.commit();") != std::string::npos,
                 "saveWifiCredentials must return the commit result") &&
-         expect(check != std::string::npos && check < success && success < restart,
-                "handleSaveWifi may confirm and restart only after a verified save");
+         expect(configure != std::string::npos && check != std::string::npos &&
+                    success != std::string::npos && restart != std::string::npos,
+                "Cable configure-wifi may confirm and restart only after a verified save");
 }
 
 }  // namespace
@@ -80,8 +59,6 @@ int main(int argc, char** argv) {
     return 1;
   }
   bool ok = true;
-  ok = testClearReportsCommitResult(source) && ok;
-  ok = testResetConfirmsOnlyAfterVerifiedClear(source) && ok;
   ok = testSaveConfirmsOnlyAfterVerifiedCommit(source) && ok;
   if (ok) {
     std::printf("wifi_credentials_policy_test: all checks passed\n");

@@ -58,10 +58,12 @@ const (
 var (
 	errFirmwareUploadRestartRequired = errors.New("VibeTV must restart before another firmware upload")
 	errFirmwareUploadMayHaveWritten  = errors.New("firmware upload may have written data")
-	upgradeStopLaunchAgentFn         = stopLaunchAgentBestEffort
-	upgradeRestartLaunchAgentFn      = restartLaunchAgent
-	rollbackRestartLaunchAgentFn     = restartLaunchAgent
-	rollbackStopTaskFn               = func(home string) error {
+	// Current firmware installs updates only over the USB cable (#489).
+	errFirmwareUpdateCableOnly   = errors.New("VibeTV installs updates only over the USB cable")
+	upgradeStopLaunchAgentFn     = stopLaunchAgentBestEffort
+	upgradeRestartLaunchAgentFn  = restartLaunchAgent
+	rollbackRestartLaunchAgentFn = restartLaunchAgent
+	rollbackStopTaskFn           = func(home string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		label := runtimepaths.DisplayStreamLaunchAgentLabel()
@@ -806,6 +808,16 @@ func runInstallUpdate(args []string) (retErr error) {
 				DeviceID:    deviceID,
 			})
 		}
+		if errors.Is(uploadErr, errFirmwareUpdateCableOnly) {
+			hint = "connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then update again"
+			emitFirmwareUpdateEvent(firmwareUpdateEvent{
+				Stage:       "uploading",
+				RetryPolicy: "cable_required",
+				Firmware:    targetVersion,
+				Target:      base,
+				DeviceID:    deviceID,
+			})
+		}
 		return &commandError{
 			Op:   "ota-upload",
 			Code: errcode.UpgradeFlashFirmware,
@@ -1102,6 +1114,10 @@ func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) 
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// Current firmware pairs only over the USB cable (#489).
+		return "", errors.New("VibeTV pairs only over the USB cable: connect it to this Mac, press Connect in the Mac App, then run the update again")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("POST /api/pair returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
@@ -1784,6 +1800,10 @@ func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token stri
 		err := fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			return err
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			// Nothing was written: the device has no WiFi update route.
+			return fmt.Errorf("%w: %v", errFirmwareUpdateCableOnly, err)
 		}
 		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}

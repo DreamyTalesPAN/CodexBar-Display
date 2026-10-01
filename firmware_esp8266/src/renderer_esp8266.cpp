@@ -240,14 +240,8 @@ void RendererESP8266::DrawStatus(
 #endif
 }
 
-void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx) {
-  // The Mac App owns setup guidance; the access point remains available behind it.
-  DrawStatus(ctx, "VIBE TV", "Download Mac App", "app.vibetv.shop");
-}
-
 void RendererESP8266::DrawConnectedSetupInstructions(
     app::RuntimeContext& ctx,
-    const String& host,
     const String& fallbackIp) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
@@ -258,20 +252,20 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  const char* title = "WiFi connected!";
-  const char* action = "Now go to:";
-  const String detail = host.length() > 0 ? host : "app.vibetv.shop";
+  // A device on WiFi was set up over the cable, so the app is already
+  // installed. This screen only bridges a restart until the app streams again;
+  // it must not read like a setup step. The IP stays for manual connection.
+  const char* title = "VIBE TV";
+  const char* action = "Waiting for app";
   const bool hasFallbackIp = ConnectedSetupPolicy::IsStationIPv4(fallbackIp.c_str());
   const String ipLine = hasFallbackIp ? String("IP: ") + fallbackIp : String("IP unavailable");
-  const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
-  const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
-  const int detailSize = display::ChooseTextSizeToFit(detail.c_str(), 2, 1, tft.width() - 14);
+  const int titleSize = display::ChooseTextSizeToFit(title, 4, 2, tft.width() - 8);
+  const int actionSize = display::ChooseTextSizeToFit(action, 3, 1, tft.width() - 8);
   const int ipSize = display::ChooseTextSizeToFit(ipLine.c_str(), 2, 1, tft.width() - 14);
 
   const int totalH =
-      display::TextPixelHeight(titleSize) + 12 +
-      display::TextPixelHeight(actionSize) + 10 +
-      display::TextPixelHeight(detailSize) + 14 +
+      display::TextPixelHeight(titleSize) + 14 +
+      display::TextPixelHeight(actionSize) + 8 +
       display::TextPixelHeight(ipSize);
   int y = (tft.height() - totalH) / 2;
   if (y < 6) {
@@ -279,25 +273,19 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   }
 
   display::SetTextSize(titleSize);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setTextColor(kBrandNeon, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(title, titleSize), y);
   tft.print(title);
 
-  y += display::TextPixelHeight(titleSize) + 12;
+  y += display::TextPixelHeight(titleSize) + 14;
   display::SetTextSize(actionSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(action, actionSize), y);
   tft.print(action);
 
-  y += display::TextPixelHeight(actionSize) + 10;
-  display::SetTextSize(detailSize);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(detail.c_str(), detailSize), y);
-  tft.print(detail);
-
-  y += display::TextPixelHeight(detailSize) + 14;
+  y += display::TextPixelHeight(actionSize) + 8;
   display::SetTextSize(ipSize);
-  tft.setTextColor(hasFallbackIp ? TFT_WHITE : TFT_LIGHTGREY, TFT_BLACK);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(ipLine.c_str(), ipSize), y);
   tft.print(ipLine);
 
@@ -306,7 +294,7 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   ctx.screenDirty = false;
 #else
   (void)ctx;
-  Serial.printf("probe_connected_setup host=%s fallback_ip=%s\n", host.c_str(), fallbackIp.c_str());
+  Serial.printf("probe_connected_setup fallback_ip=%s\n", fallbackIp.c_str());
 #endif
 }
 

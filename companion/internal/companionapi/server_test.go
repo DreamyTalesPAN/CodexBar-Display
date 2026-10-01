@@ -9247,6 +9247,79 @@ func TestSetupResetPromptsForCredentialsAfterFailedWiFiTransition(t *testing.T) 
 	}
 }
 
+func TestDeviceFactoryResetErasesCableDeviceAndForgetsPairing(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable",
+		DeviceToken:    "pair-token",
+		KnownDevices: []runtimeconfig.KnownDevice{
+			{DeviceID: "device-cable", DeviceToken: "pair-token"},
+			{DeviceID: "other-device", DeviceToken: "other-token"},
+		},
+	})
+	hello := protocol.DeviceHello{
+		Kind:     "hello",
+		DeviceID: "device-cable",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	erased := ""
+	server.factoryResetCable = func(port, deviceID string) error {
+		if port != "/dev/mock" {
+			t.Fatalf("unexpected port %q", port)
+		}
+		erased = deviceID
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/factory-reset", nil))
+	if rec.Code != http.StatusOK || erased != "device-cable" {
+		t.Fatalf("status=%d erased=%q body=%s", rec.Code, erased, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceToken != "" || cfg.DeviceID != "" || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("local binding survived the factory reset: %+v", cfg)
+	}
+	if _, ok := cfg.KnownDevice("device-cable"); ok {
+		t.Fatalf("erased device is still remembered: %+v", cfg.KnownDevices)
+	}
+	if other, ok := cfg.KnownDevice("other-device"); !ok || other.DeviceToken != "other-token" {
+		t.Fatalf("another VibeTV was forgotten: %+v", cfg.KnownDevices)
+	}
+}
+
+func TestDeviceFactoryResetRequiresCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceID:     "device-wifi",
+		DeviceToken:  "pair-token",
+	})
+	server.factoryResetCable = func(string, string) error {
+		t.Fatal("factory reset must not run without the USB cable")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/factory-reset", nil))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "factory_reset_cable_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFirmwareUpdateErrorPayloadExplainsCableOnlyUpdate(t *testing.T) {
+	payload := firmwareUpdateErrorPayload(errors.New("upload failed"), "cable_required")
+	if payload.Code != "firmware_update_cable_required" || !strings.Contains(payload.NextAction, "USB cable") {
+		t.Fatalf("unexpected payload %+v", payload)
+	}
+}
+
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
@@ -13876,6 +13949,16 @@ func TestDeviceSearchReportsTheLegacyCableVibeTVForItsUpdate(t *testing.T) {
 	}
 	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
 	if rec.Code != http.StatusConflict || got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !reflect.DeepEqual(*got.Error.Device, want) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// Issue #489: current firmware has no WiFi pairing endpoint. Its 404 must tell
+// the customer to use the cable instead of a generic retry.
+func TestWiFiPairingNotFoundAsksForCable(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writePairingError(rec, &pairingAuthorizationError{statusCode: http.StatusNotFound, err: errors.New("404")}, "1.0.61")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"cable_pairing_required"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

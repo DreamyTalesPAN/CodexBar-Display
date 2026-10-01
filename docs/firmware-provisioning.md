@@ -13,9 +13,12 @@ The first OTA pass uses the GeekMagic updater at `http://<ip>/update` with multi
 - `GET /hello`
 - `GET /assets`
 - `POST /assets` multipart field `asset` plus a `path` query/form value for individual theme assets
-- `POST /update/firmware` multipart field `firmware` for app firmware
-- `POST /update/filesystem` multipart field `filesystem` for LittleFS
 - `POST /frame` for smoke frames
+
+Current VibeTV firmware has no WiFi update routes (#489), so the script skips
+the filesystem upload by default and later firmware updates run over the USB
+cable. `POST /update/firmware` and `POST /update/filesystem` exist only on
+legacy firmware.
 
 The tooling does not store WiFi passwords or other secrets.
 
@@ -153,16 +156,17 @@ If only filesystem needs to be refreshed after the initial factory OTA:
 
 ## Recovery Limitation
 
-Devices must expose either the GeekMagic factory update page or the VibeTV OTA endpoints before this script can update them over WiFi. If a device already runs VibeTV firmware but does not expose `/update`, `/update/firmware`, or `/update/filesystem`, it cannot be replaced by this script alone. Restore a supported update path first, then rerun provisioning.
+Devices must expose the GeekMagic factory update page before this script can update them over WiFi. A device that already runs current VibeTV firmware has no WiFi update route; update it over the USB cable with the Mac App or `codexbar-display install-update --target cable://vibetv`.
 
 ## WiFi Setup Recovery
 
-- An authenticated `POST /reset-wifi` clears saved WiFi credentials and restarts into setup mode while the device is reachable on the local network.
-- If saved credentials fail, the device returns to the same open, writable
-  `VibeTV-Setup` portal used for first setup. Saving a replacement network does
-  not clear pairing, themes, brightness, or other settings.
+- WiFi credentials and pairing are written only over the USB cable (issue #489).
+  There is no HTTP WiFi reset, setup access point or local-WiFi pairing.
+- If saved credentials fail, the device shows `Connect USB cable` and keeps
+  retrying. Sending a replacement network over the cable does not clear
+  pairing, themes, brightness, or other settings.
 - Repeated early power interruptions do not clear WiFi credentials.
-- Firmware `1.0.39` accepts an explicit local-WiFi Connect without the previous
-  token. The new token is still required before using any OTA endpoint.
+- A lost token is recovered by pairing over the cable, which returns the
+  existing token. The token is required before using any OTA endpoint.
 - Firmware `1.0.38` keeps its legacy three-power-cycle WiFi recovery and
   30-minute pairing window so that it can be connected and updated.

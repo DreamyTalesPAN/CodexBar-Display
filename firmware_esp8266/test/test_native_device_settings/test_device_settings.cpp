@@ -156,16 +156,6 @@ void test_cable_wifi_configuration_accepts_only_cable_or_wifi_setup() {
       ConnectionMode::kLegacyWifiOnly, true));
 }
 
-void test_connection_transition_gives_setup_a_bounded_customer_window() {
-  TEST_ASSERT_EQUAL_UINT32(
-      kConnectionTransitionConfirmationMs,
-      ConnectionTransitionTimeoutMs(false));
-  TEST_ASSERT_EQUAL_UINT32(
-      kConnectionTransitionSetupMs,
-      ConnectionTransitionTimeoutMs(true));
-  TEST_ASSERT_TRUE(kConnectionTransitionSetupMs > kConnectionTransitionConfirmationMs);
-}
-
 }  // namespace
 
 void setUp() {}
@@ -187,6 +177,5 @@ int main(int, char**) {
   RUN_TEST(test_connection_transition_round_trips_both_directions);
   RUN_TEST(test_connection_transition_rejects_unsafe_modes_and_corruption);
   RUN_TEST(test_cable_wifi_configuration_accepts_only_cable_or_wifi_setup);
-  RUN_TEST(test_connection_transition_gives_setup_a_bounded_customer_window);
   return UNITY_END();
 }

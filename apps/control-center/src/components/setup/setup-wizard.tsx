@@ -20,7 +20,7 @@ import {
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
-  SetupWiFiPhoneDialog,
+  SetupCableHelpDialog,
 } from "./setup-device-dialogs";
 import { SetupDialog } from "./setup-dialog";
 import { SetupDeviceScreen } from "./setup-device-screen";
@@ -791,7 +791,7 @@ export function SetupWizard(props: SetupWizardProps) {
           />
         ) : null}
         {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
-          <SetupWiFiPhoneDialog
+          <SetupCableHelpDialog
             onEnterAddressManually={openAddressDialog}
             onScanAgain={searchAgain}
           />
@@ -804,7 +804,7 @@ export function SetupWizard(props: SetupWizardProps) {
               setNotFoundDismissed(true);
               void chooseTransport("cable");
             }}
-            onSetUpWiFi={() => {
+            onUseWiFi={() => {
               setNotFoundDismissed(true);
               void chooseTransport("wifi");
             }}
@@ -851,6 +851,12 @@ export function SetupWizard(props: SetupWizardProps) {
             connect.reset();
             searchAgain();
           }}
+          onUseCable={
+            connect.failure?.kind === "connect" &&
+            connect.failure.code === "cable_pairing_required"
+              ? () => void chooseTransport("cable")
+              : undefined
+          }
           open={connect.failure?.kind === "connect"}
           title={
             connect.failure?.kind === "connect"
