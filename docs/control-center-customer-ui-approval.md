@@ -4655,3 +4655,33 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul enabled Auto-fix for this pull request, which covers fixing its failing CI. The customer flow "Firmware update must refresh the active slot theme exactly once" failed because the previous entry's change took the grace only from the status answer.
 - Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while this window runs its own firmware update or theme install, or while the same `/v1/status` answer reports an installing job. A job only remembered from an earlier status answer no longer suspends counting. No copy, control, layout or visual change.
 - Scope: `control-center-app.tsx`. This approves the pull request only, not merge, release, or a device operation.
+
+## 2026-09-25 — Turning off the Manual provider keeps VibeTV showing usage
+
+- User approval: Marcus reported that after pinning Manual to Codex and switching Codex off in Settings, the Manual preview read "No usage yet", no provider was checked, and VibeTV showed nothing although Claude had usage. Codex proposed keeping the pinned provider while it is on, switching the selection to Automatic when it is turned off, and saying so with a short hint. Marcus answered "ok".
+- Approved customer-visible result: While the Manual provider stays on, nothing changes. When the customer turns it off in Settings, Display mode switches to Automatic over the providers that are still on, and the Display mode section shows "<Provider> is off, so VibeTV now switches automatically." until the display choice changes again. VibeTV itself keeps showing the remaining providers instead of going blank, also when the provider is turned off outside this app. No other control, copy, or layout changes.
+- Scope: `control-center-types.ts`, `control-center-app.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, the daemon provider-display fallback in `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-25 — Review follow-up: the hint stays through unrelated provider toggles
+
+- User approval: Covered by Marcus's "ok" to the entry above, which asked for a short hint when the switch happens. The review of PR #477 found that toggling another provider cleared the hint although the display mode did not change, and the live preview test showed the same.
+- Approved customer-visible result: The hint explains the automatic switch while this app window stays open. It disappears once a new display mode is saved or when the provider it names is switched on again, because it would then be wrong. Turning another provider on or off only adjusts the Automatic pool and leaves it visible, and a failed save leaves it in place. After the app is reopened, Automatic is simply the saved mode and no hint is shown.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.
+
+## 2026-09-25 — Review follow-up: only a provider switched off triggers the switch
+
+- User approval: Covered by Marcus's "ok" to the first entry of this date, which approved switching when the Manual provider is turned off. The review of PR #477 found that a Manual provider missing from the provider list entirely was treated as turned off too.
+- Approved customer-visible result: Only a Manual provider that the provider list shows as switched off triggers the switch to Automatic and the hint. A Manual provider that no longer appears in the list at all stays selected exactly as before this pull request.
+- Scope: `control-center-types.ts`, `control-center-app.tsx`, the matching daemon inventory check, their tests, and this approval record. Pull-request branch only.
+
+## 2026-09-25 — Review follow-up: an old hint does not come back
+
+- User approval: Covered by Marcus's "ok" to the first entry of this date. The review of PR #477 found that a hint hidden because its provider was switched on again reappeared when that provider was switched off later, although the display mode had not changed.
+- Approved customer-visible result: Switching the named provider on again ends the hint for good. Switching it off later while Automatic is already active shows no hint, because nothing switched.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.
+
+## 2026-10-01 — Review follow-up: the automatic switch survives one failed CodexBar read
+
+- User approval: On 2026-10-01 Paul asked to review this pull request together with #474, test it on this Mac with the connected VibeTV, and fix every issue found directly. The review found that while the switch was active, a single failed CodexBar read replaced the remaining provider's usage on VibeTV with the no-providers screen.
+- Approved customer-visible result: No screen, dialog, button, or text changes. Once VibeTV has switched to the providers that are still on, it keeps showing them through one failed CodexBar read. A second failed read in a row ends the switch, because the Manual provider may have been switched on again meanwhile. After a restart of the background service the strict behaviour decided on 2026-09-25 stays: until CodexBar confirms the Manual provider is off, nothing else is shown in its place.
+- Scope: `companion/internal/daemon/collector.go`, `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
