@@ -863,6 +863,38 @@ void testUsageCountdownRefreshDoesNotRepaintBatteryArea() {
   }
 }
 
+void testCountdownRepaintsOnlyWhenItsMinuteChanges() {
+  // A frame every ~2 s with a few seconds less must not repaint "2h 48m".
+  const String spec("{\"v\":1,\"id\":\"countdown\",\"rev\":1,\"p\":[{\"t\":\"tx\",\"x\":0,\"y\":0,\"b\":\"r\"},{\"t\":\"tx\",\"x\":0,\"y\":20,\"b\":\"us1r\"}]}");
+  codexbar_display::core::Frame before;
+  before.resetSecs = 10110;  // 2h 48m 30s
+  before.usageWindows[0].available = true;
+  before.usageWindows[0].percent = 42;
+  before.usageWindows[0].resetSecs = 3630;
+  auto sameMinute = before;
+  sameMinute.resetSecs = 10088;
+  sameMinute.usageWindows[0].resetSecs = 3608;
+  TEST_ASSERT_FALSE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, sameMinute, spec));
+  TEST_ASSERT_EQUAL_UINT32(0, codexbar_display::core::ThemeSpecLiveChangedFields(before, sameMinute, spec));
+
+  auto nextMinute = before;
+  nextMinute.resetSecs = 10079;  // 2h 47m
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, nextMinute, spec));
+  TEST_ASSERT_TRUE((codexbar_display::core::ThemeSpecLiveChangedFields(before, nextMinute, spec) &
+                    codexbar_display::themespec::kThemeSpecFieldReset) != 0);
+
+  auto windowNextMinute = before;
+  windowNextMinute.usageWindows[0].resetSecs = 3599;
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, windowNextMinute, spec));
+
+  // "Reset unavailable" (0) and the last minute (1..59 s) are different texts.
+  auto unavailable = before;
+  unavailable.resetSecs = 0;
+  auto lastMinute = before;
+  lastMinute.resetSecs = 30;
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(unavailable, lastMinute, spec));
+}
+
 void testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3516,6 +3548,7 @@ int main() {
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testUsageCountdownRefreshDoesNotRepaintBatteryArea);
+  RUN_TEST(testCountdownRepaintsOnlyWhenItsMinuteChanges);
   RUN_TEST(testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
