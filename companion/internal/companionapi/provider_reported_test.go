@@ -220,3 +220,26 @@ func TestProviderReadinessNeverMarshalsItsReportedText(t *testing.T) {
 		}
 	}
 }
+
+// Google ended Gemini CLI OAuth for consumer accounts. CodexBar 0.63.0 words
+// the remedy for its own app; inside VibeTV it names Antigravity alone.
+func TestReportedProviderMessageNamesAntigravityWithoutCodexBar(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{
+			in:   "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.",
+			want: "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
+		},
+		{
+			in:   "Could not refresh Gemini OAuth credentials from Gemini CLI. Enable Win-CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.",
+			want: "Could not refresh Gemini OAuth credentials from Gemini CLI. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
+		},
+		{
+			in:   "Individual accounts should use CodexBar's Antigravity provider instead. Workspace and education accounts should keep using Gemini.",
+			want: "Individual accounts should use Antigravity instead. Workspace and education accounts should keep using Gemini.",
+		},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("got  %q\nwant %q", got, tc.want)
+		}
+	}
+}
