@@ -244,10 +244,23 @@ PY
 rehearsal::discover_device() {
   local remembered="$REHEARSAL_STATE_DIR/device-target"
 
-  # Resolved up front: a missing pyserial must stop the run here, not surface
-  # after the flash as a three-minute wait that reads "unconfirmed".
+  # Checked up front, before anything is written. A missing pyserial would
+  # otherwise surface after the flash as a three-minute wait that reads
+  # "unconfirmed". The Cable flash also authenticates with this Mac's Cable
+  # pairing: with a WiFi binding or none it would fail with "paired Cable VibeTV
+  # is required" after the run had started.
   if rehearsal::is_cable_target; then
     rehearsal::resolve_serial_python
+    local mode
+    mode="$(python3 -c '
+import json, sys
+try:
+    print(json.load(open(sys.argv[1])).get("connectionMode") or "")
+except Exception:
+    print("")
+' "$REHEARSAL_SUPPORT_DIR/config.json" 2>/dev/null || true)"
+    [[ "$mode" == cable ]] \
+      || rehearsal::die 'cable://vibetv needs this Mac paired over USB-C: pair the VibeTV by cable, or switch Settings > Connection to USB-C, then retry'
   fi
 
   if [[ -n "$REHEARSAL_DEVICE_TARGET" ]]; then
