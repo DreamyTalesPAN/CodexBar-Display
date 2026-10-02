@@ -754,6 +754,43 @@ func TestInstallReactivatesWhenHealthStillShowsPreviousTheme(t *testing.T) {
 	}
 }
 
+func TestInstallReportsPersistentLowHeapAsIncompatibleTheme(t *testing.T) {
+	withFastActivationRetries(t)
+	packDir := writeMinimalThemePack(t)
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave","themeSpec":{"active":true,"path":"/themes/u/synth.json","renderOk":false,"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/s.cba"}}}`))
+		}
+	})
+	defer server.Close()
+
+	_, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	var installErr *InstallError
+	if !errors.As(err, &installErr) {
+		t.Fatalf("expected InstallError, got %v", err)
+	}
+	if installErr.Op != "theme-pack/render-health" || installErr.ErrorCode() != errcode.ProtocolThemeSpecIncompatible {
+		t.Fatalf("expected incompatible render-health error, got op=%q code=%q", installErr.Op, installErr.ErrorCode())
+	}
+	if hint := installErr.RecoveryAction(); strings.Contains(hint, "retry") || !strings.Contains(hint, "choose another theme") {
+		t.Fatalf("low heap must not suggest a retry, got %q", hint)
+	}
+	if !strings.Contains(err.Error(), `renderError="low_heap_cba_buffer"`) {
+		t.Fatalf("expected health details in error, got %v", err)
+	}
+}
+
 func TestInstallEnforcesGIFLZWCapabilityBeforeUpload(t *testing.T) {
 	packDir := writeGIFThemePack(t, makeTwelveBitGIF(t))
 
