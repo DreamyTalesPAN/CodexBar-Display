@@ -1208,7 +1208,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
-	cfg, configured := loadRuntimeConfig(deps)
 	invalidateLastGoodTerminal(state, allProviders, deps)
 	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerOff)
 
@@ -1219,8 +1218,12 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		return finalizeCycleResult(state, result, now)
 	}
 	var activeProviders []string
-	if configured && cfg.AgentActivitySettings().Enabled && (cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic") && state.agentSnapshot != nil {
-		activeProviders = state.agentSnapshot().ActiveProviders()
+	// Only a running observer needs the config here; reading it on every cycle
+	// besides applyProviderDisplaySelection's read cost allocations.
+	if state.agentSnapshot != nil {
+		if cfg, ok := loadRuntimeConfig(deps); ok && cfg.AgentActivitySettings().Enabled && (cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic") {
+			activeProviders = state.agentSnapshot().ActiveProviders()
+		}
 	}
 	decision, ok := state.selector.SelectWithDecision(allProviders, activeProviders...)
 	if !ok {
