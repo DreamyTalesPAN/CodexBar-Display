@@ -1,0 +1,68 @@
+#pragma once
+
+#include <cstring>
+#include <cstdio>
+#include <cstdint>
+
+namespace codexbar_display {
+namespace agentactivity {
+
+// Presentation groups preserve the observer's original phase on the wire.
+enum class State : uint8_t { Unknown, Idle, Working, NeedsYou, Done, Error };
+inline State DisplayState(const char* phase) {
+  if (phase == nullptr) return State::Unknown;
+  // The observer's three waiting phases (permission, answer, review).
+  if (std::strncmp(phase, "waiting_for_", 12) == 0) return State::NeedsYou;
+  if (std::strcmp(phase, "idle") == 0) return State::Idle;
+  if (std::strcmp(phase, "done") == 0) return State::Done;
+  if (std::strcmp(phase, "error") == 0) return State::Error;
+  for (const char* working : {"coding", "working", "thinking", "tool_use", "compacting"}) {
+    if (std::strcmp(phase, working) == 0) return State::Working;
+  }
+  return State::Unknown;
+}
+inline bool IsWorking(const char* value) { return DisplayState(value) == State::Working; }
+
+// Stale already renders as unknown, like an expired lease, so it needs none.
+inline bool HasLease(const char* value) {
+  return value != nullptr && std::strcmp(value, "coding") != 0 && DisplayState(value) > State::Idle;
+}
+inline void StatusText(const char* phase, const char* name, char* out, size_t size) {
+  const State state = DisplayState(phase);
+  if (state == State::Idle) { std::snprintf(out, size, "Nothing running"); return; }
+  if (state == State::Unknown) { std::snprintf(out, size, "Agent status unavailable"); return; }
+  const char* suffix = state == State::Working ? "is working" :
+      state == State::NeedsYou ? "needs you" : state == State::Done ? "is done" : "hit an error";
+  std::snprintf(out, size, "%.40s %s", name != nullptr && name[0] ? name : "Agent", suffix);
+}
+
+// Observe every frame/tick. The first observation establishes a baseline, so
+// activation/reconnect cannot replay a completion. No heap or framebuffer.
+struct Announcement {
+  State previous = State::Unknown;
+  bool initialized = false;
+  bool running = false;
+  uint32_t startedAt = 0;
+  bool Update(const char* phase, bool enabled, uint32_t now, uint16_t reminderSecs = 0) {
+    const State state = DisplayState(phase);
+    const bool eligible = enabled &&
+        state != State::Idle && state != State::Unknown;
+    // Only a session that needs you is announced again, after its reminder.
+    const uint32_t repeatMs = state == State::NeedsYou ? static_cast<uint32_t>(reminderSecs) * 1000UL : 0;
+    if (!initialized || !eligible) startedAt = now;
+    if (initialized && state != previous) {
+      running = eligible;
+      startedAt = now;
+    } else if (initialized && eligible && repeatMs > 0 && now - startedAt >= repeatMs) {
+      running = true;
+      startedAt = now;
+    }
+    initialized = true;
+    previous = state;
+    const uint32_t elapsed = now - startedAt;
+    if (!eligible || elapsed >= 550) running = false;
+    return running && (elapsed < 200 || elapsed >= 350);
+  }
+};
+}  // namespace agentactivity
+}  // namespace codexbar_display

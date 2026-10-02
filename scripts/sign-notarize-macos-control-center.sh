@@ -203,6 +203,7 @@ dry_run() {
 dry-run: planned real-mode commands:
   curl https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
   security create-keychain / security import Developer ID Application certificate
+  codesign --force --options runtime --timestamp --entitlements integrations/clawd/node.entitlements --sign <identity> "${APP_DIR}/Contents/Helpers/agent-engine/node"
   codesign --force --options runtime --timestamp --sign <identity> "${APP_DIR}/Contents/Helpers/codexbar-display"
   codesign --force --options runtime --timestamp --entitlements macos/VibeTVControlCenter/VibeTVControlCenter.entitlements --sign <identity> "${APP_DIR}"
   codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
@@ -339,6 +340,12 @@ sign_app_bundle() {
       "$sparkle_framework"
     codesign --verify --deep --strict --verbose=2 "$sparkle_framework"
   fi
+
+  local engine_node="${APP_DIR}/Contents/Helpers/agent-engine/node"
+  [[ -x "$engine_node" ]] || die "Bundled agent runtime is missing"
+  codesign --force --options runtime --timestamp --sign "$identity" \
+    --entitlements "${ROOT}/integrations/clawd/node.entitlements" "$engine_node"
+  codesign --verify --strict --verbose=2 "$engine_node"
 
   if [[ -x "$companion_binary" ]]; then
     codesign \

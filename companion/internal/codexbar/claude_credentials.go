@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // claudeCredentialsFlag is Win-CodexBar's consent switch for reading Claude
@@ -19,6 +20,9 @@ import (
 const claudeCredentialsFlag = "claude_allow_reading_claude_code_credentials"
 
 var grantClaudeCredentialsFn = grantClaudeCredentials
+
+// Serialize Companion-owned settings writes, including CLI provider toggles.
+var windowsSettingsMu sync.Mutex
 
 // settingsCodec wraps and unwraps the Win-CodexBar settings payload. Windows
 // uses DPAPI; tests substitute a reversible stand-in.
@@ -33,62 +37,84 @@ type settingsCodec struct {
 // rewrites on its first save. A UTF-8 BOM makes Win-CodexBar ignore the file
 // silently, so one is stripped on read and never written.
 func allowClaudeCredentials(data []byte, codec settingsCodec) ([]byte, error) {
+	return updateWindowsSettings(data, codec, func(settings map[string]json.RawMessage) {
+		settings[claudeCredentialsFlag] = json.RawMessage("true")
+	})
+}
+
+// Decode once for both the consent flag and the upstream display preference.
+// Unknown settings and secure-file envelope fields survive each update.
+func decodeWindowsSettings(data []byte, codec settingsCodec) (map[string]json.RawMessage, map[string]json.RawMessage, error) {
 	data = bytes.TrimPrefix(bytes.TrimSpace(data), []byte("\xef\xbb\xbf"))
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, fmt.Errorf("parse CodexBar settings: %w", err)
+		return nil, nil, err
+	}
+	if envelope == nil {
+		return nil, nil, errors.New("CodexBar settings are empty")
 	}
 	var format string
-	if raw, ok := envelope["format"]; ok {
-		_ = json.Unmarshal(raw, &format)
-	}
+	_ = json.Unmarshal(envelope["format"], &format)
 	if format != "codexbar.secure-file" {
-		return setJSONFlag(envelope)
+		return envelope, nil, nil
 	}
 	var encoded string
 	if err := json.Unmarshal(envelope["payload"], &encoded); err != nil {
-		return nil, fmt.Errorf("parse CodexBar settings payload: %w", err)
+		return nil, nil, err
 	}
 	protected, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("decode CodexBar settings payload: %w", err)
+		return nil, nil, err
 	}
 	plain, err := codec.unprotect(protected)
 	if err != nil {
-		return nil, fmt.Errorf("unprotect CodexBar settings: %w", err)
+		return nil, nil, fmt.Errorf("unprotect CodexBar settings: %w", err)
 	}
 	var settings map[string]json.RawMessage
 	if err := json.Unmarshal(plain, &settings); err != nil {
-		return nil, fmt.Errorf("parse protected CodexBar settings: %w", err)
+		return nil, nil, err
 	}
-	updated, err := setJSONFlag(settings)
+	if settings == nil {
+		return nil, nil, errors.New("CodexBar settings are empty")
+	}
+	return settings, envelope, nil
+}
+
+func updateWindowsSettings(data []byte, codec settingsCodec, update func(map[string]json.RawMessage)) ([]byte, error) {
+	settings, envelope, err := decodeWindowsSettings(data, codec)
 	if err != nil {
 		return nil, err
 	}
-	reprotected, err := codec.protect(updated)
+	update(settings)
+	updated, err := json.Marshal(settings)
+	if err != nil || envelope == nil {
+		return updated, err
+	}
+	protected, err := codec.protect(updated)
 	if err != nil {
-		return nil, fmt.Errorf("protect CodexBar settings: %w", err)
+		return nil, err
 	}
-	envelope["payload"], _ = json.Marshal(base64.StdEncoding.EncodeToString(reprotected))
+	envelope["payload"], _ = json.Marshal(base64.StdEncoding.EncodeToString(protected))
 	return json.Marshal(envelope)
-}
-
-func setJSONFlag(settings map[string]json.RawMessage) ([]byte, error) {
-	if settings == nil {
-		return nil, errors.New("CodexBar settings are empty")
-	}
-	settings[claudeCredentialsFlag] = json.RawMessage("true")
-	return json.Marshal(settings)
 }
 
 // rewriteSettingsFile applies allowClaudeCredentials to the file at path and
 // replaces it atomically.
 func rewriteSettingsFile(path string, codec settingsCodec) error {
+	return rewriteWindowsSettingsFile(path, codec, func(settings map[string]json.RawMessage) {
+		settings[claudeCredentialsFlag] = json.RawMessage("true")
+	})
+}
+
+func rewriteWindowsSettingsFile(path string, codec settingsCodec, update func(map[string]json.RawMessage)) error {
+	windowsSettingsMu.Lock()
+	defer windowsSettingsMu.Unlock()
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	updated, err := allowClaudeCredentials(data, codec)
+	updated, err := updateWindowsSettings(data, codec, update)
 	if err != nil {
 		return err
 	}

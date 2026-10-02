@@ -4,7 +4,7 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import { Search, SearchX, TriangleAlert } from "lucide-react";
+import { Search, SearchX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,8 +20,7 @@ import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SetupProviderRow, setupProviderIssueMessage } from "./setup-provider-row";
-import { SetupDialog } from "./setup-dialog";
+import { SetupProviderRow } from "./setup-provider-row";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
   SetupWizardScreen,
@@ -112,10 +111,6 @@ export function setupProviderNeedsOwnApp(
   );
 }
 
-export function setupProviderOwnAppNotice(label: string): string {
-  return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
-}
-
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
@@ -149,25 +144,6 @@ export function ProviderList({
   providers,
   usage,
 }: ProviderListProps) {
-  // One acknowledged message per provider: polling must not reopen a dismissed
-  // popup, while a new message or an explicit retry may show it again.
-  const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>({});
-  const issue = providers.flatMap((provider) => {
-    if (!provider.value || pendingCheckIds.has(provider.providerId) ||
-        pendingPreferenceIds.has(provider.id)) return [];
-    const message = setupProviderIssueMessage({
-      health: provider.health.state, label: provider.label,
-      detail: provider.health.message, reportedMessage: provider.health.reported,
-    });
-    return message && dismissedIssues[provider.id] !== message
-      ? [{ provider, message }] : [];
-  })[0];
-  const dismissIssue = () => {
-    if (issue) setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
-  };
-  const resetIssue = (provider: ProviderItem) => {
-    setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
-  };
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
   const matching = setupProvidersEnabledFirst(
@@ -179,43 +155,9 @@ export function ProviderList({
   // everyone who does not know what to search for.
   const visible = matching.slice(0, shown);
   const remaining = matching.length - visible.length;
-  const ownAppNotice =
-    issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
-      {issue ? (
-        <SetupDialog
-          open
-          title={issue.provider.label}
-          description={
-            ownAppNotice
-              ? setupProviderOwnAppNotice(issue.provider.label)
-              : issue.message
-          }
-          icon={TriangleAlert}
-          onOpenChange={(open) => { if (!open) dismissIssue(); }}
-          primaryAction={{ label: "OK", onSelect: dismissIssue }}
-          secondaryAction={issue.provider.health.reported ? {
-            label: `Copy provider message for ${issue.provider.label}`,
-            onSelect: () => { void navigator.clipboard?.writeText(issue.provider.health.reported!); },
-          } : undefined}
-        >
-          {ownAppNotice ? (
-            <div className="flex flex-col items-start gap-2">
-              <p className="text-sm text-muted-foreground">{issue.message}</p>
-              <Button
-                className="h-auto px-0"
-                onClick={onOpenSetupGuide}
-                type="button"
-                variant="link"
-              >
-                Open setup guide
-              </Button>
-            </div>
-          ) : null}
-        </SetupDialog>
-      ) : null}
       <div className="relative w-full">
         <Search
           aria-hidden
@@ -235,37 +177,24 @@ export function ProviderList({
       </div>
 
       <ItemGroup className="mt-3 gap-2">
-        {visible.map((provider) => (
-          <SetupProviderRow
-            checking={pendingCheckIds.has(provider.providerId)}
-            enabled={provider.value}
-            health={
-              provider.value && provider.health.state === "healthy" &&
-              !setupProviderCanDisplay(provider, usage)
-                ? "checking"
-                : provider.health.state
-            }
-            key={provider.id}
-            label={provider.label}
-            onShowIssue={() => resetIssue(provider)}
-            onCheckAgain={() => {
-              resetIssue(provider);
-              onCheckAgain(provider);
-            }}
-            onOpenSignIn={
-              onOpenSignIn && setupProviderOffersSignIn(provider)
-                ? () => {
-                    onOpenSignIn(provider);
-                  }
-                : undefined
-            }
-            onToggle={(enabled) => {
-              resetIssue(provider);
-              onToggle(provider, enabled);
-            }}
-            saving={pendingPreferenceIds.has(provider.id)}
-          />
-        ))}
+        {visible.map((provider) => {
+          return (
+            <SetupProviderRow
+              checking={pendingCheckIds.has(provider.providerId)}
+              enabled={provider.value}
+              health={provider.value && provider.health.state === "healthy" && !setupProviderCanDisplay(provider, usage) ? "checking" : provider.health.state}
+              key={provider.id}
+              label={provider.label}
+              detail={provider.health.message}
+              onOpenSignIn={onOpenSignIn && setupProviderOffersSignIn(provider) ? () => onOpenSignIn(provider) : undefined}
+              onCheckAgain={() => onCheckAgain(provider)}
+              onOpenSetupGuide={onOpenSetupGuide && setupProviderNeedsOwnApp(provider) ? onOpenSetupGuide : undefined}
+              onToggle={(enabled) => onToggle(provider, enabled)}
+              reportedMessage={provider.health.reported}
+              saving={pendingPreferenceIds.has(provider.id)}
+            />
+          );
+        })}
         {matching.length === 0 ? (
           <Empty
             className={cn(

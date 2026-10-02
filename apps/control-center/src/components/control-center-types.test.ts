@@ -589,7 +589,11 @@ describe("providerSetupNeedsEngineRecovery", () => {
         engine: { status: "ready" },
       }),
     ).toBe(false);
-    expect(providerSetupNeedsEngineRecovery({ status: "checking" })).toBe(false);
+    expect(providerSetupNeedsEngineRecovery({
+      status: "checking",
+      engine: { status: "timeout" },
+      providers: [{ id: "codexbar", status: "timeout" }],
+    })).toBe(false);
   });
 });
 

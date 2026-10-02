@@ -151,12 +151,9 @@ const MAX_GIF_BYTES = 24 * 1024;
 const MAX_GIF_WIDTH = 80;
 const MAX_GIF_HEIGHT = 80;
 const MAX_GIF_PIXELS = MAX_GIF_WIDTH * MAX_GIF_HEIGHT;
-const MAX_SPRITE_FRAME_WIDTH = 64;
-const MAX_SPRITE_FRAME_HEIGHT = 64;
-const MAX_STATIC_SPRITE_FRAME_WIDTH = DISPLAY_SIZE;
-const MAX_STATIC_SPRITE_FRAME_HEIGHT = DISPLAY_SIZE;
-const MAX_SPRITE_FRAMES = 32;
-const MAX_SPRITE_TOTAL_PIXELS = 32768;
+// Validation mirrors the firmware's sprite validator, so every shipped theme
+// stays editable. The image importer keeps its smaller authoring budget.
+const MAX_SPRITE_FRAMES = 64;
 const DEFAULT_SPRITE_FPS = 8;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
@@ -598,6 +595,7 @@ function compiledThemeSpecStringBytes(
       stringBytes += compiledStringBytes(primitive.assetPath);
       stringBytes += compiledStringBytes(primitive.stateAssets?.idle);
       stringBytes += compiledStringBytes(primitive.stateAssets?.coding);
+      for (const state of ["needs_you", "done", "error"]) stringBytes += compiledStringBytes(primitive.stateAssets?.[state]);
       if (primitive.type === "sprite") {
         for (const [provider, assetPath] of Object.entries(
           primitive.providerAssets || {},
@@ -708,6 +706,7 @@ export function buildThemePack(
     ...(usesProviderAssets ? ["provider-assets-v1"] : []),
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
+    ...(themeStudioSpecUsesAgentStates(normalized) ? ["agent-theme-states-v1"] : []),
   ];
   const minFirmware =
     usesProviderAssets || usesColorStops || usesTextValign
@@ -1090,23 +1089,13 @@ function validatePrimitive(
       const width = sprite?.width ?? primitive.width ?? 0;
       const height = sprite?.height ?? primitive.height ?? 0;
       const frames = sprite?.frameCount ?? primitive.frameCount ?? 1;
-      const maxFrameWidth =
-        sprite?.kind === "CBI1"
-          ? MAX_STATIC_SPRITE_FRAME_WIDTH
-          : MAX_SPRITE_FRAME_WIDTH;
-      const maxFrameHeight =
-        sprite?.kind === "CBI1"
-          ? MAX_STATIC_SPRITE_FRAME_HEIGHT
-          : MAX_SPRITE_FRAME_HEIGHT;
-      if (width > maxFrameWidth || height > maxFrameHeight) {
+      if (width > DISPLAY_SIZE || height > DISPLAY_SIZE) {
         errors.push(
-          `${prefix}: sprite frames must stay within ${maxFrameWidth}x${maxFrameHeight}.`,
+          `${prefix}: sprite frames must stay within ${DISPLAY_SIZE}x${DISPLAY_SIZE}.`,
         );
       }
-      if (width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
-        errors.push(
-          `${prefix}: sprite is too large (${width * height * frames}/${MAX_SPRITE_TOTAL_PIXELS} pixels across frames).`,
-        );
+      if (frames > MAX_SPRITE_FRAMES) {
+        errors.push(`${prefix}: sprite frames must be between 1 and ${MAX_SPRITE_FRAMES}.`);
       }
     }
   }
@@ -1198,8 +1187,8 @@ function validateThemeAssetPaths(
     if (!STATE_NAME_RE.test(stateName)) {
       errors.push(`${prefix}: state name ${stateName} is not supported.`);
     }
-    if (stateName !== "idle" && stateName !== "coding") {
-      errors.push(`${prefix}: use idle or coding for state assets.`);
+    if (!["idle", "coding", "needs_you", "done", "error"].includes(stateName)) {
+      errors.push(`${prefix}: use idle, coding, needs_you, done or error for state assets.`);
     }
     validateThemeAssetPath(assetPath, prefix, errors);
   }
@@ -1928,4 +1917,8 @@ function colorStopsValue(
     result.push({ gte, color });
   }
   return result.sort((a, b) => b.gte - a.gte);
+}
+
+export function themeStudioSpecUsesAgentStates(spec: ThemeStudioSpec): boolean {
+  return spec.primitives.some(p => Object.keys(p.stateAssets || {}).some(key => !["idle", "coding"].includes(key)));
 }

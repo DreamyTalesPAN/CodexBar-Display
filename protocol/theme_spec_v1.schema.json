@@ -106,11 +106,17 @@
           },
           "slot": {
             "type": "integer",
-            "enum": [1, 2]
+            "enum": [
+              1,
+              2
+            ]
           },
           "sl": {
             "type": "integer",
-            "enum": [1, 2]
+            "enum": [
+              1,
+              2
+            ]
           },
           "usageIndex": {
             "type": "integer",
@@ -274,6 +280,12 @@
           },
           "cs": {
             "$ref": "#/$defs/colorStops"
+          },
+          "stateAssets": {
+            "$ref": "#/$defs/stateAssets"
+          },
+          "sa": {
+            "$ref": "#/$defs/stateAssets"
           }
         },
         "additionalProperties": true,
@@ -660,6 +672,27 @@
           }
         ],
         "additionalProperties": false
+      }
+    },
+    "stateAssets": {
+      "description": "Lifecycle assets require agent-theme-states-v1 for needs_you, done and error. Working phases use coding.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "propertyNames": {
+        "enum": [
+          "idle",
+          "coding",
+          "needs_you",
+          "done",
+          "error"
+        ]
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 31,
+        "pattern": "^/themes/"
       }
     }
   }

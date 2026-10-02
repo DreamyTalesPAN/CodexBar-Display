@@ -40,6 +40,13 @@ run() {
   fi
 }
 
+if touches '^integrations/clawd/'; then
+  run "agent engine source" python3 integrations/clawd/prepare.py
+  run "agent engine tests" bash -c 'node --test integrations/clawd/test/*.test.cjs'
+else
+  SKIPPED+=("agent engine (untouched)")
+fi
+
 if touches '^companion/'; then
   run "go vet"  bash -c 'cd companion && go vet ./...'
   run "go test" bash -c 'cd companion && go test ./...'

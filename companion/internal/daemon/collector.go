@@ -748,6 +748,21 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			continue
 		}
 		seen[key] = struct{}{}
+		if stats.HistoryCoverageEstablished != nil && !*stats.HistoryCoverageEstablished &&
+			stats.TotalTokens == 0 && stats.SessionTokens == 0 && stats.WeekTokens == 0 {
+			// An empty unfinished scan is not a known zero. Keep bounded
+			// last-good data without renewing its age. Non-empty progress is
+			// published below with CodexBar's explicit unsettled marker.
+			settled = false
+			if snapshot, exists := c.providers[key]; exists {
+				if snapshot.TokenHistorySettled {
+					updated++
+				}
+				snapshot.TokenHistorySettled = false
+				c.providers[key] = snapshot
+			}
+			continue
+		}
 
 		snapshot, exists := c.providers[key]
 		if !exists && stats.Unavailable {
@@ -809,6 +824,9 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		// Without a cost history there is nothing that can still grow, so such
 		// a provider must not keep the collector scanning.
 		providerSettled := stats.Cost == nil || (hadPrevious && previousPrint == print)
+		if stats.HistoryCoverageEstablished != nil {
+			providerSettled = *stats.HistoryCoverageEstablished
+		}
 		settled = settled && providerSettled
 
 		c.providers[key] = providerSnapshot{

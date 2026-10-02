@@ -821,3 +821,39 @@ func writeZipFromDir(t *testing.T, zipPath, dir string) {
 		}
 	}
 }
+
+func TestAgentStatePacksRequireDeclaredAndAdvertisedCapability(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"sa":{"idle":"/themes/u/i.cbi","needs_you":"/themes/u/n.cbi"}}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/i.cbi", file: "assets/i.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+		{path: "/themes/u/n.cbi", file: "assets/n.cbi", data: "CBI1\n1 1\n1\n#FFAA00\na\n"},
+	})
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "requiredCapabilities") {
+		t.Fatalf("undeclared state capability accepted: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err = json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.RequiredCapabilities = []string{protocol.FeatureAgentThemeStatesV1}
+	raw, _ = json.Marshal(manifest)
+	if err = os.WriteFile(filepath.Join(dir, "manifest.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	pack, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true, SupportsStoredThemes: true, MaxStoredThemeSpecBytes: 4096, MaxThemePrimitives: 32}
+	if err = pack.ValidateAgainstCapabilities(caps); err == nil || !strings.Contains(err.Error(), protocol.FeatureAgentThemeStatesV1) {
+		t.Fatalf("old firmware accepted new states: %v", err)
+	}
+	caps.SupportsAgentThemeStatesV1 = true
+	if err = pack.ValidateAgainstCapabilities(caps); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -4459,6 +4459,129 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
 - Approved customer-visible result: Preserve the required matching live preview before leaving the wizard while retaining main's completed firmware-update and attention handling. Fresh devices without an installed theme can continue setup after a verified firmware update; loss of an existing theme remains visible. Cable reads its baseline over USB and WiFi over HTTP, then both apply the same existing theme-verification rule. Attention never starts another automatic firmware upload.
 - Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.
+## 2026-09-08 — Shared provider notices and Gemini migration (#425)
+
+- User approval: "ok passt so", after reviewing the desktop screenshots in this
+  task. The user explicitly applied Screen 07's notice treatment to every
+  provider, then requested action buttons in the same row as the notice text.
+- Approved customer-visible result: All provider notices use one shared card
+  layout in setup and Settings: provider name and toggle above a separator,
+  small explanatory text below it, with Copy, Retry or the available migration
+  action aligned to the right of that text. The Gemini consumer migration uses
+  the supplied Screen 07 copy and a `Turn on Antigravity` button that enables
+  Antigravity through VibeTV's existing settings flow. Once Antigravity is on,
+  the action disappears and the already-on explanation appears. Gemini keeps
+  its own toggle; no automatic switch-off or navigation to CodexBar is added.
+  Continue still requires real displayable usage from an enabled provider.
+- Reviewed evidence: desktop `global-provider-notices.png` and
+  `gemini-migration-desktop.png` from the real frontend with mocked provider
+  responses, captured in this task under `tmp/issue425/design-import/screenshots/`.
+  Desktop only; this is UI approval, not hardware or release approval.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the issue's
+  runtime/state mapping and contract notes, and this approval record.
+
+## 2026-09-08 — Remove unsupported quota equivalence claim (#425)
+
+- User approval: "Das passt mir so. Jetzt push das", after reviewing the
+  corrected Gemini screenshot and explanation in this task.
+- Approved customer-visible result: Keep the approved shared provider notice
+  layout and actions. Replace the unsupported claim about equivalent limits
+  and resets with `You can turn on Antigravity instead.` When enabled, say
+  `Antigravity is already on — you can turn Gemini off.` Apply the same neutral
+  wording to any replacement named by upstream guidance.
+- Validation: 52 focused tests, the desktop migration browser check, ESLint,
+  customer-copy guard and diff checks passed before this approval. No additional
+  local UI preview or build is requested.
+
+## 2026-09-08 — Keep completed provider notices during background collection
+
+- User approval: After testing the local DMG, the user requested that a known
+  provider notice must not return to the loading state while idle; the loading
+  indication should follow an explicit click on the refresh action.
+- Approved customer-visible result: Background inventory refresh preserves the
+  completed provider health and guidance while collection runs. Initial and
+  newly enabled providers still show checking, and an explicit row retry still
+  shows its existing pending indicator. No layout, copy or action is added.
+
+## 2026-09-08 — Skip Display Mode for one enabled provider (#423)
+
+- User approval: "Nur wenn ich zwei oder mehr AI Provider ausgewählt habe,
+  soll ich auf Display Mode kommen und da wählen können zwischen Automatic
+  und Manual. Lass uns das in diesem PR auch noch fixen."
+- Approved customer-visible result: Continue on the provider step saves Manual
+  with the sole enabled provider and skips Display Mode. Two or more enabled
+  providers still show the Automatic/Manual choice, regardless of which ones
+  have usable readings. Existing readiness and save-failure checks remain in
+  effect. Back from the theme returns directly to providers when only one is
+  enabled, and Continue reevaluates the current toggles after edits.
+
+## 2026-09-08 — Reach providers after a successful connection
+
+- User approval: After installing the test DMG, the user reported being stuck
+  on the completed connection/firmware log and unable to reach the provider
+  list: "jetzt bin ich wieder hier stuck und komme nicht weiter zur providerliste".
+- Approved customer-visible result: Completing Connect and the firmware check
+  opens provider selection when the connected device is waiting for usage,
+  including when a previous provider setup is saved. The provider step keeps its existing
+  readiness checks and waits for Continue; a later background device update
+  cannot skip the choice. A real device loss and unfinished or failed firmware
+  work still keep the connection/recovery step.
+
+## 2026-09-08 — Reconnect regression coverage
+
+- User approval: The same request to fix being stuck after Connect and reach
+  the provider list authorizes the connection-flow correction above.
+- Approved customer-visible result: Successful connection and completed firmware
+  work open providers before continuing to a missing theme; live usage arriving
+  later does not skip that choice. Browser expectations now exercise this same
+  approved result, including firmware-in-progress and failure gates.
+
+
+## 2026-09-12 — Theme first and used/remaining in setup and Settings
+
+- User approval: Paul requested the updated Claude Design project: "es soll jetzt ne möglichkeit geben, usage als used oder remaining anzuzeigen ... das geht 1x beim setup im wizard und danach in settings" and "im setup soll man erst das theme auswählen, dann folgen display mode und show usage as, jew. mit richtiger preview von dem theme, das ich ausgewählt habe. ... bau das beides noch ein".
+- Approved customer-visible result: Setup chooses providers, then a theme, Display Mode (only for two or more enabled providers), and Show usage as. Used and Remaining cards render the selected theme with the existing usage snapshot. Settings exposes the same choice using the active theme. Saving updates CodexBar's existing usageBarsShowUsed preference, already used by the Companion API and device stream. Missing readings remain unavailable; failed writes remain on the originating screen.
+- Design source: Live Claude Design MCP, project 36eb7a1c-bd59-42f0-b120-3f1eb3905e4b, Setup Wizard Redesign.dc.html and Control Center Redesign.dc.html, including their imported design system.
+- Rebase: PR #427 updated onto PR #407 c00485e, including main 1d470ea. Retain this PR's previously approved global inline provider notices and #407's actual-usage readiness gate.
+- Validation: Local component/API/browser checks are recorded with the candidate. No physical-device rehearsal or signed release qualification is claimed by these UI checks.
+
+- Screenshot follow-up: Keep both preview cards aligned at the top when their descriptions have different lengths, as in the approved design above.
+- User approval: The 2026-09-12 request to implement the updated design ("bau das beides noch ein") covers this alignment correction in the same cards.
+- Approved customer-visible result: Display Mode and Show usage as keep the selected theme previews aligned at the top, even when their descriptions wrap to different lengths.
+
+- User approval: The same 2026-09-12 request specifies Theme, then Display Mode, then Show usage as.
+- Approved customer-visible result: Returning to Theme and continuing follows that order again; one enabled provider still skips Display Mode.
+- Connection-loss validation: A pending theme setup remains incomplete if the device disconnects before the initial display preference read settles. This preserves the existing recovery behavior with the new theme-first ordering.
+
+## Settings preview correction
+
+- User approval: "in den settings nicht das richtige theme zeigen, da bei der visualisierung bleiben wie vorher. auch bei show usage as"
+- Approved customer-visible result: Settings uses the previous compact provider/percentage/bar visualization for both Display Mode and Show usage as. Setup retains its selected-theme previews. The Used/Remaining preference and its persistence are unchanged.
+
+## 2026-09-15 — Rebase provider and usage setup onto current PR #407
+
+- User approval: Paul explicitly requested “ok nochmal rebasen auf pr 407, da ist noch einiges dazugekommen”, preserving the provider, theme-first setup and simple Settings previews approved in this task.
+- Approved customer-visible result: Retain PR #407's device-matching live preview admission and completed firmware-update handling together with explicit provider continuation, Theme → Display Mode → Show usage as, and compact Settings visuals. Back to Theme also updates the existing wizard navigation override; the parent still owns missing-theme recovery. No new layout, hardware write, installation or release is introduced.
+
+## 2026-09-15 — Align inherited firmware onboarding coverage
+
+- User approval: Paul requested rebasing this PR onto current PR #407 and previously authorized fixing resulting CI failures within this setup scope.
+- Approved customer-visible result: The approved connection → provider confirmation → theme → usage choice flow remains unchanged. The inherited successful firmware-onboarding browser case now confirms these existing choices before asserting a valid final preview, while retaining terminal polling and exactly-one-upload/install assertions.
+
+## 2026-09-15 — Preserve no-device setup recovery coverage
+
+- User approval: Paul requested the current PR #407 rebase and authorized fixing integration test failures for these approved setup flows.
+- Approved customer-visible result: No runtime change. When the unfinished theme setup loses its only VibeTV and discovery returns no candidates, the existing welcome/search screen remains visible. The regression asserts this screen plus no Control Center admission and no theme install. The focused one/two-provider theme and usage flow passes.
+
+## 2026-09-09 — Windows token-history unavailable state
+
+## 2026-09-15 — Merge the firmware onboarding fix from main into PR #407
+
+- User approval: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
+- Approved customer-visible result: Preserve the required matching live preview before leaving the wizard while retaining main's completed firmware-update and attention handling. Fresh devices without an installed theme can continue setup after a verified firmware update; loss of an existing theme remains visible. Cable reads its baseline over USB and WiFi over HTTP, then both apply the same existing theme-verification rule. Attention never starts another automatic firmware upload.
+- Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.
 
 ## 2026-09-18 — app.vibetv.shop offers the download for the system the customer is on
 
@@ -4466,6 +4589,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The hosted setup page at app.vibetv.shop recognises the customer's system and offers one primary download for it. On macOS nothing changes at all: the same "Get the Mac App, then it takes you through the rest." subtitle, the same single "Download" button for the verified DMG, the same three DMG install steps, and the same "The signed download is not ready yet. Please try again later." state when no DMG is published. On Windows the page shows a single "Download for Windows" button for the verified installer, the steps "Open the downloaded installer.", "Confirm the installation and wait for it to finish.", "Open VibeTV Control Center from the Start menu.", an honest note that Windows may warn about an unknown publisher because the installer is not signed yet, and a quiet text link "Using a Mac? Download for macOS". When no Windows installer is published, the Windows button shows the existing disabled "not ready yet" state instead of a dead link. When the browser reports no usable system, the page offers macOS and, only if it is actually published, Windows.
 - Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, `apps/control-center/src/lib/customer-platform.ts`, `apps/control-center/src/lib/companion-release.ts`, `apps/control-center/src/app/api/companion/latest/route.ts`, `apps/control-center/src/components/control-center-app.tsx` and their tests. The Windows installer goes through the same GitHub asset verification as the DMG and stays behind its own feature flag `CONTROL_CENTER_ENABLE_WINDOWS_APP_SETUP_DOWNLOAD`. The Mac path, its copy and its behaviour are unchanged and covered by regression tests. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
 
+- User approval: Marcus answered "leg los" to the proposal that fresh Windows installations start with all providers off and the customer enables their provider, while existing settings remain unchanged.
+- Approved customer-visible result: No provider is preselected when Windows has no CodexBar settings yet. Customers enable their providers using the existing controls. Previously saved selections are preserved; unavailable credentials do not silently change a selection.
+- Scope: Windows configuration bootstrap and its regression coverage, using the existing UI. No provider-specific detection, authentication changes, macOS default changes, push, merge, release, or hardware changes are approved by this entry.
 ### 2026-09-18 — Customer flow coverage for the same download page
 
 - User approval: This adds no new visible result. It is the test coverage for the screen Marcus approved above with "Okay, das klingt sehr gut", after CI showed that the existing hosted-download flow checks only passed by accident of the runner's own operating system.
@@ -4529,6 +4655,98 @@ issue scope, or release permission never implies UI permission.
 - Known limitation: The repository rehearsal scripts drive the device over HTTP and cannot run against a cable-connected VibeTV, so the scripted cold- and warm-start flows were not executed. The legibility and clipping question they exist to answer was verified directly instead, on this device's real state and panel geometry. A scripted rehearsal remains outstanding for the release gate.
 - Scope: `theme-packs/mini-classic/theme.json`, `theme-packs/claude-creature/theme.json`, their generated render packs and tests, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
 - Superseded on 2026-09-22: This layout was withdrawn from the published catalog by the superseding theme versions recorded below. It stays on `codex/integration-p1-batch` for hardware verification.
+
+## 2026-09-20 — Approved agent theme states and shared announcement
+
+- User approval: Paul approved the theme preview ("Top. Das so einarbeiten ins Claude Design."), explicitly specified the two full-theme inversions and existing status line, authorized integrating the bundles on the feature branch, and requested the updated Claude Creature sprites from the same design.
+- Approved customer-visible result: Existing theme label shows the actual agent (for example "Codex is working", "Codex needs you", "Codex is done", "Codex hit an error", or "Nothing running"). Themes use their approved state sprites; a missing sprite triggers two hard full-frame inversions at 0–200 and 350–550 ms. Nothing running stays quiet, disabling motion restores normal colors, and firmware notices retain priority. Mini uses the approved small props beside its eyes, Tiny Office uses the approved poses, and Creature uses the current Claude Design poses.
+- Scope: Theme bundles and their existing live/Theme Studio previews, shared device rendering, compatibility checks, and regression tests. This does not approve a new Control Center lifecycle page, hardware writes, main merge, or release.
+
+## 2026-09-21 — Agent activity settings from Claude Design
+
+- User approval: Paul explicitly requested the designed settings ("Haste auch die ganzen settings implementiert und getestet? Wir haben ja die dazugehörigen settings auch designed in Claude design"), completed Design login and instructed "bin eingeloggt. check die settings und bau die so". This records that specific design implementation approval.
+- Approved customer-visible result: Settings contains the Agent activity group from `Control Center - Agent Activity.dc.html` (project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`, etag `1789894480238945`): Show agent activity; Blink the screen when an agent needs you; Remind me again with 5 minutes, 15 minutes or Never; Quiet from with Never quiet, 22:00–08:00 or 00:00–07:00. Defaults are enabled, blink enabled, 5 minutes and Never quiet. Dependent controls disable when their parent is off. The existing error dialog handles unavailable or unconfirmed settings. The existing screen preview follows these settings. Dedicated state artwork keeps the already approved sprite behavior; themes without that artwork use the shared two-blink fallback and configured waiting reminders.
+- Scope: Settings section, existing preference controls/API, live preview and regression coverage. Reuse the current UI principles, grouped rows and error dialog. No new Overview/session interface, main merge, publication, signing or release is approved by this entry.
+
+### 2026-09-21 — Blink on every theme
+
+- User approval: Paul answered the explicit scope question with "Alle themes und ne Einstellung dafür dass ich das ausstellen kann".
+- Approved customer-visible result: The shared two-blink announcement and waiting reminders apply to every theme, including dedicated state sprites. The Blink switch disables those inversions and reminders while preserving status text and artwork. Quiet hours and reduced motion still suppress blinking.
+- Scope: Central firmware and live-preview announcement logic, the already approved settings, tests and theme guidance. No per-theme alert implementation.
+
+### 2026-09-21 — Keep provider browser fixtures scoped to their settings section
+
+- User approval: Covered by Paul's specific Agent activity settings approval above; test-harness correction only.
+- Approved customer-visible result: Unchanged. The browser fixture now answers the agents section separately, matching the real preference API and avoiding duplicate provider controls in that section.
+- Scope: Existing customer-flow browser fixtures only. No new application UI or publication.
+
+### 2026-09-21 — Preserve CodexBar provider guidance
+
+- User approval: Paul's repository instructions explicitly require CodexBar to own provider-specific behavior and errors, and the Mac App to transport that meaning without reimplementing it. His current feature-branch fix/test authorization covers correcting the review finding against that boundary.
+- Approved customer-visible result: Unsupported-provider rows show the existing upstream guidance and copy action. They no longer invent a provider-specific explanation or a replacement-provider button by searching English diagnostic text. The normal provider switches remain available, and usable readings still govern Continue.
+- Scope: Delete the browser's replacement inference and redundant row overrides, update their regressions and browser scenario. No new provider integration, provider probe, main merge or release.
+
+## 2026-09-21 — Overview session cards from Claude Design
+
+- User approval: Paul requested the missing cards under the Overview preview: "auf dem overview screen hier sollten doch unten jetzt so cards der versch. agents sein. dazu gibts auch n claude design."
+- Approved customer-visible result: Add the Sessions grid from `Control Center - Agent Activity.dc.html` (project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`, verified unchanged etag `1789894480238945`) below the existing device preview. Each observed session has its source name, readable phase and last observed activity age. Waiting sessions get the existing update-green dot; idle sessions are muted. Cards stay still. Missing/stale observations show unavailable, while a healthy empty snapshot shows Nothing running. Because the current observer provides last-observed timestamps rather than session/phase start times, time labels explicitly say Last activity instead of inventing a duration.
+- Scope: Existing Overview, existing status polling data and regression coverage. Keep the connection hero and health row. This supersedes the earlier deferral of Overview session cards; no new observer, provider behavior, main merge, signing or release.
+
+### 2026-09-21 — Complete the session-card connection path
+
+- User approval: Paul's request to implement the agent settings and show real sessions includes making the supported agents connectable. The current review found that the engine's existing opt-in integration endpoint had no production UI caller; without it, hook-based sessions could not reach the approved cards. This is the implementation needed to make that request work, not permission to silently enable integrations.
+- Approved customer-visible result: A matching Agent connections group in Settings lists engine-supported sources. Codex shows Detected automatically; supported hook adapters have explicit connect switches. Blocked hook configurations stay disabled with explanatory text; unsupported integrations are not offered. The explanation says that connecting adds local activity hooks and requires a new session. Failed writes use the existing error dialog and do not claim success.
+- Scope: Connect the existing engine-owned integration endpoint to the current status owner; no new hook logic, provider semantics or automatically enabled agents. Unit/browser fixtures verify enable, disable and failed writes without modifying a customer's agent settings.
+
+### 2026-09-21 — Preserve the approved small session tiles
+
+- User approval: Covered by Paul's Overview-card request above and its exact Claude Design reference, whose grid uses auto-fill with a 164px minimum track width.
+- Approved customer-visible result: With only one or two sessions, cards retain compact grid tracks instead of stretching across the entire row. Existing responsive wrapping, card contents and controls are unchanged.
+- Scope: The one-word auto-fit to auto-fill correction in AgentSessions; this records fidelity to the already requested design, not a new design direction.
+
+### 2026-09-21 — One switch for every supported agent
+
+- User approval: Paul requested: "Agent connections und alles was dazugehört wieder entfernen. agent activity reicht, wenn ich das da an flippe, dann wird das einfach für alle angeschaltet".
+- Approved customer-visible result: Remove Agent connections and its per-agent switches. Show agent activity enables the existing observers for all supported agents together; switching it off removes VibeTV-owned hooks and leaves usage visible. Existing third-party hooks and agent settings are preserved. Failures use the existing settings error dialog.
+- Scope: Supersedes the separate connection-path entry above. Keep Overview session cards and the existing blink, reminder and quiet settings. One engine-owned bulk operation replaces the per-source public endpoint; no new provider semantics, signing, merge or release.
+
+### 2026-09-21 — Preserve approved results while integrating current main
+
+- User approval: Paul's continuing authorization is to combine the updated themes and agent feature on this feature branch and test them together. Current main added the separately approved readability and discontinued-provider corrections recorded above.
+- Approved customer-visible result: Retain readable percentage lanes from main together with the approved five-state sprites; keep this branch's provider notices and typed unsupported-provider behavior. Preserve the reviewed provider-neutral adapter boundary: do not reinstate provider-specific terminal-state inference from English migration messages. Agent activity remains the sole master switch.
+- Scope: Conflict resolution on the feature branch only. Mini 1.2.2 and Creature 1.3.1 preserve published ZIPs, and CodexBar 0.63.0 retains immutable archive verification. No main write or release.
+
+### 2026-09-21 — Make the first master-switch activation truthful
+
+- User approval: Paul's master-switch request explicitly makes switching Agent activity on the action that enables all supported agents.
+- Approved customer-visible result: New profiles start with Agent activity off, so the first on action installs every supported hook adapter before confirming success. Explicitly saved choices are preserved. This supersedes the earlier on-by-default presentation setting now that the control also installs observers. Blink, reminder and quiet defaults remain unchanged.
+- Scope: Default and regression coverage only, fixing the reviewed clean-install activation gap without another connection control or startup installation path.
+
+## 2026-09-22 — Automatic display follows observed agent activity
+
+- User approval: "wie siehts aus mit dem display mode automatic? bisher hat der auf basis von token difference umgeschaltet, glaube ich. zieh das um auf die neue agent activity."
+- Approved customer-visible result: Automatic follows the new Agent activity source instead of token or usage deltas. Needs-you states take priority, then the existing engine priority; the most recently observed session in that phase leads. Idle/unavailable/unmapped activity retains the current available provider. The master switch controls this behavior too; Manual stays pinned. The Automatic tile describes this behavior and its dependency on Agent activity. No new setting or connection control is added.
+- Validation: regression tests cover activity-only switching, waiting priority, token spikes, master-off, Manual, stale observations and missing/disabled usage providers. Remove the old usage-delta and filesystem-activity heuristics rather than retain a second activity owner.
+
+## 2026-09-22 — Automatic preview matches observed selection
+
+- User approval: The request to move Automatic from token differences to the new Agent activity also governs its preview in Setup and Settings.
+- Approved customer-visible result: Remove the old timed provider rotation from the Automatic tile. Its existing preview follows the provider acknowledged by VibeTV, using the shared display-frame path; no browser-side activity inference or new controls. Without a display frame yet, preview the first available provider choice.
+- Validation: Codex review 5279093171 identified the stale rotation. The shared preview now updates only with supplied data; tests cover current-provider ordering and real selection changes.
+
+
+### 2026-09-22 — Finished-session display duration
+
+- User approval: “wenn ne session fertig ist, geht es zu schnell über zu nothing running. mach das einstellbar in den settings.” Default explicitly selected: “30 Sekunden (empfohlen)”.
+- Approved customer-visible result: Add “Keep ‘Done’ on screen” under Agent activity, with “How long a finished session stays visible. New activity takes over immediately.” Choices: 10 seconds, 30 seconds, 1 minute, 2 minutes, 5 minutes. Default 30 seconds, including existing profiles without this setting.
+- Use the existing preference control. Disable with the master switch, independently of blinking. Apply centrally to all themes without a restart. New activity and needs-you retain their existing priority.
+- Preview correctness: accept acknowledged lifecycle-only frames with a valid named agent while keeping all quota fields unavailable, so the preview matches the already-approved physical agent display even before first usage collection.
+
+## 2026-09-23 — Control Center Overview and Settings design
+
+- User approval: Paul requested, "mach hier weiter" at commit `8f6cd7ce783855f6f5eb20ee9f2e3c98c027c6e9` and "setze dieses design um für overview und settings" using `Control Center - Agent Activity.dc.html` in Claude Design project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`. He explicitly added, "wir haben bei settings noch eine zusätzliche einstellung hinzugefügt, die bleibt."
+- Approved customer-visible result: Overview shows the active theme on the supplied VibeTV model as an interactive 3D preview and uses quiet session rows, with a prominent status badge for agents that need attention. The previous centered connection hero and four-card health grid give way to this hierarchy while connection and unavailable states remain truthful. Settings presents Agent activity as simple rows without an enclosing border, shadow, or row dividers. The existing master, blink, reminder, and quiet controls keep their behavior, and the later "Keep ‘Done’ on screen" setting remains available with its 30-second default and independent blink behavior.
+- Scope: Presentation and copy for Overview and Settings on the feature branch, plus focused regression coverage. This entry supersedes the earlier Overview layout instruction to keep the connection hero and health row. It does not authorize a main-branch merge, release, installation, or device write.
 
 ## 2026-09-22 — Return main to its pre-#466 customer-visible state
 
@@ -4638,6 +4856,30 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Windows, when a provider without the "Sign in to <Provider>" button needs a sign-in or setup (`auth_required` or `setup_required`), its message dialog reads "VibeTV reads <Provider> usage from <Provider>'s own app on this computer. Make sure it is installed and signed in, then click Check again." Below it the dialog shows the provider's own message and an "Open setup guide" link that opens https://vibetv.shop/pages/setup in the default browser. OK and "Copy provider message for <Provider>" stay as they are. Codex, Claude, Cursor and Antigravity, every other state, and the Mac app are unchanged.
 - Scope: `setup-providers-screen.tsx`, `setup-wizard.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, and the Companion's fixed `POST /v1/providers/setup-guide` (`companion/internal/companionapi/provider_setup.go`, `server.go`). This approves the draft pull request only, not merge, release, or a device operation.
 
+## 2026-09-30 — Integrate current main into the agent activity branch
+
+- User approval: On 2026-09-30 Paul asked to bring the agent activity branch up to date with main, resolve the conflicts and keep a single branch.
+- Approved customer-visible result: Everything main shipped since #466 stays as approved: the Windows wording, the one-provider skip of Display Mode (#423), the USB rescue update and every CodexBar provider on Windows. The Windows prerequisite notice ("VibeTV reads <Provider> usage from <Provider>'s own app on this computer. …" with "Open setup guide") appears in the provider row's notice, which replaced the provider popup on this branch, instead of in a popup; its wording is unchanged. In this branch's theme-first order the one-provider skip removes Display Mode between theme and "Show usage as", and a second provider switched on afterwards shows Display Mode again. The Overview keeps the approved 3D preview and session cards, so it has no app status row to word for Windows. The five-state themes are republished above main's versions: Mini Classic 1.2.3 (ThemeSpec revision 10) and Claude Creature 1.3.3 (revision 10). Main's published Mini 1.2.1/1.2.2 and Creature 1.3.1/1.3.2 downloads stay byte-identical.
+- Scope: Conflict resolution on the feature branch only. No main write, release, installation or device operation.
+
+### 2026-09-30 — Review fixes to the agent activity implementation
+
+- User approval: On 2026-09-30 Paul asked to challenge and optimize the agent activity implementation on this branch. These entries correct behavior against the approvals above; the one new behavior (error duration) is marked for his confirmation on the pull request.
+- Approved customer-visible result: With Agent activity on and no agent running, VibeTV says "Nothing running", matching the Overview, instead of "Agent status unavailable". Many finished subagents no longer push a parent that needs you off the screen. A Codex session whose question was answered and which then finished shows "done". With Agent activity off, the Overview lists no sessions. The Windows app's Overview header reads "App offline" / "Connecting to app". Pending confirmation: an error stays visible for the "Keep 'Done' on screen" duration, then the session counts as idle, instead of staying on screen until the agent does something else.
+- Scope: Observer lifecycle, hook installation, render wakes, the master switch's off path, the Overview header status and session cards, and 3D preview loading. No new controls or copy. No main write, release, installation or device operation.
+
+### 2026-09-30 — Paul's decisions on the review questions
+
+- User approval: Paul answered the review questions on 2026-09-30: keep the timed Automatic preview in Settings; "Done" does not repeat its blink ("nein"); Automatic switches "nicht bei jedem Tool-Aufruf ..., sondern nur wenn der Agent den Status wechselt, also needs you, done, error, working"; no reminder for tool approvals, with an issue for the underlying gap ("ok. leg issue dafür an"); idle sessions are shown muted ("gedimmt"); the error duration is confirmed ("ja").
+- Approved customer-visible result: "Done" blinks once when a session finishes and does not repeat for the rest of its display time; reminders repeat only for a session that needs you. Automatic and the status line follow the session whose state (working, needs you, done, error) changed last; tool calls and further activity in the same state never switch provider or name. A waiting tool approval gets its first blink but no repeated reminder. The Overview lists idle sessions muted, after the others, labeled "Idle"; "Nothing running" appears only with no session at all. An error stays visible for the "Keep 'Done' on screen" duration.
+- Scope: Firmware announcement timing, the live preview's matching blink, the Companion's provider/name ordering and reminder, the Overview session list, their tests and this record. No new controls. No main write, release, installation or device operation.
+
+### 2026-09-30 — Lone token days and shipped themes in Theme Studio
+
+- User approval: On 2026-09-30 Paul was shown both corrections ("Token-Chart … einen Punkt bekommt nur noch ein isolierter Tag"; "Theme Studio … lehnte vier ausgelieferte Themes ab … Die Prüfung übernimmt jetzt die Grenzen der Firmware") and answered "ok, dann push".
+- Approved customer-visible result: In "Tokens used over time", a reported day between two days without data shows as a dot; connected days keep the released plain line without dots. Theme Studio accepts every shipped theme, so Clippy, Claude Creature, Mini Classic and Pixel Battery can be sent, saved and exported again. Imported images keep the existing sprite size limits.
+- Scope: `usage-screen.tsx`, `theme-studio.ts`, the customer-flow tests and this record. No main write, release, installation or device operation.
+
 ## 2026-09-30 — USB firmware update without false alarms, with progress
 
 - User approval: Paul tested the customer state with a USB VibeTV, saw "We couldn't search for your VibeTV — VibeTV update is still running", "Finish AI setup on this Mac" and a background-service dialog while the firmware update ran, and asked: "fix das und mach PR. außerdem wieso dauert firmware update so lange? und ich brauche da nen status indicator". He then asked to speed up the upload in the same pull request: "mach das in den gleichen pr".
@@ -4685,3 +4927,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: On 2026-10-01 Paul asked to review this pull request together with #474, test it on this Mac with the connected VibeTV, and fix every issue found directly. The review found that while the switch was active, a single failed CodexBar read replaced the remaining provider's usage on VibeTV with the no-providers screen.
 - Approved customer-visible result: No screen, dialog, button, or text changes. Once VibeTV has switched to the providers that are still on, it keeps showing them through one failed CodexBar read. A second failed read in a row ends the switch, because the Manual provider may have been switched on again meanwhile. After a restart of the background service the strict behaviour decided on 2026-09-25 stays: until CodexBar confirms the Manual provider is off, nothing else is shown in its place.
 - Scope: `companion/internal/daemon/collector.go`, `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+### 2026-10-02 — Keep main's Gemini shutdown classification on the agent activity branch
+
+- User approval: Marcus approved the Gemini account guidance in #470 (merged 2026-09-29), which classifies exactly the two recorded CodexBar 0.63.0 shutdown sentences as unsupported; #474 builds on it to void retained quota for such providers. That supersedes this branch's 2026-09-21 entry "do not reinstate provider-specific terminal-state inference from English migration messages" for those two sentences only. Flagged to Paul for confirmation on the pull request.
+- Approved customer-visible result: A Gemini account that CodexBar reports with one of the two recorded shutdown sentences shows as unsupported with CodexBar's own message, exactly as on main. Every other "no longer supported" wording keeps its recoverable classification, and the browser still infers no replacement provider.
+- Scope: `classifyProviderError`, its tests, and this record. No main write, release, installation or device operation.

@@ -42,6 +42,7 @@ var processPermissionMigrations permissionMigrationCache
 var configTransactionLocks sync.Map
 
 type Config struct {
+	AgentActivity                  *AgentActivitySettings `json:"agentActivity,omitempty"`
 	WiFiTransitionStartedAt        int64                  `json:"wifiTransitionStartedAt,omitempty"`
 	Theme                          string                 `json:"theme,omitempty"`
 	ConnectionMode                 string                 `json:"connectionMode,omitempty"`

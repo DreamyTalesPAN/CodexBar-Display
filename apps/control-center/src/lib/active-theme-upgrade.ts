@@ -93,6 +93,7 @@ export function resolveActiveThemeUpgrade(
     };
   }
   const needsRequiredCapability =
+    (theme.requiredCapabilities.includes("agent-theme-states-v1") && device.capabilities?.theme?.supportsAgentThemeStatesV1 !== true) ||
     (theme.requiredCapabilities.includes("usage-slots-v1") && needsUsageSlots) ||
     (theme.requiredCapabilities.includes("usage-windows-v1") &&
       needsUsageWindows) ||

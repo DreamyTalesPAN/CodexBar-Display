@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
@@ -170,6 +171,10 @@ var displayStreamLogKeys = []string{
 	"usageSlots",
 	"providerSlots",
 	"activity",
+	"agentName",
+	"animationsDisabled",
+	"agentAlertsMuted",
+	"agentReminderSecs",
 	"time",
 	"date",
 	"error",
@@ -179,6 +184,8 @@ var displayStreamLogKeys = []string{
 }
 
 type Options struct {
+	AgentSnapshot        func() agentstatus.Snapshot
+	ConfigureAgents      func(context.Context, bool) (agentstatus.Snapshot, error)
 	Addr                 string
 	Home                 string
 	AllowedOrigins       []string
@@ -194,6 +201,9 @@ type Options struct {
 }
 
 type Server struct {
+	agentSnapshot          func() agentstatus.Snapshot
+	agentPreferencesMu     sync.Mutex
+	configureAgents        func(context.Context, bool) (agentstatus.Snapshot, error)
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
@@ -480,16 +490,18 @@ type deviceHealthInfo struct {
 }
 
 type themeSpecHealth struct {
-	Active           bool   `json:"active"`
-	Path             string `json:"path,omitempty"`
-	Hash             string `json:"hash,omitempty"`
-	RenderOK         *bool  `json:"renderOk,omitempty"`
-	RenderError      string `json:"renderError,omitempty"`
-	RenderErrorAsset string `json:"renderErrorAsset,omitempty"`
-	RenderFailures   uint64 `json:"renderFailures,omitempty"`
+	Active                 bool   `json:"active"`
+	Path                   string `json:"path,omitempty"`
+	Hash                   string `json:"hash,omitempty"`
+	RenderOK               *bool  `json:"renderOk,omitempty"`
+	RenderError            string `json:"renderError,omitempty"`
+	RenderErrorAsset       string `json:"renderErrorAsset,omitempty"`
+	RenderFailures         uint64 `json:"renderFailures,omitempty"`
+	CBALastFrameDurationMs uint64 `json:"cbaLastFrameDurationMs,omitempty"`
 }
 
 type statusResponse struct {
+	Agents                       agentstatus.Snapshot   `json:"agents"`
 	OK                           bool                   `json:"ok"`
 	Companion                    companion              `json:"companion"`
 	Device                       deviceInfo             `json:"device"`
@@ -983,6 +995,8 @@ func New(opts Options) (*Server, error) {
 	}
 	server := &Server{
 		addr:                   addr,
+		agentSnapshot:          opts.AgentSnapshot,
+		configureAgents:        opts.ConfigureAgents,
 		home:                   home,
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
@@ -1132,6 +1146,7 @@ func (s *Server) registerControlCenterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/control-center/", s.handleControlCenter)
 	mux.HandleFunc("/_next/", s.handleControlCenterAsset)
 	mux.HandleFunc("/images/", s.handleControlCenterAsset)
+	mux.HandleFunc("/models/", s.handleControlCenterAsset)
 	mux.HandleFunc("/theme-packs/render/", s.handleThemeRenderPack)
 	mux.HandleFunc("/theme-packs/", s.handleControlCenterAsset)
 	mux.HandleFunc("/favicon.ico", s.handleControlCenterAsset)
@@ -1503,6 +1518,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		themeInstall = &latest
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
+		Agents:                       s.agents(),
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
 		Device:                       device,
@@ -2775,17 +2791,10 @@ func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
 	if len(providers) == 0 {
 		return false
 	}
-	var completedAt time.Time
+	// The collector checks freshness per provider. A retained history and a
+	// newly completed scan can legitimately have different timestamps.
 	for _, provider := range providers {
 		if !provider.TokenUsageReady && provider.Cost == nil {
-			return false
-		}
-		if provider.TokenStatsCollectedAt.IsZero() {
-			continue
-		}
-		if completedAt.IsZero() {
-			completedAt = provider.TokenStatsCollectedAt
-		} else if !provider.TokenStatsCollectedAt.Equal(completedAt) {
 			return false
 		}
 	}
@@ -3523,6 +3532,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, statusResponse{
+		Agents:                       s.agents(),
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
 		Device:                       device,
@@ -8412,13 +8422,14 @@ type deviceHealth struct {
 	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
-			Active           bool   `json:"active"`
-			Path             string `json:"path"`
-			Hash             string `json:"hash"`
-			RenderOK         *bool  `json:"renderOk"`
-			RenderError      string `json:"renderError"`
-			RenderErrorAsset string `json:"renderErrorAsset"`
-			RenderFailures   uint64 `json:"renderFailures"`
+			Active                 bool   `json:"active"`
+			Path                   string `json:"path"`
+			Hash                   string `json:"hash"`
+			RenderOK               *bool  `json:"renderOk"`
+			RenderError            string `json:"renderError"`
+			RenderErrorAsset       string `json:"renderErrorAsset"`
+			RenderFailures         uint64 `json:"renderFailures"`
+			CBALastFrameDurationMs uint64 `json:"cbaLastFrameDurationMs"`
 		} `json:"themeSpec"`
 	} `json:"display"`
 	Render struct {
@@ -9340,13 +9351,14 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
 			ThemeSpec: &themeSpecHealth{
-				Active:           health.Display.ThemeSpec.Active,
-				Path:             strings.TrimSpace(health.Display.ThemeSpec.Path),
-				Hash:             strings.TrimSpace(health.Display.ThemeSpec.Hash),
-				RenderOK:         health.Display.ThemeSpec.RenderOK,
-				RenderError:      strings.TrimSpace(health.Display.ThemeSpec.RenderError),
-				RenderErrorAsset: strings.TrimSpace(health.Display.ThemeSpec.RenderErrorAsset),
-				RenderFailures:   health.Display.ThemeSpec.RenderFailures,
+				Active:                 health.Display.ThemeSpec.Active,
+				Path:                   strings.TrimSpace(health.Display.ThemeSpec.Path),
+				Hash:                   strings.TrimSpace(health.Display.ThemeSpec.Hash),
+				RenderOK:               health.Display.ThemeSpec.RenderOK,
+				RenderError:            strings.TrimSpace(health.Display.ThemeSpec.RenderError),
+				RenderErrorAsset:       strings.TrimSpace(health.Display.ThemeSpec.RenderErrorAsset),
+				RenderFailures:         health.Display.ThemeSpec.RenderFailures,
+				CBALastFrameDurationMs: health.Display.ThemeSpec.CBALastFrameDurationMs,
 			},
 		}
 	}
@@ -9956,10 +9968,15 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 		ResetTrust:         displayStreamLogValue(line, "resetTrust"),
 		UsageMode:          displayStreamLogValue(line, "usageMode"),
 		Activity:           displayStreamLogValue(line, "activity"),
-		Time:               displayStreamLogValue(line, "time"),
-		Date:               displayStreamLogValue(line, "date"),
-		Error:              displayStreamLogValue(line, "error"),
+		AgentName:          displayStreamLogValue(line, "agentName"),
+		AnimationsDisabled: boolFieldFromDisplayStreamLog(line, "animationsDisabled"),
+		AgentAlertsMuted:   boolFieldFromDisplayStreamLog(line, "agentAlertsMuted"),
+
+		Time:  displayStreamLogValue(line, "time"),
+		Date:  displayStreamLogValue(line, "date"),
+		Error: displayStreamLogValue(line, "error"),
 	}
+	frame.AgentReminderSecs, _ = intFieldFromDisplayStreamLog(line, "agentReminderSecs")
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}
@@ -10350,4 +10367,11 @@ func uniqueStrings(values ...string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func (s *Server) agents() agentstatus.Snapshot {
+	if s.agentSnapshot != nil {
+		return s.agentSnapshot()
+	}
+	return agentstatus.Snapshot{SchemaVersion: 1, Health: "unavailable", Phase: "unavailable", Sessions: []agentstatus.Session{}, Sources: []agentstatus.Source{}}
 }

@@ -1,7 +1,10 @@
 "use client";
 
+import { AgentActivitySettings, type AgentSettingsRequest } from "./agent-activity-settings";
+import { UsageModeChoice } from "./setup/setup-usage-mode-screen";
+import type { UsageDisplayMode } from "./setup/setup-display-previews";
 import { CircleArrowRight, Wifi } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Item, ItemSeparator } from "@/components/ui/item";
@@ -50,7 +53,11 @@ export function standbyTimeoutLabel(minutes: number): string {
 }
 
 export type SettingsScreenProps = {
-  /** Live usage per provider, in the order Automatic moves through them. */
+  agentSettingsRequest?: AgentSettingsRequest;
+  usageMode?: UsageDisplayMode | null;
+  usageSavePending?: boolean;
+  onUsageModeChange?: (mode: UsageDisplayMode) => void;
+  /** Live usage per provider, with the currently displayed provider first. */
   automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
   brightness: number | null;
@@ -72,6 +79,8 @@ export type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
+  agentSettingsRequest,
+  usageMode, usageSavePending, onUsageModeChange,
   automaticPreviews,
   device,
   brightness,
@@ -91,6 +100,15 @@ export function SettingsScreen({
   windowsHost = false,
 }: SettingsScreenProps) {
   const thisHost = windowsHost ? "this computer" : "this Mac";
+  // This card demonstrates Automatic across the enabled providers. It does
+  // not select a device provider or own usage; all readings come from props.
+  const [previewIndex, setPreviewIndex] = useState(0);
+  useEffect(() => {
+    if (automaticPreviews.length < 2) return;
+    const timer = window.setInterval(() => setPreviewIndex((index) =>
+      (index + 1) % automaticPreviews.length), 3000);
+    return () => window.clearInterval(timer);
+  }, [automaticPreviews.length]);
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
@@ -157,6 +175,12 @@ export function SettingsScreen({
         error={actionError ?? providerError ?? null}
         onOpenChange={(open) => !open && onDismissError()}
       />
+      {agentSettingsRequest ? <>
+        <SettingsSection title="Agent activity" description="What your agents are doing, and when one needs you.">
+          <AgentActivitySettings request={agentSettingsRequest} />
+        </SettingsSection>
+        <ItemSeparator />
+      </> : null}
       <SettingsSection title="Connection">
         <div
           aria-label="Connection mode"
@@ -224,33 +248,6 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="Display">
-        <BrightnessControl
-          disabled={
-            !brightnessSupport ||
-            !deviceIsReady(device) ||
-            brightness == null ||
-            localActionBusy
-          }
-          id="vibetv-brightness"
-          label="Brightness"
-          max={maxBrightness}
-          min={minBrightness}
-          onSave={onSaveBrightness}
-          onValueChange={onBrightnessChange}
-          value={currentBrightness}
-          valueLabel={
-            !brightnessSupport
-              ? "Not supported"
-              : brightness == null
-                ? "Loading"
-                : `${brightness}%`
-          }
-        />
-      </SettingsSection>
-
-      <ItemSeparator className="my-0" />
-
       <SettingsSection title="Display mode">
         {providerPicker.displayNotice ? (
           <p className="text-sm text-muted-foreground" role="status">
@@ -258,15 +255,16 @@ export function SettingsScreen({
           </p>
         ) : null}
         <DisplayModeChoice
-          automaticPreview={automaticPreviews[0] ?? null}
-          automaticPreviews={automaticPreviews}
+          simplePreview
+          usageMode={usageMode ?? undefined}
+          automaticPreview={automaticPreviews[previewIndex % automaticPreviews.length] ?? null}
           manualPreview={
             automaticPreviews.find(
               (preview) =>
                 preview.providerLabel ===
                 displayable.find(
                   (item) =>
-                    item.providerId === providerPicker.display?.providerIds[0],
+                    item.providerId === manualProviderId,
                 )?.label,
             ) ?? null
           }
@@ -297,6 +295,38 @@ export function SettingsScreen({
           }))}
           saving={displaySavePending}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
+        />
+      </SettingsSection>
+      <ItemSeparator className="my-0" />
+      <SettingsSection title="Show usage as">
+        <UsageModeChoice mode={usageMode ?? null} onSelect={(mode) => onUsageModeChange?.(mode)}
+          saving={usageSavePending || localActionBusy} simplePreview
+          preview={automaticPreviews.find((preview) => preview.providerLabel ===
+            displayable.find((item) => item.providerId === manualProviderId)?.label) ?? automaticPreviews[0] ?? null} />
+      </SettingsSection>
+      <ItemSeparator className="my-0" />
+      <SettingsSection title="Display">
+        <BrightnessControl
+          disabled={
+            !brightnessSupport ||
+            !deviceIsReady(device) ||
+            brightness == null ||
+            localActionBusy
+          }
+          id="vibetv-brightness"
+          label="Brightness"
+          max={maxBrightness}
+          min={minBrightness}
+          onSave={onSaveBrightness}
+          onValueChange={onBrightnessChange}
+          value={currentBrightness}
+          valueLabel={
+            !brightnessSupport
+              ? "Not supported"
+              : brightness == null
+                ? "Loading"
+                : `${brightness}%`
+          }
         />
       </SettingsSection>
 
@@ -448,7 +478,7 @@ function SettingsSection({
       <div className="min-w-0">
         <h2 className="text-base font-semibold">{title}</h2>
         {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
         ) : null}
       </div>
       <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>

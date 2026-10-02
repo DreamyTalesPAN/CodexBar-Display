@@ -15,23 +15,18 @@ struct RuntimeContext {
   bool screenDirty = true;
   String topLineOverride;
   int64_t lastRenderedSecs = -1;
-  int64_t lastRenderedMinuteBucket = -1;
   int64_t lastRenderedUsageWindowSecs[core::kMaxUsageWindows];
-  int64_t lastRenderedUsageWindowMinuteBuckets[core::kMaxUsageWindows];
   // Provider slots tick down locally exactly like usage windows, so they need
   // the same tracking — without it a provider-overview screensaver freezes at
   // the last received value while the device clock keeps running.
   int64_t lastRenderedProviderSlotSecs[core::kMaxProviderSlots];
-  int64_t lastRenderedProviderSlotMinuteBuckets[core::kMaxProviderSlots];
 
   RuntimeContext() {
     for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
       lastRenderedUsageWindowSecs[i] = -1;
-      lastRenderedUsageWindowMinuteBuckets[i] = -1;
     }
     for (size_t i = 0; i < core::kMaxProviderSlots; ++i) {
       lastRenderedProviderSlotSecs[i] = -1;
-      lastRenderedProviderSlotMinuteBuckets[i] = -1;
     }
   }
 };

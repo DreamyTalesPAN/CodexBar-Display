@@ -6,7 +6,7 @@ import {
   boundValue,
   buildFrameData,
   fetchThemeRenderPackRevision,
-  hasRenderableUsage,
+  hasRenderableFrame,
   LiveVibeTVPreview,
   livePreviewDisplayFrame,
   parseLatestDisplayFrameResponse,
@@ -299,13 +299,13 @@ describe("dynamic usage slot preview", () => {
 
   it("waits for actual usage instead of accepting a provider label alone", () => {
     expect(
-      hasRenderableUsage({
+      hasRenderableFrame({
         ok: true,
         frame: { v: 2, provider: "claude", label: "Claude" },
       }),
     ).toBe(false);
     expect(
-      hasRenderableUsage({
+      hasRenderableFrame({
         ok: true,
         frame: {
           v: 2,
@@ -316,7 +316,7 @@ describe("dynamic usage slot preview", () => {
       }),
     ).toBe(true);
     expect(
-      hasRenderableUsage({
+      hasRenderableFrame({
         ok: true,
         frame: {
           v: 2,
@@ -776,4 +776,20 @@ describe("live VibeTV partial usage", () => {
     expect(primitiveUsageSlotVisible({ providerSlot: 2 }, singleProvider)).toBe(false);
     expect(boundValue("providerSlot2Label", singleProvider)).toBe("");
   });
+});
+
+
+it("renders lifecycle-only carriers without exposing retained quota", () => {
+ const carrier={ok:true,frame:{v:2,usageUnavailable:true,activity:"done",agentName:"Codex",session:91,weekly:82,resetSecs:600,tokenTotalsKnown:true,totalTokens:9000,usageWindows:[{id:"weekly",label:"Weekly",percent:82,resetSecs:600}],providerSlots:[{id:"codex",label:"Codex",percent:91}]}};
+ expect(hasRenderableFrame(carrier)).toBe(true);
+ const frame=buildFrameData(undefined,carrier.frame);
+ expect(frame.activity).toBe("done");
+ expect(frame.agentName).toBe("Codex");
+ expect(frame.sessionUnavailable && frame.weeklyUnavailable).toBe(true);
+ expect(frame.usageWindows).toEqual([]);
+ expect(frame.providerSlots).toEqual([]);
+ expect(frame.hasTokenTotals).toBe(false);
+ expect(frame.resetSecs).toBe(0);
+ expect(hasRenderableFrame({...carrier,frame:{...carrier.frame,activity:"stale"}})).toBe(false);
+ expect(hasRenderableFrame({...carrier,frame:{...carrier.frame,agentName:""}})).toBe(false);
 });

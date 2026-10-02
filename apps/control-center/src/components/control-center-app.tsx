@@ -81,7 +81,9 @@ import {
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
 import { useLatestDisplayFrame } from "./live-vibetv-preview";
+import type { AgentSnapshot } from "./agent-sessions";
 import { OverviewScreen } from "./overview-screen";
+import { ShellConnectionStatus, overviewConnectionStatus } from "./shell-connection-status";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
   providerUsageNeedsReconcile,
@@ -120,6 +122,7 @@ import {
   setupUsageCauseFor,
 } from "./setup/setup-usage-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
+import type { UsageDisplayMode } from "./setup/setup-display-previews";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen } from "./settings-screen";
 import { collectSupportReport } from "./support-report";
@@ -402,6 +405,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
     null,
   );
+  const [agents, setAgents] = useState<AgentSnapshot | null>(null);
   // The runtime names its platform, and that answer is kept: "Mac App
   // offline" is shown exactly when the runtime is gone. Until it first
   // answers, the system the WebView reports stands in, so a slow first status
@@ -453,6 +457,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [],
   );
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
+  const usageModeRevision = useRef(0);
+  const [usageMode, setUsageMode] = useState<UsageDisplayMode | null>(null);
+  const [usageModePending, setUsageModePending] = useState(false);
+  const [usageModeError, setUsageModeError] = useState<ApiError | null>(null);
+  const [setupDisplayConfirmed, setSetupDisplayConfirmed] = useState(false);
+  const [setupUsageComplete, setSetupUsageComplete] = useState(false);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [standby, setStandby] = useState<StandbySettings | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -802,6 +812,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const markCompanionUnavailable = useCallback(() => {
     setCompanionStatus("missing");
     setCompanionInfo(null);
+    setAgents(null);
     setThemeInstallEnabled(false);
     setUsage(null);
     setUsageError(null);
@@ -814,6 +825,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const markCompanionAccessBlocked = useCallback(() => {
     setCompanionStatus("unknown");
     setCompanionInfo(null);
+    setAgents(null);
     setThemeInstallEnabled(false);
     setUsage(null);
     setUsageError(null);
@@ -1231,6 +1243,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       try {
         const payload = await runCompanion<{
+          agents?: AgentSnapshot;
           companion?: CompanionInfo;
           connectionMode?: string;
           connectionModeChoiceRequired?: boolean;
@@ -1247,6 +1260,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
+        setAgents(payload.agents || null);
         applyConnectionStatus(payload);
         setProviderSetup(payload.providerSetup || null);
         setProviderSelectionSetup(payload.setup || null);
@@ -1397,6 +1411,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const setupGeneration = setupGenerationRef.current;
     try {
       const payload = await runCompanion<{
+        agents?: AgentSnapshot;
         companion?: CompanionInfo;
         connectionMode?: string;
         connectionModeChoiceRequired?: boolean;
@@ -1411,6 +1426,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
+      setAgents(payload.agents || null);
       applyConnectionStatus(payload);
       setProviderSetup(payload.providerSetup || null);
       setProviderSelectionSetup(payload.setup || null);
@@ -1981,6 +1997,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // Left standing, the rerun reaches its closing step and is treated as
       // finished before it renders, so the customer never sees VibeTV running.
       setHasEnteredControlCenter(false);
+      setSetupUsageComplete(false);
+      setSetupDisplayConfirmed(false);
       setProviderSetupCompletedThisSession(false);
       setSetupThemeInstallRequested(false);
       setSetupThemeChoiceRequired(false);
@@ -3483,6 +3501,41 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [refreshUsage, runCompanion],
   );
 
+  const loadUsageMode = useCallback(async () => {
+    const revision = ++usageModeRevision.current;
+    try {
+      const payload = await runCompanion<{ items: PreferenceDescriptor[] }>("/v1/preferences?section=display");
+      if (revision !== usageModeRevision.current) return;
+      const value = payload.items.find((item) => item.id === "codexbar.usageBarsShowUsed")?.value;
+      if (typeof value !== "boolean") throw new Error("Usage display setting is unavailable.");
+      setUsageMode(value ? "used" : "remaining");
+      setUsageModeError(null);
+    } catch (error) {
+      if (revision === usageModeRevision.current) setUsageModeError(normalizeCaughtError(error, "Usage display setting could not be loaded."));
+    }
+  }, [runCompanion]);
+
+  const saveUsageMode = useCallback(async (mode: UsageDisplayMode) => {
+    if (setupResetInProgressRef.current) return false;
+    usageModeRevision.current += 1;
+    let finishWrite = () => {};
+    const write = new Promise<void>((resolve) => { finishWrite = resolve; });
+    providerPreferenceWritesRef.current = Promise.all([providerPreferenceWritesRef.current, write]).then(() => undefined);
+    setUsageModePending(true);
+    try {
+      const payload = await runCompanion<{ item: PreferenceDescriptor }>("/v1/preferences/codexbar.usageBarsShowUsed", {
+        method: "PATCH", body: JSON.stringify({ value: mode === "used" }),
+      });
+      setUsageMode(payload.item.value === true ? "used" : "remaining");
+      setUsageModeError(null);
+      void refreshUsage({ quiet: true });
+      return true;
+    } catch (error) {
+      setUsageModeError(normalizeCaughtError(error, "Usage display setting could not be saved."));
+      return false;
+    } finally { finishWrite(); setUsageModePending(false); }
+  }, [refreshUsage, runCompanion]);
+
   const completeProviderSetup = useCallback(async () => {
     setBusyAction("provider-setup-complete");
     try {
@@ -3491,6 +3544,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }>("/v1/setup/providers/complete", { method: "POST" });
       setProviderSelectionSetup(payload.setup);
       setProviderSetupCompletedThisSession(true);
+      setSetupDisplayConfirmed(false);
+      setSetupThemeChoiceRequired(true);
       setSetupThemeInstallRequested(false);
       setProviderDisplayError(null);
       setLastError(null);
@@ -4552,10 +4607,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       void Promise.all([
         refreshProviderPreferences({ quiet: true }),
         refreshProviderDisplay({ quiet: true }),
+        loadUsageMode(),
       ]);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
+    loadUsageMode,
+    providerDisplayWanted,
     activeShellTab,
     companionStatus,
     providerSelectionSetup?.providerSelectionRequired,
@@ -4615,7 +4673,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
-    displayConfigured: displaySetupComplete,
+    displayConfigured: displaySetupComplete && (!providerSetupCompletedThisSession || setupDisplayConfirmed || (providerPreferences || []).filter((item) => isProviderItem(item) && item.value).length === 1),
+    usageConfigured: setupUsageComplete || !providerSetupCompletedThisSession,
     displaySelectionSupported: setupDisplaySelectionSupported(
       providerDisplay,
       providerDisplayError,
@@ -4671,6 +4730,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id: item.providerId,
       label: item.label,
     })),
+    displayFrame?.frame?.provider,
   );
   // Step 05 keeps offering all four live themes: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the
@@ -4693,6 +4753,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallEnabled,
         })?.reason ?? null,
     }));
+  const setupThemeAlreadyActive = Boolean(selectedTheme &&
+    selectedTheme.themeId === device?.activeTheme &&
+    selectedTheme.themeSpecPath === device?.display?.themeSpec?.path &&
+    deviceCompletedThemeSetup(device));
   const setupThemeError: ApiError | null =
     themeInstallStatus?.phase === "error"
       ? themeInstallStatus.failure ?? {
@@ -4753,7 +4817,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               "Keep the selected VibeTV connected by Cable and retry.",
           };
         }
-        return { board: selected.device?.board, firmware: selected.device?.firmware };
+        return selected.device ?? {};
       }
       const connected = await selectAndConnectDevice(candidate);
       if (!connected || "code" in connected) {
@@ -4761,7 +4825,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       // Selection already returned the verified handshake. A second probe can
       // race the transport worker's restart and discard that fresh identity.
-      return { board: connected.board, firmware: connected.firmware };
+      return connected;
     },
     installFirmware: async (connected) => {
       lastFirmwareErrorRef.current = null;
@@ -4866,6 +4930,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (setupOwnsScreen) {
       return (
         <SetupWizard
+          usageMode={usageMode}
+          usageSavePending={usageModePending}
+          usageError={errorForHost(usageModeError, windowsHost)}
+          onDismissUsageError={() => setUsageModeError(null)}
+          onRetryUsageMode={() => void loadUsageMode()}
+          onUsageContinue={async (mode) => {
+            const generation = setupGenerationRef.current;
+            const saved = await saveUsageMode(mode);
+            if (saved && generation === setupGenerationRef.current) setSetupUsageComplete(true);
+            return saved;
+          }}
           initialWiFiSetup={settingsWiFiSetup}
           onConnectionComplete={finishConnectionChange}
           aiFixPrompt={setupAiFixPrompt}
@@ -4924,23 +4999,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onConfigureWiFi={configureSetupWiFi}
           onCreateSupportReport={loadSupportDiagnostics}
           onFinished={finishSetup}
-          onDisplayContinue={(selection) =>
-            updateProviderDisplay(
-              selection.mode === "automatic"
-                ? { ...selection, providerIds: enabledProviderIds }
-                : selection,
-              selection.mode === "automatic"
-                ? enabledProviderIds[0] ?? ""
-                : selection.providerIds[0] ?? "",
-            )
-          }
+          onDisplayContinue={async (selection) => {
+            const saved = await updateProviderDisplay(
+              selection.mode === "automatic" ? { ...selection, providerIds: enabledProviderIds } : selection,
+              selection.mode === "automatic" ? enabledProviderIds[0] ?? "" : selection.providerIds[0] ?? "",
+            );
+            if (saved) setSetupDisplayConfirmed(true);
+            return saved;
+          }}
+          selectedThemeInstalled={setupThemeAlreadyActive}
           onReturnToThemes={() => {
             setSetupThemeChoiceRequired(true);
             setSetupThemeInstallRequested(false);
           }}
           onInstallTheme={() => {
+            setSetupDisplayConfirmed(false);
+            if (setupThemeAlreadyActive) {
+              setSetupThemeChoiceRequired(false);
+              return Promise.resolve(true);
+            }
+            setSetupThemeChoiceRequired(true);
             setSetupThemeInstallRequested(true);
-            void installTheme();
+            return installTheme();
           }}
           onProviderCheck={(provider) => void checkProvider(provider)}
           onProviderOpenSignIn={
@@ -5003,6 +5083,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
         device={device}
+        headerAction={activeShellTab === "overview" ? (
+          <ShellConnectionStatus {...overviewConnectionStatus(
+            companionStatus,
+            device,
+            firmwareUpdateStatus?.phase,
+            companionInfo?.app?.version,
+            windowsHost,
+          )} />
+        ) : undefined}
         updateAvailable={anyUpdateAvailable}
         onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
@@ -5014,13 +5103,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       >
         {activeShellTab === "overview" ? (
           <OverviewScreen
-            companionVersion={companionInfo?.version}
+            agents={agents}
             companionStatus={companionStatus}
             device={device}
             displayFrame={displayFrame}
             firmwareUpdateStatus={firmwareUpdateStatus}
             usage={usage}
-            windowsHost={windowsHost}
           />
         ) : null}
 
@@ -5037,8 +5125,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
-            actionError={errorForHost(lastError, windowsHost)}
+            agentSettingsRequest={runCompanion}
+            usageMode={usageMode}
+            usageSavePending={usageModePending}
+            onUsageModeChange={(mode) => void saveUsageMode(mode)}
+            actionError={errorForHost(usageModeError || lastError, windowsHost)}
             onDismissError={() => {
+              setUsageModeError(null);
               setLastError(null);
               setProviderDisplayError(null);
               setProviderPreferencesError(null);

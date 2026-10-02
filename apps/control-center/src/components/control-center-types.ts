@@ -270,6 +270,7 @@ export type DeviceInfo = {
       renderOk?: boolean;
       renderError?: string;
       renderFailures?: number;
+      cbaLastFrameDurationMs?: number;
     };
   };
   standby?: {
@@ -304,6 +305,7 @@ export type DeviceInfo = {
       supportsProviderAssetsV1?: boolean;
       supportsColorStopsV1?: boolean;
       supportsTextValignV1?: boolean;
+  supportsAgentThemeStatesV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
@@ -374,6 +376,10 @@ export type UsageProviderInfo = {
   weekTokens?: number;
   totalTokens?: number;
   activity?: string;
+  agentName?: string;
+  animationsDisabled?: boolean;
+  agentAlertsMuted?: boolean;
+  agentReminderSecs?: number;
   stale?: boolean;
   usageUnavailable?: boolean;
   sessionUnavailable?: boolean;

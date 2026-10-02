@@ -708,6 +708,43 @@
       "items": {
         "$ref": "#/$defs/usageWindow"
       }
+    },
+    "agentName": {
+      "type": "string",
+      "x-maxUtf8Bytes": 40,
+      "description": "Observed agent source display name, independent of quota provider. Requires agent-theme-states-v1."
+    },
+    "animationsDisabled": {
+      "type": "boolean",
+      "description": "Disable lifecycle announcements and asset playback. Requires agent-theme-states-v1."
+    },
+    "agentAlertsMuted": {
+      "type": "boolean",
+      "description": "Suppress all agent announcement inversions and reminders while preserving status text and state assets. Requires agent-theme-states-v1."
+    },
+    "agentReminderSecs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Repeat the two-blink announcement while an agent remains waiting. Zero or omitted disables reminders; Control Center sends 300 or 900 seconds. Muted alerts and disabled animation take priority. Requires agent-theme-states-v1."
+    },
+    "activity": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "coding",
+        "working",
+        "thinking",
+        "tool_use",
+        "compacting",
+        "waiting_for_permission",
+        "waiting_for_answer",
+        "waiting_for_review",
+        "done",
+        "error",
+        "stale",
+        "unavailable"
+      ]
     }
   },
   "additionalProperties": true
