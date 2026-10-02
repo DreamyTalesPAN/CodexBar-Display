@@ -40,6 +40,11 @@ var (
 	uploadVerifyRetryDelay = 1500 * time.Millisecond
 )
 
+// errThemeRenderLowHeap marks a render-health failure that is still
+// low_heap_cba_buffer after every activation retry: the theme's animated
+// sprite needs more free heap than this VibeTV has, so retrying cannot help.
+var errThemeRenderLowHeap = errors.New("theme animation needs more free memory than VibeTV has")
+
 var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#111111"},{"t":"tx","x":28,"y":58,"v":"INSTALLING","s":2,"c":"#B6FF00"},{"t":"tx","x":36,"y":94,"v":"NEW THEME","s":2,"c":"#FFFFFF"},{"t":"p","x":34,"y":150,"w":172,"h":18,"b":"s","c":"#B6FF00","bg":"#303030"}]}`)
 
 type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
@@ -356,6 +361,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			out,
 		); err != nil {
 			op := "theme-pack/activate"
+			code := errcode.UpgradeFlashFirmware
 			hint := "keep VibeTV powered and on the same WiFi, then retry theme install"
 			var phaseErr *themeActivationError
 			if errors.As(err, &phaseErr) {
@@ -364,10 +370,14 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 				if op == "theme-pack/render-health" {
 					hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
 				}
+				if errors.Is(err, errThemeRenderLowHeap) {
+					code = errcode.ProtocolThemeSpecIncompatible
+					hint = "this theme's animation does not fit VibeTV's free memory; choose another theme"
+				}
 			}
 			return Result{}, &InstallError{
 				Op:   op,
-				Code: errcode.UpgradeFlashFirmware,
+				Code: code,
 				Err:  err,
 				Hint: hint,
 			}
@@ -1148,7 +1158,7 @@ func validateThemeHealthSnapshot(health transportlayer.DeviceHealthSnapshot, act
 	if !health.Display.ThemeSpec.Active ||
 		!health.Display.ThemeSpec.RenderOk ||
 		(strings.TrimSpace(activePath) != "" && health.Display.ThemeSpec.Path != activePath) {
-		return fmt.Errorf(
+		err := fmt.Errorf(
 			"theme render not healthy: active=%t path=%q renderOk=%t renderError=%q renderErrorAsset=%q activeTheme=%q",
 			health.Display.ThemeSpec.Active,
 			health.Display.ThemeSpec.Path,
@@ -1157,6 +1167,10 @@ func validateThemeHealthSnapshot(health transportlayer.DeviceHealthSnapshot, act
 			health.Display.ThemeSpec.RenderErrorAsset,
 			health.Display.ActiveTheme,
 		)
+		if health.Display.ThemeSpec.RenderError == "low_heap_cba_buffer" {
+			return fmt.Errorf("%w: %v", errThemeRenderLowHeap, err)
+		}
+		return err
 	}
 	if len(expectedGIFs) == 0 {
 		return nil

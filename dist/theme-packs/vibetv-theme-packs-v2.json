@@ -6,16 +6,16 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.3.2",
-      "themeRev": 9,
-      "themeSpecPath": "/themes/u/claude--9-5c74ca.json",
+      "version": "1.3.3",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/cld-10-819afd.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.3.2.zip",
-      "sha256": "c0ed5faf24a708e204e75d7c350da5ff60b995d9c4926a3d5af2db28d06b5272",
-      "bytes": 3343
+      "downloadAsset": "vibetv-theme-claude-creature-v1.3.3.zip",
+      "sha256": "9ef9e50ca3d7cbab944839a6ba00deafb6880d478be502b157a98321b29927c8",
+      "bytes": 3342
     },
     {
       "id": "clippy",
