@@ -19,6 +19,8 @@ export type ProviderPickerProps = {
   usage: UsageSnapshot | null;
   display: ProviderDisplaySelection | null;
   displayError?: ApiError | null;
+  /** Why the display mode changed without the customer choosing it. */
+  displayNotice?: string | null;
   displayPendingProviderId?: string | null;
   items: PreferenceDescriptor[] | null;
   preferencesError?: ApiError | null;

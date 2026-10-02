@@ -338,6 +338,49 @@ func TestDoctorCableRejectsDisconnectedSavedCapabilities(t *testing.T) {
 	}
 }
 
+func TestDoctorCableConnectionState(t *testing.T) {
+	for _, tc := range []struct {
+		state   string
+		wantErr bool
+	}{
+		{state: "reconnecting", wantErr: true},
+		{state: "ready"},
+		{state: "provider_setup_required"},
+		{state: "setup_required"},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{
+					"ok":true,
+					"companion":{"runtime":{"listenerOwner":"shop.vibetv.control-center.runtime"}},
+					"device":{
+						"deviceId":"vibetv-cable",
+						"connected":true,
+						"ready":false,
+						"connectionState":"` + tc.state + `",
+						"board":"esp8266-smalltv-st7789",
+						"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}
+					}
+				}`))
+			}))
+			defer companion.Close()
+
+			_, err := readLocalCableCapabilitiesOrigins(
+				[]string{companion.URL},
+				"shop.vibetv.control-center.runtime",
+			)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "reconnecting") {
+					t.Fatalf("expected reconnecting Cable status to fail, got %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("expected %s Cable status to pass, got %v", tc.state, err)
+			}
+		})
+	}
+}
+
 func TestDoctorCableRejectsDifferentCompanionOwner(t *testing.T) {
 	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

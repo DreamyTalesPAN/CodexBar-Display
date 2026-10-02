@@ -33,6 +33,9 @@ type providerSnapshot struct {
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
+	// Terminal survives a restart: a reload must not turn a known terminal
+	// error back into stale data that keeps an old last-good frame alive.
+	Terminal bool `json:"terminal,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -64,12 +67,20 @@ type providerCollector struct {
 
 	warmupUntil time.Time
 
-	mu                      sync.RWMutex
-	providers               map[string]providerSnapshot
-	lastPersistedRaw        string
-	lastPersistedAt         time.Time
-	inventoryKnown          bool
-	inventoryEnabled        map[string]struct{}
+	mu               sync.RWMutex
+	providers        map[string]providerSnapshot
+	lastPersistedRaw string
+	lastPersistedAt  time.Time
+	inventoryKnown   bool
+	inventoryEnabled map[string]struct{}
+	// inventoryDisabled holds providers the inventory lists as switched off.
+	// A provider missing from the inventory is unknown, not off.
+	inventoryDisabled map[string]struct{}
+	// inventoryMissedReads counts the collections in a row whose own
+	// inventory read failed. 0 means the map is current. After one miss the
+	// older map may still keep a running fallback; after more it is unknown,
+	// because the provider may have been switched on again meanwhile.
+	inventoryMissedReads    int
 	firstCollectStarted     bool
 	firstCollectDone        bool
 	lastFetchErr            error
@@ -335,6 +346,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	if err != nil {
 		updated := false
 		c.mu.Lock()
+		c.noteInventoryReadLocked(inventoryAuthoritative)
 		if inventoryAuthoritative {
 			updated = c.applyProviderInventoryLocked(inventory)
 		}
@@ -372,6 +384,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	c.mu.Lock()
 	c.firstCollectDone = true
 	c.lastFetchErr = nil
+	c.noteInventoryReadLocked(inventoryAuthoritative)
 	if inventoryAuthoritative {
 		updated = c.applyProviderInventoryLocked(inventory)
 		_, authoritativeEnabled = enabledProviderInventory(inventory)
@@ -413,13 +426,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists {
-				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
+				if !parsed.Terminal && !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					lastGood.Retained = true
 					c.providers[key] = lastGood
 					updated = true
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
+				if parsed.Terminal {
+					lastGood = snapshotWithUsageCleared(lastGood)
+				}
+				lastGood.Terminal = parsed.Terminal
 				c.providers[key] = lastGood
 			} else {
 				c.providers[key] = providerSnapshot{
@@ -427,6 +444,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Frame:     frame,
 					Source:    strings.TrimSpace(parsed.Source),
 					Collected: parsedCollectedAt,
+					Terminal:  parsed.Terminal,
 				}
 			}
 			updated = true
@@ -490,6 +508,12 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 	enabledOrder, enabled := enabledProviderInventory(settings)
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
+	c.inventoryDisabled = make(map[string]struct{}, len(settings))
+	for _, setting := range settings {
+		if key := normalizeProviderKey(setting.ID); key != "" && !setting.Enabled {
+			c.inventoryDisabled[key] = struct{}{}
+		}
+	}
 	updated := !equalProviderOrder(c.order, enabledOrder)
 	c.order = enabledOrder
 	for key := range c.providers {
@@ -572,6 +596,34 @@ func (c *providerCollector) providerEnabledByInventory(provider string) (bool, b
 	}
 	_, enabled := c.inventoryEnabled[key]
 	return enabled, true
+}
+
+func (c *providerCollector) noteInventoryReadLocked(ok bool) {
+	if ok {
+		c.inventoryMissedReads = 0
+		return
+	}
+	if c.fetchInventory != nil {
+		c.inventoryMissedReads++
+	}
+}
+
+// providerOffByInventory reports whether the inventory lists the provider as
+// switched off, and whether that read belongs to the latest collection. Only
+// a current read may start a fallback; the map from the read before may keep a
+// running one through a single failed read, and older maps say nothing.
+func (c *providerCollector) providerOffByInventory(provider string) (off, current bool) {
+	if c == nil {
+		return false, false
+	}
+	key := normalizeProviderKey(provider)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.inventoryKnown || key == "" || c.inventoryMissedReads > 1 {
+		return false, false
+	}
+	_, off = c.inventoryDisabled[key]
+	return off, c.inventoryMissedReads == 0
 }
 
 func equalProviderOrder(left, right []string) bool {
@@ -790,6 +842,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			TokenStatsCollected: now,
 			TokenHistorySettled: providerSettled,
 			ActivityObservedAt:  activityObservedAt,
+			Terminal:            snapshot.Terminal,
 		}
 		updated++
 	}
@@ -969,7 +1022,10 @@ func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, m
 	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
 		clearSnapshotTokenStats(&snapshot)
 	}
+	return snapshotWithUsageCleared(snapshot)
+}
 
+func snapshotWithUsageCleared(snapshot providerSnapshot) providerSnapshot {
 	frame := snapshot.Frame.Normalize()
 	frame.UsageUnavailable = true
 	frame.SessionUnavailable = true
@@ -1023,6 +1079,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
 			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Terminal:           snapshot.Terminal,
 		})
 	}
 	return frames
