@@ -207,7 +207,7 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   provider: "vibetv",
   label: "VibeTV",
   session: 64,
-  weekly: 64,
+  weekly: 28,
   sessionUnavailable: false,
   weeklyUnavailable: false,
   resetSecs: 3600,
@@ -1708,7 +1708,7 @@ function decodeSpriteAssets(
   return decoded;
 }
 
-function decodeSprite(raw: string): DecodedSprite | null {
+export function decodeSprite(raw: string): DecodedSprite | null {
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())

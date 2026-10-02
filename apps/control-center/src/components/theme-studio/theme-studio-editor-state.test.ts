@@ -26,6 +26,15 @@ function document(packName = "Test Theme"): ThemeStudioDocument {
 }
 
 describe("themeStudioEditorReducer", () => {
+  it("repairs out-of-scene companions on every load path, including auto-restore", () => {
+    const saved = document();
+    saved.spec.primitives.push({ type: "sprite", assetPath: "/themes/u/ai-pet-1.cba", x: 230, y: 120, width: 16, height: 16 });
+    const restored = createThemeStudioEditorState(saved);
+    expect(restored.present.spec.primitives[3]).toMatchObject({ x: 224, y: 112, width: 16, height: 16 });
+    expect(isThemeStudioDirty(restored)).toBe(false);
+    const loaded = themeStudioEditorReducer(createThemeStudioEditorState(document()), { type: "load", document: saved });
+    expect(loaded.present.spec.primitives[3]).toMatchObject({ x: 224, y: 112 });
+  });
   it("tracks dirty state and supports undo and redo", () => {
     const initial = createThemeStudioEditorState(document());
     expect(initial.present.usage).toBe("live");

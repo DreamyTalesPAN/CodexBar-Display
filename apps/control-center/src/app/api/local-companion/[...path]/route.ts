@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { proxyAITheme } from "./ai-theme-proxy";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,6 +49,9 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
 
   const params = await context.params;
   const pathname = `/${(params.path || []).map(encodeURIComponent).join("/")}`;
+  if (pathname === "/v1/ai-theme" || pathname.startsWith("/v1/ai-theme/")) {
+    return proxyAITheme(request, pathname);
+  }
   const targetUrl = new URL(`${LOCAL_MAC_APP_ORIGIN}${pathname}`);
   targetUrl.search = request.nextUrl.search;
 
