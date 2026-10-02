@@ -1,6 +1,7 @@
 package codexbar
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -19,13 +20,21 @@ const (
 	geminiRefreshShutdown  = "Could not refresh Gemini OAuth credentials from Gemini CLI. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh."
 )
 
-func TestGeminiConsumerGuidancePreservesUntypedUpstreamMessage(t *testing.T) {
+func TestGeminiConsumerShutdownIsNotAnAuthFailure(t *testing.T) {
 	providers := providerReadinessFromOutput(
 		[]byte(`[{"provider":"gemini","error":{"message":"`+geminiConsumerShutdown+`","code":1,"kind":"provider"}}]`), nil, nil)
-	if len(providers) != 1 || providers[0].Status != ProviderAuthRequired {
-		t.Fatalf("expected upstream untyped fallback, got %+v", providers)
+	if len(providers) != 1 || providers[0].Status != ProviderUnsupported {
+		t.Fatalf("expected unsupported, got %+v", providers)
 	}
 	gemini := providers[0]
+	// The remedy is the provider's own migration guidance. A row that asks for
+	// another sign-in sends the customer back to the account Google refuses.
+	if strings.Contains(strings.ToLower(gemini.NextAction), "sign in") {
+		t.Fatalf("next action must not ask for a sign-in: %q", gemini.NextAction)
+	}
+	if !strings.Contains(gemini.Detail, "no longer supports") {
+		t.Fatalf("detail must state the end of support: %q", gemini.Detail)
+	}
 	// CodexBar's own sentence must survive to the row: it carries the path.
 	if gemini.Reported != geminiConsumerShutdown {
 		t.Fatalf("upstream migration message was dropped: %q", gemini.Reported)
@@ -33,17 +42,19 @@ func TestGeminiConsumerGuidancePreservesUntypedUpstreamMessage(t *testing.T) {
 
 	health := parseProviderHealth(
 		[]byte(`[{"provider":"gemini","error":{"message":"` + geminiConsumerShutdown + `"}}]`))
-	if health["gemini"].health != ProviderHealthAuthRequired {
+	if health["gemini"].health != ProviderHealthUnsupported {
 		t.Fatalf("background health must agree: %#v", health["gemini"])
 	}
 }
 
-// CodexBar owns provider semantics. Its untyped English guidance passes through
-// unchanged; only a typed upstream terminal status may disable recovery.
-func TestUntypedProviderGuidanceDoesNotInventTerminalState(t *testing.T) {
+// The classification keys on the explicit end-of-support statement, not on
+// 403, SUBSCRIPTION_REQUIRED, or the word Antigravity: upstream keeps distinct
+// handling for supported licensed accounts and unrelated failures, and so
+// must VibeTV.
+func TestUnsupportedClassificationStaysNarrow(t *testing.T) {
 	for detail, want := range map[string]string{
-		geminiConsumerShutdown: ProviderAuthRequired,
-		geminiRefreshShutdown:  ProviderAuthRequired,
+		geminiConsumerShutdown: ProviderUnsupported,
+		geminiRefreshShutdown:  ProviderUnsupported,
 		// A plain signed-out Gemini is still an ordinary sign-in.
 		"Not logged in to Gemini. Run 'gemini' in Terminal to authenticate.": ProviderAuthRequired,
 		// A licensed account that merely lacks a project, or any unrelated

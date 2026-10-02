@@ -7350,7 +7350,7 @@ func TestAgentTransitionsStayOutOfUsageRecoveryCache(t *testing.T) {
 	var original protocol.Frame
 	for i, next := range []string{"working", "tool_use", "waiting_for_answer", "done"} {
 		phase = next
-		result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{provider}, now, deps, "", "", "", "")
+		result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{provider}, now, deps, nil, "", "", "", "")
 		if err := sendCycleResult(context.Background(), "/test", protocol.DeviceCapabilities{SupportsAgentActivityV1: true, SupportsAgentThemeStatesV1: true}, 2048, state, deps, result); err != nil {
 			t.Fatal(err)
 		}
@@ -7382,7 +7382,7 @@ func TestAutomaticDisplayFollowsObservedAgents(t *testing.T) {
 	state.selector.SetCurrentProvider("codex")
 	check := func(want string) {
 		t.Helper()
-		got := selectCycleFrameFromProviders(state, providers, now, deps, "", "", "", "")
+		got := selectCycleFrameFromProviders(state, providers, now, deps, nil, "", "", "", "")
 		if got.frame.Provider != want {
 			t.Fatalf("selected %s, want %s (%s)", got.frame.Provider, want, got.selectionReason)
 		}
