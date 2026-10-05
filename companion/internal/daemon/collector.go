@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -499,7 +500,7 @@ func (c *providerCollector) logProviderErrorDetails(providers []codexbar.ParsedF
 		if key == "" {
 			continue
 		}
-		detail := strings.TrimSpace(parsed.ErrorDetail)
+		detail := redactProviderErrorDetail(parsed.ErrorDetail)
 		if !parsed.Stale || detail == "" {
 			delete(c.providerErrorDetails, key)
 			continue
@@ -517,6 +518,26 @@ func (c *providerCollector) logProviderErrorDetails(providers []codexbar.ParsedF
 	for _, line := range lines {
 		c.logf("%s", line)
 	}
+}
+
+var (
+	providerErrorBearerPattern    = regexp.MustCompile(`(?i)(bearer\s+)[^\s"',;]+`)
+	providerErrorFieldPattern     = regexp.MustCompile(`(?i)("?(?:access_token|refresh_token|id_token|token|api[_-]?key|secret|password|authorization|cookie|session[_-]?key)"?\s*[:=]\s*"?)[^\s"',;&}]+`)
+	providerErrorUserInfoPattern  = regexp.MustCompile(`(?i)(https?://)[^/\s"@]+@`)
+	providerErrorQueryPattern     = regexp.MustCompile(`([?&][^=\s&"]+=)[^&\s"]+`)
+	providerErrorLongTokenPattern = regexp.MustCompile(`sk-ant-[A-Za-z0-9_\-]+|[A-Za-z0-9_\-.+/=]{40,}`)
+)
+
+// redactProviderErrorDetail strips credentials a provider error might echo
+// (bearer tokens, token or key fields, URL secrets, long opaque tokens)
+// before the text reaches the persistent log.
+func redactProviderErrorDetail(detail string) string {
+	detail = strings.TrimSpace(detail)
+	detail = providerErrorBearerPattern.ReplaceAllString(detail, "${1}<redacted>")
+	detail = providerErrorFieldPattern.ReplaceAllString(detail, "${1}<redacted>")
+	detail = providerErrorUserInfoPattern.ReplaceAllString(detail, "${1}<redacted>@")
+	detail = providerErrorQueryPattern.ReplaceAllString(detail, "${1}<redacted>")
+	return providerErrorLongTokenPattern.ReplaceAllString(detail, "<redacted>")
 }
 
 func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {

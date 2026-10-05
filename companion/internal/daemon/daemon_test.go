@@ -5791,6 +5791,32 @@ func TestProviderCollectorLogsProviderErrorDetailOncePerChange(t *testing.T) {
 	}
 }
 
+func TestRedactProviderErrorDetailRemovesCredentials(t *testing.T) {
+	secrets := []string{
+		"abc.def-ghi",
+		"rt-0123456789",
+		"sk-ant-oat01-SECRETVALUE",
+		"user:pass",
+		"qsecret",
+		"eyJhbGciOiJIUzI1NiJ9eyJzdWIiOiIxMjM0NTY3ODkwIn0abcdefgh",
+	}
+	raw := `Claude OAuth usage request failed: HTTP 401 Authorization: Bearer abc.def-ghi {"refresh_token":"rt-0123456789"} key sk-ant-oat01-SECRETVALUE https://user:pass@api.anthropic.com/api/oauth/usage?token=qsecret jwt eyJhbGciOiJIUzI1NiJ9eyJzdWIiOiIxMjM0NTY3ODkwIn0abcdefgh`
+	got := redactProviderErrorDetail(raw)
+	for _, secret := range secrets {
+		if strings.Contains(got, secret) {
+			t.Fatalf("redacted detail still contains %q: %s", secret, got)
+		}
+	}
+	for _, keep := range []string{"Claude OAuth usage request failed: HTTP 401", "api.anthropic.com/api/oauth/usage"} {
+		if !strings.Contains(got, keep) {
+			t.Fatalf("redaction removed diagnostic text %q: %s", keep, got)
+		}
+	}
+	if plain := "Claude OAuth usage request failed: HTTP 429"; redactProviderErrorDetail(plain) != plain {
+		t.Fatalf("plain error text must stay unchanged, got %q", redactProviderErrorDetail(plain))
+	}
+}
+
 func TestProviderCollectorDashboardNotRunningDoesNotUseUsageJSONFallback(t *testing.T) {
 	prepareFastTestEnv(t)
 
