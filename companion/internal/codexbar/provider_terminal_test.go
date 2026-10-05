@@ -28,6 +28,9 @@ func TestParseAllProvidersMarksOnlyTerminalProviderErrors(t *testing.T) {
 	if parsed[1].Terminal || parsed[2].Terminal {
 		t.Fatalf("transient error or usage marked terminal: %#v", parsed[1:])
 	}
+	if parsed[1].ErrorDetail != "Not logged in to Gemini. Run 'gemini' in Terminal to authenticate." || parsed[2].ErrorDetail != "" {
+		t.Fatalf("direct usage path must keep the provider error text for the log: %#v", parsed[1:])
+	}
 }
 
 func TestDashboardProviderCarriesTerminalError(t *testing.T) {

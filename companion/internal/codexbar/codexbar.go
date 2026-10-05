@@ -727,10 +727,11 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 				Label:            label,
 				UsageUnavailable: true,
 			},
-			Provider: provider,
-			Source:   source,
-			Stale:    true,
-			Terminal: providerErrorIsTerminal(providerHealthErrorText(payload["error"])),
+			Provider:    provider,
+			Source:      source,
+			Stale:       true,
+			Terminal:    providerErrorIsTerminal(providerHealthErrorText(payload["error"])),
+			ErrorDetail: strings.TrimSpace(providerHealthErrorText(payload["error"])),
 		}, nil
 	}
 
