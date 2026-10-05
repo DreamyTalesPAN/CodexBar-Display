@@ -110,8 +110,8 @@ class PublishGateFixtureTests(unittest.TestCase):
             {
                 "schemaVersion": 1,
                 "artifacts": [
-                    {"firmwareEnv": "esp8266", "firmwareVersion": "0.0.0"},
-                    {"firmwareEnv": "esp32", "firmwareVersion": "0.0.0"},
+                    {"firmwareEnv": "esp8266"},
+                    {"firmwareEnv": "esp32"},
                 ],
             },
         )
