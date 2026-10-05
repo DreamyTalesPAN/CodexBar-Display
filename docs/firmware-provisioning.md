@@ -18,8 +18,8 @@ The first OTA pass uses the GeekMagic updater at `http://<ip>/update` with multi
 Current VibeTV firmware has no WiFi update routes (#489), so the script skips
 the filesystem upload by default and later firmware updates run over the USB
 cable. `POST /update/firmware` and `POST /update/filesystem` exist only on
-legacy firmware and on legacy WiFi VibeTVs (early hardware without USB data,
-see `docs/hardware-contract.md`).
+legacy firmware. A legacy WiFi VibeTV (early hardware without USB data, see
+`docs/hardware-contract.md`) keeps only `POST /update/firmware`.
 
 The tooling does not store WiFi passwords or other secrets.
 

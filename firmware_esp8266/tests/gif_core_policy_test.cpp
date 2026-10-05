@@ -196,8 +196,7 @@ bool testWifiPairsAndTakesCredentialsOnlyOnLegacyWifi(const char* mainPath) {
       "void handleSetupWifiScan()",
       "void handleResetWifi()",
       "void handlePairingAPI()",
-      "void handleUpdatePage()",
-      "void handleOtaResult(const char* target)",
+      "void handleOtaResult()",
   };
   for (const char* signature : gatedHandlers) {
     const std::string handler = functionBody(mainSource, signature);
@@ -445,7 +444,7 @@ bool testWifiFirmwareUpdatesOnlyOnLegacyWifi(const char* mainPath) {
     return false;
   }
   const std::string upload =
-      functionBody(mainSource, "void handleOtaUpload(int command, const char* target)");
+      functionBody(mainSource, "void handleOtaUpload()");
   const std::size_t legacyGate = upload.find("if (!legacyWifiActive()) {");
   const std::size_t uploadAuth = upload.find("if (!requestHasValidOtaAuth()) {");
   const std::size_t uploadBegin = upload.find("Update.begin(");
