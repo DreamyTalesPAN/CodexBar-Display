@@ -8761,6 +8761,32 @@ func TestSetupConnectionModeCableWinsOverPendingWiFiSwitch(t *testing.T) {
 	}
 }
 
+// A WiFi switch older than the transition window is not restarting VibeTV
+// any more, so a Cable choice must answer at once rather than wait for it.
+func TestSetupConnectionModeDoesNotWaitForAnOldWiFiSwitch(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:                "unplugged",
+		CableAutoBindDisabled:   true,
+		WiFiTransitionStartedAt: time.Now().Add(-2 * cableTransitionWait).Unix(),
+	})
+	resolves := 0
+	server.resolveCablePort = func(string, string) (string, error) {
+		resolves++
+		return "", errors.New("no VibeTV on the cable")
+	}
+	started := time.Now()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "cable_device_not_found") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if elapsed := time.Since(started); resolves != 1 || elapsed > 5*time.Second {
+		t.Fatalf("an old WiFi switch made the Cable choice wait: resolves=%d elapsed=%s", resolves, elapsed)
+	}
+}
+
 func TestSetupConnectionModeReselectsLegacyWiFiOnlyWithoutTransition(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		CableAutoBindDisabled:        true,

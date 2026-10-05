@@ -3421,7 +3421,8 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 	// Cable chosen while the WiFi switch this Mac just sent may still be
 	// restarting VibeTV (#481) is the same move back from WiFi.
-	wifiSwitchPending := mode == "cable" && cfg.WiFiTransitionPending()
+	wifiSwitchPending := mode == "cable" && cfg.WiFiTransitionPending() &&
+		s.currentTime().Sub(time.Unix(cfg.WiFiTransitionStartedAt, 0)) < cableTransitionWait
 	transitioningFromWiFi := wifiSwitchPending || (mode == "cable" &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
 		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != "")

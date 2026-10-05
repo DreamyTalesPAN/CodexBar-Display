@@ -1006,6 +1006,9 @@ void resetAnimatedSpriteCaches() {
   // active sprite.
   cbaRenderJobInProgress = false;
   cbaFrameBufferOwner = nullptr;
+  // A new set of sprites starts its own count; an earlier theme's starvation
+  // says nothing about it.
+  cbaBufferContention = CbaContentionWatch{};
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {
     animatedSpriteCaches[i] = AnimatedSpriteCache{};
   }

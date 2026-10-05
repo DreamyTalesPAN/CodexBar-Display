@@ -908,11 +908,13 @@ inline void ForEachTemplateKey(const char* raw, Fn fn) {
     }
     char key[32] = {0};
     const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
+    // Like RenderTextTemplate: a brace too long to be a key is literal text,
+    // so placeholders inside it still draw and must still count.
     if (keyLen > 0 && keyLen < sizeof(key)) {
       std::memcpy(key, raw + i + 1, keyLen);
       fn(static_cast<const char*>(key));
+      i += keyLen + 1;
     }
-    i += keyLen + 1;
   }
 }
 

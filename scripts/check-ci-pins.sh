@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fails when CI or release tooling floats (#208). Every third-party Action is
 # pinned to a full commit SHA with its tag as a comment, and every installed
-# tool or PlatformIO platform names an exact version.
+# tool, Rust toolchain or PlatformIO platform names an exact version. Node and
+# Python stay on their major/minor line and take the runner's patch release.
 #
 # Updating a pin: Dependabot proposes Action updates weekly. For a tool, look
 # up the new version, change it everywhere this script lists, let CI prove it,
@@ -33,6 +34,14 @@ while IFS= read -r line; do
   fail "pip install without an exact version: $line"
 done < <(grep -nE 'pip install ' .github/workflows/*.yml |
   grep -vE 'pip install( [A-Za-z0-9_.-]+==[0-9][0-9A-Za-z.]*)+[[:space:]]*$' || true)
+
+for workflow in .github/workflows/*.yml; do
+  uses="$(grep -c 'uses: dtolnay/rust-toolchain@' "$workflow" || true)"
+  pinned="$(grep -A2 'uses: dtolnay/rust-toolchain@' "$workflow" | grep -cE 'toolchain: [0-9]+\.[0-9]+\.[0-9]+' || true)"
+  if [[ "$uses" != "$pinned" ]]; then
+    fail "$workflow: dtolnay/rust-toolchain needs an exact toolchain: x.y.z"
+  fi
+done
 
 while IFS= read -r line; do
   fail "PlatformIO platform without an exact version: $line"

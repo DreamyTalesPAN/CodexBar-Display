@@ -967,6 +967,8 @@ void testRealBindingsStillRepaintOnlyTheirPrimitives() {
       {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"b":"s","s":2}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
       {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{weekly}%"}]})JSON", "weekly", codexbar_display::themespec::kThemeSpecFieldWeekly},
       {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{l}"}]})JSON", "label", codexbar_display::themespec::kThemeSpecFieldLabel},
+      // A brace too long to be a key is literal text; the {s} inside it draws.
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{weekly usage so far this billing week: {s}%}"}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
       // A progress bar without a binding draws session usage.
       {R"JSON({"v":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
       {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{act}"}]})JSON", "activity", codexbar_display::themespec::kThemeSpecFieldActivity},

@@ -1245,9 +1245,21 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
     return false;
   }
   // Taking the buffer is no progress: evicted sprites hand it over mid-frame
-  // forever, and resetting the watch there hid that starvation (#472). The
-  // watch is declared and fed in exactly one place each.
-  if (!expect(countOccurrences(renderer, "cbaBufferContention") == 2,
+  // forever, and resetting the watch there hid that starvation (#472). Only
+  // dropping every sprite cache starts a new count.
+  const std::size_t prepareStart = renderer.find("bool prepareAnimatedSpriteBuffer(");
+  const std::size_t prepareEnd = renderer.find("\n}\n", prepareStart);
+  const std::size_t clearCachesStart = renderer.find("void resetAnimatedSpriteCaches() {");
+  const std::size_t clearCachesEnd = renderer.find("\n}\n", clearCachesStart);
+  if (!expect(prepareStart != std::string::npos && clearCachesStart != std::string::npos,
+              "CBA buffer and cache reset paths must remain discoverable") ||
+      !expect(renderer.substr(prepareStart, prepareEnd - prepareStart).find("cbaBufferContention = ") ==
+                  std::string::npos,
+              "acquiring the CBA buffer must not reset the contention watch") ||
+      !expect(renderer.substr(clearCachesStart, clearCachesEnd - clearCachesStart).find("cbaBufferContention = CbaContentionWatch{};") !=
+                  std::string::npos,
+              "dropping the sprite caches must start a new contention count") ||
+      !expect(countOccurrences(renderer, "cbaBufferContention") == 3,
               "only CbaContentionWatch may decide when contention progressed")) {
     return false;
   }
