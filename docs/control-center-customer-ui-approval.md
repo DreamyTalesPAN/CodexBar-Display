@@ -5,6 +5,21 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-05 — A pre-USB-C Cable VibeTV stays in the list next to another WiFi VibeTV
+
+- User approval: On 2026-10-05 Claude listed #483 among the customer-visible
+  issues of the overnight batch, and the user answered in chat "du hast
+  erstmal alle freigaben" (all approvals granted for now).
+- Approved customer-visible result: When a VibeTV with firmware from before
+  USB-C is on the Cable and a different VibeTV answers on WiFi, setup's
+  existing "Choose your VibeTV" list shows both, and choosing the Cable one
+  runs the existing Cable rescue update. A WiFi VibeTV with the same board and
+  firmware as the Cable one may be the same device, so only the WiFi entry is
+  shown then, as before. No new control, copy, or layout; the Control Center
+  files are unchanged.
+- Approved files: Companion device search (`server.go`), its tests, and this
+  approval record.
+
 ## 2026-10-05 — The usage service is repaired on its own at most every ten minutes
 
 - User approval: On 2026-10-05 Claude listed the customer-visible issues of
