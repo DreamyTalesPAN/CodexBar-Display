@@ -153,7 +153,16 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		CollectedAt:        collectedAt.UTC(),
 		ActivityObservedAt: activityObservedAt,
 		Stale:              frame.UsageUnavailable,
+		Terminal:           providerErrorJSONIsTerminal(provider.Error) || providerErrorJSONIsTerminal(usageError),
 	}
+}
+
+func providerErrorJSONIsTerminal(raw json.RawMessage) bool {
+	var value any
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	return providerErrorIsTerminal(providerHealthErrorText(value))
 }
 
 func usageWindowsFromDashboardWindows(windows []dashboardusage.UsageWindow, now time.Time) []UsageWindow {

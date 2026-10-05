@@ -368,6 +368,7 @@ EOF
   fi
 
   swiftc \
+    -target "$(uname -m)-apple-macos14" \
     "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     -o "$target" \
     -F "$SPARKLE_DIST_DIR" \
@@ -378,6 +379,14 @@ EOF
     -Xlinker @executable_path/../Frameworks \
     -framework WebKit
   chmod 755 "$target"
+}
+
+# Without -target, swiftc stamps the host's SDK as minimum macOS and the app
+# will not launch on older systems (issue #450).
+verify_executable_minos() {
+  local minos
+  minos="$(vtool -show-build "$1" | awk '$1 == "minos" {print $2}' | sort -u)"
+  [[ "$minos" == "14.0" ]] || die "app executable must target macOS 14.0, got minos: ${minos:-none}"
 }
 
 main() {
@@ -406,6 +415,7 @@ main() {
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"
 
   if [[ "$DRY_RUN" != "1" ]]; then
+    verify_executable_minos "${macos_dir}/${EXECUTABLE_NAME}"
     "${ROOT}/scripts/verify-bundled-codexbar.sh" --app "$APP_DIR"
   fi
 
