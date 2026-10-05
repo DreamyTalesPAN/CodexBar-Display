@@ -2004,6 +2004,11 @@ bool parseConnectionModeRequest(
 }
 
 void handleConnectionModeSwitch() {
+  // Only the cable starts a switch on current firmware (#489). WiFi keeps
+  // the confirmation of a switch the cable started.
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   addCorsHeaders();
   if (!requireWriteAuth()) {
     return;

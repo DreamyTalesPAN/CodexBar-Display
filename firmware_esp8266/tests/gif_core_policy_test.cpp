@@ -179,8 +179,9 @@ bool testAssetWritesStayInsideThemeNamespace() {
 
 // Issue #489 / #404: the USB cable is the authorization. Only a legacy WiFi
 // VibeTV -- early hardware that may have no USB data connection -- still
-// pairs, takes WiFi details and opens VibeTV-Setup over WiFi. Every other
-// VibeTV answers those routes like unknown paths and never opens a network.
+// pairs, takes WiFi details, switches connection mode and opens VibeTV-Setup
+// over WiFi. Every other VibeTV answers those routes like unknown paths and
+// never opens a network.
 bool testWifiPairsAndTakesCredentialsOnlyOnLegacyWifi(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::string auth = functionBody(mainSource, "bool requestHasValidAuth()");
@@ -197,6 +198,7 @@ bool testWifiPairsAndTakesCredentialsOnlyOnLegacyWifi(const char* mainPath) {
       "void handleResetWifi()",
       "void handlePairingAPI()",
       "void handleOtaResult()",
+      "void handleConnectionModeSwitch()",
   };
   for (const char* signature : gatedHandlers) {
     const std::string handler = functionBody(mainSource, signature);

@@ -88,8 +88,9 @@ its new transport:
 - WiFi confirmation: authenticated `POST /api/connection-mode/confirm` with
   `{"deviceId":"..."}`
 
-Cable starts a switch with the serial request `set-connection-mode`; WiFi uses
-authenticated `POST /api/connection-mode`. A confirmation removes `/cm` and
+Cable starts a switch with the serial request `set-connection-mode`. Only a
+legacy WiFi VibeTV also accepts authenticated `POST /api/connection-mode`;
+current firmware answers it with 404 (#489). A confirmation removes `/cm` and
 makes the target stable. WiFi credentials arrive with the cable request
 `configure-wifi`, which reboots into the normal 60-second association and
 identity-confirmation window. A failed WiFi association or expired
