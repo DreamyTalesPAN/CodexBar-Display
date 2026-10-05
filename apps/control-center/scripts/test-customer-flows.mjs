@@ -2366,8 +2366,12 @@ async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
   });
   await page.route("**/v1/setup/connection-mode", async (route) => {
     selections.push(route.request().postDataJSON());
-    companion.setDevice(device);
-    await route.fulfill({ json: { ok: true, status: "selected", device } });
+    // Issue #507: the Companion answers before the paired VibeTV's first frame,
+    // so it is not reported connected yet and setup stays on this step a while.
+    const paired = { ...device, connected: false, connectionState: "retrying", stream: { healthy: false, running: true } };
+    companion.setDevice(paired);
+    setTimeout(() => companion.setDevice(device), 4_000);
+    await route.fulfill({ json: { ok: true, status: "selected", device: paired } });
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -2385,6 +2389,14 @@ async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
   assert(
     selections.length === 1 && selections[0].mode === "cable" && selections[0].deviceId === device.deviceId,
     `Setup must connect exactly the rescued VibeTV by Cable, got ${JSON.stringify(selections)}`,
+  );
+  // Back reconnects the updated VibeTV like any Cable VibeTV, without a second rescue.
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await waitForCondition(() => selections.length === 2, "Back must connect the updated VibeTV by Cable again");
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert(
+    updates.length === 1 && selections[1].mode === "cable" && selections[1].deviceId === device.deviceId,
+    `Back must not update the rescued VibeTV again, got ${JSON.stringify({ updates, selections })}`,
   );
   const headings = await page.evaluate(() => window.setupHeadings);
   assert(!headings.includes("How should VibeTV connect?"), `The rescued VibeTV must not ask for a connection method: ${JSON.stringify(headings)}`);

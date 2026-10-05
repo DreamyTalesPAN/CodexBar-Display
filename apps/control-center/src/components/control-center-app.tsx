@@ -4807,6 +4807,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           };
         }
         rescuedDeviceIdRef.current = null;
+        // A Cable VibeTV like any other now. Left as the hello from before the
+        // update, its card had no identity -- a different VibeTV than the one
+        // just connected, so setup put a list over its own connect -- and the
+        // old firmware (#507). Back must not rescue it a second time either.
+        setDeviceCandidates((current) =>
+          current.map((candidate) =>
+            candidate.rescue
+              ? {
+                  ...candidate,
+                  deviceId: selected.deviceId,
+                  firmware: selected.device?.firmware,
+                  rescue: false,
+                }
+              : candidate,
+          ),
+        );
         return;
       }
       if (!(await installFirmwareUpdate())) {
