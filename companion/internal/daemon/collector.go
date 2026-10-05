@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,6 +94,9 @@ type providerCollector struct {
 	tokenStatsSettled       bool
 	tokenStatsFailed        bool
 	tokenHistoryPrints      map[string]string
+	// providerErrorDetails holds the last logged error text per provider so
+	// an unchanged error is logged once, not on every collection.
+	providerErrorDetails map[string]string
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -381,6 +385,8 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	successes := 0
 	var authoritativeEnabled map[string]struct{}
 
+	c.logProviderErrorDetails(allProviders, sourceMode)
+
 	c.mu.Lock()
 	c.firstCollectDone = true
 	c.lastFetchErr = nil
@@ -475,6 +481,42 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		c.persistIfNeeded(collectedAt)
 	}
 	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
+}
+
+// logProviderErrorDetails logs the error text CodexBar reported for a provider
+// without usable usage, e.g. a Claude rate limit or rejected token. Without it
+// a stalled provider only shows up as stale. Each text is logged when it first
+// appears or changes; recovery clears it so a recurrence is logged again.
+func (c *providerCollector) logProviderErrorDetails(providers []codexbar.ParsedFrame, sourceMode string) {
+	const maxDetail = 300
+	var lines []string
+	c.mu.Lock()
+	if c.providerErrorDetails == nil {
+		c.providerErrorDetails = make(map[string]string)
+	}
+	for _, parsed := range providers {
+		key := normalizeProviderKey(parsed.Provider)
+		if key == "" {
+			continue
+		}
+		detail := strings.TrimSpace(parsed.ErrorDetail)
+		if !parsed.Stale || detail == "" {
+			delete(c.providerErrorDetails, key)
+			continue
+		}
+		if runes := []rune(detail); len(runes) > maxDetail {
+			detail = string(runes[:maxDetail]) + "…"
+		}
+		if c.providerErrorDetails[key] == detail {
+			continue
+		}
+		c.providerErrorDetails[key] = detail
+		lines = append(lines, fmt.Sprintf("collector provider-unavailable provider=%s source=%s detail=%q\n", key, sourceMode, detail))
+	}
+	c.mu.Unlock()
+	for _, line := range lines {
+		c.logf("%s", line)
+	}
 }
 
 func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {

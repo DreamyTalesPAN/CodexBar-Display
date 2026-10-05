@@ -483,6 +483,9 @@ type ParsedFrame struct {
 	// Terminal marks a provider error CodexBar states as permanent (see
 	// providerErrorIsTerminal): retained quota for that provider is void.
 	Terminal bool
+	// ErrorDetail is the provider's own error text when CodexBar reported
+	// one. Diagnostics only: it is logged, never shown on the device.
+	ErrorDetail string
 }
 
 type ProviderUsageMeta struct {

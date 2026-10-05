@@ -154,15 +154,29 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		ActivityObservedAt: activityObservedAt,
 		Stale:              frame.UsageUnavailable,
 		Terminal:           providerErrorJSONIsTerminal(provider.Error) || providerErrorJSONIsTerminal(usageError),
+		ErrorDetail:        firstNonEmpty(providerErrorJSONText(usageError), providerErrorJSONText(provider.Error)),
 	}
 }
 
 func providerErrorJSONIsTerminal(raw json.RawMessage) bool {
+	return providerErrorIsTerminal(providerErrorJSONText(raw))
+}
+
+func providerErrorJSONText(raw json.RawMessage) string {
 	var value any
 	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
-		return false
+		return ""
 	}
-	return providerErrorIsTerminal(providerHealthErrorText(value))
+	return strings.TrimSpace(providerHealthErrorText(value))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func usageWindowsFromDashboardWindows(windows []dashboardusage.UsageWindow, now time.Time) []UsageWindow {

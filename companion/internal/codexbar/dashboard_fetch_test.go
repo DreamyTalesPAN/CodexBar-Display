@@ -175,6 +175,9 @@ func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
 	if len(providers) != 1 || !providers[0].Frame.UsageUnavailable || !providers[0].Stale {
 		t.Fatalf("provider error must remain unavailable, got %+v", providers)
 	}
+	if providers[0].ErrorDetail != "provider unavailable" {
+		t.Fatalf("provider error text must be kept for the log, got %q", providers[0].ErrorDetail)
+	}
 }
 
 func TestFetchDashboardProvidersDoesNotProbeDisabledMacProviders(t *testing.T) {

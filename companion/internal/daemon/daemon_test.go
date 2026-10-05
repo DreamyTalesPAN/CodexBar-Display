@@ -5729,6 +5729,68 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 	}
 }
 
+func TestProviderCollectorLogsProviderErrorDetailOncePerChange(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 10, 5, 9, 30, 0, 0, time.UTC)
+	detail := "Claude OAuth usage request failed: HTTP 429"
+	var logs []string
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
+		order:           []string{"claude"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		dashboard:       staticDashboardServe{info: testDashboardServeInfo(1001)},
+		fetchDashboard: func(_ context.Context, _ codexbar.DashboardServeInfo, _ time.Time) ([]codexbar.ParsedFrame, error) {
+			if detail == "" {
+				return []codexbar.ParsedFrame{testParsedFrame("claude", 14, 22, 3600)}, nil
+			}
+			return []codexbar.ParsedFrame{{
+				Frame:       protocol.Frame{V: 1, Provider: "claude", Label: "Claude", UsageUnavailable: true},
+				Provider:    "claude",
+				Source:      "codexbar-dashboard",
+				Stale:       true,
+				ErrorDetail: detail,
+			}}, nil
+		},
+	}
+	countDetailLogs := func() int {
+		n := 0
+		for _, line := range logs {
+			if strings.Contains(line, "collector provider-unavailable provider=claude") {
+				n++
+			}
+		}
+		return n
+	}
+
+	collector.collectOnce(context.Background())
+	collector.collectOnce(context.Background())
+	if got := countDetailLogs(); got != 1 {
+		t.Fatalf("an unchanged error must be logged once, got %d in %q", got, logs)
+	}
+	if !strings.Contains(strings.Join(logs, ""), `detail="Claude OAuth usage request failed: HTTP 429"`) {
+		t.Fatalf("log must carry the exact provider error, got %q", logs)
+	}
+
+	detail = "Claude OAuth token rejected"
+	collector.collectOnce(context.Background())
+	if got := countDetailLogs(); got != 2 {
+		t.Fatalf("a changed error must be logged again, got %d in %q", got, logs)
+	}
+
+	detail = ""
+	collector.collectOnce(context.Background())
+	detail = "Claude OAuth token rejected"
+	collector.collectOnce(context.Background())
+	if got := countDetailLogs(); got != 3 {
+		t.Fatalf("an error recurring after recovery must be logged again, got %d in %q", got, logs)
+	}
+}
+
 func TestProviderCollectorDashboardNotRunningDoesNotUseUsageJSONFallback(t *testing.T) {
 	prepareFastTestEnv(t)
 
