@@ -4650,6 +4650,12 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while the same `/v1/status` answer reports an installing firmware or theme job. When the Companion no longer reports one, missed polls count again and device recovery can open as before. No copy, control, layout or visual change.
 - Scope: `control-center-app.tsx`. This approves the pull request only, not merge, release, or a device operation.
 
+## 2026-10-01 — Setup never waits for a newer app release
+
+- User approval: Marcus reproduced a Windows customer stuck in setup on "Your app is out of date" after a new release published, and approved the proposed permanent fix: every app installs only the firmware of its own release, so the block disappears entirely ("dann machst du bitte einen PR für den dauerhaften Vorschlag").
+- Approved customer-visible result: During setup, the firmware step no longer shows "Your Mac App is out of date" / "Your app is out of date" or "Could not check the Mac App". The app updates VibeTV to the firmware of its own release and setup continues. The remaining firmware dialogs ("Could not check VibeTV's firmware", "The Mac App is restarting") are unchanged. The Updates screen is unchanged and still offers the app update before the firmware update. No new copy, control, layout or visual treatment, on macOS and Windows.
+- Scope: `setup-firmware-dialogs.tsx`, `setup-wizard.tsx`, `setup-preview-gallery.tsx`, `control-center-app.tsx`, `control-center-runtime.ts`, their tests, and the Companion change of this pull request (`companion/cmd/codexbar-display/main.go`, `companion/internal/companionapi/server.go`). This approves the pull request only, not merge, release, or a device operation.
+
 ## 2026-09-30 — Recovery grace also for this window's own operation
 
 - User approval: Paul enabled Auto-fix for this pull request, which covers fixing its failing CI. The customer flow "Firmware update must refresh the active slot theme exactly once" failed because the previous entry's change took the grace only from the status answer.

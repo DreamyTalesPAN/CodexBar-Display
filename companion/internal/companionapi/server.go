@@ -2589,15 +2589,6 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 }
 
 func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
-	return s.macAppReleaseInfoCached(ctx, true)
-}
-
-// macAppReleaseInfoCached with useCache=false always contacts the release
-// feed. The firmware-install gate needs that: a cached "no update" answer
-// from just before a release publishes would otherwise let the older app
-// push the newer firmware — the exact mixed state the gate exists to
-// prevent.
-func (s *Server) macAppReleaseInfoCached(ctx context.Context, useCache bool) companionReleaseInfo {
 	app := currentCompanionAppInfo(s.installationMode)
 	installedVersion := normalizeMacAppReleaseVersion(app.Version)
 	if installedVersion == "" {
@@ -2605,18 +2596,16 @@ func (s *Server) macAppReleaseInfoCached(ctx context.Context, useCache bool) com
 	}
 	now := time.Now().UTC()
 
-	if useCache {
-		s.macAppReleaseMu.Lock()
-		if s.macAppReleaseChecked &&
-			s.macAppReleaseCache.InstalledVersion == installedVersion &&
-			now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
-			now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
-			cached := s.macAppReleaseCache
-			s.macAppReleaseMu.Unlock()
-			return cached
-		}
+	s.macAppReleaseMu.Lock()
+	if s.macAppReleaseChecked &&
+		s.macAppReleaseCache.InstalledVersion == installedVersion &&
+		now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
+		now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
+		cached := s.macAppReleaseCache
 		s.macAppReleaseMu.Unlock()
+		return cached
 	}
+	s.macAppReleaseMu.Unlock()
 
 	checkedAt := now.Format(time.RFC3339)
 	info := companionReleaseInfo{
@@ -5420,39 +5409,6 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 			"Pair VibeTV, then retry.",
 		)
 		return
-	}
-	// The firmware a release ships pairs with that release's Mac App. An older
-	// app must never push newer firmware onto the device: the mixed state
-	// renders degraded and the old app cannot even preview it. The release
-	// check runs fresh (cache bypassed) and synchronously here, so neither a
-	// UI race nor a stale pre-release cache entry can start the job. Only
-	// customer installs (dmg) are gated; dev and bench builds write devices
-	// deliberately. A failed check blocks too: the release feed and the
-	// firmware manifest are different services, so an unknown answer is not
-	// proof the app is current. The explicit env-var opt-out ("disabled")
-	// stays open for local setups.
-	if s.installationMode == "dmg" {
-		release := s.macAppReleaseInfoCached(r.Context(), false)
-		if release.UpdateAvailable {
-			writeError(
-				w,
-				http.StatusConflict,
-				"mac_app_update_required",
-				"Update the Mac App first.",
-				"Install the Mac App update, then update VibeTV firmware.",
-			)
-			return
-		}
-		if release.Status == "check_failed" {
-			writeError(
-				w,
-				http.StatusBadGateway,
-				"mac_app_release_check_failed",
-				"Could not verify that the Mac App is current.",
-				"Check the internet connection, then retry the update.",
-			)
-			return
-		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
 	if !req.Rescue && (strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "") {
