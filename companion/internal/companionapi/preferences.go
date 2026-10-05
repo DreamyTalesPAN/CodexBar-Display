@@ -195,7 +195,6 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	delete(a.server.providerReadiness, providerID)
 	a.server.providerReadinessMu.Unlock()
 	a.server.cacheProviderInventory(settings)
-	a.server.invalidateUsageCache()
 	var descriptor preferenceDescriptor
 	for _, item := range a.server.providerDescriptors(settings) {
 		if item.ID == settingID {

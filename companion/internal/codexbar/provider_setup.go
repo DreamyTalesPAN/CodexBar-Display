@@ -75,11 +75,10 @@ type ProviderReadiness struct {
 }
 
 type ProviderSetup struct {
-	Status     string              `json:"status"`
-	CheckedAt  string              `json:"checkedAt"`
-	Engine     EngineReadiness     `json:"engine"`
-	Providers  []ProviderReadiness `json:"providers"`
-	ExactUsage *ParsedFrame        `json:"-"`
+	Status    string              `json:"status"`
+	CheckedAt string              `json:"checkedAt"`
+	Engine    EngineReadiness     `json:"engine"`
+	Providers []ProviderReadiness `json:"providers"`
 }
 
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
@@ -433,20 +432,6 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		provider.Label = exactSetting.Label
 		provider.Enabled = &exactSetting.Enabled
 		result.Providers = []ProviderReadiness{provider}
-		if provider.Status == ProviderReady {
-			collectedAt, collectedErr := time.Parse(time.RFC3339, provider.CollectedAt)
-			if parsed, parseErr := parseAllProviders(out); parseErr == nil && collectedErr == nil {
-				for i := range parsed {
-					if providerKey(parsed[i]) != exactProvider {
-						continue
-					}
-					parsed[i].Frame = parsed[i].Frame.Normalize()
-					parsed[i].CollectedAt = collectedAt.UTC()
-					result.ExactUsage = &parsed[i]
-					break
-				}
-			}
-		}
 	}
 	for _, provider := range result.Providers {
 		if provider.Status == ProviderReady {
