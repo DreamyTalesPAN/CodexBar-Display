@@ -66,6 +66,23 @@ describe("SetupEventList", () => {
     expect(rows()[0]).toBe("Older entries were removed.");
   });
 
+  it("marks a restart of the background service, in the Windows app without naming the Mac", () => {
+    const restarted: SetupLog = {
+      ...log,
+      events: [
+        { seq: 5, at: "2026-10-05T16:15:45Z", stage: "service_restart", status: "succeeded", message: "The Mac App's background service started again." },
+      ],
+    };
+    const mac = render(<SetupEventList log={restarted} />);
+    expect(rows()[0]).toContain("Mac App");
+    expect(rows()[0]).toContain("The Mac App's background service started again.");
+    mac.unmount();
+
+    render(<SetupEventList log={restarted} windowsHost />);
+    expect(rows()[0]).not.toContain("Mac");
+    expect(rows()[0]).toContain("The app's background service started again.");
+  });
+
   it("has an empty state", () => {
     render(<SetupEventList log={null} />);
     expect(document.body.textContent).toBe("No setup activity recorded yet.");

@@ -213,7 +213,7 @@ function SetupEventRow({
           {formatClock(event.at)}
         </time>
         <span className="font-semibold">
-          {STAGE_LABELS[event.stage] ?? humanize(event.stage)}
+          {copyForHost(STAGE_LABELS[event.stage] ?? humanize(event.stage), windowsHost)}
         </span>
         <span className={cn("flex items-center gap-1", status.className)}>
           <Icon aria-hidden className="size-3.5 shrink-0" />
