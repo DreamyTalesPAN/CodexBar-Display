@@ -38,6 +38,7 @@ import {
   deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  deviceOffersCable,
   type ApiError,
   type DeviceInfo,
   type StandbySettings,
@@ -124,7 +125,7 @@ export function SettingsScreen({
     standbyToggleDisabled || !standbyValues.enabled;
   const supportedTransports = device?.capabilities?.transport?.supported;
   const cableSupported =
-    !supportedTransports || supportedTransports.includes("usb");
+    connectionMode === "cable" || deviceOffersCable(device);
   const wifiSupported =
     !supportedTransports || supportedTransports.includes("wifi");
   const connectionModeDisabled =

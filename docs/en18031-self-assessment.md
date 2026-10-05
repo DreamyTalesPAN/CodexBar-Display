@@ -32,7 +32,8 @@ screensaver settings), and only with the pairing token.
 | Read status (`/hello`, `/health`, `GET /assets`) | yes | yes, open, no secrets |
 
 There is no setup access point, captive portal, cloud account, remote access
-or telnet/debug service.
+or telnet/debug service. The one exception is the legacy WiFi mode for early
+VibeTVs already sold, see section 7; a new device never enters it.
 
 ## 2. Assets
 
@@ -154,6 +155,16 @@ Manual on hardware (open, to be run before release):
 - **Signed firmware:** not implemented. The ESP8266 core supports signed
   updates, but only about 15 KB of the flash budget are left. Implement only
   if the lab requires it, because updates already need physical access.
+- **Early VibeTVs without USB data (out of scope):** early hardware has no USB
+  data connection and can only use WiFi. So that it keeps receiving updates,
+  firmware that starts with WiFi or a pairing token left by older VibeTV
+  firmware runs in a legacy WiFi mode: WiFi pairing, WiFi updates and the
+  `VibeTV-Setup` network stay available, and the Mac App greys out USB-C. Its
+  first request over the USB cable ends the mode for good. Marcus accepted on
+  2026-10-05 that these devices are not EN 18031 compliant. A new device,
+  including one fresh from the manufacturer firmware, carries neither saved
+  WiFi nor a token and never enters this mode; the factory reset also returns
+  a device to the cable-only state.
 
 ## 8. Question for the test lab
 

@@ -9,7 +9,7 @@ exclusive VibeTV connection modes.
 - Fresh hardware waits for the USB cable. The display shows `Connect USB cable` and the Mac App address. Setup and pairing run only over the cable (issue #489); there is no setup access point. The Mac App shows cable instructions if discovery finds no device. The connection selector appears when Cable and WiFi discovery both succeed.
 - WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
 - The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
-- Updated legacy devices preserve WiFi credentials and pairing, use `wifi`, and support switching to Cable. Previously stored `legacy-wifi-only` is migrated to `wifi`.
+- Legacy WiFi VibeTVs (issue #489): early hardware has no USB data connection. A device that boots current firmware for the first time with saved WiFi or a pairing token from older VibeTV firmware becomes `legacy-wifi-only`. It keeps WiFi updates, local-WiFi pairing, `/save`, `/scan`, `/reset-wifi` and the `VibeTV-Setup` network, advertises `supported:["wifi"]` and `cableOnlyUpdates:false`, and cannot switch to Cable. Its first request over the USB cable proves the data path: it then becomes `wifi` for good and follows the cable-only rules. A fresh device, including one fresh from the manufacturer firmware, never becomes legacy.
 
 ## Firmware Environment -> Board Identity
 
@@ -109,7 +109,7 @@ standby use one serial `settings` request in Cable mode and the existing HTTP
 settings endpoint in WiFi mode; both finish in the same firmware validation,
 persistence, apply, and complete readback owner.
 An incomplete power-loss write is discarded on boot when `/cm` does not match
-the mode in `/s`. Older `legacy-wifi-only` settings are migrated to switchable WiFi at boot.
+the mode in `/s`. A stored `legacy-wifi-only` stays legacy until the first request over the USB cable.
 
 Hello advertises `transitionPending`, `transitionFrom`, and `transitionTo`
 inside `capabilities.transport` while confirmation is required. The Companion
@@ -220,7 +220,12 @@ The connection-mode byte is appended to the existing `/s` record. Shorter
 records remain readable.
 
 - No stored mode becomes `wifi`; without saved credentials the device shows `Connect USB cable` and waits for the cable.
-- Stored `legacy-wifi-only` becomes `wifi`, preserving the existing network.
+- A record without the classification byte that follows the connection-mode
+  byte was written by older firmware. With saved WiFi or a pairing token it
+  becomes `legacy-wifi-only`; otherwise `wifi`. The byte is written once, so
+  the decision is never repeated.
+- Stored `legacy-wifi-only` stays until the first request over the USB cable,
+  then becomes `wifi`, preserving the existing network.
 - Stored `cable` and `wifi` selections survive restarts unchanged.
 - Cable selection shuts down WiFi and the AP. WiFi can be configured over the
   data cable before moving the device to a power adapter.
@@ -404,7 +409,9 @@ unexplained transport error instead of an authentication failure.
 - The USB cable is the authorization (issue #489). WiFi credentials and pairing
   are set only over the cable with the serial `configure-wifi` and `pair`
   requests. There is no setup access point, captive portal, or HTTP endpoint
-  for WiFi credentials, WiFi reset, or pairing.
+  for WiFi credentials, WiFi reset, or pairing. The only exception is a legacy
+  WiFi VibeTV (see above), which keeps them because it may have no USB data
+  connection.
 - Fresh or failed WiFi devices show `Connect USB cable` with `app.vibetv.shop`
   and keep retrying a saved network in the background. After an empty
   discovery, the Mac App tells customers to connect the USB cable.

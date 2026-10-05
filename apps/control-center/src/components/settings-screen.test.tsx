@@ -385,6 +385,30 @@ describe("SettingsScreen standby controls", () => {
     expect(connectionModeTrigger).not.toContain('disabled=""');
   });
 
+  // Issue #489: a VibeTV on WiFi offers USB-C only on cable-only firmware.
+  it("greys out USB-C for older and legacy WiFi firmware", () => {
+    const usbCard = (cableOnlyUpdates?: boolean, supported = ["usb", "wifi"]) =>
+      render(
+        {
+          active: true,
+          connected: true,
+          paired: true,
+          capabilities: {
+            transport: { active: "wifi", mode: "wifi", supported, cableOnlyUpdates },
+          },
+        },
+        null,
+        providerPicker,
+        null,
+        "wifi",
+      ).match(/<button[^>]*aria-label="USB-C"[^>]*>/)?.[0];
+
+    expect(usbCard(true)).toBeDefined();
+    expect(usbCard(true)).not.toContain('disabled=""');
+    expect(usbCard(undefined)).toContain('disabled=""');
+    expect(usbCard(false, ["wifi"])).toContain('disabled=""');
+  });
+
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen

@@ -58,21 +58,50 @@ void test_connection_mode_bytes_decode_without_guessing() {
       static_cast<int>(DecodeConnectionMode(255)));
 }
 
-void test_cutover_migrates_legacy_state_once() {
+// Firmware before issue #489 never wrote the classification byte. A VibeTV
+// that arrives from it with saved WiFi may have no USB data connection, so it
+// stays legacy WiFi: no Cable offer, WiFi setup and updates stay available.
+void test_unclassified_wifi_device_stays_legacy_wifi() {
   TEST_ASSERT_EQUAL(
-      static_cast<int>(ConnectionMode::kWifi),
-      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kUnspecified)));
-  const auto migrated = ResolveInitialConnectionMode(ConnectionMode::kLegacyWifiOnly);
-  TEST_ASSERT_EQUAL(static_cast<int>(ConnectionMode::kWifi), static_cast<int>(migrated));
-  TEST_ASSERT_TRUE(SupportsCable(migrated));
-  TEST_ASSERT_TRUE(UsesWifi(migrated));
-  TEST_ASSERT_TRUE(CanBeginConnectionTransition(migrated, ConnectionMode::kCable));
+      static_cast<int>(ConnectionMode::kLegacyWifiOnly),
+      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kUnspecified, true, false)));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kLegacyWifiOnly),
+      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kWifi, true, false)));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kLegacyWifiOnly),
+      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kLegacyWifiOnly, true, true)));
+  // A WiFi reset keeps it legacy, so VibeTV-Setup stays its way back in.
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kLegacyWifiOnly),
+      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kLegacyWifiOnly, false, true)));
+  TEST_ASSERT_FALSE(SupportsCable(ConnectionMode::kLegacyWifiOnly));
+  TEST_ASSERT_TRUE(UsesWifi(ConnectionMode::kLegacyWifiOnly));
+  TEST_ASSERT_FALSE(CanBeginConnectionTransition(
+      ConnectionMode::kLegacyWifiOnly, ConnectionMode::kCable));
 }
 
-void test_factory_fresh_device_keeps_wifi_setup_and_cable_available() {
+void test_cable_contact_ends_legacy_wifi_for_good() {
+  const auto mode = ModeAfterCableContact(ConnectionMode::kLegacyWifiOnly);
+  TEST_ASSERT_EQUAL(static_cast<int>(ConnectionMode::kWifi), static_cast<int>(mode));
+  TEST_ASSERT_TRUE(SupportsCable(mode));
+  TEST_ASSERT_TRUE(CanBeginConnectionTransition(mode, ConnectionMode::kCable));
+  // Classified once, saved WiFi never turns it back into legacy WiFi.
   TEST_ASSERT_EQUAL(
       static_cast<int>(ConnectionMode::kWifi),
-      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kUnspecified)));
+      static_cast<int>(ResolveInitialConnectionMode(mode, true, true)));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kCable),
+      static_cast<int>(ModeAfterCableContact(ConnectionMode::kCable)));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kWifi),
+      static_cast<int>(ModeAfterCableContact(ConnectionMode::kWifi)));
+}
+
+void test_factory_fresh_device_is_set_up_over_the_cable() {
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kWifi),
+      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kUnspecified, false, false)));
   TEST_ASSERT_TRUE(SupportsCable(ConnectionMode::kWifi));
   TEST_ASSERT_TRUE(UsesWifi(ConnectionMode::kWifi));
 }
@@ -85,7 +114,8 @@ void test_sdk_wifi_import_retries_until_credentials_are_saved() {
   TEST_ASSERT_FALSE(ShouldImportLegacySdkWifi(
       ConnectionMode::kCable, false));
   // A first boot can persist WiFi mode while its router is unavailable.
-  const auto nextBootMode = ResolveInitialConnectionMode(ConnectionMode::kUnspecified);
+  const auto nextBootMode =
+      ResolveInitialConnectionMode(ConnectionMode::kUnspecified, false, false);
   TEST_ASSERT_TRUE(ShouldImportLegacySdkWifi(nextBootMode, false));
   TEST_ASSERT_FALSE(ShouldImportLegacySdkWifi(nextBootMode, true));
   TEST_ASSERT_TRUE(ShouldImportLegacySdkWifi(
@@ -97,10 +127,10 @@ void test_sdk_wifi_import_retries_until_credentials_are_saved() {
 void test_stored_mode_is_never_reinterpreted() {
   TEST_ASSERT_EQUAL(
       static_cast<int>(ConnectionMode::kCable),
-      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kCable)));
+      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kCable, true, false)));
   TEST_ASSERT_EQUAL(
       static_cast<int>(ConnectionMode::kWifi),
-      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kWifi)));
+      static_cast<int>(ResolveInitialConnectionMode(ConnectionMode::kWifi, true, true)));
   TEST_ASSERT_EQUAL_STRING("cable", ConnectionModeName(ConnectionMode::kCable));
   TEST_ASSERT_EQUAL_STRING("wifi", ConnectionModeName(ConnectionMode::kWifi));
   TEST_ASSERT_EQUAL_STRING(
@@ -170,8 +200,9 @@ int main(int, char**) {
   RUN_TEST(test_supported_range_covers_one_to_hundred_percent);
   RUN_TEST(test_out_of_range_requests_clamp_to_the_range);
   RUN_TEST(test_connection_mode_bytes_decode_without_guessing);
-  RUN_TEST(test_cutover_migrates_legacy_state_once);
-  RUN_TEST(test_factory_fresh_device_keeps_wifi_setup_and_cable_available);
+  RUN_TEST(test_unclassified_wifi_device_stays_legacy_wifi);
+  RUN_TEST(test_cable_contact_ends_legacy_wifi_for_good);
+  RUN_TEST(test_factory_fresh_device_is_set_up_over_the_cable);
   RUN_TEST(test_sdk_wifi_import_retries_until_credentials_are_saved);
   RUN_TEST(test_stored_mode_is_never_reinterpreted);
   RUN_TEST(test_connection_transition_round_trips_both_directions);

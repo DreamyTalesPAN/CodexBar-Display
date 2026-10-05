@@ -204,6 +204,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
+	listCablePorts         func() ([]string, error)
 	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
@@ -236,6 +237,9 @@ type Server struct {
 	displayStreamRunning   func() bool
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
+	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
+	legacyCableProbeMu    sync.Mutex
+	legacyCableProbePorts string
 	updateHoldUntil        time.Time
 	updateHoldRefusals     atomic.Uint64
 	configMu               sync.Mutex
@@ -993,6 +997,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:           themeinstall.Install,
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
+		listCablePorts:         usb.ListPorts,
 		discoverCableDevices:   usb.DiscoverVibeTVs,
 		readCableHello:         usb.ReadDeviceHello,
 		currentCableHello:      usb.CurrentDeviceHello,
@@ -1461,6 +1466,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			if !identityMismatch && transitionConfirmed {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+				if hello.Normalize().Capabilities.Transport.Mode == "legacy-wifi-only" {
+					s.probeLegacyWiFiCable(configuredID)
+				}
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
 				device.Paired = savedPairingRemainsValid(
 					cfg.DeviceToken,
@@ -1589,6 +1597,41 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 	}
 	hello, err := usb.ReadDeviceHello(port)
 	return hello, err == nil
+}
+
+// probeLegacyWiFiCable asks newly connected serial ports once whether one of
+// them is this legacy WiFi VibeTV. Early VibeTVs have no USB data connection,
+// so their firmware keeps WiFi updates until a request arrives over the USB
+// cable. That request ends legacy mode on the device, and its next WiFi hello
+// offers USB-C (issue #489). A port set that was already asked is skipped, so
+// neither this VibeTV nor another serial device is reopened on every poll.
+func (s *Server) probeLegacyWiFiCable(deviceID string) {
+	if s.listCablePorts == nil || s.resolveCablePort == nil {
+		return
+	}
+	ports, err := s.listCablePorts()
+	if err != nil {
+		return
+	}
+	sort.Strings(ports)
+	key := strings.Join(ports, "\n")
+	s.legacyCableProbeMu.Lock()
+	unchanged := key == s.legacyCableProbePorts
+	s.legacyCableProbeMu.Unlock()
+	if unchanged {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, running := s.activeFirmwareUpdateJob(); running || s.themeInstallInFlight() {
+		return
+	}
+	s.legacyCableProbeMu.Lock()
+	s.legacyCableProbePorts = key
+	s.legacyCableProbeMu.Unlock()
+	if len(ports) > 0 {
+		_, _ = s.resolveCablePort("", deviceID)
+	}
 }
 
 func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {

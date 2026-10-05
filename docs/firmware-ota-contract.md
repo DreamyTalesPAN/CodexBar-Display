@@ -10,7 +10,10 @@ no WiFi update route: `GET /update`, `POST /update/firmware` and
 as `firmware_update_cable_required` ("VibeTV installs updates only over the
 USB cable."), never as a possibly written upload, so no power cycle is asked
 for. The WiFi rules below apply only to legacy firmware that still has the
-WiFi updater, and to its one update to current firmware.
+WiFi updater, to its one update to current firmware, and to a legacy WiFi
+VibeTV: early hardware without a USB data connection keeps authenticated WiFi
+updates on current firmware until it answers over the USB cable once
+(`docs/hardware-contract.md`). Its hello reports `cableOnlyUpdates:false`.
 
 ## Safety invariants
 
@@ -55,6 +58,7 @@ WiFi updater, and to its one update to current firmware.
 | Bootable state | WiFi OTA path |
 | --- | --- |
 | Current firmware (cable-only updates) | Connect the USB cable, switch to USB-C in Settings, then update. There is no WiFi path. |
+| Current firmware, legacy WiFi VibeTV | Authenticated `install-update` over WiFi, as on legacy firmware. |
 | Legacy firmware on home WiFi and current token | Authenticated `install-update`. |
 | Firmware 1.0.39 up to the last version before cable-only pairing, token lost | Press Connect. The firmware replaces the token over WiFi, then authenticated `install-update` can proceed. |
 | Firmware 1.0.38 on home WiFi but local token lost or rejected | Complete the legacy three-power-cycle WiFi recovery, reconnect the device to home WiFi, press Connect within 30 minutes, then update to current firmware. |
@@ -69,8 +73,8 @@ the WiFi network can write firmware.
 
 ## Current transports
 
-- **WiFi (legacy firmware only):** authenticated multipart
-  `POST /update/firmware`. Current firmware answers `404`.
+- **WiFi (legacy firmware and legacy WiFi VibeTVs only):** authenticated
+  multipart `POST /update/firmware`. Every other VibeTV answers `404`.
 - **Cable:** the newline-delimited serial bulk-transfer protocol in
   `protocol/PROTOCOL.md` is the current Cable path. It is stop-and-wait, uses a
   128-byte candidate chunk, validates a per-chunk MD5 prefix and a complete MD5,

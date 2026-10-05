@@ -39,15 +39,34 @@ inline ConnectionMode DecodeConnectionMode(int value) {
   }
 }
 
+// Decides the connection mode at boot (issue #489). `classified` is true once
+// this firmware generation has saved the settings record. `setUpByOlderFirmware`
+// is true when older VibeTV firmware left saved WiFi or a pairing token; a unit
+// fresh from the manufacturer firmware has neither.
+//
+// A VibeTV that arrives from older VibeTV firmware may have no USB data
+// connection at all (early hardware). It keeps the legacy WiFi behaviour --
+// WiFi updates, WiFi pairing and the VibeTV-Setup network -- until its first
+// request over the USB cable (ModeAfterCableContact). Every other VibeTV,
+// including a fresh one, is set up and changed only over the cable.
 inline ConnectionMode ResolveInitialConnectionMode(
-    ConnectionMode stored) {
-  if (stored == ConnectionMode::kCable || stored == ConnectionMode::kWifi) {
+    ConnectionMode stored,
+    bool setUpByOlderFirmware,
+    bool classified) {
+  if (stored == ConnectionMode::kCable ||
+      stored == ConnectionMode::kLegacyWifiOnly) {
     return stored;
   }
-  // Old WiFi installations keep WiFi and gain Cable switching while
-  // preserving their credentials. Without a network the device waits for the
-  // USB cable; there is no setup access point.
+  if (!classified && setUpByOlderFirmware) {
+    return ConnectionMode::kLegacyWifiOnly;
+  }
   return ConnectionMode::kWifi;
+}
+
+// A request over the USB cable proves the data connection, so a legacy WiFi
+// VibeTV follows the cable-only rules from then on.
+inline ConnectionMode ModeAfterCableContact(ConnectionMode mode) {
+  return mode == ConnectionMode::kLegacyWifiOnly ? ConnectionMode::kWifi : mode;
 }
 
 inline bool ShouldImportLegacySdkWifi(

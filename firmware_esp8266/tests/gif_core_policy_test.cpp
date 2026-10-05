@@ -38,6 +38,20 @@ std::size_t countOccurrences(const std::string& value, const char* needle) {
   return count;
 }
 
+// Body of the top-level function defined as `signature`, or "" if it is
+// missing. Forward declarations are skipped.
+std::string functionBody(const std::string& source, const char* signature) {
+  const std::size_t start = source.find(std::string(signature) + " {");
+  if (start == std::string::npos) {
+    return "";
+  }
+  const std::size_t end = source.find("\n}\n", start);
+  if (end == std::string::npos) {
+    return "";
+  }
+  return source.substr(start, end - start);
+}
+
 bool testBackoffThresholdAndExpiry() {
   GifFailureGuardState guard;
 
@@ -163,27 +177,59 @@ bool testAssetWritesStayInsideThemeNamespace() {
   return true;
 }
 
-// Issue #489 / #404: the USB cable is the authorization. WiFi never issues a
-// token, never takes WiFi credentials, and never opens a setup network.
-bool testWifiNeverPairsOrTakesCredentials(const char* mainPath) {
+// Issue #489 / #404: the USB cable is the authorization. Only a legacy WiFi
+// VibeTV -- early hardware that may have no USB data connection -- still
+// pairs, takes WiFi details and opens VibeTV-Setup over WiFi. Every other
+// VibeTV answers those routes like unknown paths and never opens a network.
+bool testWifiPairsAndTakesCredentialsOnlyOnLegacyWifi(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t authStart = mainSource.find("bool requestHasValidAuth()");
-  const std::size_t authEnd = mainSource.find("\n}\n", authStart);
-  if (authStart == std::string::npos || authEnd == std::string::npos) {
-    return false;
+  const std::string auth = functionBody(mainSource, "bool requestHasValidAuth()");
+  const std::string reject = functionBody(mainSource, "bool rejectUnlessLegacyWifi()");
+  const std::string setup = functionBody(mainSource, "void enterWifiSetup()");
+  const std::string maintain = functionBody(mainSource, "void maintainWifiConnection()");
+  const std::string scan = functionBody(mainSource, "bool scanSetupNetworks(bool automatic)");
+  const std::string recovery = functionBody(mainSource, "void maintainWifiSetupRecovery()");
+  const std::string accessPoint = functionBody(mainSource, "void startSetupAccessPoint()");
+  const char* gatedHandlers[] = {
+      "void handleCaptivePortalProbe()",
+      "void handleSaveWifi()",
+      "void handleSetupWifiScan()",
+      "void handleResetWifi()",
+      "void handlePairingAPI()",
+      "void handleUpdatePage()",
+      "void handleOtaResult(const char* target)",
+  };
+  for (const char* signature : gatedHandlers) {
+    const std::string handler = functionBody(mainSource, signature);
+    const std::size_t gate = handler.find("if (rejectUnlessLegacyWifi())");
+    if (!expect(
+            gate != std::string::npos && gate < handler.find(';'),
+            "every WiFi pairing, setup and update route must first reject a non-legacy VibeTV")) {
+      std::fprintf(stderr, "  route: %s\n", signature);
+      return false;
+    }
   }
-  const std::string auth = mainSource.substr(authStart, authEnd - authStart);
+  const std::size_t legacySetup = setup.find("if (legacyWifiActive())");
+  const std::size_t legacyRecovery = maintain.find("if (setupMode && legacyWifiActive())");
   return expect(
       auth.find("deviceAuthConfigured() && requestAuthToken() == deviceAuthToken") !=
               std::string::npos &&
-          mainSource.find("\"/api/pair\"") == std::string::npos &&
-          mainSource.find("\"/save\"") == std::string::npos &&
-          mainSource.find("\"/scan\"") == std::string::npos &&
-          mainSource.find("\"/reset-wifi\"") == std::string::npos &&
-          mainSource.find("WiFi.softAP(") == std::string::npos &&
-          mainSource.find("DNSServer") == std::string::npos &&
-          mainSource.find("VibeTV-Setup") == std::string::npos,
-      "WiFi must not pair, change WiFi credentials, or open a setup network; unpaired devices accept no WiFi write");
+          reject.find("if (legacyWifiActive())") != std::string::npos &&
+          reject.find("404") != std::string::npos &&
+          legacySetup != std::string::npos &&
+          legacySetup < setup.find("startSetupAccessPoint();") &&
+          countOccurrences(mainSource, "startSetupAccessPoint();") == 1 &&
+          legacyRecovery != std::string::npos &&
+          legacyRecovery < maintain.find("maintainWifiSetupRecovery();") &&
+          countOccurrences(mainSource, "maintainWifiSetupRecovery();") == 1 &&
+          countOccurrences(mainSource, "WiFi.softAP(") ==
+              countOccurrences(accessPoint, "WiFi.softAP(") +
+                  countOccurrences(recovery, "WiFi.softAP(") &&
+          scan.find("const bool keepSetupAccessPoint = setupMode && legacyWifiActive();") !=
+              std::string::npos &&
+          scan.find("setupMode ? WIFI_AP_STA") == std::string::npos &&
+          scan.find("if (setupMode) {") == std::string::npos,
+      "only a legacy WiFi VibeTV may pair or take WiFi details over WiFi or open VibeTV-Setup; unpaired devices accept no WiFi write");
 }
 
 bool testCablePairingRequiresExactPhysicalIdentity(const char* mainPath) {
@@ -386,7 +432,9 @@ bool testAutomaticWifiFallbackPreservesSavedCredentials(const char* mainPath) {
       "failed WiFi association must preserve saved credentials for retry or Cable rollback");
 }
 
-bool testFirmwareUpdatesOnlyOverCable(const char* mainPath) {
+// Firmware arrives over the paired USB cable. Only a legacy WiFi VibeTV, which
+// may have no USB data connection, still takes a paired WiFi update.
+bool testWifiFirmwareUpdatesOnlyOnLegacyWifi(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t cable = mainSource.find("bool startCableTransfer(");
   const std::size_t cableEnd = mainSource.find("bool writeCableTransferChunk(", cable);
@@ -396,16 +444,21 @@ bool testFirmwareUpdatesOnlyOverCable(const char* mainPath) {
   if (cable == std::string::npos || cableEnd == std::string::npos || server == std::string::npos) {
     return false;
   }
+  const std::string upload =
+      functionBody(mainSource, "void handleOtaUpload(int command, const char* target)");
+  const std::size_t legacyGate = upload.find("if (!legacyWifiActive()) {");
+  const std::size_t uploadAuth = upload.find("if (!requestHasValidOtaAuth()) {");
+  const std::size_t uploadBegin = upload.find("Update.begin(");
   return expect(
       cableAuth > cable && cableAuth < cableBegin && cableBegin < cableEnd &&
-          mainSource.find("\"/update") == std::string::npos &&
-          mainSource.find("href='/update") == std::string::npos &&
-          mainSource.find("webServer.upload();") == mainSource.rfind("webServer.upload();") &&
-          mainSource.find("Update.begin(") == cableBegin &&
-          mainSource.find("Update.begin(") == mainSource.rfind("Update.begin(") &&
+          legacyGate != std::string::npos && uploadAuth != std::string::npos &&
+          uploadBegin != std::string::npos &&
+          legacyGate < upload.find("webServer.upload();") && uploadAuth < uploadBegin &&
+          countOccurrences(mainSource, "Update.begin(") == 2 &&
+          countOccurrences(upload, "Update.begin(") == 1 &&
           mainSource.find("raw_ota_server_started") == std::string::npos &&
           mainSource.find("handleRawOtaClient") == std::string::npos,
-      "firmware may only be written through the paired USB cable transfer");
+      "firmware may only be written over the paired USB cable, or by a paired legacy WiFi VibeTV");
 }
 
 bool testPairingTokenUsesHardwareRandom(const char* mainPath) {
@@ -1203,7 +1256,7 @@ int main(int argc, char** argv) {
   if (!testAssetHandlersUseThemeNamespacePolicy(argv[3])) {
     return 1;
   }
-  if (!testWifiNeverPairsOrTakesCredentials(argv[3])) {
+  if (!testWifiPairsAndTakesCredentialsOnlyOnLegacyWifi(argv[3])) {
     return 1;
   }
   if (!testCablePairingRequiresExactPhysicalIdentity(argv[3])) {
@@ -1233,7 +1286,7 @@ int main(int argc, char** argv) {
   if (!testAutomaticWifiFallbackPreservesSavedCredentials(argv[3])) {
     return 1;
   }
-  if (!testFirmwareUpdatesOnlyOverCable(argv[3])) {
+  if (!testWifiFirmwareUpdatesOnlyOnLegacyWifi(argv[3])) {
     return 1;
   }
   if (!testPairingTokenUsesHardwareRandom(argv[3])) {

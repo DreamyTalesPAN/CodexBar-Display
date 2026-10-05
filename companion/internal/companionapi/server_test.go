@@ -193,6 +193,100 @@ func TestStatusPreservesCableFreeWiFiDiscoveryMode(t *testing.T) {
 	}
 }
 
+// Issue #489: a legacy WiFi VibeTV leaves legacy mode on its first request over
+// the USB cable. Status asks each newly connected set of serial ports once, so
+// an early VibeTV without USB data is never asked and no port is reopened on
+// every poll.
+func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
+	var mode atomic.Value
+	mode.Store("legacy-wifi-only")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			legacy := mode.Load().(string) == "legacy-wifi-only"
+			supported, cableOnly := `["usb","wifi"]`, "true"
+			if legacy {
+				supported, cableOnly = `["wifi"]`, "false"
+			}
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.61","deviceId":"legacy-device","capabilities":{"transport":{"active":"wifi","mode":%q,"supported":%s,"cableOnlyUpdates":%s}}}`, mode.Load().(string), supported, cableOnly)
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "legacy-device",
+	})
+	var portsMu sync.Mutex
+	var ports []string
+	setPorts := func(next ...string) {
+		portsMu.Lock()
+		defer portsMu.Unlock()
+		ports = next
+	}
+	server.listCablePorts = func() ([]string, error) {
+		portsMu.Lock()
+		defer portsMu.Unlock()
+		return append([]string(nil), ports...), nil
+	}
+	var probed []string
+	server.resolveCablePort = func(_ string, deviceID string) (string, error) {
+		probed = append(probed, deviceID)
+		return "", errors.New("no VibeTV answered")
+	}
+	status := func() statusResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	got := status()
+	caps := got.Device.Capabilities
+	if caps == nil || caps.Transport.CableOnlyUpdates == nil || *caps.Transport.CableOnlyUpdates {
+		t.Fatalf("legacy hello must reach the app with cableOnlyUpdates=false: %+v", caps)
+	}
+	if len(probed) != 0 {
+		t.Fatalf("no serial port, but the cable was asked %d times", len(probed))
+	}
+
+	setPorts("/dev/cu.usbserial-1")
+	status()
+	status()
+	if len(probed) != 1 || probed[0] != "legacy-device" {
+		t.Fatalf("a new serial port must be asked exactly once for this VibeTV, got %v", probed)
+	}
+
+	setPorts("/dev/cu.usbserial-1", "/dev/cu.usbserial-2")
+	status()
+	if len(probed) != 2 {
+		t.Fatalf("another new serial port must be asked once, got %v", probed)
+	}
+
+	mode.Store("wifi")
+	setPorts("/dev/cu.usbserial-3")
+	got = status()
+	if len(probed) != 2 {
+		t.Fatalf("a VibeTV that left legacy mode must not be asked again, got %v", probed)
+	}
+	caps = got.Device.Capabilities
+	if caps == nil || caps.Transport.CableOnlyUpdates == nil || !*caps.Transport.CableOnlyUpdates {
+		t.Fatalf("cable-only firmware must reach the app with cableOnlyUpdates=true: %+v", caps)
+	}
+}
+
 func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
@@ -12478,6 +12572,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return protocol.DeviceHello{}, false
 	}
 	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+		return nil, nil
+	}
+	server.listCablePorts = func() ([]string, error) {
 		return nil, nil
 	}
 	server.resetCableSender = func() {}
