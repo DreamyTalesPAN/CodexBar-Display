@@ -380,12 +380,19 @@ func readPortLinesCarry(port SerialPort, window time.Duration, carry *[]byte, ac
 	return accept(strings.TrimSpace(string(bytes.TrimSpace(buffer))))
 }
 
+const bootHelloPrefix = `{"kind":"hello"`
+
 func parseDeviceHelloLine(line string) (protocol.DeviceHello, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return protocol.DeviceHello{}, false
 	}
 
+	// The boot hello follows the boot ROM's output without a line break, so
+	// the line it arrives on starts with noise rather than with the hello.
+	if start := strings.LastIndex(line, bootHelloPrefix); start > 0 {
+		line = line[start:]
+	}
 	if !strings.HasPrefix(line, "{") || !strings.HasSuffix(line, "}") {
 		return protocol.DeviceHello{}, false
 	}
