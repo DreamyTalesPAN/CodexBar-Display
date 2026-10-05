@@ -171,6 +171,7 @@ const LAUNCHD_RECOVERY_GRACE_MS = 25_000;
 // launch (main.swift:37-43). At 55s this fired while the repair was still
 // working, reported failure, and then discarded the successful native result.
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 120_000;
+const AUTOMATIC_USAGE_REPAIR_REARM_MS = 10 * 60_000;
 // The Help menu hands the last 20 of these to an AI along with the current
 // screen, so the log has to be at least that deep.
 const RECENT_EVENT_LIMIT = 20;
@@ -610,6 +611,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // says whether the native side still holds a temporary CodexBar for us.
   const codexBarRecoveryOutstanding = useRef(false);
   const providerRecoveryAttempted = useRef(false);
+  const providerRecoveryAutomaticAt = useRef(0);
   const providerRecoveryManualAttempted = useRef(false);
   const themeInstallPollJobRef = useRef("");
   const activeThemeUpgradeAttemptRef = useRef("");
@@ -4280,7 +4282,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         companionStatus === "online" &&
         !providerSetupIsChecking(providerSetup)
       ) {
-        providerRecoveryAttempted.current = false;
+        // Re-armed only after a quiet spell. A usage service that flaps
+        // between ready and failing was torn down once per flap, which held a
+        // fresh Mac on the provider step for minutes (#508). The dialog's
+        // "Try automatic repair again" still repairs at any time.
+        if (
+          Date.now() - providerRecoveryAutomaticAt.current >=
+          AUTOMATIC_USAGE_REPAIR_REARM_MS
+        ) {
+          providerRecoveryAttempted.current = false;
+        }
         providerRecoveryManualAttempted.current = false;
       }
       return;
@@ -4297,6 +4308,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     providerRecoveryAttempted.current = true;
+    providerRecoveryAutomaticAt.current = Date.now();
     const timer = window.setTimeout(() => {
       if (isNativeControlCenterApp()) {
         repairUsageService();

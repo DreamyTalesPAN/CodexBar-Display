@@ -536,6 +536,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testFlappingUsageServiceIsRepairedOnlyOnce(
+        browser,
+        appContext.appUrl,
+      );
       await testUsageServiceFailureAfterSetupOffersRecovery(
         browser,
         appContext.appUrl,
@@ -828,6 +832,10 @@ async function main() {
       appContext.appUrl,
     );
     await testDismissedUsageIncidentSurvivesProbeRefresh(
+      browser,
+      appContext.appUrl,
+    );
+    await testFlappingUsageServiceIsRepairedOnlyOnce(
       browser,
       appContext.appUrl,
     );
@@ -4404,6 +4412,101 @@ async function testProviderNeverDeliveredDeviceReachesProviderStep(browser, appU
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const providersScreen = setupScreen(page, SETUP_PROVIDERS_SCREEN);
   await providersScreen.waitFor({ timeout: 15_000 });
+  await page.close();
+}
+
+// A usage service that flaps between failing and ready is repaired on its own
+// once, not once per flap: the repair tears the background service down, and
+// on a fresh Mac every flap held setup on the provider step for another
+// minute (#508). The dialog and its Try again stay.
+async function testFlappingUsageServiceIsRepairedOnlyOnce(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+    userAgent: "VibeTVControlCenter/1.0.53",
+  });
+  const brokenSetup = {
+    status: "setup_required",
+    engine: { status: "ready" },
+    providers: [{ id: "codexbar", status: "timeout" }],
+  };
+  let phase = "broken";
+  let readyAnswers = 0;
+  let brokenAnswersAfterReady = 0;
+  let recoveryRetries = 0;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: reachableUnreadyDevice,
+    displayFrameStatus: 404,
+    providerSetup: brokenSetup,
+    providerSelectionSetup: {
+      providerSelectionRequired: true,
+      providerSelectionComplete: false,
+    },
+    onStatusProviderSetup: () => {
+      if (phase === "ready") {
+        readyAnswers += 1;
+        if (readyAnswers >= 2) {
+          phase = "broken-again";
+        }
+        return readyProviderSetup();
+      }
+      if (phase === "broken-again") {
+        brokenAnswersAfterReady += 1;
+      }
+      return brokenSetup;
+    },
+    onProviderRetry: (_setup, providerId) => {
+      if (providerId) {
+        return undefined;
+      }
+      recoveryRetries += 1;
+      return brokenSetup;
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-07-29T08:00:00Z",
+      providers: [],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const usageDialog = page.getByRole("dialog", {
+    name: "Finish AI setup on this Mac",
+  });
+  await usageDialog.waitFor({ timeout: 15_000 });
+  // Settle the automatic repair that greets the first incident.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await waitForCondition(
+    () => recoveryRetries === 1,
+    "The automatic repair must run its one provider check",
+  );
+
+  // The service recovers, then fails again a moment later.
+  phase = "ready";
+  await waitForCondition(
+    () => brokenAnswersAfterReady >= 1,
+    "The status poll must deliver ready and then the failing verdict again",
+    40_000,
+  );
+  await usageDialog.waitFor({ timeout: 10_000 });
+  // A re-armed automatic repair would consume this result and check again.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await page.waitForTimeout(1_000);
+  assert(
+    recoveryRetries === 1,
+    `A flap right after a repair must not repair again on its own, got ${recoveryRetries} checks`,
+  );
   await page.close();
 }
 

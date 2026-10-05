@@ -5,6 +5,22 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-05 — The usage service is repaired on its own at most every ten minutes
+
+- User approval: On 2026-10-05 Claude listed the customer-visible issues of
+  the overnight batch (#507, #358, #483, #508) as needing UI approval, and the
+  user answered in chat "du hast erstmal alle freigaben" (all approvals granted
+  for now; they review the batch the next morning).
+- Approved customer-visible result: When the usage service fails, the
+  automatic repair still runs once for that incident. If the service recovers
+  and fails again within ten minutes, the app no longer tears the background
+  service down a second time on its own; the existing "Finish AI setup on this
+  Mac" dialog shows instead, and its "Try automatic repair again" button still
+  repairs at any time. After ten quiet minutes the automatic repair is armed again. No new
+  control, copy, or layout (#508).
+- Approved files: `control-center-app.tsx`, its customer-flow regression test,
+  and this approval record.
+
 ## 2026-09-01 — Configured WiFi device continues automatically
 
 - User approval: The user explicitly instructed Codex to fix every sensible
