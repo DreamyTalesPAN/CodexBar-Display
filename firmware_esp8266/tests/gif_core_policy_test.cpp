@@ -414,6 +414,43 @@ bool testWifiRecoveryFirmwareWiring(const char* mainPath) {
       "setup recovery must begin once, keep timeout in AP_STA, and leave DNS/AP/setup mode only after connection");
 }
 
+// A WiFi upload that names its MD5 is checked against it before anything is
+// validated or promoted, through the same check the Cable path uses (#60).
+bool testUploadContentHashPolicy(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t assetStart = mainSource.find("void handleAssetUpload()");
+  const std::size_t assetEnd = mainSource.find("void handleAssetUploadResult()", assetStart);
+  const std::size_t finishStart = mainSource.find("bool finishCableTransfer(");
+  const std::size_t chunkStart = mainSource.find("bool writeCableTransferChunk(");
+  if (!expect(
+          assetStart != std::string::npos && assetEnd != std::string::npos && finishStart != std::string::npos &&
+              chunkStart != std::string::npos,
+          "upload handlers must remain discoverable")) {
+    return false;
+  }
+  const std::string asset = mainSource.substr(assetStart, assetEnd - assetStart);
+  const std::string chunk = mainSource.substr(chunkStart, finishStart - chunkStart);
+  const std::string finish = mainSource.substr(finishStart, 600);
+  const std::size_t start = asset.find("if (upload.status == UPLOAD_FILE_START)");
+  const std::size_t decode = asset.find("decodeTransferHash(expectedHash.c_str(), transferExpectedHash)", start);
+  const std::size_t begin = asset.find("transferHash.begin();", decode);
+  const std::size_t write = asset.find("assetUploadFile.write(upload.buf, upload.currentSize)", begin);
+  const std::size_t add = asset.find("transferHash.add(upload.buf,", write);
+  const std::size_t end = asset.find("} else if (upload.status == UPLOAD_FILE_END) {", add);
+  const std::size_t check = asset.find(
+      "if (assetUploadError.length() == 0 && assetUploadHashExpected && !transferHashMatches()) {", end);
+  const std::size_t promote = asset.find("validateCompletedAssetUpload() &&\n        promoteCompletedAssetUpload()", end);
+  return expect(
+      start != std::string::npos && decode != std::string::npos && begin != std::string::npos &&
+          write != std::string::npos && add != std::string::npos && end != std::string::npos &&
+          check != std::string::npos && promote != std::string::npos && check < promote &&
+          countOccurrences(asset, "setAssetUploadError(\"asset hash mismatch\")") == 2 &&
+          chunk.find("transferHash.add(decoded,") != std::string::npos &&
+          finish.find("CanFinish(\n          cableTransfer.flow, transferHashMatches())") != std::string::npos,
+      "WiFi uploads must hash what they write and refuse a mismatch before validating or promoting, "
+      "through the same MD5 check as Cable transfers");
+}
+
 bool testUploadMutualExclusionPolicy(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t cableStart = mainSource.find("bool startCableTransfer(");
@@ -1506,6 +1543,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testUploadMutualExclusionPolicy(argv[3])) {
+    return 1;
+  }
+  if (!testUploadContentHashPolicy(argv[3])) {
     return 1;
   }
   if (!testCaptiveFirstResponseNeverBlocksOnWifiScan(argv[3])) {

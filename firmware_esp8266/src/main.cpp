@@ -209,8 +209,6 @@ struct CableTransferState {
   codexbar_display::esp8266::cable_transfer::State flow;
   CableTransferSink sink = CableTransferSink::kNone;
   CableTransferActivation activation = CableTransferActivation::kNone;
-  MD5Builder hash;
-  uint8_t expectedHash[16] = {};
   // Non-zero while a v2 firmware transfer runs at a faster serial rate.
   unsigned long baudRate = 0;
 };
@@ -236,6 +234,19 @@ bool assetUploadInProgress = false;
 String assetUploadError;
 String assetUploadPath;
 size_t assetUploadBytesSeen = 0;
+// A Cable transfer, and a WiFi upload that names its MD5, must match that MD5
+// before it replaces anything (#60). Only one of them runs at a time.
+MD5Builder transferHash;
+uint8_t transferExpectedHash[16] = {};
+bool assetUploadHashExpected = false;
+bool decodeTransferHash(const char* encoded, uint8_t* out);
+
+bool transferHashMatches() {
+  uint8_t actual[16];
+  transferHash.calculate();
+  transferHash.getBytes(actual);
+  return memcmp(actual, transferExpectedHash, sizeof(actual)) == 0;
+}
 File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
@@ -2933,6 +2944,14 @@ void handleAssetUpload() {
       setAssetUploadError("invalid asset path");
       return;
     }
+    const String expectedHash = webServer.arg("hash");
+    assetUploadHashExpected = expectedHash.length() > 0;
+    if (assetUploadHashExpected &&
+        !decodeTransferHash(expectedHash.c_str(), transferExpectedHash)) {
+      setAssetUploadError("asset hash mismatch");
+      return;
+    }
+    transferHash.begin();
     if (assetUploadContentLengthWouldExceedLimits(upload)) {
       setAssetUploadError("gif asset too large");
       return;
@@ -2971,12 +2990,16 @@ void handleAssetUpload() {
     if (assetUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setAssetUploadError("write asset failed");
     }
+    transferHash.add(upload.buf, static_cast<uint16_t>(upload.currentSize));
     assetUploadBytesSeen += upload.currentSize;
     ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
     if (assetUploadFile) {
       assetUploadFile.flush();
       assetUploadFile.close();
+    }
+    if (assetUploadError.length() == 0 && assetUploadHashExpected && !transferHashMatches()) {
+      setAssetUploadError("asset hash mismatch");
     }
     if (assetUploadError.length() == 0 &&
         validateCompletedAssetUpload() &&
@@ -4012,8 +4035,8 @@ bool startCableTransfer(JsonDocument& doc) {
       cableTransfer.flow, expectedBytes, millis());
   cableTransfer.sink = target;
   cableTransfer.activation = targetActivation;
-  memcpy(cableTransfer.expectedHash, expectedDigest, sizeof(expectedDigest));
-  cableTransfer.hash.begin();
+  memcpy(transferExpectedHash, expectedDigest, sizeof(expectedDigest));
+  transferHash.begin();
 
   if (target == CableTransferSink::kAsset) {
     assetUploadSucceeded = false;
@@ -4108,7 +4131,7 @@ bool writeCableTransferChunk(JsonDocument& doc) {
     return true;
   }
 
-  cableTransfer.hash.add(decoded, static_cast<uint16_t>(bytes));
+  transferHash.add(decoded, static_cast<uint16_t>(bytes));
   codexbar_display::esp8266::cable_transfer::AcceptChunk(
       cableTransfer.flow, bytes, expectedChecksum, millis());
   ESP.wdtFeed();
@@ -4121,12 +4144,8 @@ bool finishCableTransfer(JsonDocument& doc) {
     emitSerialError("transfer-rejected");
     return true;
   }
-  uint8_t actualDigest[16];
-  cableTransfer.hash.calculate();
-  cableTransfer.hash.getBytes(actualDigest);
   if (!codexbar_display::esp8266::cable_transfer::CanFinish(
-          cableTransfer.flow,
-          memcmp(actualDigest, cableTransfer.expectedHash, sizeof(actualDigest)) == 0)) {
+          cableTransfer.flow, transferHashMatches())) {
     emitSerialError("transfer-rejected");
     resetCableTransfer(true);
     return true;
