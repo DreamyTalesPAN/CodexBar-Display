@@ -5,6 +5,18 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-05 — Theme readback test waits for the theme step (test only)
+
+- User approval: On 2026-10-05 the user granted all approvals for the
+  overnight batch in chat ("du hast erstmal alle freigaben").
+- Approved customer-visible result: None. The customer-flow test for a failed
+  post-install device read now waits up to ten seconds for "Choose your
+  theme" instead of sampling the screen one second in, and reports headings,
+  dialogs, screen text and recent requests when it fails (#430). Setup must
+  still not complete before a successful readback.
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and
+  this approval record.
+
 ## 2026-10-05 — A pre-USB-C Cable VibeTV stays in the list next to another WiFi VibeTV
 
 - User approval: On 2026-10-05 Claude listed #483 among the customer-visible

@@ -5341,6 +5341,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
     viewport: desktopViewport,
   });
   const installRequests = [];
+  const recentRequests = [];
   let installStarted = false;
   let postInstallDeviceReads = 0;
   const readyDevice = {
@@ -5379,6 +5380,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
         },
       ],
       onRequest: (pathname, method) => {
+        recentRequests.push(`${method} ${pathname}`);
         if (pathname === "/v1/themes/install" && method === "POST") {
           installStarted = true;
         }
@@ -5417,17 +5419,29 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
     .getByRole("status")
     .getByText("> Theme is active on VibeTV.")
     .waitFor({ timeout: 15_000 });
-  await page.waitForTimeout(1_000);
+  // Wait for the state setup has to stay in rather than sampling it one
+  // second in: CI once saw no heading at all there (#430), which a sample
+  // cannot tell apart from a transient render. If the theme step really is
+  // gone, the failure says what was on screen and what the app last asked.
+  try {
+    await page
+      .getByRole("heading", { name: SETUP_THEME_SCREEN })
+      .waitFor({ timeout: 10_000 });
+  } catch {
+    throw new Error(
+      `A failed post-install device read must keep the entered theme setup visible, got ${JSON.stringify({
+        headings: await page.locator("h1, h2, h3").allInnerTexts(),
+        dialogs: await page.getByRole("dialog").allInnerTexts(),
+        screen: (await page.locator("body").innerText()).slice(0, 600),
+        requests: recentRequests.slice(-12),
+      })}`,
+    );
+  }
   assert(
     (await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .count()) === 0,
     "A failed post-install device read must not complete setup",
-  );
-  assert(
-    (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
-      1,
-    `A failed post-install device read must keep the entered theme setup visible, got headings ${JSON.stringify(await page.getByRole("heading").allInnerTexts())}`,
   );
 
   companionRoute.setDevice(readyDevice);
