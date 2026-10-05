@@ -794,17 +794,15 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		// WiFi discovery runs alongside Cable discovery, which may still hold
 		// the start lock for a moment (#374). It must release it without
 		// waiting for WiFi discovery, so taking the lock here must succeed.
-		released := make(chan struct{})
-		go func() {
-			server.firmwareUpdateStartMu.Lock()
-			server.firmwareUpdateStartMu.Unlock()
-			close(released)
-		}()
-		select {
-		case <-released:
-		case <-time.After(5 * time.Second):
-			t.Error("WiFi discovery must not delay firmware update start")
+		deadline := time.Now().Add(5 * time.Second)
+		for !server.firmwareUpdateStartMu.TryLock() {
+			if time.Now().After(deadline) {
+				t.Error("WiFi discovery must not delay firmware update start")
+				return false
+			}
+			time.Sleep(time.Millisecond)
 		}
+		server.firmwareUpdateStartMu.Unlock()
 		return false
 	}
 	rec = search()
