@@ -20,6 +20,12 @@ export type ThemeStudioBinding =
   | "usageSlot2Percent"
   | "usageSlot2Reset"
   | "usageSlot2Available"
+  | "usageSlot1PaceDelta"
+  | "usageSlot1PaceState"
+  | "usageSlot1PaceLasts"
+  | "usageSlot2PaceDelta"
+  | "usageSlot2PaceState"
+  | "usageSlot2PaceLasts"
   | "providerSlot1Label"
   | "providerSlot1Percent"
   | "providerSlot1Reset"
@@ -696,6 +702,7 @@ export function buildThemePack(
   const usesProviderAssets = themeStudioSpecUsesProviderAssets(normalized);
   const usesColorStops = themeStudioSpecUsesColorStops(normalized);
   const usesTextValign = themeStudioSpecUsesTextValign(normalized);
+  const usesUsagePace = themeStudioSpecUsesUsagePace(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
@@ -708,6 +715,7 @@ export function buildThemePack(
     ...(usesProviderAssets ? ["provider-assets-v1"] : []),
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
+    ...(usesUsagePace ? ["usage-pace-v1"] : []),
   ];
   const minFirmware =
     usesProviderAssets || usesColorStops || usesTextValign
@@ -785,6 +793,14 @@ export function themeStudioSpecUsesUsageSlots(
       primitive.text?.includes("{usageSlot") ||
       primitive.text?.includes("{us1") ||
       primitive.text?.includes("{us2"),
+  );
+}
+
+// Older firmware renders an unknown usageSlotN key as that window's percent,
+// so a pace binding must never reach it.
+export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
+  return spec.primitives.some((primitive) =>
+    /usageSlot[12]Pace/.test(`${primitive.binding ?? ""} ${primitive.text ?? ""}`),
   );
 }
 

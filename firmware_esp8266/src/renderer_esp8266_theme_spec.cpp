@@ -1256,6 +1256,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
     frame.usageWindows[i].resetSecs =
         codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, millis());
     frame.usageWindows[i].available = CurrentFrame().usageWindows[i].available && !CurrentFrame().usageUnavailable;
+    frame.usageWindows[i].pace = CurrentFrame().usageWindows[i].pace;
   }
   frame.usageSlot1Label = frame.usageWindows[0].label;
   frame.usageSlot1Percent = frame.usageWindows[0].percent;

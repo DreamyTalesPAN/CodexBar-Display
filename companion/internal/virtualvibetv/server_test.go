@@ -212,6 +212,28 @@ func TestCapabilitiesMatchFirmware(t *testing.T) {
 	}
 }
 
+// A feature the virtual device claims but the firmware lacks would let a
+// harness rehearse a frame or install real hardware cannot render.
+func TestFeaturesMatchFirmware(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "..", "firmware_esp8266", "src", "main.cpp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firmware := regexp.MustCompile(`kThemeFeatureJSON\[\] =\s*"(.*)";`).FindSubmatch(source)
+	if firmware == nil {
+		t.Fatal("kThemeFeatureJSON not found")
+	}
+	hello := virtualHello(t)
+	for _, feature := range hello.Features {
+		if feature != protocol.FeatureTheme && !bytes.Contains(firmware[1], []byte(`\"`+feature+`\"`)) {
+			t.Errorf("virtual feature %s is not advertised by the firmware", feature)
+		}
+	}
+	if hello.Capabilities.Theme.SupportsUsagePaceV1 != bytes.Contains(source, []byte(`\"supportsUsagePaceV1\":true`)) {
+		t.Error("supportsUsagePaceV1 differs between virtual and firmware theme capabilities")
+	}
+}
+
 func TestFrameLimitBoundary(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.RebootUnavailableRequests = 0

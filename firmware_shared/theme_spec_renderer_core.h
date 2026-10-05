@@ -54,6 +54,7 @@ struct UsageWindowData {
   int percent = 0;
   int64_t resetSecs = 0;
   bool available = false;
+  usage_window_contract::Pace pace;
 };
 
 struct FrameData {
@@ -593,6 +594,9 @@ inline const char* UsageWindowField(const char* key) {
       return key + 6 + consumed + 1;
     }
   }
+  if (const char* pace = std::strstr(key, "Pace")) {
+    return pace;
+  }
   if (std::strstr(key, "Available") != nullptr) {
     return "available";
   }
@@ -603,6 +607,15 @@ inline const char* UsageWindowField(const char* key) {
     return "reset";
   }
   return "percent";
+}
+
+// A countdown and CodexBar's pace both end with their window's reset, so both
+// repaint when it moves or expires. Compact countdowns: us1r/us2r, pv1r/pv2r.
+inline bool UsageWindowKeyFollowsReset(const char* key) {
+  key = SafeText(key);
+  const char* field = UsageWindowField(key);
+  return std::strcmp(field, "reset") == 0 || std::strncmp(field, "Pace", 4) == 0 ||
+         (std::strlen(key) == 4 && key[3] == 'r');
 }
 
 inline bool UsageWindowIndexSupported(int index) {
@@ -790,6 +803,18 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       } else {
         FormatDuration(window.resetSecs, out, outSize);
       }
+    } else if (std::strncmp(field, "Pace", 4) == 0) {
+      // CodexBar computed this pace for the running window; once its
+      // countdown expired or lost trust, the pace is unknown again.
+      const usage_window_contract::Pace& pace = UsageWindowFor(frame, slotIndex).pace;
+      if (pace.state == 0 || window.resetSecs <= 0) {
+        out[0] = '\0';
+      } else if (field[4] == 'D') {
+        std::snprintf(out, outSize, pace.delta > 0 ? "+%d%%" : "%d%%", pace.delta);
+      } else {
+        std::snprintf(out, outSize, "%s", usage_window_contract::PaceText(
+            field[4] == 'S' ? pace.state : field[4] == 'L' ? pace.lasts : 0));
+      }
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(window.percent));
     }
@@ -938,9 +963,8 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProviderSlots;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
-    const bool reset = std::strcmp(UsageWindowField(binding), "reset") == 0 ||
-                       StringEqualsAny(binding, "us1r", "us2r");
-    return kThemeSpecFieldUsageWindows | (reset ? kThemeSpecFieldUsageWindowReset : 0);
+    return kThemeSpecFieldUsageWindows |
+           (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u")) {
     return kThemeSpecFieldUsageMode;

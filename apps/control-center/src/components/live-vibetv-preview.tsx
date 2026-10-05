@@ -65,7 +65,10 @@ type UsageSlotFrame = {
   label?: string;
   percent?: number;
   resetSecs?: number;
+  pace?: UsagePaceFrame;
 };
+// CodexBar's pace for a usage window, as the Companion sends it (usage-pace-v1).
+type UsagePaceFrame = { delta?: number; state?: string; lasts?: boolean };
 type UsageWindowFrame = UsageSlotFrame;
 
 type DisplayFrame = {
@@ -175,6 +178,7 @@ type FrameData = {
     percent: number;
     resetSecs: number;
     available: boolean;
+    pace?: UsagePaceFrame;
   }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
@@ -213,8 +217,20 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "used",
   usageWindows: [
-    { label: "Session", percent: 64, resetSecs: 3600, available: true },
-    { label: "Weekly", percent: 28, resetSecs: 7200, available: true },
+    {
+      label: "Session",
+      percent: 64,
+      resetSecs: 3600,
+      available: true,
+      pace: { delta: -12, state: "reserve", lasts: true },
+    },
+    {
+      label: "Weekly",
+      percent: 28,
+      resetSecs: 7200,
+      available: true,
+      pace: { delta: 8, state: "deficit", lasts: false },
+    },
   ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
@@ -1278,6 +1294,7 @@ export function buildFrameData(
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
+      pace: slot.pace,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
@@ -1503,7 +1520,37 @@ export function formatTokenCount(value: number): string {
   return `${whole}.${String(frac).padStart(2, "0")}${unit}`;
 }
 
+// Mirrors the firmware: CodexBar's pace in its own words, and nothing once the
+// window's countdown is gone.
+function usagePaceText(
+  window: FrameData["usageWindows"][number] | undefined,
+  field: string,
+): string {
+  const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
+  if (!pace?.state) {
+    return "";
+  }
+  if (field === "Delta") {
+    const delta = pace.delta ?? 0;
+    return `${delta > 0 ? "+" : ""}${delta}%`;
+  }
+  if (field === "State") {
+    return pace.state;
+  }
+  if (pace.lasts === undefined) {
+    return "";
+  }
+  return pace.lasts ? "lasts until reset" : "runs out";
+}
+
 export function boundValue(key: string, frame: FrameData): string {
+  const paceMatch = /^usageSlot([12])Pace(Delta|State|Lasts)$/.exec(key);
+  if (paceMatch) {
+    return usagePaceText(
+      frame.usageWindows[Number(paceMatch[1]) - 1],
+      paceMatch[2],
+    );
+  }
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
   );

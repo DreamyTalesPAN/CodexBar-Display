@@ -4762,3 +4762,24 @@ issue scope, or release permission never implies UI permission.
   this one is open.
 - Approved files: `control-center-app.tsx`, `setup/setup-device-dialogs.tsx`,
   the customer-flow regression test, and this approval record.
+
+## 2026-10-05 — Theme Studio offers CodexBar's reserve pace for usage windows 1 and 2
+
+- User approval: On 2026-10-05 the user granted every customer-visible change
+  of the batch in chat: "du hast erstmal alle freigaben" (all approvals granted
+  for now). #412 is part of that batch.
+- Approved customer-visible result: Theme Studio's existing "Binding" list and
+  variable tokens gain six entries, "Usage window 1 pace %", "Usage window 1
+  pace", "Usage window 1 lasts" and the same three for window 2. The editor,
+  catalog and live previews render them like the VibeTV does: CodexBar's signed
+  pace (`-25%`, `+14%`), `reserve` / `on pace` / `deficit`, and `lasts until
+  reset` / `runs out`, empty when CodexBar sent no pace or the window's
+  countdown is gone. The catalog preview's neutral example windows carry an
+  example pace. A theme that needs `usage-pace-v1` shows the existing "Firmware
+  update needed" state on a VibeTV without it, and Theme Studio exports declare
+  that capability. No other new control, copy, or layout.
+- Approved files: `control-center-types.ts`, `theme-library-screen.tsx`,
+  `live-vibetv-preview.tsx`, `theme-studio/primitive-inspector.tsx`,
+  `theme-studio/editor-geometry.ts`, `lib/theme-studio.ts`,
+  `lib/theme-studio-capabilities.ts`, `lib/active-theme-upgrade.ts`, their
+  tests, and this approval record.

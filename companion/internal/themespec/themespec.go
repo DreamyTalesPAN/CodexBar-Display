@@ -269,6 +269,9 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if specUsesTextValign(spec) && !caps.SupportsTextValignV1 {
 		return errors.New("device does not advertise text-valign-v1 support")
 	}
+	if specUsesUsagePace(spec) && !caps.SupportsUsagePaceV1 {
+		return errors.New("device does not advertise usage-pace-v1 support")
+	}
 	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
 		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
 	}
@@ -363,6 +366,19 @@ func specUsesTextValign(spec Spec) bool {
 	}
 	return false
 }
+
+// Older firmware renders an unknown usageSlotN key as that window's percent,
+// so a pace binding must never reach it.
+func specUsesUsagePace(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if usagePaceKey.MatchString(primitive.Binding) || usagePaceKey.MatchString(primitive.Text) {
+			return true
+		}
+	}
+	return false
+}
+
+var usagePaceKey = regexp.MustCompile(`usageSlot[12]Pace`)
 
 func specUsesProviderSlots(spec Spec) bool {
 	for _, primitive := range spec.Primitives {

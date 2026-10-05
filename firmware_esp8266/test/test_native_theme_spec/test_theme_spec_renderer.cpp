@@ -760,7 +760,8 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
     appendEscapedText(codexbar_display::core::kUsageWindowIDWireBytes, i);
     frameLine += "\",\"label\":\"";
     appendEscapedText(codexbar_display::core::kUsageWindowLabelWireBytes, i);
-    frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807}";
+    frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807";
+    frameLine += ",\"pace\":{\"delta\":-100,\"state\":\"reserve\",\"lasts\":false}}";
   }
   frameLine += "]}";
 
@@ -782,6 +783,8 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
     TEST_ASSERT_EQUAL_UINT32(codexbar_display::core::kUsageWindowLabelWireBytes, frame.usageWindows[i].label.length());
     TEST_ASSERT_EQUAL_INT(100, frame.usageWindows[i].percent);
     TEST_ASSERT_EQUAL_INT64(9223372036854775807LL, frame.usageWindows[i].resetSecs);
+    TEST_ASSERT_EQUAL_INT(-100, frame.usageWindows[i].pace.delta);
+    TEST_ASSERT_EQUAL_UINT8(codexbar_display::usage_window_contract::kPaceRunsOut, frame.usageWindows[i].pace.lasts);
   }
   TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kAdvertisedMaxUsageWindows - 1].available);
 }
@@ -3643,6 +3646,106 @@ void testFrameWithoutAnyDeadlineStaysStale() {
                         static_cast<int>(CurrentResetTrust(state.reset, 1000)));
 }
 
+std::vector<std::string> renderedTexts(const char* spec, const FrameData& frame) {
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  std::vector<std::string> texts;
+  for (const RecordedCommand& command : sink.commands) {
+    if (command.type == CommandType::Text) {
+      texts.push_back(command.text);
+    }
+  }
+  return texts;
+}
+
+// #412: CodexBar's pace for usage windows 1 and 2, in CodexBar's own words.
+void testUsagePaceBindingsRenderCodexBarPace() {
+  const char* spec = R"JSON({"v":1,"id":"pace","rev":1,"p":[
+    {"t":"tx","x":0,"y":0,"b":"usageSlot1PaceDelta"},
+    {"t":"tx","x":0,"y":20,"b":"usageSlot1PaceState"},
+    {"t":"tx","x":0,"y":40,"b":"usageSlot1PaceLasts"},
+    {"t":"tx","x":0,"y":60,"v":"{usageSlot2PaceDelta} {usageSlot2PaceState}"},
+    {"t":"tx","x":0,"y":80,"b":"usageSlot2PaceLasts"},
+    {"t":"tx","x":0,"y":100,"v":"{usageSlot1Percent}%"}
+  ]})JSON";
+  FrameData frame;
+  frame.usageSlot1Label = frame.usageWindows[0].label = "Session";
+  frame.usageSlot2Label = frame.usageWindows[1].label = "Weekly";
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 92;
+  frame.usageSlot2Percent = frame.usageWindows[1].percent = 27;
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
+  frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs = 95000;
+  frame.usageSlot1Available = frame.usageWindows[0].available = true;
+  frame.usageSlot2Available = frame.usageWindows[1].available = true;
+
+  // No pace from CodexBar: the pace bindings stay empty, usage still renders.
+  std::vector<std::string> none = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL_UINT32(6, none.size());
+  for (size_t i = 0; i < 5; ++i) {
+    TEST_ASSERT_EQUAL_STRING(i == 3 ? " " : "", none[i].c_str());
+  }
+  TEST_ASSERT_EQUAL_STRING("92%", none[5].c_str());
+
+  // Slot 1 in reserve and lasting, slot 2 in deficit and running out.
+  frame.usageWindows[0].pace = {-25, 1, codexbar_display::usage_window_contract::kPaceLasts};
+  frame.usageWindows[1].pace = {14, 3, codexbar_display::usage_window_contract::kPaceRunsOut};
+  std::vector<std::string> both = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL_STRING("-25%", both[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("reserve", both[1].c_str());
+  TEST_ASSERT_EQUAL_STRING("lasts until reset", both[2].c_str());
+  TEST_ASSERT_EQUAL_STRING("+14% deficit", both[3].c_str());
+  TEST_ASSERT_EQUAL_STRING("runs out", both[4].c_str());
+
+  // On pace without a projection: CodexBar names no outcome, neither do we.
+  frame.usageWindows[0].pace = {0, 2, 0};
+  std::vector<std::string> onPace = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL_STRING("0%", onPace[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("on pace", onPace[1].c_str());
+  TEST_ASSERT_EQUAL_STRING("", onPace[2].c_str());
+
+  // Reset boundary: once window 2's countdown is gone, so is its pace.
+  frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs = 0;
+  std::vector<std::string> expired = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL_STRING(" ", expired[3].c_str());
+  TEST_ASSERT_EQUAL_STRING("", expired[4].c_str());
+  TEST_ASSERT_EQUAL_STRING("0%", expired[0].c_str());
+}
+
+void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* first =
+      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-25,"state":"reserve","lasts":true}},{"id":"weekly","label":"Weekly","percent":27,"resetSecs":95000,"pace":{"delta":14,"state":"deficit"}},{"id":"fable","label":"Fable","percent":0,"resetSecs":95000,"pace":{"delta":3,"state":"farBehind","lasts":false}}],"themeSpec":{"v":1,"id":"pace-redraw","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"usageSlot1PaceDelta"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, first, 1000, event));
+  const auto& windows = state.current.usageWindows;
+  TEST_ASSERT_EQUAL_INT(-25, windows[0].pace.delta);
+  TEST_ASSERT_EQUAL_UINT8(1, windows[0].pace.state);
+  TEST_ASSERT_EQUAL_UINT8(codexbar_display::usage_window_contract::kPaceLasts, windows[0].pace.lasts);
+  TEST_ASSERT_EQUAL_UINT8(3, windows[1].pace.state);
+  TEST_ASSERT_EQUAL_UINT8(0, windows[1].pace.lasts);
+  // A token outside the contract is no pace at all.
+  TEST_ASSERT_EQUAL_UINT8(0, windows[2].pace.state);
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot2PaceState}"}]})JSON")).UsesUsageWindowReset(1));
+
+  // Only the pace moved: the pace theme repaints its pace primitive.
+  const char* paceMoved =
+      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, paceMoved, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowReset) != 0);
+
+  // A theme without pace bindings ignores pace that moves with the clock.
+  RuntimeState usageOnly;
+  const char* usageTheme =
+      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":12000,"pace":{"delta":-25,"state":"reserve","lasts":true}}],"themeSpec":{"v":1,"id":"usage-only","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{usageSlot1Percent}%"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(usageOnly, usageTheme, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(usageOnly, paceMoved, 2000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
+}
+
 }  // namespace
 
 // Defined in test_device_clock.cpp.
@@ -3790,5 +3893,7 @@ int main() {
   RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
   RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
+  RUN_TEST(testUsagePaceBindingsRenderCodexBarPace);
+  RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   return UNITY_END();
 }

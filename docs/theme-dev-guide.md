@@ -135,6 +135,17 @@ slot-2 equivalents. Compact binding keys are supported for shipped specs, but
 the meaning must remain the same; a compact key is not permission to invent a
 provider-specific fallback.
 
+CodexBar's reserve pace for usage windows 1 and 2 has its own bindings:
+`{usageSlot1PaceDelta}` renders CodexBar's signed `deltaPercent` (`-25%` is in
+reserve, `+14%` in deficit), `{usageSlot1PaceState}` its stage family
+(`reserve`, `on pace`, `deficit`), and `{usageSlot1PaceLasts}` whether the
+pace lasts until the reset (`lasts until reset`, `runs out`), plus their slot-2
+equivalents. They render empty whenever CodexBar sent no pace for the window or
+its countdown has run out, so give each one its own text primitive instead of
+mixing it into a sentence. Packs that use them declare `usage-pace-v1`: older
+firmware would draw the window's percent in their place. `theme-packs/pace-meter`
+is the reference pack.
+
 Preview data is deliberately neutral example data. A preview proving that the
 provider line renders only proves the binding and geometry; it does not prove
 that a specific provider is connected or that the hardware can render the pack.

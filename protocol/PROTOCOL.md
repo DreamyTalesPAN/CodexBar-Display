@@ -125,6 +125,7 @@ Fields:
 - `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that legacy usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
 - `usageMode` (string, optional): semantic of `session`/`weekly` and `usageWindows[].percent` (`used` or `remaining`).
 - `usageWindows` (array, optional, v2): generic ordered provider usage windows. Each emitted window carries `id` (max 32 UTF-8 bytes), `label` (max 24 UTF-8 bytes), `percent`, and its own `resetSecs`. Presence means availability; missing or unavailable source windows are omitted rather than coerced to `0`/`100`. Legacy `session`, `weekly`, and shared `resetSecs` remain compatibility aliases for windows 1, 2, and window 1's reset.
+- `usageWindows[].pace` (object, optional, `usage-pace-v1`): CodexBar's pace for that window, never computed by the host. `delta` is CodexBar's `deltaPercent` (`-100..100`; negative is in reserve, positive is in deficit). `state` is CodexBar's own stage family, the split its pace text makes: `reserve` (`slightlyBehind`, `behind`, `farBehind`), `on pace` (`onTrack`), `deficit` (`slightlyAhead`, `ahead`, `farAhead`). `lasts` is `willLastToReset`: `true` for CodexBar's "Lasts until reset", `false` when CodexBar projects running out (it reports an ETA), and omitted when CodexBar projects neither. The host sends `pace` only to devices that advertise `usage-pace-v1`, only for windows CodexBar paces, and only while that window's `resetSecs` is positive; absent means unknown, never zero. A stage CodexBar does not define is dropped. When a frame exceeds `maxFrameBytes`, the host drops pace before it drops a window.
 - `usageSlots` (array, optional, legacy): compatibility input/output for v1-era two-slot readers. The Companion normalizes slots into `usageWindows` when no windows are present; normalized v2 frames omit `usageSlots`.
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
@@ -257,6 +258,7 @@ Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`, `sprite`, `pixels`) and validated by companion before send.
 - Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/ft/al/va/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives. `va` is optional vertical text align (`middle`/`center`/`bottom`).
+- Pace bindings render `usageWindows[].pace` of usage windows 1 and 2 as text: `usageSlotNPaceDelta` (`-25%`, `+14%`, `0%`), `usageSlotNPaceState` (`reserve`, `on pace`, `deficit`) and `usageSlotNPaceLasts` (`lasts until reset`, `runs out`), with `N` = `1` or `2`. Each renders empty while its window is absent, has no pace, or its countdown has expired or lost trust. Pace text repaints with the window's countdown. Older firmware renders an unknown `usageSlotN` key as that window's percent, so specs that use them require the advertised `usage-pace-v1` capability.
 - A primitive may declare usage-lane ownership with `slot: 1|2` (compact `sl`). The renderer skips the entire primitive when that slot is absent, including static decoration and progress tracks. Themes that use slot bindings or ownership require the advertised `usage-slots-v1` capability.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
 - Text primitives scale with `fontSize`. When `fit` is `shrink` (compact `ft`), the renderer treats that size as the maximum and chooses the largest supported integer size that fits `maxWidth`/`width`.
@@ -371,7 +373,7 @@ WiFi:
   "firmware": "1.0.0",
   "deviceId": "14799300",
   "networkMode": "off",
-  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
+  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "usage-pace-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {
@@ -394,6 +396,7 @@ WiFi:
       "supportsProviderAssetsV1": true,
       "supportsColorStopsV1": true,
       "supportsTextValignV1": true,
+      "supportsUsagePaceV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -431,6 +434,7 @@ Fields:
   - `theme.supportsProviderAssetsV1` gates `providerAssets` / `pa` sprite maps. Older firmware ignores `pa` and draws `assetPath` / `a`; that fallback is compatible only when `a` is a valid sprite. Hosts still require the capability (or `minFirmware` 1.0.42) before installing a pack that uses `pa`.
   - `theme.supportsColorStopsV1` gates `colorStops` / `cs`. Older firmware uses solid `c`. Stops are authored against remaining-style percent; when the frame `usageMode` is `used`, firmware matches `100 - percent` so warning colors stay correct.
   - `theme.supportsTextValignV1` gates `valign` / `va`. Older firmware treats `y` as the glyph top, so shrink+middle is not a compatible fallback. Hosts must not install a spec that emits `va` onto firmware without this capability.
+  - `theme.supportsUsagePaceV1` (feature `usage-pace-v1`) gates `usageWindows[].pace` on the wire and the `usageSlotNPace*` bindings. Hosts send pace only to firmware that advertises it and must not install a spec that uses those bindings elsewhere.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.
