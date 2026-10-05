@@ -1755,7 +1755,7 @@ async function testSettingsErrorPopupSurvivesHealthyPoll(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
   const wifi = {
     ...companionDevice, active: true,
-    capabilities: { ...companionDevice.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] } },
+    capabilities: { ...companionDevice.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true } },
   };
   await routeCompanionOnline(page, [], () => {}, { device: wifi, connectionModeChoiceRequired: false });
   let attempts = 0;
@@ -1812,7 +1812,7 @@ async function testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appUrl) 
   const wifi = {
     ...cable,
     target: "http://192.168.1.42",
-    capabilities: { ...cable.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] } },
+    capabilities: { ...cable.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true } },
   };
   let previewAvailable = true;
   let searches = 0;
