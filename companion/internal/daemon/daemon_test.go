@@ -3872,6 +3872,52 @@ func TestDaemonSoakSimulation24hEquivalent(t *testing.T) {
 	}
 }
 
+// #500: a provider's own failure must leave a trace, once per change.
+func TestProviderCollectorLogsProviderFailureKindOnChange(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	var logs []string
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
+		order:           []string{"codex", "claude"},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	claudeFails := true
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		claude := testParsedFrame("claude", 28, 35, 7200)
+		if claudeFails {
+			claude.Frame.Error = "Claude usage request timed out after 24s"
+		}
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600), claude}, nil
+	}
+	collector.collectOnce(context.Background())
+	collector.collectOnce(context.Background())
+	claudeFails = false
+	collector.collectOnce(context.Background())
+	collector.collectOnce(context.Background())
+
+	var got []string
+	for _, line := range logs {
+		if strings.HasPrefix(line, "collector provider-error ") {
+			got = append(got, strings.TrimSpace(line))
+		}
+	}
+	want := []string{"collector provider-error claude=timeout", "collector provider-error claude=recovered"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("provider failure log = %q, want %q", got, want)
+	}
+	for _, line := range logs {
+		if strings.Contains(line, "24s") {
+			t.Fatalf("raw provider error text reached the log: %q", line)
+		}
+	}
+}
+
 func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 

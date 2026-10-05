@@ -678,6 +678,12 @@ func browserSignInPage(id, detail string) string {
 // that case; telling the customer to "sign in again" would send them in a
 // circle.
 func classifyProviderErrorFor(id, detail string) string {
+	return ProviderErrorKind(id, detail)
+}
+
+// ProviderErrorKind names a CodexBar provider failure by its readiness status
+// (timeout, auth_required, ...) without repeating the raw message.
+func ProviderErrorKind(id, detail string) string {
 	if browserSignInPage(id, detail) != "" {
 		return ProviderBrowserSignInRequired
 	}

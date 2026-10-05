@@ -80,10 +80,13 @@ type providerCollector struct {
 	// inventory read failed. 0 means the map is current. After one miss the
 	// older map may still keep a running fallback; after more it is unknown,
 	// because the provider may have been switched on again meanwhile.
-	inventoryMissedReads    int
-	firstCollectStarted     bool
-	firstCollectDone        bool
-	lastFetchErr            error
+	inventoryMissedReads int
+	firstCollectStarted  bool
+	firstCollectDone     bool
+	lastFetchErr         error
+	// providerErrors holds each provider's last logged failure kind, so a
+	// failing provider is logged when its failure changes, not every cycle.
+	providerErrors          map[string]string
 	tokenStatsMu            sync.Mutex
 	tokenStatsRunning       bool
 	tokenStatsCancel        context.CancelFunc
@@ -402,17 +405,30 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		c.providers[key] = snapshot
 		updated = true
 	}
+	var providerErrorLog []string
 	for _, parsed := range allProviders {
 		frame := parsed.Frame.Normalize()
-		if strings.TrimSpace(frame.Error) != "" {
-			continue
-		}
-
 		key := normalizeProviderKey(parsed.Provider)
 		if key == "" {
 			key = normalizeProviderKey(parsed.Frame.Provider)
 		}
-		if key == "" {
+		// A provider's own failure used to vanish here without a trace, so
+		// support could not tell a timeout from a lost sign-in (#500).
+		kind := ""
+		if detail := strings.TrimSpace(frame.Error); detail != "" {
+			kind = codexbar.ProviderErrorKind(key, detail)
+		}
+		if key != "" && kind != c.providerErrors[key] {
+			if c.providerErrors == nil {
+				c.providerErrors = make(map[string]string)
+			}
+			c.providerErrors[key] = kind
+			if kind == "" {
+				kind = "recovered"
+			}
+			providerErrorLog = append(providerErrorLog, key+"="+kind)
+		}
+		if strings.TrimSpace(frame.Error) != "" || key == "" {
 			continue
 		}
 		if inventoryAuthoritative {
@@ -473,6 +489,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 
 	if updated {
 		c.persistIfNeeded(collectedAt)
+	}
+	for _, change := range providerErrorLog {
+		c.logf("collector provider-error %s\n", change)
 	}
 	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
 }
