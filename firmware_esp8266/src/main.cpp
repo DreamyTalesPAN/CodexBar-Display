@@ -382,20 +382,47 @@ void applyDeviceSettings() {
   }
 }
 
+// Replaces a small record file through a temporary copy, so a power cut leaves
+// the old or the new record, never half of one.
+bool writeRecordFile(const char* path, const char* temporaryPath, const uint8_t* record, size_t size) {
+  if (!LittleFS.begin()) {
+    return false;
+  }
+  File file = LittleFS.open(temporaryPath, "w");
+  if (!file) {
+    return false;
+  }
+  const size_t written = file.write(record, size);
+  file.close();
+  if (written != size || !LittleFS.rename(temporaryPath, path)) {
+    LittleFS.remove(temporaryPath);
+    return false;
+  }
+  return true;
+}
+
+// The bytes read from a record file, or -1 when there is none.
+int readRecordFile(const char* path, uint8_t* record, size_t size) {
+  if (!LittleFS.begin() || !LittleFS.exists(path)) {
+    return -1;
+  }
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    return -1;
+  }
+  const int readBytes = file.read(record, size);
+  file.close();
+  return readBytes;
+}
+
 bool loadDeviceSettings() {
   deviceSettings = DeviceSettings{};
-  if (!LittleFS.begin() || !LittleFS.exists(kDeviceSettingsPath)) {
-    applyDeviceSettings();
-    return false;
-  }
-  File file = LittleFS.open(kDeviceSettingsPath, "r");
-  if (!file) {
-    applyDeviceSettings();
-    return false;
-  }
   uint8_t record[kDeviceSettingsRecordBytes] = {};
-  const int readBytes = file.read(record, sizeof(record));
-  file.close();
+  const int readBytes = readRecordFile(kDeviceSettingsPath, record, sizeof(record));
+  if (readBytes < 0) {
+    applyDeviceSettings();
+    return false;
+  }
   const int brightness = readBytes >= 1 ? record[0] : -1;
   deviceSettings.brightnessPercent =
       codexbar_display::esp8266::device_settings::BrightnessFromPersistedByte(brightness);
@@ -443,13 +470,6 @@ bool loadDeviceSettings() {
 }
 
 bool saveDeviceSettings() {
-  if (!LittleFS.begin()) {
-    return false;
-  }
-  File file = LittleFS.open(kDeviceSettingsTemporaryPath, "w");
-  if (!file) {
-    return false;
-  }
   uint8_t record[kDeviceSettingsRecordBytes] = {};
   record[0] = deviceSettings.brightnessPercent;
   deviceclock::EncodeUtcOffset(runtimeCtx.clock, record + 1);
@@ -458,17 +478,7 @@ bool saveDeviceSettings() {
       runtimeCtx.clock, record + kClockTransitionRecordOffset);
   record[kConnectionModeRecordOffset] =
       static_cast<uint8_t>(deviceSettings.connectionMode);
-  const size_t written = file.write(record, sizeof(record));
-  file.close();
-  if (written != sizeof(record)) {
-    LittleFS.remove(kDeviceSettingsTemporaryPath);
-    return false;
-  }
-  if (!LittleFS.rename(kDeviceSettingsTemporaryPath, kDeviceSettingsPath)) {
-    LittleFS.remove(kDeviceSettingsTemporaryPath);
-    return false;
-  }
-  return true;
+  return writeRecordFile(kDeviceSettingsPath, kDeviceSettingsTemporaryPath, record, sizeof(record));
 }
 
 bool clearConnectionTransition() {
@@ -486,39 +496,6 @@ bool clearConnectionTransition() {
   connectionTransitionPending = false;
   connectionTransitionStartedAtMs = 0;
   return true;
-}
-
-// Replaces a small record file through a temporary copy, so a power cut leaves
-// the old or the new record, never half of one.
-bool writeRecordFile(const char* path, const char* temporaryPath, const uint8_t* record, size_t size) {
-  if (!LittleFS.begin()) {
-    return false;
-  }
-  File file = LittleFS.open(temporaryPath, "w");
-  if (!file) {
-    return false;
-  }
-  const size_t written = file.write(record, size);
-  file.close();
-  if (written != size || !LittleFS.rename(temporaryPath, path)) {
-    LittleFS.remove(temporaryPath);
-    return false;
-  }
-  return true;
-}
-
-// The bytes read from a record file, or -1 when there is none.
-int readRecordFile(const char* path, uint8_t* record, size_t size) {
-  if (!LittleFS.begin() || !LittleFS.exists(path)) {
-    return -1;
-  }
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    return -1;
-  }
-  const int readBytes = file.read(record, size);
-  file.close();
-  return readBytes;
 }
 
 bool saveConnectionTransition(const device_settings::ConnectionTransition& transition) {
@@ -1589,7 +1566,11 @@ bool saveKnownWifiNetworks(const wifi_known::List& list) {
 }
 
 bool forgetKnownWifiNetworks() {
-  return !LittleFS.begin() || !LittleFS.exists(kKnownWifiPath) || LittleFS.remove(kKnownWifiPath);
+  if (!LittleFS.begin()) {
+    return true;
+  }
+  LittleFS.remove(kKnownWifiTemporaryPath);  // a save cut short by power loss
+  return !LittleFS.exists(kKnownWifiPath) || LittleFS.remove(kKnownWifiPath);
 }
 
 // The network a save replaces stays known, so moving back to it needs no new
@@ -4551,11 +4532,12 @@ void setup() {
     return;
   }
 
+  // Remembered networks back up the current one. Without a current network
+  // (Reset WiFi, also on older firmware) they are not used, and a switch to new
+  // credentials keeps its own rollback instead of landing on an old network.
   if (!wifiConnected && hasSavedWifi) {
-    wifiConnected = connectToSavedWifi(savedWifiCredentials);
-  }
-  if (!wifiConnected) {
-    wifiConnected = connectToKnownWifi();
+    wifiConnected = connectToSavedWifi(savedWifiCredentials) ||
+                    (!connectionTransitionPending && connectToKnownWifi());
   }
   if (wifiConnected) {
     setupMode = false;

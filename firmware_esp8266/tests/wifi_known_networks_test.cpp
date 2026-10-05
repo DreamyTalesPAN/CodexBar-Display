@@ -103,6 +103,14 @@ bool testCandidatesAreVisibleNetworksStrongestFirst() {
                 "visible networks are tried strongest first");
 }
 
+std::size_t countOf(const std::string& source, const char* needle) {
+  std::size_t count = 0;
+  for (std::size_t at = source.find(needle); at != std::string::npos; at = source.find(needle, at + 1)) {
+    ++count;
+  }
+  return count;
+}
+
 std::string functionBody(const std::string& source, const char* signature) {
   const std::size_t start = source.find(signature);
   if (start == std::string::npos) {
@@ -113,20 +121,29 @@ std::string functionBody(const std::string& source, const char* signature) {
 }
 
 // The EEPROM and LittleFS drivers cannot run natively, so the wiring is
-// checked in the source: reset forgets every network, a save keeps the one it
-// replaces, and boot falls back to the remembered ones before setup.
+// checked in the source: reset forgets every network (and a half-written
+// list), a save keeps the one it replaces, and boot falls back to the
+// remembered ones before setup -- only behind a current network and never
+// during a switch to new credentials, which keeps its own rollback.
 bool testFirmwareWiring(const std::string& source) {
   const std::string clear = functionBody(source, "bool clearWifiCredentials() {");
+  const std::string forget = functionBody(source, "bool forgetKnownWifiNetworks() {");
   const std::string save = functionBody(source, "bool saveWifiCredentials(");
-  const std::size_t saved = source.find("wifiConnected = connectToSavedWifi(savedWifiCredentials);");
-  const std::size_t known = source.find("wifiConnected = connectToKnownWifi();", saved);
-  const std::size_t setupAp = source.find("startSetupAccessPoint();", known);
+  const std::size_t boot = source.find(
+      "  if (!wifiConnected && hasSavedWifi) {\n"
+      "    wifiConnected = connectToSavedWifi(savedWifiCredentials) ||\n"
+      "                    (!connectionTransitionPending && connectToKnownWifi());\n"
+      "  }");
+  const std::size_t setupAp = source.find("startSetupAccessPoint();", boot);
   return expect(clear.find("forgetKnownWifiNetworks()") != std::string::npos,
                 "Reset WiFi must forget every remembered network") &&
+         expect(forget.find("LittleFS.remove(kKnownWifiTemporaryPath)") != std::string::npos,
+                "Reset WiFi must also drop a list a power cut left half-written") &&
          expect(save.find("rememberReplacedWifiNetwork(ssid)") < save.find("EEPROM.put(0, kWifiCredsMagic)"),
                 "saving a network must first remember the one it replaces") &&
-         expect(saved != std::string::npos && known != std::string::npos && setupAp != std::string::npos,
-                "boot must try remembered networks after the current one and before setup");
+         expect(boot != std::string::npos && setupAp != std::string::npos &&
+                    countOf(source, "connectToKnownWifi()") == 2,  // its definition and that one call
+                "boot must try remembered networks only after the current one, outside a switch, before setup");
 }
 
 }  // namespace
