@@ -894,7 +894,9 @@ inline bool StringEqualsAny(const char* value, const char* a, const char* b, con
          (c != nullptr && std::strcmp(value, c) == 0);
 }
 
-inline bool TemplateUsesField(const char* raw, const char* a, const char* b, const char* c = nullptr) {
+// Calls fn(key) for every "{key}" placeholder in a text template.
+template <typename Fn>
+inline void ForEachTemplateKey(const char* raw, Fn fn) {
   raw = SafeText(raw);
   for (size_t i = 0; raw[i] != '\0'; ++i) {
     if (raw[i] != '{') {
@@ -902,19 +904,16 @@ inline bool TemplateUsesField(const char* raw, const char* a, const char* b, con
     }
     const char* close = std::strchr(raw + i + 1, '}');
     if (close == nullptr) {
-      return false;
+      return;
     }
     char key[32] = {0};
     const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
     if (keyLen > 0 && keyLen < sizeof(key)) {
       std::memcpy(key, raw + i + 1, keyLen);
-      if (StringEqualsAny(key, a, b, c)) {
-        return true;
-      }
+      fn(static_cast<const char*>(key));
     }
     i += keyLen + 1;
   }
-  return false;
 }
 
 inline uint32_t BindingFieldMask(const char* binding) {
@@ -965,66 +964,10 @@ inline uint32_t BindingFieldMask(const char* binding) {
   return 0;
 }
 
+// A placeholder draws exactly what the same key would draw as a binding.
 inline uint32_t TextTemplateFieldMask(const char* raw) {
   uint32_t fields = 0;
-  if (TemplateUsesField(raw, "usageSlot1Reset", "us1r") ||
-      TemplateUsesField(raw, "usageSlot2Reset", "us2r")) {
-    fields |= kThemeSpecFieldUsageWindowReset;
-  }
-  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
-    char binding[24];
-    std::snprintf(binding, sizeof(binding), "usage.%u.reset", static_cast<unsigned>(i));
-    if (TemplateUsesField(raw, binding, nullptr)) {
-      fields |= kThemeSpecFieldUsageWindowReset;
-    }
-  }
-  if (TemplateUsesField(raw, "provider", "pr")) {
-    fields |= kThemeSpecFieldProvider;
-  }
-  if (TemplateUsesField(raw, "label", "providerLabel", "l")) {
-    fields |= kThemeSpecFieldLabel;
-  }
-  if (TemplateUsesField(raw, "session", "sessionPercent", "s")) {
-    fields |= kThemeSpecFieldSession;
-  }
-  if (TemplateUsesField(raw, "weekly", "weeklyPercent", "w")) {
-    fields |= kThemeSpecFieldWeekly;
-  }
-  if (TemplateUsesField(raw, "reset", "resetCountdown", "r")) {
-    fields |= kThemeSpecFieldReset;
-  }
-  if (std::strstr(SafeText(raw), "{usage.") != nullptr ||
-      TemplateUsesField(raw, "usageSlot1Label", "us1l") ||
-      TemplateUsesField(raw, "usageSlot1Percent", "us1p") ||
-      TemplateUsesField(raw, "usageSlot1Reset", "us1r") ||
-      TemplateUsesField(raw, "usageSlot1Available", "us1a") ||
-      TemplateUsesField(raw, "usageSlot2Label", "us2l") ||
-      TemplateUsesField(raw, "usageSlot2Percent", "us2p") ||
-      TemplateUsesField(raw, "usageSlot2Reset", "us2r") ||
-      TemplateUsesField(raw, "usageSlot2Available", "us2a")) {
-    fields |= kThemeSpecFieldUsageWindows;
-  }
-  if (TemplateUsesField(raw, "usageMode", "u")) {
-    fields |= kThemeSpecFieldUsageMode;
-  }
-  if (TemplateUsesField(raw, "activity", "act")) {
-    fields |= kThemeSpecFieldActivity;
-  }
-  if (TemplateUsesField(raw, "time", "tm")) {
-    fields |= kThemeSpecFieldTime;
-  }
-  if (TemplateUsesField(raw, "date", "dt")) {
-    fields |= kThemeSpecFieldDate;
-  }
-  if (TemplateUsesField(raw, "sessionTokens", "st")) {
-    fields |= kThemeSpecFieldSessionTokens;
-  }
-  if (TemplateUsesField(raw, "weekTokens", "wt")) {
-    fields |= kThemeSpecFieldWeekTokens;
-  }
-  if (TemplateUsesField(raw, "totalTokens", "tt")) {
-    fields |= kThemeSpecFieldTotalTokens;
-  }
+  ForEachTemplateKey(raw, [&fields](const char* key) { fields |= BindingFieldMask(key); });
   return fields;
 }
 

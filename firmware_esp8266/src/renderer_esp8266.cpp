@@ -350,8 +350,8 @@ updatenotice::Surface RendererESP8266::FirmwareUpdateNoticeSurface(app::RuntimeC
   if (!display::CurrentThemeSpecRenderedSuccessfully()) {
     return updatenotice::Surface::None;
   }
-  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-  if (core::ThemeSpecUsesBinding(raw, "label", "l")) {
+  if (core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame())
+          .Uses(codexbar_display::themespec::kThemeSpecFieldLabel)) {
     return updatenotice::Surface::Label;
   }
   if (display::FirmwareUpdateOverlayBarPlacement().valid) {
@@ -412,9 +412,9 @@ bool RendererESP8266::ClearFirmwareUpdateNoticeSurface(app::RuntimeContext& ctx)
     return display::RenderThemeSpecRegion(
         0, overlayY, display::Tft().width(), display::kFirmwareUpdateNoticeBarHeight);
   }
-  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
   if (display::CurrentThemeSpecRenderedSuccessfully() &&
-      core::ThemeSpecUsesBinding(raw, "label", "l")) {
+      core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame())
+          .Uses(codexbar_display::themespec::kThemeSpecFieldLabel)) {
     return display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel);
   }
   return true;
@@ -475,14 +475,9 @@ bool RendererESP8266::DrawClock(app::RuntimeContext& ctx) {
   if (!display::CurrentFrame().hasThemeSpec || !display::CurrentThemeSpecRenderedSuccessfully()) {
     return false;
   }
-  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-  uint32_t fields = 0;
-  if (core::ThemeSpecUsesBinding(raw, "time", "tm")) {
-    fields |= codexbar_display::themespec::kThemeSpecFieldTime;
-  }
-  if (core::ThemeSpecUsesBinding(raw, "date", "dt")) {
-    fields |= codexbar_display::themespec::kThemeSpecFieldDate;
-  }
+  const uint32_t fields =
+      core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame()).fields &
+      (codexbar_display::themespec::kThemeSpecFieldTime | codexbar_display::themespec::kThemeSpecFieldDate);
   if (fields == 0) {
     return false;
   }
@@ -498,16 +493,10 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-    uint32_t countdownFields = 0;
-    if (core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
-      countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
-    }
-    for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
-      if (core::ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
-        countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
-      }
-    }
+    const uint32_t countdownFields =
+        core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame()).fields &
+        (codexbar_display::themespec::kThemeSpecFieldReset |
+         codexbar_display::themespec::kThemeSpecFieldUsageWindowReset);
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {

@@ -191,6 +191,33 @@ struct ResetTrustState {
   String source;
 };
 
+// What a ThemeSpec actually draws, read from the compiled primitives the
+// renderer itself uses. Searching the raw JSON for field names instead took a
+// rectangle ("t":"r") for the reset countdown and a width ("w") for weekly
+// usage, and repainted the whole screen whenever such a value moved (#253).
+struct ThemeSpecLiveUse {
+  uint32_t fields = 0;
+  uint8_t usageWindows = 0;       // bit i: usage window i
+  uint8_t usageWindowResets = 0;  // bit i: usage window i's countdown
+  uint8_t providerSlots = 0;
+  uint8_t providerSlotResets = 0;
+
+  static ThemeSpecLiveUse All() {
+    ThemeSpecLiveUse use;
+    use.fields = 0xFFFFFFFFUL;
+    use.usageWindows = 0xFF;
+    use.usageWindowResets = 0xFF;
+    use.providerSlots = 0xFF;
+    use.providerSlotResets = 0xFF;
+    return use;
+  }
+  bool Uses(uint32_t field) const { return (fields & field) != 0; }
+  bool UsesUsageWindow(size_t i) const { return (usageWindows >> i) & 1U; }
+  bool UsesUsageWindowReset(size_t i) const { return (usageWindowResets >> i) & 1U; }
+  bool UsesProviderSlot(size_t i) const { return (providerSlots >> i) & 1U; }
+  bool UsesProviderSlotReset(size_t i) const { return (providerSlotResets >> i) & 1U; }
+};
+
 struct RuntimeState {
   Frame current;
   bool hasFrame = false;
@@ -201,6 +228,7 @@ struct RuntimeState {
   int cachedThemeRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   String cachedThemeSpecRaw;
+  ThemeSpecLiveUse cachedThemeLiveUse;
 #endif
 };
 
@@ -552,39 +580,6 @@ inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
   return false;
 }
 
-inline bool ThemeSpecUsesBinding(const String& raw, const char* fullName, const char* compactName) {
-  if (fullName != nullptr && raw.indexOf(fullName) >= 0) {
-    return true;
-  }
-  if (compactName == nullptr) {
-    return false;
-  }
-  String compactNeedle = "\"";
-  compactNeedle += compactName;
-  compactNeedle += "\"";
-  return raw.indexOf(compactNeedle.c_str()) >= 0;
-}
-
-inline bool ThemeSpecUsesActivity(const String& raw) {
-  return ThemeSpecUsesBinding(raw, "activity", "act") ||
-         raw.indexOf("stateAssets") >= 0 ||
-         raw.indexOf("\"sa\"") >= 0;
-}
-
-inline bool ThemeSpecUsesProviderAssets(const String& raw) {
-  return ThemeSpecUsesBinding(raw, "providerAssets", "pa");
-}
-
-inline bool ThemeSpecUsesColorStops(const String& raw) {
-  return ThemeSpecUsesBinding(raw, "colorStops", "cs");
-}
-
-inline bool ThemeSpecUsesTokenFields(const String& raw) {
-  return ThemeSpecUsesBinding(raw, "sessionTokens", "st") ||
-         ThemeSpecUsesBinding(raw, "weekTokens", "wt") ||
-         ThemeSpecUsesBinding(raw, "totalTokens", "tt");
-}
-
 inline bool ThemeSpecRawLooksRenderable(const String& raw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   return raw.indexOf("primitives") >= 0 || raw.indexOf("\"p\"") >= 0;
@@ -594,18 +589,84 @@ inline bool ThemeSpecRawLooksRenderable(const String& raw) {
 #endif
 }
 
-inline bool ThemeSpecRawCompiles(const String& raw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+inline bool ThemeSpecSlotKeyIsReset(const char* key) {
+  // The compact countdown keys are us1r/us2r and pv1r/pv2r.
+  return std::strcmp(themespec::UsageWindowField(key), "reset") == 0 ||
+         (std::strlen(key) == 4 && key[3] == 'r');
+}
+
+inline void AddThemeSpecSlotKeyUse(const char* key, ThemeSpecLiveUse& use) {
+  int index = themespec::ProviderSlotBindingIndex(key);
+  if (index >= 0) {
+    use.providerSlots |= static_cast<uint8_t>(1U << index);
+    if (ThemeSpecSlotKeyIsReset(key)) {
+      use.providerSlotResets |= static_cast<uint8_t>(1U << index);
+    }
+    return;
+  }
+  index = themespec::UsageWindowBindingIndex(key);
+  if (index >= 0 && static_cast<size_t>(index) < kMaxUsageWindows) {
+    use.usageWindows |= static_cast<uint8_t>(1U << index);
+    if (ThemeSpecSlotKeyIsReset(key)) {
+      use.usageWindowResets |= static_cast<uint8_t>(1U << index);
+    }
+  }
+}
+
+inline ThemeSpecLiveUse CompiledThemeSpecLiveUse(const themespec::CompiledThemeSpec& scene) {
+  ThemeSpecLiveUse use;
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const themespec::CompiledPrimitive& primitive = scene.primitives[i];
+    use.fields |= primitive.liveFields;
+    if (primitive.usageSlot > 0) {
+      use.usageWindows |= static_cast<uint8_t>(1U << (primitive.usageSlot - 1));
+    }
+    if (primitive.providerSlot > 0) {
+      use.providerSlots |= static_cast<uint8_t>(1U << (primitive.providerSlot - 1));
+    }
+    if (primitive.binding != nullptr) {
+      AddThemeSpecSlotKeyUse(primitive.binding, use);
+    } else if (primitive.kind == themespec::PrimitiveKind::Text) {
+      themespec::ForEachTemplateKey(primitive.text, [&use](const char* key) {
+        AddThemeSpecSlotKeyUse(key, use);
+      });
+    }
+  }
+  return use;
+}
+
+// Compiles once per theme, never per frame. A spec that looks renderable but
+// cannot be compiled here (e.g. low heap) counts as using everything: an extra
+// redraw is harmless, a missed one would leave stale numbers on the screen.
+inline bool ThemeSpecLiveUseForRaw(const String& raw, ThemeSpecLiveUse& out) {
+  out = ThemeSpecLiveUse{};
+  if (!ThemeSpecRawLooksRenderable(raw)) {
+    return false;
+  }
   JsonDocument doc;
   themespec::CompiledThemeSpec scene;
   const bool ok = themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  out = ok ? CompiledThemeSpecLiveUse(scene) : ThemeSpecLiveUse::All();
   themespec::ReleaseCompiledThemeSpec(scene);
   return ok;
-#else
-  (void)raw;
-  return false;
-#endif
 }
+
+inline ThemeSpecLiveUse ThemeSpecLiveUseForRaw(const String& raw) {
+  ThemeSpecLiveUse use;
+  (void)ThemeSpecLiveUseForRaw(raw, use);
+  return use;
+}
+
+inline void CacheThemeSpec(RuntimeState& runtimeState, const String& themeId, int themeRev, const String& raw) {
+  if (runtimeState.cachedThemeSpecRaw != raw) {
+    runtimeState.cachedThemeLiveUse = ThemeSpecLiveUseForRaw(raw);
+  }
+  runtimeState.cachedThemeId = themeId;
+  runtimeState.cachedThemeRev = themeRev;
+  runtimeState.cachedThemeSpecRaw = raw;
+}
+#endif
 
 inline const String& EmptyThemeSpecRaw() {
   static const String empty;
@@ -631,9 +692,31 @@ inline const String& ThemeSpecRawForFrame(const RuntimeState& runtimeState, cons
   return EmptyThemeSpecRaw();
 }
 
-inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& next, const String& raw) {
+inline const ThemeSpecLiveUse& ThemeSpecLiveUseForFrame(const RuntimeState& runtimeState, const Frame& frame) {
+  static const ThemeSpecLiveUse none;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  if (!next.hasThemeSpec || !ThemeSpecUsesTokenFields(raw)) {
+  // Every renderable spec a frame carries is cached first, so the cache
+  // describes the spec ThemeSpecRawForFrame returns for this frame.
+  if (frame.hasThemeSpec &&
+      runtimeState.cachedThemeRev > 0 &&
+      runtimeState.cachedThemeId == frame.themeSpecId &&
+      runtimeState.cachedThemeRev == frame.themeSpecRev &&
+      ThemeSpecRawLooksRenderable(runtimeState.cachedThemeSpecRaw)) {
+    return runtimeState.cachedThemeLiveUse;
+  }
+#else
+  (void)runtimeState;
+  (void)frame;
+#endif
+  return none;
+}
+
+inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& next, const ThemeSpecLiveUse& use) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (!next.hasThemeSpec ||
+      !use.Uses(themespec::kThemeSpecFieldSessionTokens |
+                themespec::kThemeSpecFieldWeekTokens |
+                themespec::kThemeSpecFieldTotalTokens)) {
     return false;
   }
   return previous.hasTokenTotals != next.hasTokenTotals ||
@@ -643,172 +726,62 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
 #else
   (void)previous;
   (void)next;
+  (void)use;
   return false;
 #endif
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-inline bool ThemeSpecJsonWhitespace(char ch) {
-  return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t';
-}
-
-inline bool ThemeSpecRawHasJsonNumber(const String& raw, const char* key, unsigned expected) {
-  char quotedKey[24] = {0};
-  std::snprintf(quotedKey, sizeof(quotedKey), "\"%s\"", key);
-
-  const char* pos = std::strstr(raw.c_str(), quotedKey);
-  while (pos != nullptr) {
-    const char* cursor = pos + std::strlen(quotedKey);
-    while (ThemeSpecJsonWhitespace(*cursor)) {
-      ++cursor;
-    }
-    if (*cursor == ':') {
-      ++cursor;
-      while (ThemeSpecJsonWhitespace(*cursor)) {
-        ++cursor;
-      }
-
-      unsigned value = 0;
-      bool hasDigit = false;
-      while (*cursor != '\0') {
-        if (*cursor < '0' || *cursor > '9') {
-          break;
-        }
-        hasDigit = true;
-        value = (value * 10U) + static_cast<unsigned>(*cursor - '0');
-        ++cursor;
-      }
-      if (hasDigit && value == expected) {
-        return true;
-      }
-    }
-    pos = std::strstr(pos + 1, quotedKey);
-  }
-  return false;
-}
-
-inline bool ThemeSpecUsesUsageWindowBinding(const String& raw, size_t slotIndex) {
-  char longName[16] = {0};
-  char indexedName[16] = {0};
-  char compactPrefix[8] = {0};
-  char compactTemplate[8] = {0};
-  std::snprintf(longName, sizeof(longName), "usageSlot%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(indexedName, sizeof(indexedName), "usage.%u.", static_cast<unsigned>(slotIndex));
-  std::snprintf(compactPrefix, sizeof(compactPrefix), "\"us%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(compactTemplate, sizeof(compactTemplate), "{us%u", static_cast<unsigned>(slotIndex + 1));
-  return raw.indexOf(longName) >= 0 ||
-         raw.indexOf(indexedName) >= 0 ||
-         raw.indexOf(compactPrefix) >= 0 ||
-         raw.indexOf(compactTemplate) >= 0 ||
-         ThemeSpecRawHasJsonNumber(raw, "ui", static_cast<unsigned>(slotIndex)) ||
-         ThemeSpecRawHasJsonNumber(raw, "usageIndex", static_cast<unsigned>(slotIndex)) ||
-         ThemeSpecRawHasJsonNumber(raw, "sl", static_cast<unsigned>(slotIndex + 1)) ||
-         ThemeSpecRawHasJsonNumber(raw, "slot", static_cast<unsigned>(slotIndex + 1));
-}
-
-inline bool ThemeSpecUsesProviderSlotBinding(const String& raw, size_t slotIndex) {
-  char longName[20] = {0};
-  char compactPrefix[8] = {0};
-  char compactTemplate[8] = {0};
-  std::snprintf(longName, sizeof(longName), "providerSlot%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(compactPrefix, sizeof(compactPrefix), "\"pv%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(compactTemplate, sizeof(compactTemplate), "{pv%u", static_cast<unsigned>(slotIndex + 1));
-  return raw.indexOf(longName) >= 0 ||
-         raw.indexOf(compactPrefix) >= 0 ||
-         raw.indexOf(compactTemplate) >= 0 ||
-         ThemeSpecRawHasJsonNumber(raw, "pl", static_cast<unsigned>(slotIndex + 1)) ||
-         ThemeSpecRawHasJsonNumber(raw, "providerSlot", static_cast<unsigned>(slotIndex + 1));
-}
-
-inline bool ThemeSpecUsesUsageWindowResetBinding(const String& raw, size_t slotIndex) {
-  char longName[24] = {0};
-  char indexedName[24] = {0};
-  char compactName[8] = {0};
-  std::snprintf(longName, sizeof(longName), "usageSlot%uReset", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(indexedName, sizeof(indexedName), "usage.%u.reset", static_cast<unsigned>(slotIndex));
-  std::snprintf(compactName, sizeof(compactName), "us%ur", static_cast<unsigned>(slotIndex + 1));
-  return raw.indexOf(longName) >= 0 || raw.indexOf(indexedName) >= 0 || raw.indexOf(compactName) >= 0;
-}
-
-inline bool ThemeSpecUsesProviderSlotResetBinding(const String& raw, size_t slotIndex) {
-  char longName[28] = {0};
-  char compactName[8] = {0};
-  std::snprintf(longName, sizeof(longName), "providerSlot%uReset", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(compactName, sizeof(compactName), "pv%ur", static_cast<unsigned>(slotIndex + 1));
-  return raw.indexOf(longName) >= 0 || raw.indexOf(compactName) >= 0;
-}
-
 inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
   return remainingSecs / 60 != lastRenderedMinuteBucket;
 }
-
-inline uint32_t ThemeSpecUsageWindowField(size_t slotIndex) {
-  (void)slotIndex;
-  return themespec::kThemeSpecFieldUsageWindows;
-}
 #endif
 
-inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& next, const String& raw) {
+inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& next, const ThemeSpecLiveUse& use) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  const bool usesLabel = ThemeSpecUsesBinding(raw, "label", "l");
-  bool usesUsageWindows = false;
-  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    usesUsageWindows = usesUsageWindows || ThemeSpecUsesUsageWindowBinding(raw, i);
-  }
-  bool providerSlotsChanged = false;
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
-    if (ThemeSpecUsesProviderSlotBinding(raw, i) &&
-        UsageWindowChanged(
-            previous.providerSlots[i],
-            next.providerSlots[i],
-            ThemeSpecUsesProviderSlotResetBinding(raw, i))) {
-      providerSlotsChanged = true;
+    if (use.UsesProviderSlot(i) &&
+        UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i], use.UsesProviderSlotReset(i))) {
+      return true;
     }
   }
-  if (providerSlotsChanged) {
-    return true;
+  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
+    if (use.UsesUsageWindow(i) &&
+        UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], use.UsesUsageWindowReset(i))) {
+      return true;
+    }
   }
-  const bool usesUsage = ThemeSpecUsesBinding(raw, "session", "s") ||
-                         ThemeSpecUsesBinding(raw, "weekly", "w") ||
-                         ThemeSpecUsesBinding(raw, "reset", "r") ||
-                         usesUsageWindows;
-  return ((ThemeSpecUsesBinding(raw, "provider", "pr") || ThemeSpecUsesProviderAssets(raw)) &&
-          previous.provider != next.provider) ||
-         (usesLabel &&
+  const bool usesUsage = use.usageWindows != 0 ||
+                         use.Uses(themespec::kThemeSpecFieldSession |
+                                  themespec::kThemeSpecFieldWeekly |
+                                  themespec::kThemeSpecFieldReset);
+  return (use.Uses(themespec::kThemeSpecFieldProvider) && previous.provider != next.provider) ||
+         (use.Uses(themespec::kThemeSpecFieldLabel) &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
-         (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
-         (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
-         (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
-         (usesUsageWindows && [&]() {
-           for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-             if (ThemeSpecUsesUsageWindowBinding(raw, i) &&
-                 UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i],
-                                    ThemeSpecUsesUsageWindowResetBinding(raw, i))) {
-               return true;
-             }
-           }
-           return false;
-         }()) ||
+         (use.Uses(themespec::kThemeSpecFieldSession) && previous.session != next.session) ||
+         (use.Uses(themespec::kThemeSpecFieldWeekly) && previous.weekly != next.weekly) ||
+         (use.Uses(themespec::kThemeSpecFieldReset) && previous.resetSecs != next.resetSecs) ||
          (usesUsage &&
            (previous.usageUnavailable != next.usageUnavailable ||
             previous.sessionUnavailable != next.sessionUnavailable ||
             previous.weeklyUnavailable != next.weeklyUnavailable)) ||
-         ((ThemeSpecUsesBinding(raw, "usageMode", "u") || ThemeSpecUsesColorStops(raw)) &&
+         (use.Uses(themespec::kThemeSpecFieldUsageMode) &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
-         (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
-         FrameTokenStatsVisualChanged(previous, next, raw);
+         (use.Uses(themespec::kThemeSpecFieldActivity) && previous.activity != next.activity) ||
+         FrameTokenStatsVisualChanged(previous, next, use);
 #else
   (void)previous;
   (void)next;
-  (void)raw;
+  (void)use;
   return false;
 #endif
 }
 
+// The changed fields this spec draws; empty when it draws none of them.
 inline uint32_t ThemeSpecLiveChangedFields(
     const Frame& previous,
     const Frame& next,
-    const String& themeSpecRaw) {
+    const ThemeSpecLiveUse& use) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   uint32_t fields = 0;
   if (previous.provider != next.provider) {
@@ -823,16 +796,15 @@ inline uint32_t ThemeSpecLiveChangedFields(
   if (previous.weekly != next.weekly) {
     fields |= themespec::kThemeSpecFieldWeekly;
   }
-  if (previous.resetSecs != next.resetSecs &&
-      ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
+  if (previous.resetSecs != next.resetSecs) {
     fields |= themespec::kThemeSpecFieldReset;
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
-      fields |= ThemeSpecUsageWindowField(i);
+      fields |= themespec::kThemeSpecFieldUsageWindows;
     }
     if (previous.usageWindows[i].resetSecs != next.usageWindows[i].resetSecs &&
-        ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
+        use.UsesUsageWindowReset(i)) {
       fields |= themespec::kThemeSpecFieldUsageWindowReset;
     }
   }
@@ -840,17 +812,15 @@ inline uint32_t ThemeSpecLiveChangedFields(
     if (UsageWindowChanged(
             previous.providerSlots[i],
             next.providerSlots[i],
-            ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i))) {
+            use.UsesProviderSlotReset(i))) {
       fields |= themespec::kThemeSpecFieldProviderSlots;
     }
   }
   if (previous.usageUnavailable != next.usageUnavailable) {
     fields |= themespec::kThemeSpecFieldSession |
               themespec::kThemeSpecFieldWeekly |
-              themespec::kThemeSpecFieldReset;
-    for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-      fields |= ThemeSpecUsageWindowField(i);
-    }
+              themespec::kThemeSpecFieldReset |
+              themespec::kThemeSpecFieldUsageWindows;
   }
   if (previous.sessionUnavailable != next.sessionUnavailable) {
     fields |= themespec::kThemeSpecFieldSession;
@@ -874,10 +844,11 @@ inline uint32_t ThemeSpecLiveChangedFields(
   if (tokenAvailabilityChanged || previous.totalTokens != next.totalTokens) {
     fields |= themespec::kThemeSpecFieldTotalTokens;
   }
-  return fields;
+  return fields & use.fields;
 #else
   (void)previous;
   (void)next;
+  (void)use;
   return 0;
 #endif
 }
@@ -885,7 +856,7 @@ inline uint32_t ThemeSpecLiveChangedFields(
 inline bool ThemeSpecCanUsePartialRender(
     const Frame& previous,
     const Frame& next,
-    const String& themeSpecRaw,
+    const ThemeSpecLiveUse& use,
     bool hadFrame,
     bool visualChanged,
     bool themeSpecChanged) {
@@ -897,18 +868,17 @@ inline bool ThemeSpecCanUsePartialRender(
     return false;
   }
   if (previous.themeSpecId != next.themeSpecId ||
-      previous.themeSpecRev != next.themeSpecRev ||
-      !ThemeSpecRawLooksRenderable(themeSpecRaw)) {
+      previous.themeSpecRev != next.themeSpecRev) {
     return false;
   }
   if (previous.clearThemeSpec != next.clearThemeSpec) {
     return false;
   }
-  return ThemeSpecLiveChangedFields(previous, next, themeSpecRaw) != 0;
+  return ThemeSpecLiveChangedFields(previous, next, use) != 0;
 #else
   (void)previous;
   (void)next;
-  (void)themeSpecRaw;
+  (void)use;
   (void)hadFrame;
   (void)visualChanged;
   (void)themeSpecChanged;
@@ -1265,7 +1235,7 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   return true;
 }
 
-inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Frame& next, const String& themeSpecRaw) {
+inline bool FrameVisualChangedForThemeSpec(const Frame& previous, const Frame& next, const ThemeSpecLiveUse& use) {
   if (previous.hasError != next.hasError) {
     return true;
   }
@@ -1273,7 +1243,7 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
     return previous.error != next.error;
   }
   const bool dataChanged = next.hasThemeSpec
-                               ? FrameThemeSpecDataVisualChanged(previous, next, themeSpecRaw)
+                               ? FrameThemeSpecDataVisualChanged(previous, next, use)
                                : previous.provider != next.provider ||
                                      previous.label != next.label ||
                                      previous.session != next.session ||
@@ -1308,14 +1278,6 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
          previous.updateLastError != next.updateLastError;
 }
 
-inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  return FrameVisualChangedWithThemeSpecRaw(previous, next, next.themeSpecRaw);
-#else
-  return FrameVisualChangedWithThemeSpecRaw(previous, next, EmptyThemeSpecRaw());
-#endif
-}
-
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 inline bool RestoreStoredThemeSpecFrame(
     RuntimeState& runtimeState,
@@ -1325,7 +1287,8 @@ inline bool RestoreStoredThemeSpecFrame(
     unsigned long nowMillis,
     SerialConsumeEvent& outEvent) {
   outEvent = {};
-  if (themeId.length() == 0 || themeRev <= 0 || !ThemeSpecRawCompiles(raw)) {
+  ThemeSpecLiveUse use;
+  if (themeId.length() == 0 || themeRev <= 0 || !ThemeSpecLiveUseForRaw(raw, use)) {
     return false;
   }
 
@@ -1341,6 +1304,7 @@ inline bool RestoreStoredThemeSpecFrame(
   runtimeState.cachedThemeId = themeId;
   runtimeState.cachedThemeRev = themeRev;
   runtimeState.cachedThemeSpecRaw = raw;
+  runtimeState.cachedThemeLiveUse = use;
   runtimeState.current = next;
   runtimeState.hasFrame = true;
   runtimeState.resetBaseSecs = next.resetSecs;
@@ -1359,11 +1323,12 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
   }
 
   if (next.clearThemeSpec) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    CacheThemeSpec(runtimeState, "", 0, "");
+    next.themeSpecRaw = "";
+#else
     runtimeState.cachedThemeId = "";
     runtimeState.cachedThemeRev = 0;
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    runtimeState.cachedThemeSpecRaw = "";
-    next.themeSpecRaw = "";
 #endif
     next.hasThemeSpec = false;
     next.themeSpecId = "";
@@ -1382,9 +1347,7 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     const bool nextHasRenderableRaw = ThemeSpecRawLooksRenderable(next.themeSpecRaw);
     if (nextHasRenderableRaw) {
-      runtimeState.cachedThemeId = next.themeSpecId;
-      runtimeState.cachedThemeRev = next.themeSpecRev;
-      runtimeState.cachedThemeSpecRaw = next.themeSpecRaw;
+      CacheThemeSpec(runtimeState, next.themeSpecId, next.themeSpecRev, next.themeSpecRaw);
       return;
     }
 
@@ -1396,9 +1359,7 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
 
     if (samePreviousTheme) {
       if (ThemeSpecRawLooksRenderable(previous.themeSpecRaw)) {
-        runtimeState.cachedThemeId = previous.themeSpecId;
-        runtimeState.cachedThemeRev = previous.themeSpecRev;
-        runtimeState.cachedThemeSpecRaw = previous.themeSpecRaw;
+        CacheThemeSpec(runtimeState, previous.themeSpecId, previous.themeSpecRev, previous.themeSpecRaw);
       }
       next.themeSpecRaw = "";
       outEvent.themeSpecCacheHit = true;
@@ -1418,9 +1379,7 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
         next.hasThemeSpec = true;
         next.themeSpecId = previous.themeSpecId;
         next.themeSpecRev = previous.themeSpecRev;
-        runtimeState.cachedThemeId = previous.themeSpecId;
-        runtimeState.cachedThemeRev = previous.themeSpecRev;
-        runtimeState.cachedThemeSpecRaw = previous.themeSpecRaw;
+        CacheThemeSpec(runtimeState, previous.themeSpecId, previous.themeSpecRev, previous.themeSpecRaw);
         next.themeSpecRaw = "";
         outEvent.themeSpecCacheHit = true;
       return;
@@ -1481,14 +1440,14 @@ inline bool ConsumeFrameLine(
   outEvent.reportsWorking = !next.hasError && next.activity == "coding";
 
   outEvent.hadFrame = runtimeState.hasFrame;
-  const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);
-  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedWithThemeSpecRaw(previous, next, themeSpecRaw) || outEvent.themeSpecChanged;
+  const ThemeSpecLiveUse& themeSpecUse = ThemeSpecLiveUseForFrame(runtimeState, next);
+  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedForThemeSpec(previous, next, themeSpecUse) || outEvent.themeSpecChanged;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next, themeSpecRaw);
+  outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next, themeSpecUse);
   outEvent.themeSpecPartialRender = ThemeSpecCanUsePartialRender(
       previous,
       next,
-      themeSpecRaw,
+      themeSpecUse,
       outEvent.hadFrame,
       outEvent.visualChanged,
       outEvent.themeSpecChanged);

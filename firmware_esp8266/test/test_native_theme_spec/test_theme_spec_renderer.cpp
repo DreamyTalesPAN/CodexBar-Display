@@ -518,11 +518,12 @@ void testTokenAvailabilityFlipRepaintsTokenBindings() {
   codexbar_display::core::Frame next;
   next.hasThemeSpec = true;
   next.hasTokenTotals = true;
-  const String raw(R"JSON({"p":[{"t":"tx","b":"st"}]})JSON");
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","b":"st"}]})JSON"));
   TEST_ASSERT_TRUE(
-      codexbar_display::core::FrameTokenStatsVisualChanged(previous, next, raw));
+      codexbar_display::core::FrameTokenStatsVisualChanged(previous, next, use));
   TEST_ASSERT_FALSE(codexbar_display::core::FrameTokenStatsVisualChanged(
-      previous, previous, raw));
+      previous, previous, use));
 }
 
 void testUsageUnavailableKeepsThemeAndProgress() {
@@ -722,10 +723,10 @@ void testUsageWindowResetCountdownsTickIndependently() {
   TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(40, 1));
   TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(140, 3));
   TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(139, 2));
-  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
-      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON"), 0));
-  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
-      String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON"), 1));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON")).UsesUsageWindowReset(0));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON")).UsesUsageWindowReset(1));
 }
 
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
@@ -839,7 +840,8 @@ void testUsageCountdownRefreshDoesNotRepaintBatteryArea() {
       before.usageWindows[0].resetSecs = 3600;
       auto after = before;
       after.usageWindows[0].resetSecs = 3540;
-      const uint32_t fields = codexbar_display::core::ThemeSpecLiveChangedFields(before, after, String(spec.c_str()));
+      const uint32_t fields = codexbar_display::core::ThemeSpecLiveChangedFields(
+          before, after, codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec.c_str())));
       RecordingSink sink;
       auto frame = testFrame();
       frame.usageSlot1Available = true;
@@ -870,6 +872,110 @@ void testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme() {
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3540}]})JSON", 2000, event));
   TEST_ASSERT_FALSE(event.visualChanged);
   TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+}
+
+// #253/#496: compact ThemeSpec keys that are not bindings must not count as
+// live data. Restores the spec like a stored theme, sends a baseline frame,
+// then reports how the device takes a frame that changes only `changed`.
+SerialConsumeEvent storedThemeFrameEvent(const char* spec, const char* changed) {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "live-use", 1, String(spec), 0, event));
+  std::string baseline = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":3600,"activity":"idle","sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, baseline.c_str(), 1000, event));
+  std::string next = baseline;
+  const std::string key = std::string("\"") + changed + "\":";
+  const size_t at = next.find(key);
+  TEST_ASSERT_TRUE(at != std::string::npos);
+  const size_t valueStart = at + key.size();
+  const size_t valueEnd = next.find_first_of(",}", valueStart);
+  next.replace(valueStart, valueEnd - valueStart, changed == std::string("label") ? "\"Codex Pro\""
+                                                 : changed == std::string("activity") ? "\"coding\""
+                                                                                       : "7");
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, next.c_str(), 2000, event));
+  return event;
+}
+
+void testCompactKeysThatAreNotBindingsDoNotRepaint() {
+  const struct { const char* spec; const char* changed; } cases[] = {
+      // "t":"r" is a rectangle, not the reset countdown.
+      {R"JSON({"v":1,"p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#112233"}]})JSON", "resetSecs"},
+      // "s" is the font size, not session usage.
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"STATIC","s":2}]})JSON", "session"},
+      // "w" is a width, not weekly usage.
+      {R"JSON({"v":1,"p":[{"t":"sp","x":0,"y":0,"w":72,"h":72,"a":"/themes/u/hero.cbi"}]})JSON", "weekly"},
+      {R"JSON({"v":1,"p":[{"t":"r","x":0,"y":0,"w":72,"h":72,"c":"#112233"}]})JSON", "weekly"},
+      // "r" is a pixel row, not the reset countdown.
+      {R"JSON({"v":1,"p":[{"t":"px","x":0,"y":0,"w":1,"h":1,"p":["#FFFFFF"],"r":["a"]}]})JSON", "resetSecs"},
+  };
+  for (const auto& entry : cases) {
+    const SerialConsumeEvent event = storedThemeFrameEvent(entry.spec, entry.changed);
+    TEST_ASSERT_FALSE_MESSAGE(event.visualChanged, entry.spec);
+    TEST_ASSERT_FALSE_MESSAGE(event.themeSpecPartialRender, entry.spec);
+  }
+}
+
+void testStaticWordsAndAssetPathsAreNotBindings() {
+  const char* spec = R"JSON({"v":1,"p":[
+    {"t":"tx","x":0,"y":0,"v":"session weekly reset label time date activity provider","s":1},
+    {"t":"sp","x":0,"y":20,"w":20,"h":20,"a":"/themes/u/session-weekly-reset-label-time-date.cbi"}
+  ]})JSON";
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec));
+  TEST_ASSERT_EQUAL_UINT32(0, use.fields);
+  TEST_ASSERT_EQUAL_UINT8(0, use.usageWindows);
+  for (const char* changed : {"session", "weekly", "resetSecs", "label", "activity", "provider"}) {
+    TEST_ASSERT_FALSE_MESSAGE(storedThemeFrameEvent(spec, changed).visualChanged, changed);
+  }
+}
+
+void testRealBindingsStillRepaintOnlyTheirPrimitives() {
+  const struct { const char* spec; const char* changed; uint32_t field; } cases[] = {
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"binding":"reset"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"in {reset}"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"in {r}"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"b":"s","s":2}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{weekly}%"}]})JSON", "weekly", codexbar_display::themespec::kThemeSpecFieldWeekly},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{l}"}]})JSON", "label", codexbar_display::themespec::kThemeSpecFieldLabel},
+      // A progress bar without a binding draws session usage.
+      {R"JSON({"v":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{act}"}]})JSON", "activity", codexbar_display::themespec::kThemeSpecFieldActivity},
+      {R"JSON({"v":1,"p":[{"t":"sp","x":0,"y":0,"w":10,"h":10,"a":"/themes/u/i.cbi","sa":{"idle":"/themes/u/i.cbi","coding":"/themes/u/c.cbi"}}]})JSON", "activity", codexbar_display::themespec::kThemeSpecFieldActivity},
+  };
+  for (const auto& entry : cases) {
+    const SerialConsumeEvent event = storedThemeFrameEvent(entry.spec, entry.changed);
+    TEST_ASSERT_TRUE_MESSAGE(event.visualChanged, entry.spec);
+    TEST_ASSERT_TRUE_MESSAGE(event.themeSpecPartialRender, entry.spec);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(entry.field, event.themeSpecChangedFields, entry.spec);
+  }
+}
+
+void testTokenFireRepaintsOnlyForTokenTotals() {
+  // The shipped Token Fire screensaver (#496): rectangles, font sizes and
+  // widths, but no usage, reset or label binding.
+  const char* spec = R"JSON({"v":1,"id":"token-fire","rev":5,"bg":"#050505","p":[{"t":"sp","x":0,"y":0,"w":240,"h":117,"a":"/themes/s/tf-bg.cbi"},{"t":"sp","x":96,"y":32,"w":48,"h":72,"bg":"#341505","a":"/themes/s/tf-fire.cba"},{"t":"tx","x":10,"y":116,"w":220,"v":"TOTAL TOKENS","s":2,"f":4,"ft":"shrink","al":"center","c":"#FFF2DE"},{"t":"r","x":12,"y":142,"w":216,"h":1,"c":"#51240F"},{"t":"tx","x":12,"y":151,"w":130,"v":"SESSION","s":2,"f":2,"ft":"shrink","c":"#D7B79A"},{"t":"tx","x":146,"y":151,"w":82,"b":"st","s":2,"f":2,"ft":"shrink","al":"right","c":"#FFD34A"},{"t":"tx","x":12,"y":181,"w":130,"v":"7 DAYS","s":2,"f":2,"ft":"shrink","c":"#D7B79A"},{"t":"tx","x":146,"y":181,"w":82,"b":"wt","s":2,"f":2,"ft":"shrink","al":"right","c":"#FFD34A"},{"t":"tx","x":12,"y":211,"w":130,"v":"ALL TIME","s":2,"f":2,"ft":"shrink","c":"#D7B79A"},{"t":"tx","x":146,"y":211,"w":82,"b":"tt","s":2,"f":2,"ft":"shrink","al":"right","c":"#FFD34A"}]})JSON";
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec));
+  TEST_ASSERT_FALSE(use.Uses(codexbar_display::themespec::kThemeSpecFieldReset));
+  TEST_ASSERT_FALSE(use.Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+  for (const char* changed : {"resetSecs", "session", "weekly", "label", "activity"}) {
+    TEST_ASSERT_FALSE_MESSAGE(storedThemeFrameEvent(spec, changed).visualChanged, changed);
+  }
+  const SerialConsumeEvent event = storedThemeFrameEvent(spec, "sessionTokens");
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(codexbar_display::themespec::kThemeSpecFieldSessionTokens, event.themeSpecChangedFields);
+}
+
+void testUncompilableSpecCountsAsUsingEverything() {
+  // A zero font size fails to compile. Without a compiled answer every change
+  // must still reach the screen rather than be silently dropped.
+  codexbar_display::core::ThemeSpecLiveUse use;
+  TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{reset}","s":0}]})JSON"), use));
+  TEST_ASSERT_TRUE(use.Uses(codexbar_display::themespec::kThemeSpecFieldReset));
+  TEST_ASSERT_TRUE(use.UsesUsageWindow(0));
+  TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecLiveUseForRaw(String(""), use));
+  TEST_ASSERT_EQUAL_UINT32(0, use.fields);
 }
 
 void testCompactUsageWindowBindingTriggersLiveRedraw() {
@@ -2734,9 +2840,7 @@ void testLegacyThemeFieldsAreIgnored() {
 
 void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
   RuntimeState state;
-  state.cachedThemeId = "clippy";
-  state.cachedThemeRev = 1;
-  state.cachedThemeSpecRaw = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2}],"fb":"mini","bg":"#000000"})JSON";
+  codexbar_display::core::CacheThemeSpec(state, "clippy", 1, R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2}],"fb":"mini","bg":"#000000"})JSON");
   state.current.provider = "codex";
   state.current.label = "Codex";
   state.current.session = 10;
@@ -3517,6 +3621,11 @@ int main() {
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testUsageCountdownRefreshDoesNotRepaintBatteryArea);
   RUN_TEST(testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme);
+  RUN_TEST(testCompactKeysThatAreNotBindingsDoNotRepaint);
+  RUN_TEST(testStaticWordsAndAssetPathsAreNotBindings);
+  RUN_TEST(testRealBindingsStillRepaintOnlyTheirPrimitives);
+  RUN_TEST(testTokenFireRepaintsOnlyForTokenTotals);
+  RUN_TEST(testUncompilableSpecCountsAsUsingEverything);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
   RUN_TEST(testCountdownOnlyFramesRedrawThemesThatShowCountdowns);
