@@ -12281,6 +12281,10 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		t.Fatalf("new server: %v", err)
 	}
 	server.probeCacheTime = 0
+	// Provider checks finish on their own goroutines and log when they do. A
+	// log saved from there lands in the temp directory while the test removes
+	// it; saving has its own tests in setup_events_test.go.
+	server.setupEvents.path = ""
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil

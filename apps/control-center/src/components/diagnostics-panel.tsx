@@ -3,9 +3,9 @@
 import { CircleCheck, CircleX, Stethoscope, TriangleAlert, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { copyForHost } from "@/lib/customer-platform";
 import type { SupportDiagnostics, UsageEngineInfo } from "./control-center-types";
 import {
-  formatCustomerPath,
   formatCustomerSupportText,
   humanize,
 } from "./customer-support-text";
@@ -50,6 +50,8 @@ type Props = {
   /** The app's usage engine repair; offered for an engine that is too old. */
   onRepairUsageEngine?: () => void;
   repairing?: boolean;
+  /** The app runs on Windows, where "Mac App" reads "App". */
+  windowsHost?: boolean;
 };
 
 export function DiagnosticsPanel({
@@ -58,6 +60,7 @@ export function DiagnosticsPanel({
   onRun,
   onRepairUsageEngine,
   repairing = false,
+  windowsHost = false,
 }: Props) {
   const engine = diagnosticsEngine(diagnostics);
   const checks = diagnostics?.checks ?? [];
@@ -102,7 +105,11 @@ export function DiagnosticsPanel({
           {checks.length ? (
             <ul aria-label="Diagnostic checks" className="grid gap-2">
               {checks.map((check, index) => (
-                <CheckRow check={check} key={check.name + "-" + index} />
+                <CheckRow
+                  check={check}
+                  key={check.name + "-" + index}
+                  windowsHost={windowsHost}
+                />
               ))}
             </ul>
           ) : null}
@@ -184,32 +191,30 @@ function UsageEngineBlock({
         <Fact label="Version" value={engine.version} />
         <Fact label="Required version" value={engine.minimumVersion} />
         <Fact label="Source" value={ENGINE_SOURCES[engine.source ?? ""] ?? humanize(engine.source)} />
-        <div className="min-w-0 sm:col-span-2">
-          <Fact label="Location" value={engine.path ? formatCustomerPath(engine.path) : undefined} />
-        </div>
       </dl>
     </section>
   );
 }
 
-function CheckRow({ check }: { check: Check }) {
+function CheckRow({ check, windowsHost }: { check: Check; windowsHost: boolean }) {
   const state = checkState(check.status);
+  const hostText = (value: string) => copyForHost(value, windowsHost);
   return (
     <li className="grid gap-1 rounded-lg border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">
-          {CHECK_LABELS[check.name] ?? humanize(check.name)}
+          {hostText(CHECK_LABELS[check.name] ?? humanize(check.name))}
         </span>
         <StatusLine icon={state} text={CHECK_STATE_TEXT[state]} />
       </div>
       {check.detail ? (
         <p className="break-words text-sm text-muted-foreground">
-          {formatCustomerSupportText(check.detail)}
+          {hostText(formatCustomerSupportText(check.detail))}
         </p>
       ) : null}
       {state !== "pass" && check.nextAction ? (
         <p className="break-words text-sm">
-          {formatCustomerSupportText(check.nextAction)}
+          {hostText(formatCustomerSupportText(check.nextAction))}
         </p>
       ) : null}
     </li>

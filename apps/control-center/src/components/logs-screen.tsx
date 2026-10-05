@@ -178,6 +178,7 @@ export function LogsScreen({
             onRun={onLoadDiagnostics}
             repairing={repairingUsageEngine}
             running={supportReportBusy}
+            windowsHost={windowsHost}
           />
         </CardContent>
       </Card>
@@ -187,7 +188,7 @@ export function LogsScreen({
           <CardTitle>Setup log</CardTitle>
         </CardHeader>
         <CardContent>
-          <SetupEventLog />
+          <SetupEventLog windowsHost={windowsHost} />
         </CardContent>
       </Card>
 

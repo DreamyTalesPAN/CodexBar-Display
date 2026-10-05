@@ -151,7 +151,7 @@ describe("a provider the account lost access to", () => {
     expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
   });
 
-  it("passes the upstream migration guidance through unchanged", () => {
+  it("passes the upstream migration guidance through without the engine's name", () => {
     expect(
       setupProviderIssueMessage({
         health: "unsupported",
@@ -159,6 +159,8 @@ describe("a provider the account lost access to", () => {
         detail: "Gemini no longer supports this account.",
         reportedMessage,
       }),
-    ).toBe(reportedMessage);
+    ).toBe(
+      "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
+    );
   });
 });

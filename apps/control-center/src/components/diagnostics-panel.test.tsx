@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupportDiagnostics } from "./control-center-types";
 import {
-  formatCustomerPath,
   formatCustomerSupportText,
   humanize,
 } from "./customer-support-text";
@@ -87,13 +86,15 @@ describe("DiagnosticsPanel", () => {
     expect(text).not.toContain("Some checks could not run");
   });
 
-  it("shows the selected usage engine with its home folder abbreviated", () => {
+  it("shows the selected usage engine without a file location", () => {
     const text = show(report);
     const engine = screen.getByRole("region", { name: "Usage engine" }).textContent;
     expect(engine).toContain("0.63.0");
     expect(engine).toContain("0.23.0");
     expect(engine).toContain("Managed by VibeTV");
-    expect(engine).toContain("~/Library/Application Support/VibeTV/usage-engine/0.63.0/usage-engine");
+    // A path with the product name replaced is a path that does not exist.
+    expect(engine).not.toContain("Location");
+    expect(text).not.toContain("Application Support");
     expect(text).not.toContain("/Users/marcus");
   });
 
@@ -111,7 +112,8 @@ describe("DiagnosticsPanel", () => {
     show({ usageEngine: { name: "CodexBar", status: "ready", version: "0.63.0", path: "C:\\Users\\marcus\\AppData\\codexbar.exe" } });
     const engine = screen.getByRole("region", { name: "Usage engine" }).textContent;
     expect(engine).toContain("0.63.0");
-    expect(engine).toContain("~\\AppData\\usage-engine.exe");
+    expect(engine).not.toContain("AppData");
+    expect(engine).not.toContain("CodexBar");
   });
 
   it("says an old engine is too old and offers the repair", () => {
@@ -172,13 +174,14 @@ describe("customer support text", () => {
     );
   });
 
-  it("abbreviates only the home folder", () => {
-    expect(formatCustomerPath("/Users/anna/bin/tool")).toBe("~/bin/tool");
-    expect(formatCustomerPath("/opt/homebrew/bin/tool")).toBe("/opt/homebrew/bin/tool");
-    expect(formatCustomerPath("C:\\Users\\anna\\tool.exe")).toBe("~\\tool.exe");
-    expect(
-      formatCustomerPath("/Users/anna/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"),
-    ).not.toMatch(/codexbar/i);
+  it("hides the engine name in text from the Mac App", () => {
     expect(formatCustomerSupportText("CodexBarCLI failed")).toBe("Usage engine failed");
+  });
+
+  it("says App instead of Mac App in the Windows app", () => {
+    const view = render(<DiagnosticsPanel diagnostics={report} windowsHost />);
+    const text = view.container.textContent ?? "";
+    expect(text).not.toContain("Mac App");
+    expect(text).not.toContain("this Mac");
   });
 });

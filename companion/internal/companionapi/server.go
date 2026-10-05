@@ -987,6 +987,7 @@ func New(opts Options) (*Server, error) {
 	server := &Server{
 		addr:                   addr,
 		home:                   home,
+		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json")},
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
 		client:                 client,

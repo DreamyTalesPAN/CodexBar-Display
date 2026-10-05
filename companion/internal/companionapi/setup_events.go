@@ -7,14 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 )
 
-// setupEventLimit bounds one setup session in memory; older events are dropped.
+// setupEventLimit bounds one setup session; older events are dropped.
 const setupEventLimit = 200
+
+// setupLogMaxAge is how long a saved session is still the setup someone is
+// working on. An older one is a finished setup and a new session starts.
+const setupLogMaxAge = 24 * time.Hour
 
 type setupEvent struct {
 	Seq        int    `json:"seq"`
@@ -39,10 +45,87 @@ type setupLog struct {
 
 // setupEventLog is the one owner of setup transitions shown live in Control
 // Center and exported in support reports.
+//
+// The runtime restarts in the middle of a setup: the usage engine repair
+// unregisters it on purpose, and a firmware or app update can too. The session
+// is therefore saved on every change and picked up again by the next runtime,
+// or the support report would lose the device search and the firmware update
+// that came before the restart.
 type setupEventLog struct {
 	mu      sync.Mutex
 	session setupLog
 	nextSeq int
+	// path is where the session is saved; empty keeps it in memory only.
+	path     string
+	restored bool
+}
+
+// openLocked makes sure a session exists: the saved one when this runtime has
+// not looked yet and it is recent enough, otherwise a new one.
+func (l *setupEventLog) openLocked(now time.Time) {
+	if !l.restored {
+		l.restored = true
+		if l.restoreLocked(now) {
+			return
+		}
+	}
+	if l.session.SessionID == "" {
+		l.startLocked(now)
+	}
+}
+
+func (l *setupEventLog) restoreLocked(now time.Time) bool {
+	if l.path == "" || l.session.SessionID != "" {
+		return false
+	}
+	raw, err := os.ReadFile(l.path)
+	if err != nil {
+		return false
+	}
+	var saved setupLog
+	if err := json.Unmarshal(raw, &saved); err != nil || saved.SessionID == "" || len(saved.Events) == 0 {
+		return false
+	}
+	last, err := time.Parse(time.RFC3339, saved.Events[len(saved.Events)-1].At)
+	if err != nil || now.Sub(last) > setupLogMaxAge {
+		return false
+	}
+	saved.OK = true
+	l.session = saved
+	l.nextSeq = 0
+	for _, event := range saved.Events {
+		l.nextSeq = max(l.nextSeq, event.Seq)
+	}
+	l.appendLocked(setupEvent{
+		At:      now.UTC().Format(time.RFC3339),
+		Stage:   "service_restart",
+		Status:  "succeeded",
+		Message: "The Mac App's background service started again.",
+	})
+	l.saveLocked()
+	return true
+}
+
+// saveLocked writes the session next to the runtime's other state. A log that
+// cannot be saved still works for this runtime, so the error is not reported.
+func (l *setupEventLog) saveLocked() {
+	if l.path == "" {
+		return
+	}
+	raw, err := json.Marshal(l.session)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
+		return
+	}
+	tmp := l.path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, l.path); err != nil {
+		_ = os.Remove(tmp)
+	}
 }
 
 func (l *setupEventLog) startLocked(now time.Time) {
@@ -54,6 +137,7 @@ func (l *setupEventLog) startLocked(now time.Time) {
 
 func (l *setupEventLog) reset(now time.Time) {
 	l.mu.Lock()
+	l.restored = true
 	l.startLocked(now)
 	l.mu.Unlock()
 	l.record(now, setupEvent{Stage: "setup_reset", Status: "started", Message: "New setup session started."})
@@ -64,9 +148,8 @@ func (l *setupEventLog) record(now time.Time, event setupEvent) {
 	event.At = now.UTC().Format(time.RFC3339)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.session.SessionID == "" {
-		l.startLocked(now)
-	}
+	l.openLocked(now)
+	defer l.saveLocked()
 	if n := len(l.session.Events); n > 0 {
 		last := &l.session.Events[n-1]
 		if sameSetupEvent(*last, event) {
@@ -84,6 +167,10 @@ func (l *setupEventLog) record(now time.Time, event setupEvent) {
 			return
 		}
 	}
+	l.appendLocked(event)
+}
+
+func (l *setupEventLog) appendLocked(event setupEvent) {
 	l.nextSeq++
 	event.Seq = l.nextSeq
 	event.Count = 1
@@ -102,9 +189,7 @@ func sameSetupEvent(a, b setupEvent) bool {
 func (l *setupEventLog) snapshot(now time.Time) setupLog {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.session.SessionID == "" {
-		l.startLocked(now)
-	}
+	l.openLocked(now)
 	out := l.session
 	out.Events = append([]setupEvent{}, l.session.Events...)
 	return out
@@ -112,9 +197,10 @@ func (l *setupEventLog) snapshot(now time.Time) setupLog {
 
 // lastOfStage reports the newest event of a stage, so a repeated check that
 // changed nothing is not logged again.
-func (l *setupEventLog) lastOfStage(stage string) (setupEvent, bool) {
+func (l *setupEventLog) lastOfStage(now time.Time, stage string) (setupEvent, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.openLocked(now)
 	for i := len(l.session.Events) - 1; i >= 0; i-- {
 		if l.session.Events[i].Stage == stage {
 			return l.session.Events[i], true
@@ -153,6 +239,14 @@ func (s *Server) setupStep(stage, started, succeeded string, next http.HandlerFu
 			message := body.Error.Message
 			if message == "" {
 				message = "The step could not finish."
+			}
+			if stage == "device_search" && body.Error.Code == "cable_firmware_too_old" {
+				// The search answers with an error so setup can carry the board
+				// and firmware into the update it then starts over the cable by
+				// itself. Logging that answer said "Failed" and sent the reader
+				// to WiFi, right above a firmware update that went through.
+				s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: "Found a VibeTV on the cable that needs a firmware update.", Code: body.Error.Code})
+				return
 			}
 			s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: message, Code: body.Error.Code, NextAction: body.Error.NextAction})
 		} else if succeeded != "" {
@@ -206,7 +300,7 @@ func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, label s
 		if check.Status == "pass" {
 			event = setupEvent{Stage: stage, Status: "succeeded", Message: check.Detail}
 		}
-		if last, ok := s.setupEvents.lastOfStage(stage); stage == "usage_engine" && ok && sameSetupEvent(last, event) {
+		if last, ok := s.setupEvents.lastOfStage(s.currentTime(), stage); stage == "usage_engine" && ok && sameSetupEvent(last, event) {
 			continue
 		}
 		s.recordSetupEvent(event)

@@ -218,7 +218,7 @@ export function SetupHelpMenu({
               <span>{showLog ? "Hide setup log" : "Show setup log"}</span>
             </Button>
           ) : null}
-          {showLog ? <SetupEventLog className="p-1 text-left" /> : null}
+          {showLog ? <SetupEventLog className="p-1 text-left" windowsHost={windowsHost} /> : null}
         </div>
       ) : null}
       <Button

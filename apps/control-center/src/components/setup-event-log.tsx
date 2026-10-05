@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SetupEvent, SetupLog } from "./control-center-types";
+import { copyForHost } from "@/lib/customer-platform";
 import { formatCustomerSupportText, humanize } from "./customer-support-text";
 
 export const SETUP_EVENTS_POLL_MS = 2000;
@@ -46,6 +47,7 @@ const STAGE_LABELS: Record<string, string> = {
   firmware_update: "Firmware update",
   theme_install: "Theme install",
   setup_reset: "New setup",
+  service_restart: "Mac App",
 };
 
 const STATUS: Record<
@@ -116,17 +118,26 @@ function windowHidden() {
   return document.visibilityState === "hidden";
 }
 
-export function SetupEventLog({ className }: { className?: string }) {
+export function SetupEventLog({
+  className,
+  windowsHost = false,
+}: {
+  className?: string;
+  /** The app runs on Windows, where "Mac App" reads "App". */
+  windowsHost?: boolean;
+}) {
   const log = useSetupEvents();
-  return <SetupEventList className={className} log={log} />;
+  return <SetupEventList className={className} log={log} windowsHost={windowsHost} />;
 }
 
 export function SetupEventList({
   className,
   log,
+  windowsHost = false,
 }: {
   className?: string;
   log: SetupLog | null;
+  windowsHost?: boolean;
 }) {
   const scrollRef = useRef<HTMLOListElement | null>(null);
   const [following, setFollowing] = useState(true);
@@ -167,7 +178,7 @@ export function SetupEventList({
           </li>
         ) : null}
         {events.map((event) => (
-          <SetupEventRow event={event} key={event.seq} />
+          <SetupEventRow event={event} key={event.seq} windowsHost={windowsHost} />
         ))}
       </ol>
       {following ? null : (
@@ -186,7 +197,13 @@ export function SetupEventList({
   );
 }
 
-function SetupEventRow({ event }: { event: SetupEvent }) {
+function SetupEventRow({
+  event,
+  windowsHost,
+}: {
+  event: SetupEvent;
+  windowsHost: boolean;
+}) {
   const status = STATUS[event.status] ?? STATUS.started;
   const Icon = status.icon;
   return (
@@ -211,10 +228,12 @@ function SetupEventRow({ event }: { event: SetupEvent }) {
           </span>
         ) : null}
       </div>
-      <p className="break-words">{formatCustomerSupportText(event.message)}</p>
+      <p className="break-words">
+        {copyForHost(formatCustomerSupportText(event.message), windowsHost)}
+      </p>
       {event.status === "failed" && event.nextAction ? (
         <p className="break-words text-muted-foreground">
-          {formatCustomerSupportText(event.nextAction)}
+          {copyForHost(formatCustomerSupportText(event.nextAction), windowsHost)}
         </p>
       ) : null}
     </li>

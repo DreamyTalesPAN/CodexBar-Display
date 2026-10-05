@@ -370,3 +370,75 @@ func TestIncompatibleEngineWinsOverCachedUsage(t *testing.T) {
 		t.Fatal("engine_incompatible is not mapped like an engine failure")
 	}
 }
+
+func TestSetupEventLogSurvivesARuntimeRestart(t *testing.T) {
+	path := t.TempDir() + "/setup-log.json"
+	start := time.Date(2026, 10, 5, 14, 27, 0, 0, time.UTC)
+
+	first := &setupEventLog{path: path}
+	first.record(start, setupEvent{Stage: "device_search", Status: "succeeded", Message: "Found 1 VibeTV."})
+	first.record(start.Add(time.Minute), setupEvent{Stage: "firmware_update", Status: "succeeded", Message: "VibeTV update complete."})
+	session := first.snapshot(start).SessionID
+
+	// The usage engine repair unregisters the runtime; the next one starts empty.
+	second := &setupEventLog{path: path}
+	second.record(start.Add(2*time.Minute), setupEvent{Stage: "provider_check", Status: "succeeded", Message: "Codex is ready."})
+	got := second.snapshot(start.Add(2 * time.Minute))
+
+	if got.SessionID != session {
+		t.Fatalf("session = %q, want the one from before the restart %q", got.SessionID, session)
+	}
+	stages := []string{}
+	for i, event := range got.Events {
+		stages = append(stages, event.Stage)
+		if event.Seq != i+1 {
+			t.Fatalf("event %d has seq %d, want %d", i, event.Seq, i+1)
+		}
+	}
+	want := "device_search firmware_update service_restart provider_check"
+	if strings.Join(stages, " ") != want {
+		t.Fatalf("stages = %v, want %s", stages, want)
+	}
+}
+
+func TestSetupEventLogStartsFreshAfterAnOldSessionOrAReset(t *testing.T) {
+	path := t.TempDir() + "/setup-log.json"
+	start := time.Date(2026, 10, 5, 14, 27, 0, 0, time.UTC)
+
+	old := &setupEventLog{path: path}
+	old.record(start, setupEvent{Stage: "device_search", Status: "succeeded", Message: "Found 1 VibeTV."})
+
+	later := &setupEventLog{path: path}
+	if got := later.snapshot(start.Add(setupLogMaxAge + time.Minute)); len(got.Events) != 0 {
+		t.Fatalf("a finished setup came back: %+v", got.Events)
+	}
+
+	reset := &setupEventLog{path: path}
+	reset.reset(start.Add(time.Minute))
+	next := &setupEventLog{path: path}
+	got := next.snapshot(start.Add(2 * time.Minute))
+	if len(got.Events) != 2 || got.Events[0].Stage != "setup_reset" || got.Events[1].Stage != "service_restart" {
+		t.Fatalf("events after a reset and a restart = %+v", got.Events)
+	}
+}
+
+func TestSetupLogDoesNotCallACableRescueAFailedSearch(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	step := server.setupStep("device_search", "Searching for VibeTV.", "", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusConflict, errorResponse{Error: apiError{
+			Code:       "cable_firmware_too_old",
+			Message:    "Your VibeTV needs a firmware update before it can use USB-C.",
+			NextAction: "Connect VibeTV to WiFi, install the update, then reconnect the cable.",
+		}})
+	})
+	step(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/device/search", nil))
+
+	got := getSetupLog(t, server)
+	if len(got.Events) != 2 {
+		t.Fatalf("events = %+v", got.Events)
+	}
+	found := got.Events[1]
+	if found.Status != "succeeded" || found.Code != "cable_firmware_too_old" || found.NextAction != "" || strings.Contains(found.Message, "WiFi") {
+		t.Fatalf("the VibeTV setup is about to update over the cable was logged as %+v", found)
+	}
+}
