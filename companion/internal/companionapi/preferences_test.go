@@ -1786,3 +1786,26 @@ func TestProviderBackgroundRefreshPreservesReadyUntilItsResult(t *testing.T) {
 		})
 	}
 }
+
+func TestProviderPermissionCopyNamesTheHostSystem(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	providerCopyGOOS = "darwin"
+	if got := providerReadinessMessage(codexbar.ProviderPermissionRequired); got != "macOS blocked access required by this provider." {
+		t.Fatalf("macOS message = %q", got)
+	}
+	if got := providerReadinessNextAction(codexbar.ProviderPermissionRequired); got != "Allow the required macOS access, then check this provider." {
+		t.Fatalf("macOS next action = %q", got)
+	}
+
+	providerCopyGOOS = "windows"
+	for _, got := range []string{
+		providerReadinessMessage(codexbar.ProviderPermissionRequired),
+		providerReadinessNextAction(codexbar.ProviderPermissionRequired),
+	} {
+		if strings.Contains(got, "macOS") {
+			t.Fatalf("Windows copy names macOS: %q", got)
+		}
+	}
+}

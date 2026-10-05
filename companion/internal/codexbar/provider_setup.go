@@ -699,6 +699,10 @@ func classifyProviderErrorFor(id, detail string) string {
 	return classifyProviderError(detail)
 }
 
+// providerCopyGOOS names the system in permission copy: Windows has no macOS
+// permission to allow (#479). A variable so tests cover both hosts.
+var providerCopyGOOS = runtime.GOOS
+
 func providerResult(id, status string) ProviderReadiness {
 	return providerResultWithSignIn(id, status, "")
 }
@@ -723,6 +727,10 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
 		result.NextAction = "Allow the requested macOS permission, then check again."
+		if providerCopyGOOS == "windows" {
+			result.Detail = "Windows blocked access required by this provider."
+			result.NextAction = "Allow the requested access, then check again."
+		}
 	case ProviderUnsupported:
 		// No sign-in wording: the account cannot use this provider at all, so
 		// the provider's own message carries the migration path and the row

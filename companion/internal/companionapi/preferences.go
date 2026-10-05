@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -834,6 +835,10 @@ func providerReadinessHealthState(status string) string {
 	}
 }
 
+// providerCopyGOOS names the system in permission copy: Windows has no macOS
+// access to allow (#479). A variable so tests cover both hosts.
+var providerCopyGOOS = runtime.GOOS
+
 func providerReadinessMessage(status string) string {
 	switch status {
 	case codexbar.ProviderReady:
@@ -843,6 +848,9 @@ func providerReadinessMessage(status string) string {
 	case codexbar.ProviderBrowserSignInRequired:
 		return "This provider needs a signed-in session in your browser."
 	case codexbar.ProviderPermissionRequired:
+		if providerCopyGOOS == "windows" {
+			return "Windows blocked access required by this provider."
+		}
 		return "macOS blocked access required by this provider."
 	case codexbar.ProviderUnsupported:
 		return "This provider no longer supports this account."
@@ -868,6 +876,9 @@ func providerReadinessNextAction(status string) string {
 	case codexbar.ProviderBrowserSignInRequired:
 		return "Sign in to this provider in your browser, close the browser, then check this provider."
 	case codexbar.ProviderPermissionRequired:
+		if providerCopyGOOS == "windows" {
+			return "Allow the required access, then check this provider."
+		}
 		return "Allow the required macOS access, then check this provider."
 	case codexbar.ProviderUnsupported:
 		return "Read the provider message, then switch this provider off and use another one."

@@ -845,3 +845,22 @@ func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
 		t.Fatalf("a ready answer must not pay for an inventory call, got %d", inventoryCalls)
 	}
 }
+
+func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	providerCopyGOOS = "darwin"
+	mac := providerResult("claude", ProviderPermissionRequired)
+	if mac.Detail != "macOS blocked access required by this provider." ||
+		mac.NextAction != "Allow the requested macOS permission, then check again." {
+		t.Fatalf("macOS copy changed: %+v", mac)
+	}
+
+	providerCopyGOOS = "windows"
+	windows := providerResult("claude", ProviderPermissionRequired)
+	if windows.Detail != "Windows blocked access required by this provider." ||
+		windows.NextAction != "Allow the requested access, then check again." {
+		t.Fatalf("Windows copy = %+v", windows)
+	}
+}
