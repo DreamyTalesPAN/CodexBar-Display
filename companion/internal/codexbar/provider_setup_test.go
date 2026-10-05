@@ -270,6 +270,41 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 	}
 }
 
+// The app-managed copy's version is the pinned one its path is keyed by, so a
+// probe or settings read never waits on starting it (#508). Any other CLI is
+// still asked.
+func TestInstalledVersionDoesNotRunTheAppManagedCLI(t *testing.T) {
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
+	home := t.TempDir()
+	testenv.Home(t, home)
+	privateCLI := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	otherCLI := filepath.Join(t.TempDir(), "codexbar")
+	for _, path := range []string{privateCLI, otherCLI} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = original })
+	var ran []string
+	runVersionCommandFn = func(_ context.Context, _ time.Duration, bin string, _ ...string) ([]byte, error) {
+		ran = append(ran, bin)
+		return nil, errors.New("slow first launch")
+	}
+
+	version, err := installedVersion(context.Background(), privateCLI)
+	want, _ := parseLooseVersion("0.63.0")
+	if err != nil || version.Compare(want) != 0 || len(ran) != 0 {
+		t.Fatalf("app-managed CLI: version=%s err=%v ran=%v, want 0.63.0 without running it", version, err, ran)
+	}
+	if _, err := installedVersion(context.Background(), otherCLI); err == nil || len(ran) != 1 || ran[0] != otherCLI {
+		t.Fatalf("other CLI: err=%v ran=%v, want it asked and failing", err, ran)
+	}
+}
+
 func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
