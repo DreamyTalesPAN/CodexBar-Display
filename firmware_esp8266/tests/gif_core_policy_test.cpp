@@ -421,11 +421,18 @@ bool testAutomaticWifiFallbackPreservesSavedCredentials(const char* mainPath) {
   }
   const std::string setup = mainSource.substr(setupStart, setupEnd - setupStart);
   const std::string maintain = mainSource.substr(maintainStart, maintainEnd - maintainStart);
+  // Only a unit fresh from the manufacturer firmware clears the SDK copy, and
+  // only of the network it was flashed on (issue #489).
+  const std::size_t freshGuard = setup.find("ShouldForgetFlashingWifi(");
+  const std::size_t freshClear = setup.find("clearSdkWifiCredentials();");
+  const std::size_t freshEnd = setup.find("} else if", freshGuard);
   return expect(
       setup.find("enterWifiSetup()") != std::string::npos &&
           maintain.find("enterWifiSetup()") != std::string::npos &&
           setup.find("clearWifiCredentials();") == std::string::npos &&
-          setup.find("clearSdkWifiCredentials();") == std::string::npos &&
+          freshGuard != std::string::npos && freshClear != std::string::npos &&
+          freshEnd != std::string::npos && freshGuard < freshClear && freshClear < freshEnd &&
+          setup.find("clearSdkWifiCredentials();", freshClear + 1) == std::string::npos &&
           maintain.find("clearWifiCredentials();") == std::string::npos &&
           maintain.find("clearSdkWifiCredentials();") == std::string::npos &&
           setup.find("connectionTransitionStartedAtMs = millis();") != std::string::npos &&

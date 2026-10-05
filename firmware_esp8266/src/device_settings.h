@@ -78,6 +78,13 @@ inline bool ShouldImportLegacySdkWifi(
   return !hasSavedWifi && stored != ConnectionMode::kCable;
 }
 
+// A unit fresh from the manufacturer firmware may still hold the network it
+// was flashed on in the SDK store. It forgets that network instead of joining
+// it, so its setup waits for the USB cable (issue #489).
+inline bool ShouldForgetFlashingWifi(bool setUpByOlderFirmware, bool classified) {
+  return !setUpByOlderFirmware && !classified;
+}
+
 inline bool UsesWifi(ConnectionMode mode) {
   return mode == ConnectionMode::kWifi || mode == ConnectionMode::kLegacyWifiOnly;
 }

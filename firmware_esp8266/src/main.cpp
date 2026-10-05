@@ -4557,12 +4557,15 @@ void setup() {
   loadDeviceAuthToken();
   bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
   // Saved WiFi or a pairing token can only come from older VibeTV firmware. A
-  // unit fresh from the manufacturer firmware has neither, even when the SDK
-  // import below joins the network it was flashed on (issue #489).
+  // unit fresh from the manufacturer firmware has neither; it forgets the
+  // network it was flashed on and waits for the cable (issue #489).
   const bool setUpByOlderFirmware = hasSavedWifi || deviceAuthConfigured();
   bool wifiConnected = false;
-  if (codexbar_display::esp8266::device_settings::ShouldImportLegacySdkWifi(
-          deviceSettings.connectionMode, hasSavedWifi)) {
+  if (codexbar_display::esp8266::device_settings::ShouldForgetFlashingWifi(
+          setUpByOlderFirmware, deviceSettingsClassified)) {
+    clearSdkWifiCredentials();
+  } else if (codexbar_display::esp8266::device_settings::ShouldImportLegacySdkWifi(
+                 deviceSettings.connectionMode, hasSavedWifi)) {
     wifiConnected = connectToSdkWifiConfig();
     if (wifiConnected) {
       hasSavedWifi = readWifiCredentials(savedWifiCredentials);

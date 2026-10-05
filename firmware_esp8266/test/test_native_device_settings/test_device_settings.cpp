@@ -124,6 +124,13 @@ void test_sdk_wifi_import_retries_until_credentials_are_saved() {
       ConnectionMode::kLegacyWifiOnly, true));
 }
 
+void test_factory_fresh_device_forgets_the_wifi_it_was_flashed_on() {
+  TEST_ASSERT_TRUE(ShouldForgetFlashingWifi(false, false));
+  TEST_ASSERT_FALSE(ShouldForgetFlashingWifi(true, false));
+  TEST_ASSERT_FALSE(ShouldForgetFlashingWifi(false, true));
+  TEST_ASSERT_FALSE(ShouldForgetFlashingWifi(true, true));
+}
+
 void test_stored_mode_is_never_reinterpreted() {
   TEST_ASSERT_EQUAL(
       static_cast<int>(ConnectionMode::kCable),
@@ -204,6 +211,7 @@ int main(int, char**) {
   RUN_TEST(test_cable_contact_ends_legacy_wifi_for_good);
   RUN_TEST(test_factory_fresh_device_is_set_up_over_the_cable);
   RUN_TEST(test_sdk_wifi_import_retries_until_credentials_are_saved);
+  RUN_TEST(test_factory_fresh_device_forgets_the_wifi_it_was_flashed_on);
   RUN_TEST(test_stored_mode_is_never_reinterpreted);
   RUN_TEST(test_connection_transition_round_trips_both_directions);
   RUN_TEST(test_connection_transition_rejects_unsafe_modes_and_corruption);
