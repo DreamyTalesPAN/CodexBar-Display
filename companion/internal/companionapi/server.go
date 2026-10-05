@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -512,6 +513,9 @@ type deviceSearchEntry struct {
 	NetworkMode string `json:"networkMode,omitempty"`
 	Known       bool   `json:"known"`
 	Active      bool   `json:"active"`
+	// Rescue marks the VibeTV on the Cable whose firmware predates USB-C:
+	// only the Cable rescue update can bring it to current.
+	Rescue bool `json:"rescue,omitempty"`
 }
 
 type themeInstallRequest struct {
@@ -3085,6 +3089,17 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		// Firmware from before USB-C sends no deviceId over the Cable. One
+		// VibeTV reports the same board and firmware on both transports, so a
+		// WiFi VibeTV that differs in either is another VibeTV. One that matches
+		// both may be this one: WiFi wins as before instead of a duplicate, and
+		// updating it lets the next search tell the two apart.
+		var legacy *usb.LegacyCableFirmwareError
+		if errors.As(cableErr, &legacy) && !slices.ContainsFunc(devices, func(device deviceSearchEntry) bool {
+			return device.Board == legacy.Board && device.Firmware == legacy.Firmware
+		}) {
+			devices = append(devices, legacyCableSearchEntry(legacy))
+		}
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()
 			devices = append(devices, deviceSearchEntry{
@@ -4590,16 +4605,22 @@ func writeCableResolutionError(w http.ResponseWriter, err error) {
 		}
 		var legacy *usb.LegacyCableFirmwareError
 		if errors.As(err, &legacy) {
-			failure.Device = &deviceSearchEntry{
-				Target:    cableDeviceTarget,
-				Transport: "cable",
-				Board:     legacy.Board,
-				Firmware:  legacy.Firmware,
-			}
+			entry := legacyCableSearchEntry(legacy)
+			failure.Device = &entry
 		}
 		writeJSON(w, http.StatusConflict, errorResponse{OK: false, Error: failure})
 	default:
 		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Set up VibeTV over WiFi and install the latest firmware — USB-C setup needs newer firmware than shipped units have. If it is already up to date, check that your cable carries data, not just power.")
+	}
+}
+
+func legacyCableSearchEntry(legacy *usb.LegacyCableFirmwareError) deviceSearchEntry {
+	return deviceSearchEntry{
+		Target:    cableDeviceTarget,
+		Transport: "cable",
+		Board:     legacy.Board,
+		Firmware:  legacy.Firmware,
+		Rescue:    true,
 	}
 }
 

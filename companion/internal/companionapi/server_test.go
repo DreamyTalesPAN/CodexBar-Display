@@ -13853,8 +13853,53 @@ func TestDeviceSearchReportsTheLegacyCableVibeTVForItsUpdate(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
+	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39", Rescue: true}
 	if rec.Code != http.StatusConflict || got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !reflect.DeepEqual(*got.Error.Device, want) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// Firmware from before USB-C sends no deviceId over the Cable. A WiFi VibeTV
+// with another board or firmware is provably another VibeTV, so the one on the
+// Cable stays selectable for its rescue. One with the same board and firmware
+// may be the same VibeTV and must not be listed twice.
+func TestDeviceSearchKeepsTheLegacyCableVibeTVNextToAnotherWiFiVibeTV(t *testing.T) {
+	legacy := &usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
+	rescue := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: legacy.Board, Firmware: legacy.Firmware, Rescue: true}
+	for _, tc := range []struct {
+		name, board, firmware string
+		wantRescue            bool
+	}{
+		{"newer firmware", "esp8266-smalltv-st7789", "1.0.45", true},
+		{"other board", "esp32-lilygo-t-display-s3", "1.0.39", true},
+		{"same board and firmware", "esp8266-smalltv-st7789", "1.0.39", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"kind":"hello","board":%q,"firmware":%q,"deviceId":"wifi-b","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, tc.board, tc.firmware)
+			}))
+			defer wifi.Close()
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.subnetTargets = func() []string { return []string{wifi.URL} }
+			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+				return nil, legacyCableSearchError{legacy}
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+			var got struct {
+				Devices []deviceSearchEntry `json:"devices"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if tc.wantRescue {
+				want = 2
+			}
+			if rec.Code != http.StatusOK || len(got.Devices) != want ||
+				(tc.wantRescue && got.Devices[0] != rescue) || got.Devices[want-1].DeviceID != "wifi-b" {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
