@@ -5,49 +5,6 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
-## 2026-10-05 — Theme readback test waits for the theme step (test only)
-
-- User approval: On 2026-10-05 the user granted all approvals for the
-  overnight batch in chat ("du hast erstmal alle freigaben").
-- Approved customer-visible result: None. The customer-flow test for a failed
-  post-install device read now waits up to ten seconds for "Choose your
-  theme" instead of sampling the screen one second in, and reports headings,
-  dialogs, screen text and recent requests when it fails (#430). Setup must
-  still not complete before a successful readback.
-- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and
-  this approval record.
-
-## 2026-10-05 — A pre-USB-C Cable VibeTV stays in the list next to another WiFi VibeTV
-
-- User approval: On 2026-10-05 Claude listed #483 among the customer-visible
-  issues of the overnight batch, and the user answered in chat "du hast
-  erstmal alle freigaben" (all approvals granted for now).
-- Approved customer-visible result: When a VibeTV with firmware from before
-  USB-C is on the Cable and a different VibeTV answers on WiFi, setup's
-  existing "Choose your VibeTV" list shows both, and choosing the Cable one
-  runs the existing Cable rescue update. A WiFi VibeTV with the same board and
-  firmware as the Cable one may be the same device, so only the WiFi entry is
-  shown then, as before. No new control, copy, or layout; the Control Center
-  files are unchanged.
-- Approved files: Companion device search (`server.go`), its tests, and this
-  approval record.
-
-## 2026-10-05 — The usage service is repaired on its own at most every ten minutes
-
-- User approval: On 2026-10-05 Claude listed the customer-visible issues of
-  the overnight batch (#507, #358, #483, #508) as needing UI approval, and the
-  user answered in chat "du hast erstmal alle freigaben" (all approvals granted
-  for now; they review the batch the next morning).
-- Approved customer-visible result: When the usage service fails, the
-  automatic repair still runs once for that incident. If the service recovers
-  and fails again within ten minutes, the app no longer tears the background
-  service down a second time on its own; the existing "Finish AI setup on this
-  Mac" dialog shows instead, and its "Try automatic repair again" button still
-  repairs at any time. After ten quiet minutes the automatic repair is armed again. No new
-  control, copy, or layout (#508).
-- Approved files: `control-center-app.tsx`, its customer-flow regression test,
-  and this approval record.
-
 ## 2026-09-01 — Configured WiFi device continues automatically
 
 - User approval: The user explicitly instructed Codex to fix every sensible
@@ -4734,6 +4691,49 @@ issue scope, or release permission never implies UI permission.
 - User approval: On 2026-10-01 Paul asked to review this pull request together with #474, test it on this Mac with the connected VibeTV, and fix every issue found directly. The review found that while the switch was active, a single failed CodexBar read replaced the remaining provider's usage on VibeTV with the no-providers screen.
 - Approved customer-visible result: No screen, dialog, button, or text changes. Once VibeTV has switched to the providers that are still on, it keeps showing them through one failed CodexBar read. A second failed read in a row ends the switch, because the Manual provider may have been switched on again meanwhile. After a restart of the background service the strict behaviour decided on 2026-09-25 stays: until CodexBar confirms the Manual provider is off, nothing else is shown in its place.
 - Scope: `companion/internal/daemon/collector.go`, `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-05 — The usage service is repaired on its own at most every ten minutes
+
+- User approval: On 2026-10-05 Claude listed the customer-visible issues of
+  the overnight batch (#507, #358, #483, #508) as needing UI approval, and the
+  user answered in chat "du hast erstmal alle freigaben" (all approvals granted
+  for now; they review the batch the next morning).
+- Approved customer-visible result: When the usage service fails, the
+  automatic repair still runs once for that incident. If the service recovers
+  and fails again within ten minutes, the app no longer tears the background
+  service down a second time on its own; the existing "Finish AI setup on this
+  Mac" dialog shows instead, and its "Try automatic repair again" button still
+  repairs at any time. After ten quiet minutes the automatic repair is armed again. No new
+  control, copy, or layout (#508).
+- Approved files: `control-center-app.tsx`, its customer-flow regression test,
+  and this approval record.
+
+## 2026-10-05 — A pre-USB-C Cable VibeTV stays in the list next to another WiFi VibeTV
+
+- User approval: On 2026-10-05 Claude listed #483 among the customer-visible
+  issues of the overnight batch, and the user answered in chat "du hast
+  erstmal alle freigaben" (all approvals granted for now).
+- Approved customer-visible result: When a VibeTV with firmware from before
+  USB-C is on the Cable and a different VibeTV answers on WiFi, setup's
+  existing "Choose your VibeTV" list shows both, and choosing the Cable one
+  runs the existing Cable rescue update. A WiFi VibeTV with the same board and
+  firmware as the Cable one may be the same device, so only the WiFi entry is
+  shown then, as before. No new control, copy, or layout; the Control Center
+  files are unchanged.
+- Approved files: Companion device search (`server.go`), its tests, and this
+  approval record.
+
+## 2026-10-05 — Theme readback test waits for the theme step (test only)
+
+- User approval: On 2026-10-05 the user granted all approvals for the
+  overnight batch in chat ("du hast erstmal alle freigaben").
+- Approved customer-visible result: None. The customer-flow test for a failed
+  post-install device read now waits up to ten seconds for "Choose your
+  theme" instead of sampling the screen one second in, and reports headings,
+  dialogs, screen text and recent requests when it fails (#430). Setup must
+  still not complete before a successful readback.
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and
+  this approval record.
 
 ## 2026-10-05 — A Cable VibeTV that setup updates keeps connecting on its own
 
