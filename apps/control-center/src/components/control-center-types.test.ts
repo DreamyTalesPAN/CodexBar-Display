@@ -7,6 +7,7 @@ import {
   deviceIsCustomerConnected,
   deviceCanSwitchToCable,
   deviceOffersCable,
+  legacyWiFiDeviceAnsweredCable,
   deviceIsReady,
   deviceUsesCable,
   deviceNeedsExplicitConnect,
@@ -230,6 +231,46 @@ describe("device connection contract", () => {
       }),
     ).toBe(true);
     expect(deviceOffersCable({ active: true, connected: true })).toBe(true);
+  });
+
+  // Issue #498: a legacy WiFi VibeTV that answered over the cable is
+  // connected by Cable; one without USB data stays on WiFi.
+  it("switches to the cable only after the same legacy VibeTV answered it", () => {
+    const wifi = (
+      deviceId: string,
+      transport: { mode: string; supported: string[]; cableOnlyUpdates: boolean },
+    ) => ({
+      deviceId,
+      active: true,
+      connected: true,
+      capabilities: { transport: { active: "wifi", ...transport } },
+    });
+    const answered = { mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true };
+    expect(legacyWiFiDeviceAnsweredCable("5863327", wifi("5863327", answered))).toBe(true);
+    expect(legacyWiFiDeviceAnsweredCable("5863327", wifi("16199591", answered))).toBe(false);
+    expect(legacyWiFiDeviceAnsweredCable(null, wifi("5863327", answered))).toBe(false);
+    expect(
+      legacyWiFiDeviceAnsweredCable(
+        "5863327",
+        wifi("5863327", { mode: "legacy-wifi-only", supported: ["wifi"], cableOnlyUpdates: false }),
+      ),
+    ).toBe(false);
+    expect(
+      legacyWiFiDeviceAnsweredCable("5863327", {
+        ...wifi("5863327", answered),
+        connected: false,
+      }),
+    ).toBe(false);
+    expect(
+      legacyWiFiDeviceAnsweredCable("5863327", {
+        deviceId: "5863327",
+        active: true,
+        connected: true,
+        capabilities: {
+          transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+        },
+      }),
+    ).toBe(false);
   });
 
   it("shows theme setup only for an active, paired VibeTV whose theme is missing", () => {

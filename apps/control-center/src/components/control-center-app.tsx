@@ -46,6 +46,7 @@ import {
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   deviceUsesCable,
+  legacyWiFiDeviceAnsweredCable,
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
@@ -1585,6 +1586,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [acceptDeviceSnapshot, runCompanion],
   );
+
+  // The VibeTV last seen in legacy WiFi mode in this app run (issue #498).
+  const legacyWiFiDeviceIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const deviceId = device?.deviceId?.trim();
+    if (deviceId && device?.capabilities?.transport?.mode === "legacy-wifi-only") {
+      legacyWiFiDeviceIdRef.current = deviceId;
+      return;
+    }
+    if (
+      connectionMode !== "wifi" ||
+      busyAction !== null ||
+      !legacyWiFiDeviceAnsweredCable(legacyWiFiDeviceIdRef.current, device)
+    ) {
+      return;
+    }
+    // Once per VibeTV and app run, the same switch as USB-C in Settings. If
+    // it fails, VibeTV keeps working over WiFi and Settings still offers USB-C.
+    legacyWiFiDeviceIdRef.current = null;
+    void selectSetupConnectionMode("cable", deviceId).catch(() =>
+      setLastError(null),
+    );
+  }, [busyAction, connectionMode, device, selectSetupConnectionMode]);
 
   const scanSetupWiFiNetworks = useCallback(async (): Promise<
     WiFiNetwork[]
