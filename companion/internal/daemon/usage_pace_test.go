@@ -64,7 +64,7 @@ func TestUsagePaceReachesOnlyFirmwareThatAdvertisesIt(t *testing.T) {
 
 func TestMarshalFrameWithinLimitDropsPaceBeforeUsageWindows(t *testing.T) {
 	frame := protocol.Frame{V: protocol.ProtocolVersionV2, Provider: "claude", Label: "Claude", UsageWindows: pacedUsageWindows()}
-	withoutPace := withoutUsagePace(frame)
+	withoutPace := frame.WithoutUsagePace()
 	limitLine, err := withoutPace.MarshalLine()
 	if err != nil {
 		t.Fatal(err)

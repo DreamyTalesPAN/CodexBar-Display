@@ -1864,3 +1864,42 @@ func testLiveFrame(context.Context) (protocol.Frame, error) {
 		UsageMode: "remaining",
 	}, nil
 }
+
+// The install's own frames are not trimmed to the device budget like the
+// stream's, so CodexBar pace must not make them too big for any firmware
+// (#412). The next streamed frame carries pace to firmware that shows it.
+func TestInstallFramesCarryNoUsagePace(t *testing.T) {
+	var sent []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		sent = append(sent, string(body))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	lasts := true
+	fetch := func(context.Context) (protocol.Frame, error) {
+		return protocol.Frame{
+			Provider: "codex",
+			UsageWindows: []protocol.UsageWindow{{
+				ID: "session", Label: "Session", Percent: 40, ResetSec: 3600,
+				Pace: protocol.UsagePace{Delta: -25, State: protocol.PaceReserve, Lasts: &lasts},
+			}},
+		}, nil
+	}
+	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
+	caps := protocol.DeviceCapabilities{Known: true, SupportsUsagePaceV1: true}
+	if err := sendLiveThemeFrame(context.Background(), wifi, server.URL, caps, fetch); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendClearThemeSpecFrame(context.Background(), wifi, server.URL, caps, fetch); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 2 {
+		t.Fatalf("sent %d frames, want 2", len(sent))
+	}
+	for _, frame := range sent {
+		if strings.Contains(frame, `"pace"`) || !strings.Contains(frame, `"percent":40`) {
+			t.Fatalf("install frame must keep its windows without pace: %s", frame)
+		}
+	}
+}

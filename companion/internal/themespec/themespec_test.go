@@ -1113,11 +1113,13 @@ func TestValidateAgainstCapabilitiesRequiresProviderAssetsColorStopsAndValign(t 
 // Older firmware renders an unknown usageSlotN key as that window's percent:
 // a pace binding on it would show a plausible but wrong number.
 func TestUsagePaceBindingsRequireUsagePaceCapability(t *testing.T) {
-	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true, SupportsUsageSlotsV1: true}
+	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true, SupportsUsageSlotsV1: true, SupportsUsageWindowsV1: true}
 	for _, primitive := range []string{
 		`{"t":"tx","x":0,"y":0,"b":"usageSlot1PaceDelta"}`,
 		`{"t":"tx","x":0,"y":0,"v":"{usageSlot2PaceState}"}`,
 		`{"t":"tx","x":0,"y":0,"v":"Pace {usageSlot1PaceLasts}"}`,
+		`{"t":"tx","x":0,"y":0,"b":"us1PaceDelta"}`,
+		`{"t":"tx","x":0,"y":0,"v":"{usage.2.PaceState}"}`,
 	} {
 		spec, raw, err := Parse([]byte(`{"v":1,"id":"pace","rev":1,"p":[` + primitive + `]}`))
 		if err != nil {
@@ -1132,7 +1134,7 @@ func TestUsagePaceBindingsRequireUsagePaceCapability(t *testing.T) {
 			t.Fatalf("%s on usage-pace-v1 firmware: %v", primitive, err)
 		}
 	}
-	spec, raw, err := Parse([]byte(`{"v":1,"id":"slots","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{usageSlot1Percent}%"}]}`))
+	spec, raw, err := Parse([]byte(`{"v":1,"id":"slots","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"Pace {usageSlot1Percent}%"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

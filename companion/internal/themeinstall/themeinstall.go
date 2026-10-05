@@ -617,6 +617,9 @@ func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, 
 	frame.Theme = ""
 	frame.ThemeSpec = nil
 	frame.ConfirmClearThemeSpec = false
+	// These frames are not trimmed to the device budget like the stream's,
+	// so they carry no pace (#412); the next streamed frame brings it.
+	frame = frame.WithoutUsagePace()
 	line, err := frame.MarshalLine()
 	if err != nil {
 		return fmt.Errorf("build live frame: %w", err)
@@ -648,6 +651,9 @@ func sendClearThemeSpecFrame(ctx context.Context, wifi transportlayer.WiFiTransp
 	frame.Theme = ""
 	frame.ThemeSpec = json.RawMessage("null")
 	frame.ConfirmClearThemeSpec = true
+	// These frames are not trimmed to the device budget like the stream's,
+	// so they carry no pace (#412); the next streamed frame brings it.
+	frame = frame.WithoutUsagePace()
 	line, err := frame.MarshalLine()
 	if err != nil {
 		return fmt.Errorf("build clear-theme frame: %w", err)

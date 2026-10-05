@@ -412,6 +412,26 @@ func truncateUTF8Bytes(value string, maxBytes int) string {
 	return value
 }
 
+// WithoutUsagePace drops CodexBar pace from every usage window. Firmware
+// without usage-pace-v1 would only carry it as dead wire bytes.
+func (f Frame) WithoutUsagePace() Frame {
+	f.UsageWindows = usageWindowsWithoutPace(f.UsageWindows)
+	f.UsageSlots = usageWindowsWithoutPace(f.UsageSlots)
+	return f
+}
+
+func usageWindowsWithoutPace(windows []UsageWindow) []UsageWindow {
+	if len(windows) == 0 {
+		return windows
+	}
+	out := make([]UsageWindow, len(windows))
+	for i, window := range windows {
+		window.Pace = UsagePace{}
+		out[i] = window
+	}
+	return out
+}
+
 func (f Frame) MarshalLine() ([]byte, error) {
 	return f.Normalize().MarshalNormalizedLine()
 }

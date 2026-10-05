@@ -367,18 +367,20 @@ func specUsesTextValign(spec Spec) bool {
 	return false
 }
 
-// Older firmware renders an unknown usageSlotN key as that window's percent,
-// so a pace binding must never reach it.
+// Older firmware renders an unknown usage window key as that window's
+// percent, so a pace binding must never reach it. The firmware reads any
+// usage window key containing "Pace" as pace (usageSlot1PaceDelta,
+// us1PaceDelta, usage.1.PaceDelta), so every such key counts here too.
 func specUsesUsagePace(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
-		if usagePaceKey.MatchString(primitive.Binding) || usagePaceKey.MatchString(primitive.Text) {
+		if strings.Contains(primitive.Binding, "Pace") || usagePaceTextKey.MatchString(primitive.Text) {
 			return true
 		}
 	}
 	return false
 }
 
-var usagePaceKey = regexp.MustCompile(`usageSlot[12]Pace`)
+var usagePaceTextKey = regexp.MustCompile(`\{[^{}]*Pace[^{}]*\}`)
 
 func specUsesProviderSlots(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
