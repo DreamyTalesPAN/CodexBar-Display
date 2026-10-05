@@ -56,19 +56,7 @@ bool cbaBufferAllocationFailedThisAttempt = false;
 // draw attempt. Nothing was decoded, so the attempt says nothing about the
 // asset and must not be reported as a failure.
 bool cbaBufferUnavailableThisAttempt = false;
-// Consecutive contended draw attempts during which the owning sprite made no
-// progress at all. A tall sprite legitimately holds the buffer for many
-// resume ticks -- a 480-row frame needs 60 of them -- so counting attempts
-// alone would report ordinary animation as a fault. Only contention while the
-// owner is stuck means the sprites are evicting each other and none can ever
-// finish a frame.
-unsigned int cbaBufferContentionStreak = 0;
-// Row the owning sprite had reached when contention was last observed. A
-// changed value proves the owner is still advancing.
-int cbaBufferContentionOwnerRow = -1;
-// Above this many consecutive contended attempts without any owner progress
-// the sprites are treated as starved and the condition is published.
-constexpr unsigned int kCbaBufferContentionStreakLimit = 12;
+CbaContentionWatch cbaBufferContention;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -107,10 +95,6 @@ struct AnimatedSpriteCache {
 
 AnimatedSpriteCache animatedSpriteCaches[kAnimatedSpriteCacheSlots];
 AnimatedSpriteCache* cbaFrameBufferOwner = nullptr;
-// The owner whose progress is being watched while another sprite waits for the
-// shared frame buffer. A different owner is progress in itself, because the
-// buffer changed hands.
-const AnimatedSpriteCache* cbaBufferContentionOwner = nullptr;
 int nextAnimatedSpriteCacheSlot = 0;
 
 void markThemeSpecRenderOk() {
@@ -737,20 +721,12 @@ bool prepareAnimatedSpriteBuffer(
     // later tick, so it must not be reported as a decode failure.
     if (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache) {
       cbaBufferUnavailableThisAttempt = true;
-      // A tall sprite holds the buffer across many resume ticks, which is
-      // normal. Only an owner that is not advancing means the sprites keep
-      // evicting each other so none can finish a frame; publish that, because
-      // health would otherwise report ok while the theme shows nothing. It
-      // stays a transient condition: the assets themselves are fine.
-      const AnimatedSpriteCache* owner = cbaFrameBufferOwner;
-      if (owner != cbaBufferContentionOwner || owner->nextRow != cbaBufferContentionOwnerRow) {
-        cbaBufferContentionOwner = owner;
-        cbaBufferContentionOwnerRow = owner->nextRow;
-        cbaBufferContentionStreak = 0;
-      } else if (cbaBufferContentionStreak < kCbaBufferContentionStreakLimit) {
-        cbaBufferContentionStreak += 1;
-      }
-      if (cbaBufferContentionStreak >= kCbaBufferContentionStreakLimit) {
+      // Sprites that keep evicting each other never finish a frame; publish
+      // that, because health would otherwise report ok while the theme shows
+      // nothing. It stays a transient condition: the assets themselves are
+      // fine.
+      if (cbaBufferContention.Observe(
+              cbaFrameBufferOwner, cbaFrameBufferOwner->nextRow, cbaCompletedFrames)) {
         setSpriteRenderError("cba_buffer_contention", cache.path.c_str());
       }
     }
@@ -795,11 +771,6 @@ bool prepareAnimatedSpriteBuffer(
     cbaFrameBuffer[i] = clearColor;
   }
   cbaFrameBufferOwner = &cache;
-  // This attempt owns the buffer and will decode into it, so the theme is
-  // making progress again.
-  cbaBufferContentionStreak = 0;
-  cbaBufferContentionOwner = nullptr;
-  cbaBufferContentionOwnerRow = -1;
   cache.frameBufferWidth = bufferWidth;
   cache.frameBufferHeight = bufferHeight;
   return true;

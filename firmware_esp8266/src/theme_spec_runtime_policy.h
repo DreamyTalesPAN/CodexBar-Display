@@ -194,5 +194,38 @@ class ThemeSpecRuntimePolicy {
   }
 };
 
+// Watches sprites that find the shared CBA frame buffer taken. A tall sprite
+// legitimately holds it for many resume ticks, so waiting alone is no fault.
+// Progress is a completed frame, or the same owner decoding further rows. A
+// change of owner is not: with more tall CBAs than cache slots the sprites
+// evict each other mid-frame, the buffer keeps changing hands and no frame
+// ever completes (#472).
+class CbaContentionWatch {
+ public:
+  static constexpr unsigned int kStreakLimit = 12;
+
+  // Records one contended draw attempt. True once the waiting has outlasted
+  // kStreakLimit attempts without progress.
+  bool Observe(const void* owner, int ownerRow, unsigned long completedFrames) {
+    const bool progressed =
+        completedFrames != completedFrames_ || (owner == owner_ && ownerRow > ownerRow_);
+    if (progressed) {
+      streak_ = 0;
+    } else if (streak_ < kStreakLimit) {
+      ++streak_;
+    }
+    owner_ = owner;
+    ownerRow_ = ownerRow;
+    completedFrames_ = completedFrames;
+    return streak_ >= kStreakLimit;
+  }
+
+ private:
+  const void* owner_ = nullptr;
+  int ownerRow_ = -1;
+  unsigned long completedFrames_ = 0;
+  unsigned int streak_ = 0;
+};
+
 }  // namespace esp8266
 }  // namespace codexbar_display
