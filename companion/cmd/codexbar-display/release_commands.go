@@ -33,6 +33,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -59,7 +60,7 @@ var (
 	errFirmwareUploadRestartRequired = errors.New("VibeTV must restart before another firmware upload")
 	errFirmwareUploadMayHaveWritten  = errors.New("firmware upload may have written data")
 	// Current firmware installs updates only over the USB cable (#489).
-	errFirmwareUpdateCableOnly   = errors.New("VibeTV installs updates only over the USB cable")
+	errFirmwareUpdateCableOnly   = themeinstall.ErrFirmwareUpdateCableOnly
 	upgradeStopLaunchAgentFn     = stopLaunchAgentBestEffort
 	upgradeRestartLaunchAgentFn  = restartLaunchAgent
 	rollbackRestartLaunchAgentFn = restartLaunchAgent
