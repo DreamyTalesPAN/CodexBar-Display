@@ -50,7 +50,11 @@ Behavior:
 ## Setup
 
 `setup` is idempotent. The default LaunchAgent runtime uses WiFi discovery, then stores the selected IP and stable `deviceId`.
-USB setup is an explicit development/support path.
+`setup --transport usb` (USB recovery flash below) is an explicit development/support path.
+
+A VibeTV on current firmware (#489) joins WiFi only after it was set up and
+paired over the USB cable in the Mac App (`docs/firmware-provisioning.md`).
+Do that first: WiFi discovery cannot find a fresh VibeTV.
 
 ### Default WiFi runtime
 
@@ -59,8 +63,8 @@ cd companion
 ../codexbar-display setup --yes
 ```
 
-This installs the companion runtime and writes a WiFi LaunchAgent. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
-It does not require USB serial.
+This installs the companion runtime and writes a WiFi LaunchAgent for a VibeTV that is already on WiFi: set up over the cable as above, or an early VibeTV without USB data in legacy WiFi mode. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
+The command itself does not require USB serial.
 
 ### Firmware update path
 
@@ -73,9 +77,10 @@ codexbar-display install-update \
   --confirm-live-update
 ```
 
-A WiFi target on current firmware fails with "VibeTV installs updates only
-over the USB cable." and writes nothing. The WiFi form below applies only to
-legacy firmware that still has the WiFi updater:
+A WiFi target then fails with "VibeTV installs updates only over the USB
+cable." and writes nothing. The WiFi form below applies only to an early
+VibeTV without USB data (legacy WiFi mode: `/hello` reports
+`transport.cableOnlyUpdates: false`) and to older firmware:
 
 ```bash
 codexbar-display install-update \
