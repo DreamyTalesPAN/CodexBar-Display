@@ -238,8 +238,10 @@ type Server struct {
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
 	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
-	legacyCableProbeMu    sync.Mutex
-	legacyCableProbePorts string
+	legacyCableProbeMu     sync.Mutex
+	legacyCableProbePorts  string
+	legacyCableProbeTries  int
+	legacyCableProbeAt     time.Time
 	updateHoldUntil        time.Time
 	updateHoldRefusals     atomic.Uint64
 	configMu               sync.Mutex
@@ -1599,12 +1601,20 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 	return hello, err == nil
 }
 
-// probeLegacyWiFiCable asks newly connected serial ports once whether one of
-// them is this legacy WiFi VibeTV. Early VibeTVs have no USB data connection,
-// so their firmware keeps WiFi updates until a request arrives over the USB
+// A VibeTV plugged in over USB restarts and does not answer the cable while it
+// joins WiFi, so a new port set is asked a few times, spaced apart.
+const (
+	legacyCableProbeAttempts   = 3
+	legacyCableProbeRetryDelay = 10 * time.Second
+)
+
+// probeLegacyWiFiCable asks newly connected serial ports whether one of them
+// is this legacy WiFi VibeTV. Early VibeTVs have no USB data connection, so
+// their firmware keeps WiFi updates until a request arrives over the USB
 // cable. That request ends legacy mode on the device, and its next WiFi hello
-// offers USB-C (issue #489). A port set that was already asked is skipped, so
-// neither this VibeTV nor another serial device is reopened on every poll.
+// offers USB-C (issue #489). A port set is asked at most
+// legacyCableProbeAttempts times, so neither this VibeTV nor another serial
+// device is reopened on every poll.
 func (s *Server) probeLegacyWiFiCable(deviceID string) {
 	if s.listCablePorts == nil || s.resolveCablePort == nil {
 		return
@@ -1615,10 +1625,18 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 	}
 	sort.Strings(ports)
 	key := strings.Join(ports, "\n")
+	due := func() bool {
+		if key != s.legacyCableProbePorts {
+			s.legacyCableProbePorts = key
+			s.legacyCableProbeTries = 0
+		}
+		return len(ports) > 0 && s.legacyCableProbeTries < legacyCableProbeAttempts &&
+			(s.legacyCableProbeTries == 0 || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
+	}
 	s.legacyCableProbeMu.Lock()
-	unchanged := key == s.legacyCableProbePorts
+	probe := due()
 	s.legacyCableProbeMu.Unlock()
-	if unchanged {
+	if !probe {
 		return
 	}
 	s.firmwareUpdateStartMu.Lock()
@@ -1627,9 +1645,13 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		return
 	}
 	s.legacyCableProbeMu.Lock()
-	s.legacyCableProbePorts = key
+	probe = due()
+	if probe {
+		s.legacyCableProbeTries++
+		s.legacyCableProbeAt = s.now()
+	}
 	s.legacyCableProbeMu.Unlock()
-	if len(ports) > 0 {
+	if probe {
 		_, _ = s.resolveCablePort("", deviceID)
 	}
 }

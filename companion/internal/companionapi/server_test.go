@@ -194,9 +194,10 @@ func TestStatusPreservesCableFreeWiFiDiscoveryMode(t *testing.T) {
 }
 
 // Issue #489: a legacy WiFi VibeTV leaves legacy mode on its first request over
-// the USB cable. Status asks each newly connected set of serial ports once, so
-// an early VibeTV without USB data is never asked and no port is reopened on
-// every poll.
+// the USB cable. Status asks each newly connected set of serial ports up to
+// three times, ten seconds apart, because a VibeTV restarts when plugged in. An
+// early VibeTV without USB data is never asked and no port is reopened on every
+// poll.
 func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 	var mode atomic.Value
 	mode.Store("legacy-wifi-only")
@@ -222,6 +223,8 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 		DeviceTarget: device.URL,
 		DeviceID:     "legacy-device",
 	})
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
 	var portsMu sync.Mutex
 	var ports []string
 	setPorts := func(next ...string) {
@@ -266,19 +269,26 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 	status()
 	status()
 	if len(probed) != 1 || probed[0] != "legacy-device" {
-		t.Fatalf("a new serial port must be asked exactly once for this VibeTV, got %v", probed)
+		t.Fatalf("a new serial port must be asked once per poll window for this VibeTV, got %v", probed)
+	}
+	for range 4 {
+		now = now.Add(legacyCableProbeRetryDelay)
+		status()
+	}
+	if len(probed) != legacyCableProbeAttempts {
+		t.Fatalf("an unanswered serial port must be asked %d times, got %v", legacyCableProbeAttempts, probed)
 	}
 
 	setPorts("/dev/cu.usbserial-1", "/dev/cu.usbserial-2")
 	status()
-	if len(probed) != 2 {
+	if len(probed) != legacyCableProbeAttempts+1 {
 		t.Fatalf("another new serial port must be asked once, got %v", probed)
 	}
 
 	mode.Store("wifi")
 	setPorts("/dev/cu.usbserial-3")
 	got = status()
-	if len(probed) != 2 {
+	if len(probed) != legacyCableProbeAttempts+1 {
 		t.Fatalf("a VibeTV that left legacy mode must not be asked again, got %v", probed)
 	}
 	caps = got.Device.Capabilities
