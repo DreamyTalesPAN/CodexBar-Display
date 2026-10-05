@@ -8699,6 +8699,70 @@ func TestSetupConnectionModeRecoversCableWhileWiFiIsOffline(t *testing.T) {
 	}
 }
 
+// #481: Cable chosen right after WiFi finds VibeTV restarting into WiFi. The
+// newer choice wins: wait for it on the cable and switch it back.
+func TestSetupConnectionModeCableWinsOverPendingWiFiSwitch(t *testing.T) {
+	const deviceID = "changed-its-mind"
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:                deviceID,
+		DeviceToken:             "pair-token",
+		CableAutoBindDisabled:   true,
+		WiFiTransitionStartedAt: time.Now().Unix(),
+	})
+	restarting := 2
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if expectedDeviceID != deviceID {
+			t.Fatalf("unexpected Cable resolution for %q", expectedDeviceID)
+		}
+		if restarting > 0 {
+			restarting--
+			return "", errors.New("VibeTV is restarting")
+		}
+		return "/dev/cu.usbserial-restart", nil
+	}
+	deviceMode := "wifi"
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		transport := protocol.TransportCapabilities{Active: "usb", Mode: deviceMode, Supported: []string{"usb", "wifi"}}
+		if deviceMode == "wifi" {
+			transport.TransitionPending = true
+			transport.TransitionFrom = "cable"
+			transport.TransitionTo = "wifi"
+		}
+		return protocol.DeviceHello{Kind: "hello", DeviceID: deviceID, Capabilities: protocol.CapabilityBlock{Transport: transport}}, nil
+	}
+	switches := 0
+	server.setCableConnectionMode = func(port, gotDeviceID, mode string) error {
+		switches++
+		if mode != "cable" || gotDeviceID != deviceID {
+			t.Fatalf("unexpected switch device=%q mode=%q", gotDeviceID, mode)
+		}
+		// The firmware rolls the pending WiFi switch back to Cable.
+		deviceMode = "cable"
+		return nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"selected"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if switches != 1 || restarting != 0 {
+		t.Fatalf("switches=%d restarting=%d", switches, restarting)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.WiFiTransitionPending() || cfg.DeviceID != deviceID {
+		t.Fatalf("Cable did not replace the pending WiFi switch: %+v", cfg)
+	}
+}
+
 func TestSetupConnectionModeReselectsLegacyWiFiOnlyWithoutTransition(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		CableAutoBindDisabled:        true,

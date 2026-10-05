@@ -3632,14 +3632,21 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		}{OK: true, ConnectionMode: "wifi", Status: "waiting_for_wifi"})
 		return
 	}
-	transitioningFromWiFi := mode == "cable" &&
+	// Cable chosen while the WiFi switch this Mac just sent may still be
+	// restarting VibeTV (#481) is the same move back from WiFi.
+	wifiSwitchPending := mode == "cable" && cfg.WiFiTransitionPending()
+	transitioningFromWiFi := wifiSwitchPending || (mode == "cable" &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
-		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != ""
+		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != "")
 	var port string
 	var hello protocol.DeviceHello
 	cableHelloReady := false
 	if transitioningFromWiFi {
 		expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
+		if wifiSwitchPending {
+			// Let the restart finish; the checks below report what is left.
+			_, _, _ = s.waitForCableHello(r.Context(), expectedDeviceID, false)
+		}
 		port, err = s.resolveCablePort("", expectedDeviceID)
 		if err == nil {
 			hello, err = s.readCableHello(port)
@@ -3657,7 +3664,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 					writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
 					return
 				}
-				port, hello, err = s.waitForCableMode(r.Context(), expectedDeviceID)
+				port, hello, err = s.waitForCableHello(r.Context(), expectedDeviceID, true)
 				if err != nil {
 					writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not finish changing its connection.", "Keep VibeTV connected by Cable, then try again.")
 					return
@@ -3856,9 +3863,12 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}{OK: true, ConnectionMode: "cable", Status: "selected", Device: device})
 }
 
-func (s *Server) waitForCableMode(
+// waitForCableHello waits up to cableTransitionWait for the expected VibeTV to
+// answer on the cable, and with requireCableMode until it reports Cable mode.
+func (s *Server) waitForCableHello(
 	ctx context.Context,
 	expectedDeviceID string,
+	requireCableMode bool,
 ) (string, protocol.DeviceHello, error) {
 	deadline := time.Now().Add(cableTransitionWait)
 	var lastErr error
@@ -3874,7 +3884,7 @@ func (s *Server) waitForCableMode(
 				if !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(expectedDeviceID)) {
 					return "", protocol.DeviceHello{}, errDeviceIdentityChanged
 				}
-				if runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) == "cable" {
+				if !requireCableMode || runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) == "cable" {
 					return port, hello, nil
 				}
 				lastErr = errors.New("VibeTV is still changing to Cable mode")
