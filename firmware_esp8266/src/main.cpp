@@ -24,6 +24,7 @@
 #include "gif_asset_validator_file.h"
 #include "sprite_asset_validator_file.h"
 #include "renderer_esp8266.h"
+#include "wifi_known_networks.h"
 #include "wifi_recovery_policy.h"
 #include "wifi_setup_portal.h"
 
@@ -98,6 +99,8 @@ const char kDeviceSettingsPath[] = "/s";
 const char kDeviceSettingsTemporaryPath[] = "/s.tmp";
 const char kConnectionTransitionPath[] = "/cm";
 const char kConnectionTransitionTemporaryPath[] = "/cm.tmp";
+const char kKnownWifiPath[] = "/wk";
+const char kKnownWifiTemporaryPath[] = "/wk.tmp";
 // The device settings record stays append-only: brightness byte, learned UTC
 // offset, standby, then optional next UTC-offset transitions. A shorter file is
 // an older record, so every reader must length-check its own section instead of
@@ -476,43 +479,54 @@ bool clearConnectionTransition() {
   return true;
 }
 
-bool saveConnectionTransition(const device_settings::ConnectionTransition& transition) {
+// Replaces a small record file through a temporary copy, so a power cut leaves
+// the old or the new record, never half of one.
+bool writeRecordFile(const char* path, const char* temporaryPath, const uint8_t* record, size_t size) {
   if (!LittleFS.begin()) {
     return false;
   }
-  File file = LittleFS.open(kConnectionTransitionTemporaryPath, "w");
+  File file = LittleFS.open(temporaryPath, "w");
   if (!file) {
     return false;
   }
-  uint8_t record[device_settings::kConnectionTransitionRecordBytes] = {};
-  device_settings::EncodeConnectionTransition(transition, record);
-  const size_t written = file.write(record, sizeof(record));
+  const size_t written = file.write(record, size);
   file.close();
-  if (written != sizeof(record)) {
-    LittleFS.remove(kConnectionTransitionTemporaryPath);
-    return false;
-  }
-  if (!LittleFS.rename(kConnectionTransitionTemporaryPath, kConnectionTransitionPath)) {
-    LittleFS.remove(kConnectionTransitionTemporaryPath);
+  if (written != size || !LittleFS.rename(temporaryPath, path)) {
+    LittleFS.remove(temporaryPath);
     return false;
   }
   return true;
+}
+
+// The bytes read from a record file, or -1 when there is none.
+int readRecordFile(const char* path, uint8_t* record, size_t size) {
+  if (!LittleFS.begin() || !LittleFS.exists(path)) {
+    return -1;
+  }
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    return -1;
+  }
+  const int readBytes = file.read(record, size);
+  file.close();
+  return readBytes;
+}
+
+bool saveConnectionTransition(const device_settings::ConnectionTransition& transition) {
+  uint8_t record[device_settings::kConnectionTransitionRecordBytes] = {};
+  device_settings::EncodeConnectionTransition(transition, record);
+  return writeRecordFile(kConnectionTransitionPath, kConnectionTransitionTemporaryPath, record, sizeof(record));
 }
 
 bool loadConnectionTransition() {
   connectionTransition = {};
   connectionTransitionPending = false;
   connectionTransitionStartedAtMs = 0;
-  if (!LittleFS.begin() || !LittleFS.exists(kConnectionTransitionPath)) {
-    return false;
-  }
-  File file = LittleFS.open(kConnectionTransitionPath, "r");
-  if (!file) {
-    return false;
-  }
   uint8_t record[device_settings::kConnectionTransitionRecordBytes] = {};
-  const int readBytes = file.read(record, sizeof(record));
-  file.close();
+  const int readBytes = readRecordFile(kConnectionTransitionPath, record, sizeof(record));
+  if (readBytes < 0) {
+    return false;
+  }
   if (!device_settings::DecodeConnectionTransition(
           record, static_cast<size_t>(readBytes), connectionTransition) ||
       deviceSettings.connectionMode != connectionTransition.target) {
@@ -1567,7 +1581,43 @@ bool readWifiCredentials(WifiCredentials& creds) {
   return String(creds.ssid).length() > 0;
 }
 
+namespace wifi_known = codexbar_display::esp8266::wifi_known;
+static_assert(wifi_known::kSsidBytes == kWifiSsidBytes && wifi_known::kPasswordBytes == kWifiPasswordBytes,
+              "remembered networks use the VTB1 field sizes");
+
+bool loadKnownWifiNetworks(wifi_known::List& list) {
+  uint8_t record[wifi_known::kEncodedBytes] = {};
+  const int readBytes = readRecordFile(kKnownWifiPath, record, sizeof(record));
+  return wifi_known::Decode(record, readBytes < 0 ? 0 : static_cast<size_t>(readBytes), list);
+}
+
+bool saveKnownWifiNetworks(const wifi_known::List& list) {
+  uint8_t record[wifi_known::kEncodedBytes] = {};
+  wifi_known::Encode(list, record);
+  return writeRecordFile(kKnownWifiPath, kKnownWifiTemporaryPath, record, sizeof(record));
+}
+
+bool forgetKnownWifiNetworks() {
+  return !LittleFS.begin() || !LittleFS.exists(kKnownWifiPath) || LittleFS.remove(kKnownWifiPath);
+}
+
+// The network a save replaces stays known, so moving back to it needs no new
+// credentials (#187). Only the current network lives in the VTB1 record.
+void rememberReplacedWifiNetwork(const String& ssid) {
+  wifi_known::List list;
+  (void)loadKnownWifiNetworks(list);
+  bool changed = wifi_known::Forget(list, ssid.c_str());
+  WifiCredentials current;
+  if (readWifiCredentials(current) && ssid != current.ssid) {
+    changed = wifi_known::Remember(list, current.ssid, current.password) || changed;
+  }
+  if (changed && !saveKnownWifiNetworks(list)) {
+    Serial.println("wifi_known_networks_save_failed");
+  }
+}
+
 bool saveWifiCredentials(const String& ssid, const String& password) {
+  rememberReplacedWifiNetwork(ssid);
   EEPROM.begin(kEepromBytes);
   EEPROM.put(0, kWifiCredsMagic);
   for (size_t i = 0; i < kWifiSsidBytes; ++i) {
@@ -1583,6 +1633,11 @@ bool saveWifiCredentials(const String& ssid, const String& password) {
 }
 
 bool clearWifiCredentials() {
+  // Reset forgets every remembered network, not only the current one.
+  if (!forgetKnownWifiNetworks()) {
+    Serial.println("wifi_credentials_clear_failed reason=known_networks");
+    return false;
+  }
   EEPROM.begin(kEepromBytes);
   for (size_t i = 0; i < kWifiCredsBytes; ++i) {
     EEPROM.write(i, 0);
@@ -1654,6 +1709,48 @@ bool connectToSavedWifi(const WifiCredentials& creds) {
   Serial.printf("wifi_connected ssid=%s ip=%s\n", creds.ssid, WiFi.localIP().toString().c_str());
   drawWaitingForCompanionStatus();
   return true;
+}
+
+// The current network did not answer: try the ones it replaced that a scan
+// can see, strongest first, each once (#187). The one that answers becomes
+// current, so the next boot tries it first.
+bool connectToKnownWifi() {
+  wifi_known::List list;
+  if (!loadKnownWifiNetworks(list) || list.count == 0) {
+    return false;
+  }
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(false);  // stop the failed attempt before scanning
+  const int found = WiFi.scanNetworks(false, false);
+  int32_t seenRssi[wifi_known::kMaxNetworks];
+  for (uint8_t i = 0; i < list.count; ++i) {
+    seenRssi[i] = wifi_known::kNotSeen;
+    if (wifi_known::SameSsid(list.items[i], savedWifiCredentials.ssid)) {
+      continue;  // already tried as the current network
+    }
+    for (int n = 0; n < found; ++n) {
+      if (WiFi.SSID(n) == list.items[i].ssid && WiFi.RSSI(n) > seenRssi[i]) {
+        seenRssi[i] = WiFi.RSSI(n);
+      }
+    }
+  }
+  WiFi.scanDelete();
+  uint8_t order[wifi_known::kMaxNetworks] = {};
+  const uint8_t candidates = wifi_known::Candidates(list, seenRssi, order);
+  for (uint8_t c = 0; c < candidates; ++c) {
+    WifiCredentials creds;
+    std::memcpy(creds.ssid, list.items[order[c]].ssid, sizeof(creds.ssid));
+    std::memcpy(creds.password, list.items[order[c]].password, sizeof(creds.password));
+    if (!connectToSavedWifi(creds)) {
+      continue;
+    }
+    if (saveWifiCredentials(creds.ssid, creds.password)) {
+      savedWifiCredentials = creds;
+      savedWifiCredentialsAvailable = true;
+    }
+    return true;
+  }
+  return false;
 }
 
 bool connectToSdkWifiConfig() {
@@ -4472,6 +4569,9 @@ void setup() {
 
   if (!wifiConnected && hasSavedWifi) {
     wifiConnected = connectToSavedWifi(savedWifiCredentials);
+  }
+  if (!wifiConnected) {
+    wifiConnected = connectToKnownWifi();
   }
   if (wifiConnected) {
     setupMode = false;
