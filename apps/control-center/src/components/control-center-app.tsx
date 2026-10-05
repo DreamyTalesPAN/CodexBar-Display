@@ -118,6 +118,7 @@ import {
   SetupUsageDialog,
   setupUsageCauseFor,
 } from "./setup/setup-usage-dialog";
+import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen } from "./settings-screen";
@@ -4664,6 +4665,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the window again. Theme and screensaver installs can temporarily make the
   // device unready; that is install progress, not a new customer setup.
   const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
+  // A VibeTV lost after setup is searched for once. The saved one found again
+  // reconnects on its own; any other answer, or that reconnect failing, is the
+  // customer's choice over the current screen.
+  const lostDevicePickerOpen =
+    !setupOwnsScreen &&
+    !needsRuntimeRecovery &&
+    deviceRecoveryPickerReason === "confirmed-loss" &&
+    deviceSearchState === "multiple" &&
+    !busyAction &&
+    (Boolean(lastError) ||
+      !deviceCandidates.some(
+        (candidate) =>
+          candidate.deviceId === deviceRecoveryGateRef.current.preferredDeviceId,
+      ));
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
@@ -5063,7 +5078,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
-            actionError={errorForHost(lastError, windowsHost)}
+            actionError={
+              lostDevicePickerOpen ? null : errorForHost(lastError, windowsHost)
+            }
             onDismissError={() => {
               setLastError(null);
               setProviderDisplayError(null);
@@ -5216,11 +5233,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         And the whole of setup wins over it too. Every failure inside the wizard
         is already a dialog over the step that caused it, and the provider step
         is where a usage problem is dealt with -- so this ambient surface has
-        nothing to add there and is still waiting once setup is done.
+        nothing to add there and is still waiting once setup is done. A lost
+        VibeTV's picker wins over it for the same reason.
       */}
+      {lostDevicePickerOpen ? (
+        <SetupDevicePickerDialog
+          candidates={deviceCandidates}
+          error={errorForHost(lastError, windowsHost)}
+          onConnect={(candidate) => void selectAndConnectDevice(candidate)}
+          onOpenChange={() => {
+            setDeviceCandidates([]);
+            setDeviceSearchState("idle");
+            setLastError(null);
+          }}
+        />
+      ) : null}
       {usageFailure &&
       !usageFailureHidden &&
       !needsRuntimeRecovery &&
+      !lostDevicePickerOpen &&
       !setupOwnsScreen ? (
         <SetupUsageDialog
           cause={usageFailure}

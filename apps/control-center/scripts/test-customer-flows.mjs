@@ -517,6 +517,7 @@ async function main() {
         testConnectInstallsFirmwareUpdate,
         testConnectFirmwareUpdateFailureOffersRetry,
         testRunningDeviceOutageKeepsControlCenterOpen,
+        testLostDeviceCandidatesAppearOverCurrentTab,
       ]) {
         await test(browser, appContext.appUrl);
         console.log(`${test.name} passed`);
@@ -895,6 +896,10 @@ async function main() {
       appContext.appUrl,
     );
     await testRunningDeviceOutageKeepsControlCenterOpen(
+      browser,
+      appContext.appUrl,
+    );
+    await testLostDeviceCandidatesAppearOverCurrentTab(
       browser,
       appContext.appUrl,
     );
@@ -5894,6 +5899,80 @@ async function testRunningDeviceOutageKeepsControlCenterOpen(browser, appUrl) {
     deviceWriteRequests.length === 0,
     `Running recovery must stay read-only while VibeTV is offline, got ${deviceWriteRequests}`,
   );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// Issue #358: a VibeTV that moved to a new address after the customer entered
+// the Control Center. The recovery search finds it there, but when it cannot be
+// connected on its own the customer must be able to choose it over the current
+// tab instead of being left without any way to select it.
+async function testLostDeviceCandidatesAppearOverCurrentTab(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const deviceId = "known-device-1";
+  const savedDevice = { ...companionDevice, connectionState: "ready", deviceId };
+  const movedTarget = "http://192.168.178.170";
+  const selections = [];
+  const companion = await routeCompanionOnline(page, installRequests, () => {}, {
+    device: savedDevice,
+    searchDevices: [
+      { target: movedTarget, deviceId, firmware: savedDevice.firmware, networkMode: "station", known: true },
+    ],
+  });
+  await page.route("**/v1/device/select", async (route) => {
+    const request = route.request().postDataJSON();
+    selections.push(request);
+    if (selections.length === 1) {
+      await route.fulfill({ status: 502, json: { ok: false, error: {
+        code: "device_selection_failed",
+        message: "The selected VibeTV could not be connected.",
+        nextAction: "Keep VibeTV powered on, then try again.",
+      } } });
+      return;
+    }
+    const moved = { ...savedDevice, target: request.target };
+    companion.setDevice(moved);
+    await route.fulfill({ json: { ok: true, device: moved } });
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
+    timeout: 15_000,
+  });
+  await clickNavigation(page, "Usage");
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+  companion.setDevice({ ...reconnectingDevice, deviceId });
+
+  const picker = page.getByRole("dialog");
+  await picker
+    .getByRole("radio", { name: new RegExp(`VibeTV ${deviceId}`) })
+    .waitFor({ timeout: 45_000 });
+  assert(
+    selections.length === 1 && selections[0].target === movedTarget,
+    `The rediscovered VibeTV must be tried once on its own first, got ${JSON.stringify(selections)}`,
+  );
+  assert(
+    (await page.getByRole("button", { name: "Overview", exact: true }).count()) === 1 &&
+      (await page.getByRole("heading", { name: "Usage", exact: true }).count()) === 1,
+    "The device picker must open over the current tab with navigation mounted",
+  );
+  assert(
+    (await page.getByRole("main", { name: SETUP_DEVICE_SCREEN }).count()) === 0,
+    "A lost VibeTV must not return the customer to setup",
+  );
+  await picker.getByRole("radio", { name: new RegExp(`VibeTV ${deviceId}`) }).click();
+  await picker.getByRole("button", { name: "Connect", exact: true }).click();
+  await picker.waitFor({ state: "detached", timeout: 15_000 });
+  assert(
+    selections.length === 2 &&
+      selections[1].target === movedTarget &&
+      selections[1].expectedDeviceId === deviceId,
+    `Choosing the VibeTV must connect it at its new address, got ${JSON.stringify(selections)}`,
+  );
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
   assertNoInstallRequests(installRequests);
   await page.close();
 }

@@ -4740,3 +4740,25 @@ issue scope, or release permission never implies UI permission.
 - User approval: On 2026-10-05 the user gave explicit approval in chat for the customer-visible UI changes of this batch ("du hast erstmal alle freigaben") after issue #507 was listed as needing UI approval.
 - Approved customer-visible result: A VibeTV on firmware from before USB-C support that is the only one on the Cable, and that setup updates over the Cable and then connects by itself, stays on "Connecting to VibeTV" after "update complete" until the next setup step appears. The "Choose your VibeTV" title, the device card still showing the firmware from before the update, and its Connect button no longer appear there. Like every Cable connect once its Cable step is done, the screen keeps the disabled "Use WiFi instead" link. Back from the AI provider step reconnects that VibeTV by Cable on its own, like any Cable VibeTV, instead of showing the list, and never updates it a second time. No new copy, control, layout, or visual treatment.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. This approves the pull-request branch only, not merge, release, or a device operation.
+
+## 2026-10-05 — Lost VibeTV can be chosen again over the current tab
+
+- User approval: The user explicitly approved customer-visible UI changes for
+  this batch in chat on 2026-10-05 ("du hast erstmal alle freigaben") after
+  issue #358 was listed as needing UI approval.
+- Approved customer-visible result: When the saved VibeTV is lost after the
+  customer entered the Control Center and the automatic recovery search finds
+  VibeTVs it does not reconnect on its own (the saved one is not among them, or
+  reconnecting it failed), a dialog opens over the current tab with the
+  navigation still visible. It reuses the setup dialog and the setup device
+  cards: title `Choose your VibeTV` and `Your VibeTV is not reachable. Choose it
+  to connect again.`, or the failed attempt's own message and next step; the
+  previously connected VibeTV (otherwise the first) is preselected; one
+  `Connect` action and the close button. Connect reconnects the chosen VibeTV
+  at its new address and the dialog closes; closing it leaves the current tab,
+  with Overview reporting the VibeTV as not reachable. The saved VibeTV found
+  at a new address still reconnects without a dialog. Settings does not show
+  the same failure in a second dialog, and the usage-service dialog waits while
+  this one is open.
+- Approved files: `control-center-app.tsx`, `setup/setup-device-dialogs.tsx`,
+  the customer-flow regression test, and this approval record.
