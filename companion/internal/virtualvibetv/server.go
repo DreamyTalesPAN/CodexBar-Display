@@ -1,6 +1,7 @@
 package virtualvibetv
 
 import (
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -487,6 +488,13 @@ func (s *Server) handleAssetUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.respond(w, r, http.StatusBadRequest, err.Error(), "invalid asset")
 		return
+	}
+	if hash := r.URL.Query().Get("hash"); hash != "" {
+		digest := md5.Sum(data)
+		if !strings.EqualFold(hash, hex.EncodeToString(digest[:])) {
+			s.respond(w, r, http.StatusBadRequest, "asset hash mismatch", "asset hash mismatch "+path)
+			return
+		}
 	}
 	s.mu.Lock()
 	s.assets[path] = append([]byte(nil), data...)

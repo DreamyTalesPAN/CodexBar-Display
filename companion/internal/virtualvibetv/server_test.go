@@ -2,9 +2,11 @@ package virtualvibetv
 
 import (
 	"bytes"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -260,4 +262,56 @@ func virtualHello(t *testing.T) protocol.DeviceHello {
 		t.Fatalf("decode hello: %v", err)
 	}
 	return hello
+}
+
+// Like the firmware, an upload that names an MD5 is stored only when its bytes
+// match it (#60); an upload without one is stored as before.
+func TestAssetUploadRefusesBytesThatDoNotMatchTheirHash(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	data := []byte("CBI1\n")
+	digest := md5.Sum(data)
+	upload := func(path, hash string) int {
+		var body bytes.Buffer
+		form := multipart.NewWriter(&body)
+		part, _ := form.CreateFormFile("asset", "a.cbi")
+		_, _ = part.Write(data)
+		_ = form.Close()
+		url := running.HTTPURL + "/assets?path=" + path
+		if hash != "" {
+			url += "&hash=" + hash
+		}
+		req, _ := http.NewRequest(http.MethodPost, url, &body)
+		req.Header.Set("Content-Type", form.FormDataContentType())
+		req.Header.Set("X-VibeTV-Token", cfg.PairingToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	wrong := md5.Sum([]byte("CBI2\n"))
+	if got := upload("/themes/u/bad.cbi", hex.EncodeToString(wrong[:])); got != http.StatusBadRequest {
+		t.Fatalf("same-size upload with a different hash: status %d, want 400", got)
+	}
+	if got := upload("/themes/u/good.cbi", hex.EncodeToString(digest[:])); got != http.StatusOK {
+		t.Fatalf("upload with its own hash: status %d", got)
+	}
+	if got := upload("/themes/u/old.cbi", ""); got != http.StatusOK {
+		t.Fatalf("upload without a hash: status %d", got)
+	}
+	running.mu.Lock()
+	_, bad := running.assets["/themes/u/bad.cbi"]
+	_, good := running.assets["/themes/u/good.cbi"]
+	_, old := running.assets["/themes/u/old.cbi"]
+	running.mu.Unlock()
+	if bad || !good || !old {
+		t.Fatalf("stored bad=%v good=%v old=%v, want only good and old", bad, good, old)
+	}
 }

@@ -377,7 +377,7 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	var gotPath string
 	var gotFilename string
 	var gotBody string
-	var gotToken string
+	var gotToken, gotHash string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/assets" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -389,6 +389,7 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 		}
 		gotToken = r.Header.Get(deviceAuthHeader)
 		gotPath = r.URL.Query().Get("path")
+		gotHash = r.URL.Query().Get("hash")
 		reader, err := r.MultipartReader()
 		if err != nil {
 			t.Fatalf("MultipartReader returned error: %v", err)
@@ -417,6 +418,10 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	}
 	if gotPath != "/themes/u/cm.cbi" || gotFilename != "cm.cbi" || gotBody != "CBI1\n" {
 		t.Fatalf("unexpected upload path=%q filename=%q body=%q", gotPath, gotFilename, gotBody)
+	}
+	// MD5 of "CBI1\n": VibeTV refuses the file unless its bytes match (#60).
+	if gotHash != "c97acf5b8f1b8e61fa88247b813e97c2" {
+		t.Fatalf("upload hash = %q", gotHash)
 	}
 	if gotToken != "env-token-456" {
 		t.Fatalf("unexpected auth token %q", gotToken)
