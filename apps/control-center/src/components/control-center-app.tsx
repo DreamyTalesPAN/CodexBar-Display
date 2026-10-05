@@ -1757,7 +1757,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     const candidate = deviceCandidates.find(
-      (entry) => entry.deviceId === preferredDeviceId,
+      (entry) =>
+        canReconnectLostDevice(entry) && entry.deviceId === preferredDeviceId,
     );
     if (
       !candidate ||
@@ -4283,21 +4284,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         companionStatus === "online" &&
         !providerSetupIsChecking(providerSetup)
       ) {
-        // Re-armed only after a quiet spell. A usage service that flaps
-        // between ready and failing was torn down once per flap, which held a
-        // fresh Mac on the provider step for minutes (#508). The dialog's
-        // "Try automatic repair again" still repairs at any time.
-        if (
-          Date.now() - providerRecoveryAutomaticAt.current >=
-          AUTOMATIC_USAGE_REPAIR_REARM_MS
-        ) {
-          providerRecoveryAttempted.current = false;
-        }
+        providerRecoveryAttempted.current = false;
         providerRecoveryManualAttempted.current = false;
       }
       return;
     }
     if (providerRecoveryAttempted.current) {
+      return;
+    }
+    // At most one automatic repair every ten minutes. A usage service that
+    // flaps between ready and failing was torn down once per flap, which held
+    // a fresh Mac on the provider step for minutes (#508). The dialog's "Try
+    // automatic repair again" still repairs at any time.
+    if (
+      Date.now() - providerRecoveryAutomaticAt.current <
+      AUTOMATIC_USAGE_REPAIR_REARM_MS
+    ) {
       return;
     }
     // A theme install job and its worker live inside the Companion process, and
@@ -4668,14 +4670,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // A VibeTV lost after setup is searched for once. The saved one found again
   // reconnects on its own; any other answer, or that reconnect failing, is the
   // customer's choice over the current screen.
+  // Only VibeTVs a WiFi reconnect can reach: a Cable entry is a connection
+  // change, not a reconnect, and /v1/device/select refuses it.
+  const lostDeviceCandidates = deviceCandidates.filter(canReconnectLostDevice);
   const lostDevicePickerOpen =
     !setupOwnsScreen &&
     !needsRuntimeRecovery &&
     deviceRecoveryPickerReason === "confirmed-loss" &&
     deviceSearchState === "multiple" &&
     !busyAction &&
+    lostDeviceCandidates.length > 0 &&
+    // Updates and Appearance put their own failure dialog over this screen.
+    !(activeShellTab === "updates" && firmwareUpdateStatus?.phase === "error") &&
+    !(activeShellTab === "theme-library" && themeInstallStatus?.phase === "error") &&
     (Boolean(lastError) ||
-      !deviceCandidates.some(
+      !lostDeviceCandidates.some(
         (candidate) =>
           candidate.deviceId === deviceRecoveryGateRef.current.preferredDeviceId,
       ));
@@ -4698,7 +4707,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       label: item.label,
     })),
   );
-  // Step 05 keeps offering all four live themes: hiding one would make the
+  // Step 05 keeps offering every live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the
   // theme library uses, so setup cannot promise what the device would refuse.
   const setupThemes = catalog.themes
@@ -5238,7 +5247,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       */}
       {lostDevicePickerOpen ? (
         <SetupDevicePickerDialog
-          candidates={deviceCandidates}
+          candidates={lostDeviceCandidates}
           error={errorForHost(lastError, windowsHost)}
           onConnect={(candidate) => void selectAndConnectDevice(candidate)}
           onOpenChange={() => {
@@ -5992,6 +6001,11 @@ function forgetDeviceTarget() {
   } catch {
     // localStorage may be unavailable in private or restricted browser contexts.
   }
+}
+
+// A lost VibeTV that the WiFi reconnect (`/v1/device/select`) can reach.
+function canReconnectLostDevice(candidate: DeviceCandidate): boolean {
+  return candidate.transport !== "cable" && Boolean(candidate.deviceId);
 }
 
 function normalizeDeviceTarget(target: string): string {

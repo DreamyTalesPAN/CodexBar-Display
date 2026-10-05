@@ -5436,10 +5436,12 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
     .getByRole("status")
     .getByText("> Theme is active on VibeTV.")
     .waitFor({ timeout: 15_000 });
-  // Wait for the state setup has to stay in rather than sampling it one
-  // second in: CI once saw no heading at all there (#430), which a sample
-  // cannot tell apart from a transient render. If the theme step really is
-  // gone, the failure says what was on screen and what the app last asked.
+  // Give a wrong completion a second to show, then wait for the state setup
+  // has to stay in rather than sampling it: CI once saw no heading at all
+  // there (#430), which a sample cannot tell apart from a transient render.
+  // If the theme step really is gone, the failure says what was on screen and
+  // what the app last asked.
+  await page.waitForTimeout(1_000);
   try {
     await page
       .getByRole("heading", { name: SETUP_THEME_SCREEN })

@@ -4783,3 +4783,22 @@ issue scope, or release permission never implies UI permission.
   `theme-studio/editor-geometry.ts`, `lib/theme-studio.ts`,
   `lib/theme-studio-capabilities.ts`, `lib/active-theme-upgrade.ts`, their
   tests, and this approval record.
+
+## 2026-10-05 — Review follow-up: lost-VibeTV picker, repair pause, Pace Meter
+
+- User approval: Covered by the user's "du hast erstmal alle freigaben" on
+  2026-10-05 for this batch. An independent review of the batch found these
+  gaps in the results approved above.
+- Approved customer-visible result: The lost-VibeTV picker (#358) lists only
+  VibeTVs it can reconnect over WiFi; a VibeTV found only on the Cable no
+  longer appears there, because choosing it could not connect. The picker
+  also waits while Updates shows "Update failed" or Appearance shows a failed
+  theme install, so it never opens on top of them. The automatic usage-service
+  repair (#508) pauses for ten minutes after it last ran, measured from that
+  repair; "Try automatic repair again" still works at any time. The new theme
+  "Pace Meter" (#412) appears in Appearance and in setup's theme step like
+  every live theme. On firmware without `usage-pace-v1` its Install is blocked
+  with the existing "Firmware update needed" state, like other themes that
+  need newer firmware. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, the customer-flow tests, the
+  Pace Meter theme pack, and this approval record.

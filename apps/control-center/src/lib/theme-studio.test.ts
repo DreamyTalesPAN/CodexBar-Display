@@ -474,6 +474,12 @@ describe("buildThemePack capability declaration", () => {
       buildThemePack(specWithBinding("usageSlot1Percent", { slot: 1 }), "Usage Pack")
         .manifest.requiredCapabilities,
     ).toEqual(["usage-slots-v1"]);
+    // The firmware reads every usage window key with "Pace" as pace.
+    const compact = validSpec();
+    compact.primitives.push({ text: "{us1PaceDelta}", type: "text", x: 0, y: 40 });
+    expect(buildThemePack(compact, "Compact Pace").manifest.requiredCapabilities).toContain(
+      "usage-pace-v1",
+    );
   });
 
   it("declares both when a design mixes them", () => {

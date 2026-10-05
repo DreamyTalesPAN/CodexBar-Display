@@ -798,9 +798,13 @@ export function themeStudioSpecUsesUsageSlots(
 
 // Older firmware renders an unknown usageSlotN key as that window's percent,
 // so a pace binding must never reach it.
+// The firmware reads any usage window key containing "Pace" as pace
+// (usageSlot1PaceDelta, us1PaceDelta, usage.1.PaceDelta).
 export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
-  return spec.primitives.some((primitive) =>
-    /usageSlot[12]Pace/.test(`${primitive.binding ?? ""} ${primitive.text ?? ""}`),
+  return spec.primitives.some(
+    (primitive) =>
+      (primitive.binding ?? "").includes("Pace") ||
+      /\{[^{}]*Pace[^{}]*\}/.test(primitive.text ?? ""),
   );
 }
 
