@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -19,9 +20,18 @@ func main() {
 	firmware := flag.String("firmware", "1.0.0", "installed firmware version")
 	candidate := flag.String("candidate-firmware", "1.0.1", "firmware version after a valid OTA")
 	expectedSHA := flag.String("expected-firmware-sha256", "", "optional SHA-256 required for raw OTA uploads")
+	scenarios := flag.String("scenario", "healthy", "comma-separated scenarios: "+strings.Join(scenarioNames(), ", "))
 	flag.Parse()
 
 	cfg := virtualvibetv.DefaultConfig()
+	for _, name := range strings.Split(*scenarios, ",") {
+		apply, ok := virtualvibetv.Scenarios[strings.TrimSpace(name)]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "unknown scenario %q; choose from %s\n", name, strings.Join(scenarioNames(), ", "))
+			os.Exit(2)
+		}
+		apply(&cfg)
+	}
 	cfg.HTTPListenAddr = strings.TrimSpace(*addr)
 	cfg.RawOTAListenAddr = strings.TrimSpace(*rawAddr)
 	cfg.Firmware = strings.TrimSpace(*firmware)
@@ -45,4 +55,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "encode Virtual VibeTV snapshot: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func scenarioNames() []string {
+	names := make([]string, 0, len(virtualvibetv.Scenarios))
+	for name := range virtualvibetv.Scenarios {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

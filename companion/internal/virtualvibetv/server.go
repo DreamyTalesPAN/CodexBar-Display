@@ -19,6 +19,11 @@ import (
 
 const maxUploadBytes = 8 << 20
 
+// MaxFrameBytes is the ESP8266 frame limit (kMaxFrameBytes in
+// firmware_esp8266/src/main.cpp). TestCapabilitiesMatchFirmware keeps the two
+// and every advertised theme limit in step (#354).
+const MaxFrameBytes = 2048
+
 // Config describes one deterministic Virtual VibeTV scenario.
 type Config struct {
 	HTTPListenAddr                string
@@ -37,6 +42,17 @@ type Config struct {
 	StreamRestartFails            bool
 	DropUpdateResponseAfterAccept bool
 	RejectUnnecessarySecondFlash  bool
+}
+
+// Scenarios are the deterministic failures the CLI can start with.
+var Scenarios = map[string]func(*Config){
+	"healthy":                    func(*Config) {},
+	"unhealthy":                  func(cfg *Config) { cfg.HealthUnhealthy = true },
+	"render-rejected":            func(cfg *Config) { cfg.RenderVerificationFails = true },
+	"lost-ota-response":          func(cfg *Config) { cfg.DropUpdateResponseAfterAccept = true },
+	"never-returns-after-update": func(cfg *Config) { cfg.NeverReturnsAfterUpdate = true },
+	// A healthy device already refuses a second flash of the same firmware.
+	"allow-second-flash": func(cfg *Config) { cfg.RejectUnnecessarySecondFlash = false },
 }
 
 func DefaultConfig() Config {
@@ -276,7 +292,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 			protocol.FeatureColorStopsV1,
 			protocol.FeatureTextValignV1,
 		},
-		MaxFrameBytes: 4096,
+		MaxFrameBytes: MaxFrameBytes,
 		Capabilities: protocol.CapabilityBlock{
 			Display: protocol.DisplayCapabilities{WidthPx: 240, HeightPx: 240, ColorDepthBits: 16},
 			// Mirrors themeCapabilitiesJSON in firmware_esp8266/src/main.cpp:
@@ -436,8 +452,8 @@ func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4097))
-	if err != nil || len(body) == 0 || len(body) > 4096 || !json.Valid(body) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, MaxFrameBytes+1))
+	if err != nil || len(body) == 0 || len(body) > MaxFrameBytes || !json.Valid(body) {
 		s.respond(w, r, http.StatusBadRequest, "invalid frame", "invalid frame")
 		return
 	}
