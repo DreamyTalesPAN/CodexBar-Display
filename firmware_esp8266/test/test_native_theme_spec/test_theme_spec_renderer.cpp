@@ -808,6 +808,36 @@ void testRawUsageWindowParserCapacityStillAcceptsNormalLabels() {
   TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kMaxUsageWindows - 1].available);
 }
 
+// #350: the parser keeps exactly the advertised number of windows, and the
+// renderer accepts the highest window index and refuses the next one.
+void testUsageWindowCapacityBoundaries() {
+  const size_t max = codexbar_display::core::kAdvertisedMaxUsageWindows;
+  for (size_t count : {static_cast<size_t>(0), static_cast<size_t>(1), max, max + 1}) {
+    std::string line = R"JSON({"v":2,"provider":"p","usageWindows":[)JSON";
+    for (size_t i = 0; i < count; ++i) {
+      line += i > 0 ? "," : "";
+      line += "{\"id\":\"w" + std::to_string(i) + "\",\"label\":\"W\",\"percent\":1,\"resetSecs\":1}";
+    }
+    line += "]}";
+    codexbar_display::core::Frame frame;
+    TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(line.c_str(), frame));
+    size_t available = 0;
+    for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
+      available += frame.usageWindows[i].available ? 1 : 0;
+    }
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(count < max ? count : max, available, line.c_str());
+  }
+
+  for (size_t index : {max - 1, max}) {
+    const std::string spec = "{\"p\":[{\"t\":\"p\",\"x\":0,\"y\":0,\"w\":10,\"h\":4,\"ui\":" +
+                             std::to_string(index) + "}]}";
+    JsonDocument doc;
+    CompiledThemeSpec scene;
+    TEST_ASSERT_EQUAL_MESSAGE(index < max, CompileThemeSpec(spec.c_str(), doc, scene), spec.c_str());
+    ReleaseCompiledThemeSpec(scene);
+  }
+}
+
 void testHighestAdvertisedUsageWindowBindingCompiles() {
   char binding[40];
   std::snprintf(
@@ -3644,6 +3674,7 @@ int main() {
   RUN_TEST(testTokenFireRepaintsOnlyForTokenTotals);
   RUN_TEST(testUncompilableSpecCountsAsUsingEverything);
   RUN_TEST(testUsageModeTextFollowsTheNormalizedFrame);
+  RUN_TEST(testUsageWindowCapacityBoundaries);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
   RUN_TEST(testCountdownOnlyFramesRedrawThemesThatShowCountdowns);
