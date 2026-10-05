@@ -978,6 +978,23 @@ void testUncompilableSpecCountsAsUsingEverything() {
   TEST_ASSERT_EQUAL_UINT32(0, use.fields);
 }
 
+void testUsageModeTextFollowsTheNormalizedFrame() {
+  const struct { const char* mode; const char* text; } cases[] = {
+      {R"JSON(,"usageMode":"used")JSON", "used"},
+      {R"JSON(,"usageMode":" Remaining ")JSON", "remaining"},
+      {R"JSON(,"usageMode":"left")JSON", "used"},
+      {"", "used"},
+  };
+  for (const auto& entry : cases) {
+    std::string line = R"JSON({"v":2,"provider":"codex","session":40,"weekly":60)JSON";
+    line += entry.mode;
+    line += "}";
+    codexbar_display::core::Frame frame;
+    TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(line.c_str(), frame));
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(entry.text, codexbar_display::core::UsageModeText(frame), line.c_str());
+  }
+}
+
 void testCompactUsageWindowBindingTriggersLiveRedraw() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3626,6 +3643,7 @@ int main() {
   RUN_TEST(testRealBindingsStillRepaintOnlyTheirPrimitives);
   RUN_TEST(testTokenFireRepaintsOnlyForTokenTotals);
   RUN_TEST(testUncompilableSpecCountsAsUsingEverything);
+  RUN_TEST(testUsageModeTextFollowsTheNormalizedFrame);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
   RUN_TEST(testCountdownOnlyFramesRedrawThemesThatShowCountdowns);

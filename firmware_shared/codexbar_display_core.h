@@ -259,6 +259,12 @@ struct SerialConsumeEvent {
   uint32_t themeSpecChangedFields = 0;
 };
 
+// What session, weekly and window percents mean. A missing or unknown
+// usageMode is normalized away by ParseFrameLine and reads as "used".
+inline const char* UsageModeText(const Frame& frame) {
+  return frame.hasUsageMode && frame.usageMode == "remaining" ? "remaining" : "used";
+}
+
 inline int ClampPct(int value) {
   if (value < 0) {
     return 0;

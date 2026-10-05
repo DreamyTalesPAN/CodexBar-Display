@@ -1231,13 +1231,6 @@ class ThemeSpecSink final : public themespec::Sink {
   uint16_t backgroundColor_ = 0x0000;
 };
 
-const char* usageModeText() {
-  if (CurrentFrame().hasUsageMode && CurrentFrame().usageMode == "remaining") {
-    return "remaining";
-  }
-  return "used";
-}
-
 const char* themeSpecUpdateNoticeText() {
   return "Open VibeTV Mac App";
 }
@@ -1279,7 +1272,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   }
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
-  frame.usageMode = usageModeText();
+  frame.usageMode = codexbar_display::core::UsageModeText(CurrentFrame());
   frame.activity = CurrentFrame().activity.c_str();
   // The device clock owns {time}/{date}; the Companion string is only a
   // fallback and is dropped once it is no longer current.
