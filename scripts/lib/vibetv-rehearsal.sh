@@ -210,7 +210,9 @@ print(json.dumps({"kind": "hello", "deviceId": device["deviceId"],
 import glob, json, sys, time
 import serial
 
-deadline = time.time() + float(sys.argv[1])
+# Every port gets its own window, so an unrelated silent serial port ahead of
+# VibeTV cannot use up the time before VibeTV is asked.
+window = float(sys.argv[1])
 ports = sorted(glob.glob("/dev/cu.usbserial*") + glob.glob("/dev/cu.wchusbserial*"))
 for path in ports:
     port = serial.Serial()
@@ -222,6 +224,7 @@ for path in ports:
         continue
     buffer = b""
     port.write(b'{"kind":"request","op":"hello"}\n')
+    deadline = time.time() + window
     while time.time() < deadline:
         buffer += port.read(4096)
         *lines, buffer = buffer.split(b"\n")
