@@ -50,17 +50,17 @@ describe("Pace Meter theme pack", () => {
     expect(texts.filter((p) => p.b === "l")).toHaveLength(1);
   });
 
-  it("shows reserve and deficit apart, and whether each pace lasts", () => {
+  it("shows each window's signed pace and whether it lasts", () => {
     expect(visibleTexts(frame(claude))).toEqual([
       "Claude",
-      "Session", "92%", "-25%", "reserve", "lasts until reset",
-      "Weekly", "27%", "+14%", "deficit", "runs out",
+      "Session", "-25%", "lasts until reset",
+      "Weekly", "+14%", "runs out",
     ]);
   });
 
   it("degrades to plain usage when CodexBar has no pace", () => {
     const values = visibleTexts(frame(claude.map((window) => ({ ...window, pace: undefined }))));
-    expect(values).toEqual(["Claude", "Session", "92%", "", "", "", "Weekly", "27%", "", "", ""]);
+    expect(values).toEqual(["Claude", "Session", "", "", "Weekly", "", ""]);
   });
 
   it("keeps the longest real values inside their lanes and the screen", () => {

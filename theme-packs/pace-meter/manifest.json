@@ -11,10 +11,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/pm-2-c946a578.json",
+    "path": "/themes/u/pm-3-0f47a274.json",
     "file": "theme.json",
-    "bytes": 1326,
-    "sha256": "c946a5785a3e11c35d1b9cb70625184eff9f62a36bb4432a044942539f3872fb",
+    "bytes": 1194,
+    "sha256": "0f47a274d9cbeaa096e7c1d6e56887bfcd39abf44f44031926bccd875844d749",
     "contentType": "application/json"
   },
   "assets": []
