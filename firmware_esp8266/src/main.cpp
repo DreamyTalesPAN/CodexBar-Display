@@ -1603,7 +1603,7 @@ bool saveKnownWifiNetworks(const wifi_known::List& list) {
 
 bool forgetKnownWifiNetworks() {
   if (!LittleFS.begin()) {
-    return true;
+    return false;  // a list this mount cannot reach may come back on a later one
   }
   LittleFS.remove(kKnownWifiTemporaryPath);  // a save cut short by power loss
   return !LittleFS.exists(kKnownWifiPath) || LittleFS.remove(kKnownWifiPath);

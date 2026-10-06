@@ -139,6 +139,8 @@ bool testFirmwareWiring(const std::string& source) {
                 "Reset WiFi must forget every remembered network") &&
          expect(forget.find("LittleFS.remove(kKnownWifiTemporaryPath)") != std::string::npos,
                 "Reset WiFi must also drop a list a power cut left half-written") &&
+         expect(forget.find("if (!LittleFS.begin()) {\n    return false;") != std::string::npos,
+                "Reset WiFi must fail, not report success, when it cannot reach the list") &&
          expect(save.find("rememberReplacedWifiNetwork(ssid)") < save.find("EEPROM.put(0, kWifiCredsMagic)"),
                 "saving a network must first remember the one it replaces") &&
          expect(boot != std::string::npos && setupAp != std::string::npos &&
