@@ -80,6 +80,7 @@ type DisplayFrame = {
   resetSecs?: number;
   resetTrust?: string;
   resetTrustSecs?: number;
+  resetSource?: string;
   usageMode?: string;
   usageWindows?: UsageWindowFrame[];
   usageSlots?: UsageSlotFrame[];
@@ -1290,7 +1291,8 @@ export function buildFrameData(
       (carrier) => (carrier.resetSecs ?? 0) > 0,
     ) &&
     (!trustEnforced ||
-      (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0);
+      (Boolean(displayFrame.resetSource) &&
+        (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0));
   // Mirrors CurrentUsageWindowRemainingSecs: idle is a window the host sent
   // with no deadline and nothing used. No deadline alone is not enough -- the
   // host also sends 0 for a deadline that ran out before the frame left and

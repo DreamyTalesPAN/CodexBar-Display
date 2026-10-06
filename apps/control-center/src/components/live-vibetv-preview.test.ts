@@ -411,6 +411,7 @@ describe("dynamic usage slot preview", () => {
       label: "Claude",
       resetSecs: 4 * 24 * 3600,
       resetTrust: "live",
+          resetSource: "claude:secondary",
       resetTrustSecs: 18000,
       usageWindows: [
         { id: "primary", label: "Session", percent: 0, resetSecs: 0 },
@@ -456,6 +457,7 @@ describe("dynamic usage slot preview", () => {
           label: "Claude",
           resetSecs: 4 * 24 * 3600,
           resetTrust: "live",
+          resetSource: "claude:secondary",
           resetTrustSecs: 18000,
           ...extra,
         },
@@ -478,6 +480,16 @@ describe("dynamic usage slot preview", () => {
     expect(boundValue("us2r", used)).toBe("No active session");
     // A provider slot is only sent with a deadline, so 0 is one that ran out.
     expect(boundValue("pv1r", used)).toBe("Reset unavailable");
+
+    // A trusted basis names its source, as on the device.
+    const unnamed = frameWith({
+      resetSource: "",
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 93, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+    });
+    expect(boundValue("us2r", unnamed)).toBe("Reset unavailable");
 
     // Windows kept from a failed collection are unavailable, not idle.
     const retained = frameWith({
