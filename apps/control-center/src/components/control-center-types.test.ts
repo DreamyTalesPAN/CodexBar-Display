@@ -6,6 +6,7 @@ import {
   deviceIsActive,
   deviceIsCustomerConnected,
   deviceCanSwitchToCable,
+  deviceOffersCable,
   deviceIsReady,
   deviceUsesCable,
   deviceNeedsExplicitConnect,
@@ -183,6 +184,52 @@ describe("device connection contract", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  // Issue #489: over WiFi, only cable-only firmware offers USB-C. Older
+  // firmware and legacy WiFi VibeTVs without USB data keep it greyed out.
+  it("offers USB-C over WiFi only on cable-only firmware", () => {
+    const wifi = (transport: {
+      mode?: string;
+      supported?: string[];
+      cableOnlyUpdates?: boolean;
+    }) => ({
+      active: true,
+      connected: true,
+      capabilities: { transport: { active: "wifi", ...transport } },
+    });
+    expect(
+      deviceOffersCable(
+        wifi({ mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true }),
+      ),
+    ).toBe(true);
+    expect(
+      deviceOffersCable(wifi({ mode: "wifi", supported: ["usb", "wifi"] })),
+    ).toBe(false);
+    expect(
+      deviceOffersCable(
+        wifi({ mode: "legacy-wifi-only", supported: ["wifi"], cableOnlyUpdates: false }),
+      ),
+    ).toBe(false);
+    expect(
+      deviceOffersCable({
+        active: true,
+        connected: true,
+        capabilities: {
+          transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      deviceOffersCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] },
+        },
+      }),
+    ).toBe(true);
+    expect(deviceOffersCable({ active: true, connected: true })).toBe(true);
   });
 
   it("shows theme setup only for an active, paired VibeTV whose theme is missing", () => {

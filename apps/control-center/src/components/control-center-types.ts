@@ -357,6 +357,9 @@ export type DeviceInfo = {
       active?: string;
       mode?: string;
       supported?: string[];
+      // True on firmware that takes setup, pairing and updates only over the
+      // USB cable, false on a legacy WiFi VibeTV, missing on older firmware.
+      cableOnlyUpdates?: boolean;
     };
   };
 };
@@ -637,6 +640,25 @@ export function deviceCanSwitchToCable(
       !deviceUsesCable(device) &&
       supported?.includes("usb"),
   );
+}
+
+// Whether Settings may offer USB-C (issue #489). A VibeTV answering over WiFi
+// offers it only on firmware that keeps setup and updates on the cable. Older
+// firmware and a legacy WiFi VibeTV, which may have no USB data connection,
+// keep it greyed out. A Cable or offline binding keeps it, because the switch
+// itself goes over the cable.
+export function deviceOffersCable(device: DeviceInfo | null | undefined) {
+  const transport = device?.capabilities?.transport;
+  if (!transport?.supported) {
+    return true;
+  }
+  if (!transport.supported.includes("usb")) {
+    return false;
+  }
+  if (device?.connected !== true || deviceUsesCable(device)) {
+    return true;
+  }
+  return transport.cableOnlyUpdates === true;
 }
 
 // A reachable VibeTV whose display stream is running for this exact device but

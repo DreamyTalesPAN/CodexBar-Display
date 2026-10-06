@@ -204,6 +204,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
+	listCablePorts         func() ([]string, error)
 	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
@@ -216,6 +217,7 @@ type Server struct {
 	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
+	factoryResetCable      func(string, string) error
 	scanCableWiFi          func(string, string) ([]protocol.WiFiNetwork, error)
 	sendCableLine          func(string, []byte) error
 	prepareCableTheme      func(context.Context, string, string, string, string) error
@@ -235,6 +237,11 @@ type Server struct {
 	displayStreamRunning   func() bool
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
+	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
+	legacyCableProbeMu     sync.Mutex
+	legacyCableProbePorts  string
+	legacyCableProbeTries  int
+	legacyCableProbeAt     time.Time
 	updateHoldUntil        time.Time
 	updateHoldRefusals     atomic.Uint64
 	configMu               sync.Mutex
@@ -996,6 +1003,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:           themeinstall.Install,
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
+		listCablePorts:         usb.ListPorts,
 		discoverCableDevices:   usb.DiscoverVibeTVs,
 		readCableHello:         usb.ReadDeviceHello,
 		currentCableHello:      usb.CurrentDeviceHello,
@@ -1008,6 +1016,7 @@ func New(opts Options) (*Server, error) {
 		readCableSettings:      usb.ReadSettings,
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
+		factoryResetCable:      usb.FactoryReset,
 		scanCableWiFi:          usb.ScanWiFi,
 		sendCableLine:          usb.SendLine,
 		prepareCableTheme:      usb.PrepareThemeInstall,
@@ -1113,6 +1122,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.setupStep("device_pair", "Pairing with VibeTV.", "VibeTV paired.", s.handleDevicePair))
+	mux.HandleFunc("/v1/device/factory-reset", s.handleDeviceFactoryReset)
 	mux.HandleFunc("/v1/setup/connection-mode", s.setupStep("connection_mode", "Changing how VibeTV connects.", "Connection choice saved.", s.handleSetupConnectionMode))
 	mux.HandleFunc("/v1/setup/wifi-networks", s.handleSetupWiFiNetworks)
 	mux.HandleFunc("/v1/setup/wifi", s.setupStep("wifi_setup", "Sending WiFi details to VibeTV.", "VibeTV received the WiFi details.", s.handleSetupWiFi))
@@ -1463,6 +1473,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			if !identityMismatch && transitionConfirmed {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+				if hello.Normalize().Capabilities.Transport.Mode == "legacy-wifi-only" {
+					s.probeLegacyWiFiCable(configuredID)
+				}
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
 				device.Paired = savedPairingRemainsValid(
 					cfg.DeviceToken,
@@ -1591,6 +1604,61 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 	}
 	hello, err := usb.ReadDeviceHello(port)
 	return hello, err == nil
+}
+
+// A VibeTV plugged in over USB restarts and does not answer the cable while it
+// joins WiFi, so a new port set is asked a few times, spaced apart.
+const (
+	legacyCableProbeAttempts   = 3
+	legacyCableProbeRetryDelay = 10 * time.Second
+)
+
+// probeLegacyWiFiCable asks newly connected serial ports whether one of them
+// is this legacy WiFi VibeTV. Early VibeTVs have no USB data connection, so
+// their firmware keeps WiFi updates until a request arrives over the USB
+// cable. That request ends legacy mode on the device, and its next WiFi hello
+// offers USB-C (issue #489). A port set is asked at most
+// legacyCableProbeAttempts times, so neither this VibeTV nor another serial
+// device is reopened on every poll.
+func (s *Server) probeLegacyWiFiCable(deviceID string) {
+	if s.listCablePorts == nil || s.resolveCablePort == nil {
+		return
+	}
+	ports, err := s.listCablePorts()
+	if err != nil {
+		return
+	}
+	sort.Strings(ports)
+	key := strings.Join(ports, "\n")
+	due := func() bool {
+		if key != s.legacyCableProbePorts {
+			s.legacyCableProbePorts = key
+			s.legacyCableProbeTries = 0
+		}
+		return len(ports) > 0 && s.legacyCableProbeTries < legacyCableProbeAttempts &&
+			(s.legacyCableProbeTries == 0 || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
+	}
+	s.legacyCableProbeMu.Lock()
+	probe := due()
+	s.legacyCableProbeMu.Unlock()
+	if !probe {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, running := s.activeFirmwareUpdateJob(); running || s.themeInstallInFlight() {
+		return
+	}
+	s.legacyCableProbeMu.Lock()
+	probe = due()
+	if probe {
+		s.legacyCableProbeTries++
+		s.legacyCableProbeAt = s.now()
+	}
+	s.legacyCableProbeMu.Unlock()
+	if probe {
+		_, _ = s.resolveCablePort("", deviceID)
+	}
 }
 
 func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
@@ -3545,6 +3613,75 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		ConnectionModeChoiceRequired: true,
 		Setup:                        setupProgress{ProviderSelectionRequired: true},
 	})
+}
+
+// handleDeviceFactoryReset erases the Cable VibeTV: WiFi details, pairing
+// token, settings and themes. It only runs over the USB cable, so nobody on
+// the WiFi network can wipe or take over the device.
+func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+		return
+	}
+	if s.rejectActiveThemeInstall(w) {
+		return
+	}
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		defer s.pauseDisplayStream(false)
+	}
+	cfg, err := s.configForMaintenance()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
+		writeError(w, http.StatusConflict, "factory_reset_cable_required", "VibeTV can only be erased over the USB cable.", "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then try again.")
+		return
+	}
+	port, hello, ok := s.requireCableControlDevice(w, cfg)
+	if !ok {
+		return
+	}
+	if err := s.factoryResetCable(port, hello.DeviceID); err != nil {
+		writeError(w, http.StatusBadGateway, "factory_reset_failed", "VibeTV could not be erased.", "Keep VibeTV connected by the USB cable, then try again.")
+		return
+	}
+	// The device no longer knows its pairing token, so the Mac forgets the
+	// whole binding now, like "Run setup again", instead of relying on a
+	// second request from the app that may never arrive.
+	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.ResetDeviceBinding()
+		current.SetProviderSelectionSetupComplete(false)
+		current.ProviderDisplay = nil
+		known := current.KnownDevices[:0]
+		for _, device := range current.KnownDevices {
+			if !strings.EqualFold(device.DeviceID, hello.DeviceID) {
+				known = append(known, device)
+			}
+		}
+		current.KnownDevices = known
+	}); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if s.resetCableSender != nil {
+		s.resetCableSender()
+	}
+	s.clearDisplayVerification("")
+	s.clearConfiguredDeviceState()
+	writeJSON(w, http.StatusOK, struct {
+		OK bool `json:"ok"`
+	}{OK: true})
 }
 
 func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Request) {
@@ -7333,6 +7470,13 @@ func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 			NextAction: "Reconnect VibeTV with a data-capable Cable, wait for it to start, then try the update once.",
 		}
 	}
+	if strings.TrimSpace(retryPolicy) == "cable_required" {
+		return apiError{
+			Code:       "firmware_update_cable_required",
+			Message:    "VibeTV installs updates only over the USB cable.",
+			NextAction: "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then update again.",
+		}
+	}
 	return apiError{
 		Code:       "firmware_update_failed",
 		Message:    "VibeTV update failed.",
@@ -8836,8 +8980,11 @@ func pairingAuthorizationStatus(err error) (int, bool) {
 }
 
 func isPairingAuthorizationStatus(statusCode int) bool {
+	// Current firmware has no WiFi pairing endpoint (404): only the USB cable
+	// issues a token.
 	return statusCode == http.StatusUnauthorized ||
 		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusNotFound ||
 		statusCode == http.StatusTooManyRequests
 }
 
@@ -9054,6 +9201,14 @@ func writePairingError(w http.ResponseWriter, err error, firmware string) {
 	}
 
 	switch statusCode {
+	case http.StatusNotFound:
+		writeError(
+			w,
+			http.StatusConflict,
+			"cable_pairing_required",
+			"VibeTV pairs only over the USB cable.",
+			"Connect VibeTV to this Mac with the USB cable, then press Connect.",
+		)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		writeError(
 			w,

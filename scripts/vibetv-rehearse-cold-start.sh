@@ -50,8 +50,34 @@ with --restore.
 PLAN
 rehearsal::confirm 'Proceed?'
 
+# The firmware carries its own version, not the release version: 1.0.54 ships
+# firmware 1.0.40. Waiting for the release version here reports every real
+# release candidate as unconfirmed after a flash that in fact succeeded.
+FIRMWARE_OUTCOME=installed
+flash_candidate_firmware() {
+  rehearsal::step "Flashing candidate firmware $CANDIDATE_FIRMWARE_VERSION"
+  if [[ "$DEVICE_FIRMWARE" == "$CANDIDATE_FIRMWARE_VERSION" ]]; then
+    rehearsal::info "already on $CANDIDATE_FIRMWARE_VERSION, nothing to flash"
+  elif rehearsal::flash_firmware "$REHEARSAL_SERVER_URL/firmware-manifest.json" "$CANDIDATE_FIRMWARE_VERSION" 1; then
+    rehearsal::wait_for_device_firmware "$CANDIDATE_FIRMWARE_VERSION" \
+      || { rehearsal::warn "VibeTV did not report $CANDIDATE_FIRMWARE_VERSION within 3 minutes"; FIRMWARE_OUTCOME=unconfirmed; }
+  else
+    FIRMWARE_OUTCOME=failed
+  fi
+}
+
 # --- 1. clean Mac ------------------------------------------------------------
 rehearsal::capture_device_token
+
+# A Cable flash authenticates with this Mac's pairing, which the purge removes,
+# and firmware no longer updates over WiFi. So a Cable VibeTV gets the
+# candidate firmware first, from the app that is still installed.
+if rehearsal::is_cable_target; then
+  rehearsal::start_artifact_server
+  rehearsal::stop_runtime
+  flash_candidate_firmware
+fi
+
 rehearsal::purge_mac
 
 # --- 2. install the candidate app -------------------------------------------
@@ -60,28 +86,17 @@ rehearsal::install_dmg "$CANDIDATE_DMG" candidate
 rehearsal::apply_companion_override
 
 # --- 3. flash the candidate firmware ----------------------------------------
-rehearsal::start_artifact_server
+if ! rehearsal::is_cable_target; then
+  rehearsal::start_artifact_server
 
-# --companion-override bootstraps the runtime agent back in step 2, and a direct
-# CLI flash refuses to start beside another device writer: the whole run ends in
-# "quiesce-device-writers: another VibeTV runtime is running and polling the
-# device". Warm start stops the runtime before its baseline flash for exactly
-# this reason; without the override nothing is polling yet, which is why the
-# documented local-validation path was the only one that hit it.
-rehearsal::stop_runtime
-
-# The firmware carries its own version, not the release version: 1.0.54 ships
-# firmware 1.0.40. Waiting for the release version here reports every real
-# release candidate as unconfirmed after a flash that in fact succeeded.
-rehearsal::step "Flashing candidate firmware $CANDIDATE_FIRMWARE_VERSION"
-FIRMWARE_OUTCOME=installed
-if [[ "$DEVICE_FIRMWARE" == "$CANDIDATE_FIRMWARE_VERSION" ]]; then
-  rehearsal::info "already on $CANDIDATE_FIRMWARE_VERSION, nothing to flash"
-elif rehearsal::flash_firmware "$REHEARSAL_SERVER_URL/firmware-manifest.json" "$CANDIDATE_FIRMWARE_VERSION" 1; then
-  rehearsal::wait_for_device_firmware "$CANDIDATE_FIRMWARE_VERSION" \
-    || { rehearsal::warn "VibeTV did not report $CANDIDATE_FIRMWARE_VERSION within 3 minutes"; FIRMWARE_OUTCOME=unconfirmed; }
-else
-  FIRMWARE_OUTCOME=failed
+  # --companion-override bootstraps the runtime agent back in step 2, and a direct
+  # CLI flash refuses to start beside another device writer: the whole run ends in
+  # "quiesce-device-writers: another VibeTV runtime is running and polling the
+  # device". Warm start stops the runtime before its baseline flash for exactly
+  # this reason; without the override nothing is polling yet, which is why the
+  # documented local-validation path was the only one that hit it.
+  rehearsal::stop_runtime
+  flash_candidate_firmware
 fi
 
 # Keep the candidate manifest active so the Updates tab stays consistent with
