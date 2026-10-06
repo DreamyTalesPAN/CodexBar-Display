@@ -3670,9 +3670,12 @@ func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mo
 	// restarting VibeTV (#481) is the same move back from WiFi.
 	wifiSwitchPending := mode == "cable" && cfg.WiFiTransitionPending() &&
 		s.currentTime().Sub(time.Unix(cfg.WiFiTransitionStartedAt, 0)) < cableTransitionWait
-	transitioningFromWiFi := wifiSwitchPending || (mode == "cable" &&
+	// Another VibeTV picked on the cable is a new selection, not the saved
+	// WiFi VibeTV moving to its cable; looking for the saved one there fails.
+	savedDeviceRequested := requestedDeviceID == "" || strings.EqualFold(requestedDeviceID, strings.TrimSpace(cfg.DeviceID))
+	transitioningFromWiFi := savedDeviceRequested && (wifiSwitchPending || (mode == "cable" &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
-		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != "")
+		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != ""))
 	var port string
 	var hello protocol.DeviceHello
 	cableHelloReady := false

@@ -9204,6 +9204,51 @@ func TestSetupConnectionModeSelectsCableWithoutPairingForBoardWithoutAuth(t *tes
 	}
 }
 
+// A saved WiFi VibeTV must not block picking another VibeTV on the cable: the
+// request names the new one, so that is the one to look for there.
+func TestSetupConnectionModeSelectsAnotherVibeTVOnCableWhileAWiFiOneIsSaved(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi", DeviceID: "saved-wifi",
+		DeviceTarget: "http://192.0.2.10", DeviceToken: "saved-token",
+	})
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "other-cable" {
+			return "", usb.ErrDeviceHelloUnavailable
+		}
+		return "/dev/cu.usbserial-other", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind: "hello", DeviceID: "other-cable",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("a VibeTV already in Cable mode needs no switch")
+		return nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{DeviceID: "other-cable", Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable","deviceId":"other-cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "other-cable" {
+		t.Fatalf("the picked Cable VibeTV did not become the active one: %+v", cfg)
+	}
+}
+
 func TestSetupConnectionModeRefreshesCableTokenRegardlessOfPairedFlag(t *testing.T) {
 	for _, paired := range []bool{false, true} {
 		for _, scenario := range []string{"cable", "wifi", "wifi-saved"} {
