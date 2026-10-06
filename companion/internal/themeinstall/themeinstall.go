@@ -1152,12 +1152,24 @@ func verifyThemeInstallHealth(wifi transportlayer.WiFiTransport, target, activeP
 	return lastErr
 }
 
+// ErrThemeNotRendered: the installed theme is the active one and the VibeTV
+// reports that it cannot draw it. A failed health read, a theme that is not
+// active or another active path are not this error.
+var ErrThemeNotRendered = errors.New("theme render not healthy")
+
 func validateThemeHealthSnapshot(health transportlayer.DeviceHealthSnapshot, activePath string, expectedGIFs map[string]struct{}) error {
-	if !health.Display.ThemeSpec.Active ||
-		!health.Display.ThemeSpec.RenderOk ||
-		(strings.TrimSpace(activePath) != "" && health.Display.ThemeSpec.Path != activePath) {
+	wrongTheme := !health.Display.ThemeSpec.Active ||
+		(strings.TrimSpace(activePath) != "" && health.Display.ThemeSpec.Path != activePath)
+	if wrongTheme || !health.Display.ThemeSpec.RenderOk {
+		cause := ErrThemeNotRendered
+		if wrongTheme {
+			// The installed theme is not the one that is up, so its render
+			// health says nothing about it yet.
+			cause = errors.New(ErrThemeNotRendered.Error())
+		}
 		return fmt.Errorf(
-			"theme render not healthy: active=%t path=%q renderOk=%t renderError=%q renderErrorAsset=%q activeTheme=%q",
+			"%w: active=%t path=%q renderOk=%t renderError=%q renderErrorAsset=%q activeTheme=%q",
+			cause,
 			health.Display.ThemeSpec.Active,
 			health.Display.ThemeSpec.Path,
 			health.Display.ThemeSpec.RenderOk,

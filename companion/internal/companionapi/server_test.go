@@ -5682,15 +5682,34 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 }
 
 func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
-	_, got := themeInstallErrorPayload(&themeinstall.InstallError{
-		Op:   "theme-pack/render-health",
-		Code: errcode.UpgradeFlashFirmware,
-		Err:  errors.New(`theme render not healthy: active=true path="/themes/u/claude--9-5c74ca.json" renderOk=false renderError="low_heap_cba_buffer" renderErrorAsset="/themes/u/cld-i.cba" activeTheme="claude-creature"`),
-		Hint: "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output",
-	})
+	const hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
+	payload := func(cause error) apiError {
+		_, got := themeInstallErrorPayload(&themeinstall.InstallError{
+			Op:   "theme-pack/render-health",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  cause,
+			Hint: hint,
+		})
+		return got
+	}
+
+	got := payload(fmt.Errorf(`%w: active=true path="/themes/u/claude--9-5c74ca.json" renderOk=false renderError="low_heap_cba_buffer" renderErrorAsset="/themes/u/cld-i.cba" activeTheme="claude-creature"`, themeinstall.ErrThemeNotRendered))
 	want := apiError{Code: "display_render_failed", Message: "VibeTV can't show this theme.", NextAction: "Choose another theme."}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+
+	// The same install step also ends when the health read itself fails or
+	// another theme is still up. Neither says the theme cannot be drawn, so
+	// both keep the retry advice.
+	for _, cause := range []error{
+		errors.New("Get \"http://vibetv.local/health\": context deadline exceeded"),
+		errors.New(`theme render not healthy: active=false path="" renderOk=true renderError="" renderErrorAsset="" activeTheme="mini"`),
+	} {
+		got := payload(cause)
+		if got.Code == "display_render_failed" || got.NextAction != hint {
+			t.Fatalf("%v: must keep the retry advice, got %+v", cause, got)
+		}
 	}
 }
 

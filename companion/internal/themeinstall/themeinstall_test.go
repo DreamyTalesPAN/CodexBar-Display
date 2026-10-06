@@ -1903,3 +1903,33 @@ func testLiveFrame(context.Context) (protocol.Frame, error) {
 		UsageMode: "remaining",
 	}, nil
 }
+
+// Only an active theme that reports renderOk=false is "cannot be drawn". A
+// theme that is not up yet, or another path being up, is an install that has
+// not settled, and the customer is asked to retry, not to pick another theme.
+func TestValidateThemeHealthSnapshotNamesOnlyAFailedRender(t *testing.T) {
+	snapshot := func(active bool, path string, renderOk bool) transportlayer.DeviceHealthSnapshot {
+		var health transportlayer.DeviceHealthSnapshot
+		health.Display.ThemeSpec.Active = active
+		health.Display.ThemeSpec.Path = path
+		health.Display.ThemeSpec.RenderOk = renderOk
+		return health
+	}
+	const path = "/themes/u/claude.json"
+
+	if err := validateThemeHealthSnapshot(snapshot(true, path, true), path, nil); err != nil {
+		t.Fatalf("healthy theme: %v", err)
+	}
+	if err := validateThemeHealthSnapshot(snapshot(true, path, false), path, nil); !errors.Is(err, ErrThemeNotRendered) {
+		t.Fatalf("active theme with renderOk=false must be ErrThemeNotRendered, got %v", err)
+	}
+	for name, health := range map[string]transportlayer.DeviceHealthSnapshot{
+		"not active":   snapshot(false, path, false),
+		"another path": snapshot(true, "/themes/u/other.json", false),
+	} {
+		err := validateThemeHealthSnapshot(health, path, nil)
+		if err == nil || errors.Is(err, ErrThemeNotRendered) {
+			t.Fatalf("%s: must fail without ErrThemeNotRendered, got %v", name, err)
+		}
+	}
+}

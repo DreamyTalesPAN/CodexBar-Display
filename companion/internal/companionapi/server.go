@@ -9183,8 +9183,7 @@ func themeInstallErrorPayload(err error) (int, apiError) {
 	}
 	// Issue #498: the theme is on the VibeTV but it cannot draw it. The raw
 	// render health is for the support report, not for the customer's dialog.
-	var installErr *themeinstall.InstallError
-	if errors.As(err, &installErr) && installErr.Op == "theme-pack/render-health" {
+	if errors.Is(err, themeinstall.ErrThemeNotRendered) {
 		code, message, next = "display_render_failed", "VibeTV can't show this theme.", "Choose another theme."
 	}
 	return http.StatusBadGateway, apiError{
