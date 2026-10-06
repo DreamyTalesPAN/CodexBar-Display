@@ -65,16 +65,13 @@ export function setupProviderRowVariant(
     // changes nothing and only sends the customer around the same loop.
     case "unsupported":
       return "unsupported";
-    // Rate limiting is not a fault the customer can repair: the sign-in works
-    // and the provider simply refused this check for being too frequent. It
-    // reuses the timed-out variant, which offers a check-again action and no
-    // repair prompt.
-    case "rate_limited":
-      return "timed_out";
     case "no_usage_available":
       return "no_usage";
     case "service_outage":
       return "outage";
+    // Everything else gets the re-check presentation and no repair prompt.
+    // That includes "rate_limited": the sign-in works and the provider only
+    // refused this check for being too frequent.
     default:
       return "timed_out";
   }

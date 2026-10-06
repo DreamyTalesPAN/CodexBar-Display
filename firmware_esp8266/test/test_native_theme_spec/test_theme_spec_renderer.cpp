@@ -3937,20 +3937,20 @@ void testIdleWindowIsDistinguishedFromAnUntrustworthyOne() {
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleSession, 1000, event));
 
   // The session window carries no deadline and is current: idle, not stale.
-  TEST_ASSERT_TRUE(UsageWindowIsIdle(state, 0, 1000));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 0, 1000)));
   // Idle travels as the negative sentinel.
   TEST_ASSERT_EQUAL_INT64(
       codexbar_display::core::kRemainingSecsIdle,
       CurrentUsageWindowRemainingSecs(state, 0, 1000));
   // The weekly window has a real deadline, so it is a countdown, not idle.
-  TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 1, 1000));
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 1, 1000)));
   TEST_ASSERT_EQUAL_INT64(345600, CurrentUsageWindowRemainingSecs(state, 1, 1000));
 
   // Past the trust horizon nothing is idle any more: the basis is stale and
   // the renderer must go back to reporting the countdown as unavailable.
   const unsigned long stale = 1000 + 6 * kHourMs;
-  TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 0, stale));
-  TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 1, stale));
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 0, stale)));
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 1, stale)));
   TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, stale));
   // ...and that counts as a new minute bucket, which is what asks the periodic
   // redraw to repaint the line. It must not depend on another countdown

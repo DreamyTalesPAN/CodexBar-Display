@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { SetupProviderRow, setupProviderIssueMessage } from "./setup-provider-row";
+import {
+  SetupProviderRow,
+  setupProviderIssueMessage,
+  setupProviderRowVariant,
+} from "./setup-provider-row";
 
 function render(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
   return renderToStaticMarkup(
@@ -163,4 +167,10 @@ describe("a provider the account lost access to", () => {
       "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
     );
   });
+});
+
+// A throttled check is nothing the customer can repair. It needs no case of
+// its own: the re-check presentation is what every unnamed state gets.
+it("gives a rate-limited provider the re-check presentation, not a sign-in", () => {
+  expect(setupProviderRowVariant("rate_limited")).toBe("timed_out");
 });

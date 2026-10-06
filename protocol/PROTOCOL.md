@@ -226,7 +226,8 @@ theme cannot bind its way around this.
 
 - A usage window the host sends without any deadline and with nothing used is
   idle, not stale: it is measured and current and simply has nothing scheduled
-  to reset. The renderer says `No active session` for it (`UsageWindowIsIdle`).
+  to reset. The renderer says `No active session` for it (`CurrentUsageWindowRemainingSecs`
+  returns the idle value).
   "Nothing used" is `percent` 0, or 100 when the frame says
   `usageMode:"remaining"`. A window with usage and no deadline is not idle:
   the host also sends `0` for a deadline that ran out before the frame left
