@@ -181,3 +181,27 @@ describe("support report from the Windows app", () => {
     expect(text).toContain("the same WiFi as this Mac.");
   });
 });
+
+// Issue #213: the report carries the Mac App's reliability timeline.
+describe("support report timeline", () => {
+  it("exports the transitions the Mac App recorded, unchanged", async () => {
+    const timeline = {
+      version: 1,
+      events: [
+        { id: 7, at: "2026-10-06T08:00:00Z", component: "device", state: "unreachable", reason: "runtime/serial-write", correlationId: "9f3c2b1a5d6e7f80" },
+        { id: 8, at: "2026-10-06T08:00:40Z", component: "device", deviceId: "vibetv-8caab5", state: "reachable", correlationId: "9f3c2b1a5d6e7f80" },
+        { id: 9, at: "2026-10-06T08:05:00Z", component: "firmware_update", deviceId: "vibetv-8caab5", state: "rebooting" },
+      ],
+    };
+    const exported = JSON.parse(serializeSupportReport(await report({ ok: true, timeline })));
+    expect(exported.timeline).toEqual(timeline);
+  });
+
+  it("marks the timeline unavailable for an older Mac App or a fallback report", async () => {
+    expect((await report({ ok: true })).timeline).toEqual({ unavailable: true });
+    const fallback = await collectSupportReport(async () => {
+      throw new Error("diagnostics unreachable");
+    }, clientState);
+    expect(fallback.timeline).toEqual({ unavailable: true });
+  });
+});

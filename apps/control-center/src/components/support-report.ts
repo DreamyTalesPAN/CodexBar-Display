@@ -26,8 +26,10 @@ export async function collectSupportReport(
     return {
       ...diagnostics,
       generatedAt: diagnostics.generatedAt || generatedAt,
-      // An older Mac App has no setup log; say so rather than leave it out.
+      // An older Mac App has no setup log or timeline; say so rather than
+      // leave them out.
       setupLog: diagnostics.setupLog ?? { unavailable: true },
+      timeline: diagnostics.timeline ?? { unavailable: true },
       client,
     };
   } catch (error) {
@@ -38,6 +40,7 @@ export async function collectSupportReport(
       generatedAt,
       client,
       setupLog: { unavailable: true },
+      timeline: { unavailable: true },
       collectionErrors: [
         {
           source: "Mac App diagnostics",
