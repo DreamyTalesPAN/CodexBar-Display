@@ -366,6 +366,14 @@ function TokenUsageOverTimePanel({
                     activeDot={{ r: 4 }}
                     connectNulls={false}
                     dataKey={item.dataKey}
+                    // A day between gaps has no line to draw, so only such a
+                    // lone value gets a dot; connected days keep the plain line.
+                    dot={({ cx, cy, index }) => {
+                      const reported = (day: number) => typeof chartData[day]?.[item.dataKey] === "number";
+                      return reported(index) && !reported(index - 1) && !reported(index + 1) ? (
+                        <circle className="recharts-area-dot" cx={cx} cy={cy} fill={`var(--color-${item.dataKey})`} key={index} r={3} />
+                      ) : null;
+                    }}
                     fill={`var(--color-${item.dataKey})`}
                     fillOpacity={0.12}
                     isAnimationActive={false}

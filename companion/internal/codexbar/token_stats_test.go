@@ -96,7 +96,7 @@ func TestParseProviderTokenStatsKeepsSuccessfulZeroResult(t *testing.T) {
 	}
 }
 
-func TestFetchProviderTokenStatsRequestsCompleteCostScan(t *testing.T) {
+func TestFetchProviderTokenStatsResumesThirtyDayCostScan(t *testing.T) {
 	var gotBin string
 	var gotArgs []string
 	runCostCommandFn = func(_ context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {
@@ -126,6 +126,22 @@ func TestFetchProviderTokenStatsRequestsCompleteCostScan(t *testing.T) {
 	}
 	if !slices.Equal(gotArgs, tokenStatsArgs(runtime.GOOS)) {
 		t.Fatalf("expected an explicit complete 30-day cost scan, got %#v", gotArgs)
+	}
+	if slices.Contains(gotArgs, "--refresh") {
+		t.Fatal("background collection must not reset CodexBar scan progress")
+	}
+}
+
+func TestParseTokenHistoryCoverage(t *testing.T) {
+	for _, coverage := range []string{"false", "true"} {
+		stats, err := parseProviderTokenStats([]byte(`[{"provider":"codex","historyCoverageIsEstablished":` + coverage + `,"daily":[],"totals":{"totalTokens":0}}]`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := stats["codex"].HistoryCoverageEstablished
+		if got == nil || *got != (coverage == "true") {
+			t.Fatalf("lost authoritative coverage %s: %#v", coverage, stats)
+		}
 	}
 }
 

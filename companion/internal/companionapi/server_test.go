@@ -25,6 +25,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/agentstatus"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -894,7 +895,22 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		t.Fatalf("accepted firmware update must retain the serial port: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
 	}
 	server.updateFirmwareUpdateJob(job.ID, func(job *firmwareUpdateJob) { job.Phase = "complete" })
+
+	rec = search()
+	if rec.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("Cable discovery must resume after update completion: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	}
+
+	// WiFi and Cable now run concurrently, so the Cable goroutine may own
+	// this mutex during the WiFi probe. Test WiFi alone to distinguish that
+	// legitimate ownership from an accidental lock around WiFi discovery.
+	server.discoverCableDevices = nil
+	wifiProbed := false
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	server.localNetworkAvailable = func() bool {
+		wifiProbed = true
+		defer cancel()
 		if !server.firmwareUpdateStartMu.TryLock() {
 			t.Error("WiFi discovery must not delay firmware update start")
 		} else {
@@ -902,9 +918,9 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 		}
 		return false
 	}
-	rec = search()
-	if rec.Code != http.StatusOK || calls != 1 {
-		t.Fatalf("Cable discovery must resume after update completion: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
+	server.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)).WithContext(ctx))
+	if !wifiProbed {
+		t.Fatal("WiFi ownership assertion was not exercised")
 	}
 }
 
@@ -3421,7 +3437,7 @@ func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
 	}
 }
 
-func TestUsageWaitsForEveryProviderTokenResult(t *testing.T) {
+func TestUsageKeepsFreshHistoryFromDifferentScanTimes(t *testing.T) {
 	now := time.Date(2026, 7, 28, 13, 0, 0, 0, time.UTC)
 	usage := daemon.PersistedUsage{
 		SavedAt: now,
@@ -3447,17 +3463,22 @@ func TestUsageWaitsForEveryProviderTokenResult(t *testing.T) {
 	}
 
 	partial := usageResponseFromPersisted(now, usage)
-	if partial.TokenUsageReady {
-		t.Fatalf("partial provider scan published an incomplete aggregate: %+v", partial)
+	if !partial.TokenUsageReady || !partial.TokenUsageUpdating {
+		t.Fatalf("retained history must remain visible while catch-up runs: %+v", partial)
 	}
-	if partial.Providers[0].TotalTokens != 0 || partial.Providers[0].Cost != nil {
-		t.Fatalf("partial provider scan exposed incomplete totals: %+v", partial.Providers)
+	if partial.Providers[0].TotalTokens != 120 || partial.Providers[0].Cost == nil || partial.Providers[1].TotalTokens != 90 || partial.Providers[1].Cost == nil {
+		t.Fatalf("different scan times removed valid provider history: %+v", partial.Providers)
 	}
 
 	usage.Providers[1].TokenStatsCollectedAt = now
 	complete := usageResponseFromPersisted(now, usage)
 	if !complete.TokenUsageReady || complete.Providers[0].TotalTokens != 120 || complete.Providers[0].Cost == nil {
 		t.Fatalf("complete provider scan did not publish token totals: %+v", complete)
+	}
+	usage.Providers[1].TokenStatsCollectedAt = time.Time{}
+	usage.Providers[1].Meta.Cost = nil
+	if usageResponseFromPersisted(now, usage).TokenUsageReady {
+		t.Fatal("a provider without any token result must remain unavailable")
 	}
 }
 
@@ -4662,6 +4683,9 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 		"_next/static/app.js": {
 			Data: []byte(`console.log("control-center")`),
 		},
+		"models/vibetv-native.glb": {
+			Data: []byte("glTF-model"),
+		},
 		"install/synthwave.html": {
 			Data: []byte(`<!doctype html><div id="root">Install Synthwave</div>`),
 		},
@@ -4693,6 +4717,13 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	}
 	if got := asset.Header().Get("Cache-Control"); got != "" {
 		t.Fatalf("expected hashed static asset to retain default caching, got Cache-Control %q", got)
+	}
+
+	model := httptest.NewRecorder()
+	modelReq := httptest.NewRequest(http.MethodGet, "/models/vibetv-native.glb", nil)
+	server.Handler().ServeHTTP(model, modelReq)
+	if model.Code != http.StatusOK || model.Body.String() != "glTF-model" {
+		t.Fatalf("expected embedded 3D model, got %d body=%s", model.Code, model.Body.String())
 	}
 
 	install := httptest.NewRecorder()
@@ -5536,6 +5567,9 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 	for _, errorCode := range []string{"device_not_found", "provider_setup_required"} {
 		t.Run(errorCode, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+			var clock atomic.Int64
+			clock.Store(time.Now().UnixNano())
+			server.now = func() time.Time { return time.Unix(0, clock.Load()) }
 			hello := cableHelloForTest("cable-a")
 			hello.Features = []string{protocol.FeatureCableHealthV1}
 			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
@@ -5562,7 +5596,7 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 			// A cached hello is not live proof. Once the bounded existing grace expires,
 			// a failed health read must report the device offline again.
 			server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{}, errors.New("unplugged") }
-			server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
+			clock.Add(int64(deviceConnectedGraceWindow + time.Second))
 			rec = httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -5659,8 +5693,9 @@ func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *test
 			Detail:    "No provider is ready.",
 		}
 	}
-	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return clock }
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC).UnixNano())
+	server.now = func() time.Time { return time.Unix(0, clock.Load()) }
 
 	readStatus := func() statusResponse {
 		rec := httptest.NewRecorder()
@@ -5682,7 +5717,7 @@ func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *test
 	// One transient probe miss 10 seconds later must NOT flip the customer
 	// back to a disconnected/setup experience.
 	available.Store(false)
-	clock = clock.Add(10 * time.Second)
+	clock.Add(int64(10 * time.Second))
 	afterMiss := readStatus()
 	if !afterMiss.Device.Connected {
 		t.Fatalf("single probe miss flipped a just-seen device to disconnected: %+v", afterMiss.Device)
@@ -5692,20 +5727,20 @@ func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *test
 	}
 
 	// Still inside the grace window a minute later: keep Connected.
-	clock = clock.Add(50 * time.Second)
+	clock.Add(int64(50 * time.Second))
 	if got := readStatus(); !got.Device.Connected {
 		t.Fatalf("device inside the reconnect grace window must stay connected: %+v", got.Device)
 	}
 
 	// Well past the grace window the truth wins: disconnected.
-	clock = clock.Add(10 * time.Minute)
+	clock.Add(int64(10 * time.Minute))
 	if got := readStatus(); got.Device.Connected {
 		t.Fatalf("device unseen for minutes must not stay connected: %+v", got.Device)
 	}
 
 	// The device comes back: connected again on the next poll.
 	available.Store(true)
-	clock = clock.Add(5 * time.Second)
+	clock.Add(int64(5 * time.Second))
 	if got := readStatus(); !got.Device.Connected {
 		t.Fatalf("recovered device must reconnect on the next poll: %+v", got.Device)
 	}
@@ -5751,8 +5786,9 @@ func TestStatusConnectedStateStaysStableThroughMinutesOfIntermittentProbes(t *te
 			Detail:    "No provider is ready.",
 		}
 	}
-	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return clock }
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC).UnixNano())
+	server.now = func() time.Time { return time.Unix(0, clock.Load()) }
 
 	readConnected := func() bool {
 		rec := httptest.NewRecorder()
@@ -5775,7 +5811,7 @@ func TestStatusConnectedStateStaysStableThroughMinutesOfIntermittentProbes(t *te
 	}
 
 	poll := func() {
-		clock = clock.Add(pollEvery)
+		clock.Add(int64(pollEvery))
 		connected := readConnected()
 		if connected != last {
 			transitions++
@@ -10887,7 +10923,8 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	}
 
 	var got firmwareUpdateJobResponse
-	for attempt := 0; attempt < 50; attempt++ {
+	// Up to 5 s: validating the gzip image can take a while on a busy Windows runner.
+	for attempt := 0; attempt < 500; attempt++ {
 		rec = httptest.NewRecorder()
 		req = httptest.NewRequest(http.MethodGet, "/v1/updates/install/status?jobId="+started.Job.ID, nil)
 		server.Handler().ServeHTTP(rec, req)
@@ -13927,6 +13964,47 @@ func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
 	}
 	if got := refusals(); got != 2 {
 		t.Fatalf("a refused theme-install hold must be counted too, got %d", got)
+	}
+}
+
+func TestStatusCarriesAuthoritativeAgentSnapshotWithoutDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	for _, phase := range []string{"unavailable", "waiting_for_permission", "done"} {
+		server.agentSnapshot = func() agentstatus.Snapshot {
+			return agentstatus.Snapshot{SchemaVersion: 1, Health: "ready", Phase: phase}
+		}
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if json.Unmarshal(response.Body.Bytes(), &got) != nil || got.Agents.Phase != phase {
+			t.Fatalf("snapshot lost: %s", response.Body.String())
+		}
+	}
+	server.agentSnapshot = nil
+	if server.agents().Phase != "unavailable" {
+		t.Fatal("missing helper became idle")
+	}
+}
+
+func TestDisplayFrameLogPreservesAgentAndMotion(t *testing.T) {
+	frame, ok := frameFromDisplayStreamLogLine(`sent frame -> test transport=usb deviceId=test provider=codex label=Codex session=10 weekly=20 activity="waiting_for_answer" agentName="Claude Code" animationsDisabled=true time="12:00" date="20 Sep" error=""`)
+	if !ok || frame.Activity != "waiting_for_answer" || frame.AgentName != "Claude Code" || !frame.AnimationsDisabled || frame.Time != "12:00" {
+		t.Fatalf("preview lost acknowledged presentation: %+v", frame)
+	}
+}
+
+func TestDeviceHealthCarriesMeasuredAnimationPacing(t *testing.T) {
+	var health deviceHealth
+	if err := json.Unmarshal([]byte(`{"ok":true,"display":{"themeSpec":{"active":true,"cbaLastFrameDurationMs":417}}}`), &health); err != nil {
+		t.Fatal(err)
+	}
+	device := withDeviceHealth(deviceInfo{}, health)
+	data, err := json.Marshal(device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"cbaLastFrameDurationMs":417`) {
+		t.Fatalf("lost device timing: %s", data)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -514,6 +515,66 @@ func TestUsageBarsShowUsedFromEnv(t *testing.T) {
 	}
 }
 
+func TestInstalledVersionReusesOnlyUnchangedExecutable(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("original"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = original })
+	calls := 0
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		calls++
+		if calls > 1 {
+			return nil, context.DeadlineExceeded
+		}
+		return []byte("CodexBar 0.63.0"), nil
+	}
+	for range 3 {
+		version, err := installedVersion(context.Background(), bin)
+		if err != nil || version.String() != "0.63" {
+			t.Fatalf("unchanged executable: version=%v err=%v", version, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("unchanged executable was probed %d times", calls)
+	}
+	// An atomic app update can preserve the old size and timestamp.
+	info, err := os.Stat(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := bin + ".new"
+	if err := os.WriteFile(replacement, []byte("replaced"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(replacement, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, bin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installedVersion(context.Background(), bin); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("replaced executable used the old version: %v", err)
+	}
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		calls++
+		return []byte("CodexBar 0.22.0"), nil
+	}
+	if err := CheckMinimumVersion(context.Background(), bin); err == nil {
+		t.Fatal("replacement with old version must still be rejected")
+	}
+	if calls != 3 {
+		t.Fatalf("failed probe was cached: calls=%d", calls)
+	}
+	if err := os.WriteFile(bin, []byte("changed in place"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installedVersion(context.Background(), bin); err != nil || calls != 4 {
+		t.Fatalf("in-place change must be probed: calls=%d err=%v", calls, err)
+	}
+}
+
 func TestCheckMinimumVersionRequiresCLIVersion(t *testing.T) {
 	orig := runVersionCommandFn
 	t.Cleanup(func() { runVersionCommandFn = orig })
@@ -596,34 +657,8 @@ func TestParseBoolPreference(t *testing.T) {
 	}
 }
 
-func TestProviderSelectorSwitchesOnUsageDelta(t *testing.T) {
-	selector := newSelectorWithoutLocalActivity()
-
-	first, ok := selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 2, 2, 12000),
-		testParsedFrame("claude", 20, 20, 15000),
-	})
-	if !ok {
-		t.Fatalf("expected a selected provider in first cycle")
-	}
-	if first.Provider != "codex" {
-		t.Fatalf("expected first-cycle fallback codex, got %q", first.Provider)
-	}
-
-	second, ok := selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 2, 2, 11940),
-		testParsedFrame("claude", 21, 20, 14940),
-	})
-	if !ok {
-		t.Fatalf("expected a selected provider in second cycle")
-	}
-	if second.Provider != "claude" {
-		t.Fatalf("expected switch to claude on session delta, got %q", second.Provider)
-	}
-}
-
 func TestProviderSelectorSticksWithoutNewActivity(t *testing.T) {
-	selector := newSelectorWithoutLocalActivity()
+	selector := NewProviderSelector()
 
 	_, _ = selector.Select([]ParsedFrame{
 		testParsedFrame("codex", 2, 2, 12000),
@@ -639,103 +674,6 @@ func TestProviderSelectorSticksWithoutNewActivity(t *testing.T) {
 	}
 	if second.Provider != "codex" {
 		t.Fatalf("expected sticky provider codex without deltas, got %q", second.Provider)
-	}
-}
-
-func TestProviderSelectorSwitchesBackWhenOtherProviderMoves(t *testing.T) {
-	selector := newSelectorWithoutLocalActivity()
-
-	_, _ = selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 2, 2, 12000),
-		testParsedFrame("claude", 20, 20, 15000),
-	})
-
-	_, _ = selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 2, 2, 11940),
-		testParsedFrame("claude", 21, 20, 14940),
-	})
-
-	third, ok := selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 3, 2, 11880),
-		testParsedFrame("claude", 21, 20, 14880),
-	})
-	if !ok {
-		t.Fatalf("expected a selected provider in third cycle")
-	}
-	if third.Provider != "codex" {
-		t.Fatalf("expected switch back to codex on new codex delta, got %q", third.Provider)
-	}
-}
-
-func TestComputeActivityScoreIgnoresResetJumpWithoutUsageDelta(t *testing.T) {
-	prev := providerSnapshot{session: 0, weekly: 0}
-	score := computeActivityScore(prev, protocol.Frame{Session: 0, Weekly: 0, ResetSec: 9000})
-	if score.hasSignal() {
-		t.Fatalf("expected reset jump to stay idle without usage delta, got %s", formatActivityScore(score))
-	}
-}
-
-func TestComputeActivityScoreUsesTokenDelta(t *testing.T) {
-	prev := providerSnapshot{
-		session:       98,
-		weekly:        88,
-		sessionTokens: 1200,
-		weekTokens:    4200,
-		totalTokens:   9000,
-	}
-	score := computeActivityScore(prev, protocol.Frame{
-		Session:       98,
-		Weekly:        88,
-		SessionTokens: 1250,
-		WeekTokens:    4250,
-		TotalTokens:   9050,
-	})
-	if !score.hasSignal() {
-		t.Fatalf("expected token delta to count as activity signal")
-	}
-	if score.sessionTokensDelta != 50 || score.weekTokensDelta != 50 || score.totalTokensDelta != 50 {
-		t.Fatalf("unexpected token deltas: %s", formatActivityScore(score))
-	}
-}
-
-func TestComputeActivityScorePrefersComparableTokensOverPercentFallback(t *testing.T) {
-	prev := providerSnapshot{
-		session:       98,
-		weekly:        88,
-		sessionTokens: 1200,
-		weekTokens:    4200,
-		totalTokens:   9000,
-	}
-	score := computeActivityScore(prev, protocol.Frame{
-		Session:       99,
-		Weekly:        89,
-		SessionTokens: 1200,
-		WeekTokens:    4200,
-		TotalTokens:   9000,
-	})
-	if score.hasSignal() {
-		t.Fatalf("expected unchanged comparable tokens to stay idle, got %s", formatActivityScore(score))
-	}
-}
-
-func TestProviderSelectorPrefersRecentLocalActivity(t *testing.T) {
-	now := time.Now()
-	selector := NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{
-			"codex":  testSignal(now.Add(-2*time.Minute), activityConfidenceHigh, "test"),
-			"claude": testSignal(now, activityConfidenceHigh, "test"),
-		}, nil
-	})
-
-	selected, ok := selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 4, 2, 9000),
-		testParsedFrame("claude", 47, 21, 10000),
-	})
-	if !ok {
-		t.Fatalf("expected a selected provider")
-	}
-	if selected.Provider != "claude" {
-		t.Fatalf("expected claude from local activity, got %q", selected.Provider)
 	}
 }
 
@@ -781,334 +719,6 @@ func TestProviderSelectorStickyFallbackDoesNotHoldUnavailableProvider(t *testing
 	if decision.Selected.Provider != "antigravity" ||
 		decision.Reason != SelectionReasonCodexbarOrder {
 		t.Fatalf("unavailable sticky provider displaced available fallback: %#v", decision)
-	}
-}
-
-func TestProviderSelectorLocalActivityDoesNotCreateActivitySignal(t *testing.T) {
-	now := time.Now().UTC()
-	selector := NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{
-			"claude": testSignal(now, activityConfidenceHigh, "test"),
-		}, nil
-	})
-
-	decision, ok := selector.SelectWithDecision([]ParsedFrame{
-		testParsedFrame("codex", 4, 2, 9000),
-		testParsedFrame("claude", 47, 21, 10000),
-	})
-	if !ok {
-		t.Fatalf("expected a selected provider")
-	}
-	if decision.Selected.Provider != "claude" {
-		t.Fatalf("expected local activity to select claude, got %q", decision.Selected.Provider)
-	}
-	if decision.ActivitySignalReason != "" || decision.ActivityDetail != "" {
-		t.Fatalf("expected no animation activity signal from local activity, got reason=%q detail=%q", decision.ActivitySignalReason, decision.ActivityDetail)
-	}
-}
-
-func TestProviderSelectorLocalActivitySelectionReportsUsageDeltaForAnimation(t *testing.T) {
-	now := time.Now().UTC()
-	selector := NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{
-			"claude": testSignal(now, activityConfidenceHigh, "test"),
-		}, nil
-	})
-
-	_, _ = selector.SelectWithDecision([]ParsedFrame{
-		testParsedFrame("codex", 4, 2, 9000),
-		testParsedFrame("claude", 47, 21, 10000),
-	})
-
-	decision, ok := selector.SelectWithDecision([]ParsedFrame{
-		testParsedFrame("codex", 4, 2, 8940),
-		testParsedFrame("claude", 48, 21, 9940),
-	})
-	if !ok {
-		t.Fatalf("expected a selected provider")
-	}
-	if decision.Reason != SelectionReasonLocalActivity {
-		t.Fatalf("expected provider selection from local activity, got %q", decision.Reason)
-	}
-	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
-		t.Fatalf("expected animation signal from usage delta, got %q", decision.ActivitySignalReason)
-	}
-	if !strings.Contains(decision.ActivityDetail, "source=usage-delta") {
-		t.Fatalf("expected usage delta detail, got %q", decision.ActivityDetail)
-	}
-}
-
-func TestProviderSelectorFallsBackToUsageDeltaWhenNoLocalActivity(t *testing.T) {
-	selector := NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{}, nil
-	})
-
-	_, _ = selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 2, 2, 12000),
-		testParsedFrame("claude", 20, 20, 15000),
-	})
-
-	selected, ok := selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 2, 2, 11940),
-		testParsedFrame("claude", 21, 20, 14940),
-	})
-	if !ok {
-		t.Fatalf("expected a selected provider")
-	}
-	if selected.Provider != "claude" {
-		t.Fatalf("expected claude from usage delta fallback, got %q", selected.Provider)
-	}
-}
-
-func TestProviderSelectorConflictKeepsCurrentProvider(t *testing.T) {
-	now := time.Now().UTC()
-	selector := NewProviderSelectorWithConfig(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{
-			"codex":  testSignal(now, activityConfidenceHigh, "test"),
-			"claude": testSignal(now.Add(-5*time.Second), activityConfidenceHigh, "test"),
-		}, nil
-	}, 15*time.Second)
-
-	first, ok := selector.SelectWithDecision([]ParsedFrame{
-		testParsedFrame("codex", 5, 5, 9000),
-		testParsedFrame("claude", 5, 5, 9000),
-	})
-	if !ok {
-		t.Fatalf("expected first selection")
-	}
-	if first.Selected.Provider != "codex" {
-		t.Fatalf("expected codex from first conflict tie-break, got %q", first.Selected.Provider)
-	}
-
-	second, ok := selector.SelectWithDecision([]ParsedFrame{
-		testParsedFrame("claude", 5, 5, 8940),
-		testParsedFrame("codex", 5, 5, 8940),
-	})
-	if !ok {
-		t.Fatalf("expected second selection")
-	}
-	if second.Selected.Provider != "codex" {
-		t.Fatalf("expected sticky current codex in conflict window, got %q", second.Selected.Provider)
-	}
-	if second.Reason != SelectionReasonLocalActivity {
-		t.Fatalf("expected local-activity reason, got %q", second.Reason)
-	}
-	if !strings.Contains(second.Detail, "keep-current") {
-		t.Fatalf("expected keep-current detail, got %q", second.Detail)
-	}
-}
-
-func TestProviderSelectorConflictResolvesByUsageDeltaWithoutCurrent(t *testing.T) {
-	now := time.Now().UTC()
-	selector := NewProviderSelectorWithConfig(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{
-			"codex":  testSignal(now, activityConfidenceHigh, "test"),
-			"claude": testSignal(now.Add(-2*time.Second), activityConfidenceHigh, "test"),
-		}, nil
-	}, 15*time.Second)
-
-	_, _ = selector.SelectWithDecision([]ParsedFrame{
-		testParsedFrame("codex", 10, 10, 9000),
-		testParsedFrame("claude", 10, 10, 9000),
-	})
-
-	selector.currentKey = ""
-	decision, ok := selector.SelectWithDecision([]ParsedFrame{
-		testParsedFrame("codex", 10, 10, 8940),
-		testParsedFrame("claude", 11, 10, 8940),
-	})
-	if !ok {
-		t.Fatalf("expected selection")
-	}
-	if decision.Selected.Provider != "claude" {
-		t.Fatalf("expected claude from usage delta conflict tie-break, got %q", decision.Selected.Provider)
-	}
-	if !strings.Contains(decision.Detail, "resolved-by=usage-delta") {
-		t.Fatalf("expected usage-delta conflict detail, got %q", decision.Detail)
-	}
-}
-
-func TestProviderSelectorPrefersHigherConfidenceSignal(t *testing.T) {
-	now := time.Now().UTC()
-	selector := NewProviderSelectorWithConfig(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{
-			"codex":  testSignal(now.Add(-20*time.Second), activityConfidenceHigh, "codex-log"),
-			"cursor": testSignal(now, activityConfidenceMedium, "cursor-session"),
-		}, nil
-	}, 15*time.Second)
-
-	selected, ok := selector.Select([]ParsedFrame{
-		testParsedFrame("codex", 4, 2, 9000),
-		testParsedFrame("cursor", 20, 10, 10000),
-	})
-	if !ok {
-		t.Fatalf("expected selected provider")
-	}
-	if selected.Provider != "codex" {
-		t.Fatalf("expected codex from higher-confidence local signal, got %q", selected.Provider)
-	}
-}
-
-func TestReadLocalProviderActivityWithDetectorsFiltersStaleEntries(t *testing.T) {
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	activity, err := readLocalProviderActivityWithDetectors([]ProviderActivityDetector{
-		staticActivityDetector{key: "codex", at: now.Add(-10 * time.Minute), ok: true, confidence: activityConfidenceHigh},
-		staticActivityDetector{key: "claude", at: now.Add(-8 * time.Hour), ok: true, confidence: activityConfidenceHigh},
-		staticActivityDetector{key: "cursor", at: now.Add(-1 * time.Minute), ok: false, confidence: activityConfidenceHigh},
-	}, func() time.Time {
-		return now
-	}, 1*time.Hour)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(activity) != 1 {
-		t.Fatalf("expected exactly one fresh activity, got %d (%v)", len(activity), activity)
-	}
-	signal, ok := activity["codex"]
-	if !ok {
-		t.Fatalf("expected codex activity to be present, got %v", activity)
-	}
-	if signal.Confidence != activityConfidenceHigh {
-		t.Fatalf("expected codex signal confidence high, got %s", signal.Confidence)
-	}
-	if _, ok := activity["claude"]; ok {
-		t.Fatalf("expected stale claude activity to be filtered out, got %v", activity)
-	}
-}
-
-func TestReadLocalProviderActivityLowConfidenceHasShorterTTL(t *testing.T) {
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	activity, err := readLocalProviderActivityWithDetectors([]ProviderActivityDetector{
-		staticActivityDetector{key: "kimi", at: now.Add(-30 * time.Minute), ok: true, confidence: activityConfidenceLow},
-	}, func() time.Time {
-		return now
-	}, 6*time.Hour)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(activity) != 0 {
-		t.Fatalf("expected low-confidence activity to expire with short ttl, got %v", activity)
-	}
-}
-
-func TestLatestClaudeActivityAtIgnoresCodexBarProbeArtifacts(t *testing.T) {
-	home := t.TempDir()
-	probePath := filepath.Join(home, ".claude", "projects", "-Users-test-Library-Application-Support-CodexBar-ClaudeProbe", "probe.jsonl")
-	if err := os.MkdirAll(filepath.Dir(probePath), 0o755); err != nil {
-		t.Fatalf("mkdir probe path: %v", err)
-	}
-	if err := os.WriteFile(probePath, []byte("{}\n"), 0o644); err != nil {
-		t.Fatalf("write probe file: %v", err)
-	}
-	probeAt := time.Date(2026, 3, 2, 15, 0, 0, 0, time.UTC)
-	if err := os.Chtimes(probePath, probeAt, probeAt); err != nil {
-		t.Fatalf("chtimes probe file: %v", err)
-	}
-
-	if at, ok := latestClaudeActivityAt(home); ok {
-		t.Fatalf("expected no claude activity from codexbar probe artifacts, got %s", at)
-	}
-}
-
-func TestLatestClaudeActivityAtUsesNonProbeProjectFiles(t *testing.T) {
-	home := t.TempDir()
-
-	probePath := filepath.Join(home, ".claude", "projects", "-Users-test-Library-Application-Support-CodexBar-ClaudeProbe", "probe.jsonl")
-	realPath := filepath.Join(home, ".claude", "projects", "-Users-test-code-real-project", "session.jsonl")
-	for _, path := range []string{probePath, realPath} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", path, err)
-		}
-		if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
-
-	probeAt := time.Date(2026, 3, 2, 16, 0, 0, 0, time.UTC)
-	realAt := time.Date(2026, 3, 2, 15, 30, 0, 0, time.UTC)
-	if err := os.Chtimes(probePath, probeAt, probeAt); err != nil {
-		t.Fatalf("chtimes probe: %v", err)
-	}
-	if err := os.Chtimes(realPath, realAt, realAt); err != nil {
-		t.Fatalf("chtimes real: %v", err)
-	}
-
-	got, ok := latestClaudeActivityAt(home)
-	if !ok {
-		t.Fatalf("expected claude activity from real project file")
-	}
-	if !got.Equal(realAt) {
-		t.Fatalf("expected real project modtime %s, got %s", realAt, got)
-	}
-}
-
-func TestDefaultActivityDetectorsIncludeCodexAndClaude(t *testing.T) {
-	detectors := defaultActivityDetectors()
-	seen := map[string]bool{}
-	for _, detector := range detectors {
-		seen[detector.ProviderKey()] = true
-	}
-
-	if !seen["codex"] {
-		t.Fatalf("expected codex detector in defaults")
-	}
-	if !seen["claude"] {
-		t.Fatalf("expected claude detector in defaults")
-	}
-	if !seen["vertexai"] {
-		t.Fatalf("expected vertexai detector in defaults")
-	}
-	if !seen["jetbrains"] {
-		t.Fatalf("expected jetbrains detector in defaults")
-	}
-	if !seen["kimi"] {
-		t.Fatalf("expected kimi detector in defaults")
-	}
-	if !seen["ollama"] {
-		t.Fatalf("expected ollama detector in defaults")
-	}
-}
-
-func TestProviderSelectionMatrix30Scenarios(t *testing.T) {
-	for i := 0; i < 30; i++ {
-		t.Run("scenario-"+strconv.Itoa(i+1), func(t *testing.T) {
-			selector := newSelectorWithoutLocalActivity()
-
-			_, _ = selector.Select([]ParsedFrame{
-				testParsedFrame("codex", 10+i, 20, 12000-int64(i*60)),
-				testParsedFrame("claude", 10+i, 20, 12000-int64(i*60)),
-			})
-
-			want := "codex"
-			nextCodex := 10 + i
-			nextClaude := 10 + i
-
-			switch i % 3 {
-			case 0:
-				nextCodex++
-				want = "codex"
-			case 1:
-				nextClaude++
-				want = "claude"
-			case 2:
-				nextCodex++
-				nextClaude++
-				// Session delta tie keeps first provider in a deterministic way.
-				want = "codex"
-			}
-
-			selected, ok := selector.Select([]ParsedFrame{
-				testParsedFrame("codex", nextCodex, 20, 11940-int64(i*60)),
-				testParsedFrame("claude", nextClaude, 20, 11940-int64(i*60)),
-			})
-			if !ok {
-				t.Fatalf("expected selected provider")
-			}
-			if selected.Provider != want {
-				t.Fatalf("expected %s, got %s", want, selected.Provider)
-			}
-		})
 	}
 }
 
@@ -1539,28 +1149,6 @@ func stubSupportedCodexBarVersion(t *testing.T) {
 	})
 }
 
-type staticActivityDetector struct {
-	key        string
-	at         time.Time
-	ok         bool
-	confidence activitySignalConfidence
-}
-
-func (d staticActivityDetector) ProviderKey() string {
-	return d.key
-}
-
-func (d staticActivityDetector) Confidence() activitySignalConfidence {
-	if d.confidence == activityConfidenceUnknown {
-		return activityConfidenceHigh
-	}
-	return d.confidence
-}
-
-func (d staticActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
-	return d.at, d.ok
-}
-
 func testParsedFrame(provider string, session, weekly int, reset int64) ParsedFrame {
 	return ParsedFrame{
 		Provider: provider,
@@ -1572,20 +1160,6 @@ func testParsedFrame(provider string, session, weekly int, reset int64) ParsedFr
 			Weekly:   weekly,
 			ResetSec: reset,
 		},
-	}
-}
-
-func newSelectorWithoutLocalActivity() *ProviderSelector {
-	return NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
-		return map[string]providerActivitySignal{}, nil
-	})
-}
-
-func testSignal(at time.Time, confidence activitySignalConfidence, evidence string) providerActivitySignal {
-	return providerActivitySignal{
-		At:         at,
-		Confidence: confidence,
-		Evidence:   evidence,
 	}
 }
 
@@ -1623,5 +1197,74 @@ func TestParseProviderPayloadBuildsOrderedUsageWindows(t *testing.T) {
 	}
 	if parsed[0].Frame.Session != 11 || parsed[0].Frame.Weekly != 22 || parsed[0].Frame.ResetSec != 100 {
 		t.Fatalf("expected legacy aliases to mirror the first two windows, got %+v", parsed[0].Frame)
+	}
+}
+
+func TestSetUsageBarsShowUsedUsesCodexBarPreferenceAndReadback(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS defaults contract; Windows covered by native secure-settings tests")
+	}
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	t.Setenv("CODEX_TEST_USAGE_PREFERENCE", filepath.Join(dir, "value"))
+	script := `#!/bin/sh
+[ "$2" = "com.steipete.codexbar" ] && [ "$3" = "usageBarsShowUsed" ] || exit 1
+if [ "$1" = "write" ]; then
+  [ "$4" = "-bool" ] || exit 1
+  printf '%s' "$5" > "$CODEX_TEST_USAGE_PREFERENCE"
+else
+  cat "$CODEX_TEST_USAGE_PREFERENCE"
+fi
+`
+	if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, used := range []bool{false, true} {
+		if err := SetUsageBarsShowUsed(context.Background(), used); err != nil {
+			t.Fatal(err)
+		}
+		if got := UsageBarsShowUsed(); got != used {
+			t.Fatalf("readback %v, want %v", got, used)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetUsageBarsShowUsed(context.Background(), false); err == nil {
+		t.Fatal("failed writes must be reported")
+	}
+}
+
+func TestUsageDisplayModeKeepsConfirmedPreferenceOnReadFailure(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS defaults contract")
+	}
+	previous := lastUsageBarsShowUsed.Swap(nil)
+	t.Cleanup(func() { lastUsageBarsShowUsed.Store(previous) })
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "")
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "defaults"), []byte("#!/bin/sh\n"+body+"\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, used := range []bool{false, true} {
+		write("echo " + strconv.FormatBool(used))
+		if UsageBarsShowUsed() != used {
+			t.Fatal("preference not read")
+		}
+		for _, broken := range []string{"exit 1", "echo invalid"} {
+			write(broken)
+			if UsageBarsShowUsed() != used {
+				t.Fatal("failed read changed confirmed display preference")
+			}
+		}
+		write(`[ "$1" = write ] && exit 0; exit 1`)
+		if err := SetUsageBarsShowUsed(context.Background(), used); err == nil {
+			t.Fatal("cached value must not pass an unavailable write readback")
+		}
 	}
 }

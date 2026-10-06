@@ -1,0 +1,2 @@
+# Applied byte-exact to the LF upstream archive; a CRLF checkout breaks git apply.
+*.patch -text

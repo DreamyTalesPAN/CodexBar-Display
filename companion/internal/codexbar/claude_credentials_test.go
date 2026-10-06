@@ -155,3 +155,69 @@ func TestSetProviderEnabledGrantsClaudeCredentialsOnWindowsOnly(t *testing.T) {
 		t.Fatal("Claude must stay disabled in CodexBar when the consent flag cannot be written")
 	}
 }
+
+func TestUsageDisplayPreservesSecureSettingsAndConsent(t *testing.T) {
+	for _, secured := range []bool{false, true} {
+		data := []byte(`{"show_as_used":true,"claude_allow_reading_claude_code_credentials":false,"future":{"keep":1}}`)
+		if secured {
+			protected, _ := reversibleCodec.protect(data)
+			data, _ = json.Marshal(map[string]any{"format": "codexbar.secure-file", "version": 1, "payload": base64.StdEncoding.EncodeToString(protected)})
+		}
+		for _, value := range []bool{false, true} {
+			var err error
+			data, err = updateWindowsSettings(data, reversibleCodec, func(settings map[string]json.RawMessage) { settings["show_as_used"], _ = json.Marshal(value) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings, envelope, err := decodeWindowsSettings(data, reversibleCodec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got bool
+			_ = json.Unmarshal(settings["show_as_used"], &got)
+			if got != value || (envelope != nil) != secured || string(settings[claudeCredentialsFlag]) != "false" || string(settings["future"]) != `{"keep":1}` {
+				t.Fatalf("display write changed other settings: %s", data)
+			}
+		}
+	}
+}
+
+func TestConcurrentWindowsSettingsPreserveConsentAndDisplay(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	protected, _ := reversibleCodec.protect([]byte(`{"show_as_used":true,"claude_allow_reading_claude_code_credentials":false,"future":{"keep":1}}`))
+	data, _ := json.Marshal(map[string]any{"format": "codexbar.secure-file", "version": 1, "payload": base64.StdEncoding.EncodeToString(protected)})
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	codec := reversibleCodec
+	codec.unprotect = func(data []byte) ([]byte, error) {
+		// Keep decryption in flight long enough for the other writer to start.
+		time.Sleep(20 * time.Millisecond)
+		return reversibleCodec.unprotect(data)
+	}
+	start, done := make(chan struct{}), make(chan error, 2)
+	go func() {
+		<-start
+		done <- rewriteSettingsFile(path, codec)
+	}()
+	go func() {
+		<-start
+		done <- rewriteWindowsSettingsFile(path, codec, func(settings map[string]json.RawMessage) {
+			settings["show_as_used"] = json.RawMessage("false")
+		})
+	}()
+	close(start)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, envelope, err := decodeWindowsSettings(data, reversibleCodec)
+	if err != nil || envelope == nil || string(settings["show_as_used"]) != "false" || string(settings[claudeCredentialsFlag]) != "true" || string(settings["future"]) != `{"keep":1}` {
+		t.Fatalf("concurrent update lost a setting: %s, %v", data, err)
+	}
+}

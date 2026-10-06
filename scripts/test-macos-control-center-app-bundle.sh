@@ -741,7 +741,7 @@ required_source = [
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
     'codexBarPinnedVersion = "0.63.0"',
-
+    'codexBarPinnedTeamIdentifier = "Y5PE65HELJ"',
     'CodexBar-macos-universal-0.63.0.zip',
     'bootstrapCodexBar()',
 

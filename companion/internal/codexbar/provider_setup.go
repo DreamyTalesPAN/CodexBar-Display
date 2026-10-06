@@ -372,6 +372,14 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	version, versionErr := installedVersion(versionCtx, bin)
 	cancelVersion()
 	if versionErr != nil {
+		// A slow probe does not prove a broken installation. Keep supervision
+		// running instead of making the UI reinstall and interrupt collection.
+		if errors.Is(versionErr, context.DeadlineExceeded) || errors.Is(versionErr, context.Canceled) {
+			result.Status = "checking"
+			result.Engine.Status = ProviderTimeout
+			result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderTimeout)}
+			return result
+		}
 		result.Engine.Status = ProviderEngineError
 		result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderEngineError)}
 		return result
@@ -443,6 +451,9 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	}
 	if exactProvider == "" {
 		result.Providers = providerReadinessFromOutput(out, commandErr, aggregateCtx.Err())
+		if len(result.Providers) == 1 && result.Providers[0].ID == "codexbar" && result.Providers[0].Status == ProviderTimeout {
+			result.Status = "checking"
+		}
 		result.Providers = providersWithSwitchState(aggregateCtx, bin, result.Providers)
 	} else {
 		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())

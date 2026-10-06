@@ -4,6 +4,11 @@ A theme pack is the downloadable unit for customer themes. GitHub hosts the publ
 
 The source of truth lives in `theme-packs/<theme-id>/` as plain files. The customer-facing GitHub artifacts live in `dist/theme-packs/` and are committed so the default install command can resolve packs from GitHub.
 
+For visual design, agent-state behavior, runtime limits, and the distinction
+between approved designs and supported firmware features, start with the
+[Theme Development Guide](theme-dev-guide.md). This document covers packaging
+and installation.
+
 ## Format
 
 Each pack is either a directory or a `.zip` with `manifest.json` at the root.
@@ -55,6 +60,9 @@ Rules:
 - Remote catalogs and packs require HTTPS and must resolve only to public network addresses. Redirects are checked again; private, loopback, link-local, multicast, and carrier-grade NAT targets are rejected.
 
 ## CLI
+
+Run these commands from the repository root. `go -C companion` selects the Go
+module; `--pack` paths in those commands are relative to `companion/`.
 
 The directories under `theme-packs/` are the source of truth for the current
 app generation. Every content change must bump both `manifest.version` and the
@@ -124,13 +132,13 @@ lives on the device.
 List the published VibeTV theme catalog:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack catalog
+go -C companion run ./cmd/codexbar-display theme-pack catalog
 ```
 
 Validate a downloaded pack:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/clippy
+go -C companion run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/clippy
 ```
 
 Local directories and ZIP files do not need catalog metadata. To validate a
@@ -139,7 +147,7 @@ downloads require HTTPS and are rejected before parsing when either value is
 missing or does not match:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack validate \
+go -C companion run ./cmd/codexbar-display theme-pack validate \
   --pack https://example.com/vibetv-theme-cozy-meadow-v0.2.0.zip \
   --pack-sha256 <64-character-hex-sha256> \
   --pack-size-bytes <exact-byte-size>
@@ -150,19 +158,19 @@ Install it on a connected VibeTV only during an explicit hardware test window. T
 For theme-only tests, skip firmware update explicitly:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/clippy --target http://<device-ip> --skip-firmware-update
+go -C companion run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/clippy --target http://<device-ip> --skip-firmware-update
 ```
 
 Install by catalog theme ID:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --theme clippy --target http://<device-ip> --skip-firmware-update
+go -C companion run ./cmd/codexbar-display theme-pack install --theme clippy --target http://<device-ip> --skip-firmware-update
 ```
 
 Install a screensaver into the second slot with `--slot screensaver`:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --slot screensaver --pack ../theme-packs/night-clock --target http://<device-ip> --skip-firmware-update
+go -C companion run ./cmd/codexbar-display theme-pack install --slot screensaver --pack ../theme-packs/night-clock --target http://<device-ip> --skip-firmware-update
 ```
 
 Without `--skip-firmware-update`, install first runs the WiFi firmware update flow for the same `--target`. If the device is already current, it continues without flashing. Then it uploads assets, uploads the stored ThemeSpec, and activates it via `/theme/active`. The regular daemon keeps sending real live frames after install.

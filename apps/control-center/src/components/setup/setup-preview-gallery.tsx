@@ -543,7 +543,6 @@ export function SetupPreviewGallery() {
             aiFixPrompt={aiFixPrompt}
             onCreateSupportReport={createSupportReport}
             automaticPreview={AUTOMATIC_PREVIEWS[0]}
-            automaticPreviews={AUTOMATIC_PREVIEWS}
             manualPreview={{
               providerLabel: displayProvider === "claude" ? "Claude" : "Codex",
               resetLabel: "RESET IN 5H",

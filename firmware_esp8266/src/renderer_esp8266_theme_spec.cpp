@@ -25,13 +25,16 @@ namespace {
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr unsigned long kThemeSpecAnimatedResumeTickMs = 1UL;
 constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
-constexpr int kAnimatedSpriteCacheSlots = 2;
+// Six bounded tiles cover a 240x108 scene without enlarging the shared buffer.
+constexpr int kAnimatedSpriteCacheSlots = 6;
 constexpr size_t kSpriteLineReserveBytes = 256;
 constexpr size_t kSpriteLineMaxBytes = 512;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
 unsigned long nextThemeSpecFullRenderRetryAtMs = 0;
 bool lastThemeSpecRenderOk = true;
 bool cbaRenderJobInProgress = false;
+agentactivity::Announcement announcement;
+bool announcementInverted = false;
 unsigned long cbaCompletedFrames = 0;
 unsigned long cbaLastFrameDurationMs = 0;
 uint16_t* cbaFrameBuffer = nullptr;
@@ -209,11 +212,11 @@ bool compiledThemeSpecHasCbaAssets(const themespec::CompiledThemeSpec& scene) {
   };
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const themespec::CompiledPrimitive& primitive = scene.primitives[i];
-    if (primitive.kind == themespec::PrimitiveKind::Sprite &&
-        (isCba(primitive.assetPath) ||
-         isCba(primitive.idleAssetPath) ||
-         isCba(primitive.codingAssetPath))) {
-      return true;
+    if (primitive.kind == themespec::PrimitiveKind::Sprite) {
+      if (isCba(primitive.assetPath)) return true;
+      for (const char* asset : primitive.stateAssets) {
+        if (isCba(asset)) return true;
+      }
     }
   }
   return false;
@@ -320,6 +323,8 @@ bool ensureThemeSpecSceneCached(const String& raw) {
     return true;
   }
 
+  // Theme activation does not replay a status announcement.
+  ResetThemeSpecAnnouncement();
   // A changed theme must stop any previous GIF immediately. The decoder stays
   // released while the next theme is parsed and compiled; GifCore allocates it
   // lazily only after real playback has found a valid GIF header.
@@ -954,10 +959,15 @@ void drawSpriteAsset(
   }
   AnimatedSpriteCache* animatedCache = nullptr;
   if (mode == SpriteRenderMode::AnimatedOnly) {
+    if (!themespec::AssetPathLooksAnimated(assetPath)) return;
     if (clip.active) {
       return;
     }
     animatedCache = animatedSpriteCacheForPath(assetPath);
+    if (animatedCache != nullptr && cbaFrameBufferOwner != nullptr &&
+        cbaFrameBufferOwner != animatedCache) return;
+    if (animatedCache != nullptr && CurrentFrame().animationsDisabled &&
+        animatedCache->frameIndex >= 0 && !animatedCache->frameInProgress) return;
     if (animatedCache == nullptr ||
         !ThemeSpecRuntimePolicy::CbaWorkDue(
             false,
@@ -1175,6 +1185,7 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
   void DrawGif(const themespec::GifCommand& cmd) override {
+    if (CurrentFrame().animationsDisabled && GifCore().StatusSnapshot().activePath == cmd.assetPath) return;
     GifPlaybackRequest request;
     request.assetPath = cmd.assetPath;
     request.x = cmd.x;
@@ -1310,6 +1321,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
+  frame.agentName = CurrentFrame().agentName.c_str();
   // The device clock owns {time}/{date}; the Companion string is only a
   // fallback and is dropped once it is no longer current.
   static char clockTimeText[deviceclock::kTimeTextSize];
@@ -1328,22 +1340,19 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
 
 }  // namespace
 
-void MarkThemeSpecCountdownsRendered() {
+void MarkThemeSpecCountdownsRendered(uint32_t fields) {
   const unsigned long now = millis();
   const int64_t remain = CurrentRemainingSecs();
-  LastRenderedSecs() = remain;
-  LastRenderedMinuteBucket() = remain / 60;
+  if (fields & themespec::kThemeSpecFieldReset) LastRenderedSecs() = remain;
   for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
     const int64_t slotRemain =
         codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, now);
-    Context().lastRenderedUsageWindowSecs[i] = slotRemain;
-    Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
+    if (fields & (themespec::kThemeSpecFieldUsageWindowReset | themespec::kThemeSpecFieldUsageWindows)) Context().lastRenderedUsageWindowSecs[i] = slotRemain;
   }
   for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
     const int64_t slotRemain =
         codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, now);
-    Context().lastRenderedProviderSlotSecs[i] = slotRemain;
-    Context().lastRenderedProviderSlotMinuteBuckets[i] = slotRemain / 60;
+    if (fields & themespec::kThemeSpecFieldProviderSlots) Context().lastRenderedProviderSlotSecs[i] = slotRemain;
   }
 }
 
@@ -1394,6 +1403,27 @@ bool DrawThemeSpecUsage() {
                                       : 0;
   MarkThemeSpecCountdownsRendered();
   return true;
+}
+
+void SetAnnouncementInverted(bool inverted) {
+  if (announcementInverted == inverted) return;
+  announcementInverted = inverted;
+  // Panel setup uses TFT_INVERSION_ON as its normal polarity.
+#ifdef TFT_INVERSION_ON
+  Tft().invertDisplay(!inverted);
+#else
+  Tft().invertDisplay(inverted);
+#endif
+}
+void ResetThemeSpecAnnouncement() {
+  announcement = {};
+  SetAnnouncementInverted(false);
+}
+void TickThemeSpecAnnouncement() {
+  const auto& frame = CurrentFrame();
+  const bool ready = frame.hasThemeSpec && !frame.hasError && currentThemeSpecRenderedSuccessfully();
+  const bool enabled = ready && !frame.animationsDisabled && !frame.agentAlertsMuted && frame.agentName.length() > 0;
+  SetAnnouncementInverted(announcement.Update(frame.activity.c_str(), enabled, millis(), frame.agentReminderSecs));
 }
 
 bool TickThemeSpecGifs() {
@@ -1474,7 +1504,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
-  MarkThemeSpecCountdownsRendered();
+  MarkThemeSpecCountdownsRendered(changedFields);
   return true;
 }
 
@@ -1597,6 +1627,9 @@ namespace display {
 bool DrawThemeSpecUsage() {
   return false;
 }
+
+void ResetThemeSpecAnnouncement() {}
+void TickThemeSpecAnnouncement() {}
 
 bool TickThemeSpecGifs() {
   return false;

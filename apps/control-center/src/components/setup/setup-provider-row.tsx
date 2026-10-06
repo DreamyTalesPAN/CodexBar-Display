@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, LogIn, RefreshCw, TriangleAlert } from "lucide-react";
+import { Copy, ExternalLink, LogIn, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -18,14 +18,14 @@ import { hideUsageEngineName } from "../customer-support-text";
 export type SetupProviderRowVariant =
   | "browser_sign_in"
   | "checking"
+  | "unsupported"
   | "no_usage"
   | "outage"
   | "permission"
   | "sign_in"
   | "stale"
   | "timed_out"
-  | "toggle"
-  | "unsupported";
+  | "toggle";
 
 /**
  * The health states the usage service reports, mapped onto the presentations
@@ -60,9 +60,6 @@ export function setupProviderRowVariant(
       return "browser_sign_in";
     case "permission_required":
       return "permission";
-    // The account lost access to this provider for good. It must not offer a
-    // sign-in: the stored credential is still valid, so signing in again
-    // changes nothing and only sends the customer around the same loop.
     case "unsupported":
       return "unsupported";
     case "no_usage_available":
@@ -86,7 +83,8 @@ type SetupProviderRowProps = {
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
-  onShowIssue: () => void;
+  detail?: string;
+  reportedMessage?: string;
   onCheckAgain: () => void;
   /**
    * Starts the provider's sign-in through the companion: the browser page
@@ -95,6 +93,12 @@ type SetupProviderRowProps = {
    * has nothing to start.
    */
   onOpenSignIn?: () => void;
+  /**
+   * Present on Windows for a signed-out provider the app cannot sign in
+   * itself: its usage comes from the provider's own app, so the notice says so
+   * and links the setup guide.
+   */
+  onOpenSetupGuide?: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -112,14 +116,15 @@ export function SetupProviderRow({
   health,
   label,
   onCheckAgain,
-  onShowIssue,
+  detail,
+  reportedMessage,
   onOpenSignIn,
+  onOpenSetupGuide,
   onToggle,
   saving = false,
 }: SetupProviderRowProps) {
   const variant = enabled ? setupProviderRowVariant(health) : "toggle";
-  const unusable =
-    variant === "no_usage" || variant === "outage" || variant === "unsupported";
+  const unusable = variant === "no_usage" || variant === "outage";
   const checkAgain = (
     <SetupProviderRowAction
       icon={RefreshCw}
@@ -127,10 +132,53 @@ export function SetupProviderRow({
       onClick={onCheckAgain}
     />
   );
+  const copyReportedMessage = reportedMessage ? (
+    <SetupProviderRowAction
+      icon={Copy}
+      label={`Copy provider message for ${label}`}
+      onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
+    />
+  ) : null;
+  // Its own text: a generic engine message hides that an update fixes it.
+  const fallbackMessage =
+    health === "engine_incompatible"
+      ? "The usage engine is too old. Repair the usage engine, then check again."
+      : variant === "sign_in"
+      ? `Sign in to ${label}`
+      : variant === "browser_sign_in"
+        ? `Sign in to ${label} in your browser, close the browser, then check again`
+      : variant === "permission"
+        ? "Allow access in macOS"
+        : variant === "unsupported"
+          ? "This provider is no longer supported for this account"
+        : variant === "no_usage"
+          ? "No usage data on this account"
+          : variant === "outage"
+            ? "Service outage — try again later"
+            : variant === "stale"
+              ? "Live usage is unavailable"
+            : "Check timed out";
+  const guidance = hideUsageEngineName(reportedMessage || detail || fallbackMessage);
+
+  const hasNotice = variant !== "checking" && variant !== "toggle";
+  const actions = variant === "unsupported" ? copyReportedMessage : (
+    <>
+      {copyReportedMessage}
+      {variant === "stale" ? null : checking ? (
+        <>
+          <span className="sr-only">Checking {label}…</span>
+          <Spinner />
+        </>
+      ) : checkAgain}
+    </>
+  );
 
   return (
     <Item
-      className="rounded-[var(--radius-card)] p-4"
+      className={cn(
+        "rounded-[var(--radius-card)] p-4",
+        hasNotice && "gap-3 border-0 bg-card px-4 pt-3 pb-4 ring-1 ring-foreground/10",
+      )}
       role="listitem"
       variant="outline"
     >
@@ -138,15 +186,7 @@ export function SetupProviderRow({
         <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
       </ItemContent>
       <ItemActions>
-        {variant === "checking" ? (
-          <Spinner />
-        ) : variant === "toggle" ? null : (
-          <>
-            <SetupProviderRowAction
-              icon={TriangleAlert}
-              label={`Show provider message for ${label}`}
-              onClick={onShowIssue}
-            />
+        {variant === "checking" ? <Spinner /> : null}
             {variant === "browser_sign_in" && onOpenSignIn ? (
               <SetupProviderRowAction
                 icon={ExternalLink}
@@ -166,22 +206,6 @@ export function SetupProviderRow({
                 <span>{`Sign in to ${label}`}</span>
               </Button>
             ) : null}
-            {variant === "stale" || variant === "unsupported" ? null : checking ? (
-              <>
-                <span className="sr-only">Checking {label}…</span>
-                <Spinner />
-              </>
-            ) : (
-              checkAgain
-            )}
-          </>
-        )}
-        {/*
-          Outside the branches on purpose: the health decides what help to
-          offer, never whether the customer may switch the provider off.
-          Turning one off is always valid and always theirs, and a provider
-          they cannot switch off is one they cannot keep off the display.
-        */}
         <Switch
           aria-label={label}
           checked={enabled}
@@ -189,42 +213,26 @@ export function SetupProviderRow({
           onCheckedChange={onToggle}
         />
       </ItemActions>
+      {hasNotice ? (
+        <div data-slot="provider-notice" className="-mx-4 flex basis-[calc(100%+2rem)] items-center gap-3 border-t border-border px-4 pt-3 text-left">
+          {onOpenSetupGuide ? (
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-1 text-xs leading-normal text-muted-foreground">
+              <p>{`VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`}</p>
+              <p>{guidance}</p>
+              <Button className="h-auto px-0 text-xs" onClick={onOpenSetupGuide} type="button" variant="link">
+                Open setup guide
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs leading-normal text-muted-foreground min-w-0 flex-1">{guidance}</p>
+          )}
+          {((variant !== "unsupported" && variant !== "stale") || copyReportedMessage) ? (
+            <div className="flex shrink-0 items-center justify-end gap-2">{actions}</div>
+          ) : null}
+        </div>
+      ) : null}
     </Item>
   );
-}
-
-/** Keep CodexBar's exact guidance in the shared popup, without provider rules. */
-export function setupProviderIssueMessage({
-  health, label, detail, reportedMessage,
-}: {
-  health: PreferenceHealthState;
-  label: string;
-  detail?: string;
-  reportedMessage?: string;
-}): string | null {
-  const variant = setupProviderRowVariant(health);
-  if (variant === "toggle" || variant === "checking") return null;
-  // Its own text: a generic engine message hides that an update fixes it.
-  const tooOld = health === "engine_incompatible";
-  const fallbackMessage =
-    tooOld
-      ? "The usage engine is too old. Repair the usage engine, then check again."
-      : variant === "sign_in"
-      ? `Sign in to ${label}`
-      : variant === "browser_sign_in"
-        ? `Sign in to ${label} in your browser, close the browser, then check again`
-      : variant === "permission"
-        ? "Allow access in macOS"
-        : variant === "unsupported"
-          ? "This provider no longer supports this account"
-        : variant === "no_usage"
-          ? "No usage data on this account"
-          : variant === "outage"
-            ? "Service outage — try again later"
-            : variant === "stale"
-              ? "Live usage is unavailable"
-            : "Check timed out";
-  return hideUsageEngineName(reportedMessage || detail || fallbackMessage);
 }
 
 function SetupProviderRowAction({

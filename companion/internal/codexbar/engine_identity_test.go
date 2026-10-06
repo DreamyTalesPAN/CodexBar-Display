@@ -34,6 +34,8 @@ func TestProbeProviderSetupSeparatesEngineVersionStates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("CODEXBAR_BIN", bin)
 			setExistingConfig(t)
+			// The fixture supplies a different fake version for the same file.
+			lastInstalledVersion.Store(nil)
 			runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 				return []byte(tc.output), tc.err
 			}

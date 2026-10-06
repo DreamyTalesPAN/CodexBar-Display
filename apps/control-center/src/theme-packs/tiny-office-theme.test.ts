@@ -34,8 +34,8 @@ describe("Tiny Office theme pack", () => {
     const parsed = importThemeSpec(JSON.parse(rawSpec));
     const validation = validateThemeSpec(parsed, pack.assets || {}, "live");
     expect(validation.errors).toEqual([]);
-    expect(primitives).toHaveLength(13);
-    expect(Buffer.byteLength(rawSpec)).toBeLessThan(2048);
+    expect(primitives).toHaveLength(17);
+    expect(Buffer.byteLength(rawSpec)).toBeLessThan(4096);
     let animated = 0;
     for (const asset of Object.values(pack.assets || {})) {
       const lines = asset.data.trim().split("\n");
@@ -55,7 +55,13 @@ describe("Tiny Office theme pack", () => {
       }
       expect(Number(lines[2])).toBeLessThanOrEqual(26);
     }
-    expect(animated).toBe(2);
+    expect(animated).toBeGreaterThan(2);
+    // Six tiled sprites share one 80x54 buffer, with at most six active cursors.
+    for (const state of ["idle", "coding", "needs_you", "done", "error"]) {
+      const tiles = primitives.filter(p => p.sa?.[state]);
+      expect(tiles).toHaveLength(6);
+      expect(tiles.reduce((area, p) => area + (p.w ?? 0) * (p.h ?? 0), 0)).toBe(240 * 108);
+    }
   });
 
   it("uses the provider display/update-notice binding exactly once", () => {
@@ -82,7 +88,7 @@ describe("Tiny Office theme pack", () => {
     expect(visible).not.toContain("used");
     expect(visible).not.toContain("Weekly");
     const unavailable = frame("idle", []);
-    expect(primitives.filter((p) => primitiveUsageSlotVisible(p, unavailable))).toHaveLength(5);
+    expect(texts.filter((p) => primitiveUsageSlotVisible(p, unavailable)).map(p => text(p, unavailable))).toEqual(["Claude", "used"]);
   });
 
   it("centers the shrunken Spark label alongside the full-size percentage", () => {
