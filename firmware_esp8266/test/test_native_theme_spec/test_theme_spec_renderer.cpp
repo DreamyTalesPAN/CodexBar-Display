@@ -3020,6 +3020,90 @@ void testStoredThemeBootActivationRejectsInvalidRaw() {
   TEST_ASSERT_FALSE(event.frameAccepted);
 }
 
+// Issue #66: what a stored theme file can turn into -- cut off by a power
+// loss, overwritten with the wrong shape, or grown past the device limits --
+// never becomes the frame, and the theme that was up stays up.
+void testCorruptStoredThemeSpecKeepsLastKnownGood() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String good =
+      R"JSON({"v":1,"id":"good","rev":3,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "good", 3, good, 1000, event));
+
+  String tooManyPrimitives = R"JSON({"v":1,"id":"big","rev":1,"p":[)JSON";
+  for (size_t i = 0; i <= codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives; ++i) {
+    tooManyPrimitives += i == 0 ? "" : ",";
+    tooManyPrimitives += R"JSON({"t":"tx","x":1,"y":2,"s":1,"v":"x"})JSON";
+  }
+  tooManyPrimitives += "]}";
+
+  const String corrupt[] = {
+      good.substring(0, good.length() / 2),
+      good.substring(0, good.length() - 2),
+      R"JSON({"v":1,"id":"bad","rev":1,"p":"tx"})JSON",
+      R"JSON({"v":1,"id":"bad","rev":1,"p":{"t":"tx"}})JSON",
+      R"JSON({"v":1,"id":"bad","rev":1,"p":[{"t":"rc","x":1,"y":2,"w":0,"h":4},{"t":"tx","x":1,"y":2,"s":0,"v":"x"}]})JSON",
+      R"JSON([{"t":"tx","x":1,"y":2,"s":1,"v":"p"}])JSON",
+      tooManyPrimitives,
+  };
+  for (const String& raw : corrupt) {
+    TEST_ASSERT_FALSE_MESSAGE(
+        RestoreStoredThemeSpecFrame(state, "bad", 1, raw, 2000, event), raw.c_str());
+    TEST_ASSERT_FALSE(event.frameAccepted);
+    TEST_ASSERT_EQUAL_STRING("good", state.current.themeSpecId.c_str());
+    TEST_ASSERT_EQUAL_INT(3, state.current.themeSpecRev);
+    TEST_ASSERT_EQUAL_STRING("good", state.cachedThemeId.c_str());
+    TEST_ASSERT_EQUAL_STRING(good.c_str(), ThemeSpecRawForFrame(state, state.current).c_str());
+  }
+
+  // Nothing was up before: the frame stays empty instead of naming a theme
+  // that cannot draw, so the device shows its own "Theme missing" screen.
+  RuntimeState fresh;
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(fresh, "bad", 1, corrupt[0], 2000, event));
+  TEST_ASSERT_FALSE(fresh.hasFrame);
+  TEST_ASSERT_FALSE(fresh.current.hasThemeSpec);
+}
+
+// The same rule for a spec a frame carries: one that can never compile used to
+// replace the cached theme and stay the frame's theme, so every render failed
+// until the next restart.
+void testFrameCarriedInvalidThemeSpecKeepsLastKnownGood() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String good =
+      R"JSON({"v":1,"id":"good","rev":3,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "good", 3, good, 1000, event));
+
+  const char* invalid[] = {
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"bad","rev":1,"p":[{"t":"unsupported"}]}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":12,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"bad","rev":1,"p":"tx"}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":13,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"good","rev":3,"p":[]}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":14,"weekly":20,"resetSecs":3600})JSON",
+  };
+  for (const char* line : invalid) {
+    TEST_ASSERT_TRUE_MESSAGE(ConsumeFrameLine(state, line, 2000, event), line);
+    TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+    TEST_ASSERT_EQUAL_STRING("good", state.current.themeSpecId.c_str());
+    TEST_ASSERT_EQUAL_INT(3, state.current.themeSpecRev);
+    TEST_ASSERT_EQUAL_STRING(good.c_str(), ThemeSpecRawForFrame(state, state.current).c_str());
+  }
+  // The usage values of those frames still arrive.
+  TEST_ASSERT_EQUAL_INT(14, state.current.session);
+
+  // A valid spec still replaces the theme.
+  const char* next = R"JSON({"v":2,"provider":"codex","label":"Codex","session":15,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"next","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"ok"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, next, 3000, event));
+  TEST_ASSERT_EQUAL_STRING("next", state.current.themeSpecId.c_str());
+  TEST_ASSERT_EQUAL_STRING("next", state.cachedThemeId.c_str());
+
+  // Nothing was up before: the frame names no theme, so the device shows its
+  // own "Theme missing" screen instead of failing to draw.
+  RuntimeState fresh;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(fresh, invalid[0], 4000, event));
+  TEST_ASSERT_FALSE(fresh.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("", fresh.cachedThemeSpecRaw.c_str());
+}
+
 void testThemeSpecErrorFrameUsesFullRender() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3797,6 +3881,8 @@ int main() {
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testStoredThemeBootActivationRestoresFrameAndFullRenderIntent);
   RUN_TEST(testStoredThemeBootActivationRejectsInvalidRaw);
+  RUN_TEST(testCorruptStoredThemeSpecKeepsLastKnownGood);
+  RUN_TEST(testFrameCarriedInvalidThemeSpecKeepsLastKnownGood);
   RUN_TEST(testThemeSpecErrorFrameUsesFullRender);
   RUN_TEST(testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);

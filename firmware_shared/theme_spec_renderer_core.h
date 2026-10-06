@@ -1000,9 +1000,12 @@ inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
   scene = CompiledThemeSpec{};
 }
 
+// `outOfMemory` separates a spec that does not fit the heap right now from one
+// that can never compile, wherever a caller has to tell the two apart.
 inline bool AllocateCompiledThemeSpecStorage(
     CompiledThemeSpec& scene,
-    const CompiledThemeSpecStoragePlan& plan) {
+    const CompiledThemeSpecStoragePlan& plan,
+    bool* outOfMemory = nullptr) {
   ReleaseCompiledThemeSpec(scene);
   if (plan.primitiveCapacity == 0 || plan.primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
       plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes ||
@@ -1020,6 +1023,9 @@ inline bool AllocateCompiledThemeSpecStorage(
       (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr) ||
       (plan.providerAssetCapacity > 0 && scene.providerAssets == nullptr)) {
     ReleaseCompiledThemeSpec(scene);
+    if (outOfMemory != nullptr) {
+      *outOfMemory = true;
+    }
     return false;
   }
 
@@ -1399,7 +1405,8 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
   return false;
 }
 
-inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scene) {
+inline bool CompileThemeSpecObject(
+    JsonObjectConst spec, CompiledThemeSpec& scene, bool* outOfMemory = nullptr) {
   ReleaseCompiledThemeSpec(scene);
   JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
   if (primitives.isNull() || primitives.size() == 0 || primitives.size() > kMaxCompiledThemeSpecPrimitives) {
@@ -1407,7 +1414,7 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   }
   CompiledThemeSpecStoragePlan storagePlan;
   if (!CountCompiledThemeSpecStorage(spec, storagePlan) ||
-      !AllocateCompiledThemeSpecStorage(scene, storagePlan)) {
+      !AllocateCompiledThemeSpecStorage(scene, storagePlan, outOfMemory)) {
     return false;
   }
 
@@ -1436,16 +1443,23 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   return true;
 }
 
-inline bool CompileThemeSpec(const char* themeSpecRaw, JsonDocument& doc, CompiledThemeSpec& scene) {
+inline bool CompileThemeSpec(
+    const char* themeSpecRaw,
+    JsonDocument& doc,
+    CompiledThemeSpec& scene,
+    bool* outOfMemory = nullptr) {
   if (themeSpecRaw == nullptr || themeSpecRaw[0] == '\0') {
     return false;
   }
   doc.clear();
   const DeserializationError err = deserializeJson(doc, themeSpecRaw);
   if (err) {
+    if (outOfMemory != nullptr) {
+      *outOfMemory = err == DeserializationError::NoMemory;
+    }
     return false;
   }
-  return CompileThemeSpecObject(doc.as<JsonObjectConst>(), scene);
+  return CompileThemeSpecObject(doc.as<JsonObjectConst>(), scene, outOfMemory);
 }
 
 struct Bounds {
