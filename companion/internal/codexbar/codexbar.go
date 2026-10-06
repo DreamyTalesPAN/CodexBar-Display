@@ -606,7 +606,22 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
+// installedVersion is the CLI's version. The app-managed copy is not run for
+// it: its path is keyed by the pinned version, and that version was checked
+// against the binary itself when the copy was installed. Running it again on
+// every probe and settings read hit the 2 s deadline on a fresh Mac, which
+// reported a broken engine and sent the app to reinstall it (#508).
 func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
+	if pinned := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); pinned != "" {
+		if managed, err := findAppManagedBinary(pinned); err == nil && managed == strings.TrimSpace(bin) {
+			return parseLooseVersion(pinned)
+		}
+	}
+	return reportedVersion(ctx, bin)
+}
+
+// reportedVersion runs the CLI and reads the version it reports.
+func reportedVersion(ctx context.Context, bin string) (looseVersion, error) {
 	bin = strings.TrimSpace(bin)
 	if bin == "" {
 		return looseVersion{}, errors.New("CodexBar binary path is empty")

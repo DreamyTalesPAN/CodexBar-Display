@@ -183,12 +183,22 @@ async function listPackFiles(root) {
   }
 }
 
-// Mirrors core::ThemeSpecUsesBinding(raw, "label", "l") in
-// firmware_shared/codexbar_display_core.h. That substring check is what decides
-// whether the firmware renders the update notice inside the theme or falls back
-// to the overlay bar, so the guard has to ask the question the same way.
+// Asks the firmware's question (ThemeSpecLiveUse in
+// firmware_shared/codexbar_display_core.h): does a primitive draw the label,
+// through its binding or a {label} placeholder? Only then does the update notice
+// render inside the theme instead of the overlay bar.
 function usesLabelBinding(specRaw) {
-  return specRaw.includes("label") || specRaw.includes('"l"');
+  const labelKeys = new Set(["label", "providerLabel", "l"]);
+  const spec = JSON.parse(specRaw);
+  return (spec.primitives || spec.p || []).some((primitive) => {
+    const binding = primitive.binding ?? primitive.b;
+    if (typeof binding === "string") {
+      return labelKeys.has(binding);
+    }
+    const text = primitive.text ?? primitive.v;
+    return typeof text === "string" &&
+      [...text.matchAll(/\{([^{}]+)\}/g)].some((match) => labelKeys.has(match[1]));
+  });
 }
 
 async function writeCatalog(catalog) {

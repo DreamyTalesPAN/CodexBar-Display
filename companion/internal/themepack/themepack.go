@@ -844,15 +844,26 @@ func spriteAssetLines(data []byte) []string {
 	// one into a line break here would split a payload the device reads as a
 	// single unparsable line. Dropping it keeps both sides on the same rows.
 	raw = strings.ReplaceAll(raw, "\r", "")
-	raw = strings.TrimSpace(raw)
+	// The device reads the first line as the header and trims only spaces and
+	// tabs, so a leading blank line or a form feed is content there. Trimming
+	// any more here would accept a pack the device rejects mid-install (#467).
+	raw = strings.TrimRight(raw, spriteLineSpace+"\n")
 	if raw == "" {
 		return nil
 	}
 	parts := strings.Split(raw, "\n")
 	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
+		parts[i] = strings.Trim(parts[i], spriteLineSpace)
 	}
 	return parts
+}
+
+// spriteLineSpace is the whitespace the firmware's sprite readers trim and
+// ParseCbaHeader() reads as a separator.
+const spriteLineSpace = " \t"
+
+func spriteHeaderFields(line string) []string {
+	return strings.FieldsFunc(line, func(r rune) bool { return strings.ContainsRune(spriteLineSpace, r) })
 }
 
 func validateStaticSpriteAsset(devicePath string, lines []string) error {
@@ -895,7 +906,7 @@ func parseSpriteDimensions(lines []string, animated bool) (width, height, frameC
 	if len(lines) == 0 {
 		return 0, 0, 0, 0, errors.New("missing dimensions")
 	}
-	fields := strings.Fields(lines[0])
+	fields := spriteHeaderFields(lines[0])
 	want := 2
 	if animated {
 		want = 4

@@ -177,6 +177,9 @@ func freshTokenUsageReadiness(usage daemon.PersistedUsage, now time.Time) []code
 	return out
 }
 
+// Token history older than this no longer proves the provider is readable.
+const tokenUsageReadinessMaxAge = 15 * time.Minute
+
 func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now time.Time) (codexbar.ProviderReadiness, bool) {
 	if snapshot.TokenStatsCollectedAt.IsZero() {
 		return codexbar.ProviderReadiness{}, false
@@ -185,7 +188,7 @@ func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now
 		now = time.Now().UTC()
 	}
 	tokenAt := snapshot.TokenStatsCollectedAt.UTC()
-	if tokenAt.After(now.UTC().Add(5*time.Minute)) || now.Sub(tokenAt) > exactUsageCacheMaxAge {
+	if tokenAt.After(now.UTC().Add(5*time.Minute)) || now.Sub(tokenAt) > tokenUsageReadinessMaxAge {
 		return codexbar.ProviderReadiness{}, false
 	}
 	if strings.TrimSpace(snapshot.Frame.Normalize().Error) != "" {
@@ -576,10 +579,9 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 	if !enabled {
 		return
 	}
+	// A ready check only wakes the collector. Its own reading never stands in
+	// for the collector's: what setup shows is what VibeTV can send (#480).
 	if exactReadiness.Status == codexbar.ProviderReady {
-		if setup.ExactUsage != nil {
-			s.cacheExactProviderUsage(*setup.ExactUsage)
-		}
 		if s.wakeDisplayStream != nil {
 			s.wakeDisplayStream()
 		}

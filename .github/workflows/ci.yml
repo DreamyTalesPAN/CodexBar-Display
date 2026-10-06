@@ -24,8 +24,8 @@ jobs:
     steps:
       - run: git config --global core.autocrlf false
         working-directory: ${{ runner.temp }}
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
       - run: go build ./...
@@ -44,15 +44,17 @@ jobs:
       CGO_ENABLED: '0'
     steps:
       - run: git config --global core.autocrlf false
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: 1.99.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: windows/src-tauri
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -93,7 +95,7 @@ jobs:
           VIBETV_VERSION: 9999.0.${{ github.run_number }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: |
-          cargo install tauri-cli --version "^2" --locked
+          cargo install tauri-cli --version "2.12.1" --locked
           # The updater manifest must be signed even for a CI-only artifact,
           # so sign it with a throwaway key generated for this run: the
           # installer works, but no released shell will ever accept it as an
@@ -106,13 +108,16 @@ jobs:
           # the sidecar build above.
           Set-Content -Path "$env:RUNNER_TEMP/ci-version.json" -Value (@{ version = $env:VIBETV_VERSION } | ConvertTo-Json -Compress)
           cargo tauri build --bundles nsis --config "$env:RUNNER_TEMP/ci-version.json"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: vibetv-control-center-windows
           path: |
             windows/src-tauri/target/release/bundle/nsis/*.exe
             windows/src-tauri/target/release/bundle/nsis/*.sig
           if-no-files-found: error
+      - name: Check that no binary needs the Visual C++ Redistributable
+        shell: pwsh
+        run: ./scripts/check-windows-crt.ps1
 
   codexbar-release-contract:
     strategy:
@@ -126,8 +131,8 @@ jobs:
     steps:
       - if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
       - name: Extract pinned macOS release
@@ -154,7 +159,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -169,10 +174,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
 
@@ -186,7 +191,7 @@ jobs:
 
       - name: Install staticcheck
         working-directory: companion
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
 
       - name: Run staticcheck
         working-directory: companion
@@ -199,6 +204,9 @@ jobs:
 
       - name: Test agent git guardrails
         run: ./scripts/test-agent-git-guardrails.sh
+
+      - name: Check CI and release tool pins
+        run: ./scripts/check-ci-pins.sh
 
       - name: Test hosted VibeTV gate contracts
         run: ./scripts/test-vibetv-hosted-gates.sh
@@ -234,12 +242,12 @@ jobs:
       CGO_ENABLED: '0'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Test macOS Control Center DMG prep
         run: ./scripts/test-macos-control-center-app-bundle.sh
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
 
@@ -258,10 +266,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -288,10 +296,10 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -322,17 +330,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
@@ -354,15 +362,15 @@ jobs:
             max_gzip_bytes: 350000
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
       - name: Install PlatformIO
-        run: pip install platformio
+        run: pip install platformio==6.2.0
 
       - name: Test ThemeSpec renderer core
         working-directory: firmware_esp8266
@@ -409,15 +417,15 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
       - name: Install PlatformIO
-        run: pip install platformio
+        run: pip install platformio==6.2.0
 
       - name: Build ESP32 experimental profile
         run: |

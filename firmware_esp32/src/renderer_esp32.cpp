@@ -72,11 +72,11 @@ void RendererESP32::DrawUsage(app::RuntimeContext& ctx) {
   tft.setTextFont(4);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.setCursor(kContentX, kSessionLabelY);
-  tft.printf("Session %d%% used", current.session);
+  tft.printf("Session %d%% %s", current.session, core::UsageModeText(current));
   drawBar(kContentX, kSessionBarY, kContentW, kBarHeight, current.session, sessionColor);
 
   tft.setCursor(kContentX, kWeeklyLabelY);
-  tft.printf("Weekly %d%% used", current.weekly);
+  tft.printf("Weekly %d%% %s", current.weekly, core::UsageModeText(current));
   drawBar(kContentX, kWeeklyBarY, kContentW, kBarHeight, current.weekly, weeklyColor);
 
   DrawReset(ctx, remain);

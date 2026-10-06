@@ -44,7 +44,7 @@ func ValidatePinnedCLI(ctx context.Context, app string) (string, error) {
 	if out, err := pinnedRun(ctx, "/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=4", app); err != nil {
 		return "", fmt.Errorf("assess CodexBar: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
-	version, err := installedVersion(ctx, bin)
+	version, err := reportedVersion(ctx, bin)
 	if err != nil {
 		return "", err
 	}

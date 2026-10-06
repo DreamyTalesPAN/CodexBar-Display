@@ -310,7 +310,7 @@ main() {
     'manual rehearsal must discover candidates waiting for Production approval'
   assert_contains "$RC_WORKFLOW" 'ref: ${{ github.sha }}' \
     'release candidate must build the exact main SHA that dispatched it'
-  assert_contains "$RC_WORKFLOW" 'pip install platformio intelhex' \
+  assert_contains "$RC_WORKFLOW" 'pip install platformio==6.2.0 intelhex==2.3.0' \
     'release candidate must install the ESP32 bootloader dependency on macOS'
   assert_contains "$RC_WORKFLOW" 'candidate-manifest.json' \
     'release candidate must emit an immutable candidate manifest'

@@ -189,9 +189,9 @@ void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
 
 void RendererESP8266::DrawStatus(
     app::RuntimeContext& ctx,
-    const String& title,
-    const String& line1,
-    const String& line2) {
+    const char* title,
+    const char* line1,
+    const char* line2) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::GifCore().ReleaseMemory();
@@ -202,9 +202,9 @@ void RendererESP8266::DrawStatus(
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  const int titleSize = display::ChooseTextSizeToFit(title.c_str(), 4, 2, tft.width() - 8);
-  const int lineSize = display::ChooseTextSizeToFit(line1.c_str(), 3, 1, tft.width() - 8);
-  const int line2Size = display::ChooseTextSizeToFit(line2.c_str(), 2, 1, tft.width() - 8);
+  const int titleSize = display::ChooseTextSizeToFit(title, 4, 2, tft.width() - 8);
+  const int lineSize = display::ChooseTextSizeToFit(line1, 3, 1, tft.width() - 8);
+  const int line2Size = display::ChooseTextSizeToFit(line2, 2, 1, tft.width() - 8);
   const int totalH =
       display::TextPixelHeight(titleSize) + 14 +
       display::TextPixelHeight(lineSize) + 8 +
@@ -216,19 +216,19 @@ void RendererESP8266::DrawStatus(
 
   display::SetTextSize(titleSize);
   tft.setTextColor(kBrandNeon, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(title.c_str(), titleSize), y);
+  tft.setCursor(display::CenteredTextX(title, titleSize), y);
   tft.print(title);
 
   y += display::TextPixelHeight(titleSize) + 14;
   display::SetTextSize(lineSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(line1.c_str(), lineSize), y);
+  tft.setCursor(display::CenteredTextX(line1, lineSize), y);
   tft.print(line1);
 
   y += display::TextPixelHeight(lineSize) + 8;
   display::SetTextSize(line2Size);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(line2.c_str(), line2Size), y);
+  tft.setCursor(display::CenteredTextX(line2, line2Size), y);
   tft.print(line2);
 
   ctx.lastRenderedSecs = -1;
@@ -236,7 +236,7 @@ void RendererESP8266::DrawStatus(
   ctx.screenDirty = false;
 #else
   (void)ctx;
-  Serial.printf("probe_status title=%s line1=%s line2=%s\n", title.c_str(), line1.c_str(), line2.c_str());
+  Serial.printf("probe_status title=%s line1=%s line2=%s\n", title, line1, line2);
 #endif
 }
 
@@ -307,20 +307,20 @@ namespace {
 // even if the preferred placement changes between draw and clear.
 int lastDrawnOverlayBarY = -1;
 
-void drawFirmwareUpdateOverlayBar(const String& text, int y) {
+void drawFirmwareUpdateOverlayBar(const char* text, int y) {
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
   display::PrimitiveFillRect(0, y, tft.width(), display::kFirmwareUpdateNoticeBarHeight, TFT_BLACK);
   tft.setTextWrap(false);
   tft.setTextFont(1);
-  const int textSize = display::ChooseTextSizeToFit(text.c_str(), 2, 1, tft.width() - 8);
+  const int textSize = display::ChooseTextSizeToFit(text, 2, 1, tft.width() - 8);
   display::SetTextSize(textSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   int textY = y + (display::kFirmwareUpdateNoticeBarHeight - display::TextPixelHeight(textSize)) / 2;
   if (textY < y) {
     textY = y;
   }
-  tft.setCursor(display::CenteredTextX(text.c_str(), textSize), textY);
+  tft.setCursor(display::CenteredTextX(text, textSize), textY);
   tft.print(text);
 }
 
@@ -338,8 +338,8 @@ updatenotice::Surface RendererESP8266::FirmwareUpdateNoticeSurface(app::RuntimeC
   if (!display::CurrentThemeSpecRenderedSuccessfully()) {
     return updatenotice::Surface::None;
   }
-  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-  if (core::ThemeSpecUsesBinding(raw, "label", "l")) {
+  if (core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame())
+          .Uses(codexbar_display::themespec::kThemeSpecFieldLabel)) {
     return updatenotice::Surface::Label;
   }
   if (display::FirmwareUpdateOverlayBarPlacement().valid) {
@@ -354,7 +354,7 @@ updatenotice::Surface RendererESP8266::FirmwareUpdateNoticeSurface(app::RuntimeC
 #endif
 }
 
-void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text) {
+void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const char* text) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   (void)text;
@@ -364,7 +364,7 @@ void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const S
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   switch (FirmwareUpdateNoticeSurface(ctx)) {
     case updatenotice::Surface::Label:
-      if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel, text.c_str())) {
+      if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel, text)) {
         display::ScreenDirty() = true;
       }
       return;
@@ -383,7 +383,7 @@ void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const S
 #endif
 #else
   (void)ctx;
-  Serial.printf("probe_update_notice text=%s\n", text.c_str());
+  Serial.printf("probe_update_notice text=%s\n", text);
 #endif
 }
 
@@ -400,9 +400,9 @@ bool RendererESP8266::ClearFirmwareUpdateNoticeSurface(app::RuntimeContext& ctx)
     return display::RenderThemeSpecRegion(
         0, overlayY, display::Tft().width(), display::kFirmwareUpdateNoticeBarHeight);
   }
-  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
   if (display::CurrentThemeSpecRenderedSuccessfully() &&
-      core::ThemeSpecUsesBinding(raw, "label", "l")) {
+      core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame())
+          .Uses(codexbar_display::themespec::kThemeSpecFieldLabel)) {
     return display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel);
   }
   return true;
@@ -463,14 +463,9 @@ bool RendererESP8266::DrawClock(app::RuntimeContext& ctx) {
   if (!display::CurrentFrame().hasThemeSpec || !display::CurrentThemeSpecRenderedSuccessfully()) {
     return false;
   }
-  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-  uint32_t fields = 0;
-  if (core::ThemeSpecUsesBinding(raw, "time", "tm")) {
-    fields |= codexbar_display::themespec::kThemeSpecFieldTime;
-  }
-  if (core::ThemeSpecUsesBinding(raw, "date", "dt")) {
-    fields |= codexbar_display::themespec::kThemeSpecFieldDate;
-  }
+  const uint32_t fields =
+      core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame()).fields &
+      (codexbar_display::themespec::kThemeSpecFieldTime | codexbar_display::themespec::kThemeSpecFieldDate);
   if (fields == 0) {
     return false;
   }
@@ -486,16 +481,10 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-    uint32_t countdownFields = 0;
-    if (core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
-      countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
-    }
-    for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
-      if (core::ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
-        countdownFields |= codexbar_display::themespec::kThemeSpecFieldUsageWindowReset;
-      }
-    }
+    const uint32_t countdownFields =
+        core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame()).fields &
+        (codexbar_display::themespec::kThemeSpecFieldReset |
+         codexbar_display::themespec::kThemeSpecFieldUsageWindowReset);
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {

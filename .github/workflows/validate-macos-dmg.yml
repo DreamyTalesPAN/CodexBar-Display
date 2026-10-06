@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout requested source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
@@ -108,7 +108,7 @@ jobs:
       # The requested source never receives the Apple credentials. Only these
       # already-reviewed signing tools run in this job.
       - name: Checkout signing tools
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Reviewed main commit that signs Sparkle's nested code inside-out.
           ref: 24c3855468991f28ef1af2df905b95944d90985c

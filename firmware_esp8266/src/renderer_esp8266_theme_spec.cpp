@@ -56,19 +56,7 @@ bool cbaBufferAllocationFailedThisAttempt = false;
 // draw attempt. Nothing was decoded, so the attempt says nothing about the
 // asset and must not be reported as a failure.
 bool cbaBufferUnavailableThisAttempt = false;
-// Consecutive contended draw attempts during which the owning sprite made no
-// progress at all. A tall sprite legitimately holds the buffer for many
-// resume ticks -- a 480-row frame needs 60 of them -- so counting attempts
-// alone would report ordinary animation as a fault. Only contention while the
-// owner is stuck means the sprites are evicting each other and none can ever
-// finish a frame.
-unsigned int cbaBufferContentionStreak = 0;
-// Row the owning sprite had reached when contention was last observed. A
-// changed value proves the owner is still advancing.
-int cbaBufferContentionOwnerRow = -1;
-// Above this many consecutive contended attempts without any owner progress
-// the sprites are treated as starved and the condition is published.
-constexpr unsigned int kCbaBufferContentionStreakLimit = 12;
+CbaContentionWatch cbaBufferContention;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
 String lastSuccessfulThemeSpecId = "";
@@ -103,14 +91,14 @@ struct AnimatedSpriteCache {
   unsigned long nextFrameAtMs = 0;
   int frameBufferWidth = 0;
   int frameBufferHeight = 0;
+  // The size the completed frame is drawn at. It differs from the buffer
+  // size when the sprite is enlarged, which is scaled during the push.
+  int frameDrawnWidth = 0;
+  int frameDrawnHeight = 0;
 };
 
 AnimatedSpriteCache animatedSpriteCaches[kAnimatedSpriteCacheSlots];
 AnimatedSpriteCache* cbaFrameBufferOwner = nullptr;
-// The owner whose progress is being watched while another sprite waits for the
-// shared frame buffer. A different owner is progress in itself, because the
-// buffer changed hands.
-const AnimatedSpriteCache* cbaBufferContentionOwner = nullptr;
 int nextAnimatedSpriteCacheSlot = 0;
 
 void markThemeSpecRenderOk() {
@@ -235,6 +223,8 @@ void releaseAnimatedSpriteBuffer(AnimatedSpriteCache& cache) {
   }
   cache.frameBufferWidth = 0;
   cache.frameBufferHeight = 0;
+  cache.frameDrawnWidth = 0;
+  cache.frameDrawnHeight = 0;
   cache.frameReadyToPush = false;
 }
 
@@ -725,11 +715,16 @@ bool prepareAnimatedSpriteBuffer(
     int targetHeight,
     bool hasClearColor,
     uint16_t clearColor) {
-  const int bufferWidth = targetWidth > 0 ? targetWidth : cache.width;
-  const int bufferHeight = targetHeight > 0 ? targetHeight : cache.height;
-  const uint32_t bufferBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(
-      bufferWidth,
-      bufferHeight);
+  const int drawnWidth = targetWidth > 0 ? targetWidth : cache.width;
+  const int drawnHeight = targetHeight > 0 ? targetHeight : cache.height;
+  const int bufferWidth = ThemeSpecRuntimePolicy::CbaBufferExtent(drawnWidth, cache.width);
+  const int bufferHeight = ThemeSpecRuntimePolicy::CbaBufferExtent(drawnHeight, cache.height);
+  // The drawn size keeps the 80 px limit too: an enlarged frame is pushed one
+  // drawn row at a time from a row of at most that width.
+  const uint32_t bufferBytes =
+      ThemeSpecRuntimePolicy::CbaBufferBytes(drawnWidth, drawnHeight) == 0
+          ? 0
+          : ThemeSpecRuntimePolicy::CbaBufferBytes(bufferWidth, bufferHeight);
   if (!hasClearColor || bufferBytes == 0 ||
       (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache)) {
     // Another sprite holds the shared frame buffer for its in-progress frame.
@@ -737,20 +732,12 @@ bool prepareAnimatedSpriteBuffer(
     // later tick, so it must not be reported as a decode failure.
     if (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache) {
       cbaBufferUnavailableThisAttempt = true;
-      // A tall sprite holds the buffer across many resume ticks, which is
-      // normal. Only an owner that is not advancing means the sprites keep
-      // evicting each other so none can finish a frame; publish that, because
-      // health would otherwise report ok while the theme shows nothing. It
-      // stays a transient condition: the assets themselves are fine.
-      const AnimatedSpriteCache* owner = cbaFrameBufferOwner;
-      if (owner != cbaBufferContentionOwner || owner->nextRow != cbaBufferContentionOwnerRow) {
-        cbaBufferContentionOwner = owner;
-        cbaBufferContentionOwnerRow = owner->nextRow;
-        cbaBufferContentionStreak = 0;
-      } else if (cbaBufferContentionStreak < kCbaBufferContentionStreakLimit) {
-        cbaBufferContentionStreak += 1;
-      }
-      if (cbaBufferContentionStreak >= kCbaBufferContentionStreakLimit) {
+      // Sprites that keep evicting each other never finish a frame; publish
+      // that, because health would otherwise report ok while the theme shows
+      // nothing. It stays a transient condition: the assets themselves are
+      // fine.
+      if (cbaBufferContention.Observe(
+              cbaFrameBufferOwner, cbaFrameBufferOwner->nextRow, cbaCompletedFrames)) {
         setSpriteRenderError("cba_buffer_contention", cache.path.c_str());
       }
     }
@@ -795,14 +782,28 @@ bool prepareAnimatedSpriteBuffer(
     cbaFrameBuffer[i] = clearColor;
   }
   cbaFrameBufferOwner = &cache;
-  // This attempt owns the buffer and will decode into it, so the theme is
-  // making progress again.
-  cbaBufferContentionStreak = 0;
-  cbaBufferContentionOwner = nullptr;
-  cbaBufferContentionOwnerRow = -1;
   cache.frameBufferWidth = bufferWidth;
   cache.frameBufferHeight = bufferHeight;
+  cache.frameDrawnWidth = drawnWidth;
+  cache.frameDrawnHeight = drawnHeight;
   return true;
+}
+
+// One drawn row of an enlarged frame, picked from the smaller buffer.
+const uint16_t* scaledCbaFrameRow(
+    const AnimatedSpriteCache& cache,
+    int drawnRow,
+    uint16_t* row) {
+  const uint16_t* source =
+      cbaFrameBuffer +
+      ThemeSpecRuntimePolicy::CbaScaledSourceIndex(
+          drawnRow, cache.frameDrawnHeight, cache.frameBufferHeight) *
+          cache.frameBufferWidth;
+  for (int x = 0; x < cache.frameDrawnWidth; ++x) {
+    row[x] = source[ThemeSpecRuntimePolicy::CbaScaledSourceIndex(
+        x, cache.frameDrawnWidth, cache.frameBufferWidth)];
+  }
+  return row;
 }
 
 void pushCompletedAnimatedSpriteFrame(
@@ -813,17 +814,23 @@ void pushCompletedAnimatedSpriteFrame(
       cbaFrameBufferOwner != &cache) {
     return;
   }
+  const bool enlarged = cache.frameDrawnWidth != cache.frameBufferWidth ||
+                        cache.frameDrawnHeight != cache.frameBufferHeight;
+  const int pushes = enlarged ? cache.frameDrawnHeight : 1;
+  uint16_t drawnRow[ThemeSpecRuntimePolicy::kMaxCbaBufferWidth];
   const unsigned long pushStartUs = micros();
   {
     DisplayTransaction transaction;
     const bool previousSwapBytes = Tft().getSwapBytes();
     Tft().setSwapBytes(true);
-    Tft().pushImage(
-        x,
-        y,
-        cache.frameBufferWidth,
-        cache.frameBufferHeight,
-        cbaFrameBuffer);
+    for (int push = 0; push < pushes; ++push) {
+      Tft().pushImage(
+          x,
+          enlarged ? y + push : y,
+          enlarged ? cache.frameDrawnWidth : cache.frameBufferWidth,
+          enlarged ? 1 : cache.frameBufferHeight,
+          enlarged ? scaledCbaFrameRow(cache, push, drawnRow) : cbaFrameBuffer);
+    }
     Tft().setSwapBytes(previousSwapBytes);
   }
   cbaLastPushDurationUs = micros() - pushStartUs;
@@ -1035,6 +1042,9 @@ void resetAnimatedSpriteCaches() {
   // active sprite.
   cbaRenderJobInProgress = false;
   cbaFrameBufferOwner = nullptr;
+  // A new set of sprites starts its own count; an earlier theme's starvation
+  // says nothing about it.
+  cbaBufferContention = CbaContentionWatch{};
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {
     animatedSpriteCaches[i] = AnimatedSpriteCache{};
   }
@@ -1260,13 +1270,6 @@ class ThemeSpecSink final : public themespec::Sink {
   uint16_t backgroundColor_ = 0x0000;
 };
 
-const char* usageModeText() {
-  if (CurrentFrame().hasUsageMode && CurrentFrame().usageMode == "remaining") {
-    return "remaining";
-  }
-  return "used";
-}
-
 const char* themeSpecUpdateNoticeText() {
   return "Open VibeTV Mac App";
 }
@@ -1308,7 +1311,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   }
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
-  frame.usageMode = usageModeText();
+  frame.usageMode = codexbar_display::core::UsageModeText(CurrentFrame());
   frame.activity = CurrentFrame().activity.c_str();
   // The device clock owns {time}/{date}; the Companion string is only a
   // fallback and is dropped once it is no longer current.

@@ -74,6 +74,7 @@ import {
   deviceRecoveryConfirmedLoss,
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
+  dismissDeviceRecoveryPicker,
   resetDeviceRecoveryGate,
   selectRecoveryDevice,
   type DeviceRecoveryGateState,
@@ -120,6 +121,7 @@ import {
   SetupUsageDialog,
   setupUsageCauseFor,
 } from "./setup/setup-usage-dialog";
+import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen } from "./settings-screen";
@@ -174,6 +176,7 @@ const LAUNCHD_RECOVERY_GRACE_MS = 25_000;
 // launch (main.swift:37-43). At 55s this fired while the repair was still
 // working, reported failure, and then discarded the successful native result.
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 120_000;
+const AUTOMATIC_USAGE_REPAIR_REARM_MS = 10 * 60_000;
 // The Help menu hands the last 20 of these to an AI along with the current
 // screen, so the log has to be at least that deep.
 const RECENT_EVENT_LIMIT = 20;
@@ -613,6 +616,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // says whether the native side still holds a temporary CodexBar for us.
   const codexBarRecoveryOutstanding = useRef(false);
   const providerRecoveryAttempted = useRef(false);
+  const providerRecoveryAutomaticAt = useRef(0);
   const providerRecoveryManualAttempted = useRef(false);
   const themeInstallPollJobRef = useRef("");
   const activeThemeUpgradeAttemptRef = useRef("");
@@ -1780,7 +1784,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     const candidate = deviceCandidates.find(
-      (entry) => entry.deviceId === preferredDeviceId,
+      (entry) =>
+        canReconnectLostDevice(entry) && entry.deviceId === preferredDeviceId,
     );
     if (
       !candidate ||
@@ -4360,6 +4365,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (providerRecoveryAttempted.current) {
       return;
     }
+    // At most one automatic repair every ten minutes. A usage service that
+    // flaps between ready and failing was torn down once per flap, which held
+    // a fresh Mac on the provider step for minutes (#508). The dialog's "Try
+    // automatic repair again" still repairs at any time.
+    if (
+      Date.now() - providerRecoveryAutomaticAt.current <
+      AUTOMATIC_USAGE_REPAIR_REARM_MS
+    ) {
+      return;
+    }
     // A theme install job and its worker live inside the Companion process, and
     // the repair unregisters that process on purpose: firing now would delete a
     // running install together with the status the UI is polling for it. The
@@ -4369,6 +4384,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     providerRecoveryAttempted.current = true;
+    providerRecoveryAutomaticAt.current = Date.now();
     const timer = window.setTimeout(() => {
       if (isNativeControlCenterApp()) {
         repairUsageService();
@@ -4724,6 +4740,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the window again. Theme and screensaver installs can temporarily make the
   // device unready; that is install progress, not a new customer setup.
   const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
+  // A VibeTV lost after setup is searched for once. The saved one found again
+  // reconnects on its own; any other answer, or that reconnect failing, is the
+  // customer's choice over the current screen.
+  // Only VibeTVs a WiFi reconnect can reach: a Cable entry is a connection
+  // change, not a reconnect, and /v1/device/select refuses it.
+  const lostDeviceCandidates = deviceCandidates.filter(canReconnectLostDevice);
+  const lostDevicePickerOpen =
+    !setupOwnsScreen &&
+    !needsRuntimeRecovery &&
+    deviceRecoveryPickerReason === "confirmed-loss" &&
+    deviceSearchState === "multiple" &&
+    !busyAction &&
+    lostDeviceCandidates.length > 0 &&
+    // Updates and Appearance put their own failure dialog over this screen.
+    !(activeShellTab === "updates" && firmwareUpdateStatus?.phase === "error") &&
+    !(activeShellTab === "theme-library" && themeInstallStatus?.phase === "error") &&
+    (Boolean(lastError) ||
+      !lostDeviceCandidates.some(
+        (candidate) =>
+          candidate.deviceId === deviceRecoveryGateRef.current.preferredDeviceId,
+      ));
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
@@ -4743,7 +4780,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       label: item.label,
     })),
   );
-  // Step 05 keeps offering all four live themes: hiding one would make the
+  // Step 05 keeps offering every live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the
   // theme library uses, so setup cannot promise what the device would refuse.
   const setupThemes = catalog.themes
@@ -4867,6 +4904,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           };
         }
         rescuedDeviceIdRef.current = null;
+        // A Cable VibeTV like any other now. Left as the hello from before the
+        // update, its card had no identity -- a different VibeTV than the one
+        // just connected, so setup put a list over its own connect -- and the
+        // old firmware (#507). Back must not rescue it a second time either.
+        setDeviceCandidates((current) =>
+          current.map((candidate) =>
+            candidate.rescue
+              ? {
+                  ...candidate,
+                  deviceId: selected.deviceId,
+                  firmware: selected.device?.firmware,
+                  rescue: false,
+                }
+              : candidate,
+          ),
+        );
         return;
       }
       if (!(await installFirmwareUpdate())) {
@@ -5107,7 +5160,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
-            actionError={errorForHost(lastError, windowsHost)}
+            actionError={
+              lostDevicePickerOpen ? null : errorForHost(lastError, windowsHost)
+            }
             onDismissError={() => {
               setLastError(null);
               setProviderDisplayError(null);
@@ -5265,11 +5320,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         And the whole of setup wins over it too. Every failure inside the wizard
         is already a dialog over the step that caused it, and the provider step
         is where a usage problem is dealt with -- so this ambient surface has
-        nothing to add there and is still waiting once setup is done.
+        nothing to add there and is still waiting once setup is done. A lost
+        VibeTV's picker wins over it for the same reason.
       */}
+      {lostDevicePickerOpen ? (
+        <SetupDevicePickerDialog
+          candidates={lostDeviceCandidates}
+          error={errorForHost(lastError, windowsHost)}
+          onConnect={(candidate) => void selectAndConnectDevice(candidate)}
+          onOpenChange={() => {
+            setDeviceCandidates([]);
+            setDeviceSearchState("idle");
+            setLastError(null);
+            setDeviceRecoveryGate(
+              dismissDeviceRecoveryPicker(deviceRecoveryGateRef.current),
+            );
+          }}
+        />
+      ) : null}
       {usageFailure &&
       !usageFailureHidden &&
       !needsRuntimeRecovery &&
+      !lostDevicePickerOpen &&
       !setupOwnsScreen ? (
         <SetupUsageDialog
           cause={usageFailure}
@@ -6010,6 +6082,11 @@ function forgetDeviceTarget() {
   } catch {
     // localStorage may be unavailable in private or restricted browser contexts.
   }
+}
+
+// A lost VibeTV that the WiFi reconnect (`/v1/device/select`) can reach.
+function canReconnectLostDevice(candidate: DeviceCandidate): boolean {
+  return candidate.transport !== "cable" && Boolean(candidate.deviceId);
 }
 
 function normalizeDeviceTarget(target: string): string {
