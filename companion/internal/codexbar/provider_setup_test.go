@@ -451,6 +451,28 @@ func TestProviderReadinessKeepsAuthFailuresThatMentionRateLimitData(t *testing.T
 	}
 }
 
+// "429" inside a request id, a process id or a duration is not an HTTP status.
+// Reading it as throttling hid the sign-in or the timeout behind "wait a few
+// minutes, nothing needs to be fixed".
+func TestProviderClassificationIgnores429InsideOtherNumbers(t *testing.T) {
+	for detail, want := range map[string]string{
+		"HTTP 401 authentication_error (request req_01429ab)": ProviderAuthRequired,
+		"session expired, helper pid 14290":                   ProviderAuthRequired,
+		"timed out after 14290ms":                             ProviderTimeout,
+	} {
+		if got := classifyProviderError(detail); got != want {
+			t.Fatalf("%q: expected %s, got %s", detail, want, got)
+		}
+		if got := classifyProviderHealth(detail); got == ProviderHealthRateLimited {
+			t.Fatalf("%q: the health scan read a number as throttling", detail)
+		}
+	}
+	// The status on its own still is throttling.
+	if got := classifyProviderError("usage endpoint answered HTTP 429."); got != ProviderRateLimited {
+		t.Fatalf("a standalone 429 must stay rate_limited, got %s", got)
+	}
+}
+
 // The cached health scan speaks for a row whenever no fresh exact readiness
 // does, so it has to reach the same verdict. It used to read the bundled
 // "OAuth ... rate limited" message as auth_required and offer a sign-in the

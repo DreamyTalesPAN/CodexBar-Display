@@ -632,18 +632,23 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 	return false
 }
 
+// 429 counts only as a number of its own. As a bare substring it also matched
+// request ids, process ids and durations ("req_01429ab", "14290ms") and told a
+// customer with a sign-in failure or a timeout to wait.
+var httpStatus429 = regexp.MustCompile(`\b429\b`)
+
 // Throttling wording: the endpoint answered and refused this call for being
 // too frequent.
 func isThrottlingDetail(lower string) bool {
 	for _, marker := range []string{
 		"rate limited", "ratelimited", "rate-limited",
-		"rate limit exceeded", "too many requests", "429",
+		"rate limit exceeded", "too many requests",
 	} {
 		if strings.Contains(lower, marker) {
 			return true
 		}
 	}
-	return false
+	return httpStatus429.MatchString(lower)
 }
 
 // Wording that reports a credential the provider could not use at all. Waiting
