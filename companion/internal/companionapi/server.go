@@ -41,6 +41,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -301,6 +302,7 @@ type Server struct {
 	macAppReleaseCheckedAt time.Time
 	macAppReleaseCache     companionReleaseInfo
 	setupEvents            setupEventLog
+	timeline               *timeline.Store
 }
 
 type apiError struct {
@@ -693,6 +695,7 @@ type diagnosticsResponse struct {
 	ProviderSetup    codexbar.ProviderSetup   `json:"providerSetup"`
 	UsageEngine      diagnosticsUsageEngine   `json:"usageEngine"`
 	SetupLog         setupLog                 `json:"setupLog"`
+	Timeline         timeline.Log             `json:"timeline"`
 	Checks           []diagnosticCheck        `json:"checks"`
 }
 
@@ -1003,6 +1006,7 @@ func New(opts Options) (*Server, error) {
 		addr:                   addr,
 		home:                   home,
 		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json")},
+		timeline:               timeline.Open(runtimepaths.Path(home, "timeline.json")),
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
 		client:                 client,
@@ -2329,6 +2333,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			ProviderSetup:    providerSetup,
 			UsageEngine:      usageEngineDiagnostics(providerSetup.Engine),
 			SetupLog:         s.setupEvents.snapshot(s.currentTime()),
+			Timeline:         s.timeline.Snapshot(s.currentTime()),
 			Checks:           checks,
 		})
 	}
@@ -3481,6 +3486,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
 	s.setupEvents.reset(s.currentTime())
+	s.recordTimeline(timeline.Event{Component: "setup_reset", State: "started"})
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
@@ -7043,6 +7049,7 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 			job.Progress = progress
 		}
 	})
+	s.recordTimeline(timeline.Event{Component: "firmware_update", DeviceID: event.DeviceID, State: event.Stage, Reason: event.Outcome})
 }
 
 func firmwareUpdateStageProgress(stage string) (string, int) {
@@ -7225,6 +7232,11 @@ func (s *Server) updateMacAppUpdateJob(jobID string, update func(*macAppUpdateJo
 		return
 	}
 	update(job)
+	event := timeline.Event{Component: "mac_app_update", State: job.Phase}
+	if job.Error != nil {
+		event.Reason = job.Error.Code
+	}
+	s.recordTimeline(event)
 }
 
 func (s *Server) macAppUpdateJobSnapshot(jobID string) (macAppUpdateJob, bool) {
