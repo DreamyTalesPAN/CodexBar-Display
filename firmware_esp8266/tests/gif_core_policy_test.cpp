@@ -13,6 +13,7 @@ namespace {
 
 using codexbar_display::esp8266::GifCorePolicy;
 using codexbar_display::esp8266::GifFailureGuardState;
+using codexbar_display::esp8266::CbaContentionWatch;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
 using codexbar_display::esp8266::AssetPathPolicy;
 using codexbar_display::esp8266::ConnectedSetupPolicy;
@@ -372,6 +373,43 @@ bool testWifiSetupKeepsRetryingSavedNetwork(const char* mainPath) {
           retry != std::string::npos && fallback != std::string::npos &&
           body.find("setupWifiState.scanInProgress") != std::string::npos,
       "WiFi without a network must keep retrying the saved network and resume once connected");
+}
+
+// A WiFi upload that names its MD5 is checked against it before anything is
+// validated or promoted, through the same check the Cable path uses (#60).
+bool testUploadContentHashPolicy(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t assetStart = mainSource.find("void handleAssetUpload()");
+  const std::size_t assetEnd = mainSource.find("void handleAssetUploadResult()", assetStart);
+  const std::size_t finishStart = mainSource.find("bool finishCableTransfer(");
+  const std::size_t chunkStart = mainSource.find("bool writeCableTransferChunk(");
+  if (!expect(
+          assetStart != std::string::npos && assetEnd != std::string::npos && finishStart != std::string::npos &&
+              chunkStart != std::string::npos,
+          "upload handlers must remain discoverable")) {
+    return false;
+  }
+  const std::string asset = mainSource.substr(assetStart, assetEnd - assetStart);
+  const std::string chunk = mainSource.substr(chunkStart, finishStart - chunkStart);
+  const std::string finish = mainSource.substr(finishStart, 600);
+  const std::size_t start = asset.find("if (upload.status == UPLOAD_FILE_START)");
+  const std::size_t decode = asset.find("decodeTransferHash(expectedHash.c_str(), transferExpectedHash)", start);
+  const std::size_t begin = asset.find("transferHash.begin();", decode);
+  const std::size_t write = asset.find("assetUploadFile.write(upload.buf, upload.currentSize)", begin);
+  const std::size_t add = asset.find("transferHash.add(upload.buf,", write);
+  const std::size_t end = asset.find("} else if (upload.status == UPLOAD_FILE_END) {", add);
+  const std::size_t check = asset.find(
+      "if (assetUploadError.length() == 0 && assetUploadHashExpected && !transferHashMatches()) {", end);
+  const std::size_t promote = asset.find("validateCompletedAssetUpload() &&\n        promoteCompletedAssetUpload()", end);
+  return expect(
+      start != std::string::npos && decode != std::string::npos && begin != std::string::npos &&
+          write != std::string::npos && add != std::string::npos && end != std::string::npos &&
+          check != std::string::npos && promote != std::string::npos && check < promote &&
+          countOccurrences(asset, "setAssetUploadError(\"asset hash mismatch\")") == 2 &&
+          chunk.find("transferHash.add(decoded,") != std::string::npos &&
+          finish.find("CanFinish(\n          cableTransfer.flow, transferHashMatches())") != std::string::npos,
+      "WiFi uploads must hash what they write and refuse a mismatch before validating or promoting, "
+      "through the same MD5 check as Cable transfers");
 }
 
 bool testUploadMutualExclusionPolicy(const char* mainPath) {
@@ -1136,22 +1174,33 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
     return false;
   }
   // Suppressing contention entirely would hide a theme whose sprites evict
-  // each other forever, so persistent contention has to surface once no
-  // sprite can finish a frame, and reset as soon as one owns the buffer.
+  // each other forever, so persistent contention has to surface. Whether it
+  // persisted is CbaContentionWatch's call (testCbaContentionWatch), fed with
+  // the owner's row and the completed-frame count.
   if (!expect(
-          renderer.find("cbaBufferContentionStreak >= kCbaBufferContentionStreakLimit") != std::string::npos &&
-              renderer.find("setSpriteRenderError(\"cba_buffer_contention\"") != std::string::npos &&
-              renderer.find("cbaBufferContentionStreak = 0;") != std::string::npos,
+          renderer.find("cbaBufferContention.Observe(\n              cbaFrameBufferOwner, cbaFrameBufferOwner->nextRow, cbaCompletedFrames)") !=
+                  std::string::npos &&
+              renderer.find("setSpriteRenderError(\"cba_buffer_contention\"") != std::string::npos,
           "persistent shared-buffer contention must be reported as a transient error")) {
     return false;
   }
-  // A valid 480-row sprite needs 60 resume ticks while holding the buffer, so
-  // counting contended attempts alone would report ordinary animation as a
-  // fault. The streak may only grow while the owner makes no progress.
-  if (!expect(
-          renderer.find("owner->nextRow != cbaBufferContentionOwnerRow") != std::string::npos &&
-              renderer.find("cbaBufferContentionOwnerRow = owner->nextRow;") != std::string::npos,
-          "contention may only count while the buffer owner makes no progress")) {
+  // Taking the buffer is no progress: evicted sprites hand it over mid-frame
+  // forever, and resetting the watch there hid that starvation (#472). Only
+  // dropping every sprite cache starts a new count.
+  const std::size_t prepareStart = renderer.find("bool prepareAnimatedSpriteBuffer(");
+  const std::size_t prepareEnd = renderer.find("\n}\n", prepareStart);
+  const std::size_t clearCachesStart = renderer.find("void resetAnimatedSpriteCaches() {");
+  const std::size_t clearCachesEnd = renderer.find("\n}\n", clearCachesStart);
+  if (!expect(prepareStart != std::string::npos && clearCachesStart != std::string::npos,
+              "CBA buffer and cache reset paths must remain discoverable") ||
+      !expect(renderer.substr(prepareStart, prepareEnd - prepareStart).find("cbaBufferContention = ") ==
+                  std::string::npos,
+              "acquiring the CBA buffer must not reset the contention watch") ||
+      !expect(renderer.substr(clearCachesStart, clearCachesEnd - clearCachesStart).find("cbaBufferContention = CbaContentionWatch{};") !=
+                  std::string::npos,
+              "dropping the sprite caches must start a new contention count") ||
+      !expect(countOccurrences(renderer, "cbaBufferContention") == 3,
+              "only CbaContentionWatch may decide when contention progressed")) {
     return false;
   }
   const std::size_t transientStart = renderer.find("void setSpriteRenderError(const char* code, const char* assetPath) {");
@@ -1224,7 +1273,100 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
 
 }  // namespace
 
+// Replays the renderer's sharing of one CBA frame buffer between sprites held
+// in two round-robin cache slots, as animatedSpriteCacheForPath() and
+// prepareAnimatedSpriteBuffer() do, and reports whether contention was ever
+// published.
+bool cbaContentionPublished(int spriteCount, int spriteHeight, int ticks) {
+  constexpr int kSlots = 2;
+  struct Slot {
+    int sprite = -1;
+    int nextRow = 0;
+  } slots[kSlots];
+  int nextSlot = 0;
+  const Slot* owner = nullptr;
+  unsigned long completedFrames = 0;
+  CbaContentionWatch watch;
+  bool published = false;
+  for (int tick = 0; tick < ticks; ++tick) {
+    for (int sprite = 0; sprite < spriteCount; ++sprite) {
+      Slot* slot = nullptr;
+      for (Slot& candidate : slots) {
+        if (candidate.sprite == sprite) {
+          slot = &candidate;
+        }
+      }
+      if (slot == nullptr) {
+        for (Slot& candidate : slots) {
+          if (slot == nullptr && candidate.sprite < 0) {
+            slot = &candidate;
+          }
+        }
+      }
+      if (slot == nullptr) {
+        slot = &slots[nextSlot];
+        nextSlot = (nextSlot + 1) % kSlots;
+      }
+      if (slot->sprite != sprite) {
+        // Eviction drops the old sprite's frame and its claim on the buffer.
+        if (owner == slot) {
+          owner = nullptr;
+        }
+        *slot = Slot{};
+        slot->sprite = sprite;
+      }
+      if (owner != nullptr && owner != slot) {
+        published = watch.Observe(owner, owner->nextRow, completedFrames) || published;
+        continue;
+      }
+      owner = slot;
+      slot->nextRow += ThemeSpecRuntimePolicy::CbaRowsForTick(slot->nextRow, spriteHeight);
+      if (slot->nextRow >= spriteHeight) {
+        ++completedFrames;
+        slot->nextRow = 0;
+        owner = nullptr;
+      }
+    }
+  }
+  return published;
+}
+
+bool testCbaContentionWatch() {
+  // Three sprites taller than one chunk keep evicting each other from two
+  // slots, so no frame ever completes (#472).
+  if (!expect(cbaContentionPublished(3, 24, 60),
+              "three tall CBAs that never finish a frame must publish contention")) {
+    return false;
+  }
+  // A 480-row sprite needs 60 resume ticks per frame while another waits;
+  // that is ordinary animation, not starvation.
+  if (!expect(!cbaContentionPublished(2, 480, 600),
+              "a tall owner that keeps decoding rows must not publish contention")) {
+    return false;
+  }
+  // Short sprites finish within one chunk, so the buffer is free again.
+  if (!expect(!cbaContentionPublished(3, 8, 600),
+              "sprites that complete frames must not publish contention")) {
+    return false;
+  }
+  // A stuck owner is starvation even without evictions.
+  CbaContentionWatch watch;
+  int stuckRow = 8;
+  bool published = false;
+  for (unsigned int i = 0; i <= CbaContentionWatch::kStreakLimit; ++i) {
+    published = watch.Observe(&stuckRow, stuckRow, 0);
+  }
+  if (!expect(published, "an owner that stops decoding must publish contention")) {
+    return false;
+  }
+  return expect(!watch.Observe(&stuckRow, stuckRow, 1),
+                "a completed frame must clear the contention streak");
+}
+
 int main(int argc, char** argv) {
+  if (!testCbaContentionWatch()) {
+    return 1;
+  }
   if (!testBackoffThresholdAndExpiry()) {
     return 1;
   }
@@ -1289,6 +1431,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testUploadMutualExclusionPolicy(argv[3])) {
+    return 1;
+  }
+  if (!testUploadContentHashPolicy(argv[3])) {
     return 1;
   }
   if (!testAutomaticWifiFallbackPreservesSavedCredentials(argv[3])) {

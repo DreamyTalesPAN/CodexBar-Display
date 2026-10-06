@@ -3,6 +3,8 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -426,7 +428,10 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		return fmt.Errorf("close asset multipart form: %w", err)
 	}
 
-	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath)
+	// VibeTV commits the file only when its bytes match this MD5, as over the
+	// cable (#60). Older firmware ignores the parameter.
+	digest := md5.Sum(data)
+	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath) + "&hash=" + hex.EncodeToString(digest[:])
 	contentType := writer.FormDataContentType()
 	bodyBytes := body.Bytes()
 	uploadClient := t.assetUploadClient(len(bodyBytes))

@@ -517,6 +517,7 @@ async function main() {
         testConnectInstallsFirmwareUpdate,
         testConnectFirmwareUpdateFailureOffersRetry,
         testRunningDeviceOutageKeepsControlCenterOpen,
+        testLostDeviceCandidatesAppearOverCurrentTab,
       ]) {
         await test(browser, appContext.appUrl);
         console.log(`${test.name} passed`);
@@ -533,6 +534,10 @@ async function main() {
         appContext.appUrl,
       );
       await testDismissedUsageIncidentSurvivesProbeRefresh(
+        browser,
+        appContext.appUrl,
+      );
+      await testFlappingUsageServiceIsRepairedOnlyOnce(
         browser,
         appContext.appUrl,
       );
@@ -831,6 +836,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testFlappingUsageServiceIsRepairedOnlyOnce(
+      browser,
+      appContext.appUrl,
+    );
     await testThemeMissingDeviceWaitsForInitialProviderCheck(
       browser,
       appContext.appUrl,
@@ -887,6 +896,10 @@ async function main() {
       appContext.appUrl,
     );
     await testRunningDeviceOutageKeepsControlCenterOpen(
+      browser,
+      appContext.appUrl,
+    );
+    await testLostDeviceCandidatesAppearOverCurrentTab(
       browser,
       appContext.appUrl,
     );
@@ -2358,8 +2371,12 @@ async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
   });
   await page.route("**/v1/setup/connection-mode", async (route) => {
     selections.push(route.request().postDataJSON());
-    companion.setDevice(device);
-    await route.fulfill({ json: { ok: true, status: "selected", device } });
+    // Issue #507: the Companion answers before the paired VibeTV's first frame,
+    // so it is not reported connected yet and setup stays on this step a while.
+    const paired = { ...device, connected: false, connectionState: "retrying", stream: { healthy: false, running: true } };
+    companion.setDevice(paired);
+    setTimeout(() => companion.setDevice(device), 4_000);
+    await route.fulfill({ json: { ok: true, status: "selected", device: paired } });
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -2377,6 +2394,14 @@ async function testPreUsbCVibeTVIsUpdatedOverTheCable(browser, appUrl) {
   assert(
     selections.length === 1 && selections[0].mode === "cable" && selections[0].deviceId === device.deviceId,
     `Setup must connect exactly the rescued VibeTV by Cable, got ${JSON.stringify(selections)}`,
+  );
+  // Back reconnects the updated VibeTV like any Cable VibeTV, without a second rescue.
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await waitForCondition(() => selections.length === 2, "Back must connect the updated VibeTV by Cable again");
+  await setupScreen(page, SETUP_PROVIDERS_SCREEN).waitFor({ timeout: 20_000 });
+  assert(
+    updates.length === 1 && selections[1].mode === "cable" && selections[1].deviceId === device.deviceId,
+    `Back must not update the rescued VibeTV again, got ${JSON.stringify({ updates, selections })}`,
   );
   const headings = await page.evaluate(() => window.setupHeadings);
   assert(!headings.includes("How should VibeTV connect?"), `The rescued VibeTV must not ask for a connection method: ${JSON.stringify(headings)}`);
@@ -4412,6 +4437,101 @@ async function testProviderNeverDeliveredDeviceReachesProviderStep(browser, appU
   await page.close();
 }
 
+// A usage service that flaps between failing and ready is repaired on its own
+// once, not once per flap: the repair tears the background service down, and
+// on a fresh Mac every flap held setup on the provider step for another
+// minute (#508). The dialog and its Try again stay.
+async function testFlappingUsageServiceIsRepairedOnlyOnce(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+    userAgent: "VibeTVControlCenter/1.0.53",
+  });
+  const brokenSetup = {
+    status: "setup_required",
+    engine: { status: "ready" },
+    providers: [{ id: "codexbar", status: "timeout" }],
+  };
+  let phase = "broken";
+  let readyAnswers = 0;
+  let brokenAnswersAfterReady = 0;
+  let recoveryRetries = 0;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: reachableUnreadyDevice,
+    displayFrameStatus: 404,
+    providerSetup: brokenSetup,
+    providerSelectionSetup: {
+      providerSelectionRequired: true,
+      providerSelectionComplete: false,
+    },
+    onStatusProviderSetup: () => {
+      if (phase === "ready") {
+        readyAnswers += 1;
+        if (readyAnswers >= 2) {
+          phase = "broken-again";
+        }
+        return readyProviderSetup();
+      }
+      if (phase === "broken-again") {
+        brokenAnswersAfterReady += 1;
+      }
+      return brokenSetup;
+    },
+    onProviderRetry: (_setup, providerId) => {
+      if (providerId) {
+        return undefined;
+      }
+      recoveryRetries += 1;
+      return brokenSetup;
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-07-29T08:00:00Z",
+      providers: [],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const usageDialog = page.getByRole("dialog", {
+    name: "Finish AI setup on this Mac",
+  });
+  await usageDialog.waitFor({ timeout: 15_000 });
+  // Settle the automatic repair that greets the first incident.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await waitForCondition(
+    () => recoveryRetries === 1,
+    "The automatic repair must run its one provider check",
+  );
+
+  // The service recovers, then fails again a moment later.
+  phase = "ready";
+  await waitForCondition(
+    () => brokenAnswersAfterReady >= 1,
+    "The status poll must deliver ready and then the failing verdict again",
+    40_000,
+  );
+  await usageDialog.waitFor({ timeout: 10_000 });
+  // A re-armed automatic repair would consume this result and check again.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await page.waitForTimeout(1_000);
+  assert(
+    recoveryRetries === 1,
+    `A flap right after a repair must not repair again on its own, got ${recoveryRetries} checks`,
+  );
+  await page.close();
+}
+
 // A dismissed usage incident has to stay dismissed for as long as the same
 // incident runs. The companion answers "checking" during every provider-setup
 // cache refresh; reading that as the incident ending re-opened the dismissed
@@ -5243,6 +5363,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
     viewport: desktopViewport,
   });
   const installRequests = [];
+  const recentRequests = [];
   let installStarted = false;
   let postInstallDeviceReads = 0;
   const readyDevice = {
@@ -5281,6 +5402,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
         },
       ],
       onRequest: (pathname, method) => {
+        recentRequests.push(`${method} ${pathname}`);
         if (pathname === "/v1/themes/install" && method === "POST") {
           installStarted = true;
         }
@@ -5319,17 +5441,31 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
     .getByRole("status")
     .getByText("> Theme is active on VibeTV.")
     .waitFor({ timeout: 15_000 });
+  // Give a wrong completion a second to show, then wait for the state setup
+  // has to stay in rather than sampling it: CI once saw no heading at all
+  // there (#430), which a sample cannot tell apart from a transient render.
+  // If the theme step really is gone, the failure says what was on screen and
+  // what the app last asked.
   await page.waitForTimeout(1_000);
+  try {
+    await page
+      .getByRole("heading", { name: SETUP_THEME_SCREEN })
+      .waitFor({ timeout: 10_000 });
+  } catch {
+    throw new Error(
+      `A failed post-install device read must keep the entered theme setup visible, got ${JSON.stringify({
+        headings: await page.locator("h1, h2, h3").allInnerTexts(),
+        dialogs: await page.getByRole("dialog").allInnerTexts(),
+        screen: (await page.locator("body").innerText()).slice(0, 600),
+        requests: recentRequests.slice(-12),
+      })}`,
+    );
+  }
   assert(
     (await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .count()) === 0,
     "A failed post-install device read must not complete setup",
-  );
-  assert(
-    (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
-      1,
-    `A failed post-install device read must keep the entered theme setup visible, got headings ${JSON.stringify(await page.getByRole("heading").allInnerTexts())}`,
   );
 
   companionRoute.setDevice(readyDevice);
@@ -5770,6 +5906,80 @@ async function testRunningDeviceOutageKeepsControlCenterOpen(browser, appUrl) {
     deviceWriteRequests.length === 0,
     `Running recovery must stay read-only while VibeTV is offline, got ${deviceWriteRequests}`,
   );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// Issue #358: a VibeTV that moved to a new address after the customer entered
+// the Control Center. The recovery search finds it there, but when it cannot be
+// connected on its own the customer must be able to choose it over the current
+// tab instead of being left without any way to select it.
+async function testLostDeviceCandidatesAppearOverCurrentTab(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const deviceId = "known-device-1";
+  const savedDevice = { ...companionDevice, connectionState: "ready", deviceId };
+  const movedTarget = "http://192.168.178.170";
+  const selections = [];
+  const companion = await routeCompanionOnline(page, installRequests, () => {}, {
+    device: savedDevice,
+    searchDevices: [
+      { target: movedTarget, deviceId, firmware: savedDevice.firmware, networkMode: "station", known: true },
+    ],
+  });
+  await page.route("**/v1/device/select", async (route) => {
+    const request = route.request().postDataJSON();
+    selections.push(request);
+    if (selections.length === 1) {
+      await route.fulfill({ status: 502, json: { ok: false, error: {
+        code: "device_selection_failed",
+        message: "The selected VibeTV could not be connected.",
+        nextAction: "Keep VibeTV powered on, then try again.",
+      } } });
+      return;
+    }
+    const moved = { ...savedDevice, target: request.target };
+    companion.setDevice(moved);
+    await route.fulfill({ json: { ok: true, device: moved } });
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
+    timeout: 15_000,
+  });
+  await clickNavigation(page, "Usage");
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+  companion.setDevice({ ...reconnectingDevice, deviceId });
+
+  const picker = page.getByRole("dialog");
+  await picker
+    .getByRole("radio", { name: new RegExp(`VibeTV ${deviceId}`) })
+    .waitFor({ timeout: 45_000 });
+  assert(
+    selections.length === 1 && selections[0].target === movedTarget,
+    `The rediscovered VibeTV must be tried once on its own first, got ${JSON.stringify(selections)}`,
+  );
+  assert(
+    (await page.getByRole("button", { name: "Overview", exact: true }).count()) === 1 &&
+      (await page.getByRole("heading", { name: "Usage", exact: true }).count()) === 1,
+    "The device picker must open over the current tab with navigation mounted",
+  );
+  assert(
+    (await page.getByRole("main", { name: SETUP_DEVICE_SCREEN }).count()) === 0,
+    "A lost VibeTV must not return the customer to setup",
+  );
+  await picker.getByRole("radio", { name: new RegExp(`VibeTV ${deviceId}`) }).click();
+  await picker.getByRole("button", { name: "Connect", exact: true }).click();
+  await picker.waitFor({ state: "detached", timeout: 15_000 });
+  assert(
+    selections.length === 2 &&
+      selections[1].target === movedTarget &&
+      selections[1].expectedDeviceId === deviceId,
+    `Choosing the VibeTV must connect it at its new address, got ${JSON.stringify(selections)}`,
+  );
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
   assertNoInstallRequests(installRequests);
   await page.close();
 }

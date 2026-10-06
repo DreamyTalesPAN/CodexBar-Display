@@ -895,11 +895,18 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 	}
 	server.updateFirmwareUpdateJob(job.ID, func(job *firmwareUpdateJob) { job.Phase = "complete" })
 	server.localNetworkAvailable = func() bool {
-		if !server.firmwareUpdateStartMu.TryLock() {
-			t.Error("WiFi discovery must not delay firmware update start")
-		} else {
-			server.firmwareUpdateStartMu.Unlock()
+		// WiFi discovery runs alongside Cable discovery, which may still hold
+		// the start lock for a moment (#374). It must release it without
+		// waiting for WiFi discovery, so taking the lock here must succeed.
+		deadline := time.Now().Add(5 * time.Second)
+		for !server.firmwareUpdateStartMu.TryLock() {
+			if time.Now().After(deadline) {
+				t.Error("WiFi discovery must not delay firmware update start")
+				return false
+			}
+			time.Sleep(time.Millisecond)
 		}
+		server.firmwareUpdateStartMu.Unlock()
 		return false
 	}
 	rec = search()
@@ -8806,6 +8813,96 @@ func TestSetupConnectionModeRecoversCableWhileWiFiIsOffline(t *testing.T) {
 	}
 }
 
+// #481: Cable chosen right after WiFi finds VibeTV restarting into WiFi. The
+// newer choice wins: wait for it on the cable and switch it back.
+func TestSetupConnectionModeCableWinsOverPendingWiFiSwitch(t *testing.T) {
+	const deviceID = "changed-its-mind"
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:                deviceID,
+		DeviceToken:             "pair-token",
+		CableAutoBindDisabled:   true,
+		WiFiTransitionStartedAt: time.Now().Unix(),
+	})
+	restarting := 2
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if expectedDeviceID != deviceID {
+			t.Fatalf("unexpected Cable resolution for %q", expectedDeviceID)
+		}
+		if restarting > 0 {
+			restarting--
+			return "", errors.New("VibeTV is restarting")
+		}
+		return "/dev/cu.usbserial-restart", nil
+	}
+	deviceMode := "wifi"
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		transport := protocol.TransportCapabilities{Active: "usb", Mode: deviceMode, Supported: []string{"usb", "wifi"}}
+		if deviceMode == "wifi" {
+			transport.TransitionPending = true
+			transport.TransitionFrom = "cable"
+			transport.TransitionTo = "wifi"
+		}
+		return protocol.DeviceHello{Kind: "hello", DeviceID: deviceID, Capabilities: protocol.CapabilityBlock{Transport: transport}}, nil
+	}
+	switches := 0
+	server.setCableConnectionMode = func(port, gotDeviceID, mode string) error {
+		switches++
+		if mode != "cable" || gotDeviceID != deviceID {
+			t.Fatalf("unexpected switch device=%q mode=%q", gotDeviceID, mode)
+		}
+		// The firmware rolls the pending WiFi switch back to Cable.
+		deviceMode = "cable"
+		return nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"selected"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if switches != 1 || restarting != 0 {
+		t.Fatalf("switches=%d restarting=%d", switches, restarting)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.WiFiTransitionPending() || cfg.DeviceID != deviceID {
+		t.Fatalf("Cable did not replace the pending WiFi switch: %+v", cfg)
+	}
+}
+
+// A WiFi switch older than the transition window is not restarting VibeTV
+// any more, so a Cable choice must answer at once rather than wait for it.
+func TestSetupConnectionModeDoesNotWaitForAnOldWiFiSwitch(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:                "unplugged",
+		CableAutoBindDisabled:   true,
+		WiFiTransitionStartedAt: time.Now().Add(-2 * cableTransitionWait).Unix(),
+	})
+	resolves := 0
+	server.resolveCablePort = func(string, string) (string, error) {
+		resolves++
+		return "", errors.New("no VibeTV on the cable")
+	}
+	started := time.Now()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "cable_device_not_found") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if elapsed := time.Since(started); resolves != 1 || elapsed > 5*time.Second {
+		t.Fatalf("an old WiFi switch made the Cable choice wait: resolves=%d elapsed=%s", resolves, elapsed)
+	}
+}
+
 func TestSetupConnectionModeReselectsLegacyWiFiOnlyWithoutTransition(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		CableAutoBindDisabled:        true,
@@ -13952,9 +14049,54 @@ func TestDeviceSearchReportsTheLegacyCableVibeTVForItsUpdate(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
+	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39", Rescue: true}
 	if rec.Code != http.StatusConflict || got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !reflect.DeepEqual(*got.Error.Device, want) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// Firmware from before USB-C sends no deviceId over the Cable. A WiFi VibeTV
+// with another board or firmware is provably another VibeTV, so the one on the
+// Cable stays selectable for its rescue. One with the same board and firmware
+// may be the same VibeTV and must not be listed twice.
+func TestDeviceSearchKeepsTheLegacyCableVibeTVNextToAnotherWiFiVibeTV(t *testing.T) {
+	legacy := &usb.LegacyCableFirmwareError{Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
+	rescue := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: legacy.Board, Firmware: legacy.Firmware, Rescue: true}
+	for _, tc := range []struct {
+		name, board, firmware string
+		wantRescue            bool
+	}{
+		{"newer firmware", "esp8266-smalltv-st7789", "1.0.45", true},
+		{"other board", "esp32-lilygo-t-display-s3", "1.0.39", true},
+		{"same board and firmware", "esp8266-smalltv-st7789", "1.0.39", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"kind":"hello","board":%q,"firmware":%q,"deviceId":"wifi-b","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, tc.board, tc.firmware)
+			}))
+			defer wifi.Close()
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.subnetTargets = func() []string { return []string{wifi.URL} }
+			server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+				return nil, legacyCableSearchError{legacy}
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+			var got struct {
+				Devices []deviceSearchEntry `json:"devices"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if tc.wantRescue {
+				want = 2
+			}
+			if rec.Code != http.StatusOK || len(got.Devices) != want ||
+				(tc.wantRescue && got.Devices[0] != rescue) || got.Devices[want-1].DeviceID != "wifi-b" {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

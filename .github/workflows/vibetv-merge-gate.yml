@@ -60,26 +60,26 @@ jobs:
       contents: read
     steps:
       - name: Checkout exact untrusted PR head without persisted credentials
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.resolve-pr.outputs.sha }}
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: apps/control-center/package-lock.json
 
       - name: Setup Python and PlatformIO
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -90,7 +90,7 @@ jobs:
             echo 'error: Issue #177 Core is required: companion/cmd/virtual-vibetv is missing.' >&2
             exit 1
           }
-          pip install platformio
+          pip install platformio==6.2.0
           source_sha="$(git rev-parse HEAD)"
           version="9999.0.${GITHUB_RUN_NUMBER}"
           build="${GITHUB_RUN_ID}"
@@ -137,7 +137,7 @@ jobs:
           printf '%s\n' "$version" > tmp/vibetv-merge/version.txt
 
       - name: Upload unsigned candidate inputs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: CODEX-vibetv-merge-inputs-${{ github.run_id }}
           path: tmp/vibetv-merge
@@ -151,13 +151,13 @@ jobs:
       contents: read
     steps:
       - name: Checkout trusted main signing tools
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
       - name: Download unsigned candidate inputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: CODEX-vibetv-merge-inputs-${{ github.run_id }}
           path: tmp/vibetv-merge
@@ -218,7 +218,7 @@ jobs:
           PY
 
       - name: Upload signed merge candidate
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: CODEX-vibetv-merge-candidate-${{ github.run_id }}
           path: |
@@ -239,7 +239,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout trusted baseline resolver
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
@@ -247,7 +247,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/resolve-vibetv-public-baselines.sh --output baseline-manifest.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: CODEX-vibetv-merge-baselines-${{ github.run_id }}
           path: baseline-manifest.json
@@ -263,15 +263,15 @@ jobs:
         state: [clean_os, current_public, previous_public]
     steps:
       - name: Checkout trusted guest test
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: CODEX-vibetv-merge-candidate-${{ github.run_id }}
           path: candidate
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: CODEX-vibetv-merge-baselines-${{ github.run_id }}
           path: baselines
@@ -302,7 +302,7 @@ jobs:
             --virtual-vibetv candidate/tmp/vibetv-merge/virtual-vibetv --companion candidate/tmp/vibetv-merge/codexbar-display \
             --firmware candidate/tmp/vibetv-merge/firmware.bin --firmware-manifest candidate/tmp/vibetv-merge/firmware-manifest.json \
             --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]+"${baseline_args[@]}"}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: CODEX-vibetv-merge-results-${{ matrix.state }}-${{ github.run_id }}

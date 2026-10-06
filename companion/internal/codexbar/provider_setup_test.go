@@ -270,6 +270,41 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 	}
 }
 
+// The app-managed copy's version is the pinned one its path is keyed by, so a
+// probe or settings read never waits on starting it (#508). Any other CLI is
+// still asked.
+func TestInstalledVersionDoesNotRunTheAppManagedCLI(t *testing.T) {
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
+	home := t.TempDir()
+	testenv.Home(t, home)
+	privateCLI := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	otherCLI := filepath.Join(t.TempDir(), "codexbar")
+	for _, path := range []string{privateCLI, otherCLI} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = original })
+	var ran []string
+	runVersionCommandFn = func(_ context.Context, _ time.Duration, bin string, _ ...string) ([]byte, error) {
+		ran = append(ran, bin)
+		return nil, errors.New("slow first launch")
+	}
+
+	version, err := installedVersion(context.Background(), privateCLI)
+	want, _ := parseLooseVersion("0.63.0")
+	if err != nil || version.Compare(want) != 0 || len(ran) != 0 {
+		t.Fatalf("app-managed CLI: version=%s err=%v ran=%v, want 0.63.0 without running it", version, err, ran)
+	}
+	if _, err := installedVersion(context.Background(), otherCLI); err == nil || len(ran) != 1 || ran[0] != otherCLI {
+		t.Fatalf("other CLI: err=%v ran=%v, want it asked and failing", err, ran)
+	}
+}
+
 func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -473,11 +508,6 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	if got.Providers[0].Source != "cli" || got.Providers[0].CollectedAt != "2026-07-24T08:00:00Z" {
 		t.Fatalf("missing safe source/freshness diagnostics: %+v", got.Providers[0])
 	}
-	if got.ExactUsage == nil || got.ExactUsage.Provider != "antigravity" ||
-		got.ExactUsage.Frame.Session != 17 || got.ExactUsage.Frame.Weekly != 23 ||
-		got.ExactUsage.CollectedAt.Format(time.RFC3339) != "2026-07-24T08:00:00Z" {
-		t.Fatalf("exact usage was not retained for immediate companion refresh: %+v", got.ExactUsage)
-	}
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
@@ -551,35 +581,6 @@ func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.
 		if hasDeadline {
 			t.Fatalf("probe %d ran under the shared aggregate deadline; each provider needs its own budget", i)
 		}
-	}
-}
-
-func TestProbeProviderSetupForProviderDoesNotCacheUndatedExactUsage(t *testing.T) {
-	originalUsage := runUsageCommandFn
-	originalVersion := runVersionCommandFn
-	defer func() {
-		runUsageCommandFn = originalUsage
-		runVersionCommandFn = originalVersion
-	}()
-	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEXBAR_BIN", bin)
-	setExistingConfig(t)
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.44.0"), nil
-	}
-	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
-		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
-			return []byte(`[{"provider":"future-provider","displayName":"Future Provider","enabled":true}]`), nil
-		}
-		return []byte(`[{"provider":"future-provider","source":"oauth","usage":{"secondary":{"usedPercent":23}}}]`), nil
-	}
-
-	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "future-provider")
-	if got.Status != ProviderReady || got.ExactUsage != nil {
-		t.Fatalf("undated provider usage must be ready but not immediately cached: %+v", got)
 	}
 }
 
@@ -844,5 +845,24 @@ func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
 	}
 	if inventoryCalls != 0 {
 		t.Fatalf("a ready answer must not pay for an inventory call, got %d", inventoryCalls)
+	}
+}
+
+func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	providerCopyGOOS = "darwin"
+	mac := providerResult("claude", ProviderPermissionRequired)
+	if mac.Detail != "macOS blocked access required by this provider." ||
+		mac.NextAction != "Allow the requested macOS permission, then check again." {
+		t.Fatalf("macOS copy changed: %+v", mac)
+	}
+
+	providerCopyGOOS = "windows"
+	windows := providerResult("claude", ProviderPermissionRequired)
+	if windows.Detail != "Windows blocked access required by this provider." ||
+		windows.NextAction != "Allow the requested access, then check again." {
+		t.Fatalf("Windows copy = %+v", windows)
 	}
 }

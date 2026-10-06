@@ -52,7 +52,7 @@ if touches '^companion/'; then
     export PATH="$(go env GOPATH)/bin:$PATH"
     if ! command -v staticcheck >/dev/null 2>&1; then
       printf "   installing staticcheck\n"
-      go install honnef.co/go/tools/cmd/staticcheck@latest || exit 1
+      go install honnef.co/go/tools/cmd/staticcheck@v0.8.1 || exit 1
     fi
     cd companion && staticcheck ./...'
   # companion-tests in CI enforces the daemon latency and allocation budgets

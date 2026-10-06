@@ -82,11 +82,10 @@ type ProviderReadiness struct {
 }
 
 type ProviderSetup struct {
-	Status     string              `json:"status"`
-	CheckedAt  string              `json:"checkedAt"`
-	Engine     EngineReadiness     `json:"engine"`
-	Providers  []ProviderReadiness `json:"providers"`
-	ExactUsage *ParsedFrame        `json:"-"`
+	Status    string              `json:"status"`
+	CheckedAt string              `json:"checkedAt"`
+	Engine    EngineReadiness     `json:"engine"`
+	Providers []ProviderReadiness `json:"providers"`
 }
 
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
@@ -449,20 +448,6 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		provider.Label = exactSetting.Label
 		provider.Enabled = &exactSetting.Enabled
 		result.Providers = []ProviderReadiness{provider}
-		if provider.Status == ProviderReady {
-			collectedAt, collectedErr := time.Parse(time.RFC3339, provider.CollectedAt)
-			if parsed, parseErr := parseAllProviders(out); parseErr == nil && collectedErr == nil {
-				for i := range parsed {
-					if providerKey(parsed[i]) != exactProvider {
-						continue
-					}
-					parsed[i].Frame = parsed[i].Frame.Normalize()
-					parsed[i].CollectedAt = collectedAt.UTC()
-					result.ExactUsage = &parsed[i]
-					break
-				}
-			}
-		}
 	}
 	for _, provider := range result.Providers {
 		if provider.Status == ProviderReady {
@@ -709,11 +694,21 @@ func browserSignInPage(id, detail string) string {
 // that case; telling the customer to "sign in again" would send them in a
 // circle.
 func classifyProviderErrorFor(id, detail string) string {
+	return ProviderErrorKind(id, detail)
+}
+
+// ProviderErrorKind names a CodexBar provider failure by its readiness status
+// (timeout, auth_required, ...) without repeating the raw message.
+func ProviderErrorKind(id, detail string) string {
 	if browserSignInPage(id, detail) != "" {
 		return ProviderBrowserSignInRequired
 	}
 	return classifyProviderError(detail)
 }
+
+// providerCopyGOOS names the system in permission copy: Windows has no macOS
+// permission to allow (#479). A variable so tests cover both hosts.
+var providerCopyGOOS = runtime.GOOS
 
 func providerResult(id, status string) ProviderReadiness {
 	return providerResultWithSignIn(id, status, "")
@@ -739,6 +734,10 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
 		result.NextAction = "Allow the requested macOS permission, then check again."
+		if providerCopyGOOS == "windows" {
+			result.Detail = "Windows blocked access required by this provider."
+			result.NextAction = "Allow the requested access, then check again."
+		}
 	case ProviderUnsupported:
 		// No sign-in wording: the account cannot use this provider at all, so
 		// the provider's own message carries the migration path and the row

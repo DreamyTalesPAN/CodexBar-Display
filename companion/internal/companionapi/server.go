@@ -269,8 +269,6 @@ type Server struct {
 	allowMacAppSelfUpdate  bool
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
-	usageCacheMu           sync.RWMutex
-	usageCache             *usageResponse
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
 	providerSetupMu        sync.Mutex
@@ -523,6 +521,9 @@ type deviceSearchEntry struct {
 	NetworkMode string `json:"networkMode,omitempty"`
 	Known       bool   `json:"known"`
 	Active      bool   `json:"active"`
+	// Rescue marks the VibeTV on the Cable whose firmware predates USB-C:
+	// only the Cable rescue update can bring it to current.
+	Rescue bool `json:"rescue,omitempty"`
 }
 
 type themeInstallRequest struct {
@@ -1951,19 +1952,11 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			loadInventory()
 			usage = usageForEnabledProviders(usage, inventory)
 			resp := usageResponseFromPersisted(now, usage)
-			if cached, ok := s.cachedExactUsageOverlay(now, usage); ok {
-				resp = cached
-			}
 			if len(resp.Providers) > 0 {
 				writeUsage(resp, usage)
 				return
 			}
 		}
-	}
-
-	if cached, ok := s.cachedExactUsageOverlay(now, daemon.PersistedUsage{}); ok {
-		writeUsage(cached, daemon.PersistedUsage{})
-		return
 	}
 
 	if manualRefresh {
@@ -2073,137 +2066,6 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable")}
 }
 
-const exactUsageCacheMaxAge = 15 * time.Minute
-
-func (s *Server) invalidateUsageCache() {
-	s.usageCacheMu.Lock()
-	defer s.usageCacheMu.Unlock()
-	s.usageCache = nil
-}
-
-func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUsage) (usageResponse, bool) {
-	s.usageCacheMu.RLock()
-	if s.usageCache == nil {
-		s.usageCacheMu.RUnlock()
-		return usageResponse{}, false
-	}
-	cached := cloneCachedUsageResponse(*s.usageCache)
-	s.usageCacheMu.RUnlock()
-
-	cachedProviderID := strings.TrimSpace(cached.CurrentProvider)
-	var cachedProvider usageProviderInfo
-	for _, provider := range cached.Providers {
-		if provider.ID == cachedProviderID {
-			cachedProvider = provider
-			break
-		}
-	}
-	if cachedProvider.ID == "" {
-		return usageResponse{}, false
-	}
-	cachedCollectedAt, err := time.Parse(time.RFC3339, cachedProvider.CollectedAt)
-	if err != nil || cachedCollectedAt.After(now.Add(5*time.Minute)) || now.Sub(cachedCollectedAt) > exactUsageCacheMaxAge {
-		return usageResponse{}, false
-	}
-
-	for _, provider := range usage.Providers {
-		id := usageProviderID(provider.Provider, provider.Frame.Provider)
-		if id != cachedProviderID {
-			continue
-		}
-		if provider.Stale || provider.Frame.Normalize().UsageUnavailable || !provider.CollectedAt.Before(cachedCollectedAt) {
-			return usageResponse{}, false
-		}
-	}
-	if len(usage.Providers) == 0 {
-		return cached, true
-	}
-
-	current := usageResponseFromPersisted(now, usage)
-	replaced := false
-	for i := range current.Providers {
-		if current.Providers[i].ID != cachedProviderID {
-			continue
-		}
-		current.Providers[i] = mergePersistedUsageDetails(
-			usageResponse{Providers: []usageProviderInfo{cachedProvider}},
-			usageResponse{Providers: []usageProviderInfo{current.Providers[i]}},
-		).Providers[0]
-		replaced = true
-		break
-	}
-	if !replaced {
-		current.Providers = append(current.Providers, cachedProvider)
-	}
-	current.CurrentProvider = cachedProviderID
-	current.UsageMode = usageModeForProviders(current.Providers)
-	current.TokenUsageReady = usageProvidersHaveTokenResult(current.Providers)
-	current.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(current.Providers)
-	return current, true
-}
-
-func cloneCachedUsageResponse(response usageResponse) usageResponse {
-	response.Providers = slices.Clone(response.Providers)
-	for i := range response.Providers {
-		response.Providers[i].Windows = slices.Clone(response.Providers[i].Windows)
-	}
-	return response
-}
-
-func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
-	now := s.currentTime().UTC()
-	const exactUsageFutureSkew = 5 * time.Minute
-	if parsed.CollectedAt.IsZero() ||
-		parsed.CollectedAt.After(now.Add(exactUsageFutureSkew)) ||
-		now.Sub(parsed.CollectedAt) > exactUsageCacheMaxAge {
-		return
-	}
-	fresh, ok := usageProviderFromParsed(parsed)
-	if !ok || (fresh.UsageUnavailable && len(fresh.Windows) == 0) {
-		return
-	}
-
-	base := emptyUsageResponse(now, "codexbar")
-	if s.loadUsage != nil {
-		if persisted, ok := s.loadUsage(now); ok {
-			base = usageResponseFromPersisted(now, persisted)
-		}
-	}
-	s.usageCacheMu.Lock()
-	if s.usageCache != nil {
-		base = *s.usageCache
-	}
-	replaced := false
-	for i := range base.Providers {
-		if base.Providers[i].ID != fresh.ID {
-			continue
-		}
-		fresh.TokenUsageReady = base.Providers[i].TokenUsageReady
-		fresh.TokenStatsCollectedAt = base.Providers[i].TokenStatsCollectedAt
-		base.Providers[i] = fresh
-		replaced = true
-		break
-	}
-	if !replaced {
-		base.Providers = append(base.Providers, fresh)
-	}
-	// This cache exists to overlay one probed provider's quota windows. Token
-	// history has one owner, so a cached copy must never outrank the newer
-	// collector snapshot merged in by cachedExactUsageOverlay.
-	for i := range base.Providers {
-		clearUsageProviderTokenHistory(&base.Providers[i])
-	}
-	base.TokenUsageReady = usageProvidersHaveTokenResult(base.Providers)
-	base.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(base.Providers)
-	base.OK = true
-	base.GeneratedAt = now.Format(time.RFC3339)
-	base.Source = "codexbar"
-	base.UsageMode = usageModeForProviders(base.Providers)
-	base.CurrentProvider = fresh.ID
-	s.usageCache = &base
-	s.usageCacheMu.Unlock()
-}
-
 func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
 	if provider == nil {
 		return
@@ -2215,40 +2077,6 @@ func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
 	provider.CostSettled = false
 	provider.TokenUsageReady = false
 	provider.TokenStatsCollectedAt = time.Time{}
-}
-
-func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
-	previous := make(map[string]usageProviderInfo, len(persisted.Providers))
-	for _, provider := range persisted.Providers {
-		previous[provider.ID] = provider
-	}
-	for i := range fresh.Providers {
-		provider := &fresh.Providers[i]
-		cached, ok := previous[provider.ID]
-		if !ok {
-			continue
-		}
-		if provider.Cost == nil {
-			if provider.SessionTokens == 0 {
-				provider.SessionTokens = cached.SessionTokens
-			}
-			if provider.WeekTokens == 0 {
-				provider.WeekTokens = cached.WeekTokens
-			}
-			if provider.TotalTokens == 0 {
-				provider.TotalTokens = cached.TotalTokens
-			}
-			provider.Cost = cached.Cost
-			provider.CostSettled = cached.CostSettled
-		}
-		provider.TokenUsageReady = provider.TokenUsageReady || cached.TokenUsageReady
-		if provider.TokenStatsCollectedAt.IsZero() {
-			provider.TokenStatsCollectedAt = cached.TokenStatsCollectedAt
-		}
-	}
-	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
-	fresh.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(fresh.Providers)
-	return fresh
 }
 
 func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Time) bool {
@@ -2931,43 +2759,6 @@ func snapshotHasUsableUsage(frame protocol.Frame, meta codexbar.ProviderUsageMet
 		len(frame.UsageSlots) > 0
 }
 
-func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bool) {
-	frame := parsed.Frame.Normalize()
-	if strings.TrimSpace(frame.Error) != "" {
-		return usageProviderInfo{}, false
-	}
-	id := usageProviderID(parsed.Provider, frame.Provider)
-	if id == "" {
-		return usageProviderInfo{}, false
-	}
-	return usageProviderInfo{
-		ID:                 id,
-		Label:              usageProviderLabel(id, frame.Label),
-		Source:             strings.TrimSpace(parsed.Source),
-		Session:            frame.Session,
-		Weekly:             frame.Weekly,
-		ResetSec:           frame.ResetSec,
-		UsageMode:          usageModeOrDefault(frame.UsageMode),
-		SessionTokens:      frame.SessionTokens,
-		WeekTokens:         frame.WeekTokens,
-		TotalTokens:        frame.TotalTokens,
-		Activity:           strings.TrimSpace(frame.Activity),
-		Stale:              parsed.Stale,
-		UsageUnavailable:   parsed.Stale || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
-		SessionUnavailable: parsed.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
-		WeeklyUnavailable:  parsed.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
-		CollectedAt:        formatOptionalTime(parsed.CollectedAt),
-		ActivityObservedAt: formatOptionalTime(parsed.ActivityObservedAt),
-		Windows:            usageWindowsFromMeta(parsed.Meta),
-		Status:             usageStatusFromMeta(parsed.Meta),
-		Credits:            usageCreditsFromMeta(parsed.Meta),
-		ResetCredits:       usageResetCreditsFromMeta(parsed.Meta),
-		Cost:               usageCostFromMeta(parsed.Meta),
-		Pace:               usagePaceFromMeta(parsed.Meta),
-		UsageOverTime:      usageOverTimeFromMeta(parsed.Meta),
-	}, true
-}
-
 func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 	if len(meta.Windows) == 0 {
 		return nil
@@ -3373,6 +3164,17 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 				writeCableResolutionError(w, cableErr)
 				return
 			}
+		}
+		// Firmware from before USB-C sends no deviceId over the Cable. One
+		// VibeTV reports the same board and firmware on both transports, so a
+		// WiFi VibeTV that differs in either is another VibeTV. One that matches
+		// both may be this one: WiFi wins as before instead of a duplicate, and
+		// updating it lets the next search tell the two apart.
+		var legacy *usb.LegacyCableFirmwareError
+		if errors.As(cableErr, &legacy) && !slices.ContainsFunc(devices, func(device deviceSearchEntry) bool {
+			return device.Board == legacy.Board && device.Firmware == legacy.Firmware
+		}) {
+			devices = append(devices, legacyCableSearchEntry(legacy))
 		}
 		for _, cable := range cableDevices {
 			hello := cable.Hello.Normalize()
@@ -3796,14 +3598,22 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		}{OK: true, ConnectionMode: "wifi", Status: "waiting_for_wifi"})
 		return
 	}
-	transitioningFromWiFi := mode == "cable" &&
+	// Cable chosen while the WiFi switch this Mac just sent may still be
+	// restarting VibeTV (#481) is the same move back from WiFi.
+	wifiSwitchPending := mode == "cable" && cfg.WiFiTransitionPending() &&
+		s.currentTime().Sub(time.Unix(cfg.WiFiTransitionStartedAt, 0)) < cableTransitionWait
+	transitioningFromWiFi := wifiSwitchPending || (mode == "cable" &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
-		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != ""
+		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != "")
 	var port string
 	var hello protocol.DeviceHello
 	cableHelloReady := false
 	if transitioningFromWiFi {
 		expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
+		if wifiSwitchPending {
+			// Let the restart finish; the checks below report what is left.
+			_, _, _ = s.waitForCableHello(r.Context(), expectedDeviceID, false)
+		}
 		port, err = s.resolveCablePort("", expectedDeviceID)
 		if err == nil {
 			hello, err = s.readCableHello(port)
@@ -3821,7 +3631,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 					writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
 					return
 				}
-				port, hello, err = s.waitForCableMode(r.Context(), expectedDeviceID)
+				port, hello, err = s.waitForCableHello(r.Context(), expectedDeviceID, true)
 				if err != nil {
 					writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not finish changing its connection.", "Keep VibeTV connected by Cable, then try again.")
 					return
@@ -4020,9 +3830,12 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}{OK: true, ConnectionMode: "cable", Status: "selected", Device: device})
 }
 
-func (s *Server) waitForCableMode(
+// waitForCableHello waits up to cableTransitionWait for the expected VibeTV to
+// answer on the cable, and with requireCableMode until it reports Cable mode.
+func (s *Server) waitForCableHello(
 	ctx context.Context,
 	expectedDeviceID string,
+	requireCableMode bool,
 ) (string, protocol.DeviceHello, error) {
 	deadline := time.Now().Add(cableTransitionWait)
 	var lastErr error
@@ -4038,7 +3851,7 @@ func (s *Server) waitForCableMode(
 				if !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(expectedDeviceID)) {
 					return "", protocol.DeviceHello{}, errDeviceIdentityChanged
 				}
-				if runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) == "cable" {
+				if !requireCableMode || runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) == "cable" {
 					return port, hello, nil
 				}
 				lastErr = errors.New("VibeTV is still changing to Cable mode")
@@ -4956,16 +4769,22 @@ func writeCableResolutionError(w http.ResponseWriter, err error) {
 		}
 		var legacy *usb.LegacyCableFirmwareError
 		if errors.As(err, &legacy) {
-			failure.Device = &deviceSearchEntry{
-				Target:    cableDeviceTarget,
-				Transport: "cable",
-				Board:     legacy.Board,
-				Firmware:  legacy.Firmware,
-			}
+			entry := legacyCableSearchEntry(legacy)
+			failure.Device = &entry
 		}
 		writeJSON(w, http.StatusConflict, errorResponse{OK: false, Error: failure})
 	default:
 		writeError(w, http.StatusConflict, "cable_device_not_found", "Couldn’t connect via USB-C", "Set up VibeTV over WiFi and install the latest firmware — USB-C setup needs newer firmware than shipped units have. If it is already up to date, check that your cable carries data, not just power.")
+	}
+}
+
+func legacyCableSearchEntry(legacy *usb.LegacyCableFirmwareError) deviceSearchEntry {
+	return deviceSearchEntry{
+		Target:    cableDeviceTarget,
+		Transport: "cable",
+		Board:     legacy.Board,
+		Firmware:  legacy.Firmware,
+		Rescue:    true,
 	}
 }
 

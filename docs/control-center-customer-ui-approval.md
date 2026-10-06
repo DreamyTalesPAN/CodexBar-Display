@@ -4751,3 +4751,180 @@ issue scope, or release permission never implies UI permission.
 - User approval: Same decision as the entry "Early VibeTVs without USB data keep WiFi updates, USB-C stays greyed out" (2026-10-05, "für die die kabel option einfach immer ausgegraut ist").
 - Approved customer-visible result: Unchanged from that entry. The WiFi VibeTVs in the customer-flow tests now report current firmware (`cableOnlyUpdates:true`), so their USB-C card stays available as approved. On a legacy WiFi VibeTV the device status page reads "Update with the VibeTV App on your Mac." instead of linking to a separate update page that said the same. No other screen, control or layout changes.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and the legacy device status page text. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-05 — The usage service is repaired on its own at most every ten minutes
+
+- User approval: On 2026-10-05 Claude listed the customer-visible issues of
+  the overnight batch (#507, #358, #483, #508) as needing UI approval, and the
+  user answered in chat "du hast erstmal alle freigaben" (all approvals granted
+  for now; they review the batch the next morning).
+- Approved customer-visible result: When the usage service fails, the
+  automatic repair still runs once for that incident. If the service recovers
+  and fails again within ten minutes, the app no longer tears the background
+  service down a second time on its own; the existing "Finish AI setup on this
+  Mac" dialog shows instead, and its "Try automatic repair again" button still
+  repairs at any time. After ten quiet minutes the automatic repair is armed again. No new
+  control, copy, or layout (#508).
+- Approved files: `control-center-app.tsx`, its customer-flow regression test,
+  and this approval record.
+
+## 2026-10-05 — A pre-USB-C Cable VibeTV stays in the list next to another WiFi VibeTV
+
+- User approval: On 2026-10-05 Claude listed #483 among the customer-visible
+  issues of the overnight batch, and the user answered in chat "du hast
+  erstmal alle freigaben" (all approvals granted for now).
+- Approved customer-visible result: When a VibeTV with firmware from before
+  USB-C is on the Cable and a different VibeTV answers on WiFi, setup's
+  existing "Choose your VibeTV" list shows both, and choosing the Cable one
+  runs the existing Cable rescue update. A WiFi VibeTV with the same board and
+  firmware as the Cable one may be the same device, so only the WiFi entry is
+  shown then, as before. No new control, copy, or layout; the Control Center
+  files are unchanged.
+- Approved files: Companion device search (`server.go`), its tests, and this
+  approval record.
+
+## 2026-10-05 — Theme readback test waits for the theme step (test only)
+
+- User approval: On 2026-10-05 the user granted all approvals for the
+  overnight batch in chat ("du hast erstmal alle freigaben").
+- Approved customer-visible result: None. The customer-flow test for a failed
+  post-install device read now waits up to ten seconds for "Choose your
+  theme" instead of sampling the screen one second in, and reports headings,
+  dialogs, screen text and recent requests when it fails (#430). Setup must
+  still not complete before a successful readback.
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and
+  this approval record.
+
+## 2026-10-05 — A Cable VibeTV that setup updates keeps connecting on its own
+
+- User approval: On 2026-10-05 the user gave explicit approval in chat for the customer-visible UI changes of this batch ("du hast erstmal alle freigaben") after issue #507 was listed as needing UI approval.
+- Approved customer-visible result: A VibeTV on firmware from before USB-C support that is the only one on the Cable, and that setup updates over the Cable and then connects by itself, stays on "Connecting to VibeTV" after "update complete" until the next setup step appears. The "Choose your VibeTV" title, the device card still showing the firmware from before the update, and its Connect button no longer appear there. Like every Cable connect once its Cable step is done, the screen keeps the disabled "Use WiFi instead" link. Back from the AI provider step reconnects that VibeTV by Cable on its own, like any Cable VibeTV, instead of showing the list, and never updates it a second time. No new copy, control, layout, or visual treatment.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. This approves the pull-request branch only, not merge, release, or a device operation.
+
+## 2026-10-05 — Lost VibeTV can be chosen again over the current tab
+
+- User approval: The user explicitly approved customer-visible UI changes for
+  this batch in chat on 2026-10-05 ("du hast erstmal alle freigaben") after
+  issue #358 was listed as needing UI approval.
+- Approved customer-visible result: When the saved VibeTV is lost after the
+  customer entered the Control Center and the automatic recovery search finds
+  VibeTVs it does not reconnect on its own (the saved one is not among them, or
+  reconnecting it failed), a dialog opens over the current tab with the
+  navigation still visible. It reuses the setup dialog and the setup device
+  cards: title `Choose your VibeTV` and `Your VibeTV is not reachable. Choose it
+  to connect again.`, or the failed attempt's own message and next step; the
+  previously connected VibeTV (otherwise the first) is preselected; one
+  `Connect` action and the close button. Connect reconnects the chosen VibeTV
+  at its new address and the dialog closes; closing it leaves the current tab,
+  with Overview reporting the VibeTV as not reachable. The saved VibeTV found
+  at a new address still reconnects without a dialog. Settings does not show
+  the same failure in a second dialog, and the usage-service dialog waits while
+  this one is open.
+- Approved files: `control-center-app.tsx`, `setup/setup-device-dialogs.tsx`,
+  the customer-flow regression test, and this approval record.
+
+## 2026-10-05 — Theme Studio offers CodexBar's reserve pace for usage windows 1 and 2
+
+- User approval: On 2026-10-05 the user granted every customer-visible change
+  of the batch in chat: "du hast erstmal alle freigaben" (all approvals granted
+  for now). #412 is part of that batch.
+- Approved customer-visible result: Theme Studio's existing "Binding" list and
+  variable tokens gain six entries, "Usage window 1 pace %", "Usage window 1
+  pace", "Usage window 1 lasts" and the same three for window 2. The editor,
+  catalog and live previews render them like the VibeTV does: CodexBar's signed
+  pace (`-25%`, `+14%`), `reserve` / `on pace` / `deficit`, and `lasts until
+  reset` / `runs out`, empty when CodexBar sent no pace or the window's
+  countdown is gone. The catalog preview's neutral example windows carry an
+  example pace. A theme that needs `usage-pace-v1` shows the existing "Firmware
+  update needed" state on a VibeTV without it, and Theme Studio exports declare
+  that capability. No other new control, copy, or layout.
+- Approved files: `control-center-types.ts`, `theme-library-screen.tsx`,
+  `live-vibetv-preview.tsx`, `theme-studio/primitive-inspector.tsx`,
+  `theme-studio/editor-geometry.ts`, `lib/theme-studio.ts`,
+  `lib/theme-studio-capabilities.ts`, `lib/active-theme-upgrade.ts`, their
+  tests, and this approval record.
+
+## 2026-10-05 — Review follow-up: lost-VibeTV picker, repair pause, Pace Meter
+
+- User approval: Covered by the user's "du hast erstmal alle freigaben" on
+  2026-10-05 for this batch. An independent review of the batch found these
+  gaps in the results approved above.
+- Approved customer-visible result: The lost-VibeTV picker (#358) lists only
+  VibeTVs it can reconnect over WiFi; a VibeTV found only on the Cable no
+  longer appears there, because choosing it could not connect. The picker
+  also waits while Updates shows "Update failed" or Appearance shows a failed
+  theme install, so it never opens on top of them. The automatic usage-service
+  repair (#508) pauses for ten minutes after it last ran, measured from that
+  repair; "Try automatic repair again" still works at any time. The new theme
+  "Pace Meter" (#412) appears in Appearance and in setup's theme step like
+  every live theme. On firmware without `usage-pace-v1` its Install is blocked
+  with the existing "Firmware update needed" state, like other themes that
+  need newer firmware. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, the customer-flow tests, the
+  Pace Meter theme pack, and this approval record.
+
+## 2026-10-06 — Pace Meter redrawn as two lanes
+
+- User approval: On 2026-10-06, while this pull request was rehearsed on the
+  bench Mac, Paul saw Pace Meter on the VibeTV, asked for other designs, was
+  shown four and chose in chat: "Bau Pace Meter als Entwurf B (zwei Spuren)".
+- Approved customer-visible result: Pace Meter (#412) shows the provider name
+  small at the top and one lane per usage window: the window's label, its
+  signed pace large on the right (`-11%`, `+8%`), a full-width bar of the
+  window's usage coloured by remaining quota like other themes, and below it
+  `lasts until reset` or `runs out`. The words `reserve` / `on pace` /
+  `deficit` and the separate usage percent are gone from this theme. A marker
+  for the expected usage and a colour that follows the pace state need new
+  firmware bindings and are not part of this change. No app screen, control or
+  copy changes.
+- Approved files: the Pace Meter theme pack, its generated render pack and
+  catalog entry, its test, and this approval record.
+
+## 2026-10-06 — Pace Meter gets the design's state colour and expected line
+
+- User approval: The two-lane build above lacked the state colour and the
+  expected marker of the design Paul chose ("Entwurf B"). On 2026-10-06 he
+  sent a photo of the VibeTV with "das sieht nicht so aus wie dein entwurf.
+  mach erstmal alles auf diesem mac was geht."
+- Approved customer-visible result: In each Pace Meter lane the signed pace is
+  drawn larger and, together with the bar, is green in reserve, yellow on pace
+  and coral in deficit; without a pace the bar is grey. A thin white line
+  below the bar reaches to where CodexBar expects the window to be by now and
+  is empty without a pace. This replaces the quota colouring and the "not part
+  of this change" note of the entry above. The catalog and live previews draw
+  the same. No app screen, control or copy changes.
+- Approved files: the Pace Meter theme pack, its generated render pack and
+  catalog entry, its test, the firmware and preview rules for pace colours and
+  the expected fill (`theme_spec_renderer_core.h`, `live-vibetv-preview.tsx`,
+  `lib/theme-studio.ts`, `themespec.go`), and this approval record.
+
+## 2026-10-06 — Pace bindings and Pace Meter taken out of this batch again
+
+- User approval: On 2026-10-06 the Windows rehearsal of this pull request showed
+  Pace Meter almost empty and a wrong weekly value, because the Windows usage
+  engine loses Claude's weekly window and reset times whenever it falls back to
+  its CLI source (marcus7989/Win-CodexBar#3). Paul decided in chat: "dann bau
+  das pace meter zeug wieder aus aus dem pr und kommentier im issue, dass man
+  das erst machen kann, wenn dieser upstream pr gemerged usw ist."
+- Approved customer-visible result: Everything the three entries above added
+  for #412 is gone from this pull request: the Pace Meter theme no longer
+  appears in Appearance or in setup's theme step, and Theme Studio's "Binding"
+  list and variable tokens no longer offer the six pace entries. Themes,
+  previews and the VibeTV behave as on `main` in this respect. #412 stays open
+  until the Windows engine delivers the reset times a pace needs.
+- Approved files: the files named in the three entries above, restored to
+  their state without #412, and this approval record.
+## 2026-10-06 — Lost-VibeTV picker searches again after it is closed
+
+- User approval: On 2026-10-06 Marcus was asked whether, after closing the
+  lost-VibeTV dialog, the app should keep looking and show the dialog again if
+  the VibeTV is still missing after three more checks, and answered "ja".
+  The Codex review of PR #509 found that closing the picker ended the search
+  until the app was restarted.
+- Approved customer-visible result: Closing the lost-VibeTV picker (#358) with
+  × or Escape no longer ends the search. If the saved VibeTV is still missing
+  after the next three checks, the app searches once more: the saved VibeTV at
+  a new address reconnects on its own, other VibeTVs found are offered in the
+  same picker again. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, `device-recovery-gate.ts`, its
+  test, and this approval record.

@@ -359,6 +359,18 @@ func TestLoadRejectsMalformedSpriteAsset(t *testing.T) {
 
 // Every sprite in a pack is written to the device, so an unreferenced one must
 // be rejected before any device write instead of failing later in the renderer.
+// The device trims spaces and tabs around every line, so padding it accepts
+// must keep passing preflight after the #467 tightening.
+func TestLoadAcceptsSpriteLinesPaddedWithSpacesAndTabs(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/good.cbi"}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/good.cbi", file: "assets/good.cbi", data: "  CBI1\t\n1\t1 \n 1\n#FFFFFF\n a\n\n \n"},
+	})
+	if _, err := Load(dir); err != nil {
+		t.Fatalf("padded sprite rejected: %v", err)
+	}
+}
+
 func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/good.cbi"}]}`
 	for _, tc := range []struct {
@@ -434,6 +446,35 @@ func TestLoadRejectsMalformedUnreferencedSpriteAsset(t *testing.T) {
 			name: "signed palette size",
 			data: "CBI1\n1 1\n+1\n#FFFFFF\na\n",
 			want: "palette size must be 1..26",
+		},
+		// The device reads the first line as the header, so a blank line in
+		// front of it is an empty header there (#467).
+		{
+			name: "leading blank line",
+			data: "\nCBI1\n1 1\n1\n#FFFFFF\na\n",
+			want: "unsupported header",
+		},
+		{
+			name: "leading whitespace-only line",
+			data: " \t\nCBI1\n1 1\n1\n#FFFFFF\na\n",
+			want: "unsupported header",
+		},
+		// ParseCbaHeader() separates fields with spaces and tabs only.
+		{
+			name: "form feed between dimensions",
+			data: "CBI1\n1\f1\n1\n#FFFFFF\na\n",
+			want: "dimensions must have 2 fields",
+		},
+		{
+			name: "no-break space between dimensions",
+			data: "CBI1\n1\u00a01\n1\n#FFFFFF\na\n",
+			want: "dimensions must have 2 fields",
+		},
+		// The firmware trims only spaces and tabs around a line.
+		{
+			name: "vertical tab after the header",
+			data: "CBI1\v\n1 1\n1\n#FFFFFF\na\n",
+			want: "unsupported header",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
