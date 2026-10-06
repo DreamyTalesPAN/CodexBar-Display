@@ -18,6 +18,7 @@ import {
   normalizeManualDeviceTarget,
 } from "../device-target-copy";
 import { SetupDialog } from "./setup-dialog";
+import { selectedItemClass } from "./setup-selectable-card";
 
 const ADDRESS_ERROR = "Enter the IP address shown on the VibeTV screen.";
 
@@ -128,6 +129,10 @@ type NotFoundDialogProps = {
   windowsHost?: boolean;
 };
 
+// The two ways out of "not found" are buttons, so they look like the
+// connection cards in Settings: outlined, on the card background, with hover.
+const notFoundChoiceClass = `${selectedItemClass(false)} bg-card p-4 disabled:cursor-not-allowed disabled:opacity-50`;
+
 /** 02c — neither Cable nor WiFi discovery found a VibeTV. */
 export function SetupDeviceNotFoundDialog({
   busy = false,
@@ -151,8 +156,8 @@ export function SetupDeviceNotFoundDialog({
       }}
       title="We couldn't find your VibeTV"
     >
-      <ItemGroup className="gap-1">
-        <Item asChild>
+      <ItemGroup className="gap-3">
+        <Item asChild className={notFoundChoiceClass} variant="outline">
           <button
             className="text-left"
             disabled={busy}
@@ -171,7 +176,7 @@ export function SetupDeviceNotFoundDialog({
             </ItemContent>
           </button>
         </Item>
-        <Item asChild>
+        <Item asChild className={notFoundChoiceClass} variant="outline">
           <button
             className="text-left"
             disabled={busy}
