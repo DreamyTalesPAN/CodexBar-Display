@@ -24,7 +24,7 @@ import type {
 } from "../control-center-types";
 import { candidateKey, type SetupTransport } from "./setup-connection";
 import { SetupDeviceCard } from "./setup-device-card";
-import { SetupWiFiPhoneDialog } from "./setup-device-dialogs";
+import { SetupCableHelpDialog } from "./setup-device-dialogs";
 import { selectedItemClass } from "./setup-selectable-card";
 import { cn } from "@/lib/utils";
 import type { ConnectPhase } from "./setup-connect-log";
@@ -361,7 +361,7 @@ export function SetupDeviceScreen({
       ) : null}
 
       {wifiSetupPhase === "waiting" && !wifiWaitingViaCable ? (
-        <SetupWiFiPhoneDialog
+        <SetupCableHelpDialog
           onEnterAddressManually={onEnterAddressManually}
           onScanAgain={onSearchAgain}
           scanning={searching}

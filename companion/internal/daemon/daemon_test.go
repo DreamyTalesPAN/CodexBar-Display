@@ -6342,11 +6342,11 @@ func TestRunDaemonLoopRecoversCableAfterUnconfirmedWiFi(t *testing.T) {
 		retry             bool
 		probes            []int
 	}{
-		{name: "legacy pending state", probes: []int{11}},
-		{name: "restart during persisted window", startedMinutesAgo: 10, probes: []int{1}},
+		{name: "legacy pending state", probes: []int{2}},
+		{name: "restart during persisted window", startedMinutesAgo: 1, probes: []int{1}},
 		{name: "restart after persisted window", startedMinutesAgo: 20, probes: []int{0}},
-		{name: "new credential attempt restarts quiet window", retry: true, probes: []int{21}},
-		{name: "absent device gets bounded probes", probes: []int{11, 22}},
+		{name: "new credential attempt restarts quiet window", retry: true, probes: []int{3}},
+		{name: "absent device gets bounded probes", probes: []int{2, 4}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prepareFastTestEnv(t)
@@ -6370,7 +6370,7 @@ func TestRunDaemonLoopRecoversCableAfterUnconfirmedWiFi(t *testing.T) {
 						return nil
 					}
 					now = now.Add(time.Minute)
-					if tc.retry && now.Sub(started) == 10*time.Minute {
+					if tc.retry && now.Sub(started) == time.Minute {
 						cfg.WiFiTransitionStartedAt = now.Unix()
 					}
 					if now.Sub(started) > 24*time.Minute {

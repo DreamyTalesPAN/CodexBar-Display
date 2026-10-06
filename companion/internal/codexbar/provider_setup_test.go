@@ -390,6 +390,7 @@ func TestProviderReadinessCopyHidesInternalUsageServiceName(t *testing.T) {
 		ProviderTimeout,
 		ProviderConfigError,
 		ProviderEngineError,
+		ProviderEngineIncompatible,
 		ProviderNotConfigured,
 	} {
 		got := providerResult("codexbar", status)

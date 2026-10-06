@@ -50,7 +50,11 @@ Behavior:
 ## Setup
 
 `setup` is idempotent. The default LaunchAgent runtime uses WiFi discovery, then stores the selected IP and stable `deviceId`.
-USB setup is an explicit development/support path.
+`setup --transport usb` (USB recovery flash below) is an explicit development/support path.
+
+A VibeTV on current firmware (#489) joins WiFi only after it was set up and
+paired over the USB cable in the Mac App (`docs/firmware-provisioning.md`).
+Do that first: WiFi discovery cannot find a fresh VibeTV.
 
 ### Default WiFi runtime
 
@@ -59,12 +63,24 @@ cd companion
 ../codexbar-display setup --yes
 ```
 
-This installs the companion runtime and writes a WiFi LaunchAgent. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
-It does not require USB serial.
+This installs the companion runtime and writes a WiFi LaunchAgent for a VibeTV that is already on WiFi: set up over the cable as above, or an early VibeTV without USB data in legacy WiFi mode. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
+The command itself does not require USB serial.
 
-### WiFi firmware update path
+### Firmware update path
 
-Use this for normal devices. It downloads the latest published firmware manifest and installs the matching release asset over WiFi:
+Current firmware (#489) installs updates only over the USB cable. Connect the
+cable, switch the Mac App to USB-C, then update in the app or run:
+
+```bash
+codexbar-display install-update \
+  --target cable://vibetv \
+  --confirm-live-update
+```
+
+A WiFi target then fails with "VibeTV installs updates only over the USB
+cable." and writes nothing. The WiFi form below applies only to an early
+VibeTV without USB data (legacy WiFi mode: `/hello` reports
+`transport.cableOnlyUpdates: false`) and to older firmware:
 
 ```bash
 codexbar-display install-update \
@@ -99,11 +115,14 @@ unset VIBETV_TOKEN
 ```
 
 An HTTP `401`/`403`, an empty token, or a different `deviceId` means the stored
-pairing cannot be trusted for that target. On firmware `1.0.39` and newer,
+pairing cannot be trusted for that target. Current firmware (#489) pairs only
+over the USB cable: connect the cable, switch to USB-C in the Mac App and use
+Settings → "Run setup again"; the WiFi repair below returns `404` there.
+On legacy firmware from `1.0.39` up to the last release before #489,
 explicit Connect replaces the token. Firmware `1.0.38` must first complete its
 legacy three-power-cycle WiFi recovery and return to home WiFi; Connect must
-then run within 30 minutes. In either case, with explicit approval for this
-device, use:
+then run within 30 minutes. For these legacy versions only, with explicit
+approval for this device, use:
 
 ```bash
 curl -fsS --max-time 90 \
@@ -250,29 +269,31 @@ Per device:
 
 During normal operation the display uses explicit support states:
 - `Starting`: boot is running before WiFi mode is known.
-- `Download Mac App` with `app.vibetv.shop`: fresh setup is waiting for the Mac App; the open `VibeTV-Setup` AP runs in the background. Older firmware may show `SETUP WIFI` and the setup IP.
+- `Connect USB cable` with `app.vibetv.shop`: fresh setup or a lost WiFi network is waiting for the USB cable. There is no setup AP. Older firmware may show `Download Mac App` or `SETUP WIFI` and open `VibeTV-Setup`.
 - `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
-- `WiFi connected!` with `Now go to:` and `app.vibetv.shop`: WiFi is connected and the device gives the customer the hosted Control Center URL.
+- `Waiting for app` with the device IP: WiFi is connected and the device waits for the app to stream. In cable mode the same screen appears without an IP.
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
 - `Open App` / `app.vibetv.shop`: the device previously had data, but no fresh frame arrived for more than two minutes, or the Mac App reported a recoverable runtime problem.
 - `Install Mac App` / `app.vibetv.shop`: the device received a runtime frame saying the Mac App binary is missing.
 - `Update Mac App` / `app.vibetv.shop`: the Mac App reported an incompatible usage app version or payload format.
 - `Update available` / `app.vibetv.shop`: a firmware update is available. ThemeSpec themes receive the same alternating text through their provider-label binding.
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
-- `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
-Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, current firmware must show `Download Mac App` and `app.vibetv.shop`. Verify the open `VibeTV-Setup` AP independently.
+Current firmware has no HTTP WiFi reset. A device provisioned over WiFi keeps
+the provisioning network. Before packaging, connect it by USB cable, switch
+to USB-C in the Mac App Settings and use "Reset to factory settings" (Companion
+`POST /v1/device/factory-reset`); VibeTV then forgets its WiFi, pairing,
+settings and themes and shows `Connect USB cable`.
 
-The Mac App guides Cable or WiFi setup. When WiFi provisioning is needed
-without USB data, it tells the customer to join `VibeTV-Setup` on a phone and
-open `192.168.4.1`.
+The Mac App guides setup over the USB cable. WiFi details and pairing are sent
+only over the cable.
 
 Smoke checklist for #53:
 - Boot device and confirm the first screen says `Starting`.
-- Clear WiFi and confirm `Download Mac App` / `app.vibetv.shop` on the display
-  and the open `VibeTV-Setup` network in a separate WiFi scan.
+- Without reachable WiFi, confirm `Connect USB cable` / `app.vibetv.shop` on the
+  display and no `VibeTV-Setup` network in a separate WiFi scan.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
-- After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
+- After WiFi connects, confirm the waiting screen shows only `VIBE TV`, `Waiting for app`, and the IP.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
 - Send a frame with `update.available=true` and confirm the customer-facing update text alternates between `Update available` and `app.vibetv.shop`.
 - Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update available` and `app.vibetv.shop`.

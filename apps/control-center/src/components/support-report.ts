@@ -23,6 +23,8 @@ export async function collectSupportReport(
     return {
       ...diagnostics,
       generatedAt: diagnostics.generatedAt || generatedAt,
+      // An older Mac App has no setup log; say so rather than leave it out.
+      setupLog: diagnostics.setupLog ?? { unavailable: true },
       client,
     };
   } catch (error) {
@@ -32,6 +34,7 @@ export async function collectSupportReport(
       reportType: "control_center_fallback",
       generatedAt,
       client,
+      setupLog: { unavailable: true },
       collectionErrors: [
         {
           source: "Mac App diagnostics",

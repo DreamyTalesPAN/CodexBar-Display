@@ -64,6 +64,7 @@ export type ProviderReadinessStatus =
   | "timeout"
   | "config_error"
   | "engine_error"
+  | "engine_incompatible"
   | "not_configured"
   | string;
 
@@ -84,11 +85,7 @@ export type ProviderSetupInfo = {
   detail?: string;
   errorCode?: string;
   nextAction?: string;
-  engine?: {
-    status?: "ready" | "not_configured" | "config_error" | string;
-    version?: string;
-    path?: string;
-    source?: "bundled" | "system" | "override" | string;
+  engine?: UsageEngineInfo & {
     configPath?: string;
     configWritable?: boolean;
     detail?: string;
@@ -96,6 +93,41 @@ export type ProviderSetupInfo = {
     nextAction?: string;
   };
   providers?: ProviderReadinessInfo[];
+};
+
+/** The usage engine the running Mac App selected; path is the full path. */
+export type UsageEngineInfo = {
+  status?:
+    | "ready"
+    | "not_configured"
+    | "config_error"
+    | "engine_error"
+    | "engine_incompatible"
+    | string;
+  version?: string;
+  minimumVersion?: string;
+  path?: string;
+  source?: "bundled" | "app_managed" | "override" | "system" | "path" | string;
+};
+
+export type SetupEvent = {
+  seq: number;
+  at: string;
+  stage: string;
+  status: "started" | "succeeded" | "skipped" | "retry" | "failed" | string;
+  message: string;
+  code?: string;
+  nextAction?: string;
+  count?: number;
+};
+
+/** One setup session, oldest event first, as GET /v1/setup/events returns it. */
+export type SetupLog = {
+  sessionId: string;
+  startedAt: string;
+  events: SetupEvent[];
+  truncated: boolean;
+  dropped: number;
 };
 
 export type ProviderSelectionSetup = {
@@ -137,6 +169,9 @@ export type SupportDiagnostics = {
   };
   companion?: CompanionInfo;
   providerSetup?: ProviderSetupInfo;
+  /** Carries the engine's product name; never render name. */
+  usageEngine?: UsageEngineInfo & { name?: string };
+  setupLog?: SetupLog | { unavailable: true };
   device?: DeviceInfo;
   checks?: Array<{
     name: string;
@@ -322,6 +357,9 @@ export type DeviceInfo = {
       active?: string;
       mode?: string;
       supported?: string[];
+      // True on firmware that takes setup, pairing and updates only over the
+      // USB cable, false on a legacy WiFi VibeTV, missing on older firmware.
+      cableOnlyUpdates?: boolean;
     };
   };
 };
@@ -488,6 +526,7 @@ export type PreferenceHealthState =
   | "stale"
   | "service_outage"
   | "unavailable"
+  | "engine_incompatible"
   | "checking"
   | "disabled"
   | string;
@@ -601,6 +640,25 @@ export function deviceCanSwitchToCable(
       !deviceUsesCable(device) &&
       supported?.includes("usb"),
   );
+}
+
+// Whether Settings may offer USB-C (issue #489). A VibeTV answering over WiFi
+// offers it only on firmware that keeps setup and updates on the cable. Older
+// firmware and a legacy WiFi VibeTV, which may have no USB data connection,
+// keep it greyed out. A Cable or offline binding keeps it, because the switch
+// itself goes over the cable.
+export function deviceOffersCable(device: DeviceInfo | null | undefined) {
+  const transport = device?.capabilities?.transport;
+  if (!transport?.supported) {
+    return true;
+  }
+  if (!transport.supported.includes("usb")) {
+    return false;
+  }
+  if (device?.connected !== true || deviceUsesCable(device)) {
+    return true;
+  }
+  return transport.cableOnlyUpdates === true;
 }
 
 // A reachable VibeTV whose display stream is running for this exact device but

@@ -192,7 +192,7 @@ const ENTRIES: Entry[] = [
   { id: "02-cable-connecting", label: "· Cable connecting" },
   { id: "02-wifi", label: "· WiFi devices" },
   { id: "02-wifi-setup", label: "· WiFi over cable" },
-  { id: "02-phone", label: "· WiFi with phone" },
+  { id: "02-phone", label: "· Cable help" },
   { id: "03", label: "03 Providers" },
   { id: "04", label: "04 Display" },
   { id: "05", label: "05 Theme" },
@@ -201,7 +201,7 @@ const ENTRIES: Entry[] = [
   { id: "02c", label: "· Not found" },
   { id: "02d", label: "· Connect failed" },
   { id: "02f", label: "· Update failed" },
-  { id: "02g", label: "· App behind" },
+  { id: "02g", label: "· Check failed" },
   { id: "03b", label: "· Usage failed" },
 ];
 
@@ -439,7 +439,7 @@ export function SetupPreviewGallery() {
               onOpenChange={setDialogOpen}
               onScanAgain={() => goTo("02")}
               onUseCable={() => goTo("02-cable")}
-              onSetUpWiFi={() => goTo("02-phone")}
+              onUseWiFi={() => goTo("02-phone")}
               open={dialogOpen}
             />
           </>
@@ -497,7 +497,7 @@ export function SetupPreviewGallery() {
               onOpenChange={setDialogOpen}
               onResolve={noop}
               open={dialogOpen}
-              reason="mac_app_update_required"
+              reason="firmware_check_failed"
             />
           </>
         );
