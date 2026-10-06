@@ -3803,6 +3803,10 @@ func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mo
 		(deviceMode == "legacy-wifi-only" && mode == "wifi")
 	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
 	cableToken := strings.TrimSpace(cfg.DeviceToken)
+	if saved := strings.TrimSpace(cfg.DeviceID); saved != "" && !strings.EqualFold(saved, hello.DeviceID) {
+		// The saved token belongs to the saved VibeTV, not to this one.
+		cableToken = ""
+	}
 	if known && strings.TrimSpace(knownDevice.DeviceToken) != "" {
 		cableToken = strings.TrimSpace(knownDevice.DeviceToken)
 	}

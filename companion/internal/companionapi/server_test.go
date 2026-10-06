@@ -9289,6 +9289,9 @@ func TestSetupConnectionModeSelectsAnotherVibeTVOnCableWhileAWiFiOneIsSaved(t *t
 	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "other-cable" {
 		t.Fatalf("the picked Cable VibeTV did not become the active one: %+v", cfg)
 	}
+	if cfg.DeviceToken != "" {
+		t.Fatalf("the saved VibeTV's token was stored for another VibeTV: %q", cfg.DeviceToken)
+	}
 }
 
 func TestSetupConnectionModeRefreshesCableTokenRegardlessOfPairedFlag(t *testing.T) {
