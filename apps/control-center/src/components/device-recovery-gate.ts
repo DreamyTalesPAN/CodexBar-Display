@@ -41,6 +41,17 @@ export function resetDeviceRecoveryGate(): DeviceRecoveryGateState {
   return createDeviceRecoveryGateState();
 }
 
+// Closing the lost-VibeTV picker means "not now", not "stop looking". The
+// failure count starts over, so the VibeTV still being missing after the next
+// three checks searches again and can offer the found VibeTVs once more.
+// Keeping "confirmed-loss" here left the customer without any way back to the
+// moved VibeTV until the app was restarted.
+export function dismissDeviceRecoveryPicker(
+  state: DeviceRecoveryGateState,
+): DeviceRecoveryGateState {
+  return { ...state, failedNormalChecks: 0, pickerReason: null };
+}
+
 export function selectRecoveryDevice(
   state: DeviceRecoveryGateState,
   device: Pick<DeviceInfo, "deviceId"> | null | undefined,

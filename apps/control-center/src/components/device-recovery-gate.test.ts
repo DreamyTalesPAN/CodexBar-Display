@@ -4,6 +4,7 @@ import {
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
   deviceRecoveryConfirmedLoss,
+  dismissDeviceRecoveryPicker,
   selectRecoveryDevice,
 } from "./device-recovery-gate";
 
@@ -74,6 +75,29 @@ describe("device recovery gate", () => {
     expect(third.state.pickerReason).toBe("confirmed-loss");
     expect(fourth.openPicker).toBe(false);
     expect(fourth.state.pickerReason).toBe("confirmed-loss");
+  });
+
+  it("opens the picker again after it was closed while the VibeTV stays lost", () => {
+    let state = selectRecoveryDevice(createDeviceRecoveryGateState(), {
+      deviceId: "stable-a",
+    });
+    for (let i = 0; i < DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT; i += 1) {
+      state = applyDeviceRecoveryStatus(state, { device: null }).state;
+    }
+    expect(state.pickerReason).toBe("confirmed-loss");
+
+    state = dismissDeviceRecoveryPicker(state);
+    expect(state.pickerReason).toBeNull();
+    expect(state.preferredDeviceId).toBe("stable-a");
+
+    const reopened: boolean[] = [];
+    for (let i = 0; i < DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT; i += 1) {
+      const next = applyDeviceRecoveryStatus(state, { device: null });
+      reopened.push(next.openPicker);
+      state = next.state;
+    }
+    expect(reopened).toEqual([false, false, true]);
+    expect(state.pickerReason).toBe("confirmed-loss");
   });
 
   it("does not count initial or diagnostic reads as recovery failures", () => {

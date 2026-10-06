@@ -73,6 +73,7 @@ import {
   deviceRecoveryConfirmedLoss,
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
+  dismissDeviceRecoveryPicker,
   resetDeviceRecoveryGate,
   selectRecoveryDevice,
   type DeviceRecoveryGateState,
@@ -5307,6 +5308,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             setDeviceCandidates([]);
             setDeviceSearchState("idle");
             setLastError(null);
+            setDeviceRecoveryGate(
+              dismissDeviceRecoveryPicker(deviceRecoveryGateRef.current),
+            );
           }}
         />
       ) : null}
