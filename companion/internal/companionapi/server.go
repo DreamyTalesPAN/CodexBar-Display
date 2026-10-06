@@ -497,6 +497,9 @@ type themeSpecHealth struct {
 	RenderError      string `json:"renderError,omitempty"`
 	RenderErrorAsset string `json:"renderErrorAsset,omitempty"`
 	RenderFailures   uint64 `json:"renderFailures,omitempty"`
+	// The animation frame buffer the VibeTV holds right now; only read by
+	// themeCannotBeDrawn.
+	cbaBufferBytes uint64
 }
 
 type statusResponse struct {
@@ -1787,7 +1790,7 @@ func (s *Server) withConfiguredConnectionState(
 				device.ConnectionState = deviceConnectionSetup
 				return device
 			}
-			if spec.RenderOK != nil && !*spec.RenderOK &&
+			if themeCannotBeDrawn(spec) &&
 				(device.Stream == nil || device.Stream.ErrorCode != "provider_setup_required") {
 				device.ConnectionState = deviceConnectionRenderFailed
 				return device
@@ -1808,6 +1811,30 @@ const deviceConnectionNoProvider = "provider_setup_required"
 // a theme problem. Calling it "provider setup required" sent the customer to
 // the AI provider and the firmware.
 const deviceConnectionRenderFailed = "display_render_failed"
+
+// renderOk=false also covers states the firmware leaves on its own, and one
+// health reading has to tell them apart without remembering the last one.
+//   - "low_heap": a full redraw found no heap and retries after 750 ms. One
+//     reading cannot tell a single miss from a theme that never fits, so it is
+//     not named here and stays "waiting for an image".
+//   - "low_heap_cba_buffer": the animation found no frame buffer. The error
+//     stays up until a whole clean pass has been drawn, which takes seconds
+//     after one tight moment. While the VibeTV holds a frame buffer it is
+//     drawing again; a theme that never fits (#498) never gets one.
+//
+// Everything else is a spec or an asset the VibeTV cannot use.
+func themeCannotBeDrawn(spec *themeSpecHealth) bool {
+	if spec.RenderOK == nil || *spec.RenderOK {
+		return false
+	}
+	switch spec.RenderError {
+	case "low_heap":
+		return false
+	case "low_heap_cba_buffer":
+		return spec.cbaBufferBytes == 0
+	}
+	return true
+}
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {
 	if id := strings.ToLower(strings.TrimSpace(cfg.DeviceID)); id != "" {
@@ -8469,6 +8496,7 @@ type deviceHealth struct {
 			RenderError      string `json:"renderError"`
 			RenderErrorAsset string `json:"renderErrorAsset"`
 			RenderFailures   uint64 `json:"renderFailures"`
+			CBABufferBytes   uint64 `json:"cbaBufferBytes"`
 		} `json:"themeSpec"`
 	} `json:"display"`
 	Render struct {
@@ -9413,6 +9441,7 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 				RenderError:      strings.TrimSpace(health.Display.ThemeSpec.RenderError),
 				RenderErrorAsset: strings.TrimSpace(health.Display.ThemeSpec.RenderErrorAsset),
 				RenderFailures:   health.Display.ThemeSpec.RenderFailures,
+				cbaBufferBytes:   health.Display.ThemeSpec.CBABufferBytes,
 			},
 		}
 	}

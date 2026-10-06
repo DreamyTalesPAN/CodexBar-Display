@@ -5637,12 +5637,14 @@ func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.
 // Issue #498: a theme that fails to render (here Claude Creature on the WiFi
 // heap) is a theme problem. The VibeTV is connected and the provider is fine.
 func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
+	// The VibeTV never gets a frame buffer for the animation: it holds none.
+	renderHealth := `"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":0`
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.45","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
 		case "/health":
-			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude--9-5c74ca.json","renderOk":false,"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba"}},"render":{"fullCount":4,"partialCount":9,"lastKind":"theme_spec_usage"}}`))
+			_, _ = fmt.Fprintf(w, `{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude--9-5c74ca.json","renderOk":false,%s}},"render":{"fullCount":4,"partialCount":9,"lastKind":"theme_spec_usage"}}`, renderHealth)
 		default:
 			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 		}
@@ -5673,6 +5675,25 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 	}
 	if got.ConnectionState != deviceConnectionRenderFailed {
 		t.Fatalf("connectionState=%q, want %q", got.ConnectionState, deviceConnectionRenderFailed)
+	}
+
+	// States the VibeTV leaves on its own are not "choose another theme": one
+	// tight moment keeps renderOk false for seconds while the animation is
+	// already drawing into its buffer again, and a full redraw that found no
+	// heap retries by itself.
+	for _, recovering := range []string{
+		`"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":28800`,
+		`"renderError":"low_heap"`,
+	} {
+		renderHealth = recovering
+		if got := status(); got.ConnectionState == deviceConnectionRenderFailed || !got.Connected || got.Ready {
+			t.Fatalf("%s: a recovering render must not be named a theme problem: %+v", recovering, got)
+		}
+	}
+	// A spec or asset the VibeTV cannot use stays named.
+	renderHealth = `"renderError":"cba_render_failed","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":28800`
+	if got := status(); got.ConnectionState != deviceConnectionRenderFailed {
+		t.Fatalf("a broken asset is a theme problem, got %q", got.ConnectionState)
 	}
 
 	stream = displayStreamInfo{Running: true, Target: device.URL, ErrorCode: "provider_setup_required"}
