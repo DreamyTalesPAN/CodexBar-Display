@@ -70,6 +70,8 @@ export type SettingsScreenProps = {
   onChooseScreensaver: () => void;
   onConnectionModeChange: (mode: "cable" | "wifi") => void;
   onResetSetup: () => void;
+  /** Opens Support and runs diagnostics there. */
+  onRunDiagnostics?: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
   onSaveStandby: (value: StandbySettings) => void;
@@ -93,6 +95,7 @@ export function SettingsScreen({
   onChooseScreensaver,
   onConnectionModeChange,
   onResetSetup,
+  onRunDiagnostics,
   onSaveBrightness,
   providerPicker,
   onSaveStandby,
@@ -453,6 +456,13 @@ export function SettingsScreen({
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}
         />
+        {onRunDiagnostics ? (
+          <div>
+            <Button onClick={onRunDiagnostics} size="sm" type="button" variant="outline">
+              <span>Run diagnostics</span>
+            </Button>
+          </div>
+        ) : null}
       </SettingsSection>
     </div>
   );

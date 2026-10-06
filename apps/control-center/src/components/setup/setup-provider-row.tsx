@@ -13,6 +13,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
+import { hideUsageEngineName } from "../customer-support-text";
 
 export type SetupProviderRowVariant =
   | "browser_sign_in"
@@ -138,8 +139,11 @@ export function SetupProviderRow({
       onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
     />
   ) : null;
+  // Its own text: a generic engine message hides that an update fixes it.
   const fallbackMessage =
-    variant === "sign_in"
+    health === "engine_incompatible"
+      ? "The usage engine is too old. Repair the usage engine, then check again."
+      : variant === "sign_in"
       ? `Sign in to ${label}`
       : variant === "browser_sign_in"
         ? `Sign in to ${label} in your browser, close the browser, then check again`
@@ -154,7 +158,7 @@ export function SetupProviderRow({
             : variant === "stale"
               ? "Live usage is unavailable"
             : "Check timed out";
-  const guidance = reportedMessage || detail || fallbackMessage;
+  const guidance = hideUsageEngineName(reportedMessage || detail || fallbackMessage);
 
   const hasNotice = variant !== "checking" && variant !== "toggle";
   const actions = variant === "unsupported" ? copyReportedMessage : (

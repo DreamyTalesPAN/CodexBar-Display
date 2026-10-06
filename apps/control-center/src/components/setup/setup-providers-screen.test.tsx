@@ -19,6 +19,7 @@ import {
   setupProviderMatchesQuery,
   setupProviderOffersSignIn,
 } from "./setup-providers-screen";
+import { hideUsageEngineName } from "../customer-support-text";
 
 afterEach(() => {
   cleanup();
@@ -569,7 +570,9 @@ describe("SetupProvidersScreen", () => {
    it("preserves upstream guidance without inferring a replacement action", () => {
      const onToggle = vi.fn();
      renderDom(<SetupProvidersScreen usage={usage} onCheckAgain={vi.fn()} onContinue={vi.fn()} onToggle={onToggle} pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} providers={[gemini, antigravity]} />);
-     expect(screen.getByText(gemini.health.reported!)).toBeTruthy();
+     // #476 words the engine's remedy for VibeTV: no product name in the notice.
+    expect(screen.getByText(hideUsageEngineName(gemini.health.reported!))).toBeTruthy();
+    expect(screen.queryByText(/CodexBar/)).toBeNull();
      expect(screen.queryByRole("button", {name: "Turn on Antigravity"})).toBeNull();
      fireEvent.click(screen.getByRole("switch", {name: "Antigravity"}));
      expect(onToggle).toHaveBeenCalledExactlyOnceWith(antigravity, true);

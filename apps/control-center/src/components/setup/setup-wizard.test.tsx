@@ -91,7 +91,6 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     pendingCheckIds: new Set<string>(),
     pendingPreferenceIds: new Set<string>(),
     providersLoading: false,
-    onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
     providers: [provider(), provider("claude", "Claude")],
     selectedThemeId: null,

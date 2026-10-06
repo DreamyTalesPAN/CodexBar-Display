@@ -40,6 +40,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
@@ -158,7 +159,26 @@ func healthRuntimeOwner() string {
 			return label
 		}
 	}
-	return runtimepaths.DisplayStreamLaunchAgentLabel()
+	return shellRuntimeLabel()
+}
+
+// bundledRuntimeLabels are the runtimes the Mac App registers through
+// SMAppService; neither has a LaunchAgents plist.
+var bundledRuntimeLabels = []string{runtimepaths.ShellDisplayStreamLaunchAgentLabel, "shop.vibetv.control-center.preview-runtime"}
+
+// shellRuntimeLabel names the runtime a command run from a shell inspects.
+// Only the runtime process inherits the label environment, so on macOS a
+// loaded bundled runtime wins over the legacy LaunchAgent.
+func shellRuntimeLabel() string {
+	if runtime.GOOS == "windows" || strings.TrimSpace(os.Getenv(runtimepaths.DisplayStreamLaunchAgentLabelEnv)) != "" {
+		return runtimepaths.DisplayStreamLaunchAgentLabel()
+	}
+	for _, label := range bundledRuntimeLabels {
+		if _, err := doctorLaunchAgentPrintFn(label); err == nil {
+			return label
+		}
+	}
+	return runtimepaths.LegacyDisplayStreamLaunchAgentLabel
 }
 
 func printUsage() {
@@ -239,6 +259,9 @@ func runDaemon(args []string) error {
 		if err := os.Setenv("VIBETV_DISABLE_MAC_APP_SELF_UPDATE", "1"); err != nil {
 			return err
 		}
+	}
+	if err := pinFirmwareManifestToAppRelease(); err != nil {
+		return err
 	}
 	writerLock, err := writerlock.Acquire()
 	if err != nil {
@@ -349,6 +372,42 @@ type daemonCommandOptions struct {
 func parseDaemonOptions(args []string) (daemon.Options, error) {
 	opts, err := parseDaemonCommandOptions(args)
 	return opts.Daemon, err
+}
+
+// pinFirmwareManifestToAppRelease points a customer install (Mac App or
+// Windows app) at the firmware manifest of its own release instead of the
+// latest one. App and firmware of a release belong together, so an app only
+// ever installs the firmware it shipped with, and publishing a newer release
+// cannot strand an older app halfway through setup. An explicit manifest
+// override (bench and rehearsal setups) wins. A build whose release is not
+// published (CI builds, a candidate before its release) keeps the latest
+// manifest, as before.
+func pinFirmwareManifestToAppRelease() error {
+	if os.Getenv("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1" ||
+		strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL")) != "" {
+		return nil
+	}
+	version, err := versioning.ParseSemVer(os.Getenv("VIBETV_MAC_APP_VERSION"))
+	if err != nil {
+		return nil
+	}
+	manifestURL := githubReleaseAssetURL(defaultReleaseRepo, "v"+version.String(), "firmware-manifest.json")
+	if firmwareManifestMissing(manifestURL) {
+		return nil
+	}
+	return os.Setenv("CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL", manifestURL)
+}
+
+// firmwareManifestMissing reports only a definitive 404. Any other answer,
+// including no network at startup, keeps the pin.
+var firmwareManifestMissing = func(manifestURL string) bool {
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Head(manifestURL)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusNotFound
 }
 
 func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
@@ -1045,7 +1104,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		return config, err
 	}
 
-	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
+	for _, label := range bundledRuntimeLabels {
 		if output, err := doctorLaunchAgentPrintFn(label); err == nil && doctorLaunchAgentStateHealthy(string(output)) {
 			cfg, err := runtimeconfig.Load(home)
 			if err != nil {
@@ -1168,9 +1227,8 @@ func parseDoctorLaunchAgentPath(output string) string {
 }
 
 func doctorLaunchAgentStateHealthy(output string) bool {
-	return strings.Contains(output, "state = running") ||
-		strings.Contains(output, "state = waiting") ||
-		strings.Contains(output, "state = spawn scheduled")
+	state, _ := service.ParseStatus(output)
+	return service.Healthy(state)
 }
 
 func doctorWiFiTarget(configTarget, plistTarget string) string {
@@ -1655,11 +1713,13 @@ func runService(args []string) error {
 		fmt.Println("background service: stopped and disabled")
 		return nil
 	case "status":
-		status, err := queryLaunchAgentStatus()
+		label := shellRuntimeLabel()
+		status, err := queryLaunchAgentStatus(label)
 		if err != nil {
 			return err
 		}
 		fmt.Println("codexbar-display service")
+		fmt.Printf("label: %s\n", label)
 		if status.Enabled {
 			fmt.Println("enabled: yes")
 		} else {
@@ -1670,8 +1730,8 @@ func runService(args []string) error {
 			fmt.Printf("pid: %s\n", status.PID)
 		}
 		if runtime.GOOS == "windows" {
-			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, runtimepaths.DisplayStreamLaunchAgentLabel()))
-		} else {
+			fmt.Printf("task configuration: %s\n", service.TaskConfigPath(home, label))
+		} else if label == runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
 			fmt.Printf("plist: %s\n", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel))
 		}
 		return nil

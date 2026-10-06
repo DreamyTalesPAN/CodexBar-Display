@@ -239,6 +239,18 @@ describe("provider notices", () => {
     expect(html.indexOf('role="switch"')).toBeLessThan(html.indexOf('data-slot="provider-notice"'));
     expect(html).toContain("text-xs leading-normal text-muted-foreground");
   });
+  // #476: the engine's product name stays out of customer text, and an engine
+  // that is too old says so instead of looking like a timed-out check.
+  it("names an engine that is too old instead of a timed-out check", () => {
+    const html = render({ health: "engine_incompatible" });
+    expect(html).toContain("The usage engine is too old. Repair the usage engine, then check again.");
+    expect(html).toContain('aria-label="Check Claude Code again"');
+  });
+  it("keeps the engine's product name out of the notice", () => {
+    const html = render({ health: "engine_incompatible", detail: "CodexBar 0.17.0 is too old. Version 0.23.0 or newer is required." });
+    expect(html).toContain("Usage engine 0.17.0 is too old. Version 0.23.0 or newer is required.");
+    expect(html).not.toContain("CodexBar");
+  });
   it.each(["healthy", "disabled", "checking"])("does not add a notice for %s", (health) => {
     expect(render({health})).not.toContain('data-slot="provider-notice"');
   });

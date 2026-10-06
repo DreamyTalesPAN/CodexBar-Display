@@ -104,3 +104,19 @@ describe("support report surface", () => {
     expect(serializeSupportReport(fallback)).not.toContain('"page"');
   });
 });
+
+// Issue #313: a report always says whether setup events were available.
+describe("support report setup log", () => {
+  it("keeps the setup log the Mac App captured, including an empty one", async () => {
+    const setupLog = { sessionId: "s1", startedAt: "2026-09-24T10:00:00Z", events: [], truncated: false, dropped: 0 };
+    expect((await report({ ok: true, setupLog })).setupLog).toEqual(setupLog);
+  });
+
+  it("marks the setup log unavailable for an older Mac App or a fallback report", async () => {
+    expect((await report({ ok: true })).setupLog).toEqual({ unavailable: true });
+    const fallback = await collectSupportReport(async () => {
+      throw new Error("diagnostics unreachable");
+    }, clientState);
+    expect(fallback.setupLog).toEqual({ unavailable: true });
+  });
+});
