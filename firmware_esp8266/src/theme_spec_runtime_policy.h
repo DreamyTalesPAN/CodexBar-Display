@@ -133,6 +133,31 @@ class ThemeSpecRuntimePolicy {
     return static_cast<uint32_t>(width) * static_cast<uint32_t>(height) * 2UL;
   }
 
+  // The frame buffer holds one axis of a sprite at the smaller of its source
+  // and drawn size. An enlarged sprite is decoded at source size and scaled
+  // only while it is pushed, so Claude Creature's 52 px sprite drawn at 77 px
+  // needs 5408 bytes instead of 11858. That difference decides whether the
+  // animation fits the heap left over in WiFi mode (issue #498).
+  static int CbaBufferExtent(int drawnExtent, int sourceExtent) {
+    if (drawnExtent <= 0) {
+      return sourceExtent;
+    }
+    return sourceExtent > 0 && sourceExtent < drawnExtent ? sourceExtent : drawnExtent;
+  }
+
+  // The buffer row or column shown at a drawn position when an enlarged
+  // sprite is pushed. It is the last source index whose span starts at or
+  // before the position, which is the pixel the full-size decode used to
+  // leave there: each source run filled floor(start) to ceil(end) and the
+  // next run overwrote the shared edge pixel.
+  static int CbaScaledSourceIndex(int drawnIndex, int drawnExtent, int sourceExtent) {
+    if (drawnExtent <= 0 || sourceExtent <= 0 || drawnIndex < 0) {
+      return 0;
+    }
+    const int index = ((drawnIndex + 1) * sourceExtent + drawnExtent - 1) / drawnExtent - 1;
+    return index < sourceExtent - 1 ? index : sourceExtent - 1;
+  }
+
   static bool CanAllocateCbaBuffer(
       uint32_t freeHeapBytes,
       uint32_t maxFreeBlockBytes,
