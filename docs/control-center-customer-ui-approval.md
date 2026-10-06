@@ -4958,3 +4958,8 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A provider row in the "stale" state (last reading still shown, live usage briefly unavailable) keeps its warning icon, but its message no longer opens as a dialog by itself on Choose AI providers or in Settings → AI providers. Clicking the warning icon still shows it. Every other provider message (sign-in, unsupported, outage, permission, no usage) opens exactly as before.
 - Scope: `setup-providers-screen.tsx` (the provider list shared by setup and Settings), its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
 
+## 2026-10-06 — "We couldn't find your VibeTV": the two choices look like cards
+
+- User approval: On 2026-10-06 Paul asked for this after clicking the wrong choice in the dialog: "da sehen die beiden optionen gar nicht klickbar aus … ändere das, dass die klickbarer aussehen, wie die karten in den settings, mit nem anderen hintergrund oder so".
+- Approved customer-visible result: In the dialog "We couldn't find your VibeTV" the two choices "Use the cable" and "Already on WiFi" are drawn like the connection cards in Settings: an outline, the card background, more padding, a hover tint and a pointer cursor, with a larger gap between them. Icons, titles, descriptions, the order, the two buttons below and what each choice does are unchanged.
+- Scope: `SetupDeviceNotFoundDialog` in `apps/control-center/src/components/setup/setup-device-dialogs.tsx`. This approves the pull request only, not merge, release, installation, or a device operation.
