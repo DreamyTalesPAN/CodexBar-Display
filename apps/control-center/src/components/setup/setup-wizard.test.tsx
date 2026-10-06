@@ -563,7 +563,7 @@ describe("SetupWizard: direct connection", () => {
     await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
     fireEvent.click(await screen.findByRole("button", { name: "Close" }));
     rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} deviceCandidates={[wifi]} />);
-    fireEvent.click(await screen.findByRole("button", { name: /Set up WiFi with your phone/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Already on WiFi/ }));
     fireEvent.click(await screen.findByRole("radio", { name: /wifi-device/ }));
     expect(connect).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -587,6 +587,25 @@ describe("SetupWizard: direct connection", () => {
     expect(dialog.textContent).not.toContain("Mac");
   });
 
+  it("sends a VibeTV that pairs only over the cable to the cable (#489)", async () => {
+    const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" };
+    const connect = vi.fn().mockRejectedValue({
+      code: "cable_pairing_required",
+      message: "VibeTV pairs only over the USB cable.",
+      nextAction: "Connect VibeTV to this Mac with the USB cable, then press Connect.",
+    });
+    const props = baseProps({
+      step: "device", connectionMode: "wifi", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple", deviceCandidates: [wifi],
+      connectSteps: { connect, checkFirmware: vi.fn().mockResolvedValue(null), installFirmware: vi.fn() },
+    });
+    render(<SetupWizard {...props} />);
+    const dialog = await screen.findByRole("dialog", { name: "VibeTV pairs only over the USB cable." });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use the cable" }));
+    await waitFor(() => expect(props.onSearchDevices).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog", { name: "VibeTV pairs only over the USB cable." })).toBeNull();
+  });
+
   it.each([1, 2])("recovers saved Cable through an explicit choice among %i discovered WiFi devices without provisioning", async (count) => {
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "known-device", transport: "wifi" };
     const connect = vi.fn().mockResolvedValue({ firmware: "1.0.43" });
@@ -600,7 +619,7 @@ describe("SetupWizard: direct connection", () => {
     });
     render(<SetupWizard {...props} />);
     expect(connect).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
     if (count === 2) {
       expect(connect).not.toHaveBeenCalled();
       fireEvent.click(await screen.findByRole("radio", { name: /known-device/ }));
@@ -954,7 +973,7 @@ describe("SetupWizard: WiFi recovery dialogs", () => {
         fireEvent.click(screen.getByRole("radio", { name: "WiFi" }));
         fireEvent.click(screen.getByRole("button", { name: "Connect" }));
       } else {
-        fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ }));
+        fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
       }
     }
     chooseWiFi();
@@ -976,7 +995,7 @@ describe("SetupWizard: WiFi recovery dialogs", () => {
       onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
     });
     render(<SetupWizard {...props} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Set up WiFi with your phone/ })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ })); });
     await act(() => vi.advanceTimersByTimeAsync(60_000));
     const dialog = screen.getByRole("dialog", { name: "WiFi setup failed" });
     expect(dialog.textContent).toContain("VibeTV did not reconnect.");

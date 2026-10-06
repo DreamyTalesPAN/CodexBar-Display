@@ -15,8 +15,8 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SetupAddressDialog,
+  SetupCableHelpDialog,
   SetupDeviceNotFoundDialog,
-  SetupWiFiPhoneDialog,
 } from "./setup-device-dialogs";
 
 afterEach(() => {
@@ -36,22 +36,24 @@ function connect() {
 }
 
 describe("Setup WiFi recovery", () => {
-  it("keeps phone instructions reachable after closing and supports manual entry", () => {
+  it("keeps cable instructions reachable after closing and supports manual entry", () => {
     const onEnterAddressManually = vi.fn();
     const onScanAgain = vi.fn();
     render(
-      <SetupWiFiPhoneDialog
+      <SetupCableHelpDialog
         onEnterAddressManually={onEnterAddressManually}
         onScanAgain={onScanAgain}
       />,
     );
-    expect(
-      screen.getByRole("dialog", { name: "Connect to WiFi" }),
-    ).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "Connect the USB cable" });
+    // Issue #489: setup never runs over a VibeTV-Setup network or a phone.
+    expect(dialog.textContent).not.toContain("VibeTV-Setup");
+    expect(dialog.textContent).not.toContain("192.168.4.1");
+    expect(dialog.textContent).not.toContain("phone");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(
-      screen.getByRole("button", { name: "Set up WiFi with your phone" }),
+      screen.getByRole("button", { name: "How to connect VibeTV" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
     expect(onScanAgain).toHaveBeenCalledTimes(1);
@@ -62,7 +64,7 @@ describe("Setup WiFi recovery", () => {
 
   it("routes the two not-found choices separately", () => {
     const onUseCable = vi.fn();
-    const onSetUpWiFi = vi.fn();
+    const onUseWiFi = vi.fn();
     const onScanAgain = vi.fn();
     render(
       <SetupDeviceNotFoundDialog
@@ -71,16 +73,15 @@ describe("Setup WiFi recovery", () => {
         onEnterAddressManually={vi.fn()}
         onScanAgain={onScanAgain}
         onUseCable={onUseCable}
-        onSetUpWiFi={onSetUpWiFi}
+        onUseWiFi={onUseWiFi}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Use the cable/ }));
     expect(onUseCable).toHaveBeenCalledTimes(1);
     expect(onScanAgain).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Set up WiFi with your phone/ }),
-    );
-    expect(onSetUpWiFi).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/phone/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
+    expect(onUseWiFi).toHaveBeenCalledTimes(1);
   });
 });
 

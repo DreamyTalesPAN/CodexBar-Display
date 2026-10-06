@@ -16,6 +16,8 @@ smoke_block="$(sed -n '/^  if \[\[ "\$skip_smoke" != "1" \]\]; then$/,/^  fi$/p'
   || die "preserved filesystem runs must explain the skipped missing-theme assertion"
 [[ "$smoke_block" == *'check_post_smoke_theme_missing_state "$health_url"'* ]] \
   || die "full filesystem runs must retain the missing-theme assertion"
+grep -q 'if \[\[ "\$skip_smoke" != "1" && -z "\$device_token" \]\]; then' "$SCRIPT" \
+  || die "an unpaired device must skip the smoke frame instead of failing on 401"
 
 bash -n "$SCRIPT"
 printf 'VibeTV provisioning contract tests passed\n'

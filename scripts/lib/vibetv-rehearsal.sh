@@ -96,7 +96,8 @@ Usage: $(basename "$0") [options]
                          release: its release candidate is the candidate
   --pr <number>          Pull request whose merge-gate candidate to install (default: $REHEARSAL_PR)
   --run-id <id>          Use an explicit candidate run instead of resolving one
-  --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72 (default: autodetect)
+  --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72, or
+                         cable://vibetv for a VibeTV on the USB cable (default: autodetect)
   --restore-from <run>   Restore a named run under ~/.vibetv-rehearsal/runs
                          instead of the newest one with a backup
   --companion-override <path>
@@ -159,9 +160,85 @@ rehearsal::open_run_dir() {
 
 # --------------------------------------------------------------- device helpers
 
+rehearsal::is_cable_target() {
+  [[ "${1:-$REHEARSAL_DEVICE_TARGET}" == cable://* ]]
+}
+
+# The direct serial read needs pyserial, which a clean bench Mac lacks. Same
+# fallback as scripts/vibetv-hw-selftest.sh: a private venv under the state dir.
+REHEARSAL_SERIAL_PYTHON=""
+rehearsal::resolve_serial_python() {
+  [[ -z "$REHEARSAL_SERIAL_PYTHON" ]] || return 0
+  if python3 -c 'import serial' >/dev/null 2>&1; then
+    REHEARSAL_SERIAL_PYTHON=python3
+    return 0
+  fi
+  local venv="$REHEARSAL_STATE_DIR/venv"
+  if [[ ! -x "$venv/bin/python" ]]; then
+    rehearsal::info 'creating a pyserial venv for the cable VibeTV'
+    python3 -m venv "$venv" >/dev/null 2>&1 && "$venv/bin/pip" -q install pyserial >/dev/null 2>&1
+  fi
+  "$venv/bin/python" -c 'import serial' >/dev/null 2>&1 \
+    || rehearsal::die 'could not provide pyserial, which a cable VibeTV needs'
+  REHEARSAL_SERIAL_PYTHON="$venv/bin/python"
+}
+
 rehearsal::device_hello() {
   local target="$1" timeout="${2:-8}"
+  if rehearsal::is_cable_target "$target"; then
+    rehearsal::cable_hello "$timeout"
+    return
+  fi
   curl -fsS --connect-timeout "$timeout" -m "$timeout" "${target%/}/hello" 2>/dev/null || return 1
+}
+
+# A Cable VibeTV has no address. While the runtime runs it holds the serial port
+# exclusively, so it is asked; once it is stopped, the device answers directly.
+rehearsal::cable_hello() {
+  local timeout="$1"
+  curl -fsS -m 3 http://127.0.0.1:47832/v1/device 2>/dev/null | python3 -c '
+import json, sys
+device = json.load(sys.stdin).get("device") or {}
+if not device.get("connected") or not device.get("deviceId"):
+    sys.exit(1)
+print(json.dumps({"kind": "hello", "deviceId": device["deviceId"],
+                  "firmware": device.get("firmware"), "board": device.get("board")}))
+' 2>/dev/null && return 0
+
+  rehearsal::resolve_serial_python
+  "$REHEARSAL_SERIAL_PYTHON" - "$timeout" <<'PY' 2>/dev/null
+import glob, json, sys, time
+import serial
+
+# Every port gets its own window, so an unrelated silent serial port ahead of
+# VibeTV cannot use up the time before VibeTV is asked.
+window = float(sys.argv[1])
+ports = sorted(glob.glob("/dev/cu.usbserial*") + glob.glob("/dev/cu.wchusbserial*"))
+for path in ports:
+    port = serial.Serial()
+    port.port, port.baudrate, port.timeout = path, 115200, 0.2
+    port.dtr = port.rts = False  # opening must not reset the board
+    try:
+        port.open()
+    except Exception:
+        continue
+    buffer = b""
+    port.write(b'{"kind":"request","op":"hello"}\n')
+    deadline = time.time() + window
+    while time.time() < deadline:
+        buffer += port.read(4096)
+        *lines, buffer = buffer.split(b"\n")
+        for line in lines:
+            try:
+                hello = json.loads(line)
+            except Exception:
+                continue
+            if hello.get("kind") == "hello" and hello.get("deviceId"):
+                print(json.dumps(hello))
+                sys.exit(0)
+    port.close()
+sys.exit(1)
+PY
 }
 
 # Finds the VibeTV: explicit flag, remembered target, stored config, then a
@@ -169,6 +246,25 @@ rehearsal::device_hello() {
 # is what keeps a second rehearsal from re-scanning the whole subnet.
 rehearsal::discover_device() {
   local remembered="$REHEARSAL_STATE_DIR/device-target"
+
+  # Checked up front, before anything is written. A missing pyserial would
+  # otherwise surface after the flash as a three-minute wait that reads
+  # "unconfirmed". The Cable flash also authenticates with this Mac's Cable
+  # pairing: with a WiFi binding or none it would fail with "paired Cable VibeTV
+  # is required" after the run had started.
+  if rehearsal::is_cable_target; then
+    rehearsal::resolve_serial_python
+    local mode
+    mode="$(python3 -c '
+import json, sys
+try:
+    print(json.load(open(sys.argv[1])).get("connectionMode") or "")
+except Exception:
+    print("")
+' "$REHEARSAL_SUPPORT_DIR/config.json" 2>/dev/null || true)"
+    [[ "$mode" == cable ]] \
+      || rehearsal::die 'cable://vibetv needs this Mac paired over USB-C: pair the VibeTV by cable, or switch Settings > Connection to USB-C, then retry'
+  fi
 
   if [[ -n "$REHEARSAL_DEVICE_TARGET" ]]; then
     rehearsal::device_hello "$REHEARSAL_DEVICE_TARGET" >/dev/null \

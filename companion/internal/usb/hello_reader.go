@@ -175,6 +175,44 @@ func validCablePairingToken(token string) bool {
 	return true
 }
 
+func readFactoryResetFromPort(port SerialPort, window time.Duration, deviceID string) error {
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string `json:"kind"`
+			Status   string `json:"status"`
+			DeviceID string `json:"deviceId"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = errors.New("device rejected the factory reset")
+			return true
+		case "factory-reset":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) {
+				responseErr = errors.New("device acknowledged the factory reset for a different identity")
+			} else if !strings.EqualFold(strings.TrimSpace(reply.Status), "done") {
+				responseErr = errors.New("device could not erase all saved data")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return responseErr
+	}
+	if !seen {
+		return errors.New("device did not acknowledge the factory reset")
+	}
+	return nil
+}
+
 func readSettingsFromPort(port SerialPort, window time.Duration, deviceID string) (protocol.DeviceSettings, error) {
 	var settings protocol.DeviceSettings
 	var responseErr error
@@ -342,12 +380,19 @@ func readPortLinesCarry(port SerialPort, window time.Duration, carry *[]byte, ac
 	return accept(strings.TrimSpace(string(bytes.TrimSpace(buffer))))
 }
 
+const bootHelloPrefix = `{"kind":"hello"`
+
 func parseDeviceHelloLine(line string) (protocol.DeviceHello, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return protocol.DeviceHello{}, false
 	}
 
+	// The boot hello follows the boot ROM's output without a line break, so
+	// the line it arrives on starts with noise rather than with the hello.
+	if start := strings.LastIndex(line, bootHelloPrefix); start > 0 {
+		line = line[start:]
+	}
 	if !strings.HasPrefix(line, "{") || !strings.HasSuffix(line, "}") {
 		return protocol.DeviceHello{}, false
 	}

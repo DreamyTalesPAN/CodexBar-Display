@@ -95,10 +95,11 @@ daemon. API language belongs in developer and operator docs.
 
 1. Customer opens `app.vibetv.shop` on the Mac and downloads the verified DMG.
 2. Customer drags VibeTV Control Center into Applications and opens it.
-3. If no usable device is configured, the native app explains how to join
-   `VibeTV-Setup` on a phone and put VibeTV on the home WiFi.
-4. The customer confirms that VibeTV is on WiFi.
-5. The Mac App discovers the device, pairs only when required, starts the local
+3. If no usable device is configured, the native app asks the customer to
+   connect VibeTV with the USB cable. Setup and pairing run only over the cable.
+4. The Mac App can send home WiFi details over the cable; VibeTV then switches
+   to WiFi.
+5. The Mac App discovers the device, pairs over the cable when required, starts the local
    display stream, and verifies the returned device status.
 6. A successful check opens Overview immediately. An existing healthy setup
    skips onboarding and opens Overview directly.

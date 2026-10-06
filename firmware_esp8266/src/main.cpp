@@ -108,8 +108,12 @@ constexpr size_t kClockTransitionRecordOffset =
 constexpr size_t kConnectionModeRecordOffset =
     kClockTransitionRecordOffset +
     codexbar_display::deviceclock::kUtcOffsetTransitionRecordBytes;
+// Written as 1 by every firmware since issue #489, so a record without it comes
+// from older firmware and the boot decides once whether the VibeTV stays a
+// legacy WiFi device (device_settings::ResolveInitialConnectionMode).
+constexpr size_t kCableOnlyClassifiedRecordOffset = kConnectionModeRecordOffset + 1;
 constexpr size_t kDeviceSettingsRecordBytes =
-    kConnectionModeRecordOffset + 1;
+    kCableOnlyClassifiedRecordOffset + 1;
 const char kResetTrustHandoverPath[] = "/rt";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
@@ -266,6 +270,7 @@ FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateNoticeDirty = false;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
+bool deviceSettingsClassified = false;
 device_settings::ConnectionTransition connectionTransition;
 bool connectionTransitionPending = false;
 unsigned long connectionTransitionStartedAtMs = 0;
@@ -372,6 +377,7 @@ void applyDeviceSettings() {
 
 bool loadDeviceSettings() {
   deviceSettings = DeviceSettings{};
+  deviceSettingsClassified = false;
   if (!LittleFS.begin() || !LittleFS.exists(kDeviceSettingsPath)) {
     applyDeviceSettings();
     return false;
@@ -426,6 +432,9 @@ bool loadDeviceSettings() {
         codexbar_display::esp8266::device_settings::DecodeConnectionMode(
             record[kConnectionModeRecordOffset]);
   }
+  if (readBytes > static_cast<int>(kCableOnlyClassifiedRecordOffset)) {
+    deviceSettingsClassified = record[kCableOnlyClassifiedRecordOffset] == 1;
+  }
   applyDeviceSettings();
   return readBytes > 0;
 }
@@ -446,6 +455,7 @@ bool saveDeviceSettings() {
       runtimeCtx.clock, record + kClockTransitionRecordOffset);
   record[kConnectionModeRecordOffset] =
       static_cast<uint8_t>(deviceSettings.connectionMode);
+  record[kCableOnlyClassifiedRecordOffset] = 1;
   const size_t written = file.write(record, sizeof(record));
   file.close();
   if (written != sizeof(record)) {
@@ -631,18 +641,20 @@ void maintainConnectionTransition() {
     return;
   }
   if ((millis() - connectionTransitionStartedAtMs) >=
-      device_settings::ConnectionTransitionTimeoutMs(setupMode)) {
+      device_settings::kConnectionTransitionConfirmationMs) {
     (void)rollbackConnectionTransition("confirmation_timeout");
   }
 }
 
-bool resolveInitialConnectionMode() {
+bool resolveInitialConnectionMode(bool setUpByOlderFirmware) {
   using codexbar_display::esp8266::device_settings::ConnectionMode;
   using codexbar_display::esp8266::device_settings::ResolveInitialConnectionMode;
 
-  const ConnectionMode resolved =
-      ResolveInitialConnectionMode(deviceSettings.connectionMode);
-  if (resolved == deviceSettings.connectionMode) {
+  const ConnectionMode resolved = ResolveInitialConnectionMode(
+      deviceSettings.connectionMode,
+      setUpByOlderFirmware,
+      deviceSettingsClassified);
+  if (resolved == deviceSettings.connectionMode && deviceSettingsClassified) {
     return true;
   }
   deviceSettings.connectionMode = resolved;
@@ -652,10 +664,19 @@ bool resolveInitialConnectionMode() {
         codexbar_display::esp8266::device_settings::ConnectionModeName(resolved));
     return false;
   }
+  deviceSettingsClassified = true;
   Serial.printf(
       "connection_mode_migrated mode=%s\n",
       codexbar_display::esp8266::device_settings::ConnectionModeName(resolved));
   return true;
+}
+
+// Early VibeTVs have no USB data connection. They keep the WiFi setup network,
+// WiFi pairing and WiFi updates until a request over the USB cable proves the
+// cable (issue #489).
+bool legacyWifiActive() {
+  return deviceSettings.connectionMode ==
+         codexbar_display::esp8266::device_settings::ConnectionMode::kLegacyWifiOnly;
 }
 
 // Reset-deadline handover across a self-initiated restart.
@@ -730,15 +751,14 @@ bool validAuthToken(const String& value) {
 }
 
 String generateAuthToken() {
-  uint32_t seed = ESP.getCycleCount() ^ micros() ^ (static_cast<uint32_t>(ESP.getChipId()) << 8);
-  randomSeed(seed);
+  // 128 bits from the ESP8266 hardware random number generator.
+  uint8_t bytes[16];
+  ESP.random(bytes, sizeof(bytes));
   String token;
-  token.reserve(32);
-  for (uint8_t i = 0; i < 4; ++i) {
-    uint32_t value = static_cast<uint32_t>(random(0x10000)) << 16;
-    value |= static_cast<uint32_t>(random(0x10000));
-    char chunk[9];
-    snprintf(chunk, sizeof(chunk), "%08lx", static_cast<unsigned long>(value));
+  token.reserve(sizeof(bytes) * 2);
+  for (uint8_t value : bytes) {
+    char chunk[3];
+    snprintf(chunk, sizeof(chunk), "%02x", value);
     token += chunk;
   }
   return token;
@@ -791,28 +811,24 @@ String requestAuthToken() {
   return token;
 }
 
+// An unpaired device accepts no WiFi write at all, and a paired one only with
+// its current token. Pairing runs over the USB cable; only a legacy WiFi
+// device still pairs over WiFi (handlePairingAPI).
 bool requestHasValidAuth() {
-  if (!deviceAuthConfigured()) {
-    return true;
-  }
-  return requestAuthToken() == deviceAuthToken;
-}
-
-bool requestHasCurrentDeviceToken() {
   return deviceAuthConfigured() && requestAuthToken() == deviceAuthToken;
 }
 
 bool requestHasValidOtaAuth() {
   return codexbar_display::esp8266::WifiSecurityPolicy::AllowsFirmwareUpload(
       deviceAuthConfigured(),
-      requestHasCurrentDeviceToken());
+      requestHasValidAuth());
 }
 
 bool authorizeWifiCredentialWrite() {
   if (codexbar_display::esp8266::WifiSecurityPolicy::AllowsCredentialWrite(
           setupMode,
           deviceAuthConfigured(),
-          requestHasCurrentDeviceToken())) {
+          requestHasValidAuth())) {
     return true;
   }
   addCorsHeaders();
@@ -823,6 +839,17 @@ bool authorizeWifiCredentialWrite() {
     webServer.send(403, "text/plain; charset=utf-8", "physical setup confirmation required");
   }
   return false;
+}
+
+// The WiFi setup, pairing and update routes exist only for a legacy WiFi
+// VibeTV. Every other VibeTV answers them like an unknown path.
+bool rejectUnlessLegacyWifi() {
+  if (legacyWifiActive()) {
+    return false;
+  }
+  webServer.keepAlive(false);
+  webServer.send(404, "text/plain; charset=utf-8", "not found");
+  return true;
 }
 
 bool requireWriteAuth() {
@@ -1116,7 +1143,7 @@ void drawWaitingForCompanionStatus() {
     stationIp = "";
   }
   const unsigned long renderStartUs = micros();
-  renderer.DrawConnectedSetupInstructions(runtimeCtx, kCustomerAppHost, stationIp);
+  renderer.DrawConnectedSetupInstructions(runtimeCtx, stationIp);
   recordRenderFull("connected_setup", micros() - renderStartUs);
   lastConnectedSetupIp = stationIp;
   waitStatusRendered = true;
@@ -1477,6 +1504,11 @@ const char* transportCapabilitiesJSON(const char* activeTransport, bool compact 
       deviceSettings.connectionMode);
   json += "\",\"transitionPending\":";
   json += connectionTransitionPending ? "true" : "false";
+  // Since issue #489: true when firmware, pairing and WiFi details change only
+  // over the USB cable; false for a legacy WiFi VibeTV. Older firmware omits
+  // it, which tells hosts that its "supported" list is not proven.
+  json += ",\"cableOnlyUpdates\":";
+  json += legacyWifiActive() ? "false" : "true";
   if (connectionTransitionPending) {
     json += ",\"transitionFrom\":\"";
     json += device_settings::ConnectionModeName(connectionTransition.previous);
@@ -1524,9 +1556,13 @@ String updateStatusHTML(bool compact) {
     if (firmwareUpdate.latestVersion.length() > 0) {
       html += F(" / Latest: <code>");
       html += htmlEscape(firmwareUpdate.latestVersion);
-      html += F("</code>");
+    html += F("</code>");
     }
-    html += F("</span><a class='update-link' href='/update'>Install update</a>");
+    if (legacyWifiActive()) {
+      html += F("</span><span>Update with the VibeTV App on your Mac.</span>");
+    } else {
+      html += F("</span><span>Update with the Mac app over the USB cable.</span>");
+    }
     html += compact ? F("</div>") : F("</section>");
     return html;
   }
@@ -1702,10 +1738,13 @@ bool scanSetupNetworks(bool automatic) {
     return false;
   }
   const bool recoveryAttemptInterrupted = automatic && wifiSetupRecoveryState.attemptInProgress;
+  // Only a legacy WiFi VibeTV has VibeTV-Setup open while scanning. Any other
+  // one is scanned over the cable and must never raise an access point.
+  const bool keepSetupAccessPoint = setupMode && legacyWifiActive();
 
   Serial.println("wifi_setup_scan_started");
   int networks = -2;
-  WiFi.mode(setupMode ? WIFI_AP_STA : WIFI_STA);
+  WiFi.mode(keepSetupAccessPoint ? WIFI_AP_STA : WIFI_STA);
   WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   delay(150);
@@ -1737,7 +1776,7 @@ bool scanSetupNetworks(bool automatic) {
         static_cast<uint32_t>(millis()));
     Serial.println("wifi_setup_recovery_rescheduled reason=automatic_scan");
   }
-  if (setupMode) {
+  if (keepSetupAccessPoint) {
     WiFi.mode(WIFI_AP);
   } else if (!codexbar_display::esp8266::device_settings::UsesWifi(
                  deviceSettings.connectionMode)) {
@@ -1774,12 +1813,14 @@ String connectedPageHTML() {
     html += kCustomerAppHost;
     html += F("</a> on your Mac and follow the main button.</p></section>");
   }
-  html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a></p>");
+  html += F("<p><a href='/health'>Status</a></p>");
   html += F("<section><h2>Pairing</h2>");
   if (deviceAuthConfigured()) {
     html += F("<p class='muted'>Paired. Manage this VibeTV in Control Center.</p>");
-  } else {
+  } else if (legacyWifiActive()) {
     html += F("<p class='muted'>Open Control Center to finish pairing after Wi-Fi setup.</p>");
+  } else {
+    html += F("<p class='muted'>Connect VibeTV to your Mac with the USB cable to pair it.</p>");
   }
   html += F("</section>");
   return html;
@@ -1787,7 +1828,7 @@ String connectedPageHTML() {
 
 void handleRoot() {
   webServer.keepAlive(false);
-  if (setupMode) {
+  if (setupMode && legacyWifiActive()) {
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
@@ -1805,6 +1846,9 @@ void redirectToSetupRoot() {
 }
 
 void handleCaptivePortalProbe() {
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   webServer.keepAlive(false);
   if (setupMode) {
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
@@ -1818,6 +1862,9 @@ void handleCaptivePortalProbe() {
 }
 
 void handleSaveWifi() {
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   webServer.keepAlive(false);
   if (!authorizeWifiCredentialWrite()) {
     return;
@@ -1868,6 +1915,9 @@ void handleSaveWifi() {
 }
 
 void handleSetupWifiScan() {
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   webServer.keepAlive(false);
   if (!setupMode) {
     redirectToSetupRoot();
@@ -1882,6 +1932,9 @@ void handleSetupWifiScan() {
 }
 
 void handleResetWifi() {
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   webServer.keepAlive(false);
   if (webServer.method() != HTTP_POST) {
     webServer.send(405, "text/plain; charset=utf-8", "method not allowed");
@@ -1951,6 +2004,11 @@ bool parseConnectionModeRequest(
 }
 
 void handleConnectionModeSwitch() {
+  // Only the cable starts a switch on current firmware (#489). WiFi keeps
+  // the confirmation of a switch the cable started.
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   addCorsHeaders();
   if (!requireWriteAuth()) {
     return;
@@ -2075,6 +2133,52 @@ bool serialRequestBusy() {
          assetUploadInProgress || rebootPending;
 }
 
+void enterOtaSafeMode(WiFiClient* otaClient = nullptr);
+void enterWifiSetup();
+
+// Erases everything a customer stored on the device: WiFi credentials (our
+// EEPROM copy and the SDK copy), pairing token, settings and themes.
+void factoryResetAndRestart() {
+  EEPROM.begin(kEepromBytes);
+  for (size_t i = 0; i < kEepromBytes; ++i) {
+    EEPROM.write(i, 0);
+  }
+  bool erased = EEPROM.commit();
+  erased = ESP.eraseConfig() && erased;
+  enterOtaSafeMode();
+  erased = LittleFS.format() && erased;
+  String out = "{\"kind\":\"factory-reset\",\"status\":\"";
+  out += erased ? "done" : "failed";
+  out += "\",\"deviceId\":\"";
+  out += deviceID;
+  out += "\"}";
+  Serial.println(out);
+  Serial.flush();
+  delay(100);
+  ESP.restart();
+}
+
+// The first request over the USB cable proves that this VibeTV has a data
+// connection. A legacy WiFi VibeTV then follows the cable-only rules for good:
+// its WiFi setup, pairing and update routes stop answering (issue #489).
+void leaveLegacyWifiOnCableContact() {
+  if (!legacyWifiActive() || otaUploadInProgress || assetUploadInProgress) {
+    return;
+  }
+  deviceSettings.connectionMode = device_settings::ModeAfterCableContact(
+      deviceSettings.connectionMode);
+  if (!saveDeviceSettings()) {
+    deviceSettings.connectionMode = device_settings::ConnectionMode::kLegacyWifiOnly;
+    Serial.println("legacy_wifi_exit_failed reason=settings_save");
+    return;
+  }
+  Serial.println("legacy_wifi_exit reason=cable_contact");
+  if (setupMode) {
+    // Replaces the VibeTV-Setup network with the wait for WiFi over the cable.
+    enterWifiSetup();
+  }
+}
+
 bool handleSerialControlLine(const String& line) {
   JsonDocument doc;
   if (deserializeJson(doc, line)) {
@@ -2084,6 +2188,7 @@ bool handleSerialControlLine(const String& line) {
   if (strcmp(kind, "request") != 0) {
     return false;
   }
+  leaveLegacyWifiOnCableContact();
 
   const char* op = doc["op"] | "";
   if (strncmp(op, "transfer-", 9) == 0) {
@@ -2251,6 +2356,14 @@ bool handleSerialControlLine(const String& line) {
     } else {
       emitSerialConnectionMode("switching", target, true);
       scheduleReboot("wifi_credentials_saved");
+    }
+  } else if (strcmp(op, "factory-reset") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
+    if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+        serialRequestBusy()) {
+      emitSerialError("factory-reset-rejected");
+    } else {
+      factoryResetAndRestart();
     }
   } else {
     emitSerialError("unsupported-request");
@@ -2647,6 +2760,11 @@ void handleSettingsAPI() {
 }
 
 void handlePairingAPI() {
+  // Only a legacy WiFi VibeTV, which may have no USB data connection, still
+  // pairs over WiFi. Every other VibeTV pairs over the USB cable.
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   addCorsHeaders();
   const String token = generateAuthToken();
   if (!saveDeviceAuthToken(token)) {
@@ -3629,14 +3747,6 @@ void maintainStandby() {
 }
 
 
-void handleUpdatePage() {
-  webServer.keepAlive(false);
-  webServer.send(
-      200,
-      "text/html; charset=utf-8",
-      F("<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'><title>VibeTV Update</title><h1>VibeTV Update</h1><p>Open the VibeTV App on your Mac to check and install updates.</p><p><a href='/'>Back</a></p>"));
-}
-
 void setOtaError(const String& message) {
   otaUploadError = message;
   Serial.printf("ota_error message=%s\n", otaUploadError.c_str());
@@ -3652,15 +3762,11 @@ void resetOtaUpdaterAfterFailure() {
   Update.clearError();
 }
 
-size_t otaMaxSizeForCommand(int command) {
-  if (command == U_FS) {
-    return static_cast<size_t>(FS_end - FS_start);
-  }
+size_t firmwareUpdateMaxSize() {
   return static_cast<size_t>((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000);
 }
 
-void enterOtaSafeMode(int command, WiFiClient* otaClient) {
-  (void)command;
+void enterOtaSafeMode(WiFiClient* otaClient) {
   firmwareUpdateNoticeDirty = false;
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
@@ -3675,7 +3781,13 @@ void enterOtaSafeMode(int command, WiFiClient* otaClient) {
   ESP.wdtFeed();
 }
 
-void handleOtaUpload(int command, const char* target) {
+void handleOtaUpload() {
+  // Only a legacy WiFi VibeTV takes firmware over WiFi; every other one
+  // ignores the body and answers 404 in handleOtaResult. The mode cannot
+  // change during an upload (leaveLegacyWifiOnCableContact).
+  if (!legacyWifiActive()) {
+    return;
+  }
   HTTPUpload& upload = webServer.upload();
 
   if (upload.status == UPLOAD_FILE_START) {
@@ -3690,10 +3802,9 @@ void handleOtaUpload(int command, const char* target) {
     otaUploadInProgress = true;
     otaUploadNeedsReboot = false;
     otaUploadError = "";
-    const size_t maxSize = otaMaxSizeForCommand(command);
+    const size_t maxSize = firmwareUpdateMaxSize();
     Serial.printf(
-        "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu free_sketch_space=%zu\n",
-        target,
+        "ota_upload_start filename=%s content_length=%zu max_size=%zu free_sketch_space=%zu\n",
         upload.filename.c_str(),
         upload.contentLength,
         maxSize,
@@ -3702,12 +3813,11 @@ void handleOtaUpload(int command, const char* target) {
       setOtaError("unauthorized");
       return;
     }
-    enterOtaSafeMode(command, &webServer.client());
+    enterOtaSafeMode(&webServer.client());
     otaUploadNeedsReboot = true;
-    const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
-    drawUpdateStatus(targetLabel);
+    drawUpdateStatus("Loading firmware");
     waitStatusRendered = true;
-    if (!Update.begin(maxSize, command)) {
+    if (!Update.begin(maxSize, U_FLASH)) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
     }
@@ -3720,7 +3830,7 @@ void handleOtaUpload(int command, const char* target) {
   } else if (upload.status == UPLOAD_FILE_END) {
     if (otaUploadError.length() == 0 && Update.end(true)) {
       otaUploadSucceeded = true;
-      Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
+      Serial.printf("ota_upload_success bytes=%zu\n", upload.totalSize);
     } else if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
@@ -3728,7 +3838,7 @@ void handleOtaUpload(int command, const char* target) {
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     setOtaError("upload aborted");
     resetOtaUpdaterAfterFailure();
-    Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
+    Serial.printf("ota_upload_aborted bytes=%zu\n", upload.totalSize);
   }
   yield();
 }
@@ -3739,7 +3849,10 @@ void scheduleReboot(const char* reason) {
   Serial.printf("reboot_scheduled reason=%s delay_ms=%lu\n", reason, kRebootDelayMs);
 }
 
-void handleOtaResult(const char* target) {
+void handleOtaResult() {
+  if (rejectUnlessLegacyWifi()) {
+    return;
+  }
   webServer.keepAlive(false);
   if (otaUploadError == "unauthorized") {
     otaUploadInProgress = false;
@@ -3752,7 +3865,7 @@ void handleOtaResult(const char* target) {
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
-    Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
+    Serial.printf("ota_upload_failed error=%s\n", error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
     if (otaUploadNeedsReboot) {
       scheduleReboot("ota_failure");
@@ -3761,17 +3874,10 @@ void handleOtaResult(const char* target) {
     return;
   }
 
-  String html;
-  html.reserve(500);
-  html += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>VibeTV Update</title></head><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:32px'>";
-  html += "<h1>Update successful</h1><p>";
-  html += target;
-  html += " was written. Vibe TV is restarting.</p></body></html>";
-  webServer.send(200, "text/html; charset=utf-8", html);
+  webServer.send(200, "text/plain; charset=utf-8", "Update successful. Vibe TV is restarting.");
   drawUpdateStatus("Restarting");
   waitStatusRendered = true;
-  scheduleReboot(target);
+  scheduleReboot("firmware");
   otaUploadInProgress = false;
   otaUploadNeedsReboot = false;
 }
@@ -3929,7 +4035,7 @@ bool startCableTransfer(JsonDocument& doc) {
     target = CableTransferSink::kAsset;
   } else if (strcmp(sink, "firmware") == 0 &&
              activation[0] == '\0' &&
-             expectedBytes <= otaMaxSizeForCommand(U_FLASH)) {
+             expectedBytes <= firmwareUpdateMaxSize()) {
     target = CableTransferSink::kFirmware;
   }
   uint8_t expectedDigest[16];
@@ -3977,7 +4083,7 @@ bool startCableTransfer(JsonDocument& doc) {
     otaUploadInProgress = true;
     otaUploadNeedsReboot = true;
     otaUploadError = "";
-    enterOtaSafeMode(U_FLASH, nullptr);
+    enterOtaSafeMode();
     drawUpdateStatus("Loading firmware");
     waitStatusRendered = true;
     if (!Update.begin(expectedBytes, U_FLASH)) {
@@ -4209,12 +4315,6 @@ void startHttpServer() {
     return;
   }
   webServer.on("/", HTTP_GET, handleRoot);
-  webServer.on("/hotspot-detect.html", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/generate_204", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/gen_204", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/fwlink", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/connecttest.txt", HTTP_GET, handleCaptivePortalProbe);
-  webServer.on("/ncsi.txt", HTTP_GET, handleCaptivePortalProbe);
   webServer.on("/save", HTTP_POST, handleSaveWifi);
   webServer.on("/scan", HTTP_POST, handleSetupWifiScan);
   webServer.on("/reset-wifi", HTTP_POST, handleResetWifi);
@@ -4237,25 +4337,7 @@ void startHttpServer() {
   webServer.on("/theme/active", HTTP_POST, handleThemeActive);
   webServer.on("/screensaver/active", HTTP_POST, handleScreensaverActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
-  webServer.on("/update", HTTP_GET, handleUpdatePage);
-  webServer.on(
-      "/update/firmware",
-      HTTP_POST,
-      []() {
-        handleOtaResult("firmware");
-      },
-      []() {
-        handleOtaUpload(U_FLASH, "firmware");
-      });
-  webServer.on(
-      "/update/filesystem",
-      HTTP_POST,
-      []() {
-        handleOtaResult("filesystem");
-      },
-      []() {
-        handleOtaUpload(U_FS, "filesystem");
-      });
+  webServer.on("/update/firmware", HTTP_POST, handleOtaResult, handleOtaUpload);
   webServer.onNotFound([]() {
     if (webServer.method() == HTTP_OPTIONS) {
       addCorsHeaders();
@@ -4263,6 +4345,7 @@ void startHttpServer() {
       return;
     }
     if (setupMode) {
+      // Captive portal probes (hotspot-detect, generate_204, ...) land here.
       handleCaptivePortalProbe();
       return;
     }
@@ -4274,6 +4357,8 @@ void startHttpServer() {
   Serial.println("http_server_started port=80");
 }
 
+// Legacy WiFi only: an early VibeTV may have no USB data connection, so the
+// VibeTV-Setup network stays its way to new WiFi details.
 void startSetupAccessPoint() {
   setupMode = true;
   pendingHttpRender = false;
@@ -4293,7 +4378,34 @@ void startSetupAccessPoint() {
   Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
   startHttpServer();
   const unsigned long renderStartUs = micros();
-  renderer.DrawSetupInstructions(runtimeCtx);
+  renderer.DrawStatus(runtimeCtx, "VIBE TV", "Download Mac App", kCustomerAppHost);
+  recordRenderFull("setup", micros() - renderStartUs);
+  waitStatusRendered = true;
+}
+
+// WiFi mode without a network. A legacy WiFi VibeTV opens VibeTV-Setup; every
+// other one has no setup access point: the customer connects the USB cable and
+// the Mac App sends new WiFi details over it. The saved network keeps being
+// retried in the background.
+void enterWifiSetup() {
+  pendingHttpRender = false;
+  if (legacyWifiActive()) {
+    startSetupAccessPoint();
+    return;
+  }
+  if (captiveDnsStarted) {
+    // A legacy VibeTV just proved its cable while VibeTV-Setup was open.
+    dnsServer.stop();
+    captiveDnsStarted = false;
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+  }
+  setupMode = true;
+  resetWifiReconnectState();
+  wifiReconnectAttemptAtMs = millis();
+  Serial.println("wifi_setup_waiting_for_cable");
+  const unsigned long renderStartUs = micros();
+  renderer.DrawStatus(runtimeCtx, "VIBE TV", "Connect USB cable", kCustomerAppHost);
   recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
 }
@@ -4303,11 +4415,29 @@ void maintainWifiConnection() {
           deviceSettings.connectionMode)) {
     return;
   }
-  if (setupMode) {
+  if (setupMode && legacyWifiActive()) {
     maintainWifiSetupRecovery();
     return;
   }
   if (rebootPending) {
+    return;
+  }
+  const unsigned long nowMs = millis();
+  if (setupMode) {
+    if (WiFi.status() == WL_CONNECTED) {
+      setupMode = false;
+      resetWifiReconnectState();
+      startHttpServer();
+      drawWaitingForCompanionStatus();
+      Serial.printf("wifi_setup_retry_connected ip=%s\n", WiFi.localIP().toString().c_str());
+    } else if (savedWifiCredentialsAvailable && !setupWifiState.scanInProgress &&
+               (nowMs - wifiReconnectAttemptAtMs) >= kWifiConnectTimeoutMs) {
+      wifiReconnectAttemptAtMs = nowMs;
+      WiFi.mode(WIFI_STA);
+      applyWifiInteropPhyMode();
+      WiFi.begin(savedWifiCredentials.ssid, savedWifiCredentials.password);
+      Serial.printf("wifi_setup_retry_started ssid=%s\n", savedWifiCredentials.ssid);
+    }
     return;
   }
   if (WiFi.status() == WL_CONNECTED) {
@@ -4328,7 +4458,6 @@ void maintainWifiConnection() {
     return;
   }
 
-  const unsigned long nowMs = millis();
   if (wifiDisconnectedAtMs == 0) {
     wifiDisconnectedAtMs = nowMs;
     wifiReconnectAttemptAtMs = 0;
@@ -4353,8 +4482,8 @@ void maintainWifiConnection() {
   }
 
   if ((nowMs - wifiDisconnectedAtMs) >= kWifiReconnectFallbackMs) {
-    Serial.println("wifi_reconnect_failed action=setup_ap");
-    startSetupAccessPoint();
+    Serial.println("wifi_reconnect_failed action=cable_setup");
+    enterWifiSetup();
   }
 }
 
@@ -4427,16 +4556,23 @@ void setup() {
   (void)loadDeviceSettings();
   loadDeviceAuthToken();
   bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
+  // Saved WiFi or a pairing token can only come from older VibeTV firmware. A
+  // unit fresh from the manufacturer firmware has neither; it forgets the
+  // network it was flashed on and waits for the cable (issue #489).
+  const bool setUpByOlderFirmware = hasSavedWifi || deviceAuthConfigured();
   bool wifiConnected = false;
-  if (codexbar_display::esp8266::device_settings::ShouldImportLegacySdkWifi(
-          deviceSettings.connectionMode, hasSavedWifi)) {
+  if (codexbar_display::esp8266::device_settings::ShouldForgetFlashingWifi(
+          setUpByOlderFirmware, deviceSettingsClassified)) {
+    clearSdkWifiCredentials();
+  } else if (codexbar_display::esp8266::device_settings::ShouldImportLegacySdkWifi(
+                 deviceSettings.connectionMode, hasSavedWifi)) {
     wifiConnected = connectToSdkWifiConfig();
     if (wifiConnected) {
       hasSavedWifi = readWifiCredentials(savedWifiCredentials);
     }
   }
   savedWifiCredentialsAvailable = hasSavedWifi;
-  (void)resolveInitialConnectionMode();
+  (void)resolveInitialConnectionMode(setUpByOlderFirmware);
   (void)loadConnectionTransition();
   restoreResetTrustAfterRestart();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -4464,7 +4600,10 @@ void setup() {
     WiFi.disconnect(false);
     WiFi.mode(WIFI_OFF);
     const unsigned long renderStartUs = micros();
-    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Open Mac App", kCustomerAppHost);
+    // Cable mode is only ever chosen in the app, so it is already installed.
+    // A setup hint here flashed on every restart, e.g. after switching back
+    // from WiFi, and read as if VibeTV had gone back to setup.
+    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Waiting for app", "");
     recordRenderFull("cable_setup", micros() - renderStartUs);
     waitStatusRendered = true;
     return;
@@ -4484,7 +4623,7 @@ void setup() {
     if (connectionTransitionPending) {
       connectionTransitionStartedAtMs = millis();
     }
-    startSetupAccessPoint();
+    enterWifiSetup();
   }
 }
 
