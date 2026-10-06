@@ -3925,6 +3925,18 @@ func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	if !providerSetupNeedsCustomerAction(engineBroken) {
 		t.Fatal("a missing engine must end the wait")
 	}
+	engineTooOld := codexbar.ProviderSetup{Status: "setup_required"}
+	engineTooOld.Engine.Status = codexbar.ProviderEngineIncompatible
+	if !providerSetupNeedsCustomerAction(engineTooOld) {
+		t.Fatal("an engine that is too old must end the wait")
+	}
+	engineTooOldRow := codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codexbar", Status: codexbar.ProviderEngineIncompatible}},
+	}
+	if !providerSetupNeedsCustomerAction(engineTooOldRow) {
+		t.Fatal("an engine row that is too old must end the wait")
+	}
 }
 
 // The wait reads the provider state the Companion already owns. A cold cache
@@ -12269,6 +12281,10 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		t.Fatalf("new server: %v", err)
 	}
 	server.probeCacheTime = 0
+	// Provider checks finish on their own goroutines and log when they do. A
+	// log saved from there lands in the temp directory while the test removes
+	// it; saving has its own tests in setup_events_test.go.
+	server.setupEvents.path = ""
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil
