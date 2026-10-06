@@ -73,6 +73,9 @@
 #define MAX_COLORS 256
 #ifdef __LINUX__
 #define MAX_WIDTH 2048
+#elif ANIMATEDGIF_VIBETV_PROFILE
+// VibeTV's display is 240 px wide; open() rejects a wider canvas.
+#define MAX_WIDTH 240
 #else
 #define MAX_WIDTH 480
 #endif // __LINUX__
@@ -209,8 +212,14 @@ typedef struct gif_image_tag
     unsigned char *pTurboBuffer;
     unsigned char *pPixels, *pOldPixels;
     unsigned char ucFileBuf[FILE_BUF_SIZE]; // holds temp data and pixel stack
+#if ANIMATEDGIF_VIBETV_PROFILE
+    // The VibeTV profile only ever stores RGB565 palettes.
+    unsigned short pPalette[MAX_COLORS];
+    unsigned short pLocalPalette[MAX_COLORS];
+#else
     unsigned short pPalette[(MAX_COLORS * 3)/2]; // can hold RGB565 or RGB888 - set in begin()
     unsigned short pLocalPalette[(MAX_COLORS * 3)/2]; // color palettes for GIF images
+#endif
     unsigned char ucLZW[LZW_BUF_SIZE]; // holds de-chunked LZW data
     // These next 3 are used in Turbo mode to have a larger ucLZW buffer
     unsigned short usGIFTable[1<<MAX_CODE_SIZE];

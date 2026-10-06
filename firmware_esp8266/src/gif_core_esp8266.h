@@ -37,6 +37,7 @@ struct GifCoreStatusSnapshot {
   bool filePresent = false;
   bool decoderAllocated = false;
   bool decoderOpen = false;
+  unsigned long framesPlayed = 0;
   String lastErrorStage;
 };
 
@@ -46,6 +47,7 @@ class GifCoreESP8266 {
   void Setup() {}
   void ReleaseMemory() {}
   void ResetForAssetUpdate() {}
+  uint32_t DecoderBytes() const { return 0; }
 
   bool Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame) {
     (void)tft;
@@ -65,6 +67,7 @@ class GifCoreESP8266 {
   void ResetForAssetUpdate();
   bool Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame);
   GifCoreStatusSnapshot StatusSnapshot() const;
+  uint32_t DecoderBytes() const { return decoder_ != nullptr ? sizeof(AnimatedGIF) : 0; }
 
  private:
   using GifFailureGuard = GifFailureGuardState;
@@ -101,6 +104,7 @@ class GifCoreESP8266 {
   bool decoderOpen_ = false;
   bool suppressDraw_ = false;
   unsigned long nextFrameAtMs_ = 0;
+  unsigned long framesPlayed_ = 0;
   int gifWidth_ = 0;
   int gifHeight_ = 0;
   int drawX_ = 0;

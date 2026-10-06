@@ -293,6 +293,7 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
   }
 
   nextFrameAtMs_ = frameStartMs + static_cast<unsigned long>(delayMs);
+  ++framesPlayed_;
   NoteSuccess(assetPath_.c_str());
   return true;
 }
@@ -310,6 +311,7 @@ GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
   snapshot.filePresent = filePresent_;
   snapshot.decoderAllocated = decoder_ != nullptr;
   snapshot.decoderOpen = decoderOpen_;
+  snapshot.framesPlayed = framesPlayed_;
   snapshot.lastErrorStage = lastErrorStage_;
   return snapshot;
 }

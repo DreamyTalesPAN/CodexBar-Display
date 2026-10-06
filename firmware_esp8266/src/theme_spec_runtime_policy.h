@@ -28,6 +28,17 @@ class ThemeSpecRuntimePolicy {
            maxFreeBlockBytes >= kMinAnimationMaxFreeBlockBytes;
   }
 
+  // A GIF allocates its decoder on the first animation tick and keeps it. Those
+  // bytes were free when that tick was admitted, so the following ticks count
+  // them as available. Without that the allocation itself drops the heap below
+  // the animation limit and the GIF stops after one frame (#520).
+  static bool CanAnimate(
+      uint32_t freeHeapBytes,
+      uint32_t maxFreeBlockBytes,
+      uint32_t heldDecoderBytes) {
+    return CanAnimate(freeHeapBytes + heldDecoderBytes, maxFreeBlockBytes + heldDecoderBytes);
+  }
+
   static bool ParseCbaHeader(const char* text, int* values, uint8_t valueCount) {
     if (text == nullptr || values == nullptr || valueCount == 0) {
       return false;

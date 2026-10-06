@@ -15,6 +15,11 @@ contiguous decoder workspace on ESP8266. It is safe only because firmware
 validates every GIF's LZW stream against the same 11-bit profile before decoder
 allocation and before accepting direct GIF uploads.
 
+The profile also sizes both palettes for RGB565 only (256 entries instead of
+384) and the line buffer for the 240 px display (`MAX_WIDTH` 240 instead of
+480). Together that is 752 bytes less decoder state, which a GIF theme needs in
+WiFi mode (issue #520).
+
 The `ANIMATEDGIF_VIBETV_PROFILE` compile-time profile retains only the runtime
 path used by firmware: file callbacks, RGB565 big-endian palettes, RAW scanline
 callbacks, regular LZW decoding, `reset`, and `close`. Turbo, COOKED and

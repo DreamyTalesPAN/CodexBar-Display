@@ -79,11 +79,13 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   snapshot.cbaBufferBytes = themeSpecStats.cbaBufferBytes;
   snapshot.cbaBufferAllocationFailures = themeSpecStats.cbaBufferAllocationFailures;
   snapshot.cbaLastPushDurationUs = themeSpecStats.cbaLastPushDurationUs;
+  snapshot.animationLowHeapSkips = themeSpecStats.animationLowHeapSkips;
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
   snapshot.gifDecoderAllocated = gif.decoderAllocated;
   snapshot.gifDecoderOpen = gif.decoderOpen;
+  snapshot.gifFramesPlayed = gif.framesPlayed;
   snapshot.gifLastErrorStage = gif.lastErrorStage;
 #else
   snapshot.activeTheme = "probe";

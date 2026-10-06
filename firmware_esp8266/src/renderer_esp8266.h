@@ -29,6 +29,8 @@ struct RendererHealthSnapshot {
   bool gifFilePresent = false;
   bool gifDecoderAllocated = false;
   bool gifDecoderOpen = false;
+  unsigned long gifFramesPlayed = 0;
+  unsigned long animationLowHeapSkips = 0;
   String gifLastErrorStage;
 };
 
