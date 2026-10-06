@@ -264,6 +264,9 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 	if len(probed) != 0 {
 		t.Fatalf("no serial port, but the cable was asked %d times", len(probed))
 	}
+	if got.Device.LegacyCableAnswered {
+		t.Fatal("a VibeTV still in legacy mode has not answered the cable")
+	}
 
 	setPorts("/dev/cu.usbserial-1")
 	status()
@@ -294,6 +297,11 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 	caps = got.Device.Capabilities
 	if caps == nil || caps.Transport.CableOnlyUpdates == nil || !*caps.Transport.CableOnlyUpdates {
 		t.Fatalf("cable-only firmware must reach the app with cableOnlyUpdates=true: %+v", caps)
+	}
+	// Issue #498: the Companion remembers the legacy VibeTV, so the app learns
+	// of the cable answer even if it never saw legacy mode itself.
+	if !got.Device.LegacyCableAnswered {
+		t.Fatal("the remembered legacy VibeTV left legacy mode; the app must be told to connect it by Cable")
 	}
 }
 

@@ -440,6 +440,10 @@ type deviceInfo struct {
 	Display         *deviceDisplayInfo        `json:"display,omitempty"`
 	Standby         *deviceStandbyInfo        `json:"standby,omitempty"`
 	Health          *deviceHealthInfo         `json:"health,omitempty"`
+	// LegacyCableAnswered tells the app to connect this WiFi VibeTV by Cable:
+	// it came from firmware before cable-only updates and has since answered
+	// over the USB cable (issue #498).
+	LegacyCableAnswered bool `json:"legacyCableAnswered"`
 }
 
 type displayStreamInfo struct {
@@ -1474,8 +1478,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			if !identityMismatch && transitionConfirmed {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
-				if hello.Normalize().Capabilities.Transport.Mode == "legacy-wifi-only" {
+				if transport := hello.Normalize().Capabilities.Transport; transport.Mode == "legacy-wifi-only" {
 					s.probeLegacyWiFiCable(configuredID)
+				} else {
+					device.LegacyCableAnswered = legacyWiFiDeviceAnsweredCable(cfg.LegacyWiFiDeviceID, observedID, transport)
 				}
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
 				device.Paired = savedPairingRemainsValid(
@@ -1660,6 +1666,33 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 	if probe {
 		_, _ = s.resolveCablePort("", deviceID)
 	}
+}
+
+// rememberLegacyWiFiDevice keeps the one fact the cable switch of issue #498
+// needs: this WiFi VibeTV ran, or is being updated from, firmware from before
+// cable-only updates. Legacy mode itself ends with the first request over the
+// USB cable, whoever sends it, so the app cannot rely on having seen it.
+func (s *Server) rememberLegacyWiFiDevice(deviceID string) {
+	deviceID = strings.TrimSpace(deviceID)
+	cfg, err := s.config()
+	if err != nil || deviceID == "" || !strings.EqualFold(strings.TrimSpace(cfg.DeviceID), deviceID) ||
+		strings.EqualFold(cfg.LegacyWiFiDeviceID, deviceID) {
+		return
+	}
+	_, _ = s.updateConfig(func(current *runtimeconfig.Config) {
+		current.LegacyWiFiDeviceID = deviceID
+	})
+}
+
+// legacyWiFiDeviceAnsweredCable reports that the remembered legacy WiFi VibeTV
+// left legacy mode, which only a request over the USB cable causes. A VibeTV
+// without USB data never does, and one set up on current firmware was never
+// remembered, so both stay on WiFi.
+func legacyWiFiDeviceAnsweredCable(legacyDeviceID string, deviceID string, transport protocol.TransportCapabilities) bool {
+	legacyDeviceID = strings.TrimSpace(legacyDeviceID)
+	return legacyDeviceID != "" && strings.EqualFold(legacyDeviceID, strings.TrimSpace(deviceID)) &&
+		transport.Mode == "wifi" && slices.Contains(transport.Supported, "usb") &&
+		transport.CableOnlyUpdates != nil && *transport.CableOnlyUpdates
 }
 
 func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
@@ -3525,6 +3558,15 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		writeInternalError(w, err)
 		return
+	}
+	if cfg.LegacyWiFiDeviceID != "" {
+		// Any connection choice settles the one automatic switch to Cable.
+		if cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			current.LegacyWiFiDeviceID = ""
+		}); err != nil {
+			writeInternalError(w, err)
+			return
+		}
 	}
 	freshWiFiChoice := mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" &&
 		(cfg.ConnectionModeChoiceRequired || runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "")
@@ -5393,6 +5435,12 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 			"Pair VibeTV, then retry.",
 		)
 		return
+	}
+	if transport := hello.Normalize().Capabilities.Transport; !req.Rescue &&
+		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" &&
+		(transport.CableOnlyUpdates == nil || !*transport.CableOnlyUpdates) {
+		// The update restarts this VibeTV in legacy WiFi mode (issue #498).
+		s.rememberLegacyWiFiDevice(cfg.DeviceID)
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
 	if !req.Rescue && (strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "") {
@@ -8271,7 +8319,12 @@ func (s *Server) getHello(ctx context.Context, target, token string) (protocol.D
 	if err := s.doJSON(ctx, http.MethodGet, target, "/hello", token, nil, &hello); err != nil {
 		return protocol.DeviceHello{}, err
 	}
-	return hello.Normalize(), nil
+	hello = hello.Normalize()
+	if hello.Capabilities.Transport.Mode == "legacy-wifi-only" {
+		// Every WiFi hello passes here, so no caller can miss legacy mode.
+		s.rememberLegacyWiFiDevice(hello.DeviceID)
+	}
+	return hello, nil
 }
 
 func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, error) {

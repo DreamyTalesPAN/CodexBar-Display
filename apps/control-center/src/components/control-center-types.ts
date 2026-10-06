@@ -268,6 +268,7 @@ export type DeviceInfo = {
   known?: boolean;
   active?: boolean;
   connected: boolean;
+  legacyCableAnswered?: boolean;
   paired?: boolean;
   ready?: boolean;
   connectionState?:
@@ -663,23 +664,18 @@ export function deviceOffersCable(device: DeviceInfo | null | undefined) {
 
 // Issue #498: a VibeTV set up over WiFi on firmware from before USB-C support
 // stays in legacy WiFi mode after its update. Plugged into this computer, the
-// Companion asks it over the cable and it leaves legacy mode. Seeing that on
-// the same VibeTV proves its cable carries data, so the app connects it by
-// Cable. A VibeTV without USB data never leaves legacy mode and stays on WiFi.
+// Companion asks it over the cable and it leaves legacy mode, which proves its
+// cable carries data. The Companion remembers that VibeTV and reports the
+// moment, because legacy mode ends with the first request over the cable and
+// this window may never have seen it. A VibeTV without USB data never leaves
+// legacy mode and stays on WiFi.
 export function legacyWiFiDeviceAnsweredCable(
-  legacyDeviceId: string | null | undefined,
   device: DeviceInfo | null | undefined,
 ) {
-  const transport = device?.capabilities?.transport;
-  const deviceId = device?.deviceId?.trim();
-  return Boolean(
-    deviceId &&
-      legacyDeviceId?.trim() === deviceId &&
-      device?.connected === true &&
-      !deviceUsesCable(device) &&
-      transport?.mode === "wifi" &&
-      transport.supported?.includes("usb") &&
-      transport.cableOnlyUpdates === true,
+  return (
+    device?.legacyCableAnswered === true &&
+    device.connected === true &&
+    !deviceUsesCable(device)
   );
 }
 
