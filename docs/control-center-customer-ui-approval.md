@@ -4963,3 +4963,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Covered by Paul's 2026-10-05 request to fix what the hardware rehearsal of this pull request found and make it ready to merge. The Windows run showed the new restart entry under the step label "Mac App".
 - Approved customer-visible result: In the Windows app the setup log's step labels use the approved Windows wording too, so the restart entry reads "App — Done: The app's background service started again." The Mac wording is unchanged. No other screen, control or copy changes.
 - Scope: `setup-event-log.tsx`, its test, and this approval record. This approves the visible result on the pull-request branch only, not merge, release, installation, or a device operation.
+
+### 2026-10-06 — Apply #476's provider wording to the provider row
+
+- User approval: Marcus approved in #476 that customer text never names the usage engine's product and that an engine that is too old says so; Paul's standing request on this branch is to keep main's approved results when merging. On this branch the provider notice lives in the row, as approved on 2026-09-30.
+- Approved customer-visible result: The provider row's notice shows the provider message with "CodexBar" worded as "usage engine" and CodexBar's Antigravity remedy as "Enable Antigravity, …", exactly as main's popup does. A provider whose engine is too old shows "The usage engine is too old. Repair the usage engine, then check again." with the re-check action. The copy action still copies the provider's original message.
+- Scope: `setup-provider-row.tsx`, its tests, `setup-providers-screen.test.tsx`, the customer-flow test and this record. No main write, release, installation or device operation.
