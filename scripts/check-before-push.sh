@@ -69,7 +69,7 @@ if touches '^companion/'; then
   # Allocations are enforced exactly as CI does: they are deterministic, and
   # they are where a real regression shows up. The wall-clock budgets get four
   # times the headroom locally, because they measure the machine as much as the
-  # code -- marshaling took 506ns on an idle Mac and 1099ns against CI's 1000ns
+  # code -- marshaling took 506ns on an idle Mac and 1099ns against CI's then 1000ns
   # limit while the rest of this gate was running. Failing a push for that would
   # teach people to distrust the gate, and an order-of-magnitude slowdown still
   # trips these. CI keeps the real numbers on a controlled runner.

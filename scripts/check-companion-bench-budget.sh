@@ -6,7 +6,9 @@ companion_dir="$repo_root/companion"
 
 max_cycle_ns="${MAX_CYCLE_NS:-50000}"
 max_cycle_allocs="${MAX_CYCLE_ALLOCS:-160}"
-max_marshal_ns="${MAX_MARSHAL_NS:-1000}"
+# 1100 since the agent frame fields (agentName, agentReminderSecs, two flags):
+# main measured about 960 ns on CI runners, the four fields add 4-8%.
+max_marshal_ns="${MAX_MARSHAL_NS:-1100}"
 max_marshal_allocs="${MAX_MARSHAL_ALLOCS:-4}"
 
 run_benchmark() {
