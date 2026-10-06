@@ -36,34 +36,6 @@
         "resetSecs": {
           "type": "integer",
           "minimum": 0
-        },
-        "pace": {
-          "type": "object",
-          "description": "CodexBar pace for this window. Sent only to firmware that advertises usage-pace-v1, and only while resetSecs is positive.",
-          "required": [
-            "delta",
-            "state"
-          ],
-          "properties": {
-            "delta": {
-              "type": "integer",
-              "minimum": -100,
-              "maximum": 100,
-              "description": "CodexBar deltaPercent: negative is in reserve, positive is in deficit."
-            },
-            "state": {
-              "enum": [
-                "reserve",
-                "on pace",
-                "deficit"
-              ]
-            },
-            "lasts": {
-              "type": "boolean",
-              "description": "CodexBar willLastToReset. Omitted when CodexBar projects neither outcome."
-            }
-          },
-          "additionalProperties": false
         }
       },
       "additionalProperties": false

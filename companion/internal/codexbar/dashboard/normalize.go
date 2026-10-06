@@ -36,7 +36,6 @@ type DashboardWindow struct {
 type UsageProvider struct {
 	Provider string          `json:"provider"`
 	Usage    UsageMetadata   `json:"usage"`
-	Pace     any             `json:"pace"`
 	Error    json.RawMessage `json:"error"`
 }
 

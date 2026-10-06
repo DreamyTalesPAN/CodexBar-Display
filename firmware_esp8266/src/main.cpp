@@ -38,7 +38,7 @@
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 const char kThemeFeatureJSON[] =
-    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"usage-pace-v1\",\"cable-transfer-v1\",\"cable-transfer-v2\",\"cable-health-v1\"]";
+    "[\"theme-spec-v1\",\"provider-slots-v1\",\"provider-assets-v1\",\"color-stops-v1\",\"text-valign-v1\",\"cable-transfer-v1\",\"cable-transfer-v2\",\"cable-health-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif
@@ -136,7 +136,7 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   if (!enabled) {
     return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsTextValignV1\":true,\"supportsUsagePaceV1\":true,\"maxUsageWindows\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsTextValignV1\":true,\"maxUsageWindows\":";
   out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
   out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives;

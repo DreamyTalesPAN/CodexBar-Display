@@ -11,7 +11,6 @@ const (
 	FeatureProviderAssetsV1 = "provider-assets-v1"
 	FeatureColorStopsV1     = "color-stops-v1"
 	FeatureTextValignV1     = "text-valign-v1"
-	FeatureUsagePaceV1      = "usage-pace-v1"
 	DefaultMaxFrameBytes    = 512
 	DefaultMinBrightness    = 10
 	DefaultMaxBrightness    = 100
@@ -51,7 +50,6 @@ type ThemeCapabilities struct {
 	SupportsProviderAssetsV1 bool     `json:"supportsProviderAssetsV1,omitempty"`
 	SupportsColorStopsV1     bool     `json:"supportsColorStopsV1,omitempty"`
 	SupportsTextValignV1     bool     `json:"supportsTextValignV1,omitempty"`
-	SupportsUsagePaceV1      bool     `json:"supportsUsagePaceV1,omitempty"`
 	MaxUsageWindows          int      `json:"maxUsageWindows,omitempty"`
 	SupportsStoredThemes     bool     `json:"supportsStoredThemes,omitempty"`
 	MaxThemeSpecBytes        int      `json:"maxThemeSpecBytes,omitempty"`
@@ -213,7 +211,6 @@ type DeviceCapabilities struct {
 	SupportsProviderAssetsV1   bool
 	SupportsColorStopsV1       bool
 	SupportsTextValignV1       bool
-	SupportsUsagePaceV1        bool
 	MaxUsageWindows            int
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
@@ -263,7 +260,6 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	supportsProviderAssetsV1 := h.HasFeature(FeatureProviderAssetsV1) || h.Capabilities.Theme.SupportsProviderAssetsV1
 	supportsColorStopsV1 := h.HasFeature(FeatureColorStopsV1) || h.Capabilities.Theme.SupportsColorStopsV1
 	supportsTextValignV1 := h.HasFeature(FeatureTextValignV1) || h.Capabilities.Theme.SupportsTextValignV1
-	supportsUsagePaceV1 := h.HasFeature(FeatureUsagePaceV1) || h.Capabilities.Theme.SupportsUsagePaceV1
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
@@ -287,7 +283,6 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsProviderAssetsV1:   supportsProviderAssetsV1,
 		SupportsColorStopsV1:       supportsColorStopsV1,
 		SupportsTextValignV1:       supportsTextValignV1,
-		SupportsUsagePaceV1:        supportsUsagePaceV1,
 		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,

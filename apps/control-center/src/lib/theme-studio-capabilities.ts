@@ -5,7 +5,6 @@ import {
   themeStudioSpecUsesProviderAssets,
   themeStudioSpecUsesColorStops,
   themeStudioSpecUsesTextValign,
-  themeStudioSpecUsesUsagePace,
   themeStudioSpecUsesUsageWindows,
   themeStudioSpecUsesUsageSlots,
   type ThemeStudioAsset,
@@ -21,7 +20,6 @@ export type ThemeStudioDeviceCapabilities = {
   supportsProviderAssetsV1?: boolean;
   supportsColorStopsV1?: boolean;
   supportsTextValignV1?: boolean;
-  supportsUsagePaceV1?: boolean;
   maxUsageWindows?: number;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;
@@ -119,14 +117,6 @@ export function validateThemeAgainstCapabilities(
   if (
     themeStudioSpecUsesTextValign(normalized) &&
     caps.supportsTextValignV1 !== true
-  ) {
-    errors.push(
-      "This VibeTV needs a firmware update before it can use this theme.",
-    );
-  }
-  if (
-    themeStudioSpecUsesUsagePace(normalized) &&
-    caps.supportsUsagePaceV1 !== true
   ) {
     errors.push(
       "This VibeTV needs a firmware update before it can use this theme.",

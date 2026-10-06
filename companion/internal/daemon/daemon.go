@@ -1573,9 +1573,6 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		// wire bytes against its frame budget.
 		frame.ProviderSlots = nil
 	}
-	if !caps.SupportsUsagePaceV1 {
-		frame = frame.WithoutUsagePace()
-	}
 	now := deps.now()
 	frame = attachClockFields(frame, now)
 	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
@@ -2890,17 +2887,6 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		}
 		frame.ProviderSlots = nil
 	}
-
-	// Pace only qualifies its window, so the window outlives its pace.
-	noPace := frame.WithoutUsagePace()
-	line, err = noPace.MarshalNormalizedLine()
-	if err != nil {
-		return nil, protocol.Frame{}, err
-	}
-	if len(line) <= maxBytes {
-		return line, noPace, nil
-	}
-	frame = noPace
 
 	usageWindowsActive := len(frame.UsageWindows) > 0
 	usageCount := len(frame.UsageWindows)

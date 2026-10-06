@@ -4897,3 +4897,20 @@ issue scope, or release permission never implies UI permission.
   catalog entry, its test, the firmware and preview rules for pace colours and
   the expected fill (`theme_spec_renderer_core.h`, `live-vibetv-preview.tsx`,
   `lib/theme-studio.ts`, `themespec.go`), and this approval record.
+
+## 2026-10-06 — Pace bindings and Pace Meter taken out of this batch again
+
+- User approval: On 2026-10-06 the Windows rehearsal of this pull request showed
+  Pace Meter almost empty and a wrong weekly value, because the Windows usage
+  engine loses Claude's weekly window and reset times whenever it falls back to
+  its CLI source (marcus7989/Win-CodexBar#3). Paul decided in chat: "dann bau
+  das pace meter zeug wieder aus aus dem pr und kommentier im issue, dass man
+  das erst machen kann, wenn dieser upstream pr gemerged usw ist."
+- Approved customer-visible result: Everything the three entries above added
+  for #412 is gone from this pull request: the Pace Meter theme no longer
+  appears in Appearance or in setup's theme step, and Theme Studio's "Binding"
+  list and variable tokens no longer offer the six pace entries. Themes,
+  previews and the VibeTV behave as on `main` in this respect. #412 stays open
+  until the Windows engine delivers the reset times a pace needs.
+- Approved files: the files named in the three entries above, restored to
+  their state without #412, and this approval record.

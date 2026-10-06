@@ -29,33 +29,10 @@ const (
 const ResetTrustHorizon = 5 * time.Hour
 
 type UsageWindow struct {
-	ID       string    `json:"id"`
-	Label    string    `json:"label"`
-	Percent  int       `json:"percent"`
-	ResetSec int64     `json:"resetSecs"`
-	Pace     UsagePace `json:"pace,omitzero"`
-}
-
-// UsagePace carries CodexBar's pace for one usage window (usage-pace-v1).
-// Delta is CodexBar's deltaPercent (negative: in reserve, positive: in
-// deficit) and State its stage family. Lasts is willLastToReset, nil when
-// CodexBar projects neither outcome. The zero value means no pace.
-type UsagePace struct {
-	Delta int    `json:"delta"`
-	State string `json:"state"`
-	Lasts *bool  `json:"lasts,omitempty"`
-}
-
-const (
-	PaceReserve = "reserve"
-	PaceOnPace  = "on pace"
-	PaceDeficit = "deficit"
-)
-
-// usable also bounds the pace's wire bytes, which the firmware budgets.
-func (p UsagePace) usable() bool {
-	return p.Delta >= -100 && p.Delta <= 100 &&
-		(p.State == PaceReserve || p.State == PaceOnPace || p.State == PaceDeficit)
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Percent  int    `json:"percent"`
+	ResetSec int64  `json:"resetSecs"`
 }
 
 func (w *UsageWindow) UnmarshalJSON(data []byte) error {
@@ -279,12 +256,6 @@ func normalizeUsageWindows(windows []UsageWindow) []UsageWindow {
 		if window.ResetSec < 0 {
 			window.ResetSec = 0
 		}
-		if window.ResetSec == 0 || !window.Pace.usable() {
-			// CodexBar computes pace against the window's reset. Once that
-			// countdown expired or lost its trust, the pace belongs to a
-			// window that is gone.
-			window.Pace = UsagePace{}
-		}
 		out = append(out, window)
 	}
 	return out
@@ -410,26 +381,6 @@ func truncateUTF8Bytes(value string, maxBytes int) string {
 		value = value[:len(value)-1]
 	}
 	return value
-}
-
-// WithoutUsagePace drops CodexBar pace from every usage window. Firmware
-// without usage-pace-v1 would only carry it as dead wire bytes.
-func (f Frame) WithoutUsagePace() Frame {
-	f.UsageWindows = usageWindowsWithoutPace(f.UsageWindows)
-	f.UsageSlots = usageWindowsWithoutPace(f.UsageSlots)
-	return f
-}
-
-func usageWindowsWithoutPace(windows []UsageWindow) []UsageWindow {
-	if len(windows) == 0 {
-		return windows
-	}
-	out := make([]UsageWindow, len(windows))
-	for i, window := range windows {
-		window.Pace = UsagePace{}
-		out[i] = window
-	}
-	return out
 }
 
 func (f Frame) MarshalLine() ([]byte, error) {
