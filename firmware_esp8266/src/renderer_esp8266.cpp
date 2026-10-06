@@ -483,10 +483,8 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const uint32_t countdownFields =
-        core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame()).fields &
-        (codexbar_display::themespec::kThemeSpecFieldReset |
-         codexbar_display::themespec::kThemeSpecFieldUsageWindowReset);
+    const uint32_t countdownFields = core::ThemeSpecCountdownFields(
+        core::ThemeSpecLiveUseForFrame(display::RuntimeState(), display::CurrentFrame()));
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         countdownFields != 0 &&
         display::RenderThemeSpecPartial(countdownFields)) {
