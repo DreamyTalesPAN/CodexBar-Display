@@ -381,8 +381,14 @@ inline int64_t CurrentUsageWindowRemainingSecs(
       !state.current.usageWindows[slotIndex].available) {
     return 0;
   }
+  // No deadline alone is not idle: the host also sends 0 for a deadline that
+  // ran out before the frame left and for a provider that names none. Only a
+  // window with nothing used has nothing to reset. In "remaining" mode the
+  // host sends what is left, so nothing used reads 100.
   if (state.current.usageWindows[slotIndex].resetSecs == 0 &&
-      !state.current.usageUnavailable) {
+      !state.current.usageUnavailable &&
+      state.current.usageWindows[slotIndex].percent ==
+          (state.current.usageMode == "remaining" ? 100 : 0)) {
     return kRemainingSecsIdle;
   }
   const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
@@ -400,10 +406,6 @@ inline int64_t CurrentProviderSlotRemainingSecs(
       slotIndex >= kMaxProviderSlots ||
       !state.current.providerSlots[slotIndex].available) {
     return 0;
-  }
-  if (state.current.providerSlots[slotIndex].resetSecs == 0 &&
-      !state.current.usageUnavailable) {
-    return kRemainingSecsIdle;
   }
   const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
   const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
@@ -1448,7 +1450,9 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
       }
     }
     if (nextHasRenderableRaw) {
-      CacheThemeSpec(runtimeState, next.themeSpecId, next.themeSpecRev, next.themeSpecRaw);
+      // The cache already holds this raw and its live use.
+      runtimeState.cachedThemeId = next.themeSpecId;
+      runtimeState.cachedThemeRev = next.themeSpecRev;
       return;
     }
 

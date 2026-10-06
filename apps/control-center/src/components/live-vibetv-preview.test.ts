@@ -441,6 +441,56 @@ describe("dynamic usage slot preview", () => {
     ).toBe("Reset unavailable");
   });
 
+  // Review of #524: the host sends resetSecs 0 not only for a window without
+  // a deadline but also for a deadline that ran out before the frame left and
+  // for a provider that names none. Idle needs nothing used as well, exactly
+  // as on the device.
+  it("does not call a window with usage and no deadline idle", () => {
+    const savedAt = "2026-07-24T10:30:00Z";
+    const frameWith = (extra: object) =>
+      buildFrameData(
+        savedAt,
+        {
+          v: 2,
+          provider: "claude",
+          label: "Claude",
+          resetSecs: 4 * 24 * 3600,
+          resetTrust: "live",
+          resetTrustSecs: 18000,
+          ...extra,
+        },
+        new Date(savedAt),
+      );
+    const used = frameWith({
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 93, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+      providerSlots: [
+        { id: "codex", label: "Codex", percent: 0, resetSecs: 0 },
+        { id: "claude", label: "Claude", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
+    });
+    expect(boundValue("us1r", used)).toBe("Reset unavailable");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {usage.0.reset}" }, used),
+    ).toBe("Reset unavailable");
+    expect(boundValue("us2r", used)).toBe("No active session");
+    // A provider slot is only sent with a deadline, so 0 is one that ran out.
+    expect(boundValue("pv1r", used)).toBe("Reset unavailable");
+
+    // "remaining" mode sends what is left: nothing used reads 100.
+    const remaining = frameWith({
+      usageMode: "remaining",
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 100, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+    });
+    expect(boundValue("us1r", remaining)).toBe("No active session");
+    expect(boundValue("us2r", remaining)).toBe("Reset unavailable");
+  });
+
   // A deadline that ran out between the frame being saved and now is not idle:
   // it reached the reset the host did send, so the countdown is genuinely
   // unavailable until the next frame arrives.

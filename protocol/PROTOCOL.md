@@ -224,11 +224,16 @@ reads the countdown through `CurrentRemainingSecs`, which returns `0` for a
 stale basis, and the ThemeSpec renderer turns `0` into `Reset unavailable`. A
 theme cannot bind its way around this.
 
-- A window the host sends without any deadline is idle, not stale: it is
-  measured and current and simply has nothing scheduled to reset. The renderer
-  says `No active session` for it (`UsageWindowIsIdle`). This never applies
-  while trust is `stale` or usage is unavailable, so the wording above stays
-  exactly as strict as before.
+- A usage window the host sends without any deadline and with nothing used is
+  idle, not stale: it is measured and current and simply has nothing scheduled
+  to reset. The renderer says `No active session` for it (`UsageWindowIsIdle`).
+  "Nothing used" is `percent` 0, or 100 when the frame says
+  `usageMode:"remaining"`. A window with usage and no deadline is not idle:
+  the host also sends `0` for a deadline that ran out before the frame left
+  and for a provider that names none, and the device cannot tell those apart.
+  Provider slots are never idle, because the host only sends one with a
+  deadline. None of this applies while trust is `stale` or usage is
+  unavailable, so the wording above stays exactly as strict as before.
   Inside the device that state travels as a negative remaining value
   (`kRemainingSecsIdle`, mirrored as `kResetSecsIdle` in the renderer),
   because the ESP8266 image has no flash left for a separate per-window flag.

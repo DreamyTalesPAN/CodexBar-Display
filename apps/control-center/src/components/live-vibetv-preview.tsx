@@ -1289,12 +1289,17 @@ export function buildFrameData(
     ) &&
     (!trustEnforced ||
       (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0);
-  // Mirrors UsageWindowIsIdle: a window the host sent without any deadline at
-  // all has nothing scheduled to reset. A deadline that merely counted down to
-  // zero since the frame was saved is not idle -- it reached the reset the
-  // host did send.
-  const windowIsIdle = (sourceResetSecs: number | undefined) =>
-    basisTrusted && (sourceResetSecs ?? 0) <= 0;
+  // Mirrors CurrentUsageWindowRemainingSecs: idle is a window the host sent
+  // with no deadline and nothing used. No deadline alone is not enough -- the
+  // host also sends 0 for a deadline that ran out before the frame left and
+  // for a provider that names none. In "remaining" mode the host sends what is
+  // left, so nothing used reads 100. A provider slot is only sent with a
+  // deadline and is never idle.
+  const nothingUsedPercent = sourceUsageMode === "remaining" ? 100 : 0;
+  const windowIsIdle = (slot: UsageWindowFrame | UsageSlotFrame | undefined) =>
+    basisTrusted &&
+    (slot?.resetSecs ?? 0) <= 0 &&
+    clampPercent(slot?.percent) === nothingUsedPercent;
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -1309,24 +1314,24 @@ export function buildFrameData(
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
-      idle: windowIsIdle(slot.resetSecs),
+      idle: windowIsIdle(slot),
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
     usageSlot1ResetSecs: remainingResetSeconds(slot1?.resetSecs),
     usageSlot1Available: Boolean(slot1),
-    usageSlot1Idle: Boolean(slot1) && windowIsIdle(slot1?.resetSecs),
+    usageSlot1Idle: Boolean(slot1) && windowIsIdle(slot1),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
     usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
-    usageSlot2Idle: Boolean(slot2) && windowIsIdle(slot2?.resetSecs),
+    usageSlot2Idle: Boolean(slot2) && windowIsIdle(slot2),
     providerSlots: providerSlots.map((slot) => ({
       label: slot.label || "",
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
-      idle: windowIsIdle(slot.resetSecs),
+      idle: false,
     })),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,

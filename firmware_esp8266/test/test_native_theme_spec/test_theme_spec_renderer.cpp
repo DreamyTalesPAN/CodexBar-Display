@@ -3963,6 +3963,47 @@ void testIdleWindowIsDistinguishedFromAnUntrustworthyOne() {
   TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(59, 1));
 }
 
+// Review of #524: the host sends resetSecs 0 not only for a window without a
+// deadline but also for a deadline that ran out before the frame left and for
+// a provider that names none. "No active session" beside 93% used claimed a
+// state the device cannot know. Idle needs both: no deadline and nothing used.
+void testWindowWithUsageAndNoDeadlineIsNotIdle() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* prefix =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":345600,"resetTrustSecs":18000,)JSON"
+      R"JSON("resetSource":"claude:secondary","resetTrust":"live",)JSON";
+  const String used = String(prefix) +
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":93,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"extra","label":"Extra","percent":32,"resetSecs":345600}],)JSON"
+      R"JSON("providerSlots":[{"id":"codex","label":"Codex","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, used.c_str(), 1000, event));
+  // Usage without a deadline: unavailable, as before.
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  // Nothing used and no deadline: idle.
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  // A provider slot is only sent with a deadline, so 0 there is one that ran
+  // out, whatever its percent says.
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+
+  // In "remaining" mode the host sends what is left: nothing used reads 100,
+  // and 0 means everything is used.
+  const String remaining = String(prefix) +
+      R"JSON("usageMode":"remaining",)JSON"
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":100,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"extra","label":"Extra","percent":68,"resetSecs":345600}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remaining.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 0, 2000));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 1, 2000));
+}
+
 // The selected provider can lack a reset while another fresh provider has one.
 // providerResetSlots still ships that countdown, so trust must not hinge on the
 // legacy root projection being positive.
@@ -4163,5 +4204,6 @@ int main() {
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
   RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
   RUN_TEST(testIdleWindowIsDistinguishedFromAnUntrustworthyOne);
+  RUN_TEST(testWindowWithUsageAndNoDeadlineIsNotIdle);
   return UNITY_END();
 }

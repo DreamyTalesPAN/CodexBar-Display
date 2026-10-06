@@ -818,7 +818,8 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(slot.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (slot.resetSecs <= 0) {
-        std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(slot.resetSecs)));
+        // A provider slot is only sent with a deadline, so it is never idle.
+        std::snprintf(out, outSize, "%s", kResetUnavailableText);
       } else {
         FormatDuration(slot.resetSecs, out, outSize);
       }
@@ -949,9 +950,9 @@ inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& f
     // reads them as "percent". BoundValue matches them by name; this probe
     // has to do the same or {us1r} keeps rendering the doubled sentence on
     // the device while the Control Center preview already collapses it.
-    const bool isShortReset =
-        std::strcmp(key, "us1r") == 0 || std::strcmp(key, "us2r") == 0 ||
-        std::strcmp(key, "pv1r") == 0 || std::strcmp(key, "pv2r") == 0;
+    // With a slot index found, a four-character key ending in "r" is one of
+    // us1r, us2r, pv1r, pv2r.
+    const bool isShortReset = keyLen == 4 && key[3] == 'r';
     const bool isCountdown =
         ((providerSlotIndex >= 0 || usageSlotIndex >= 0) &&
          (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0));
