@@ -264,6 +264,9 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 	if len(probed) != 0 {
 		t.Fatalf("no serial port, but the cable was asked %d times", len(probed))
 	}
+	if got.Device.LegacyCableAnswered {
+		t.Fatal("a VibeTV still in legacy mode has not answered the cable")
+	}
 
 	setPorts("/dev/cu.usbserial-1")
 	status()
@@ -294,6 +297,11 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 	caps = got.Device.Capabilities
 	if caps == nil || caps.Transport.CableOnlyUpdates == nil || !*caps.Transport.CableOnlyUpdates {
 		t.Fatalf("cable-only firmware must reach the app with cableOnlyUpdates=true: %+v", caps)
+	}
+	// Issue #498: the Companion remembers the legacy VibeTV, so the app learns
+	// of the cable answer even if it never saw legacy mode itself.
+	if !got.Device.LegacyCableAnswered {
+		t.Fatal("the remembered legacy VibeTV left legacy mode; the app must be told to connect it by Cable")
 	}
 }
 
@@ -11205,6 +11213,104 @@ func TestFirmwareUpdateInstallReturnsAcceptedJobWithoutCableIO(t *testing.T) {
 			if rec.Code != http.StatusAccepted || got.Job.ID != job.ID || server.nextUpdateJob != 1 {
 				t.Fatalf("repeat request must return accepted job: status=%d body=%s", rec.Code, rec.Body.String())
 			}
+		})
+	}
+}
+
+// Issue #522: firmware with cable-only updates refuses an upload over WiFi.
+// The update of a WiFi VibeTV therefore runs over the cable when that VibeTV
+// answers there, and is refused before any upload when it does not.
+func TestFirmwareUpdateInstallUsesCableForCableOnlyWiFiVibeTV(t *testing.T) {
+	const deviceID = "wifi-cable-only"
+	for _, tc := range []struct {
+		name         string
+		cableOnly    bool
+		cableAnswers bool
+		wantStatus   int
+		wantMode     string
+	}{
+		{name: "cable answers", cableOnly: true, cableAnswers: true, wantStatus: http.StatusAccepted, wantMode: "cable"},
+		{name: "cable silent", cableOnly: true, wantStatus: http.StatusConflict, wantMode: "wifi"},
+		{name: "legacy WiFi on a wall charger", wantStatus: http.StatusAccepted, wantMode: "wifi"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/hello" {
+					_, _ = io.WriteString(w, `{"ok":true}`)
+					return
+				}
+				mode := "legacy-wifi-only"
+				if tc.cableOnly {
+					mode = "wifi"
+				}
+				_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.46","deviceId":%q,"capabilities":{"transport":{"active":"wifi","mode":%q,"supported":["usb","wifi"],"cableOnlyUpdates":%t}}}`, deviceID, mode, tc.cableOnly)
+			}))
+			defer device.Close()
+			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: device.URL, DeviceID: deviceID, DeviceToken: "pair-token"})
+			cableMode := "wifi"
+			server.resolveCablePort = func(_, expected string) (string, error) {
+				if !tc.cableOnly {
+					t.Error("a legacy WiFi VibeTV must not be looked for on the cable")
+				}
+				if !tc.cableAnswers || expected != deviceID {
+					return "", usb.ErrDeviceHelloUnavailable
+				}
+				return "/dev/mock-cable", nil
+			}
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				return protocol.DeviceHello{
+					Kind: "hello", DeviceID: deviceID, Board: "esp8266-smalltv-st7789", Firmware: "1.0.46",
+					Features:     []string{protocol.FeatureCableTransferV1},
+					Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: cableMode, Supported: []string{"usb", "wifi"}}},
+				}, nil
+			}
+			server.setCableConnectionMode = func(_, _, mode string) error {
+				cableMode = mode
+				return nil
+			}
+			server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+			updated := make(chan string, 1)
+			server.updateFirmware = func(_ context.Context, _ string, cfg runtimeconfig.Config, _ firmwareUpdateRequest, _ io.Writer) error {
+				updated <- cfg.ConnectionMode
+				return errors.New("stop after the transport choice")
+			}
+
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			cfg, err := server.config()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ConnectionMode != tc.wantMode {
+				t.Fatalf("connection mode %q, want %q", cfg.ConnectionMode, tc.wantMode)
+			}
+			if tc.wantStatus == http.StatusConflict {
+				if !strings.Contains(rec.Body.String(), "firmware_update_cable_required") {
+					t.Fatalf("refusal must ask for the USB cable: %s", rec.Body.String())
+				}
+				if _, running := server.activeFirmwareUpdateJob(); running {
+					t.Fatal("no update may start while the cable is silent")
+				}
+				return
+			}
+			select {
+			case got := <-updated:
+				if got != tc.wantMode {
+					t.Fatalf("update ran in %q mode, want %q", got, tc.wantMode)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("update did not start")
+			}
+			for attempt := 0; attempt < 500; attempt++ {
+				if _, running := server.activeFirmwareUpdateJob(); !running {
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			t.Fatal("update job did not finish")
 		})
 	}
 }

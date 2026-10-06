@@ -52,6 +52,10 @@ type Config struct {
 	KnownDevices                   []KnownDevice          `json:"knownDevices,omitempty"`
 	CableAutoBindDisabled          bool                   `json:"cableAutoBindDisabled,omitempty"`
 	ConnectionModeChoiceRequired   bool                   `json:"connectionModeChoiceRequired,omitempty"`
+	// LegacyWiFiDeviceID is the WiFi VibeTV that ran, or was updated from,
+	// firmware from before cable-only updates. Once it answers over the USB
+	// cable the app connects it by Cable (issue #498).
+	LegacyWiFiDeviceID string `json:"legacyWifiDeviceId,omitempty"`
 	ProviderDisplay                *ProviderDisplayConfig `json:"providerDisplay,omitempty"`
 	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
 }

@@ -45,6 +45,7 @@ import {
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   deviceUsesCable,
+  legacyWiFiDeviceAnsweredCable,
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
@@ -1591,6 +1592,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [acceptDeviceSnapshot, runCompanion],
   );
 
+  // Issue #498: the Companion reports when the legacy WiFi VibeTV answered
+  // over the USB cable. Once per VibeTV and app run, the same switch as USB-C
+  // in Settings; the Companion drops its note with that request. If the
+  // switch fails, VibeTV keeps working over WiFi and Settings still offers
+  // USB-C.
+  const cableSwitchAttemptedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const deviceId = device?.deviceId?.trim();
+    if (
+      !deviceId ||
+      connectionMode !== "wifi" ||
+      busyAction !== null ||
+      cableSwitchAttemptedRef.current === deviceId ||
+      !legacyWiFiDeviceAnsweredCable(device)
+    ) {
+      return;
+    }
+    cableSwitchAttemptedRef.current = deviceId;
+    void selectSetupConnectionMode("cable", deviceId).catch(() =>
+      setLastError(null),
+    );
+  }, [busyAction, connectionMode, device, selectSetupConnectionMode]);
+
   const scanSetupWiFiNetworks = useCallback(async (): Promise<
     WiFiNetwork[]
   > => {
@@ -2849,6 +2873,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           method: "POST",
           body: JSON.stringify(rescue ? { rescue } : {}),
         },
+        // Issue #522: the Companion may first connect a WiFi VibeTV by Cable.
+        { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
       );
       if (!payload.job) {
         throw {
