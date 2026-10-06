@@ -4757,3 +4757,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: On 2026-10-05 Marcus approved the fix for issue #498 ("ja mach das"): a VibeTV that setup found and updated over WiFi stays in WiFi mode, where an animated theme can run out of memory. Setup switches it to the cable when the same VibeTV answers over the USB cable; a VibeTV without USB data stays on WiFi.
 - Approved customer-visible result: While the app runs and the VibeTV it uses over WiFi leaves legacy WiFi mode because it answered over the USB cable, the app switches it to USB-C once, the same switch as choosing USB-C in Settings. Settings then shows USB-C selected. If the switch fails, VibeTV keeps working over WiFi without an error dialog and Settings still offers USB-C. A WiFi VibeTV that never answers the cable, and one whose customer chose WiFi on current firmware, stay on WiFi. No copy, layout or other control changes.
 - Scope: `control-center-app.tsx`, `control-center-types.ts` and its test. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — Merge of main into the legacy WiFi cable switch (#504)
+
+- User approval: Same decision as the entry "A legacy WiFi VibeTV that answers the cable switches to USB-C" (2026-10-05, Marcus: "ja mach das"). No new decision was needed.
+- Approved customer-visible result: Unchanged from that entry. `main` now contains #490 as one squashed commit, so this branch was merged with `main`; the result is `main` plus the unchanged change of that entry. No screen, copy, control or layout changes.
+- Scope: The merge commit only. This approves the pull request only, not merge, release, installation, or a device operation.
