@@ -134,7 +134,7 @@ describe("provider popup guidance", () => {
 // same refusal; the row must carry the provider's migration path instead.
 describe("a provider the account lost access to", () => {
   const reportedMessage =
-    "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh.";
+    "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.";
 
   it("shows the migration message and no sign-in or re-check loop", () => {
     const html = render({
