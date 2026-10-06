@@ -3545,7 +3545,20 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	if s.rejectActiveThemeInstall(w) {
 		return
 	}
+	if device := s.selectConnectionMode(w, r, mode, requestedDeviceID); device != nil {
+		writeJSON(w, http.StatusOK, struct {
+			OK             bool       `json:"ok"`
+			ConnectionMode string     `json:"connectionMode"`
+			Status         string     `json:"status"`
+			Device         deviceInfo `json:"device"`
+		}{OK: true, ConnectionMode: "cable", Status: "selected", Device: *device})
+	}
+}
 
+// selectConnectionMode is the one switch between Cable and WiFi. The caller
+// holds firmwareUpdateStartMu. It writes every response itself except the one
+// for a selected Cable, whose device it returns.
+func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mode, requestedDeviceID string) (cable *deviceInfo) {
 	s.deviceMaintenanceMu.Lock()
 	defer s.deviceMaintenanceMu.Unlock()
 	s.repairMu.Lock()
@@ -3864,12 +3877,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 	device := s.cableDeviceInfo(r.Context(), cfg, hello)
 	device.Paired = !pairingRequired || cableToken != ""
-	writeJSON(w, http.StatusOK, struct {
-		OK             bool       `json:"ok"`
-		ConnectionMode string     `json:"connectionMode"`
-		Status         string     `json:"status"`
-		Device         deviceInfo `json:"device"`
-	}{OK: true, ConnectionMode: "cable", Status: "selected", Device: device})
+	return &device
 }
 
 // waitForCableHello waits up to cableTransitionWait for the expected VibeTV to
@@ -5412,6 +5420,24 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		_, hello, ok = s.requireCableControlDevice(w, cfg)
 	} else {
 		cfg, hello, ok = s.requireDevice(w, r)
+		if transport := hello.Normalize().Capabilities.Transport; ok &&
+			transport.CableOnlyUpdates != nil && *transport.CableOnlyUpdates {
+			// Issue #522: this firmware refuses an upload over WiFi. If this
+			// VibeTV answers on the USB cable, connect it by Cable and update
+			// there; if not, say so before anything is uploaded.
+			if _, err := s.resolveCablePort("", hello.DeviceID); err != nil {
+				writeJSON(w, http.StatusConflict, errorResponse{OK: false, Error: firmwareUpdateErrorPayload(nil, "cable_required")})
+				return
+			}
+			if s.selectConnectionMode(w, r, "cable", hello.DeviceID) == nil {
+				return
+			}
+			if cfg, err = s.config(); err != nil {
+				writeInternalError(w, err)
+				return
+			}
+			_, hello, ok = s.requireCableControlDevice(w, cfg)
+		}
 	}
 	if !ok {
 		return
@@ -7341,7 +7367,7 @@ func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 		return apiError{
 			Code:       "firmware_update_cable_required",
 			Message:    "VibeTV installs updates only over the USB cable.",
-			NextAction: "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then update again.",
+			NextAction: "Connect VibeTV to this Mac with the USB cable, then update again.",
 		}
 	}
 	return apiError{

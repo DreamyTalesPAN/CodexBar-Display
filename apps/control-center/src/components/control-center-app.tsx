@@ -2873,6 +2873,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           method: "POST",
           body: JSON.stringify(rescue ? { rescue } : {}),
         },
+        // Issue #522: the Companion may first connect a WiFi VibeTV by Cable.
+        { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
       );
       if (!payload.job) {
         throw {
