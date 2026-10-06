@@ -412,23 +412,15 @@ inline int64_t CurrentProviderSlotRemainingSecs(
 }
 
 // A deadline that merely counted down to zero is not idle: it reached the
-// reset the host did send, and the next frame carries the new one. Both
-// predicates therefore read the deadline the host sent, never the locally
-// counted remainder, and both go false as soon as trust turns stale.
+// reset the host did send, and the next frame carries the new one. This
+// therefore reads the deadline the host sent, never the locally counted
+// remainder, and goes false as soon as trust turns stale.
 inline bool UsageWindowIsIdle(
     const RuntimeState& state,
     size_t slotIndex,
     unsigned long nowMillis) {
   return RemainingSecsAreIdle(
       CurrentUsageWindowRemainingSecs(state, slotIndex, nowMillis));
-}
-
-inline bool ProviderSlotIsIdle(
-    const RuntimeState& state,
-    size_t slotIndex,
-    unsigned long nowMillis) {
-  return RemainingSecsAreIdle(
-      CurrentProviderSlotRemainingSecs(state, slotIndex, nowMillis));
 }
 
 inline bool IsSafeIdentifier(const String& value, bool allowSourceChars) {
