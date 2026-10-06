@@ -264,6 +264,27 @@ textarea {
   --sidebar-ring: #CCFF00;
 }
 
+/* "Increase contrast" (macOS) and its web equivalent: separators and control
+   outlines become clearly visible and keyboard focus gets a solid outline.
+   Windows contrast themes arrive as forced-colors, which the browser applies
+   by itself. */
+@media (prefers-contrast: more) {
+  :root {
+    --border: #707070;
+    --input: #1B1B1B;
+  }
+
+  .dark {
+    --border: #A0A0A0;
+    --input: #EDEDED;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

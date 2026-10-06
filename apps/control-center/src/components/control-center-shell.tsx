@@ -332,6 +332,7 @@ function ShellNavButton({
         <SidebarMenuBadge
           aria-label="Update available"
           className="top-1/2! -translate-y-1/2"
+          role="img"
         >
           <span className="size-2 rounded-full bg-sidebar-primary" />
         </SidebarMenuBadge>

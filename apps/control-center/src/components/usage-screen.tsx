@@ -6,7 +6,7 @@ import {
   Info,
   RefreshCw,
 } from "lucide-react";
-import { type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -408,15 +408,20 @@ function UsageProviderTile({
 }) {
   const tokenEvidence = providerHasTokenEvidence(provider);
   const providerStale = provider.stale && !tokenEvidence;
+  // Names the card after its provider, so "Session: 12% used" is never read
+  // without saying whose it is.
+  const titleId = useId();
   return (
     <Card
+      aria-labelledby={titleId}
+      role="group"
       className={cn(
         "h-full min-h-[248px] [--card-spacing:--spacing(5)]",
         providerStale && "opacity-65",
       )}
     >
       <CardHeader>
-        <CardTitle className="break-words text-xl font-black">
+        <CardTitle className="break-words text-xl font-black" id={titleId}>
           {provider.label || provider.id}
         </CardTitle>
         {providerStale || provider.status ? (
