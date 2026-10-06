@@ -96,6 +96,7 @@ export type ThemeLibraryDeviceInfo = {
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
+  connectionState?: string;
   board?: string;
   firmware?: string;
   activeTheme?: string;
@@ -908,18 +909,21 @@ function ThemeListItem({
     screensaverInstallLocked
       ? { reason: "Turn on Show screensaver first." }
       : null;
+  // The VibeTV cannot draw its active theme (#498): the way out is another
+  // theme, so that state must not block installing one.
+  const themeNotShown = device?.connectionState === "display_render_failed";
   const blocker =
     screensaverLockBlocker ??
     (theme
       ? buildThemeInstallBlocker({
           device,
           theme,
-          allowUnreadyInstall: retryingFailedInstall,
+          allowUnreadyInstall: retryingFailedInstall || themeNotShown,
           themeInstallBlockedReason,
           themeInstallEnabled,
         })
       : buildCustomThemeInstallBlocker({
-          allowUnreadyInstall: retryingFailedInstall,
+          allowUnreadyInstall: retryingFailedInstall || themeNotShown,
           device,
           themeInstallBlockedReason,
           themeInstallEnabled,

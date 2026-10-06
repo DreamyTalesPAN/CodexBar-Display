@@ -5685,6 +5685,7 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 	for _, recovering := range []string{
 		`"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":28800`,
 		`"renderError":"low_heap"`,
+		`"renderError":"low_heap_full_render"`,
 	} {
 		renderHealth = recovering
 		if got := status(); got.ConnectionState == deviceConnectionRenderFailed || !got.Connected || got.Ready {
