@@ -31,6 +31,8 @@ constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldProviderSlots = 1UL << 13;
 // A ticking reset must not invalidate slot-owned labels, sprites, or progress bars.
 constexpr uint32_t kThemeSpecFieldUsageWindowReset = 1UL << 14;
+// CodexBar's pace for a usage window; unlike its countdown it does not tick.
+constexpr uint32_t kThemeSpecFieldUsageWindowPace = 1UL << 15;
 constexpr size_t kMaxThemeSpecProviderSlots = 2;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
@@ -609,13 +611,17 @@ inline const char* UsageWindowField(const char* key) {
   return "percent";
 }
 
-// A countdown and CodexBar's pace both end with their window's reset, so both
-// repaint when it moves or expires. Compact countdowns: us1r/us2r, pv1r/pv2r.
+// A countdown repaints whenever it moves. Compact countdowns: us1r/us2r,
+// pv1r/pv2r.
 inline bool UsageWindowKeyFollowsReset(const char* key) {
   key = SafeText(key);
-  const char* field = UsageWindowField(key);
-  return std::strcmp(field, "reset") == 0 || std::strncmp(field, "Pace", 4) == 0 ||
-         (std::strlen(key) == 4 && key[3] == 'r');
+  return std::strcmp(UsageWindowField(key), "reset") == 0 || (std::strlen(key) == 4 && key[3] == 'r');
+}
+
+// CodexBar's pace repaints only when the pace itself changes or its window's
+// countdown runs out, not with every tick of that countdown.
+inline bool UsageWindowKeyShowsPace(const char* key) {
+  return std::strncmp(UsageWindowField(key), "Pace", 4) == 0;
 }
 
 inline bool UsageWindowIndexSupported(int index) {
@@ -964,7 +970,8 @@ inline uint32_t BindingFieldMask(const char* binding) {
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
     return kThemeSpecFieldUsageWindows |
-           (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0);
+           (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0) |
+           (UsageWindowKeyShowsPace(binding) ? kThemeSpecFieldUsageWindowPace : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u")) {
     return kThemeSpecFieldUsageMode;

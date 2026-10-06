@@ -205,6 +205,7 @@ struct ThemeSpecLiveUse {
   uint32_t fields = 0;
   uint8_t usageWindows = 0;       // bit i: usage window i
   uint8_t usageWindowResets = 0;  // bit i: usage window i's countdown
+  uint8_t usageWindowPaces = 0;   // bit i: usage window i's CodexBar pace
   uint8_t providerSlots = 0;
   uint8_t providerSlotResets = 0;
 
@@ -213,6 +214,7 @@ struct ThemeSpecLiveUse {
     use.fields = 0xFFFFFFFFUL;
     use.usageWindows = 0xFF;
     use.usageWindowResets = 0xFF;
+    use.usageWindowPaces = 0xFF;
     use.providerSlots = 0xFF;
     use.providerSlotResets = 0xFF;
     return use;
@@ -220,6 +222,7 @@ struct ThemeSpecLiveUse {
   bool Uses(uint32_t field) const { return (fields & field) != 0; }
   bool UsesUsageWindow(size_t i) const { return (usageWindows >> i) & 1U; }
   bool UsesUsageWindowReset(size_t i) const { return (usageWindowResets >> i) & 1U; }
+  bool UsesUsageWindowPace(size_t i) const { return (usageWindowPaces >> i) & 1U; }
   bool UsesProviderSlot(size_t i) const { return (providerSlots >> i) & 1U; }
   bool UsesProviderSlotReset(size_t i) const { return (providerSlotResets >> i) & 1U; }
 };
@@ -527,10 +530,15 @@ inline bool DecodeResetTrustRecord(
   return true;
 }
 
-// The countdown and the CodexBar pace that ends with it. Only themes that show
-// either repaint for them: pace moves with the clock, not only with usage.
+// Only themes that show a countdown repaint when it moves.
 inline bool UsageWindowResetChanged(const UsageWindow& previous, const UsageWindow& next) {
-  return previous.resetSecs != next.resetSecs || previous.pace != next.pace;
+  return previous.resetSecs != next.resetSecs;
+}
+
+// Only themes that show CodexBar's pace repaint for it: when the pace changes,
+// or when the countdown it ends with runs out or starts again.
+inline bool UsageWindowPaceChanged(const UsageWindow& previous, const UsageWindow& next) {
+  return previous.pace != next.pace || (previous.resetSecs > 0) != (next.resetSecs > 0);
 }
 
 inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
@@ -622,6 +630,9 @@ inline void AddThemeSpecSlotKeyUse(const char* key, ThemeSpecLiveUse& use) {
     use.usageWindows |= static_cast<uint8_t>(1U << index);
     if (themespec::UsageWindowKeyFollowsReset(key)) {
       use.usageWindowResets |= static_cast<uint8_t>(1U << index);
+    }
+    if (themespec::UsageWindowKeyShowsPace(key)) {
+      use.usageWindowPaces |= static_cast<uint8_t>(1U << index);
     }
   }
 }
@@ -759,7 +770,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     if (use.UsesUsageWindow(i) &&
-        UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], use.UsesUsageWindowReset(i))) {
+        (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], use.UsesUsageWindowReset(i)) ||
+         (use.UsesUsageWindowPace(i) && UsageWindowPaceChanged(previous.usageWindows[i], next.usageWindows[i])))) {
       return true;
     }
   }
@@ -815,9 +827,13 @@ inline uint32_t ThemeSpecLiveChangedFields(
     if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
       fields |= themespec::kThemeSpecFieldUsageWindows;
     }
-    if (UsageWindowResetChanged(previous.usageWindows[i], next.usageWindows[i]) &&
-        use.UsesUsageWindowReset(i)) {
+    if (use.UsesUsageWindowReset(i) &&
+        UsageWindowResetChanged(previous.usageWindows[i], next.usageWindows[i])) {
       fields |= themespec::kThemeSpecFieldUsageWindowReset;
+    }
+    if (use.UsesUsageWindowPace(i) &&
+        UsageWindowPaceChanged(previous.usageWindows[i], next.usageWindows[i])) {
+      fields |= themespec::kThemeSpecFieldUsageWindowPace;
     }
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {

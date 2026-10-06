@@ -3793,6 +3793,8 @@ void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   // A token outside the contract is no pace at all.
   TEST_ASSERT_EQUAL_UINT8(0, windows[2].pace.state);
   TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot2PaceState}"}]})JSON")).UsesUsageWindowPace(1));
+  TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecLiveUseForRaw(
       String(R"JSON({"p":[{"t":"tx","v":"{usageSlot2PaceState}"}]})JSON")).UsesUsageWindowReset(1));
 
   // Only the pace moved: the pace theme repaints its pace primitive.
@@ -3801,7 +3803,22 @@ void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, paceMoved, 2000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
-  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowReset) != 0);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowPace) != 0);
+
+  // Only the countdown ticked, as it does with every frame: nothing the pace
+  // theme shows changed, so nothing is repainted.
+  const char* countdownTicked =
+      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":11998,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownTicked, 4000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
+
+  // The countdown ran out: the pace is gone, and that is repainted.
+  const char* countdownGone =
+      R"JSON({"v":2,"provider":"claude","usageWindows":[{"id":"session","label":"Session","percent":92,"resetSecs":0,"pace":{"delta":-24,"state":"reserve","lasts":true}}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownGone, 6000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowPace) != 0);
 
   // A theme without pace bindings ignores pace that moves with the clock.
   RuntimeState usageOnly;
