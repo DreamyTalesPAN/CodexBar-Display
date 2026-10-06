@@ -36,6 +36,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { copyForHost } from "@/lib/customer-platform";
 import {
+  deviceIsCustomerConnected,
   deviceIsReady,
   type DeviceInfo,
   type SupportDiagnostics,
@@ -86,7 +87,7 @@ export function LogsScreen({
   supportReportBusy = false,
   windowsHost = false,
 }: LogsScreenProps) {
-  const deviceConnected = deviceIsReady(device);
+  const deviceConnected = deviceIsCustomerConnected(device);
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
 

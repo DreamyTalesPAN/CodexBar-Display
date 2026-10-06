@@ -1781,9 +1781,17 @@ func (s *Server) withConfiguredConnectionState(
 	// window above keeps an unreachable device Connected, and that one really
 	// is reconnecting.
 	if streamConnected || (reachable && device.Paired) {
-		if device.Display != nil && device.Display.ThemeSpec != nil && !device.Display.ThemeSpec.Active {
-			device.ConnectionState = deviceConnectionSetup
-			return device
+		if device.Display != nil && device.Display.ThemeSpec != nil {
+			spec := device.Display.ThemeSpec
+			if !spec.Active {
+				device.ConnectionState = deviceConnectionSetup
+				return device
+			}
+			if spec.RenderOK != nil && !*spec.RenderOK &&
+				(device.Stream == nil || device.Stream.ErrorCode != "provider_setup_required") {
+				device.ConnectionState = deviceConnectionRenderFailed
+				return device
+			}
 		}
 		device.ConnectionState = deviceConnectionNoProvider
 		return device
@@ -1795,6 +1803,11 @@ func (s *Server) withConfiguredConnectionState(
 // A reachable, paired device whose only missing piece is AI usage is not
 // reconnecting. Naming that separately keeps the connection story honest.
 const deviceConnectionNoProvider = "provider_setup_required"
+
+// Issue #498: a reachable, paired device that cannot draw its active theme has
+// a theme problem. Calling it "provider setup required" sent the customer to
+// the AI provider and the firmware.
+const deviceConnectionRenderFailed = "display_render_failed"
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {
 	if id := strings.ToLower(strings.TrimSpace(cfg.DeviceID)); id != "" {
@@ -9164,6 +9177,12 @@ func themeInstallErrorPayload(err error) (int, apiError) {
 	message := "Theme install failed."
 	if detail := sanitizeErrorDetail(err); detail != "" {
 		message = "Theme install failed: " + detail
+	}
+	// Issue #498: the theme is on the VibeTV but it cannot draw it. The raw
+	// render health is for the support report, not for the customer's dialog.
+	var installErr *themeinstall.InstallError
+	if errors.As(err, &installErr) && installErr.Op == "theme-pack/render-health" {
+		code, message, next = "display_render_failed", "VibeTV can't show this theme.", "Choose another theme."
 	}
 	return http.StatusBadGateway, apiError{
 		Code:       code,

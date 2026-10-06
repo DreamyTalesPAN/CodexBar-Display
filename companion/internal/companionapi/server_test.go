@@ -5634,6 +5634,66 @@ func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.
 	}
 }
 
+// Issue #498: a theme that fails to render (here Claude Creature on the WiFi
+// heap) is a theme problem. The VibeTV is connected and the provider is fine.
+func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.45","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude--9-5c74ca.json","renderOk":false,"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba"}},"render":{"fullCount":4,"partialCount":9,"lastKind":"theme_spec_usage"}}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	stream := displayStreamInfo{Running: true, Healthy: true, Target: device.URL, LastTarget: device.URL}
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return stream }
+	status := func() deviceInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v body=%s", err, rec.Body.String())
+		}
+		return got.Device
+	}
+
+	got := status()
+	if !got.Active || !got.Connected || !got.Paired || got.Ready {
+		t.Fatalf("render failure must leave the VibeTV connected and not ready: %+v", got)
+	}
+	if got.ConnectionState != deviceConnectionRenderFailed {
+		t.Fatalf("connectionState=%q, want %q", got.ConnectionState, deviceConnectionRenderFailed)
+	}
+
+	stream = displayStreamInfo{Running: true, Target: device.URL, ErrorCode: "provider_setup_required"}
+	if got := status(); got.ConnectionState != deviceConnectionNoProvider {
+		t.Fatalf("a missing provider keeps its own state, got %q", got.ConnectionState)
+	}
+}
+
+func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
+	_, got := themeInstallErrorPayload(&themeinstall.InstallError{
+		Op:   "theme-pack/render-health",
+		Code: errcode.UpgradeFlashFirmware,
+		Err:  errors.New(`theme render not healthy: active=true path="/themes/u/claude--9-5c74ca.json" renderOk=false renderError="low_heap_cba_buffer" renderErrorAsset="/themes/u/cld-i.cba" activeTheme="claude-creature"`),
+		Hint: "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output",
+	})
+	want := apiError{Code: "display_render_failed", Message: "VibeTV can't show this theme.", NextAction: "Choose another theme."}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
 // Regression test for the live-observed customer failure (2026-08-06): the
 // Control Center bounced between the Overview and the "Choose a VibeTV"
 // setup screen because a single missed /hello probe flipped Connected to

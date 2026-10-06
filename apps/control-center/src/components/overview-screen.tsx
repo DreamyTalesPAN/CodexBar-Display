@@ -62,6 +62,9 @@ export function OverviewScreen({
   const connected = deviceIsCustomerConnected(device);
   const displayReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
+  // Issue #498: the Companion names a theme the VibeTV cannot draw.
+  const themeNotShown =
+    connected && device?.connectionState === "display_render_failed";
   const reconnecting =
     deviceIsActive(device) &&
     !deviceIsReady(device) &&
@@ -134,6 +137,8 @@ export function OverviewScreen({
                   ? undefined
                   : updateOwnedDisconnect
                     ? "No action is required. Keep VibeTV connected to power and wait."
+                  : themeNotShown
+                    ? "VibeTV can't show this theme. Choose another theme."
                   : waitingForUsage
                     ? "This can take up to 60 seconds."
                     : "Waiting for a fresh image from VibeTV."
@@ -145,6 +150,8 @@ export function OverviewScreen({
                   ? "Live"
                   : updateOwnedDisconnect
                     ? "Update running"
+                  : themeNotShown
+                    ? "Theme not shown"
                   : waitingForUsage
                     ? "Waiting for usage"
                     : "Waiting for first image"

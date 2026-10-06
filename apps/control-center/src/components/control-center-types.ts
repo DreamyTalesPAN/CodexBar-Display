@@ -275,7 +275,8 @@ export type DeviceInfo = {
     | "ready"
     | "reconnecting"
     | "setup_required"
-    | "provider_setup_required";
+    | "provider_setup_required"
+    | "display_render_failed";
   lastSeenAt?: string;
   board?: string;
   firmware?: string;

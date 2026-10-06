@@ -26,6 +26,29 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Start using any AI provider.");
   });
 
+  it("names a theme VibeTV cannot draw instead of waiting for an image (#498)", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: true,
+          deviceId: "14799300",
+          paired: true,
+          ready: false,
+          connectionState: "display_render_failed",
+        }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV is connected");
+    expect(html).toContain("Theme not shown");
+    expect(html).toContain(
+      "VibeTV can&#x27;t show this theme. Choose another theme.",
+    );
+    expect(html).not.toContain("Waiting for first image");
+  });
+
   it("keeps a genuinely disconnected selected VibeTV not connected", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
