@@ -1814,7 +1814,8 @@ const deviceConnectionRenderFailed = "display_render_failed"
 
 // renderOk=false also covers states the firmware leaves on its own, and one
 // health reading has to tell them apart without remembering the last one.
-//   - "low_heap": a full redraw found no heap and retries after 750 ms. One
+//   - "low_heap" ("low_heap_full_render" on older firmware): a full redraw
+//     found no heap and retries after 750 ms. One
 //     reading cannot tell a single miss from a theme that never fits, so it is
 //     not named here and stays "waiting for an image".
 //   - "low_heap_cba_buffer": the animation found no frame buffer. The error
@@ -1828,7 +1829,7 @@ func themeCannotBeDrawn(spec *themeSpecHealth) bool {
 		return false
 	}
 	switch spec.RenderError {
-	case "low_heap":
+	case "low_heap", "low_heap_full_render":
 		return false
 	case "low_heap_cba_buffer":
 		return spec.cbaBufferBytes == 0
