@@ -1717,16 +1717,18 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	// What the VibeTV now shows. Reported after every frame; the timeline keeps
-	// the changes.
+	// the changes. Every frame has a provider and every hello a firmware, so a
+	// missing one (an error frame) is recorded as unknown instead of leaving
+	// the last value standing. A frame names a theme only when it carries one.
 	usage := timeline.Event{Component: "usage", State: "shown"}
 	if frame.UsageUnavailable || frame.Error != "" {
 		usage = timeline.Event{Component: "usage", State: "unavailable", Reason: result.selectionReason}
 	}
 	events := []timeline.Event{
 		{Component: "device", State: "reachable"},
-		{Component: "firmware", State: caps.Firmware},
+		{Component: "firmware", State: timelineStateOrUnknown(caps.Firmware)},
 		{Component: "theme", State: frame.Theme},
-		{Component: "provider", State: frame.Provider},
+		{Component: "provider", State: timelineStateOrUnknown(frame.Provider)},
 		usage,
 	}
 	if result.failureErr == nil || result.usedLastGood {
@@ -3029,4 +3031,11 @@ func compactUpdateCandidates(frame protocol.Frame) []protocol.Frame {
 	candidates = append(candidates, withoutTheme)
 
 	return candidates
+}
+
+func timelineStateOrUnknown(state string) string {
+	if strings.TrimSpace(state) == "" {
+		return "unknown"
+	}
+	return state
 }

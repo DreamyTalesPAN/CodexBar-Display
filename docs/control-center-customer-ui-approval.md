@@ -5146,3 +5146,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Not yet confirmed by Paul; drafted during the unattended night batch of 2026-10-06, confirmation required before merge. Two further findings of the Codex review of PR #524.
 - Approved customer-visible result: No new screen, dialog, button, or text. The preview shows "No active session" only when the frame also names where its reset time came from, as VibeTV requires. A theme whose scene found no memory and is being retried (`parse_fail`) does not show "Theme not shown".
 - Scope: `live-vibetv-preview.tsx`, its test, the render rule in `companion/internal/companionapi/server.go`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-07 — Review follow-up: the timeline records a missing provider or firmware as unknown (#213)
+
+- User approval: Not yet confirmed by Paul; drafted during the unattended night batch of 2026-10-06, confirmation required before merge.
+- Approved customer-visible result: Proposed, not yet approved. No screen, text, button, or layout in the Control Center changes. In the downloaded support report, the timeline shows `provider unknown` or `firmware unknown` when a frame or hello carried none, instead of leaving the previous value as the latest entry.
+- Scope: `companion/internal/daemon/daemon.go`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
