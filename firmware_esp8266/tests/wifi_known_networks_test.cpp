@@ -134,7 +134,7 @@ bool testFirmwareWiring(const std::string& source) {
       "    wifiConnected = connectToSavedWifi(savedWifiCredentials) ||\n"
       "                    (!connectionTransitionPending && connectToKnownWifi());\n"
       "  }");
-  const std::size_t setupAp = source.find("startSetupAccessPoint();", boot);
+  const std::size_t setupAp = source.find("enterWifiSetup();", boot);
   return expect(clear.find("forgetKnownWifiNetworks()") != std::string::npos,
                 "Reset WiFi must forget every remembered network") &&
          expect(forget.find("LittleFS.remove(kKnownWifiTemporaryPath)") != std::string::npos,
