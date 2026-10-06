@@ -201,7 +201,7 @@ const ENTRIES: Entry[] = [
   { id: "02c", label: "· Not found" },
   { id: "02d", label: "· Connect failed" },
   { id: "02f", label: "· Update failed" },
-  { id: "02g", label: "· App behind" },
+  { id: "02g", label: "· Check failed" },
   { id: "03b", label: "· Usage failed" },
 ];
 
@@ -497,7 +497,7 @@ export function SetupPreviewGallery() {
               onOpenChange={setDialogOpen}
               onResolve={noop}
               open={dialogOpen}
-              reason="mac_app_update_required"
+              reason="firmware_check_failed"
             />
           </>
         );
