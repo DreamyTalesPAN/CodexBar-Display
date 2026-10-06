@@ -74,6 +74,10 @@ type TransportCapabilities struct {
 	TransitionPending bool     `json:"transitionPending,omitempty"`
 	TransitionFrom    string   `json:"transitionFrom,omitempty"`
 	TransitionTo      string   `json:"transitionTo,omitempty"`
+	// CableOnlyUpdates is true on firmware that takes setup, pairing and
+	// updates only over the USB cable, false on a legacy WiFi VibeTV and
+	// missing on older firmware (issue #489).
+	CableOnlyUpdates *bool `json:"cableOnlyUpdates,omitempty"`
 }
 
 type AuthCapabilities struct {

@@ -994,3 +994,40 @@ func TestDeviceHelloNeverResetsABoardThatAnswers(t *testing.T) {
 		t.Fatalf("err=%v resets=%d", err, port.rtsPulses)
 	}
 }
+
+func TestSenderFactoryResetsExactCableDevice(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"factory-reset","status":"done","deviceId":"14799300"}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+
+	if err := sender.FactoryReset("/dev/mock", "14799300"); err != nil {
+		t.Fatalf("factory reset: %v", err)
+	}
+	want := `{"kind":"request","op":"factory-reset","deviceId":"14799300"}` + "\n"
+	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
+		t.Fatalf("unexpected factory reset request %#v", port.writePayloads)
+	}
+}
+
+func TestSenderFactoryResetRejectsFailureAndOtherDevice(t *testing.T) {
+	for _, reply := range []string{
+		`{"kind":"factory-reset","status":"failed","deviceId":"14799300"}`,
+		`{"kind":"factory-reset","status":"done","deviceId":"other"}`,
+		`{"kind":"error","code":"factory-reset-rejected"}`,
+	} {
+		port := newMockSerialPort()
+		port.readQueue = [][]byte{[]byte(reply + "\n")}
+		sender := NewSenderWithConfig(SenderConfig{
+			Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+			Sleep:       func(time.Duration) {},
+			HelloWindow: 10 * time.Millisecond,
+		})
+		if err := sender.FactoryReset("/dev/mock", "14799300"); err == nil {
+			t.Fatalf("expected factory reset failure for %s", reply)
+		}
+	}
+}

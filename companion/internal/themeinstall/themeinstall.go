@@ -42,6 +42,10 @@ var (
 
 var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#111111"},{"t":"tx","x":28,"y":58,"v":"INSTALLING","s":2,"c":"#B6FF00"},{"t":"tx","x":36,"y":94,"v":"NEW THEME","s":2,"c":"#FFFFFF"},{"t":"p","x":34,"y":150,"w":172,"h":18,"b":"s","c":"#B6FF00","bg":"#303030"}]}`)
 
+// ErrFirmwareUpdateCableOnly marks a VibeTV that takes firmware updates only
+// over the USB cable (#489), so a WiFi retry cannot succeed.
+var ErrFirmwareUpdateCableOnly = errors.New("VibeTV installs updates only over the USB cable")
+
 type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
 type PairTokenStore func(target, token string) error
 
@@ -229,11 +233,15 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			manifestURL = DefaultFirmwareManifestURL
 		}
 		if err := opts.FirmwareUpdater(ctx, resolvedTarget, manifestURL); err != nil {
+			hint := "keep VibeTV powered and on the same WiFi, then retry theme install"
+			if errors.Is(err, ErrFirmwareUpdateCableOnly) {
+				hint = "connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then retry theme install"
+			}
 			return Result{}, &InstallError{
 				Op:   "theme-pack/check-firmware",
 				Code: errcode.UpgradeFlashFirmware,
 				Err:  err,
-				Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+				Hint: hint,
 			}
 		}
 		fmt.Fprintln(out, "Rechecking device after firmware update...")
