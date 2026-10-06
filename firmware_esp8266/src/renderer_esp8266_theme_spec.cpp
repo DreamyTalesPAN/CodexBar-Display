@@ -103,6 +103,10 @@ struct AnimatedSpriteCache {
   unsigned long nextFrameAtMs = 0;
   int frameBufferWidth = 0;
   int frameBufferHeight = 0;
+  // The size the completed frame is drawn at. It differs from the buffer
+  // size when the sprite is enlarged, which is scaled during the push.
+  int frameDrawnWidth = 0;
+  int frameDrawnHeight = 0;
 };
 
 AnimatedSpriteCache animatedSpriteCaches[kAnimatedSpriteCacheSlots];
@@ -235,6 +239,8 @@ void releaseAnimatedSpriteBuffer(AnimatedSpriteCache& cache) {
   }
   cache.frameBufferWidth = 0;
   cache.frameBufferHeight = 0;
+  cache.frameDrawnWidth = 0;
+  cache.frameDrawnHeight = 0;
   cache.frameReadyToPush = false;
 }
 
@@ -725,11 +731,16 @@ bool prepareAnimatedSpriteBuffer(
     int targetHeight,
     bool hasClearColor,
     uint16_t clearColor) {
-  const int bufferWidth = targetWidth > 0 ? targetWidth : cache.width;
-  const int bufferHeight = targetHeight > 0 ? targetHeight : cache.height;
-  const uint32_t bufferBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(
-      bufferWidth,
-      bufferHeight);
+  const int drawnWidth = targetWidth > 0 ? targetWidth : cache.width;
+  const int drawnHeight = targetHeight > 0 ? targetHeight : cache.height;
+  const int bufferWidth = ThemeSpecRuntimePolicy::CbaBufferExtent(drawnWidth, cache.width);
+  const int bufferHeight = ThemeSpecRuntimePolicy::CbaBufferExtent(drawnHeight, cache.height);
+  // The drawn size keeps the 80 px limit too: an enlarged frame is pushed one
+  // drawn row at a time from a row of at most that width.
+  const uint32_t bufferBytes =
+      ThemeSpecRuntimePolicy::CbaBufferBytes(drawnWidth, drawnHeight) == 0
+          ? 0
+          : ThemeSpecRuntimePolicy::CbaBufferBytes(bufferWidth, bufferHeight);
   if (!hasClearColor || bufferBytes == 0 ||
       (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache)) {
     // Another sprite holds the shared frame buffer for its in-progress frame.
@@ -802,7 +813,26 @@ bool prepareAnimatedSpriteBuffer(
   cbaBufferContentionOwnerRow = -1;
   cache.frameBufferWidth = bufferWidth;
   cache.frameBufferHeight = bufferHeight;
+  cache.frameDrawnWidth = drawnWidth;
+  cache.frameDrawnHeight = drawnHeight;
   return true;
+}
+
+// One drawn row of an enlarged frame, picked from the smaller buffer.
+const uint16_t* scaledCbaFrameRow(
+    const AnimatedSpriteCache& cache,
+    int drawnRow,
+    uint16_t* row) {
+  const uint16_t* source =
+      cbaFrameBuffer +
+      ThemeSpecRuntimePolicy::CbaScaledSourceIndex(
+          drawnRow, cache.frameDrawnHeight, cache.frameBufferHeight) *
+          cache.frameBufferWidth;
+  for (int x = 0; x < cache.frameDrawnWidth; ++x) {
+    row[x] = source[ThemeSpecRuntimePolicy::CbaScaledSourceIndex(
+        x, cache.frameDrawnWidth, cache.frameBufferWidth)];
+  }
+  return row;
 }
 
 void pushCompletedAnimatedSpriteFrame(
@@ -813,17 +843,23 @@ void pushCompletedAnimatedSpriteFrame(
       cbaFrameBufferOwner != &cache) {
     return;
   }
+  const bool enlarged = cache.frameDrawnWidth != cache.frameBufferWidth ||
+                        cache.frameDrawnHeight != cache.frameBufferHeight;
+  const int pushes = enlarged ? cache.frameDrawnHeight : 1;
+  uint16_t drawnRow[ThemeSpecRuntimePolicy::kMaxCbaBufferWidth];
   const unsigned long pushStartUs = micros();
   {
     DisplayTransaction transaction;
     const bool previousSwapBytes = Tft().getSwapBytes();
     Tft().setSwapBytes(true);
-    Tft().pushImage(
-        x,
-        y,
-        cache.frameBufferWidth,
-        cache.frameBufferHeight,
-        cbaFrameBuffer);
+    for (int push = 0; push < pushes; ++push) {
+      Tft().pushImage(
+          x,
+          enlarged ? y + push : y,
+          enlarged ? cache.frameDrawnWidth : cache.frameBufferWidth,
+          enlarged ? 1 : cache.frameBufferHeight,
+          enlarged ? scaledCbaFrameRow(cache, push, drawnRow) : cbaFrameBuffer);
+    }
     Tft().setSwapBytes(previousSwapBytes);
   }
   cbaLastPushDurationUs = micros() - pushStartUs;
