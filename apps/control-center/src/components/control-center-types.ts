@@ -62,6 +62,7 @@ export type ProviderReadinessStatus =
   | "unsupported"
   | "no_usage_available"
   | "timeout"
+  | "rate_limited"
   | "config_error"
   | "engine_error"
   | "engine_incompatible"

@@ -393,10 +393,81 @@ describe("dynamic usage slot preview", () => {
       ],
       providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 0 }],
     });
+    // A frame that carries no deadline anywhere gives the device no basis to
+    // stand behind, so nothing in it is idle.
     expect(boundValue("us1r", frame)).toBe("Reset unavailable");
     expect(boundValue("us2r", frame)).toBe("Reset unavailable");
     expect(boundValue("usage.0.reset", frame)).toBe("Reset unavailable");
     expect(boundValue("pv1r", frame)).toBe("Reset unavailable");
+  });
+
+  // The Companion clears every countdown of a stale frame to zero but keeps
+  // its windows. The device renders "Reset unavailable" for those, and so must
+  // the preview: zero alone does not make a window idle.
+  it("calls a window idle only over a basis the device still trusts", () => {
+    const customerFrame = {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetSecs: 4 * 24 * 3600,
+      resetTrust: "live",
+      resetTrustSecs: 18000,
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
+    };
+    const savedAt = "2026-07-24T10:30:00Z";
+    const line = { t: "tx", v: "Resets in {usageSlot1Reset}" } as const;
+    expect(
+      renderTextPrimitive(line, buildFrameData(savedAt, customerFrame, new Date(savedAt))),
+    ).toBe("No active session");
+    // Past the five-hour trust budget.
+    expect(
+      renderTextPrimitive(
+        line,
+        buildFrameData(savedAt, customerFrame, new Date("2026-07-24T15:30:01Z")),
+      ),
+    ).toBe("Reset unavailable");
+    const stale = {
+      ...customerFrame,
+      resetSecs: 0,
+      resetTrust: "stale",
+      resetTrustSecs: 0,
+      usageWindows: customerFrame.usageWindows.map((window) => ({ ...window, resetSecs: 0 })),
+    };
+    expect(
+      renderTextPrimitive(line, buildFrameData(savedAt, stale, new Date(savedAt))),
+    ).toBe("Reset unavailable");
+  });
+
+  // A deadline that ran out between the frame being saved and now is not idle:
+  // it reached the reset the host did send, so the countdown is genuinely
+  // unavailable until the next frame arrives.
+  it("separates an idle window from a countdown that ran out", () => {
+    const frame = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 60,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 40, resetSecs: 60 },
+          { id: "weekly", label: "Weekly", percent: 0, resetSecs: 0 },
+        ],
+      },
+      new Date("2026-07-24T11:30:00Z"),
+    );
+    expect(boundValue("us1r", frame)).toBe("Reset unavailable");
+    expect(boundValue("us2r", frame)).toBe("No active session");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {us1r}" }, frame),
+    ).toBe("Reset unavailable");
+    // One line binding both cannot claim everything is merely idle.
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{us1r} / {us2r}" }, frame),
+    ).toBe("Reset unavailable");
   });
 
   it("keeps an unavailable slot empty rather than reporting it unavailable", () => {
@@ -423,23 +494,90 @@ describe("dynamic usage slot preview", () => {
     );
   });
 
-  // Pins the asymmetry so nobody "tidies" it later: RenderTextTemplate probes
-  // only the root tokens, so slot tokens really do substitute in place on the
-  // device and leave the surrounding text standing.
-  it("substitutes slot countdown tokens in place, like the firmware", () => {
-    const expired = buildFrameData("2026-07-24T10:30:00Z", {
+  // The root token owns no window of its own, so it may only name the idle
+  // state when every window the frame carries is idle. Anything else would
+  // dress an untrustworthy screen up as a merely idle account.
+  it("lets the root countdown name the idle state only when every window is idle", () => {
+    const idle = buildFrameData("2026-07-24T10:30:00Z", {
       v: 2,
-      provider: "codex",
-      label: "Codex",
+      provider: "claude",
+      label: "Claude",
       resetSecs: 0,
-      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+      usageSlots: [{ id: "session", label: "Session", percent: 0, resetSecs: 0 }],
+      // Another provider's deadline is the basis the device stands behind.
+      providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 7200 }],
+    });
+    expect(boundValue("reset", idle)).toBe("No active session");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {reset}" }, idle),
+    ).toBe("No active session");
+
+    const mixed = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 60,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 32, resetSecs: 60 },
+        ],
+      },
+      new Date("2026-07-24T11:30:00Z"),
+    );
+    expect(boundValue("reset", mixed)).toBe("Reset unavailable");
+  });
+
+  // A customer received a VibeTV reading "Resets in Reset unavailable": an idle
+  // Claude session carries no deadline, and the shipped theme hard-codes the
+  // "Resets in " prefix. A line whose only substitution is a countdown without
+  // a deadline collapses on the device, and an idle window names that state
+  // instead of reporting a fault, so the preview has to match.
+  it("collapses a line whose only value is an unavailable countdown", () => {
+    const idle = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetSecs: 4 * 24 * 3600,
+      usageSlots: [
+        { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "weekly", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
     });
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {usage.0.reset}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {usage.0.reset}" }, idle),
+    ).toBe("No active session");
     expect(
-      renderTextPrimitive({ t: "tx", v: "Reset in {us1r}" }, expired),
-    ).toBe("Reset in Reset unavailable");
+      renderTextPrimitive({ t: "tx", v: "Resets in {us1r}" }, idle),
+    ).toBe("No active session");
+  });
+
+  // The collapse is limited to countdown-only templates. A line that also
+  // substitutes a label or a percentage still carries information, so it keeps
+  // substituting in place exactly as the firmware does.
+  it("keeps substituting in place when the line carries another real value", () => {
+    const idle = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        resetSecs: 0,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+        ],
+      },
+      new Date("2026-07-24T10:30:00Z"),
+    );
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{us1l} {us1r}" }, idle),
+    ).toBe("Session No active session");
+    // A window that does have a deadline is untouched.
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Resets in {us2r}" }, idle),
+    ).toBe("Resets in 4d 0h");
   });
 
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
