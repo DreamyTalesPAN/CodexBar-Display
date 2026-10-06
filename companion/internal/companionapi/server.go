@@ -1822,6 +1822,9 @@ const deviceConnectionRenderFailed = "display_render_failed"
 //     found no heap and retries after 750 ms. One
 //     reading cannot tell a single miss from a theme that never fits, so it is
 //     not named here and stays "waiting for an image".
+//   - "parse_fail": also what a valid theme reports while its scene found no
+//     heap; the firmware retries the full render. An invalid spec is refused
+//     at activation and in the frame (#66), so this reading is the retry.
 //   - "low_heap_cba_buffer": the animation found no frame buffer. The error
 //     stays up until a whole clean pass has been drawn, which takes seconds
 //     after one tight moment. While the VibeTV holds a frame buffer it is
@@ -1833,7 +1836,7 @@ func themeCannotBeDrawn(spec *themeSpecHealth) bool {
 		return false
 	}
 	switch spec.RenderError {
-	case "low_heap", "low_heap_full_render":
+	case "low_heap", "low_heap_full_render", "parse_fail":
 		return false
 	case "low_heap_cba_buffer":
 		return spec.cbaBufferBytes == 0

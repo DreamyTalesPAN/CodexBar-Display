@@ -5140,3 +5140,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Not yet confirmed by Paul; drafted during the unattended night batch of 2026-10-06, confirmation required before merge. The Codex review of PR #524 found that the Control Center preview could read "No active session" for a 0 % window kept from a failed collection, while VibeTV shows "Reset unavailable" for it.
 - Approved customer-visible result: No new screen, dialog, button, or text. When usage is marked unavailable, the preview shows "Reset unavailable" for a window without a reset time, the same as VibeTV.
 - Scope: `live-vibetv-preview.tsx`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-07 — Review follow-up: the preview needs a named reset source; a retried render is not a theme problem (#448, #498)
+
+- User approval: Not yet confirmed by Paul; drafted during the unattended night batch of 2026-10-06, confirmation required before merge. Two further findings of the Codex review of PR #524.
+- Approved customer-visible result: No new screen, dialog, button, or text. The preview shows "No active session" only when the frame also names where its reset time came from, as VibeTV requires. A theme whose scene found no memory and is being retried (`parse_fail`) does not show "Theme not shown".
+- Scope: `live-vibetv-preview.tsx`, its test, the render rule in `companion/internal/companionapi/server.go`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
