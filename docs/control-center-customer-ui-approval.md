@@ -5094,3 +5094,9 @@ issue scope, or release permission never implies UI permission.
 - Approved files: This approval record only.
 - Scope: Recording hardware evidence. No code, theme, release, or customer
   device operation is part of this entry.
+
+## 2026-10-06 — Idle reset text carried onto the current branch, with the stale cases kept honest (#448)
+
+- User approval: Not yet confirmed by Paul; drafted during the unattended night batch of 2026-10-06, confirmation required before merge.
+- Approved customer-visible result: No new text. The results recorded for #448 on 2026-09-17, 2026-09-21 and 2026-09-22 are unchanged: an idle Claude session reads `No active session` instead of `Resets in Reset unavailable`, and a rate-limited provider check reads "Claude is limiting usage checks right now." with "Wait a few minutes, then check again. Nothing needs to be fixed." Three cases now show the already approved wording where the earlier branch showed the wrong one. The Control Center preview shows `Reset unavailable`, as the VibeTV does, when the frame is marked stale, when its five-hour trust budget has run out, or when it carries no reset time at all; it showed `No active session` there before. On the VibeTV, `No active session` changes back to `Reset unavailable` when the trust budget runs out even if no other countdown changes at that moment; it could stay on the screen before. In setup, a rate-limit answer that ends in "credentials were preserved" shows the wait message instead of asking the customer to sign in again.
+- Scope: the merge of `codex/issue-448-idle-reset-text` into this branch, `live-vibetv-preview.tsx`, `codexbar_display_core.h`, `renderer_esp8266.cpp`, `renderer_esp8266_theme_spec.cpp`, `companion/internal/codexbar/provider_setup.go`, their tests, and this approval record. Not verified on hardware in this batch. This covers the branch only, not merge, release, installation, or a device operation.
