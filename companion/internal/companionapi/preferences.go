@@ -724,7 +724,8 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				setting.Health == codexbar.ProviderHealthUnavailable) {
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
-		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {
+		} else if (setting.Health == codexbar.ProviderHealthUnavailable ||
+			setting.Health == codexbar.ProviderHealthRateLimited) && lastSuccess[setting.ID] != "" {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
@@ -922,7 +923,9 @@ func providerCanUseUsageEvidence(setting codexbar.ProviderSetting) bool {
 		(setting.Health == "" ||
 			setting.Health == codexbar.ProviderHealthHealthy ||
 			setting.Health == codexbar.ProviderHealthChecking ||
-			setting.Health == codexbar.ProviderHealthUnavailable)
+			setting.Health == codexbar.ProviderHealthUnavailable ||
+			// A refused check says nothing against a reading that did arrive.
+			setting.Health == codexbar.ProviderHealthRateLimited)
 }
 
 func providerPreferenceID(providerID string) string {
