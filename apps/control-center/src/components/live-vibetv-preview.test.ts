@@ -393,12 +393,52 @@ describe("dynamic usage slot preview", () => {
       ],
       providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 0 }],
     });
-    // A window the host sent without any deadline is idle, not broken: the
-    // device says the same, so the preview must not report a fault here.
-    expect(boundValue("us1r", frame)).toBe("No active session");
-    expect(boundValue("us2r", frame)).toBe("No active session");
-    expect(boundValue("usage.0.reset", frame)).toBe("No active session");
-    expect(boundValue("pv1r", frame)).toBe("No active session");
+    // A frame that carries no deadline anywhere gives the device no basis to
+    // stand behind, so nothing in it is idle.
+    expect(boundValue("us1r", frame)).toBe("Reset unavailable");
+    expect(boundValue("us2r", frame)).toBe("Reset unavailable");
+    expect(boundValue("usage.0.reset", frame)).toBe("Reset unavailable");
+    expect(boundValue("pv1r", frame)).toBe("Reset unavailable");
+  });
+
+  // The Companion clears every countdown of a stale frame to zero but keeps
+  // its windows. The device renders "Reset unavailable" for those, and so must
+  // the preview: zero alone does not make a window idle.
+  it("calls a window idle only over a basis the device still trusts", () => {
+    const customerFrame = {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetSecs: 4 * 24 * 3600,
+      resetTrust: "live",
+      resetTrustSecs: 18000,
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
+    };
+    const savedAt = "2026-07-24T10:30:00Z";
+    const line = { t: "tx", v: "Resets in {usageSlot1Reset}" } as const;
+    expect(
+      renderTextPrimitive(line, buildFrameData(savedAt, customerFrame, new Date(savedAt))),
+    ).toBe("No active session");
+    // Past the five-hour trust budget.
+    expect(
+      renderTextPrimitive(
+        line,
+        buildFrameData(savedAt, customerFrame, new Date("2026-07-24T15:30:01Z")),
+      ),
+    ).toBe("Reset unavailable");
+    const stale = {
+      ...customerFrame,
+      resetSecs: 0,
+      resetTrust: "stale",
+      resetTrustSecs: 0,
+      usageWindows: customerFrame.usageWindows.map((window) => ({ ...window, resetSecs: 0 })),
+    };
+    expect(
+      renderTextPrimitive(line, buildFrameData(savedAt, stale, new Date(savedAt))),
+    ).toBe("Reset unavailable");
   });
 
   // A deadline that ran out between the frame being saved and now is not idle:
@@ -464,6 +504,8 @@ describe("dynamic usage slot preview", () => {
       label: "Claude",
       resetSecs: 0,
       usageSlots: [{ id: "session", label: "Session", percent: 0, resetSecs: 0 }],
+      // Another provider's deadline is the basis the device stands behind.
+      providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 7200 }],
     });
     expect(boundValue("reset", idle)).toBe("No active session");
     expect(
@@ -497,8 +539,11 @@ describe("dynamic usage slot preview", () => {
       v: 2,
       provider: "claude",
       label: "Claude",
-      resetSecs: 0,
-      usageSlots: [{ id: "session", label: "Session", percent: 0, resetSecs: 0 }],
+      resetSecs: 4 * 24 * 3600,
+      usageSlots: [
+        { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "weekly", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
     });
     expect(
       renderTextPrimitive({ t: "tx", v: "Resets in {usage.0.reset}" }, idle),

@@ -78,6 +78,8 @@ type DisplayFrame = {
   sessionUnavailable?: boolean;
   weeklyUnavailable?: boolean;
   resetSecs?: number;
+  resetTrust?: string;
+  resetTrustSecs?: number;
   usageMode?: string;
   usageWindows?: UsageWindowFrame[];
   usageSlots?: UsageSlotFrame[];
@@ -1270,6 +1272,29 @@ export function buildFrameData(
   ).filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()));
   const slot1 = slots[0];
   const slot2 = slots[1];
+  const providerSlots = (displayFrame.providerSlots || []).filter((slot) =>
+    Boolean(slot.id?.trim() && slot.label?.trim()),
+  );
+  // Mirrors ApplyFrameResetTrust and CurrentResetTrust in
+  // codexbar_display_core.h: the device stands behind a frame's countdowns only
+  // while the frame carries at least one deadline, is not marked stale, and its
+  // trust budget has not run out. Without that basis a window with no deadline
+  // is unavailable, not idle.
+  const trustEnforced =
+    displayFrame.resetTrust === "live" || displayFrame.resetTrust === "offline";
+  const basisTrusted =
+    displayFrame.resetTrust !== "stale" &&
+    [displayFrame, ...slots, ...providerSlots].some(
+      (carrier) => (carrier.resetSecs ?? 0) > 0,
+    ) &&
+    (!trustEnforced ||
+      (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0);
+  // Mirrors UsageWindowIsIdle: a window the host sent without any deadline at
+  // all has nothing scheduled to reset. A deadline that merely counted down to
+  // zero since the frame was saved is not idle -- it reached the reset the
+  // host did send.
+  const windowIsIdle = (sourceResetSecs: number | undefined) =>
+    basisTrusted && (sourceResetSecs ?? 0) <= 0;
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -1296,15 +1321,13 @@ export function buildFrameData(
     usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
     usageSlot2Idle: Boolean(slot2) && windowIsIdle(slot2?.resetSecs),
-    providerSlots: (displayFrame.providerSlots || [])
-      .filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()))
-      .map((slot) => ({
-        label: slot.label || "",
-        percent: clampPercent(slot.percent),
-        resetSecs: remainingResetSeconds(slot.resetSecs),
-        available: true,
-        idle: windowIsIdle(slot.resetSecs),
-      })),
+    providerSlots: providerSlots.map((slot) => ({
+      label: slot.label || "",
+      percent: clampPercent(slot.percent),
+      resetSecs: remainingResetSeconds(slot.resetSecs),
+      available: true,
+      idle: windowIsIdle(slot.resetSecs),
+    })),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     hasTokenTotals:
@@ -1457,14 +1480,6 @@ const RESET_UNAVAILABLE = "Reset unavailable";
 // current and measured but has no deadline is idle, not broken: the customer
 // simply has not started a session yet, so nothing is scheduled to reset.
 const RESET_IDLE = "No active session";
-
-// Mirrors UsageWindowIsIdle in codexbar_display_core.h: a window the host sent
-// without any deadline at all has nothing scheduled to reset. A deadline that
-// merely counted down to zero since the frame was saved is not idle -- it
-// reached the reset the host did send.
-function windowIsIdle(sourceResetSecs: number | undefined): boolean {
-  return (sourceResetSecs ?? 0) <= 0;
-}
 
 // Mirrors RootResetIsIdle in theme_spec_renderer_core.h. The root {reset}
 // token owns no window, so it is idle only when every window the frame does
