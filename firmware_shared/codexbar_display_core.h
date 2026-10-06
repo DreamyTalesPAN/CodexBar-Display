@@ -521,11 +521,23 @@ inline bool DecodeResetTrustRecord(
   return true;
 }
 
+// Countdowns are drawn in whole minutes (FormatDuration) and 0 means "Reset
+// unavailable". A frame arrives every couple of seconds with a few seconds
+// less on the clock; comparing raw seconds repainted the countdown on every
+// frame although its text had not changed.
+inline int64_t ResetCountdownDisplayBucket(int64_t secs) {
+  return secs <= 0 ? -1 : secs / 60;
+}
+
+inline bool ResetCountdownDisplayChanged(int64_t previousSecs, int64_t nextSecs) {
+  return ResetCountdownDisplayBucket(previousSecs) != ResetCountdownDisplayBucket(nextSecs);
+}
+
 inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
   return previous.id != next.id ||
          previous.label != next.label ||
          previous.percent != next.percent ||
-         (includeReset && previous.resetSecs != next.resetSecs) ||
+         (includeReset && ResetCountdownDisplayChanged(previous.resetSecs, next.resetSecs)) ||
          previous.available != next.available;
 }
 
@@ -766,7 +778,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
          (use.Uses(themespec::kThemeSpecFieldSession) && previous.session != next.session) ||
          (use.Uses(themespec::kThemeSpecFieldWeekly) && previous.weekly != next.weekly) ||
-         (use.Uses(themespec::kThemeSpecFieldReset) && previous.resetSecs != next.resetSecs) ||
+         (use.Uses(themespec::kThemeSpecFieldReset) &&
+          ResetCountdownDisplayChanged(previous.resetSecs, next.resetSecs)) ||
          (usesUsage &&
            (previous.usageUnavailable != next.usageUnavailable ||
             previous.sessionUnavailable != next.sessionUnavailable ||
@@ -802,14 +815,14 @@ inline uint32_t ThemeSpecLiveChangedFields(
   if (previous.weekly != next.weekly) {
     fields |= themespec::kThemeSpecFieldWeekly;
   }
-  if (previous.resetSecs != next.resetSecs) {
+  if (ResetCountdownDisplayChanged(previous.resetSecs, next.resetSecs)) {
     fields |= themespec::kThemeSpecFieldReset;
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], false)) {
       fields |= themespec::kThemeSpecFieldUsageWindows;
     }
-    if (previous.usageWindows[i].resetSecs != next.usageWindows[i].resetSecs &&
+    if (ResetCountdownDisplayChanged(previous.usageWindows[i].resetSecs, next.usageWindows[i].resetSecs) &&
         use.UsesUsageWindowReset(i)) {
       fields |= themespec::kThemeSpecFieldUsageWindowReset;
     }
