@@ -66,6 +66,8 @@ export type SettingsScreenProps = {
   onResetSetup: () => void;
   /** Erases the VibeTV over the USB cable, then starts setup again. */
   onEraseDevice?: () => void;
+  /** Opens Support and runs diagnostics there. */
+  onRunDiagnostics?: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
   onSaveStandby: (value: StandbySettings) => void;
@@ -88,6 +90,7 @@ export function SettingsScreen({
   onConnectionModeChange,
   onResetSetup,
   onEraseDevice,
+  onRunDiagnostics,
   onSaveBrightness,
   providerPicker,
   onSaveStandby,
@@ -481,6 +484,13 @@ export function SettingsScreen({
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}
         />
+        {onRunDiagnostics ? (
+          <div>
+            <Button onClick={onRunDiagnostics} size="sm" type="button" variant="outline">
+              <span>Run diagnostics</span>
+            </Button>
+          </div>
+        ) : null}
       </SettingsSection>
     </div>
   );

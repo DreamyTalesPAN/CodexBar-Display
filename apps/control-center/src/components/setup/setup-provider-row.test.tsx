@@ -113,6 +113,20 @@ describe("provider popup guidance", () => {
   it.each(["healthy", "checking", "disabled"])("does not turn %s into an error", (health) => {
     expect(setupProviderIssueMessage({ health, label: "Codex" })).toBeNull();
   });
+
+  it("names an engine that is too old instead of a timed-out check", () => {
+    expect(setupProviderIssueMessage({ health: "engine_incompatible", label: "Codex" })).toBe(
+      "The usage engine is too old. Repair the usage engine, then check again.",
+    );
+    expect(render({ health: "engine_incompatible" })).toContain('aria-label="Check Claude Code again"');
+  });
+
+  it("keeps the engine's product name out of provider messages", () => {
+    expect(setupProviderIssueMessage({ health: "engine_incompatible", label: "Codex",
+      detail: "CodexBar 0.17.0 is too old. Version 0.23.0 or newer is required." })).toBe(
+      "Usage engine 0.17.0 is too old. Version 0.23.0 or newer is required.",
+    );
+  });
 });
 
 // Google ended Gemini CLI OAuth for consumer accounts. The stored credential
@@ -137,7 +151,7 @@ describe("a provider the account lost access to", () => {
     expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
   });
 
-  it("passes the upstream migration guidance through unchanged", () => {
+  it("passes the upstream migration guidance through without the engine's name", () => {
     expect(
       setupProviderIssueMessage({
         health: "unsupported",
@@ -145,6 +159,8 @@ describe("a provider the account lost access to", () => {
         detail: "Gemini no longer supports this account.",
         reportedMessage,
       }),
-    ).toBe(reportedMessage);
+    ).toBe(
+      "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable Antigravity, sign in to Antigravity or run `agy`, then refresh.",
+    );
   });
 });

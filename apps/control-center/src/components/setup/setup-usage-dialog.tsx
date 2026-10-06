@@ -5,6 +5,7 @@ import { SetupDialog } from "./setup-dialog";
 
 export type SetupUsageCause =
   | "checking"
+  | "incompatible"
   | "not_set_up"
   | "setup_incomplete"
   | "unknown";
@@ -22,6 +23,11 @@ export const setupUsageCauseCopy: Record<
     description:
       "VibeTV is starting its built-in usage service and checking this Mac.",
     title: "Starting AI usage",
+  },
+  incompatible: {
+    description:
+      "The usage engine on this Mac is too old. Repair it, then try again.",
+    title: "Update the usage engine",
   },
   not_set_up: {
     description:
@@ -88,6 +94,9 @@ export function setupUsageCauseFor(setup: {
 } | null): SetupUsageCause {
   if (setup?.status === "checking") {
     return "checking";
+  }
+  if (setup?.engine?.status === "engine_incompatible") {
+    return "incompatible";
   }
   if (setup?.engine?.status === "not_configured") {
     return "not_set_up";

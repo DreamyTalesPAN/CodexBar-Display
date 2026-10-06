@@ -21,7 +21,6 @@ import { buildThemePack } from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
-  checkForMacAppUpdate,
   companionRequestUrl,
   finishCodexBarRecovery,
   isLocalCompanionOrigin,
@@ -65,6 +64,7 @@ import {
   type ProviderSelectionSetup,
   type PreferenceDescriptor,
   type StandbySettings,
+  type SetupLog,
   type SupportDiagnostics,
   type UsageSnapshot,
   type WiFiNetwork,
@@ -123,6 +123,7 @@ import {
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen } from "./settings-screen";
+import { SetupEventsContext } from "./setup-event-log";
 import { collectSupportReport } from "./support-report";
 import {
   buildThemeInstallBlocker,
@@ -4069,6 +4070,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     repairUsageService();
   }, [repairUsageService]);
 
+  // Read-only; an older Mac App without the setup log rejects it and the log
+  // simply stays empty. It must not clear the error the screen is showing.
+  const loadSetupEvents = useCallback(
+    () =>
+      runCompanion<SetupLog>("/v1/setup/events", undefined, {
+        preserveLastError: true,
+      }),
+    [runCompanion],
+  );
+
+  const runDiagnosticsFromSettings = useCallback(() => {
+    setActiveTab("logs");
+    void loadSupportDiagnostics();
+  }, [loadSupportDiagnostics]);
+
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
       return;
@@ -5035,7 +5051,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onSearchDevices={() => void searchAndConnect()}
           onScanWiFiNetworks={scanSetupWiFiNetworks}
           onSelectConnectionMode={selectSetupConnectionMode}
-          onUpdateMacApp={checkForMacAppUpdate}
           displaySavePending={pendingProviderDisplayId !== null}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}
@@ -5127,6 +5142,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onResetSetup={resetSetup}
             onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
+            onRunDiagnostics={runDiagnosticsFromSettings}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}
             onSaveStandby={saveStandby}
@@ -5212,7 +5228,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             lastError={errorForHost(lastError, windowsHost)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
+            onRepairUsageEngine={retryUsageService}
             onRunSetupAgain={resetSetup}
+            repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}
           />
@@ -5222,7 +5240,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   return (
-    <>
+    // The hosted download page has no local Mac App to read a setup log from.
+    <SetupEventsContext.Provider value={hostedSetup ? null : loadSetupEvents}>
       {renderScreen()}
       <SetupRecoveryDialogs
         onHide={() => setRuntimeRecoveryHidden(true)}
@@ -5261,7 +5280,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           windowsHost={windowsHost}
         />
       ) : null}
-    </>
+    </SetupEventsContext.Provider>
   );
 }
 

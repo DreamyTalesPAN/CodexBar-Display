@@ -77,6 +77,52 @@ func TestBootstrapAlreadyLoadedRace(t *testing.T) {
 	}
 }
 
+// macOS 27 prints nested coalition blocks with "state = active" after the
+// service's own "state = running" (issue #475).
+const macOS27LaunchctlPrint = `gui/501/shop.vibetv.control-center.runtime = {
+	active count = 1
+	path = (submitted by smd.373)
+	type = Submitted
+	managed_by = com.apple.xpc.ServiceManagement
+	state = running
+
+	program identifier = Contents/Helpers/codexbar-display (mode: 2)
+	LWCR = {
+		"reqs" => {
+			"signing-identifier" => "codexbar-display"
+		}
+		"vers" => 1
+	}
+
+	pid = 63912
+
+	resource coalition = {
+		ID = 53454
+		type = resource
+		state = active
+		active count = 1
+		name = shop.vibetv.control-center.runtime
+	}
+
+	jetsam coalition = {
+		ID = 53455
+		type = jetsam
+		state = active
+		active count = 1
+		name = shop.vibetv.control-center.runtime
+	}
+
+	job state = running
+	properties = partial import | keepalive | runatload | resolve program | has LWCR
+}`
+
+func TestParseStatusIgnoresNestedBlocks(t *testing.T) {
+	state, pid := ParseStatus(macOS27LaunchctlPrint)
+	if state != "running" || pid != "63912" || !Healthy(state) {
+		t.Fatalf("state=%q pid=%q", state, pid)
+	}
+}
+
 func TestUnsupportedServiceFailsClosed(t *testing.T) {
 	var manager Manager = unsupported{}
 	ctx := context.Background()
