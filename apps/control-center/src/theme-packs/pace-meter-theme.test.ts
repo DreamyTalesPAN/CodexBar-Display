@@ -4,6 +4,8 @@ import path from "node:path";
 import {
   buildFrameData,
   primitiveUsageSlotVisible,
+  progressPercent,
+  resolveProgressFillColor,
   renderTextPrimitive,
   themeFirmwareTextMetrics,
   themeTextFittedSize,
@@ -44,7 +46,7 @@ const claude = [
 
 describe("Pace Meter theme pack", () => {
   it("is gated on usage-pace-v1 and passes Theme Studio validation", () => {
-    expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "usage-pace-v1"]);
+    expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "usage-pace-v1", "color-stops-v1"]);
     const validation = validateThemeSpec(importThemeSpec(pack.spec), {}, "live");
     expect(validation.errors).toEqual([]);
     expect(texts.filter((p) => p.b === "l")).toHaveLength(1);
@@ -55,6 +57,26 @@ describe("Pace Meter theme pack", () => {
       "Claude",
       "Session", "-25%", "lasts until reset",
       "Weekly", "+14%", "runs out",
+    ]);
+  });
+
+  it("colours each lane by CodexBar's state and draws where it expects the window", () => {
+    const bars = (pack.spec?.p || []).filter((p) => p.t === "p");
+    const lanes = (data: ReturnType<typeof frame>) =>
+      bars.map((p) => [p.b, progressPercent(p, data), resolveProgressFillColor(p, 0, data)]);
+    // remaining mode: 92% left with 25% in reserve means 67% was expected to be left.
+    expect(lanes(frame(claude))).toEqual([
+      ["usageSlot1PaceUsed", 92, "#5DCAA5"],
+      ["usageSlot1PaceExpected", 67, "#E8EEF2"],
+      ["usageSlot2PaceUsed", 27, "#F0997B"],
+      ["usageSlot2PaceExpected", 41, "#E8EEF2"],
+    ]);
+    const deltas = texts.filter((p) => (p.b || "").endsWith("PaceDelta"));
+    expect(deltas.map((p) => resolveProgressFillColor(p, 0, frame(claude)))).toEqual(["#5DCAA5", "#F0997B"]);
+    // Without a pace the bar keeps the window's fill in a neutral colour and the pace line is empty.
+    const plain = frame(claude.map((window) => ({ ...window, pace: undefined })));
+    expect(lanes(plain).map((lane) => lane.slice(1))).toEqual([
+      [92, "#7C8A99"], [0, "#E8EEF2"], [27, "#7C8A99"], [0, "#E8EEF2"],
     ]);
   });
 
@@ -74,8 +96,10 @@ describe("Pace Meter theme pack", () => {
     for (const p of texts) {
       const value = renderTextPrimitive(p, longest);
       const size = themeTextFittedSize(value, p.f ?? 1, p.s ?? 1, p.w ?? 0, true);
-      expect(themeFirmwareTextMetrics(value, p.f ?? 1, size)?.width, value).toBeLessThanOrEqual(p.w ?? 0);
-      expect((p.y ?? 0) + 16 * (p.s ?? 1), value).toBeLessThanOrEqual(240);
+      // Font 4 (the delta) has no glyph table here; its widest value, "+100%", is 73 px in TFT_eSPI's width table.
+      const width = (p.f ?? 1) === 4 ? 73 : themeFirmwareTextMetrics(value, p.f ?? 1, size)?.width;
+      expect(width, value).toBeLessThanOrEqual(p.w ?? 0);
+      expect((p.y ?? 0) + ((p.f ?? 1) === 4 ? 26 : 16) * (p.s ?? 1), value).toBeLessThanOrEqual(240);
     }
   });
 });

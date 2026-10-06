@@ -1313,6 +1313,11 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
     out.liveFields |= out.binding != nullptr ? BindingFieldMask(out.binding) : TextTemplateFieldMask(out.text);
+    // Text bound to a pace key takes its colour from the pace state.
+    if (out.binding != nullptr && std::strstr(out.binding, "Pace") != nullptr &&
+        !CompileProgressColorStops(primitive, out)) {
+      return false;
+    }
     return out.size > 0;
   }
 
@@ -1578,11 +1583,35 @@ inline int AlignedTextY(int boxY, int boxHeight, int glyphHeight, int valign) {
   return boxY;
 }
 
+// The pace behind a "...Pace..." usage window binding while its window still
+// runs, else nullptr (CodexBar sent none, or the countdown is gone).
+inline const usage_window_contract::Pace* BoundPaceFor(const char* binding, const FrameData& frame) {
+  const int slotIndex = UsageWindowBindingIndex(binding);
+  if (slotIndex < 0 || std::strncmp(UsageWindowField(binding), "Pace", 4) != 0) {
+    return nullptr;
+  }
+  const UsageWindowData& window = UsageWindowFor(frame, slotIndex);
+  return window.pace.state != 0 && window.resetSecs > 0 ? &window.pace : nullptr;
+}
+
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
     const UsageWindowData window = BoundUsageWindowFor(frame, primitive.binding, slotIndex);
-    return window.available ? ClampPct(window.percent) : 0;
+    if (!window.available) {
+      return 0;
+    }
+    // usageSlotNPaceExpected: where CodexBar expects the window to be by now.
+    // Its delta is counted in used percent.
+    if (std::strncmp(UsageWindowField(primitive.binding), "PaceE", 5) == 0) {
+      const usage_window_contract::Pace* pace = BoundPaceFor(primitive.binding, frame);
+      if (pace == nullptr) {
+        return 0;
+      }
+      const bool used = std::strcmp(SafeText(frame.usageMode), "used") == 0;
+      return ClampPct(window.percent + (used ? -pace->delta : pace->delta));
+    }
+    return ClampPct(window.percent);
   }
   if (StringEqualsAny(primitive.binding, "weekly", "weeklyPercent", "w")) {
     return ClampPct(frame.weekly);
@@ -1600,11 +1629,21 @@ inline int RemainingStyleProgressPercent(int percent, const char* usageMode) {
   return clamped;
 }
 
+// A pace binding matches its stops against CodexBar's state instead of the
+// quota: reserve 100, on pace 50, deficit 0. Without a pace it keeps `c`.
 inline uint16_t ResolveProgressFillColor(
     const CompiledPrimitive& primitive,
     int percent,
-    const char* usageMode) {
-  const int remainingStyle = RemainingStyleProgressPercent(percent, usageMode);
+    const FrameData& frame) {
+  int remainingStyle = RemainingStyleProgressPercent(percent, frame.usageMode);
+  if (UsageWindowBindingIndex(primitive.binding) >= 0 &&
+      std::strncmp(UsageWindowField(primitive.binding), "Pace", 4) == 0) {
+    const usage_window_contract::Pace* pace = BoundPaceFor(primitive.binding, frame);
+    if (pace == nullptr) {
+      return primitive.color;
+    }
+    remainingStyle = (3 - pace->state) * 50;
+  }
   for (uint8_t i = 0; i < primitive.colorStopCount; ++i) {
     if (remainingStyle >= primitive.colorStops[i].gte) {
       return primitive.colorStops[i].color;
@@ -1798,7 +1837,7 @@ inline bool DrawCompiledPrimitive(
       RenderTextTemplate(primitive.text, frame, text, sizeof(text));
     }
     cmd.text = text;
-    cmd.fg = primitive.color;
+    cmd.fg = primitive.colorStopCount > 0 ? ResolveProgressFillColor(primitive, 0, frame) : primitive.color;
     cmd.bg = primitive.bg;
     cmd.hasBg = primitive.hasBg;
     sink.DrawText(cmd);
@@ -1819,7 +1858,7 @@ inline bool DrawCompiledPrimitive(
     cmd.segments = primitive.segments;
     cmd.segmentGap = primitive.segmentGap;
     cmd.borderRadius = primitive.borderRadius;
-    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent, frame.usageMode);
+    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent, frame);
     cmd.bgColor = primitive.bg;
     cmd.borderColor = primitive.border;
     if (cmd.width <= 0 || cmd.height <= 0) {

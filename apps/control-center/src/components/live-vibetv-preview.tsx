@@ -739,7 +739,11 @@ function ThemePrimitiveNode({
     return (
       <ThemeTextPrimitive
         align={primitive.align || primitive.al}
-        color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
+        color={
+          (primitive.binding || primitive.b || "").includes("Pace")
+            ? resolveProgressFillColor(primitive, 0, frame)
+            : colorFor(primitive.color || primitive.c, "#FFFFFF")
+        }
         font={font}
         fontSize={fontSize}
         fontWeight={themeFontWeight(font)}
@@ -998,11 +1002,7 @@ function ThemeProgress({
     "#7BEF7B",
   );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
-  const fillColor = resolveProgressFillColor(
-    primitive,
-    percent,
-    frame.usageMode,
-  );
+  const fillColor = resolveProgressFillColor(primitive, percent, frame);
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
@@ -1687,6 +1687,28 @@ export function progressPercent(
     const window = frame.usageWindows[Number(usageMatch[1])];
     return window?.available ? window.percent : 0;
   }
+  // Mirrors the firmware: PaceExpected is where CodexBar expects the window
+  // to be by now (its delta counts used percent); other pace bindings fill
+  // like the window's percent.
+  const paceMatch = /^usageSlot([12])Pace(\w+)$/.exec(binding);
+  if (paceMatch) {
+    const window = frame.usageWindows[Number(paceMatch[1]) - 1];
+    if (!window?.available) {
+      return 0;
+    }
+    if (!paceMatch[2].startsWith("E")) {
+      return window.percent;
+    }
+    const pace = boundPace(binding, frame);
+    if (!pace) {
+      return 0;
+    }
+    const delta = pace.delta ?? 0;
+    return Math.max(
+      0,
+      Math.min(100, window.percent + (frame.usageMode === "used" ? -delta : delta)),
+    );
+  }
   if (binding === "usageSlot1Percent" || binding === "us1p") {
     return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
   }
@@ -1699,11 +1721,30 @@ export function progressPercent(
   return frame.sessionUnavailable ? 0 : frame.session;
 }
 
-function resolveProgressFillColor(
+// The pace behind a usageSlotNPace... binding while its window still runs.
+function boundPace(binding: string, frame: FrameData): UsagePaceFrame | undefined {
+  const match = /^usageSlot([12])Pace/.exec(binding);
+  const window = match ? frame.usageWindows[Number(match[1]) - 1] : undefined;
+  const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
+  return pace?.state ? pace : undefined;
+}
+
+const PACE_STATE_LEVEL: Record<string, number> = { reserve: 100, "on pace": 50, deficit: 0 };
+
+// A pace binding matches its stops against CodexBar's state instead of the
+// quota, like the firmware; without a pace it keeps the solid colour.
+export function resolveProgressFillColor(
   primitive: ThemePrimitive,
   percent: number,
-  usageMode?: string,
+  frame: Pick<FrameData, "usageMode" | "usageWindows">,
 ): string {
+  const usageMode = frame.usageMode;
+  const binding = primitive.binding || primitive.b || "";
+  const paceBound = /^usageSlot[12]Pace/.test(binding);
+  const pace = paceBound ? boundPace(binding, frame as FrameData) : undefined;
+  if (paceBound && !pace) {
+    return colorFor(primitive.color || primitive.c, "#FFFFFF");
+  }
   const stops = [...(primitive.colorStops || primitive.cs || [])]
     .map((stop) => ({
       gte: typeof stop.gte === "number" ? stop.gte : -1,
@@ -1712,8 +1753,11 @@ function resolveProgressFillColor(
     .filter((stop) => stop.gte >= 0 && stop.gte <= 100 && stop.color)
     .sort((a, b) => b.gte - a.gte);
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
-  const remainingStyle =
-    usageMode === "used" ? 100 - clamped : clamped;
+  const remainingStyle = pace
+    ? (PACE_STATE_LEVEL[pace.state ?? ""] ?? 0)
+    : usageMode === "used"
+      ? 100 - clamped
+      : clamped;
   for (const stop of stops) {
     if (remainingStyle >= stop.gte) {
       return colorFor(stop.color, "#FFFFFF");

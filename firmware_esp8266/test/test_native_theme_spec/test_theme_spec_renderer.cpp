@@ -3711,6 +3711,73 @@ void testUsagePaceBindingsRenderCodexBarPace() {
   TEST_ASSERT_EQUAL_STRING("0%", expired[0].c_str());
 }
 
+// Pace Meter: a pace binding colours by CodexBar's state, and PaceExpected
+// fills to where CodexBar expects the window to be by now.
+// The progress and text commands of a spec, without its background fill.
+std::vector<RecordedCommand> paceCommands(const char* spec, const FrameData& frame) {
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  std::vector<RecordedCommand> drawn;
+  for (const RecordedCommand& command : sink.commands) {
+    if (command.type == CommandType::Progress || command.type == CommandType::Text) {
+      drawn.push_back(command);
+    }
+  }
+  return drawn;
+}
+
+void testUsagePaceColoursAndExpectedFill() {
+  const char* spec = R"JSON({"v":1,"id":"pace","rev":1,"p":[
+    {"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1PaceUsed","c":"#808080","cs":[{"gte":100,"c":"#00FF00"},{"gte":50,"c":"#FFFF00"},{"gte":0,"c":"#FF0000"}]},
+    {"t":"p","x":0,"y":20,"w":100,"h":4,"b":"usageSlot1PaceExpected","c":"#FFFFFF"},
+    {"t":"tx","x":0,"y":40,"b":"usageSlot1PaceDelta","c":"#808080","cs":[{"gte":100,"c":"#00FF00"},{"gte":50,"c":"#FFFF00"},{"gte":0,"c":"#FF0000"}]},
+    {"t":"p","x":0,"y":60,"w":100,"h":10,"b":"us1p","c":"#808080","cs":[{"gte":50,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}
+  ]})JSON";
+  FrameData frame;
+  frame.usageMode = "used";
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 34;
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
+  frame.usageSlot1Available = frame.usageWindows[0].available = true;
+  const uint16_t grey = 0x8410, green = 0x07E0, yellow = 0xFFE0, red = 0xF800;
+
+  // No pace: the bar keeps the window's fill in its solid colour, the expected
+  // line stays empty, and a quota bar keeps matching its stops on the quota.
+  const std::vector<RecordedCommand> none = paceCommands(spec, frame);
+  TEST_ASSERT_EQUAL_INT(34, none[0].percent);
+  TEST_ASSERT_EQUAL_HEX16(grey, none[0].color);
+  TEST_ASSERT_EQUAL_INT(0, none[1].percent);
+  TEST_ASSERT_EQUAL_HEX16(grey, none[2].fg);
+  TEST_ASSERT_EQUAL_HEX16(green, none[3].color);
+
+  // 34% used with 11% in reserve: 45% was expected by now.
+  frame.usageWindows[0].pace = {-11, 1, codexbar_display::usage_window_contract::kPaceLasts};
+  const std::vector<RecordedCommand> reserve = paceCommands(spec, frame);
+  TEST_ASSERT_EQUAL_INT(34, reserve[0].percent);
+  TEST_ASSERT_EQUAL_HEX16(green, reserve[0].color);
+  TEST_ASSERT_EQUAL_INT(45, reserve[1].percent);
+  TEST_ASSERT_EQUAL_HEX16(green, reserve[2].fg);
+
+  frame.usageWindows[0].pace = {0, 2, 0};
+  const std::vector<RecordedCommand> onPace = paceCommands(spec, frame);
+  TEST_ASSERT_EQUAL_HEX16(yellow, onPace[0].color);
+  TEST_ASSERT_EQUAL_INT(34, onPace[1].percent);
+
+  // Remaining mode counts the other way: 66% left with an 8% deficit means 74% was expected to be left.
+  frame.usageMode = "remaining";
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 66;
+  frame.usageWindows[0].pace = {8, 3, codexbar_display::usage_window_contract::kPaceRunsOut};
+  const std::vector<RecordedCommand> deficit = paceCommands(spec, frame);
+  TEST_ASSERT_EQUAL_HEX16(red, deficit[0].color);
+  TEST_ASSERT_EQUAL_INT(74, deficit[1].percent);
+  TEST_ASSERT_EQUAL_HEX16(red, deficit[2].fg);
+
+  // Once the countdown is gone, so is the pace.
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 0;
+  const std::vector<RecordedCommand> expired = paceCommands(spec, frame);
+  TEST_ASSERT_EQUAL_HEX16(grey, expired[0].color);
+  TEST_ASSERT_EQUAL_INT(0, expired[1].percent);
+}
+
 void testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3894,6 +3961,7 @@ int main() {
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
   RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
   RUN_TEST(testUsagePaceBindingsRenderCodexBarPace);
+  RUN_TEST(testUsagePaceColoursAndExpectedFill);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   return UNITY_END();
 }

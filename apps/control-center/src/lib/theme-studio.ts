@@ -965,7 +965,8 @@ function validatePrimitive(
   }
   if (
     (primitive.colorStops || []).length > 0 &&
-    primitive.type !== "progress"
+    primitive.type !== "progress" &&
+    !(primitive.type === "text" && (primitive.binding ?? "").includes("Pace"))
   ) {
     errors.push(`${prefix}: colorStops is only supported on progress.`);
   }

@@ -8,13 +8,14 @@
   "usage": "live",
   "requiredCapabilities": [
     "usage-slots-v1",
-    "usage-pace-v1"
+    "usage-pace-v1",
+    "color-stops-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/pm-3-0f47a274.json",
+    "path": "/themes/u/pm-4-d0dddb01.json",
     "file": "theme.json",
-    "bytes": 1194,
-    "sha256": "0f47a274d9cbeaa096e7c1d6e56887bfcd39abf44f44031926bccd875844d749",
+    "bytes": 1625,
+    "sha256": "d0dddb01afe1a881f8fb540fc93d24747eac5827870318e667fa3ce2f10723de",
     "contentType": "application/json"
   },
   "assets": []

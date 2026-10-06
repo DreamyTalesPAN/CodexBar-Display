@@ -4868,14 +4868,19 @@ issue scope, or release permission never implies UI permission.
 - User approval: On 2026-10-06, while this pull request was rehearsed on the
   bench Mac, Paul saw Pace Meter on the VibeTV, asked for other designs, was
   shown four and chose in chat: "Bau Pace Meter als Entwurf B (zwei Spuren)".
+  The first build lacked the design's state colour and expected marker; Paul
+  sent a photo of the VibeTV with "das sieht nicht so aus wie dein entwurf".
 - Approved customer-visible result: Pace Meter (#412) shows the provider name
   small at the top and one lane per usage window: the window's label, its
   signed pace large on the right (`-11%`, `+8%`), a full-width bar of the
-  window's usage coloured by remaining quota like other themes, and below it
-  `lasts until reset` or `runs out`. The words `reserve` / `on pace` /
-  `deficit` and the separate usage percent are gone from this theme. A marker
-  for the expected usage and a colour that follows the pace state need new
-  firmware bindings and are not part of this change. No app screen, control or
-  copy changes.
+  window's usage, a thin white line below it that reaches to where CodexBar
+  expects the window to be by now, and `lasts until reset` or `runs out`. The
+  pace number and the bar are green in reserve, yellow on pace and coral in
+  deficit; without a pace the bar is grey and the line is empty. The words
+  `reserve` / `on pace` / `deficit` and the separate usage percent are gone
+  from this theme. The catalog and live previews draw the same. No app screen,
+  control or copy changes.
 - Approved files: the Pace Meter theme pack, its generated render pack and
-  catalog entry, its test, and this approval record.
+  catalog entry, its test, the firmware and preview rules for pace colours and
+  the expected fill (`theme_spec_renderer_core.h`, `live-vibetv-preview.tsx`,
+  `lib/theme-studio.ts`, `themespec.go`), and this approval record.

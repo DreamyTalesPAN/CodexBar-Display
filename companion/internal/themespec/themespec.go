@@ -1033,7 +1033,8 @@ func validateColorStops(p Primitive) error {
 	if len(p.ColorStops) == 0 {
 		return nil
 	}
-	if p.Type != "progress" {
+	// Text bound to a pace key takes its colour from the pace state (usage-pace-v1).
+	if p.Type != "progress" && !(p.Type == "text" && strings.Contains(p.Binding, "Pace")) {
 		return errors.New("colorStops is only supported on progress primitives")
 	}
 	if len(p.ColorStops) > 4 {

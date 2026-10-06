@@ -146,6 +146,14 @@ mixing it into a sentence. Packs that use them declare `usage-pace-v1`: older
 firmware would draw the window's percent in their place. `theme-packs/pace-meter`
 is the reference pack.
 
+A `progress` primitive can show the pace too. Bound to `usageSlot1PaceUsed` it
+fills like the window's percent; bound to `usageSlot1PaceExpected` it fills to
+where CodexBar expects the window to be by now, and stays empty without a
+pace. On any pace binding, `colorStops` are matched against CodexBar's state
+instead of the quota: `reserve` is 100, `on pace` 50, `deficit` 0. That also
+holds for a `text` primitive bound to a pace key, the only text that may carry
+`colorStops`. Without a pace the solid `c` is used.
+
 Preview data is deliberately neutral example data. A preview proving that the
 provider line renders only proves the binding and geometry; it does not prove
 that a specific provider is connected or that the hardware can render the pack.
