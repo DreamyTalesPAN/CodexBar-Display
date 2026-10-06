@@ -5124,3 +5124,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Not yet confirmed by Paul; drafted during the unattended night batch of 2026-10-06, confirmation required before merge. The Codex review of PR #524 found that the Overview tells the customer to choose another theme while the theme library still refused every install with "Connect VibeTV first." because the display is not ready.
 - Approved customer-visible result: No new screen, dialog, button, or text. While VibeTV reports that it cannot draw its active theme (`display_render_failed`), the Install buttons in Appearance stay usable for a connected, paired VibeTV instead of showing "Connect VibeTV first." A full redraw that found no memory on older firmware (`low_heap_full_render`) is treated like `low_heap` and does not show "Theme not shown".
 - Scope: `theme-library-screen.tsx`, its test, the render rule in `companion/internal/companionapi/server.go`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-07 — Review follow-up: the preview keeps retained usage unavailable (#448)
+
+- User approval: Not yet confirmed by Paul; drafted during the unattended night batch of 2026-10-06, confirmation required before merge. The Codex review of PR #524 found that the Control Center preview could read "No active session" for a 0 % window kept from a failed collection, while VibeTV shows "Reset unavailable" for it.
+- Approved customer-visible result: No new screen, dialog, button, or text. When usage is marked unavailable, the preview shows "Reset unavailable" for a window without a reset time, the same as VibeTV.
+- Scope: `live-vibetv-preview.tsx`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.

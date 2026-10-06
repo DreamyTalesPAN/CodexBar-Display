@@ -1284,6 +1284,8 @@ export function buildFrameData(
     displayFrame.resetTrust === "live" || displayFrame.resetTrust === "offline";
   const basisTrusted =
     displayFrame.resetTrust !== "stale" &&
+    // Retained windows of a failed collection stay unavailable, as on the device.
+    displayFrame.usageUnavailable !== true &&
     [displayFrame, ...slots, ...providerSlots].some(
       (carrier) => (carrier.resetSecs ?? 0) > 0,
     ) &&
