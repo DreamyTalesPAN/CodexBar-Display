@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,9 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 func incompatibleEngineSetup() codexbar.ProviderSetup {
@@ -331,6 +334,89 @@ func TestDiagnosticsIncludesUsageEngineAndSetupLog(t *testing.T) {
 	}
 	if !hasDiagnosticCheck(got.Checks, "provider_setup", "attention") {
 		t.Fatalf("provider_setup check must stay: %+v", got.Checks)
+	}
+}
+
+// The support report's timeline is the setup steps, update phases and resets
+// as bare transitions: codes and states, never the customer-facing wording.
+func TestDiagnosticsTimelineHoldsSetupAndUpdateTransitions(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup { return incompatibleEngineSetup() }
+	server.recordSetupEvent(setupEvent{Stage: "device_pair", Status: "started", Message: "Pairing with VibeTV."})
+	for i := 0; i < 3; i++ {
+		server.recordSetupEvent(setupEvent{Stage: "device_pair", Status: "failed", Message: "http://192.168.178.40/pair?token=abc123 refused", Code: "pairing_token_rejected", NextAction: "Pair again."})
+	}
+	server.recordSetupEvent(setupEvent{Stage: "device_pair", Status: "succeeded", Message: "VibeTV paired."})
+	for _, stage := range []string{"validating_artifact", "uploading", "uploading", "rebooting"} {
+		server.applyFirmwareUpdateEvent("job-1", firmwareUpdateEvent{Stage: stage, DeviceID: "vibetv-8caab5", Target: "http://192.168.178.40/?token=abc123"})
+	}
+	server.applyFirmwareUpdateEvent("job-1", firmwareUpdateEvent{Stage: "verified", Outcome: "updated", DeviceID: "vibetv-8caab5"})
+	job := server.createMacAppUpdateJob(macAppUpdateRequest{Version: "2.0.0"})
+	server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) { job.Progress = 40 })
+	server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) { job.Progress = 60 })
+	server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) {
+		job.Phase = "error"
+		job.Error = &apiError{Code: "mac_app_update_failed", Message: "open /Users/paul/Downloads/VibeTV.dmg: denied"}
+	})
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, event := range got.Timeline.Events {
+		if event.CorrelationID != got.SetupLog.SessionID || event.ID == 0 || event.At == "" {
+			t.Fatalf("event is not tied to the setup session: %+v", event)
+		}
+		lines = append(lines, strings.TrimRight(event.Component+" "+event.State+" "+event.Reason+" "+event.DeviceID, " "))
+	}
+	want := []string{
+		"device_pair started",
+		"device_pair failed pairing_token_rejected",
+		"device_pair succeeded",
+		"firmware_update validating_artifact  vibetv-8caab5",
+		"firmware_update uploading  vibetv-8caab5",
+		"firmware_update rebooting  vibetv-8caab5",
+		"firmware_update verified updated vibetv-8caab5",
+		"mac_app_update installing",
+		"mac_app_update error mac_app_update_failed",
+	}
+	if got.Timeline.Version != timeline.Version || strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("timeline v%d:\n%s\nwant:\n%s", got.Timeline.Version, strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+	raw, _ := json.Marshal(got.Timeline)
+	for _, secret := range []string{"abc123", "192.168", "paul", "Pairing with"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("timeline leaks %q: %s", secret, raw)
+		}
+	}
+	// The setup log beside it is unchanged by the timeline.
+	if len(got.SetupLog.Events) != 3 || got.SetupLog.Events[1].Count != 3 {
+		t.Fatalf("setupLog = %+v", got.SetupLog.Events)
+	}
+}
+
+func TestTimelineIsSavedBesideTheSetupLogAndSurvivesARestart(t *testing.T) {
+	home := t.TempDir()
+	first, err := New(Options{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "started", Message: "Installing theme."})
+	if _, err := os.Stat(runtimepaths.Path(home, "timeline.json")); err != nil {
+		t.Fatalf("timeline file: %v", err)
+	}
+	second, err := New(Options{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: "Theme installed."})
+	events := second.Timeline().Snapshot(time.Now()).Events
+	if len(events) != 2 || events[0].State != "started" || events[1].State != "succeeded" || events[1].ID != 2 ||
+		events[0].CorrelationID != events[1].CorrelationID {
+		t.Fatalf("timeline after restart = %+v", events)
 	}
 }
 

@@ -36,6 +36,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -13636,6 +13637,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	// log saved from there lands in the temp directory while the test removes
 	// it; saving has its own tests in setup_events_test.go.
 	server.setupEvents.path = ""
+	server.timeline = timeline.Open("")
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil

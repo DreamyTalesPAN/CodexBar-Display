@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 // setupEventLimit bounds one setup session; older events are dropped.
@@ -209,8 +210,33 @@ func (l *setupEventLog) lastOfStage(now time.Time, stage string) (setupEvent, bo
 	return setupEvent{}, false
 }
 
+// sessionID names the current setup session.
+func (l *setupEventLog) sessionID(now time.Time) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.openLocked(now)
+	return l.session.SessionID
+}
+
+// recordSetupEvent is the one place a setup step is logged: in the setup log
+// the customer sees, and as a transition in the support timeline.
 func (s *Server) recordSetupEvent(event setupEvent) {
 	s.setupEvents.record(s.currentTime(), event)
+	s.recordTimeline(timeline.Event{Component: event.Stage, State: event.Status, Reason: event.Code})
+}
+
+// Timeline is the support timeline. The runtime hands it to its display
+// worker, so both write the one file through the one store.
+func (s *Server) Timeline() *timeline.Store {
+	return s.timeline
+}
+
+// recordTimeline adds a transition to the support timeline, tied to the setup
+// session it happened in.
+func (s *Server) recordTimeline(event timeline.Event) {
+	now := s.currentTime()
+	event.CorrelationID = s.setupEvents.sessionID(now)
+	s.timeline.Record(now, event)
 }
 
 func (s *Server) handleSetupEvents(w http.ResponseWriter, r *http.Request) {
