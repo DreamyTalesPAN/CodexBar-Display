@@ -356,12 +356,8 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
 // are checked anyway, and the value keeps flowing through the same
 // change-detection that repaints any other countdown. That is what makes the
 // wording revert on its own when the trust budget later expires: the helpers
-// stop returning the sentinel, the tracked value changes, and the periodic
-// redraw fires.
-//
-// The magnitude stays under a minute so that "secs / 60" keeps landing in
-// bucket 0 like a real expiry, which leaves the minute-bucket comparison
-// untouched.
+// stop returning the sentinel, its minute bucket (RemainingMinuteBucket)
+// changes, and the periodic redraw fires.
 constexpr int64_t kRemainingSecsIdle = -1;
 
 inline bool RemainingSecsAreIdle(int64_t remainingSecs) {
@@ -821,8 +817,15 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+// The idle sentinel gets a bucket of its own. "-1 / 60" is 0, the bucket of an
+// expired countdown, so an idle window whose trust budget ran out would keep
+// "No active session" on the screen when no other countdown moved with it.
+inline int64_t RemainingMinuteBucket(int64_t remainingSecs) {
+  return RemainingSecsAreIdle(remainingSecs) ? -1 : remainingSecs / 60;
+}
+
 inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
-  return remainingSecs / 60 != lastRenderedMinuteBucket;
+  return RemainingMinuteBucket(remainingSecs) != lastRenderedMinuteBucket;
 }
 #endif
 

@@ -3854,15 +3854,10 @@ void testIdleWindowIsDistinguishedFromAnUntrustworthyOne() {
 
   // The session window carries no deadline and is current: idle, not stale.
   TEST_ASSERT_TRUE(UsageWindowIsIdle(state, 0, 1000));
-  // Idle travels as the negative sentinel, so the value the renderer tracks
-  // differs from a countdown that reached zero. That difference is what makes
-  // the periodic redraw fire when trust later expires.
+  // Idle travels as the negative sentinel.
   TEST_ASSERT_EQUAL_INT64(
       codexbar_display::core::kRemainingSecsIdle,
       CurrentUsageWindowRemainingSecs(state, 0, 1000));
-  // It still shares the minute bucket of a real expiry, so the existing
-  // bucket comparison is untouched.
-  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000) / 60);
   // The weekly window has a real deadline, so it is a countdown, not idle.
   TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 1, 1000));
   TEST_ASSERT_EQUAL_INT64(345600, CurrentUsageWindowRemainingSecs(state, 1, 1000));
@@ -3872,10 +3867,16 @@ void testIdleWindowIsDistinguishedFromAnUntrustworthyOne() {
   const unsigned long stale = 1000 + 6 * kHourMs;
   TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 0, stale));
   TEST_ASSERT_FALSE(UsageWindowIsIdle(state, 1, stale));
-  // ...and the tracked value changes when it does, which is what asks the
-  // periodic redraw to repaint the line instead of leaving "No active
-  // session" standing over a basis the device cannot justify.
   TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, stale));
+  // ...and that counts as a new minute bucket, which is what asks the periodic
+  // redraw to repaint the line. It must not depend on another countdown
+  // moving at the same moment: the weekly one may have run out long before.
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(
+      CurrentUsageWindowRemainingSecs(state, 0, stale),
+      codexbar_display::core::RemainingMinuteBucket(CurrentUsageWindowRemainingSecs(state, 0, 1000))));
+  // A real countdown keeps its whole-minute buckets.
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(119, 1));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(59, 1));
 }
 
 // The selected provider can lack a reset while another fresh provider has one.

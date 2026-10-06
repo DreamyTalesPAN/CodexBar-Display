@@ -1341,13 +1341,13 @@ void MarkThemeSpecCountdownsRendered() {
     const int64_t slotRemain =
         codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, now);
     Context().lastRenderedUsageWindowSecs[i] = slotRemain;
-    Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
+    Context().lastRenderedUsageWindowMinuteBuckets[i] = codexbar_display::core::RemainingMinuteBucket(slotRemain);
   }
   for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
     const int64_t slotRemain =
         codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, now);
     Context().lastRenderedProviderSlotSecs[i] = slotRemain;
-    Context().lastRenderedProviderSlotMinuteBuckets[i] = slotRemain / 60;
+    Context().lastRenderedProviderSlotMinuteBuckets[i] = codexbar_display::core::RemainingMinuteBucket(slotRemain);
   }
 }
 
