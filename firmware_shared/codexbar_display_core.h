@@ -703,14 +703,15 @@ inline ThemeSpecLiveUse CompiledThemeSpecLiveUse(const themespec::CompiledThemeS
 // Compiles once per theme, never per frame. A spec that looks renderable but
 // cannot be compiled here (e.g. low heap) counts as using everything: an extra
 // redraw is harmless, a missed one would leave stale numbers on the screen.
-inline bool ThemeSpecLiveUseForRaw(const String& raw, ThemeSpecLiveUse& out) {
+inline bool ThemeSpecLiveUseForRaw(
+    const String& raw, ThemeSpecLiveUse& out, bool* outOfMemory = nullptr) {
   out = ThemeSpecLiveUse{};
   if (!ThemeSpecRawLooksRenderable(raw)) {
     return false;
   }
   JsonDocument doc;
   themespec::CompiledThemeSpec scene;
-  const bool ok = themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  const bool ok = themespec::CompileThemeSpec(raw.c_str(), doc, scene, outOfMemory);
   out = ok ? CompiledThemeSpecLiveUse(scene) : ThemeSpecLiveUse::All();
   themespec::ReleaseCompiledThemeSpec(scene);
   return ok;
@@ -1430,7 +1431,22 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
                                  runtimeState.cachedThemeId == next.themeSpecId &&
                                  runtimeState.cachedThemeRev == next.themeSpecRev;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const bool nextHasRenderableRaw = ThemeSpecRawLooksRenderable(next.themeSpecRaw);
+    bool nextHasRenderableRaw = ThemeSpecRawLooksRenderable(next.themeSpecRaw);
+    if (nextHasRenderableRaw && next.themeSpecRaw != runtimeState.cachedThemeSpecRaw) {
+      // Issue #66: a spec that can never compile must not replace the theme
+      // that is up. Dropping it here leaves the frame to the last good theme
+      // below. One that only lacks heap right now is kept; the renderer
+      // retries it.
+      bool outOfMemory = false;
+      ThemeSpecLiveUse use;
+      if (ThemeSpecLiveUseForRaw(next.themeSpecRaw, use, &outOfMemory) || outOfMemory) {
+        runtimeState.cachedThemeLiveUse = use;
+        runtimeState.cachedThemeSpecRaw = next.themeSpecRaw;
+      } else {
+        next.themeSpecRaw = "";
+        nextHasRenderableRaw = false;
+      }
+    }
     if (nextHasRenderableRaw) {
       CacheThemeSpec(runtimeState, next.themeSpecId, next.themeSpecRev, next.themeSpecRaw);
       return;

@@ -1168,6 +1168,36 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *te
 	}
 }
 
+// Issue #478: only the release artifact with the manifest's SHA-256 reaches
+// the ROM loader. A download that does not match is never written.
+func TestRunInstallUpdateCableRescueWritesNothingOnAHashMismatch(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
+	}
+	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
+		t.Fatal("rescue flashed an image that does not match the manifest")
+		return nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/firmware.bin" {
+			_, _ = io.WriteString(w, "tampered firmware")
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"http://%s/firmware.bin","sha256":"%s"}]}`, r.Host, sha256String("cable firmware"))
+	}))
+	t.Cleanup(server.Close)
+	releaseHTTPClient = server.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable-rescue://vibetv", "--manifest-url", server.URL + "/manifest.json", "--skip-launchagent-pause"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("expected the hash mismatch to stop the rescue, got %v", err)
+	}
+}
+
 func pinCableRescue(t *testing.T) {
 	t.Helper()
 	previousFind := findLegacyCableVibeTVFn
