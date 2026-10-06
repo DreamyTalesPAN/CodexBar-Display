@@ -4914,3 +4914,17 @@ issue scope, or release permission never implies UI permission.
   until the Windows engine delivers the reset times a pace needs.
 - Approved files: the files named in the three entries above, restored to
   their state without #412, and this approval record.
+## 2026-10-06 — Lost-VibeTV picker searches again after it is closed
+
+- User approval: On 2026-10-06 Marcus was asked whether, after closing the
+  lost-VibeTV dialog, the app should keep looking and show the dialog again if
+  the VibeTV is still missing after three more checks, and answered "ja".
+  The Codex review of PR #509 found that closing the picker ended the search
+  until the app was restarted.
+- Approved customer-visible result: Closing the lost-VibeTV picker (#358) with
+  × or Escape no longer ends the search. If the saved VibeTV is still missing
+  after the next three checks, the app searches once more: the saved VibeTV at
+  a new address reconnects on its own, other VibeTVs found are offered in the
+  same picker again. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, `device-recovery-gate.ts`, its
+  test, and this approval record.
