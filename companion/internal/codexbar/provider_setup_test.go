@@ -930,7 +930,7 @@ func TestProviderVersionTimeoutDoesNotRequestEngineRepair(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("old executable"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if got := ProbeProviderSetup(context.Background(), t.TempDir()); got.Engine.Status != ProviderEngineError {
+	if got := ProbeProviderSetup(context.Background(), t.TempDir()); got.Engine.Status != ProviderEngineIncompatible {
 		t.Fatalf("old engine must still require repair: %+v", got)
 	}
 }
