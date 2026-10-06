@@ -650,8 +650,7 @@ func isThrottlingDetail(lower string) bool {
 // never repairs that, so it outranks throttling mentioned in the same summary.
 func namesUnusableCredential(lower string) bool {
 	for _, marker := range []string{
-		"no cookies", "not logged in", "no credentials", "credentials were preserved",
-		"token expired", "unauthorized",
+		"no cookies", "not logged in", "no credentials", "token expired", "unauthorized",
 	} {
 		if strings.Contains(lower, marker) {
 			return true

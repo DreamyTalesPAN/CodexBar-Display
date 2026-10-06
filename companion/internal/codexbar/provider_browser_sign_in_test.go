@@ -43,6 +43,9 @@ func TestBrowserSignInStaysNarrow(t *testing.T) {
 		// so the customer is asked to wait rather than to sign in again (#448).
 		// What matters to this test is that it is not a browser sign-in.
 		"OAuth error: Claude OAuth usage endpoint is rate limited": ProviderRateLimited,
+		// Win-CodexBar's own suffix says the credential is fine, so it must not
+		// turn the wait into a sign-in.
+		"OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.": ProviderRateLimited,
 		// The English summary alone, without CodexBar's marker, is not enough.
 		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited.": ProviderAuthRequired,
 		// A marker without a page, or with a page that is not https, is ignored.
