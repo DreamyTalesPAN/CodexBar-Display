@@ -6,15 +6,16 @@ import {
 
 describe("firmwareBlockedReason", () => {
   it("recognises every refusal the companion can answer with", () => {
-    expect(firmwareBlockedReason("mac_app_update_required")).toBe(
-      "mac_app_update_required",
-    );
-    expect(firmwareBlockedReason("mac_app_release_check_failed")).toBe(
-      "mac_app_release_check_failed",
-    );
     expect(firmwareBlockedReason("mac_app_restarting")).toBe(
       "mac_app_restarting",
     );
+  });
+
+  // DO NOT weaken this test. A newer app release must never strand a customer
+  // in setup: the app installs the firmware of its own release instead.
+  it("never blocks setup on a newer app release", () => {
+    expect(firmwareBlockedReason("mac_app_update_required")).toBeNull();
+    expect(firmwareBlockedReason("mac_app_release_check_failed")).toBeNull();
   });
 
   it("leaves an ordinary update failure to the failure dialog", () => {
@@ -33,14 +34,7 @@ describe("FIRMWARE_BLOCKED_COPY", () => {
     expect(new Set(titles).size).toBe(titles.length);
   });
 
-  it("uses the one sanctioned update label for the blocking case", () => {
-    expect(FIRMWARE_BLOCKED_COPY.mac_app_update_required.action).toBe("Update");
-  });
-
-  it("offers a retry for the two transient refusals", () => {
-    expect(FIRMWARE_BLOCKED_COPY.mac_app_release_check_failed.action).toBe(
-      "Try again",
-    );
+  it("offers a retry for the transient refusal", () => {
     expect(FIRMWARE_BLOCKED_COPY.mac_app_restarting.action).toBe("Try again");
   });
 

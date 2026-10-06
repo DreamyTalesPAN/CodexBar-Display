@@ -193,6 +193,110 @@ func TestStatusPreservesCableFreeWiFiDiscoveryMode(t *testing.T) {
 	}
 }
 
+// Issue #489: a legacy WiFi VibeTV leaves legacy mode on its first request over
+// the USB cable. Status asks each newly connected set of serial ports up to
+// three times, ten seconds apart, because a VibeTV restarts when plugged in. An
+// early VibeTV without USB data is never asked and no port is reopened on every
+// poll.
+func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
+	var mode atomic.Value
+	mode.Store("legacy-wifi-only")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			legacy := mode.Load().(string) == "legacy-wifi-only"
+			supported, cableOnly := `["usb","wifi"]`, "true"
+			if legacy {
+				supported, cableOnly = `["wifi"]`, "false"
+			}
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.61","deviceId":"legacy-device","capabilities":{"transport":{"active":"wifi","mode":%q,"supported":%s,"cableOnlyUpdates":%s}}}`, mode.Load().(string), supported, cableOnly)
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "legacy-device",
+	})
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	var portsMu sync.Mutex
+	var ports []string
+	setPorts := func(next ...string) {
+		portsMu.Lock()
+		defer portsMu.Unlock()
+		ports = next
+	}
+	server.listCablePorts = func() ([]string, error) {
+		portsMu.Lock()
+		defer portsMu.Unlock()
+		return append([]string(nil), ports...), nil
+	}
+	var probed []string
+	server.resolveCablePort = func(_ string, deviceID string) (string, error) {
+		probed = append(probed, deviceID)
+		return "", errors.New("no VibeTV answered")
+	}
+	status := func() statusResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	got := status()
+	caps := got.Device.Capabilities
+	if caps == nil || caps.Transport.CableOnlyUpdates == nil || *caps.Transport.CableOnlyUpdates {
+		t.Fatalf("legacy hello must reach the app with cableOnlyUpdates=false: %+v", caps)
+	}
+	if len(probed) != 0 {
+		t.Fatalf("no serial port, but the cable was asked %d times", len(probed))
+	}
+
+	setPorts("/dev/cu.usbserial-1")
+	status()
+	status()
+	if len(probed) != 1 || probed[0] != "legacy-device" {
+		t.Fatalf("a new serial port must be asked once per poll window for this VibeTV, got %v", probed)
+	}
+	for range 4 {
+		now = now.Add(legacyCableProbeRetryDelay)
+		status()
+	}
+	if len(probed) != legacyCableProbeAttempts {
+		t.Fatalf("an unanswered serial port must be asked %d times, got %v", legacyCableProbeAttempts, probed)
+	}
+
+	setPorts("/dev/cu.usbserial-1", "/dev/cu.usbserial-2")
+	status()
+	if len(probed) != legacyCableProbeAttempts+1 {
+		t.Fatalf("another new serial port must be asked once, got %v", probed)
+	}
+
+	mode.Store("wifi")
+	setPorts("/dev/cu.usbserial-3")
+	got = status()
+	if len(probed) != legacyCableProbeAttempts+1 {
+		t.Fatalf("a VibeTV that left legacy mode must not be asked again, got %v", probed)
+	}
+	caps = got.Device.Capabilities
+	if caps == nil || caps.Transport.CableOnlyUpdates == nil || !*caps.Transport.CableOnlyUpdates {
+		t.Fatalf("cable-only firmware must reach the app with cableOnlyUpdates=true: %+v", caps)
+	}
+}
+
 func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
@@ -3924,6 +4028,18 @@ func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	engineBroken.Engine.Status = codexbar.ProviderNotConfigured
 	if !providerSetupNeedsCustomerAction(engineBroken) {
 		t.Fatal("a missing engine must end the wait")
+	}
+	engineTooOld := codexbar.ProviderSetup{Status: "setup_required"}
+	engineTooOld.Engine.Status = codexbar.ProviderEngineIncompatible
+	if !providerSetupNeedsCustomerAction(engineTooOld) {
+		t.Fatal("an engine that is too old must end the wait")
+	}
+	engineTooOldRow := codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codexbar", Status: codexbar.ProviderEngineIncompatible}},
+	}
+	if !providerSetupNeedsCustomerAction(engineTooOldRow) {
+		t.Fatal("an engine row that is too old must end the wait")
 	}
 }
 
@@ -9247,6 +9363,79 @@ func TestSetupResetPromptsForCredentialsAfterFailedWiFiTransition(t *testing.T) 
 	}
 }
 
+func TestDeviceFactoryResetErasesCableDeviceAndForgetsPairing(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable",
+		DeviceToken:    "pair-token",
+		KnownDevices: []runtimeconfig.KnownDevice{
+			{DeviceID: "device-cable", DeviceToken: "pair-token"},
+			{DeviceID: "other-device", DeviceToken: "other-token"},
+		},
+	})
+	hello := protocol.DeviceHello{
+		Kind:     "hello",
+		DeviceID: "device-cable",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	erased := ""
+	server.factoryResetCable = func(port, deviceID string) error {
+		if port != "/dev/mock" {
+			t.Fatalf("unexpected port %q", port)
+		}
+		erased = deviceID
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/factory-reset", nil))
+	if rec.Code != http.StatusOK || erased != "device-cable" {
+		t.Fatalf("status=%d erased=%q body=%s", rec.Code, erased, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceToken != "" || cfg.DeviceID != "" || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("local binding survived the factory reset: %+v", cfg)
+	}
+	if _, ok := cfg.KnownDevice("device-cable"); ok {
+		t.Fatalf("erased device is still remembered: %+v", cfg.KnownDevices)
+	}
+	if other, ok := cfg.KnownDevice("other-device"); !ok || other.DeviceToken != "other-token" {
+		t.Fatalf("another VibeTV was forgotten: %+v", cfg.KnownDevices)
+	}
+}
+
+func TestDeviceFactoryResetRequiresCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceID:     "device-wifi",
+		DeviceToken:  "pair-token",
+	})
+	server.factoryResetCable = func(string, string) error {
+		t.Fatal("factory reset must not run without the USB cable")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/factory-reset", nil))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "factory_reset_cable_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFirmwareUpdateErrorPayloadExplainsCableOnlyUpdate(t *testing.T) {
+	payload := firmwareUpdateErrorPayload(errors.New("upload failed"), "cable_required")
+	if payload.Code != "firmware_update_cable_required" || !strings.Contains(payload.NextAction, "USB cable") {
+		t.Fatalf("unexpected payload %+v", payload)
+	}
+}
+
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
@@ -11207,130 +11396,12 @@ func TestFirmwareUpdateCommandEnvGrantsPausedMarkerOnlyToWriterOwners(t *testing
 	}
 }
 
-// DO NOT weaken this test. An older Mac App must never push newer firmware
-// onto the device: the mixed state (new firmware + old app) renders slot-bound
-// theme elements empty and the old app cannot preview the device. The gate has
-// to hold at the API, not only in the UI, so races and alternative UI entry
-// points cannot start the job.
-func TestFirmwareUpdateInstallRefusesWhileMacAppUpdateAvailableOnDmg(t *testing.T) {
-	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-gated","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
-		default:
-			_, _ = w.Write([]byte(`{"ok":true}`))
-		}
-	}))
-	defer device.Close()
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-gated", DeviceToken: "pair-token"})
-	server.installationMode = "dmg"
-	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
-		return githubRelease{TagName: "v9999999.0.0"}, nil
-	}
-	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
-		t.Fatal("firmware update must not start while a Mac App update is available")
-		return nil
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
-	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409 while the Mac App update is pending, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "mac_app_update_required") {
-		t.Fatalf("expected mac_app_update_required, got: %s", rec.Body.String())
-	}
-	if _, active := server.activeFirmwareUpdateJob(); active {
-		t.Fatal("no firmware update job may exist after the refusal")
-	}
-}
-
-// DO NOT weaken this test. A cached "no update" release answer from just
-// before a release publishes must not let the older app push the newer
-// firmware: the install-time gate has to bypass the release cache and
-// contact the feed.
-func TestFirmwareUpdateInstallGateBypassesStaleReleaseCache(t *testing.T) {
-	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-cached","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
-		default:
-			_, _ = w.Write([]byte(`{"ok":true}`))
-		}
-	}))
-	defer device.Close()
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-cached", DeviceToken: "pair-token"})
-	server.installationMode = "dmg"
-	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
-		return githubRelease{TagName: "v0.0.1"}, nil
-	}
-	// Prime the cache with the pre-release "no update" answer.
-	if primed := server.macAppReleaseInfo(context.Background()); primed.UpdateAvailable {
-		t.Fatalf("priming check must not report an update, got %+v", primed)
-	}
-	// The release publishes inside the cache window.
-	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
-		return githubRelease{TagName: "v9999999.0.0"}, nil
-	}
-	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
-		t.Fatal("firmware update must not start on a stale cached release answer")
-		return nil
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
-	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409 from the fresh release check, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "mac_app_update_required") {
-		t.Fatalf("expected mac_app_update_required, got: %s", rec.Body.String())
-	}
-}
-
-// DO NOT weaken this test. An unknown release answer is not proof the Mac App
-// is current: the release feed and the firmware manifest are different
-// services, so the firmware can be reachable while the release check is down
-// or rate-limited. Customer installs fail closed.
-func TestFirmwareUpdateInstallRefusesWhenMacAppReleaseCheckFails(t *testing.T) {
-	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-offline","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
-		default:
-			_, _ = w.Write([]byte(`{"ok":true}`))
-		}
-	}))
-	defer device.Close()
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-offline", DeviceToken: "pair-token"})
-	server.installationMode = "dmg"
-	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
-		return githubRelease{}, errors.New("release feed unreachable")
-	}
-	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
-		t.Fatal("firmware update must not start on an unknown release answer")
-		return nil
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
-	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502 while the release check fails, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "mac_app_release_check_failed") {
-		t.Fatalf("expected mac_app_release_check_failed, got: %s", rec.Body.String())
-	}
-}
-
-// The env-var opt-out ("disabled") is the deliberate local escape for bench
-// and dev setups without a reachable release feed; it must keep working.
-func TestFirmwareUpdateInstallProceedsWhenReleaseCheckExplicitlyDisabled(t *testing.T) {
-	t.Setenv("CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL", "off")
+// DO NOT weaken this test. A customer app installs the firmware of its own
+// release (the daemon pins the firmware manifest to the app version), so a
+// newer published release must not block the firmware update, and the update
+// must not depend on the app release feed at all. Blocking here stranded
+// Windows customers mid-setup whenever a release published.
+func TestFirmwareUpdateInstallDoesNotWaitForNewerAppRelease(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -11345,8 +11416,8 @@ func TestFirmwareUpdateInstallProceedsWhenReleaseCheckExplicitlyDisabled(t *test
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-optout", DeviceToken: "pair-token"})
 	server.installationMode = "dmg"
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
-		t.Fatal("disabled check must not contact the release feed")
-		return githubRelease{}, nil
+		t.Fatal("the firmware update must not consult the app release feed")
+		return githubRelease{TagName: "v9999999.0.0"}, nil
 	}
 	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
 		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
@@ -11364,7 +11435,7 @@ func TestFirmwareUpdateInstallProceedsWhenReleaseCheckExplicitlyDisabled(t *test
 	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
 	server.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected the update to start with the check disabled, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected the update to start, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var started firmwareUpdateJobResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
@@ -12387,6 +12458,10 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		t.Fatalf("new server: %v", err)
 	}
 	server.probeCacheTime = 0
+	// Provider checks finish on their own goroutines and log when they do. A
+	// log saved from there lands in the temp directory while the test removes
+	// it; saving has its own tests in setup_events_test.go.
+	server.setupEvents.path = ""
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil
@@ -12405,6 +12480,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return protocol.DeviceHello{}, false
 	}
 	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+		return nil, nil
+	}
+	server.listCablePorts = func() ([]string, error) {
 		return nil, nil
 	}
 	server.resetCableSender = func() {}
@@ -13876,6 +13954,16 @@ func TestDeviceSearchReportsTheLegacyCableVibeTVForItsUpdate(t *testing.T) {
 	}
 	want := deviceSearchEntry{Target: cableDeviceTarget, Transport: "cable", Board: "esp8266-smalltv-st7789", Firmware: "1.0.39"}
 	if rec.Code != http.StatusConflict || got.Error.Code != "cable_firmware_too_old" || got.Error.Device == nil || !reflect.DeepEqual(*got.Error.Device, want) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// Issue #489: current firmware has no WiFi pairing endpoint. Its 404 must tell
+// the customer to use the cable instead of a generic retry.
+func TestWiFiPairingNotFoundAsksForCable(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writePairingError(rec, &pairingAuthorizationError{statusCode: http.StatusNotFound, err: errors.New("404")}, "1.0.61")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"cable_pairing_required"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

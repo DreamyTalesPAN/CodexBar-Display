@@ -21,7 +21,6 @@ import { buildThemePack } from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
-  checkForMacAppUpdate,
   companionRequestUrl,
   finishCodexBarRecovery,
   isLocalCompanionOrigin,
@@ -64,6 +63,7 @@ import {
   type ProviderSelectionSetup,
   type PreferenceDescriptor,
   type StandbySettings,
+  type SetupLog,
   type SupportDiagnostics,
   type UsageSnapshot,
   type WiFiNetwork,
@@ -122,6 +122,7 @@ import {
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen } from "./settings-screen";
+import { SetupEventsContext } from "./setup-event-log";
 import { collectSupportReport } from "./support-report";
 import {
   buildThemeInstallBlocker,
@@ -258,7 +259,7 @@ type FirmwareUpdateJob = {
   phase: "installing" | "complete" | "attention" | "error";
   stage?: string;
   outcome?: string;
-  retryPolicy?: "power_cycle" | "reconnect_cable";
+  retryPolicy?: "power_cycle" | "reconnect_cable" | "cable_required";
   message?: string;
   progress?: number;
   startedAt?: string;
@@ -2046,6 +2047,37 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
     setDeviceRecoveryGate,
   ]);
+
+  // Erases the Cable VibeTV (WiFi details, pairing, settings, themes) and then
+  // starts setup again, because the pairing on this Mac is gone as well.
+  const eraseDevice = useCallback(async () => {
+    setBusyAction("erase-device");
+    setLastError(null);
+    try {
+      await runCompanion<{ ok?: boolean }>(
+        "/v1/device/factory-reset",
+        { method: "POST" },
+        { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
+      );
+      addEvent({
+        label: "VibeTV reset to factory settings",
+        detail: "WiFi details, pairing, settings and themes were removed.",
+        tone: "unknown",
+      });
+    } catch (error) {
+      const normalized = normalizeCaughtError(error, "VibeTV was not reset.");
+      setLastError(normalized);
+      addEvent({
+        label: "VibeTV was not reset",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
+      setBusyAction(null);
+      return;
+    }
+    setBusyAction(null);
+    await resetSetup();
+  }, [addEvent, resetSetup, runCompanion]);
 
   const saveBrightness = useCallback(
     async (value: number) => {
@@ -4014,6 +4046,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     repairUsageService();
   }, [repairUsageService]);
 
+  // Read-only; an older Mac App without the setup log rejects it and the log
+  // simply stays empty. It must not clear the error the screen is showing.
+  const loadSetupEvents = useCallback(
+    () =>
+      runCompanion<SetupLog>("/v1/setup/events", undefined, {
+        preserveLastError: true,
+      }),
+    [runCompanion],
+  );
+
+  const runDiagnosticsFromSettings = useCallback(() => {
+    setActiveTab("logs");
+    void loadSupportDiagnostics();
+  }, [loadSupportDiagnostics]);
+
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
       return;
@@ -4980,7 +5027,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onSearchDevices={() => void searchAndConnect()}
           onScanWiFiNetworks={scanSetupWiFiNetworks}
           onSelectConnectionMode={selectSetupConnectionMode}
-          onUpdateMacApp={checkForMacAppUpdate}
           displaySavePending={pendingProviderDisplayId !== null}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}
@@ -5070,7 +5116,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={resetSetup}
+            onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
+            onRunDiagnostics={runDiagnosticsFromSettings}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}
             onSaveStandby={saveStandby}
@@ -5156,7 +5204,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             lastError={errorForHost(lastError, windowsHost)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
+            onRepairUsageEngine={retryUsageService}
             onRunSetupAgain={resetSetup}
+            repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}
           />
@@ -5166,7 +5216,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   return (
-    <>
+    // The hosted download page has no local Mac App to read a setup log from.
+    <SetupEventsContext.Provider value={hostedSetup ? null : loadSetupEvents}>
       {renderScreen()}
       <SetupRecoveryDialogs
         onHide={() => setRuntimeRecoveryHidden(true)}
@@ -5205,7 +5256,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           windowsHost={windowsHost}
         />
       ) : null}
-    </>
+    </SetupEventsContext.Provider>
   );
 }
 

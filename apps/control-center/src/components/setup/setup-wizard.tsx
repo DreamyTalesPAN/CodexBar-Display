@@ -20,7 +20,7 @@ import {
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
-  SetupWiFiPhoneDialog,
+  SetupCableHelpDialog,
 } from "./setup-device-dialogs";
 import { SetupDialog } from "./setup-dialog";
 import { SetupDeviceScreen } from "./setup-device-screen";
@@ -144,8 +144,6 @@ export type SetupWizardProps = {
   pendingPreferenceIds: Set<string>;
   /** The first provider inventory has not answered yet. */
   providersLoading: boolean;
-  /** Hand the customer to Sparkle: only it can update the Mac App. */
-  onUpdateMacApp: () => void;
   /** Why the last scan could not be made, when that is what happened. */
   searchError: ApiError | null;
   onSelectTheme: (theme: SetupThemeOption) => void;
@@ -791,7 +789,7 @@ export function SetupWizard(props: SetupWizardProps) {
           />
         ) : null}
         {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
-          <SetupWiFiPhoneDialog
+          <SetupCableHelpDialog
             onEnterAddressManually={openAddressDialog}
             onScanAgain={searchAgain}
           />
@@ -804,7 +802,7 @@ export function SetupWizard(props: SetupWizardProps) {
               setNotFoundDismissed(true);
               void chooseTransport("cable");
             }}
-            onSetUpWiFi={() => {
+            onUseWiFi={() => {
               setNotFoundDismissed(true);
               void chooseTransport("wifi");
             }}
@@ -851,6 +849,12 @@ export function SetupWizard(props: SetupWizardProps) {
             connect.reset();
             searchAgain();
           }}
+          onUseCable={
+            connect.failure?.kind === "connect" &&
+            connect.failure.code === "cable_pairing_required"
+              ? () => void chooseTransport("cable")
+              : undefined
+          }
           open={connect.failure?.kind === "connect"}
           title={
             connect.failure?.kind === "connect"
@@ -861,15 +865,7 @@ export function SetupWizard(props: SetupWizardProps) {
         {connect.failure?.kind === "firmware-blocked" ? (
           <SetupFirmwareBlockedDialog
             onOpenChange={(open) => !open && connect.dismissFailure()}
-            // "Update" means update the Mac App, and only Sparkle can do that.
-            // Retrying the firmware install just meets the same refusal, and
-            // the automatic update prompt does not reach a customer who is
-            // still inside setup.
-            onResolve={
-              connect.failure.reason === "mac_app_update_required"
-                ? props.onUpdateMacApp
-                : connect.retry
-            }
+            onResolve={connect.retry}
             open
             reason={connect.failure.reason}
             windowsHost={props.windowsHost}

@@ -171,7 +171,7 @@ function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
       <AlertTitle>Reconnecting to VibeTV</AlertTitle>
       <AlertDescription>
         {wifiSetupLikely
-          ? "If VibeTV shows VibeTV-Setup, connect your phone to it and choose the new WiFi. Your pairing and settings stay saved."
+          ? "If VibeTV shows “Connect USB cable”, plug it into this computer with the cable and choose the new WiFi. Your pairing and settings stay saved."
           : "VibeTV is online, but its display is still reconnecting."}
       </AlertDescription>
     </Alert>

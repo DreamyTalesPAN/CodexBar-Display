@@ -10,7 +10,7 @@ import {
 
 /** Which dialog a failed connect should open. */
 export type ConnectFailure =
-  | { kind: "connect"; description: string; title: string }
+  | { kind: "connect"; code?: string; description: string; title: string }
   | { kind: "firmware-blocked"; reason: FirmwareBlockedReason }
   | { kind: "firmware-attention"; description: string }
   | { kind: "firmware-update" };
@@ -100,6 +100,7 @@ export function useSetupConnect(
         fail(
           {
             kind: "connect",
+            code: api?.code,
             description:
               api?.nextAction ||
               "Keep VibeTV powered on, then search again.",

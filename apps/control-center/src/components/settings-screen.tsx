@@ -38,6 +38,7 @@ import {
   deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  deviceOffersCable,
   type ApiError,
   type DeviceInfo,
   type StandbySettings,
@@ -63,6 +64,10 @@ export type SettingsScreenProps = {
   onChooseScreensaver: () => void;
   onConnectionModeChange: (mode: "cable" | "wifi") => void;
   onResetSetup: () => void;
+  /** Erases the VibeTV over the USB cable, then starts setup again. */
+  onEraseDevice?: () => void;
+  /** Opens Support and runs diagnostics there. */
+  onRunDiagnostics?: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
   onSaveStandby: (value: StandbySettings) => void;
@@ -84,6 +89,8 @@ export function SettingsScreen({
   onChooseScreensaver,
   onConnectionModeChange,
   onResetSetup,
+  onEraseDevice,
+  onRunDiagnostics,
   onSaveBrightness,
   providerPicker,
   onSaveStandby,
@@ -92,6 +99,7 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const thisHost = windowsHost ? "this computer" : "this Mac";
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
+  const [eraseRequested, setEraseRequested] = useState(false);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
   const minBrightness =
@@ -104,6 +112,7 @@ export function SettingsScreen({
     busyAction === "standby" ||
     busyAction === "connection-mode" ||
     busyAction === "reset-setup" ||
+    busyAction === "erase-device" ||
     busyAction === "firmware-update";
   // Firmware that does not advertise standby has no screensaver at all, so the
   // whole block stays hidden instead of showing controls that cannot work.
@@ -119,7 +128,7 @@ export function SettingsScreen({
     standbyToggleDisabled || !standbyValues.enabled;
   const supportedTransports = device?.capabilities?.transport?.supported;
   const cableSupported =
-    !supportedTransports || supportedTransports.includes("usb");
+    connectionMode === "cable" || deviceOffersCable(device);
   const wifiSupported =
     !supportedTransports || supportedTransports.includes("wifi");
   const connectionModeDisabled =
@@ -398,6 +407,58 @@ export function SettingsScreen({
             </span>
           </Button>
         </div>
+        {onEraseDevice && connectionMode === "cable" ? (
+          <div>
+            <Button
+              disabled={localActionBusy || !deviceIsCustomerConnected(device)}
+              onClick={() => setEraseRequested(true)}
+              type="button"
+              variant="outline"
+            >
+              {busyAction === "erase-device" ? (
+                <Spinner data-icon="inline-start" />
+              ) : null}
+              <span>
+                {busyAction === "erase-device"
+                  ? "Resetting"
+                  : "Reset to factory settings"}
+              </span>
+            </Button>
+          </div>
+        ) : null}
+        {eraseRequested ? (
+          <Dialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setEraseRequested(false);
+            }}
+          >
+            <DialogContent showCloseButton={false}>
+              <DialogHeader>
+                <DialogTitle>Reset VibeTV to factory settings?</DialogTitle>
+                <DialogDescription>
+                  VibeTV forgets its WiFi details, pairing, settings and themes, then setup starts again. Use this before you give VibeTV away.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button onClick={() => setEraseRequested(false)} type="button" variant="outline">
+                  Cancel
+                </Button>
+                <Button
+                  disabled={localActionBusy}
+                  onClick={() => {
+                    setEraseRequested(false);
+                    onEraseDevice?.();
+                  }}
+                  type="button"
+                  variant="destructive"
+                >
+                  Reset
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
@@ -423,6 +484,13 @@ export function SettingsScreen({
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}
         />
+        {onRunDiagnostics ? (
+          <div>
+            <Button onClick={onRunDiagnostics} size="sm" type="button" variant="outline">
+              <span>Run diagnostics</span>
+            </Button>
+          </div>
+        ) : null}
       </SettingsSection>
     </div>
   );
