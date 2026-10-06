@@ -344,6 +344,9 @@ jobs:
           }
           Set-Content -Path "$env:RUNNER_TEMP/release-version.json" -Value ($releaseConfig | ConvertTo-Json -Depth 6 -Compress)
           cargo tauri build --bundles nsis --config "$env:RUNNER_TEMP/release-version.json"
+      - name: Check that no binary needs the Visual C++ Redistributable
+        shell: pwsh
+        run: ./scripts/check-windows-crt.ps1
       - name: Stage the Windows publish set
         shell: pwsh
         env:

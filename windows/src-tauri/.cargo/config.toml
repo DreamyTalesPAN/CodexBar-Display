@@ -1,0 +1,4 @@
+# Link the MSVC C runtime into the shell so it starts on PCs without the
+# Visual C++ Redistributable (VCRUNTIME140.dll missing, issue #501).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

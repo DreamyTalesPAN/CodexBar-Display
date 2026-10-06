@@ -115,6 +115,9 @@ jobs:
             windows/src-tauri/target/release/bundle/nsis/*.exe
             windows/src-tauri/target/release/bundle/nsis/*.sig
           if-no-files-found: error
+      - name: Check that no binary needs the Visual C++ Redistributable
+        shell: pwsh
+        run: ./scripts/check-windows-crt.ps1
 
   codexbar-release-contract:
     strategy:
