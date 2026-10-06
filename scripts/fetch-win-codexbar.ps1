@@ -12,9 +12,9 @@ param([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference = 'Stop'
 # Version the CLI reports with --version (unchanged from upstream in the fork).
 $version = '0.60.3'
-$releaseTag = 'v0.60.3-vibetv.5'
+$releaseTag = 'v0.60.3-vibetv.6'
 $releaseRepo = 'marcus7989/Win-CodexBar'
-$sha256 = '38827330c15d28f0665ff4c5fd7e6d1e16988671b282f78c7b78fc40029c1fc2'
+$sha256 = '62e11c8b3137d72291cf17e8ba1090ba9096ea5ec6f2d817035b67cee62d775e'
 New-Item -ItemType Directory -Force $Destination | Out-Null
 $zip = Join-Path $Destination "CodexBarCLI-$releaseTag-windows-x64.zip"
 Invoke-WebRequest "https://github.com/$releaseRepo/releases/download/$releaseTag/CodexBarCLI-$releaseTag-windows-x64.zip" -OutFile $zip
