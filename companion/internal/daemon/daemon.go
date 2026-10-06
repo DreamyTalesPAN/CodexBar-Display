@@ -1830,10 +1830,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	// the changes. Every frame has a provider and every hello a firmware, so a
 	// missing one (an error frame) is recorded as unknown instead of leaving
 	// the last value standing. A frame names a theme only when it carries one.
-	usage := timeline.Event{Component: "usage", State: "shown"}
-	if frame.UsageUnavailable || frame.Error != "" {
-		usage = timeline.Event{Component: "usage", State: "unavailable", Reason: result.selectionReason}
-	}
+	usage := usageTimelineEvent(frame.UsageUnavailable || frame.Error != "", result.usedLastGood, string(result.failureKind), result.selectionReason)
 	events := []timeline.Event{
 		{Component: "device", State: "reachable"},
 		{Component: "firmware", State: timelineStateOrUnknown(caps.Firmware)},
@@ -3178,4 +3175,17 @@ func timelineStateOrUnknown(state string) string {
 		return "unknown"
 	}
 	return state
+}
+
+// usageTimelineEvent names what the sent frame says about usage. A frame that
+// repeats the last good values after a failed collection is "stale", so an
+// outage does not read as fresh usage in the support timeline.
+func usageTimelineEvent(unavailable, usedLastGood bool, failureKind, selectionReason string) timeline.Event {
+	switch {
+	case unavailable:
+		return timeline.Event{Component: "usage", State: "unavailable", Reason: selectionReason}
+	case usedLastGood:
+		return timeline.Event{Component: "usage", State: "stale", Reason: failureKind}
+	}
+	return timeline.Event{Component: "usage", State: "shown"}
 }

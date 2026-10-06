@@ -137,3 +137,15 @@ func TestTimelineStateOrUnknown(t *testing.T) {
 		t.Fatalf("provider states = %v", got)
 	}
 }
+
+func TestUsageTimelineEventNamesALastGoodFrameStale(t *testing.T) {
+	if got := usageTimelineEvent(false, false, "", ""); got.State != "shown" {
+		t.Fatalf("fresh usage = %+v", got)
+	}
+	if got := usageTimelineEvent(false, true, "provider/timeout", ""); got.State != "stale" || got.Reason != "provider/timeout" {
+		t.Fatalf("last-good frame = %+v", got)
+	}
+	if got := usageTimelineEvent(true, true, "provider/timeout", "no-provider"); got.State != "unavailable" || got.Reason != "no-provider" {
+		t.Fatalf("unavailable frame = %+v", got)
+	}
+}
