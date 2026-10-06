@@ -5005,3 +5005,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Same decision as the entry "Early VibeTVs without USB data keep WiFi updates, USB-C stays greyed out" (2026-10-05, "für die die kabel option einfach immer ausgegraut ist").
 - Approved customer-visible result: Unchanged from that entry. The WiFi VibeTVs in the customer-flow tests now report current firmware (`cableOnlyUpdates:true`), so their USB-C card stays available as approved. On a legacy WiFi VibeTV the device status page reads "Update with the VibeTV App on your Mac." instead of linking to a separate update page that said the same. No other screen, control or layout changes.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and the legacy device status page text. This approves the pull request only, not merge, release, installation, or a device operation.
+
+### 2026-10-06 — Keep the redesigned Overview when merging #490
+
+- User approval: Paul approved the redesigned Overview (3D preview and session cards) on this branch; #490's customer-visible results are recorded in their own entries above and are merged unchanged.
+- Approved customer-visible result: Everything #490 changed is shown as on main. Its reworded reconnect hint ("If VibeTV shows “Connect USB cable”, …") belonged to the old Overview's reconnect notice, which the redesigned Overview does not have; the Overview therefore shows no such hint, as before this merge.
+- Scope: Conflict resolution in `overview-screen.tsx` and this record. No main write, release, installation or device operation.
