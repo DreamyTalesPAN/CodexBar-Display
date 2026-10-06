@@ -479,6 +479,16 @@ describe("dynamic usage slot preview", () => {
     // A provider slot is only sent with a deadline, so 0 is one that ran out.
     expect(boundValue("pv1r", used)).toBe("Reset unavailable");
 
+    // Windows kept from a failed collection are unavailable, not idle.
+    const retained = frameWith({
+      usageUnavailable: true,
+      usageWindows: [
+        { id: "primary", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "secondary", label: "Weekly", percent: 32, resetSecs: 4 * 24 * 3600 },
+      ],
+    });
+    expect(boundValue("us1r", retained)).toBe("Reset unavailable");
+
     // "remaining" mode sends what is left: nothing used reads 100.
     const remaining = frameWith({
       usageMode: "remaining",
