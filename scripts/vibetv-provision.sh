@@ -24,7 +24,7 @@ expect_board=""
 skip_build=0
 skip_manufacturer_ota=0
 skip_firmware_ota=1
-skip_filesystem_ota=0
+skip_filesystem_ota=1
 skip_health=0
 skip_asset_check=0
 skip_smoke=0
@@ -106,10 +106,14 @@ Flow toggles:
                         Also upload firmware.bin to the VibeTV updater after boot.
                         Off by default because the normal first pass uses
                         GeekMagic manufacturer OTA for firmware.
-  --skip-filesystem     Do not upload littlefs.bin to VibeTV.
+                        Current VibeTV firmware has no WiFi updater (#489);
+                        use this only for legacy firmware.
+  --skip-filesystem     Do not upload littlefs.bin to VibeTV. Default: current
+                        VibeTV firmware has no WiFi filesystem updater (#489).
   --skip-health         Do not require /health during post-flash polling.
   --skip-asset-check    Do not require theme assets to be visible through /assets.
-  --skip-smoke          Do not send the missing-theme test frame.
+  --skip-smoke          Do not send the missing-theme test frame. Default
+                        without --device-token: unpaired firmware rejects it.
   --allow-reboot-close  Treat curl exit 52/56 during OTA as a reboot close.
                         This is the default; post-upload checks still decide pass/fail.
   --strict-upload-response
@@ -768,6 +772,13 @@ flash_package() {
   else
     log "skip: filesystem OTA"
     post_upload_checks "final runtime verification" "$health_url" "$hello_url" "$assets_url" "required"
+  fi
+
+  # Current firmware rejects /frame from an unpaired device, and pairing runs
+  # only over the USB cable (#489), so a fresh unit has no token here.
+  if [[ "$skip_smoke" != "1" && -z "$device_token" ]]; then
+    log "skip: smoke frame needs --device-token; pairing runs only over the USB cable (#489)"
+    skip_smoke=1
   fi
 
   if [[ "$skip_smoke" != "1" ]]; then

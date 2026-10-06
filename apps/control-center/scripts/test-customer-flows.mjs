@@ -1768,7 +1768,7 @@ async function testSettingsErrorPopupSurvivesHealthyPoll(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
   const wifi = {
     ...companionDevice, active: true,
-    capabilities: { ...companionDevice.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] } },
+    capabilities: { ...companionDevice.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true } },
   };
   await routeCompanionOnline(page, [], () => {}, { device: wifi, connectionModeChoiceRequired: false });
   let attempts = 0;
@@ -1825,7 +1825,7 @@ async function testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appUrl) 
   const wifi = {
     ...cable,
     target: "http://192.168.1.42",
-    capabilities: { ...cable.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] } },
+    capabilities: { ...cable.capabilities, transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true } },
   };
   let previewAvailable = true;
   let searches = 0;
@@ -2290,15 +2290,15 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const dialog = setupNotFoundDialog(page);
   await dialog.waitFor({ timeout: 10_000 });
-  await dialog.getByRole("heading", { name: "Connect to WiFi", exact: true }).waitFor();
-  await dialog.getByText("192.168.4.1", { exact: true }).waitFor();
-  assert(await dialog.locator("ol li").count() === 4, "Empty discovery must open the phone WiFi steps directly");
-  assert(await dialog.getByRole("button", { name: /Use the cable/ }).count() === 0, "Fresh setup must not require a second transport choice before WiFi instructions");
+  await dialog.getByRole("heading", { name: "Connect the USB cable", exact: true }).waitFor();
+  assert(await dialog.locator("ol li").count() === 3, "Empty discovery must open the USB cable steps directly");
+  assert(await dialog.getByText("192.168.4.1").count() === 0, "Setup must never point to a VibeTV-Setup network (#489)");
+  assert(await dialog.getByRole("button", { name: /Use the cable/ }).count() === 0, "Fresh setup must not require a second transport choice before the cable instructions");
   const scanAgain = dialog.getByRole("button", { name: "Scan again" });
   const manualEntry = dialog.getByRole("button", { name: "Enter IP manually" });
   await scanAgain.waitFor();
   await manualEntry.waitFor();
-  await captureMigrationScreenshot(page, "12-fresh-no-usb-wifi-instructions.png");
+  await captureMigrationScreenshot(page, "12-fresh-no-usb-cable-instructions.png");
   assert(
     (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
       0,
@@ -2578,6 +2578,9 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "permission_required",
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
+      // Customers never see the engine's product name (#334).
+      shownMessage:
+        "Safari cookie file is not readable. Enable Full Disk Access for usage engine.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2598,6 +2601,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
         "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.",
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
+      shownMessage: "Usage engine could not save the Codex provider settings.",
       rowActions: [
         "Check Codex again",
       ],
@@ -2734,13 +2738,14 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
     const providerDialog = page.getByRole("dialog", { name: "Codex", exact: true });
-    await providerDialog.getByText(fixture.reportedMessage, { exact: true })
+    const shownMessage = fixture.shownMessage ?? fixture.reportedMessage;
+    await providerDialog.getByText(shownMessage, { exact: true })
       .waitFor({ timeout: 10_000 });
     await providerDialog.getByRole("button", { name: "Copy provider message for Codex" })
       .waitFor({ timeout: 10_000 });
     await providerDialog.getByRole("button", { name: "OK", exact: true }).click();
     assert(
-      (await page.getByText(fixture.reportedMessage, { exact: true }).count()) === 0,
+      (await page.getByText(shownMessage, { exact: true }).count()) === 0,
       `${fixture.status} must keep the reported message in the dismissible dialog, not on the row`,
     );
     for (const action of fixture.rowActions) {
@@ -3520,9 +3525,9 @@ async function assertKnownDeviceMacAppOutage(page) {
   );
   assert(
     (await page
-      .getByText("Plug in your VibeTV and wait for the VibeTV-Setup network.")
+      .getByRole("heading", { name: "Connect the USB cable" })
       .count()) === 0,
-    "A known-device Mac App outage must not show WiFi onboarding",
+    "A known-device Mac App outage must not show first-run cable onboarding",
   );
   assert(
     Boolean(
@@ -13472,7 +13477,7 @@ function setupAddressDialog(page) {
 }
 
 function setupNotFoundDialog(page) {
-  return page.getByRole("dialog", { name: /^(We couldn't find your VibeTV|Connect to WiFi)$/ });
+  return page.getByRole("dialog", { name: /^(We couldn't find your VibeTV|Connect the USB cable)$/ });
 }
 
 async function waitForSetupDeviceStep(page, timeout = 10_000) {
@@ -13605,14 +13610,15 @@ async function assertCompanionRequestTimeoutContract() {
     source.includes("options?.timeoutMs ?? COMPANION_REQUEST_TIMEOUT_MS"),
     "Mac App requests must use an explicit timeout override when provided",
   );
-  // select, connection-mode, and reload-display. There is no separate repair
+  // select, connection-mode, reload-display, and the Cable factory reset
+  // (it waits for the device's erase reply). There is no separate repair
   // call: selectDevice pairs by force on the server, so the wizard's Connect
   // already is the repair the old Pair again button used to send.
   const repairTimeoutUses =
     source.match(/timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS/g) || [];
   assert(
-    repairTimeoutUses.length === 3,
-    `Exactly select, connection-mode, and reload-display must use the long repair timeout, got ${repairTimeoutUses.length} uses`,
+    repairTimeoutUses.length === 4,
+    `Exactly select, connection-mode, reload-display, and factory-reset must use the long repair timeout, got ${repairTimeoutUses.length} uses`,
   );
   const statusPollGuards =
     source.match(/if \(statusPollInFlight\.current\)/g) || [];

@@ -329,6 +329,10 @@ func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base, currentToken st
 		return "", fmt.Errorf("post device pair: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// Current firmware pairs only over the USB cable (#489).
+		return "", fmt.Errorf("post device pair: status=404: VibeTV pairs only over the USB cable: connect it to this Mac and press Connect in the Mac App")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("post device pair: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -354,6 +358,7 @@ func pairDeviceAuthorizationRejected(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "status=401") ||
 		strings.Contains(message, "status=403") ||
+		strings.Contains(message, "status=404") ||
 		strings.Contains(message, "status=429")
 }
 

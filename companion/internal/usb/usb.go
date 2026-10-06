@@ -125,6 +125,10 @@ func ConfigureWiFi(port, deviceID, ssid, password string) error {
 	return defaultSender.ConfigureWiFi(port, deviceID, ssid, password)
 }
 
+func FactoryReset(port, deviceID string) error {
+	return defaultSender.FactoryReset(port, deviceID)
+}
+
 func ScanWiFi(port, deviceID string) ([]protocol.WiFiNetwork, error) {
 	return defaultSender.ScanWiFi(port, deviceID)
 }

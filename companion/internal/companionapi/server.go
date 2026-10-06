@@ -204,6 +204,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
+	listCablePorts         func() ([]string, error)
 	discoverCableDevices   func(context.Context) ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
@@ -216,6 +217,7 @@ type Server struct {
 	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
+	factoryResetCable      func(string, string) error
 	scanCableWiFi          func(string, string) ([]protocol.WiFiNetwork, error)
 	sendCableLine          func(string, []byte) error
 	prepareCableTheme      func(context.Context, string, string, string, string) error
@@ -235,6 +237,11 @@ type Server struct {
 	displayStreamRunning   func() bool
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
+	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
+	legacyCableProbeMu     sync.Mutex
+	legacyCableProbePorts  string
+	legacyCableProbeTries  int
+	legacyCableProbeAt     time.Time
 	updateHoldUntil        time.Time
 	updateHoldRefusals     atomic.Uint64
 	configMu               sync.Mutex
@@ -293,6 +300,7 @@ type Server struct {
 	macAppReleaseChecked   bool
 	macAppReleaseCheckedAt time.Time
 	macAppReleaseCache     companionReleaseInfo
+	setupEvents            setupEventLog
 }
 
 type apiError struct {
@@ -676,6 +684,8 @@ type diagnosticsResponse struct {
 	Companion        companion                `json:"companion"`
 	Device           deviceInfo               `json:"device"`
 	ProviderSetup    codexbar.ProviderSetup   `json:"providerSetup"`
+	UsageEngine      diagnosticsUsageEngine   `json:"usageEngine"`
+	SetupLog         setupLog                 `json:"setupLog"`
 	Checks           []diagnosticCheck        `json:"checks"`
 }
 
@@ -985,6 +995,7 @@ func New(opts Options) (*Server, error) {
 	server := &Server{
 		addr:                   addr,
 		home:                   home,
+		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json")},
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
 		client:                 client,
@@ -993,6 +1004,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:           themeinstall.Install,
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
+		listCablePorts:         usb.ListPorts,
 		discoverCableDevices:   usb.DiscoverVibeTVs,
 		readCableHello:         usb.ReadDeviceHello,
 		currentCableHello:      usb.CurrentDeviceHello,
@@ -1005,6 +1017,7 @@ func New(opts Options) (*Server, error) {
 		readCableSettings:      usb.ReadSettings,
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
+		factoryResetCable:      usb.FactoryReset,
 		scanCableWiFi:          usb.ScanWiFi,
 		sendCableLine:          usb.SendLine,
 		prepareCableTheme:      usb.PrepareThemeInstall,
@@ -1104,22 +1117,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/providers/sign-in", s.handleProviderSignIn)
 	mux.HandleFunc("/v1/providers/setup-guide", s.handleProviderSetupGuide)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
-	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
-	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
-	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
+	mux.HandleFunc("/v1/device/search", s.setupStep("device_search", "Searching for VibeTV.", "", s.handleDeviceSearch))
+	mux.HandleFunc("/v1/device/select", s.setupStep("device_select", "Connecting to the selected VibeTV.", "VibeTV connected.", s.handleDeviceSelect))
+	mux.HandleFunc("/v1/device/repair", s.setupStep("device_pair", "Repairing the VibeTV connection.", "", s.handleDeviceRepair))
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
-	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
-	mux.HandleFunc("/v1/setup/connection-mode", s.handleSetupConnectionMode)
+	mux.HandleFunc("/v1/device/pair", s.setupStep("device_pair", "Pairing with VibeTV.", "VibeTV paired.", s.handleDevicePair))
+	mux.HandleFunc("/v1/device/factory-reset", s.handleDeviceFactoryReset)
+	mux.HandleFunc("/v1/setup/connection-mode", s.setupStep("connection_mode", "Changing how VibeTV connects.", "Connection choice saved.", s.handleSetupConnectionMode))
 	mux.HandleFunc("/v1/setup/wifi-networks", s.handleSetupWiFiNetworks)
-	mux.HandleFunc("/v1/setup/wifi", s.handleSetupWiFi)
+	mux.HandleFunc("/v1/setup/wifi", s.setupStep("wifi_setup", "Sending WiFi details to VibeTV.", "VibeTV received the WiFi details.", s.handleSetupWiFi))
 	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
-	mux.HandleFunc("/v1/setup/providers/complete", s.handleProviderSetupComplete)
+	mux.HandleFunc("/v1/setup/events", s.handleSetupEvents)
+	mux.HandleFunc("/v1/setup/providers/complete", s.setupStep("provider_setup", "", "AI provider setup complete.", s.handleProviderSetupComplete))
 	mux.HandleFunc("/v1/settings", s.handleSettings)
-	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
+	mux.HandleFunc("/v1/themes/install", s.setupStep("theme_install", "Installing theme.", "", s.handleThemeInstall))
 	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
 	mux.HandleFunc("/v1/updates/latest", s.handleFirmwareLatest)
-	mux.HandleFunc("/v1/updates/install", s.handleFirmwareUpdateInstall)
+	mux.HandleFunc("/v1/updates/install", s.setupStep("firmware_update", "Starting the VibeTV update.", "", s.handleFirmwareUpdateInstall))
 	mux.HandleFunc("/v1/updates/install/status", s.handleFirmwareUpdateStatus)
 	if s.allowMacAppSelfUpdate {
 		mux.HandleFunc("/v1/mac-app/update", s.handleMacAppUpdateInstall)
@@ -1459,6 +1474,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			if !identityMismatch && transitionConfirmed {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+				if hello.Normalize().Capabilities.Transport.Mode == "legacy-wifi-only" {
+					s.probeLegacyWiFiCable(configuredID)
+				}
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
 				device.Paired = savedPairingRemainsValid(
 					cfg.DeviceToken,
@@ -1587,6 +1605,61 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 	}
 	hello, err := usb.ReadDeviceHello(port)
 	return hello, err == nil
+}
+
+// A VibeTV plugged in over USB restarts and does not answer the cable while it
+// joins WiFi, so a new port set is asked a few times, spaced apart.
+const (
+	legacyCableProbeAttempts   = 3
+	legacyCableProbeRetryDelay = 10 * time.Second
+)
+
+// probeLegacyWiFiCable asks newly connected serial ports whether one of them
+// is this legacy WiFi VibeTV. Early VibeTVs have no USB data connection, so
+// their firmware keeps WiFi updates until a request arrives over the USB
+// cable. That request ends legacy mode on the device, and its next WiFi hello
+// offers USB-C (issue #489). A port set is asked at most
+// legacyCableProbeAttempts times, so neither this VibeTV nor another serial
+// device is reopened on every poll.
+func (s *Server) probeLegacyWiFiCable(deviceID string) {
+	if s.listCablePorts == nil || s.resolveCablePort == nil {
+		return
+	}
+	ports, err := s.listCablePorts()
+	if err != nil {
+		return
+	}
+	sort.Strings(ports)
+	key := strings.Join(ports, "\n")
+	due := func() bool {
+		if key != s.legacyCableProbePorts {
+			s.legacyCableProbePorts = key
+			s.legacyCableProbeTries = 0
+		}
+		return len(ports) > 0 && s.legacyCableProbeTries < legacyCableProbeAttempts &&
+			(s.legacyCableProbeTries == 0 || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
+	}
+	s.legacyCableProbeMu.Lock()
+	probe := due()
+	s.legacyCableProbeMu.Unlock()
+	if !probe {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, running := s.activeFirmwareUpdateJob(); running || s.themeInstallInFlight() {
+		return
+	}
+	s.legacyCableProbeMu.Lock()
+	probe = due()
+	if probe {
+		s.legacyCableProbeTries++
+		s.legacyCableProbeAt = s.now()
+	}
+	s.legacyCableProbeMu.Unlock()
+	if probe {
+		_, _ = s.resolveCablePort("", deviceID)
+	}
 }
 
 func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
@@ -2152,6 +2225,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status: "pass",
 			Detail: "Companion API is responding on loopback.",
 		},
+		usageEngineDiagnosticCheck(providerSetup.Engine),
 		providerDiagnosticCheck(providerSetup),
 	}
 	if discoveryResult != nil {
@@ -2180,6 +2254,8 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Companion:        s.companionInfo(r.Context()),
 			Device:           device,
 			ProviderSetup:    providerSetup,
+			UsageEngine:      usageEngineDiagnostics(providerSetup.Engine),
+			SetupLog:         s.setupEvents.snapshot(s.currentTime()),
 			Checks:           checks,
 		})
 	}
@@ -3119,6 +3195,13 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.Target) == "" && distinctDeviceSearchCount(devices) > 1 {
 		s.markAmbiguousDeviceSelection()
 	}
+	if count := distinctDeviceSearchCount(devices); count == 0 {
+		s.recordSetupEvent(setupEvent{Stage: "device_search", Status: "failed", Message: "No VibeTV found.", Code: "vibetv_not_found", NextAction: "Keep VibeTV powered on and on the same WiFi as this computer, then search again."})
+	} else if count == 1 {
+		s.recordSetupEvent(setupEvent{Stage: "device_search", Status: "succeeded", Message: "Found 1 VibeTV."})
+	} else {
+		s.recordSetupEvent(setupEvent{Stage: "device_search", Status: "succeeded", Message: fmt.Sprintf("Found %d VibeTVs.", count)})
+	}
 	writeJSON(w, http.StatusOK, struct {
 		OK      bool                `json:"ok"`
 		Devices []deviceSearchEntry `json:"devices"`
@@ -3173,7 +3256,18 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 		writeRepairError(w, err)
 		return
 	}
+	s.recordRepairResult(device)
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
+// recordRepairResult logs a repair as done only once VibeTV reports it paired;
+// a forced pair can answer before the device confirms it.
+func (s *Server) recordRepairResult(device deviceInfo) {
+	if device.Paired {
+		s.recordSetupEvent(setupEvent{Stage: "device_pair", Status: "succeeded", Message: "VibeTV connection repaired."})
+		return
+	}
+	s.recordSetupEvent(setupEvent{Stage: "device_pair", Status: "started", Message: "Waiting for VibeTV to finish pairing."})
 }
 
 func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Request) {
@@ -3313,6 +3407,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	}
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
+	s.setupEvents.reset(s.currentTime())
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
@@ -3320,6 +3415,75 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		ConnectionModeChoiceRequired: true,
 		Setup:                        setupProgress{ProviderSelectionRequired: true},
 	})
+}
+
+// handleDeviceFactoryReset erases the Cable VibeTV: WiFi details, pairing
+// token, settings and themes. It only runs over the USB cable, so nobody on
+// the WiFi network can wipe or take over the device.
+func (s *Server) handleDeviceFactoryReset(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+		return
+	}
+	if s.rejectActiveThemeInstall(w) {
+		return
+	}
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		defer s.pauseDisplayStream(false)
+	}
+	cfg, err := s.configForMaintenance()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
+		writeError(w, http.StatusConflict, "factory_reset_cable_required", "VibeTV can only be erased over the USB cable.", "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then try again.")
+		return
+	}
+	port, hello, ok := s.requireCableControlDevice(w, cfg)
+	if !ok {
+		return
+	}
+	if err := s.factoryResetCable(port, hello.DeviceID); err != nil {
+		writeError(w, http.StatusBadGateway, "factory_reset_failed", "VibeTV could not be erased.", "Keep VibeTV connected by the USB cable, then try again.")
+		return
+	}
+	// The device no longer knows its pairing token, so the Mac forgets the
+	// whole binding now, like "Run setup again", instead of relying on a
+	// second request from the app that may never arrive.
+	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.ResetDeviceBinding()
+		current.SetProviderSelectionSetupComplete(false)
+		current.ProviderDisplay = nil
+		known := current.KnownDevices[:0]
+		for _, device := range current.KnownDevices {
+			if !strings.EqualFold(device.DeviceID, hello.DeviceID) {
+				known = append(known, device)
+			}
+		}
+		current.KnownDevices = known
+	}); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if s.resetCableSender != nil {
+		s.resetCableSender()
+	}
+	s.clearDisplayVerification("")
+	s.clearConfiguredDeviceState()
+	writeJSON(w, http.StatusOK, struct {
+		OK bool `json:"ok"`
+	}{OK: true})
 }
 
 func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Request) {
@@ -4895,6 +5059,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeThemeInstallError(w, err)
 		return
 	}
+	s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: "Theme installed."})
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool                `json:"ok"`
 		Result themeinstall.Result `json:"result"`
@@ -5815,6 +5980,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		finishedAt := time.Now().UTC()
 		if err != nil {
 			_, apiErr := themeInstallErrorPayload(err)
+			s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
 			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 				job.Phase = "error"
 				job.Message = "Theme install failed."
@@ -5831,6 +5997,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		if req.Slot == themepack.UsageScreensaver {
 			done = "Screensaver is ready on VibeTV."
 		}
+		s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: done})
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
 			// Without a ready provider the VibeTV keeps drawing the error frame,
@@ -6164,6 +6331,11 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			}
 			if verifyErr == nil {
 				finishedAt := time.Now().UTC()
+				if attentionMessage != "" {
+					s.recordSetupEvent(setupEvent{Stage: "firmware_update", Status: "failed", Message: attentionMessage, Code: "firmware_update_attention", NextAction: firmwareUpdateDiagnosticNextAction(firmwareUpdateJob{Phase: "attention"})})
+				} else {
+					s.recordSetupEvent(setupEvent{Stage: "firmware_update", Status: "succeeded", Message: "VibeTV update complete."})
+				}
 				s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 					job.Progress = 100
 					job.FinishedAt = &finishedAt
@@ -6193,6 +6365,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 				_, _ = fmt.Fprintf(os.Stderr, "VibeTV firmware update failed: %s\n", detail)
 			}
 			apiErr := firmwareUpdateErrorPayload(err, snapshot.RetryPolicy)
+			s.recordSetupEvent(setupEvent{Stage: "firmware_update", Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 				job.Phase = "error"
 				job.Message = "Update failed."
@@ -7114,6 +7287,13 @@ func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 			Code:       "firmware_update_cable_interrupted",
 			Message:    "Cable update was interrupted.",
 			NextAction: "Reconnect VibeTV with a data-capable Cable, wait for it to start, then try the update once.",
+		}
+	}
+	if strings.TrimSpace(retryPolicy) == "cable_required" {
+		return apiError{
+			Code:       "firmware_update_cable_required",
+			Message:    "VibeTV installs updates only over the USB cable.",
+			NextAction: "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then update again.",
 		}
 	}
 	return apiError{
@@ -8619,8 +8799,11 @@ func pairingAuthorizationStatus(err error) (int, bool) {
 }
 
 func isPairingAuthorizationStatus(statusCode int) bool {
+	// Current firmware has no WiFi pairing endpoint (404): only the USB cable
+	// issues a token.
 	return statusCode == http.StatusUnauthorized ||
 		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusNotFound ||
 		statusCode == http.StatusTooManyRequests
 }
 
@@ -8837,6 +9020,14 @@ func writePairingError(w http.ResponseWriter, err error, firmware string) {
 	}
 
 	switch statusCode {
+	case http.StatusNotFound:
+		writeError(
+			w,
+			http.StatusConflict,
+			"cable_pairing_required",
+			"VibeTV pairs only over the USB cable.",
+			"Connect VibeTV to this Mac with the USB cable, then press Connect.",
+		)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		writeError(
 			w,
@@ -9429,17 +9620,22 @@ func (s *Server) waitForDisplayStreamMode(
 // it waits. Neither is a transient probe result -- a timeout or a momentary
 // engine error also arrives as the global setup_required, but the provider
 // could still deliver inside the wait window. Only the failures the reconciler
-// already protects as customer-owned settle the wait.
+// already protects as customer-owned settle the wait, plus an engine that is
+// too old: no retry inside the window can make it deliver.
 func providerSetupNeedsCustomerAction(setup codexbar.ProviderSetup) bool {
 	switch strings.TrimSpace(strings.ToLower(setup.Status)) {
 	case "", codexbar.ProviderReady, "checking":
 		return false
 	}
-	if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(setup.Engine.Status))) {
+	settles := func(status string) bool {
+		status = strings.TrimSpace(strings.ToLower(status))
+		return providerSetupFailureMustWin(status) || status == codexbar.ProviderEngineIncompatible
+	}
+	if settles(setup.Engine.Status) {
 		return true
 	}
 	for _, provider := range setup.Providers {
-		if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(provider.Status))) {
+		if settles(provider.Status) {
 			return true
 		}
 	}

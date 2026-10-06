@@ -116,12 +116,12 @@ bool testThemeActivationRejectsInvalidSpecsBeforePersisting(const std::string& s
       "stored theme activation must validate, persist, and then commit runtime state");
 }
 
-bool testSetupAccessPointClearsPendingThemeRender(const std::string& source) {
-  const std::size_t setupStart = source.find("void startSetupAccessPoint()");
+bool testWifiSetupClearsPendingThemeRender(const std::string& source) {
+  const std::size_t setupStart = source.find("void enterWifiSetup()");
   const std::size_t setupEnd = source.find("\nvoid maintainWifiConnection()", setupStart);
   if (!expect(
           setupStart != std::string::npos && setupEnd != std::string::npos,
-          "setup access point body must remain discoverable")) {
+          "WiFi setup body must remain discoverable")) {
     return false;
   }
 
@@ -328,7 +328,7 @@ bool testAssetDeleteProtectsStandbyLiveTheme(const std::string& source) {
 
 bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
   const std::size_t standbyStart = source.find("void maintainStandby()");
-  const std::size_t standbyEnd = source.find("\nvoid handleUpdatePage()", standbyStart);
+  const std::size_t standbyEnd = source.find("\nvoid resetOtaUpdaterAfterFailure()", standbyStart);
   if (!expect(
           standbyStart != std::string::npos && standbyEnd != std::string::npos,
           "standby state machine must remain discoverable")) {
@@ -349,7 +349,7 @@ bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
 
 bool testUsageWakeRestoresLiveThemeBeforeDroppingPath(const std::string& source) {
   const std::size_t standbyStart = source.find("void maintainStandby()");
-  const std::size_t standbyEnd = source.find("\nvoid handleUpdatePage()", standbyStart);
+  const std::size_t standbyEnd = source.find("\nvoid resetOtaUpdaterAfterFailure()", standbyStart);
   if (!expect(
           standbyStart != std::string::npos && standbyEnd != std::string::npos,
           "standby state machine must remain discoverable")) {
@@ -513,7 +513,7 @@ int main(int argc, char** argv) {
       !testThemeActivationUsesDeferredRenderTransport(source) ||
       !testThemeActivationDoesNotCloseFilesystemBeforeResponse(source) ||
       !testThemeActivationRejectsInvalidSpecsBeforePersisting(source) ||
-      !testSetupAccessPointClearsPendingThemeRender(source) ||
+      !testWifiSetupClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testSetupSizesSerialRxBufferForFrameContract(source) ||
       !testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(source) ||

@@ -455,6 +455,50 @@ func (s *Sender) ReadSettings(path, deviceID string) (protocol.DeviceSettings, e
 	return s.requestSettings(path, deviceID, nil)
 }
 
+// FactoryReset asks the Cable VibeTV to erase its WiFi details, pairing
+// token, settings and themes. The device restarts after it replies.
+func (s *Sender) FactoryReset(path, deviceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return errors.New("factory reset deviceId is required")
+	}
+	if _, err := s.ensurePort(path); err != nil {
+		return err
+	}
+	request := struct {
+		Kind     string `json:"kind"`
+		Op       string `json:"op"`
+		DeviceID string `json:"deviceId"`
+	}{Kind: "request", Op: "factory-reset", DeviceID: deviceID}
+	line, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+	_ = s.port.ResetInputBuffer()
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return wrapTransportError(
+			errcode.TransportSerialWrite,
+			"factory-reset",
+			path,
+			"Keep the selected VibeTV connected by Cable and try again.",
+			err,
+		)
+	}
+	err = readFactoryResetFromPort(s.port, s.helloWindow, deviceID)
+	// The device restarts after erasing, so the old handshake is stale.
+	s.helloSeen = false
+	s.capsCollected = false
+	if err != nil {
+		return fmt.Errorf("erase VibeTV on %s: %w", path, err)
+	}
+	return nil
+}
+
 func (s *Sender) ReadHealth(path, deviceID string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

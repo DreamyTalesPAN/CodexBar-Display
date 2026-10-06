@@ -44,8 +44,9 @@ type Options struct {
 }
 
 const (
-	// Firmware allows ten minutes in setup AP mode, plus join/reboot time.
-	wifiTransitionQuietPeriod  = 11 * time.Minute
+	// Firmware confirms or rolls back a WiFi switch within one minute of its
+	// reboot (no setup AP since #489), plus join/reboot time.
+	wifiTransitionQuietPeriod  = 2 * time.Minute
 	defaultInterval            = 2 * time.Second
 	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second

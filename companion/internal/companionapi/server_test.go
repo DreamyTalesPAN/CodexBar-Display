@@ -193,6 +193,110 @@ func TestStatusPreservesCableFreeWiFiDiscoveryMode(t *testing.T) {
 	}
 }
 
+// Issue #489: a legacy WiFi VibeTV leaves legacy mode on its first request over
+// the USB cable. Status asks each newly connected set of serial ports up to
+// three times, ten seconds apart, because a VibeTV restarts when plugged in. An
+// early VibeTV without USB data is never asked and no port is reopened on every
+// poll.
+func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
+	var mode atomic.Value
+	mode.Store("legacy-wifi-only")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			legacy := mode.Load().(string) == "legacy-wifi-only"
+			supported, cableOnly := `["usb","wifi"]`, "true"
+			if legacy {
+				supported, cableOnly = `["wifi"]`, "false"
+			}
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.61","deviceId":"legacy-device","capabilities":{"transport":{"active":"wifi","mode":%q,"supported":%s,"cableOnlyUpdates":%s}}}`, mode.Load().(string), supported, cableOnly)
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "legacy-device",
+	})
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	var portsMu sync.Mutex
+	var ports []string
+	setPorts := func(next ...string) {
+		portsMu.Lock()
+		defer portsMu.Unlock()
+		ports = next
+	}
+	server.listCablePorts = func() ([]string, error) {
+		portsMu.Lock()
+		defer portsMu.Unlock()
+		return append([]string(nil), ports...), nil
+	}
+	var probed []string
+	server.resolveCablePort = func(_ string, deviceID string) (string, error) {
+		probed = append(probed, deviceID)
+		return "", errors.New("no VibeTV answered")
+	}
+	status := func() statusResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	got := status()
+	caps := got.Device.Capabilities
+	if caps == nil || caps.Transport.CableOnlyUpdates == nil || *caps.Transport.CableOnlyUpdates {
+		t.Fatalf("legacy hello must reach the app with cableOnlyUpdates=false: %+v", caps)
+	}
+	if len(probed) != 0 {
+		t.Fatalf("no serial port, but the cable was asked %d times", len(probed))
+	}
+
+	setPorts("/dev/cu.usbserial-1")
+	status()
+	status()
+	if len(probed) != 1 || probed[0] != "legacy-device" {
+		t.Fatalf("a new serial port must be asked once per poll window for this VibeTV, got %v", probed)
+	}
+	for range 4 {
+		now = now.Add(legacyCableProbeRetryDelay)
+		status()
+	}
+	if len(probed) != legacyCableProbeAttempts {
+		t.Fatalf("an unanswered serial port must be asked %d times, got %v", legacyCableProbeAttempts, probed)
+	}
+
+	setPorts("/dev/cu.usbserial-1", "/dev/cu.usbserial-2")
+	status()
+	if len(probed) != legacyCableProbeAttempts+1 {
+		t.Fatalf("another new serial port must be asked once, got %v", probed)
+	}
+
+	mode.Store("wifi")
+	setPorts("/dev/cu.usbserial-3")
+	got = status()
+	if len(probed) != legacyCableProbeAttempts+1 {
+		t.Fatalf("a VibeTV that left legacy mode must not be asked again, got %v", probed)
+	}
+	caps = got.Device.Capabilities
+	if caps == nil || caps.Transport.CableOnlyUpdates == nil || !*caps.Transport.CableOnlyUpdates {
+		t.Fatalf("cable-only firmware must reach the app with cableOnlyUpdates=true: %+v", caps)
+	}
+}
+
 func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
@@ -3931,6 +4035,18 @@ func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	engineBroken.Engine.Status = codexbar.ProviderNotConfigured
 	if !providerSetupNeedsCustomerAction(engineBroken) {
 		t.Fatal("a missing engine must end the wait")
+	}
+	engineTooOld := codexbar.ProviderSetup{Status: "setup_required"}
+	engineTooOld.Engine.Status = codexbar.ProviderEngineIncompatible
+	if !providerSetupNeedsCustomerAction(engineTooOld) {
+		t.Fatal("an engine that is too old must end the wait")
+	}
+	engineTooOldRow := codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codexbar", Status: codexbar.ProviderEngineIncompatible}},
+	}
+	if !providerSetupNeedsCustomerAction(engineTooOldRow) {
+		t.Fatal("an engine row that is too old must end the wait")
 	}
 }
 
@@ -9344,6 +9460,79 @@ func TestSetupResetPromptsForCredentialsAfterFailedWiFiTransition(t *testing.T) 
 	}
 }
 
+func TestDeviceFactoryResetErasesCableDeviceAndForgetsPairing(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable",
+		DeviceToken:    "pair-token",
+		KnownDevices: []runtimeconfig.KnownDevice{
+			{DeviceID: "device-cable", DeviceToken: "pair-token"},
+			{DeviceID: "other-device", DeviceToken: "other-token"},
+		},
+	})
+	hello := protocol.DeviceHello{
+		Kind:     "hello",
+		DeviceID: "device-cable",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	erased := ""
+	server.factoryResetCable = func(port, deviceID string) error {
+		if port != "/dev/mock" {
+			t.Fatalf("unexpected port %q", port)
+		}
+		erased = deviceID
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/factory-reset", nil))
+	if rec.Code != http.StatusOK || erased != "device-cable" {
+		t.Fatalf("status=%d erased=%q body=%s", rec.Code, erased, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceToken != "" || cfg.DeviceID != "" || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("local binding survived the factory reset: %+v", cfg)
+	}
+	if _, ok := cfg.KnownDevice("device-cable"); ok {
+		t.Fatalf("erased device is still remembered: %+v", cfg.KnownDevices)
+	}
+	if other, ok := cfg.KnownDevice("other-device"); !ok || other.DeviceToken != "other-token" {
+		t.Fatalf("another VibeTV was forgotten: %+v", cfg.KnownDevices)
+	}
+}
+
+func TestDeviceFactoryResetRequiresCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceID:     "device-wifi",
+		DeviceToken:  "pair-token",
+	})
+	server.factoryResetCable = func(string, string) error {
+		t.Fatal("factory reset must not run without the USB cable")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/factory-reset", nil))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "factory_reset_cable_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFirmwareUpdateErrorPayloadExplainsCableOnlyUpdate(t *testing.T) {
+	payload := firmwareUpdateErrorPayload(errors.New("upload failed"), "cable_required")
+	if payload.Code != "firmware_update_cable_required" || !strings.Contains(payload.NextAction, "USB cable") {
+		t.Fatalf("unexpected payload %+v", payload)
+	}
+}
+
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
@@ -12366,6 +12555,10 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		t.Fatalf("new server: %v", err)
 	}
 	server.probeCacheTime = 0
+	// Provider checks finish on their own goroutines and log when they do. A
+	// log saved from there lands in the temp directory while the test removes
+	// it; saving has its own tests in setup_events_test.go.
+	server.setupEvents.path = ""
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil
@@ -12384,6 +12577,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return protocol.DeviceHello{}, false
 	}
 	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
+		return nil, nil
+	}
+	server.listCablePorts = func() ([]string, error) {
 		return nil, nil
 	}
 	server.resetCableSender = func() {}
@@ -13901,5 +14097,15 @@ func TestDeviceSearchKeepsTheLegacyCableVibeTVNextToAnotherWiFiVibeTV(t *testing
 				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+// Issue #489: current firmware has no WiFi pairing endpoint. Its 404 must tell
+// the customer to use the cable instead of a generic retry.
+func TestWiFiPairingNotFoundAsksForCable(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writePairingError(rec, &pairingAuthorizationError{statusCode: http.StatusNotFound, err: errors.New("404")}, "1.0.61")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"cable_pairing_required"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

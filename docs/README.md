@@ -22,6 +22,7 @@ Center on the customer's Mac.
 - [Hardware contract](hardware-contract.md): firmware, WiFi (incl. the 802.11g interop rule), display, and endpoint contract.
 - [Firmware provisioning](firmware-provisioning.md): provisioning and OTA packaging.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
+- [EN 18031 self-assessment](en18031-self-assessment.md): draft EU cybersecurity (RED) assessment for the test lab.
 - [ThemeSpec slot budget](themespec-slot-budget.md): measured RAM and transition cost of a second resident ThemeSpec.
 - [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
 - [Firmware migrations](firmware-migrations/1.0.36-to-1.0.37.md): per-version migration notes and their compatibility modes.

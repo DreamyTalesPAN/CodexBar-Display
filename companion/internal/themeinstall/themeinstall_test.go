@@ -996,6 +996,45 @@ func TestInstallRejectsMissingUsageSlotsAfterFirmwareUpdateBeforeUpload(t *testi
 	}
 }
 
+func TestInstallCableOnlyFirmwareUpdateHintsAtTheCable(t *testing.T) {
+	packDir := writeUsageSlotsThemePack(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			http.Error(w, "no device writes expected", http.StatusInternalServerError)
+			return
+		}
+		writeUsageSlotsThemeHello(t, w, false)
+	}))
+	defer server.Close()
+
+	for _, tc := range []struct {
+		name      string
+		updateErr error
+		wantHint  string
+	}{
+		{"cable only", fmt.Errorf("%w: POST /update/firmware returned 404", ErrFirmwareUpdateCableOnly), "USB cable"},
+		{"other failure", errors.New("connection timed out"), "same WiFi"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Install(context.Background(), Options{
+				PackURL:           packDir,
+				Target:            server.URL,
+				HTTPClient:        server.Client(),
+				UploadSettleDelay: -1,
+				FirmwareUpdater: func(context.Context, string, string) error {
+					return tc.updateErr
+				},
+			})
+			if !errors.Is(err, tc.updateErr) {
+				t.Fatalf("expected the firmware update error, got %v", err)
+			}
+			if hint := errcode.Recovery(err); !strings.Contains(hint, tc.wantHint) {
+				t.Fatalf("recovery hint %q should mention %q", hint, tc.wantHint)
+			}
+		})
+	}
+}
+
 func TestInstallSkipFirmwareUpdateRejectsMissingUsageSlotsImmediately(t *testing.T) {
 	packDir := writeUsageSlotsThemePack(t)
 	var firmwareUpdateAttempts atomic.Int32
