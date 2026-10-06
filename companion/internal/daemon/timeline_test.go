@@ -120,3 +120,20 @@ func TestCycleFailureIsAttributedToDeviceOrStream(t *testing.T) {
 		}
 	}
 }
+
+func TestTimelineStateOrUnknown(t *testing.T) {
+	// An error frame carries no provider; the timeline must not keep showing
+	// the previous one as current.
+	store := timeline.Open("")
+	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	for _, provider := range []string{"claude", "", " ", "claude"} {
+		store.Record(at, timeline.Event{Component: "provider", State: timelineStateOrUnknown(provider)})
+	}
+	var got []string
+	for _, event := range store.Snapshot(at).Events {
+		got = append(got, event.State)
+	}
+	if strings.Join(got, ",") != "claude,unknown,claude" {
+		t.Fatalf("provider states = %v", got)
+	}
+}
