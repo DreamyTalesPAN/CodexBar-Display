@@ -7,7 +7,11 @@ import type {
   StandbySettings,
 } from "./control-center-types";
 import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
-import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
+import {
+  SettingsScreen,
+  standbyTimeoutLabel,
+  type SettingsScreenProps,
+} from "./settings-screen";
 import type { SetupDisplayModePreview } from "./setup/setup-display-mode-screen";
 
 const providerPicker: ProviderPickerProps = {
@@ -111,6 +115,7 @@ function render(
   windowsHost = false,
   displayPreferences: PreferenceDescriptor[] = [],
   automaticPreviews: SetupDisplayModePreview[] = [],
+  providerShortcut: SettingsScreenProps["providerShortcut"] = null,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
@@ -130,6 +135,7 @@ function render(
       onSaveStandby={vi.fn()}
       onStandbyBrightnessChange={vi.fn()}
       providerPicker={picker}
+      providerShortcut={providerShortcut}
       windowsHost={windowsHost}
     />,
   );
@@ -573,6 +579,45 @@ describe("SettingsScreen standby controls", () => {
     // Pinned to a provider that shows nothing, the card keeps saying so.
     expect(manualPanel("fixed", ["codex"])).toContain("No usage yet");
     expect(manualPanel("fixed", ["claude"])).toContain("Claude");
+  });
+
+  // Issue #424: the app's global shortcut for the next provider is named
+  // under Display mode, and so is the case that the system refused its keys.
+  it("names the provider shortcut under Display mode", () => {
+    const displayMode = (
+      providerShortcut: SettingsScreenProps["providerShortcut"],
+      windowsHost = false,
+    ) => {
+      const html = render(
+        standbyDevice, savedStandby, providerPicker, 70, "cable", windowsHost,
+        [], [], providerShortcut,
+      );
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Screensaver</h2>"),
+      );
+    };
+
+    expect(displayMode("available")).toContain(
+      "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.",
+    );
+    expect(displayMode("unavailable")).toContain(
+      "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.",
+    );
+    expect(displayMode("unavailable")).not.toContain("Press ");
+
+    const windows = displayMode("available", true);
+    expect(windows).toContain(
+      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to Manual.",
+    );
+    expect(windows).not.toContain("⌘");
+    expect(displayMode("unavailable", true)).toContain(
+      "The shortcut Ctrl+Alt+Shift+P for the next provider is not available: another app may already be using these keys.",
+    );
+
+    // A browser has no global shortcut, so Settings names none.
+    expect(displayMode(null)).not.toContain("shortcut");
+    expect(displayMode(null)).not.toContain("Press ");
   });
 
   it("says why Display mode switched to Automatic", () => {

@@ -79,6 +79,11 @@ export type SettingsScreenProps = {
   onRunDiagnostics?: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
+  /**
+   * The app's global shortcut for the next provider, or that the system
+   * refused its keys. Null in a browser, which has no such shortcut.
+   */
+  providerShortcut?: "available" | "unavailable" | null;
   onSaveStandby: (value: StandbySettings) => void;
   onStandbyBrightnessChange: (value: number) => void;
   /** The app runs on Windows; the Mac wording stays exactly as it is. */
@@ -104,11 +109,14 @@ export function SettingsScreen({
   onRunDiagnostics,
   onSaveBrightness,
   providerPicker,
+  providerShortcut = null,
   onSaveStandby,
   onStandbyBrightnessChange,
   windowsHost = false,
 }: SettingsScreenProps) {
   const thisHost = windowsHost ? "this computer" : "this Mac";
+  // The keys the Windows App and the Mac App register (issue #424).
+  const shortcutKeys = windowsHost ? "Ctrl+Alt+Shift+P" : "⌃⌥⌘P";
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const [eraseRequested, setEraseRequested] = useState(false);
   const brightnessSupport =
@@ -347,6 +355,13 @@ export function SettingsScreen({
             disabled={localActionBusy}
             onChange={onDisplayPreferenceChange}
           />
+        ) : null}
+        {providerShortcut ? (
+          <p className="text-sm text-muted-foreground">
+            {providerShortcut === "available"
+              ? `Press ${shortcutKeys} in any app to show the next provider. This switches to Manual.`
+              : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
+          </p>
         ) : null}
       </SettingsSection>
 

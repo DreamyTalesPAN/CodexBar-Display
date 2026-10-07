@@ -139,6 +139,13 @@ order, and with a reading that can be shown. With fewer than two of them the
 stored choice stays as it is. The answer is the selection now stored, in the
 shape of `GET /v1/provider-display`. Nothing about a provider is changed.
 
+The Mac App (⌃⌥⌘P) and the Windows App (Ctrl+Alt+Shift+P) register one global
+keyboard shortcut and send this request on every press (issue #424). Settings
+names the keys under Display mode. An app whose keys the system refused appends
+` ProviderShortcut/unavailable` to its user agent, and Settings says that
+instead. After a press the app sends the page the event
+`vibetv:provider-display-changed`, and the page reads the selection again.
+
 Brightness and the screensaver stay on `/v1/settings`; they are device
 settings and are not part of this section.
 

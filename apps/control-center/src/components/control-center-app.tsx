@@ -28,6 +28,7 @@ import {
   localizeCompanionAssetUrl,
   localControlCenterUrl,
   launchCodexBarRepair,
+  nativeProviderShortcut,
   needsLoopbackTargetAddressSpace,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
@@ -187,6 +188,7 @@ const AUTOMATIC_USAGE_REPAIR_REARM_MS = 10 * 60_000;
 const RECENT_EVENT_LIMIT = 20;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
+const NATIVE_PROVIDER_DISPLAY_CHANGED_EVENT = "vibetv:provider-display-changed";
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -4697,6 +4699,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return () => window.clearInterval(timer);
   }, [providerDisplayRetryWanted, refreshProviderDisplay]);
 
+  // Issue #424: the app's shortcut for the next provider saves the display
+  // choice without this page. The app says so, and the page reads the choice
+  // and the usage again, as it does after saving one itself.
+  useEffect(() => {
+    const reread = () => {
+      void refreshProviderDisplay({ quiet: true });
+      void refreshUsage({ quiet: true });
+    };
+    window.addEventListener(NATIVE_PROVIDER_DISPLAY_CHANGED_EVENT, reread);
+    return () =>
+      window.removeEventListener(NATIVE_PROVIDER_DISPLAY_CHANGED_EVENT, reread);
+  }, [refreshProviderDisplay, refreshUsage]);
+
   useEffect(() => {
     if (!providerPreferencesPollingWanted) {
       return;
@@ -5286,6 +5301,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onDisplayPreferenceChange={updateDisplayPreference}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}
+            providerShortcut={nativeProviderShortcut(navigator.userAgent)}
             onSaveStandby={saveStandby}
             onStandbyBrightnessChange={changeStandbyBrightness}
           />

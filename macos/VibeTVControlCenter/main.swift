@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import Cocoa
 
 import Darwin
@@ -13,6 +14,8 @@ private let defaultRuntimeOriginString = "http://127.0.0.1:47832"
 private let defaultRuntimePort = 47832
 private let runtimeEndpointFileName = "runtime-endpoint.json"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
+// Appended when ⌃⌥⌘P could not be registered; Settings then says so.
+private let providerShortcutUnavailableUserAgentSuffix = " ProviderShortcut/unavailable"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
 private let restartControlCenterURLHost = "restart-control-center"
@@ -1353,6 +1356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
     private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
+    private var providerShortcutRegistered = false
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -1389,6 +1393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationRequiredAlert()
             return
         }
+        providerShortcutRegistered = registerProviderShortcut()
 #if canImport(Sparkle)
         _ = updaterController
 #endif
@@ -2231,6 +2236,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    // Issue #424: ⌃⌥⌘P shows the next provider on VibeTV from any app. A Carbon
+    // hot key needs no Accessibility permission. Which provider comes next is
+    // the runtime's decision; the app only asks for it.
+    private func registerProviderShortcut() -> Bool {
+        var pressed = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        var hotKey: EventHotKeyRef?
+        return InstallEventHandler(
+            GetEventDispatcherTarget(),
+            { _, _, _ in
+                Task { @MainActor in
+                    (NSApp.delegate as? AppDelegate)?.showNextProvider()
+                }
+                return noErr
+            },
+            1,
+            &pressed,
+            nil,
+            nil
+        ) == noErr && RegisterEventHotKey(
+            UInt32(kVK_ANSI_P),
+            UInt32(controlKey | optionKey | cmdKey),
+            EventHotKeyID(signature: 0x5654_5650 /* VTVP */, id: 1),
+            GetEventDispatcherTarget(),
+            0,
+            &hotKey
+        ) == noErr
+    }
+
+    private func showNextProvider() {
+        guard installationReady else {
+            return
+        }
+        var request = URLRequest(
+            url: activeRuntimeOrigin.appendingPathComponent("v1/provider-display/next"),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: runtimeHealthRequestTimeout
+        )
+        request.httpMethod = "POST"
+        Task { [weak self] in
+            guard let (_, response) = try? await URLSession.shared.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode == 200 else {
+                NSLog("VibeTV Control Center could not show the next provider")
+                return
+            }
+            // An open Settings page shows the display choice; it reads it again.
+            _ = try? await self?.webView?.evaluateJavaScript(
+                "window.dispatchEvent(new Event('vibetv:provider-display-changed')); true"
+            )
+        }
+    }
+
     private func presentControlCenter() {
         guard !installationRequired, installationReady else {
             return
@@ -2284,7 +2343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             buildVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleVersion"
             ) as? String
-        )
+        ) + (providerShortcutRegistered ? "" : providerShortcutUnavailableUserAgentSuffix)
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
