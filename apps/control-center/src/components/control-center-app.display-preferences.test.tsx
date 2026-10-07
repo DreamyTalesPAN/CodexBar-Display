@@ -24,6 +24,7 @@ const device = {
   activeTheme: "codex",
   display: { themeSpec },
   health: { ok: true },
+  capabilities: { standby: { supported: true } },
 };
 const usageDisplay = {
   id: "vibetv.usage.displayMode",
@@ -124,6 +125,12 @@ function startWindow() {
         companion.stored = { ...usageDisplay, value, effectiveValue: value ?? "used" };
         return jsonResponse({ ok: true, item: companion.stored });
       }
+      if (url.endsWith("/v1/settings")) {
+        const standby = init?.body
+          ? JSON.parse(String(init.body)).standby
+          : { enabled: false, timeoutMinutes: 1, brightnessPercent: 20 };
+        return jsonResponse({ ok: true, settings: { standby } });
+      }
       if (url.endsWith("/v1/provider-display")) {
         return jsonResponse({
           ok: true,
@@ -203,4 +210,20 @@ it("keeps the stored usage display and says so when the write is refused", async
   expect(
     screen.getByRole("combobox", { name: "Usage display", hidden: true }).textContent,
   ).toBe("Default");
+});
+
+// The activity entry counts minutes the way the "Show after" list does.
+it("names a one-minute screensaver in the singular", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("switch", { name: "Show screensaver" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+
+  expect(window.text()).toContain(
+    "The screensaver starts after 1 minute at 20% brightness.",
+  );
 });

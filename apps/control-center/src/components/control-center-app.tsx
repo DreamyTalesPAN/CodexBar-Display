@@ -125,7 +125,7 @@ import {
 import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
-import { SettingsScreen } from "./settings-screen";
+import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
 import { SetupEventsContext } from "./setup-event-log";
 import { collectSupportReport } from "./support-report";
 import {
@@ -2196,7 +2196,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         addEvent({
           label: "Screensaver saved",
           detail: saved.enabled
-            ? `The screensaver starts after ${saved.timeoutMinutes} minutes at ${saved.brightnessPercent}% brightness.`
+            ? `The screensaver starts after ${standbyTimeoutLabel(saved.timeoutMinutes)} at ${saved.brightnessPercent}% brightness.`
             : "The screensaver is off.",
           tone: "ready",
         });
