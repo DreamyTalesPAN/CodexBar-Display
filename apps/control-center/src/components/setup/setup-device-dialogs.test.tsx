@@ -164,4 +164,20 @@ describe("Setup device dialogs accessibility", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     await expectNoAxeViolations(document.body.innerHTML);
   });
+
+  it("takes focus when it opens and hands it back when it closes", async () => {
+    const page = (open: boolean) => (
+      <>
+        <button type="button">Enter IP manually</button>
+        <SetupAddressDialog onConnect={vi.fn()} onOpenChange={vi.fn()} open={open} />
+      </>
+    );
+    const view = render(page(false));
+    const opener = screen.getByRole("button", { name: "Enter IP manually" });
+    opener.focus();
+    view.rerender(page(true));
+    expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
+    view.rerender(page(false));
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
 });

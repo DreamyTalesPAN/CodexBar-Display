@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import { SettingsScreen, type SettingsScreenProps } from "./settings-screen";
@@ -152,5 +152,15 @@ describe("Settings confirmations", () => {
     fireEvent.click(screen.getByRole("button", { name: "WiFi" }));
     expect(screen.getByRole("dialog", { name: "Switch to WiFi?" })).toBeTruthy();
     await expectNoAxeViolations(document.body.innerHTML);
+  });
+
+  it("moves focus into the factory reset question and back to its button", async () => {
+    render(<SettingsScreen {...props({ onEraseDevice: vi.fn() })} />);
+    const opener = screen.getByRole("button", { name: "Reset to factory settings" });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 });

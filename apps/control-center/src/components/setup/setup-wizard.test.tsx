@@ -2138,5 +2138,14 @@ describe("SetupWizard: accessibility", () => {
       await expectNoAxeViolations(document.body.innerHTML);
     },
   );
+
+  it("moves focus to the new step's title once the pressed button is gone", () => {
+    const view = render(<SetupWizard {...baseProps({ step: "providers" })} />);
+    const pressed = screen.getByRole("button", { name: "Continue" });
+    pressed.focus();
+    expect(document.activeElement).toBe(pressed);
+    view.rerender(<SetupWizard {...baseProps({ step: "display" })} />);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+  });
 });
 
