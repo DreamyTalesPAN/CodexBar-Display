@@ -576,6 +576,17 @@ codexbar-display net-probe --target http://<device-ip>
 `channel`, `phyMode`, `sleepMode`). `phyMode` must read `11g`; support
 reports should always quote this block for connectivity complaints.
 
+The Mac App passes the block on as `device.health.wifi` in `/v1/status`,
+`/v1/device` and `/v1/diagnostics` and adds `"weak": true` when a VibeTV on
+WiFi reports an `rssi` at or below -80 dBm on two readings in a row (at least
+3 s apart, at most 15 s; one reading above -80 ends it). The Control Center
+takes its weak-signal note from this flag and compares no number itself
+(issue #265). -80 is a first value that has not been validated in real
+weak-signal conditions. To see the state on a bench VibeTV next to its
+router, raise the threshold above its reading in the environment of the Mac
+App's background service and restart it, for example
+`CODEXBAR_DISPLAY_WIFI_WEAK_SIGNAL_DBM=-40`; remove the variable afterwards.
+
 ## Fast Hardware Self-Test (bench device)
 
 One command exercises the firmware + Companion OTA/recovery matrix against a

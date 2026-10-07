@@ -6926,6 +6926,117 @@ func TestStatusOmitsWiFiHealthForCableDevice(t *testing.T) {
 	}
 }
 
+// Issue #265: a VibeTV on WiFi whose signal is at or below wifiSignalWeakDBm
+// on two readings in a row is named weak, and one better reading ends it.
+func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
+	wifi := `,"wifi":{"rssi":-80,"channel":11,"phyMode":"11g","sleepMode":"none"}`
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.56","deviceId":"vibetv-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true` + wifi + `}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "vibetv-wifi"})
+	server.subnetTargets = func() []string { return nil }
+	now := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	weak := func(endpoint string) bool {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		var got struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v body=%s", endpoint, err, rec.Body.String())
+		}
+		return got.Device.Health != nil && got.Device.Health.WiFi != nil && got.Device.Health.WiFi.Weak
+	}
+	// The app's next status poll, 5 s later.
+	nextPoll := func() bool {
+		t.Helper()
+		now = now.Add(5 * time.Second)
+		return weak("/v1/status")
+	}
+
+	if weak("/v1/status") {
+		t.Fatal("one low reading must not name a weak signal")
+	}
+	now = now.Add(themeNotDrawnConfirmTime - time.Millisecond)
+	if weak("/v1/status") {
+		t.Fatal("a second look inside the same poll window is not a second reading")
+	}
+	if !nextPoll() {
+		t.Fatal("a signal at the threshold on the next poll is weak")
+	}
+	// The page takes its VibeTV from these too and must not see another answer.
+	for _, endpoint := range []string{"/v1/device", "/v1/diagnostics"} {
+		if !weak(endpoint) {
+			t.Fatalf("%s must name the same weak signal as /v1/status", endpoint)
+		}
+	}
+
+	wifi = `,"wifi":{"rssi":-79}`
+	if nextPoll() {
+		t.Fatal("one reading above the threshold ends the weak signal")
+	}
+	wifi = `,"wifi":{"rssi":-80}`
+	if nextPoll() {
+		t.Fatal("the first low reading after a better one must not name a weak signal")
+	}
+	if !nextPoll() {
+		t.Fatal("two low readings in a row are a weak signal again")
+	}
+
+	// Firmware that reports no signal strength never gets the flag.
+	wifi = ""
+	if nextPoll() || nextPoll() {
+		t.Fatal("a VibeTV that reports no signal strength must not be named weak")
+	}
+
+	// The bench VibeTV sits next to its router; the override reaches it there.
+	t.Setenv(wifiSignalWeakEnvVar, "-40")
+	wifi = `,"wifi":{"rssi":-48}`
+	if nextPoll() || !nextPoll() {
+		t.Fatal("the bench override must replace the threshold and keep the two readings")
+	}
+}
+
+// The Cable never gets the flag, whatever its health reading carries.
+func TestStatusNeverNamesAWeakWiFiSignalOnTheCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = []string{protocol.FeatureCableHealthV1}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.WiFi = deviceWiFiHealth{RSSI: -90}
+		return health, nil
+	}
+	now := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+
+	for range 3 {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Device.Health == nil || got.Device.Health.WiFi == nil || got.Device.Health.WiFi.Weak {
+			t.Fatalf("a VibeTV on the Cable must not be named weak: %s", rec.Body.String())
+		}
+		now = now.Add(5 * time.Second)
+	}
+}
+
 func TestDeviceReloadDisplayWaitsForRenderHealth(t *testing.T) {
 	var healthCalls int
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -263,6 +263,8 @@ type Server struct {
 	healthProbeCache       map[string]healthProbeSnapshot
 	healthProbeFlights     map[string]*healthProbeFlight
 	probeCacheTime         time.Duration
+	weakWiFiMu             sync.Mutex
+	weakWiFi               weakWiFiRun
 	connectionMu           sync.Mutex
 	connectionStates       map[string]*configuredDeviceConnection
 	now                    func() time.Time
@@ -499,7 +501,7 @@ type deviceHealthInfo struct {
 	LastResetAt string `json:"lastResetAt,omitempty"`
 	RenderKind  string `json:"renderKind,omitempty"`
 	Error       string `json:"error,omitempty"`
-	// Diagnostics only (#265): set when the device reports a signal reading.
+	// Set when the device reports a signal reading (#265).
 	WiFi *deviceWiFiHealth `json:"wifi,omitempty"`
 }
 
@@ -508,6 +510,16 @@ type deviceWiFiHealth struct {
 	Channel   int    `json:"channel,omitempty"`
 	PhyMode   string `json:"phyMode,omitempty"`
 	SleepMode string `json:"sleepMode,omitempty"`
+	// Weak is the Mac App's decision, set by getHealth for a VibeTV on WiFi.
+	Weak bool `json:"weak,omitempty"`
+}
+
+// The VibeTV whose WiFi readings are at or below the weak-signal threshold,
+// when that run of readings began and when its latest one was.
+type weakWiFiRun struct {
+	target string
+	since  time.Time
+	last   time.Time
 }
 
 type themeSpecHealth struct {
@@ -1898,6 +1910,42 @@ func (c *configuredDeviceConnection) themeStaysUndrawn(display *deviceDisplayInf
 	}
 	c.themeNotDrawnLastAt = now
 	return now.Sub(c.themeNotDrawnAt) >= themeNotDrawnConfirmTime
+}
+
+// wifiSignalWeakDBm is the signal strength at or below which a VibeTV on WiFi
+// is too far from its router for reliable updates (issue #265). It is a
+// conservative first value and has not been validated against real
+// weak-signal conditions yet, which the issue asks for.
+const wifiSignalWeakDBm = -80
+
+// wifiSignalWeakEnvVar replaces wifiSignalWeakDBm on the bench, where the
+// VibeTV sits next to its router.
+const wifiSignalWeakEnvVar = "CODEXBAR_DISPLAY_WIFI_WEAK_SIGNAL_DBM"
+
+// wifiSignalStaysWeak reports a signal at or below the threshold on two health
+// readings in a row, told apart by the same two times as in themeStaysUndrawn.
+// One low reading can be a passing dip, one reading above the threshold ends
+// the run, and another VibeTV starts it over. The threshold is always
+// negative, so firmware that reports no signal strength, which leaves 0, is
+// never weak.
+func (s *Server) wifiSignalStaysWeak(target string, rssi int) bool {
+	threshold := wifiSignalWeakDBm
+	if dbm, err := strconv.Atoi(strings.TrimSpace(os.Getenv(wifiSignalWeakEnvVar))); err == nil && dbm < 0 {
+		threshold = dbm
+	}
+	now := s.currentTime()
+	s.weakWiFiMu.Lock()
+	defer s.weakWiFiMu.Unlock()
+	if rssi > threshold {
+		s.weakWiFi = weakWiFiRun{}
+		return false
+	}
+	if target = normalizeTarget(target); s.weakWiFi.target != target ||
+		now.Sub(s.weakWiFi.last) > themeNotDrawnForgetTime {
+		s.weakWiFi = weakWiFiRun{target: target, since: now}
+	}
+	s.weakWiFi.last = now
+	return now.Sub(s.weakWiFi.since) >= themeNotDrawnConfirmTime
 }
 
 // renderOk=false also covers states the firmware leaves on its own, and one
@@ -8660,6 +8708,10 @@ func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHea
 	if err := s.doJSON(ctx, http.MethodGet, target, "/health", token, nil, &health); err != nil {
 		return deviceHealth{}, err
 	}
+	// Every reading over WiFi passes here, so each device answer counts once
+	// however many callers reuse it. The Cable reads health another way and
+	// never gets the flag.
+	health.WiFi.Weak = s.wifiSignalStaysWeak(target, health.WiFi.RSSI)
 	return health, nil
 }
 
