@@ -256,3 +256,58 @@ it("keeps those notices outside the box a narrow window hides", async () => {
   expect(screen.getByText("Inspector").closest("aside")!.className).toContain("hidden");
   expect(notice.closest("aside")).toBeNull();
 });
+
+// Seen on the Windows app on 2026-10-07: "Saved to library." stayed above the
+// Inspector after the next change, beside the badge "Unsaved changes".
+it("takes Saved to library away with the next change, Undo included", async () => {
+  renderStudio("blank");
+  const addText = () => fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  fireEvent.click(button("Save theme"));
+  await screen.findByText("Saved to library.");
+
+  addText();
+  expect(screen.getByText("Unsaved changes")).toBeTruthy();
+  expect(screen.queryByText("Saved to library.")).toBeNull();
+
+  fireEvent.click(button("Save theme"));
+  await screen.findByText("Saved to library.");
+  fireEvent.click(button("Undo"));
+  expect(screen.queryByText("Saved to library.")).toBeNull();
+});
+
+// Also seen there: "Export … Nothing was sent." stood beside "Theme installed".
+it("shows one answer at a time for Save, Export and Send, errors included", async () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const saved = "Saved to library.";
+  const exported = "vibetv-theme-my-theme.zip exported. Nothing was sent.";
+  const sendFailed = "Theme install needs attention. Check the install status.";
+  const shown = () => [saved, exported, sendFailed].filter(text => screen.queryByText(text));
+  renderStudio("blank", { onInstallTheme: async () => false });
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(shown()).toEqual([saved]));
+  fireEvent.click(button("Export ZIP"));
+  expect(shown()).toEqual([exported]);
+  fireEvent.click(button("Send to VibeTV"));
+  await waitFor(() => expect(shown()).toEqual([sendFailed]));
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(shown()).toEqual([saved]));
+});
+
+// Why nothing can be saved is not an answer to a click and stays.
+it("keeps saying why saving is locked after a change and after Export", () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const locked = "Saved themes contain invalid data. The original data was left unchanged.";
+  renderStudio("custom", { saveBlockedReason: locked });
+  expect(screen.getAllByText(locked)).toHaveLength(1);
+
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getAllByText(locked)).toHaveLength(1);
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  // Now the line above the buttons names it too.
+  expect(screen.getAllByText(locked)).toHaveLength(2);
+});

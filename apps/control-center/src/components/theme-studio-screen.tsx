@@ -100,6 +100,7 @@ import {
   reorderPrimitiveIndices,
   themeStudioEditorReducer,
   type ThemeStudioDocument,
+  type ThemeStudioEditorAction,
 } from "./theme-studio/theme-studio-editor-state";
 import {
   AdvancedPanel,
@@ -143,6 +144,23 @@ const DEFAULT_GIF_SIZE = 80;
 const MAX_TEXT_FONT_SIZE = 30;
 const RETIRED_AI_THEME_STORAGE_PREFIX = "vibetv.controlCenter.aiTheme";
 const NATIVE_WINDOW_WILL_CLOSE_EVENT = "vibetv:native-window-will-close";
+// No Export or Send has answered yet: these two are not shown as notices.
+const EXPORT_IDLE: EditorStatus = {
+  tone: "unknown",
+  message: "Export is ready after validation.",
+};
+const SEND_IDLE: EditorStatus = {
+  tone: "unknown",
+  message: "Nothing is sent until you click Send.",
+};
+type LibraryStatus = EditorStatus & {
+  /** The recovery copy could not be written; no answer to a click. */
+  recovery?: boolean;
+};
+// Takes the Library notice away, except the one about the recovery copy:
+// that one leaves with the next copy that is written.
+const withoutLibraryAnswer = (current: LibraryStatus | null) =>
+  current?.recovery ? current : null;
 
 export type ThemeStudioEditorSource = "blank" | "custom" | "published";
 
@@ -217,7 +235,7 @@ export function ThemeStudioScreen({
   const sourceRef = useRef<ThemeStudioEditorSource>(
     initialTheme?.source || "custom",
   );
-  const [editorState, dispatchEditor] = useReducer(
+  const [editorState, dispatchEditorState] = useReducer(
     themeStudioEditorReducer,
     undefined,
     () =>
@@ -228,6 +246,15 @@ export function ThemeStudioScreen({
         usage,
       }),
   );
+  const [libraryStatus, setLibraryStatus] = useState<LibraryStatus | null>(null);
+  // What Save answered was about the theme as it was. Every change to it,
+  // Undo and Redo included, takes that answer away.
+  const dispatchEditor = useCallback((action: ThemeStudioEditorAction) => {
+    if (action.type !== "mark_saved" && !action.type.endsWith("_transaction")) {
+      setLibraryStatus(withoutLibraryAnswer);
+    }
+    dispatchEditorState(action);
+  }, []);
   const { assets, packName, spec } = editorState.present;
   const [recoveryDirty, setRecoveryDirty] = useState(
     Boolean(initialTheme?.recovered),
@@ -255,27 +282,25 @@ export function ThemeStudioScreen({
     tone: "unknown",
     message: "Draft ready.",
   });
-  const [exportStatus, setExportStatus] = useState<EditorStatus>({
-    tone: "unknown",
-    message: "Export is ready after validation.",
-  });
-  const [deviceStatus, setDeviceStatus] = useState<EditorStatus>({
-    tone: "unknown",
-    message: "Nothing is sent until you click Send.",
-  });
+  const [exportStatus, setExportStatus] = useState(EXPORT_IDLE);
+  const [deviceStatus, setDeviceStatus] = useState(SEND_IDLE);
   const [assetStatus, setAssetStatus] = useState<EditorStatus>({
     tone: "unknown",
     message: "",
   });
-  // recovery: the recovery copy could not be written. That notice leaves with
-  // the next write of the copy that succeeds.
-  const [libraryStatus, setLibraryStatus] = useState<
-    (EditorStatus & { recovery?: boolean }) | null
-  >(() =>
-    saveBlockedReason
-      ? { message: saveBlockedReason, tone: "attention" }
-      : null,
-  );
+  // Why nothing can be saved is no answer to a click either: it stands for as
+  // long as it is true and nothing else is said under Library.
+  const libraryNotice: EditorStatus | null =
+    libraryStatus ||
+    (saveBlockedReason
+      ? { tone: "attention", message: saveBlockedReason }
+      : null);
+  // One answer at a time: a new Save, Export or Send takes the others' away.
+  function clearAnswers() {
+    setLibraryStatus(withoutLibraryAnswer);
+    setExportStatus(EXPORT_IDLE);
+    setDeviceStatus(SEND_IDLE);
+  }
 
   const validation = useMemo(
     () => validateThemeSpec(spec, assets, usage),
@@ -379,10 +404,7 @@ export function ThemeStudioScreen({
     if (status) {
       setJsonStatus(status);
     }
-    setExportStatus({
-      tone: "unknown",
-      message: "Export is ready after validation.",
-    });
+    setExportStatus(EXPORT_IDLE);
   }
 
   const updateDocument = useCallback(
@@ -401,7 +423,7 @@ export function ThemeStudioScreen({
         type: "mutate",
       });
     },
-    [jsonDirty],
+    [dispatchEditor, jsonDirty],
   );
 
   const updateSpec = useCallback(
@@ -446,8 +468,8 @@ export function ThemeStudioScreen({
     if (!onSaveToLibrary) {
       return false;
     }
+    clearAnswers();
     if (saveBlockedReason) {
-      setLibraryStatus({ tone: "attention", message: saveBlockedReason });
       return false;
     }
     if (validation.errors.length > 0) {
@@ -597,10 +619,7 @@ export function ThemeStudioScreen({
           ? { tone: "ready", message: "Mini Classic loaded." }
           : { tone: "ready", message: "Theme opened." },
       });
-      setDeviceStatus({
-        tone: "unknown",
-        message: "Nothing is sent until you click Send.",
-      });
+      setDeviceStatus(SEND_IDLE);
     } catch (error) {
       if (options.cancelled?.()) {
         return;
@@ -923,7 +942,7 @@ export function ThemeStudioScreen({
 
     window.addEventListener("keydown", handleEditorShortcut);
     return () => window.removeEventListener("keydown", handleEditorShortcut);
-  }, [spec.primitives, updateSpec, visibleSelectedIndices]);
+  }, [dispatchEditor, spec.primitives, updateSpec, visibleSelectedIndices]);
 
   useEffect(() => {
     if (!dirty) {
@@ -988,6 +1007,7 @@ export function ThemeStudioScreen({
   }
 
   function exportThemePack() {
+    clearAnswers();
     if (validation.errors.length > 0) {
       setExportStatus({
         tone: "attention",
@@ -1030,6 +1050,7 @@ export function ThemeStudioScreen({
     if (sendBlockedReason) {
       return;
     }
+    clearAnswers();
 
     if (!onInstallTheme) {
       setDeviceStatus({
@@ -1083,9 +1104,7 @@ export function ThemeStudioScreen({
 
   const validationOk = validation.errors.length === 0;
   const assetCount = referencedAssets.length;
-  const showDeviceStatus =
-    deviceStatus.tone === "attention" ||
-    deviceStatus.message !== "Nothing is sent until you click Send.";
+  const showDeviceStatus = deviceStatus !== SEND_IDLE;
   const showJsonStatus = jsonStatus.tone === "attention";
 
   return (
@@ -1618,21 +1637,21 @@ export function ThemeStudioScreen({
             {/* What Save, Export and Send answered comes first: under the
                 Inspector's fields it was below the fold. */}
             <div className="grid gap-4 empty:hidden">
-              {libraryStatus ? (
+              {libraryNotice ? (
                 <StatusLine
-                  detail={libraryStatus.message}
+                  detail={libraryNotice.message}
                   icon={
-                    libraryStatus.tone === "attention" ? (
+                    libraryNotice.tone === "attention" ? (
                       <AlertTriangle size={16} aria-hidden />
                     ) : (
                       <CheckCircle2 size={16} aria-hidden />
                     )
                   }
                   title="Library"
-                  tone={libraryStatus.tone}
+                  tone={libraryNotice.tone}
                 />
               ) : null}
-              {exportStatus.message !== "Export is ready after validation." ? (
+              {exportStatus !== EXPORT_IDLE ? (
                 <StatusLine
                   detail={exportStatus.message}
                   icon={
