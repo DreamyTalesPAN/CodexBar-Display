@@ -299,7 +299,9 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
   LentWorkspace workspace(decoder_);
   if (decoder_ != nullptr && !workspace.ok()) {
     // No block for the work buffers right now: skip this frame and retry on
-    // the next tick instead of counting it as a playback failure.
+    // the next tick instead of counting it as a playback failure. /health
+    // reports it with the other animation low-heap skips.
+    ++workspaceSkips_;
     return true;
   }
 
@@ -354,6 +356,7 @@ GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
   snapshot.decoderAllocated = decoder_ != nullptr;
   snapshot.decoderOpen = decoderOpen_;
   snapshot.framesPlayed = framesPlayed_;
+  snapshot.workspaceSkips = workspaceSkips_;
   snapshot.lastErrorStage = lastErrorStage_;
   return snapshot;
 }
