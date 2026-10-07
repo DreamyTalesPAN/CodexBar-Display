@@ -59,6 +59,8 @@ function DialogContent({
 }) {
   // Radix hands focus back only to a Dialog.Trigger, and the dialogs here open
   // from state. Without this, closing one drops focus to the top of the window.
+  // Only then: focus that is already in the next dialog or in a field the
+  // customer clicked meanwhile stays where it is.
   const opener = React.useRef<Element | null>(null)
   return (
     <DialogPortal>
@@ -77,6 +79,7 @@ function DialogContent({
           onCloseAutoFocus?.(event)
           if (
             !event.defaultPrevented &&
+            document.activeElement === document.body &&
             opener.current instanceof HTMLElement &&
             opener.current.isConnected
           ) {
