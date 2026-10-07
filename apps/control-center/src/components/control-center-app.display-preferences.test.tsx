@@ -59,7 +59,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 // The Mac App as this window sees it: one stored display preference.
 function startWindow() {
-  const companion = { stored: usageDisplay, refuseWrites: false, requests: [] as string[] };
+  const companion = {
+    stored: usageDisplay,
+    refuseWrites: false,
+    requests: [] as string[],
+    // While set, a read of the display preferences answers late, with the
+    // value it found when it started.
+    holdRead: null as Promise<void> | null,
+  };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
@@ -112,7 +119,9 @@ function startWindow() {
         });
       }
       if (url.endsWith("/v1/preferences?section=display")) {
-        return jsonResponse({ ok: true, items: [companion.stored] });
+        const found = companion.stored;
+        await companion.holdRead;
+        return jsonResponse({ ok: true, items: [found] });
       }
       if (url.endsWith("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: [] });
@@ -210,6 +219,31 @@ it("keeps the stored usage display and says so when the write is refused", async
   expect(
     screen.getByRole("combobox", { name: "Usage display", hidden: true }).textContent,
   ).toBe("Default");
+});
+
+// A read that started before a change must not put the old value back.
+it("keeps a saved usage display when an older read answers afterwards", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  let answerRead = () => {};
+  window.companion.holdRead = new Promise<void>((resolve) => {
+    answerRead = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  await window.choose("Remaining");
+  expect(window.usageDisplay().textContent).toBe("Remaining");
+
+  window.companion.holdRead = null;
+  answerRead();
+  await window.wait(1);
+  expect(window.usageDisplay().textContent).toBe("Remaining");
 });
 
 // The activity entry counts minutes the way the "Show after" list does.

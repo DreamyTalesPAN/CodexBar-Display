@@ -531,6 +531,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
+  const displayPreferencesRevisionRef = useRef(0);
   const setupResetInProgressRef = useRef(false);
   const providerPoolReconcilesAfterResetRef = useRef<Array<() => void>>([]);
   const providerPoolReconcileRetryRef = useRef<
@@ -3344,12 +3345,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshDisplayPreferences = useCallback(async () => {
+    const revision = displayPreferencesRevisionRef.current;
     try {
       const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
         "/v1/preferences?section=display",
         undefined,
         { preserveLastError: true },
       );
+      // A change made while this read was under way already shows the newer
+      // value; the answer describes the state before it.
+      if (revision !== displayPreferencesRevisionRef.current) {
+        return;
+      }
       setDisplayPreferences(
         (payload.items || []).filter((item) => item.section === "display"),
       );
@@ -3363,6 +3370,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // was and the error says why.
   const updateDisplayPreference = useCallback(
     async (item: PreferenceDescriptor, value: PreferenceValue) => {
+      displayPreferencesRevisionRef.current += 1;
       try {
         const payload = await runCompanion<{ item: PreferenceDescriptor }>(
           `/v1/preferences/${encodeURIComponent(item.id)}`,
