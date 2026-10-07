@@ -47,14 +47,13 @@ export async function importSpriteFile(
     if (!metadata) {
       throw new Error("Sprite file must be CBI1 or CBA1.");
     }
-    const extension = raw.trimStart().startsWith("CBA1") ? ".cba" : ".cbi";
     return {
       asset: {
         contentType: "text/plain",
         data: raw,
         encoding: "text",
       },
-      assetPath: themeAssetPathForFile(file.name, extension, usage),
+      assetPath: spriteAssetPath(file.name, raw, usage),
       fps: metadata.fps,
       frameCount: metadata.frameCount,
       height: metadata.height,
@@ -71,13 +70,14 @@ export async function importSpriteFile(
   try {
     const frame = inferSpriteSheetFrame(bitmap.width, bitmap.height);
     const sprite = spriteFromBitmap(bitmap, frame);
+    const data = encodeSpriteAsset(sprite);
     return {
       asset: {
         contentType: "text/plain",
-        data: encodeSpriteAsset(sprite),
+        data,
         encoding: "text",
       },
-      assetPath: themeAssetPathForFile(file.name, ".cba", usage),
+      assetPath: spriteAssetPath(file.name, data, usage),
       fps: sprite.fps,
       frameCount: sprite.frameCount,
       height: sprite.height,
@@ -87,6 +87,18 @@ export async function importSpriteFile(
   } finally {
     bitmap.close();
   }
+}
+
+// VibeTV animates a sprite by its .cba name and draws a .cbi once, and it
+// refuses a file whose name and content disagree. So the name follows the
+// content: a single picture is .cbi, an animation is .cba.
+function spriteAssetPath(
+  name: string,
+  raw: string,
+  usage: ThemeStudioUsage,
+): string {
+  const extension = raw.trimStart().startsWith("CBA1") ? ".cba" : ".cbi";
+  return themeAssetPathForFile(name, extension, usage);
 }
 
 function inferSpriteSheetFrame(width: number, height: number) {
