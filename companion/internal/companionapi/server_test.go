@@ -6996,7 +6996,8 @@ func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
 
 	// Firmware that reports no signal strength never gets the flag.
 	wifi = ""
-	if nextPoll() || nextPoll() {
+	first, second := nextPoll(), nextPoll()
+	if first || second {
 		t.Fatal("a VibeTV that reports no signal strength must not be named weak")
 	}
 
