@@ -520,6 +520,7 @@ type weakWiFiRun struct {
 	target string
 	since  time.Time
 	last   time.Time
+	named  bool
 }
 
 type themeSpecHealth struct {
@@ -1922,30 +1923,44 @@ const wifiSignalWeakDBm = -80
 // VibeTV sits next to its router.
 const wifiSignalWeakEnvVar = "CODEXBAR_DISPLAY_WIFI_WEAK_SIGNAL_DBM"
 
+// A signal that was named weak keeps the name until it is wifiSignalRecoverDB
+// above the threshold, or it would flip with every reading around it. A run of
+// low readings is forgotten after wifiSignalRunForget without one: readings
+// that go missing are what a weak signal looks like, so a few missed polls
+// must not end it.
+const (
+	wifiSignalRecoverDB = 3
+	wifiSignalRunForget = 5 * time.Minute
+)
+
 // wifiSignalStaysWeak reports a signal at or below the threshold on two health
-// readings in a row, told apart by the same two times as in themeStaysUndrawn.
-// One low reading can be a passing dip, one reading above the threshold ends
-// the run, and another VibeTV starts it over. The threshold is always
-// negative, so firmware that reports no signal strength, which leaves 0, is
-// never weak.
+// readings in a row, the second at least themeNotDrawnConfirmTime after the
+// first. One low reading can be a passing dip, a better reading ends the run,
+// and another VibeTV starts it over. The threshold is always negative, so
+// firmware that reports no signal strength, which leaves 0, is never weak.
 func (s *Server) wifiSignalStaysWeak(target string, rssi int) bool {
 	threshold := wifiSignalWeakDBm
 	if dbm, err := strconv.Atoi(strings.TrimSpace(os.Getenv(wifiSignalWeakEnvVar))); err == nil && dbm < 0 {
 		threshold = dbm
 	}
 	now := s.currentTime()
+	target = normalizeTarget(target)
 	s.weakWiFiMu.Lock()
 	defer s.weakWiFiMu.Unlock()
+	sameRun := s.weakWiFi.target == target && now.Sub(s.weakWiFi.last) <= wifiSignalRunForget
+	if sameRun && s.weakWiFi.named {
+		threshold += wifiSignalRecoverDB
+	}
 	if rssi > threshold {
 		s.weakWiFi = weakWiFiRun{}
 		return false
 	}
-	if target = normalizeTarget(target); s.weakWiFi.target != target ||
-		now.Sub(s.weakWiFi.last) > themeNotDrawnForgetTime {
+	if !sameRun {
 		s.weakWiFi = weakWiFiRun{target: target, since: now}
 	}
 	s.weakWiFi.last = now
-	return now.Sub(s.weakWiFi.since) >= themeNotDrawnConfirmTime
+	s.weakWiFi.named = now.Sub(s.weakWiFi.since) >= themeNotDrawnConfirmTime
+	return s.weakWiFi.named
 }
 
 // renderOk=false also covers states the firmware leaves on its own, and one

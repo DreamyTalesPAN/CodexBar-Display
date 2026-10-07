@@ -579,7 +579,9 @@ reports should always quote this block for connectivity complaints.
 The Mac App passes the block on as `device.health.wifi` in `/v1/status`,
 `/v1/device` and `/v1/diagnostics` and adds `"weak": true` when a VibeTV on
 WiFi reports an `rssi` at or below -80 dBm on two readings in a row (at least
-3 s apart, at most 15 s; one reading above -80 ends it). The Control Center
+3 s apart). Once set, the flag ends with a reading of -77 dBm or better, so it
+does not flip around the threshold; polls that get no answer do not end it,
+and a low reading is forgotten after 5 minutes without another. The Control Center
 takes its weak-signal note from this flag and compares no number itself
 (issue #265). -80 is a first value that has not been validated in real
 weak-signal conditions. To see the state on a bench VibeTV next to its

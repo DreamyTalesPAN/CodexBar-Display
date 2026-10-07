@@ -6982,9 +6982,24 @@ func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
 		}
 	}
 
+	// Around the threshold the name must not flip with every reading, and
+	// polls that get no answer are what a weak signal looks like.
+	wifi = `,"wifi":{"rssi":-78}`
+	if !nextPoll() {
+		t.Fatal("a named weak signal must not end one or two dB above the threshold")
+	}
+	now = now.Add(time.Minute)
+	wifi = `,"wifi":{"rssi":-80}`
+	if !nextPoll() {
+		t.Fatal("a minute without a reading must not end a weak signal")
+	}
+	wifi = `,"wifi":{"rssi":-76}`
+	if nextPoll() {
+		t.Fatal("a reading clearly above the threshold ends the weak signal")
+	}
 	wifi = `,"wifi":{"rssi":-79}`
 	if nextPoll() {
-		t.Fatal("one reading above the threshold ends the weak signal")
+		t.Fatal("above the threshold a signal that is not named weak stays unnamed")
 	}
 	wifi = `,"wifi":{"rssi":-80}`
 	if nextPoll() {
@@ -6992,6 +7007,15 @@ func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
 	}
 	if !nextPoll() {
 		t.Fatal("two low readings in a row are a weak signal again")
+	}
+	// A low reading long ago does not confirm one now.
+	wifi = `,"wifi":{"rssi":-76}`
+	nextPoll()
+	wifi = `,"wifi":{"rssi":-80}`
+	nextPoll()
+	now = now.Add(wifiSignalRunForget + time.Second)
+	if nextPoll() {
+		t.Fatal("a low reading from before a long gap must not confirm the next one")
 	}
 
 	// Firmware that reports no signal strength never gets the flag.
