@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ControlCenterShell } from "./control-center-shell";
 
@@ -41,5 +42,22 @@ describe("ControlCenterShell", () => {
     expect(html).not.toContain(">Updates<");
     expect(html).toContain(">Usage<");
     expect(html).toContain(">Support<");
+  });
+
+  it("has no accessibility violations with an update waiting", async () => {
+    await expectNoAxeViolations(
+      renderToStaticMarkup(
+        <TooltipProvider>
+          <ControlCenterShell
+            activeTab="overview"
+            device={{ active: true, connected: true }}
+            onTabChange={vi.fn()}
+            updateAvailable
+          >
+            <div>Overview content</div>
+          </ControlCenterShell>
+        </TooltipProvider>,
+      ),
+    );
   });
 });

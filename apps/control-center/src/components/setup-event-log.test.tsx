@@ -53,7 +53,7 @@ describe("SetupEventList", () => {
     render(<SetupEventList log={log} />);
     expect(rows()[1]).toContain("3 times");
     expect(rows()[1]).not.toContain("×");
-    expect(screen.getByLabelText("Repeated 3 times")).toBeTruthy();
+    expect(rows()[1]).toContain("Repeated 3 times");
   });
 
   it("never shows the engine's product name", () => {

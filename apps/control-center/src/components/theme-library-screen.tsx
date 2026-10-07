@@ -1077,12 +1077,13 @@ function InlineInstallProgress({
     ? status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
     : status.message || status.logs[status.logs.length - 1] || "Preparing theme install.";
   const previousSteps = complete ? [] : status.logs.slice(-4, -1);
+  const title = complete ? "Installed" : "Installing";
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
-      <Progress className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
+      <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
-        <AlertTitle>{complete ? "Installed" : "Installing"}</AlertTitle>
+        <AlertTitle>{title}</AlertTitle>
         <AlertDescription>
           <p>{detail}</p>
           {previousSteps.length > 0 ? (

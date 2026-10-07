@@ -13,6 +13,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import {
   SetupAddressDialog,
   SetupCableHelpDialog,
@@ -139,5 +140,28 @@ describe("SetupAddressDialog", () => {
     expect(onConnect).toHaveBeenCalledTimes(1);
     release(null);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+describe("Setup device dialogs accessibility", () => {
+  it.each([
+    ["cable help", <SetupCableHelpDialog key="cable" onEnterAddressManually={vi.fn()} onScanAgain={vi.fn()} />],
+    [
+      "VibeTV not found",
+      <SetupDeviceNotFoundDialog
+        key="not-found"
+        open
+        onOpenChange={vi.fn()}
+        onEnterAddressManually={vi.fn()}
+        onScanAgain={vi.fn()}
+        onUseCable={vi.fn()}
+        onUseWiFi={vi.fn()}
+      />,
+    ],
+    ["IP address", <SetupAddressDialog key="address" onConnect={vi.fn()} onOpenChange={vi.fn()} open />],
+  ])("has no violations in the %s dialog", async (_name, dialog) => {
+    render(dialog);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await expectNoAxeViolations(document.body.innerHTML);
   });
 });

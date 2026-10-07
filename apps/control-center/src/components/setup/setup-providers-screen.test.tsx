@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
@@ -695,5 +696,28 @@ describe("SetupProvidersScreen", () => {
         ),
       ).toBe(false);
     }
+  });
+});
+
+describe("SetupProvidersScreen accessibility", () => {
+  it("has no violations with the list, without a match, while loading and with a provider message open", async () => {
+    await expectNoAxeViolations(render());
+    await expectNoAxeViolations(render({ providers: [] }));
+    await expectNoAxeViolations(render({ providers: [], loading: true }));
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    renderDom(
+      <SetupProvidersScreen
+        onCheckAgain={vi.fn()}
+        onContinue={vi.fn()}
+        onToggle={vi.fn()}
+        pendingCheckIds={new Set<string>()}
+        pendingPreferenceIds={new Set<string>()}
+        providers={[claude, failed]}
+        usage={usage}
+      />,
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await expectNoAxeViolations(document.body.innerHTML);
   });
 });

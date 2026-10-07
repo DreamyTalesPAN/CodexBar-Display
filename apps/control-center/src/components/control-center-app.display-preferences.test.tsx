@@ -8,6 +8,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { expectNoAxeViolations } from "@/test/axe";
 import { ControlCenterApp } from "./control-center-app";
 
 const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7" };
@@ -315,3 +316,23 @@ it("asks before running setup again and lets the customer cancel", async () => {
   expect(question()).toBeNull();
   expect(resets()).toHaveLength(1);
 });
+
+it("has no accessibility violations on any tab or in the setup question", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  const pages: string[] = [];
+  // "Appearance" opens the submenu that holds Themes and Screensavers.
+  for (const tab of ["Overview", "Usage", "Settings", "Appearance", "Themes", "Screensavers", "Updates", "Support"]) {
+    fireEvent.click(screen.getByRole("button", { name: tab }));
+    await window.wait(1);
+    pages.push(document.body.innerHTML);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
+  pages.push(document.body.innerHTML);
+
+  // axe waits on real timers.
+  vi.useRealTimers();
+  for (const page of pages) await expectNoAxeViolations(page);
+  // Nine full-app checks take about three seconds on an idle machine.
+}, 30_000);

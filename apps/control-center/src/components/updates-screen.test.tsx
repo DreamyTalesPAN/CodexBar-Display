@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { UpdatesScreen } from "./updates-screen";
 
 afterEach(cleanup);
@@ -437,5 +438,29 @@ describe("UpdatesScreen Mac-App-first gate", () => {
 
     expect(html).toContain("Update the app first");
     expect(html).not.toContain("Mac");
+  });
+
+  it.each([
+    ["offered", undefined],
+    ["running", { phase: "installing" as const, startedAt: "2026-08-09T13:01:00Z", progress: 40, logs: [] }],
+    ["failed", { phase: "error" as const, startedAt: "2026-08-09T13:01:00Z", error: "Update was not installed.", logs: [] }],
+  ])("has no accessibility violations with an update %s", async (_name, updateStatus) => {
+    await expectNoAxeViolations(
+      renderMarkup(
+        <UpdatesScreen
+          {...firmwareUpdateAvailableProps}
+          companionRelease={{
+            checkedAt: "2026-08-09T13:00:00Z",
+            status: "available",
+            updateAvailable: false,
+            message: "Mac App is up to date.",
+          }}
+          onCheckUpdates={() => undefined}
+          onCreateReport={() => undefined}
+          onInstallUpdate={() => true}
+          updateStatus={updateStatus}
+        />,
+      ),
+    );
   });
 });

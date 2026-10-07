@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { ThemeStudioUsage } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import {
@@ -320,5 +321,36 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain("Create a screensaver to add it to this list.");
     expect(html).toContain("Create Screensaver");
     expect(html).not.toContain("Reload catalog");
+  });
+
+  it("has no accessibility violations as Themes, Screensavers, empty list and during an install", async () => {
+    await expectNoAxeViolations(renderLibrary("live"));
+    await expectNoAxeViolations(renderLibrary("screensaver"));
+    await expectNoAxeViolations(renderLibrary("screensaver", [themes[0]]));
+    await expectNoAxeViolations(
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction="install"
+          companionStatus="online"
+          device={{ ...device, ready: true, firmware: "9.9.9" }}
+          installStatus={{
+            phase: "installing",
+            themeId: "live-theme",
+            title: "Live Theme",
+            startedAt: "2026-10-07T10:00:00Z",
+            progress: 40,
+            logs: ["Checking VibeTV.", "Sending theme."],
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId="live-theme"
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={themes}
+          usage="live"
+        />,
+      ),
+    );
   });
 });

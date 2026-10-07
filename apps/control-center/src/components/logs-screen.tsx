@@ -101,7 +101,7 @@ export function LogsScreen({
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Connected VibeTV</CardTitle>
+            <CardTitle asChild><h2>Connected VibeTV</h2></CardTitle>
             <CardDescription>
               {deviceConnected
                 ? copyForHost(
@@ -158,7 +158,7 @@ export function LogsScreen({
 
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Support report</CardTitle>
+            <CardTitle asChild><h2>Support report</h2></CardTitle>
             <CardDescription>
               Create a diagnostic file when support asks for it.
             </CardDescription>
@@ -176,7 +176,7 @@ export function LogsScreen({
 
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Diagnostics</CardTitle>
+          <CardTitle asChild><h2>Diagnostics</h2></CardTitle>
         </CardHeader>
         <CardContent>
           <DiagnosticsPanel
@@ -192,7 +192,7 @@ export function LogsScreen({
 
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Setup log</CardTitle>
+          <CardTitle asChild><h2>Setup log</h2></CardTitle>
         </CardHeader>
         <CardContent>
           <SetupEventLog windowsHost={windowsHost} />
@@ -201,7 +201,7 @@ export function LogsScreen({
 
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Recent activity</CardTitle>
+          <CardTitle asChild><h2>Recent activity</h2></CardTitle>
           <CardDescription>Connection and setup changes from this session.</CardDescription>
           {onRefresh ? (
             <CardAction>
@@ -224,7 +224,7 @@ export function LogsScreen({
             <div className="max-h-[320px] overflow-y-auto rounded-lg border">
               <ItemGroup className="gap-0 divide-y">
                 {events.map((event) => (
-                  <Item className="rounded-none border-0" key={event.id} size="sm">
+                  <Item className="rounded-none border-0" key={event.id} role="listitem" size="sm">
                     <ItemMedia variant="icon"><Activity aria-hidden /></ItemMedia>
                     <ItemContent>
                       <ItemTitle>{supportText(event.label)}</ItemTitle>

@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { LogsScreen } from "./logs-screen";
 
 // Issue #498: a theme that fails to render left the device "not ready", and
@@ -55,4 +56,26 @@ it("names the live theme while the screensaver is on screen", () => {
 
   expect(html).toContain("Mini Classic");
   expect(html).not.toContain("Night Clock");
+});
+
+it("has no accessibility violations with diagnostics, recent activity and an error", async () => {
+  await expectNoAxeViolations(
+    renderToStaticMarkup(
+      <LogsScreen
+        device={{ active: true, connected: true, paired: true, ready: true }}
+        diagnostics={{
+          ok: true,
+          generatedAt: "2026-10-07T06:58:00.000Z",
+          usageEngine: { status: "outdated", version: "0.17.0", minimumVersion: "0.23.0" },
+          checks: [{ name: "device_hello", status: "attention", detail: "VibeTV did not answer.", nextAction: "Check that VibeTV is on." }],
+        }}
+        onLoadDiagnostics={() => undefined}
+        onRepairUsageEngine={() => undefined}
+        events={[{ id: "1", label: "Settings loaded", detail: "Brightness 70%" }]}
+        lastError={{ code: "usage_failed", message: "Usage needs attention.", nextAction: "Try again." }}
+        onRefresh={() => undefined}
+        onRunSetupAgain={() => undefined}
+      />,
+    ),
+  );
 });

@@ -284,22 +284,23 @@ export function ProviderList({
             saving={pendingPreferenceIds.has(provider.id)}
           />
         ))}
-        {matching.length === 0 ? (
-          <Empty
-            className={cn(
-              "bg-muted/50 py-8 ring-1 ring-foreground/10",
-              SETUP_REVEAL,
-            )}
-          >
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <SearchX size={17} aria-hidden />
-              </EmptyMedia>
-              <EmptyTitle>No AI providers match your search.</EmptyTitle>
-            </EmptyHeader>
-          </Empty>
-        ) : null}
       </ItemGroup>
+      {/* After the list, not in it: a list may only hold list items. */}
+      {matching.length === 0 ? (
+        <Empty
+          className={cn(
+            "bg-muted/50 py-8 ring-1 ring-foreground/10",
+            SETUP_REVEAL,
+          )}
+        >
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchX size={17} aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>No AI providers match your search.</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
 
       {remaining > 0 ? (
         <Button
