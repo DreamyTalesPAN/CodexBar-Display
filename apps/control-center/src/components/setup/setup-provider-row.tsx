@@ -69,6 +69,9 @@ export function setupProviderRowVariant(
       return "no_usage";
     case "service_outage":
       return "outage";
+    // Everything else gets the re-check presentation and no repair prompt.
+    // That includes "rate_limited": the sign-in works and the provider only
+    // refused this check for being too frequent.
     default:
       return "timed_out";
   }

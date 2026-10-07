@@ -62,6 +62,7 @@ export type ProviderReadinessStatus =
   | "unsupported"
   | "no_usage_available"
   | "timeout"
+  | "rate_limited"
   | "config_error"
   | "engine_error"
   | "engine_incompatible"
@@ -275,7 +276,8 @@ export type DeviceInfo = {
     | "ready"
     | "reconnecting"
     | "setup_required"
-    | "provider_setup_required";
+    | "provider_setup_required"
+    | "display_render_failed";
   lastSeenAt?: string;
   board?: string;
   firmware?: string;

@@ -1,4 +1,7 @@
-import type { DeviceInfo } from "./control-center-types";
+import {
+  deviceIsCustomerConnected,
+  type DeviceInfo,
+} from "./control-center-types";
 
 export const DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT = 3;
 
@@ -67,13 +70,26 @@ export function selectRecoveryDevice(
 export function applyDeviceRecoveryStatus(
   state: DeviceRecoveryGateState,
   status: {
-    device?: Pick<DeviceInfo, "active" | "connected" | "deviceId" | "target"> | null;
+    device?: Pick<
+      DeviceInfo,
+      "active" | "connected" | "deviceId" | "paired" | "target"
+    > | null;
     countFailure?: boolean;
     operationInProgress?: boolean;
   },
 ): DeviceRecoveryGateResult {
   const deviceId = stableDeviceId(status.device);
-  const preferredDeviceId = state.preferredDeviceId || deviceId;
+  // The Companion owns which VibeTV is bound. Once it reports its own VibeTV
+  // as connected -- what the Overview calls connected -- that VibeTV is the
+  // selected one, even when this window still remembers another. Holding on
+  // to the remembered ID counted every such status as a miss: after the
+  // connection was changed outside this window, it declared the old VibeTV
+  // lost and showed "Not connected" over a working one until a reload.
+  // A VibeTV that merely answers at the address (not active) is still foreign.
+  const preferredDeviceId =
+    (deviceIsCustomerConnected(status.device) && deviceId) ||
+    state.preferredDeviceId ||
+    deviceId;
   const deviceMatchesPreferred =
     Boolean(deviceId) && (!preferredDeviceId || deviceId === preferredDeviceId);
   const selectedDeviceReachable =

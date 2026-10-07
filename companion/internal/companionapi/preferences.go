@@ -724,7 +724,8 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				setting.Health == codexbar.ProviderHealthUnavailable) {
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
-		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {
+		} else if (setting.Health == codexbar.ProviderHealthUnavailable ||
+			setting.Health == codexbar.ProviderHealthRateLimited) && lastSuccess[setting.ID] != "" {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
@@ -805,7 +806,7 @@ func providerReadinessAppliesToSettingImpl(readiness providerReadinessRecord, se
 	}
 	switch setting.Health {
 	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthBrowserSignIn, codexbar.ProviderHealthSetupRequired,
-		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable, codexbar.ProviderHealthUnsupported:
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable, codexbar.ProviderHealthUnsupported, codexbar.ProviderHealthRateLimited:
 		return false
 	default:
 		return true
@@ -836,6 +837,8 @@ func providerReadinessHealthState(status string) string {
 		return "no_usage_available"
 	case codexbar.ProviderTimeout:
 		return "timeout"
+	case codexbar.ProviderRateLimited:
+		return "rate_limited"
 	case codexbar.ProviderConfigError:
 		return "config_error"
 	case codexbar.ProviderEngineError:
@@ -872,6 +875,8 @@ func providerReadinessMessage(status string) string {
 		return "This account does not expose usage data."
 	case codexbar.ProviderTimeout:
 		return "The provider check timed out."
+	case codexbar.ProviderRateLimited:
+		return "This provider is limiting usage checks right now."
 	case codexbar.ProviderConfigError:
 		return "Provider settings could not be read or saved."
 	case codexbar.ProviderEngineError:
@@ -902,6 +907,8 @@ func providerReadinessNextAction(status string) string {
 		return "Use this provider once or connect an account with usage, then check again."
 	case codexbar.ProviderTimeout:
 		return "Wait a moment, then check this provider again."
+	case codexbar.ProviderRateLimited:
+		return "Wait a few minutes, then check this provider again."
 	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
 		return "Repair the usage service, then check this provider again."
 	case codexbar.ProviderEngineIncompatible:
@@ -916,7 +923,9 @@ func providerCanUseUsageEvidence(setting codexbar.ProviderSetting) bool {
 		(setting.Health == "" ||
 			setting.Health == codexbar.ProviderHealthHealthy ||
 			setting.Health == codexbar.ProviderHealthChecking ||
-			setting.Health == codexbar.ProviderHealthUnavailable)
+			setting.Health == codexbar.ProviderHealthUnavailable ||
+			// A refused check says nothing against a reading that did arrive.
+			setting.Health == codexbar.ProviderHealthRateLimited)
 }
 
 func providerPreferenceID(providerID string) string {
@@ -937,6 +946,8 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "This provider no longer supports this account."
 	case codexbar.ProviderHealthNoUsage:
 		return "This account does not expose usage data."
+	case codexbar.ProviderHealthRateLimited:
+		return "This provider is limiting usage checks right now."
 	case codexbar.ProviderHealthUnavailable:
 		return "Provider is not responding right now."
 	default:

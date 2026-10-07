@@ -540,6 +540,44 @@ func TestFreshUsageAfterExactFailureRestoresHealthyPreference(t *testing.T) {
 	}
 }
 
+// Review of #524: a health scan the provider throttled is like one that got no
+// answer. It must not hide a reading that did arrive, or the row stops being
+// healthy and setup refuses to continue for a provider that is delivering.
+func TestRateLimitedHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	rateLimited := []codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true,
+		Health: codexbar.ProviderHealthRateLimited, Reported: "usage request failed: too many requests",
+	}}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now), true
+	}
+	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != "healthy" {
+		t.Fatalf("fresh usage must keep the row healthy: %#v", items[0].Health)
+	}
+
+	// A saved reading that is no longer fresh is still the last good one.
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("codex", "Codex", now)
+		for i := range usage.Providers {
+			usage.Providers[i].Stale = true
+		}
+		return usage, true
+	}
+	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != providerHealthStateStale {
+		t.Fatalf("a saved reading must show as stale: %#v", items[0].Health)
+	}
+
+	// Without any reading the row still says what the scan found.
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != "rate_limited" {
+		t.Fatalf("no reading: the row must stay rate_limited: %#v", items[0].Health)
+	}
+}
+
 func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {

@@ -176,6 +176,28 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain("Wait");
   });
 
+  it("lets a VibeTV that cannot show its theme install another one", () => {
+    const render = (connectionState: string) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{ ...device, firmware: "9.9.9", connectionState }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={themes}
+          usage="live"
+        />,
+      );
+    expect(render("provider_setup_required")).toContain("Connect VibeTV first.");
+    expect(render("display_render_failed")).not.toContain("Connect VibeTV first.");
+  });
+
   it("keeps the existing Themes list restricted to live packs", () => {
     const html = renderLibrary("live");
 

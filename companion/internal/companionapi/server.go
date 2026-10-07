@@ -176,6 +176,9 @@ var displayStreamLogKeys = []string{
 	"reason",
 	"detail",
 	"activityDetail",
+	"resetTrust",
+	"resetTrustSecs",
+	"resetSource",
 }
 
 type Options struct {
@@ -191,9 +194,12 @@ type Options struct {
 	// Supplied only by the process supervising the actual worker. Running alone
 	// never establishes frame freshness or device readiness.
 	DisplayStreamRunning func() bool
+	// Logf writes one line to the runtime's log. Nil outside the runtime.
+	Logf func(string, ...any)
 }
 
 type Server struct {
+	logf                   func(string, ...any)
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
@@ -241,6 +247,7 @@ type Server struct {
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string
 	legacyCableProbeTries  int
+	legacyCableProbeBusy   int
 	legacyCableProbeAt     time.Time
 	updateHoldUntil        time.Time
 	updateHoldRefusals     atomic.Uint64
@@ -406,6 +413,11 @@ type healthProbeFlight struct {
 
 type configuredDeviceConnection struct {
 	lastSeenAt time.Time
+	// The theme path and render error of the last health reading that
+	// themeCannotBeDrawn named, and when that run of readings began.
+	themeNotDrawn       string
+	themeNotDrawnAt     time.Time
+	themeNotDrawnLastAt time.Time
 }
 
 func (e *repairStageError) Error() string {
@@ -497,6 +509,9 @@ type themeSpecHealth struct {
 	RenderError      string `json:"renderError,omitempty"`
 	RenderErrorAsset string `json:"renderErrorAsset,omitempty"`
 	RenderFailures   uint64 `json:"renderFailures,omitempty"`
+	// The animation frame buffer the VibeTV holds right now; only read by
+	// themeCannotBeDrawn.
+	cbaBufferBytes uint64
 }
 
 type statusResponse struct {
@@ -1053,6 +1068,7 @@ func New(opts Options) (*Server, error) {
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
+		logf:                  opts.Logf,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
 		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
@@ -1458,7 +1474,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			s.firmwareUpdateStartMu.Unlock()
 		}
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
-		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
+		hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+		if identity, ok := protocol.HelloIdentity(err); ok && strings.EqualFold(strings.TrimSpace(cfg.DeviceID), identity.DeviceID) {
+			// Issue #526: the saved VibeTV answered, without capabilities. It
+			// stays found and keeps the board and firmware the Updates tab
+			// needs. Everything a complete hello decides below stays undecided,
+			// as after a hello that failed.
+			device.Board, device.Firmware = identity.Board, identity.Firmware
+			s.rememberConfiguredDeviceSeen(cfg)
+		}
+		if err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)
 			observedID := strings.TrimSpace(hello.DeviceID)
 			identityMismatch = configuredID != "" && observedID != "" &&
@@ -1614,10 +1639,17 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 }
 
 // A VibeTV plugged in over USB restarts and does not answer the cable while it
-// joins WiFi, so a new port set is asked a few times, spaced apart.
+// joins WiFi, so a new port set is asked a few times, spaced apart. A try in
+// which no port could be opened asked nobody and reopened nothing, so it is
+// spaced like the others but not counted (issue #529): the cable is asked once
+// the other program lets go of the port. A port that never opens (no
+// permission, a Bluetooth COM port) reports the same error, so those tries are
+// capped too: five minutes cover a program that is busy with the port, and
+// after that the port set is left alone until it changes.
 const (
-	legacyCableProbeAttempts   = 3
-	legacyCableProbeRetryDelay = 10 * time.Second
+	legacyCableProbeAttempts     = 3
+	legacyCableProbeBusyAttempts = 30
+	legacyCableProbeRetryDelay   = 10 * time.Second
 )
 
 // probeLegacyWiFiCable asks newly connected serial ports whether one of them
@@ -1641,9 +1673,12 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		if key != s.legacyCableProbePorts {
 			s.legacyCableProbePorts = key
 			s.legacyCableProbeTries = 0
+			s.legacyCableProbeBusy = 0
+			s.legacyCableProbeAt = time.Time{}
 		}
 		return len(ports) > 0 && s.legacyCableProbeTries < legacyCableProbeAttempts &&
-			(s.legacyCableProbeTries == 0 || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
+			s.legacyCableProbeBusy < legacyCableProbeBusyAttempts &&
+			(s.legacyCableProbeAt.IsZero() || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
 	}
 	s.legacyCableProbeMu.Lock()
 	probe := due()
@@ -1663,8 +1698,16 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		s.legacyCableProbeAt = s.now()
 	}
 	s.legacyCableProbeMu.Unlock()
-	if probe {
-		_, _ = s.resolveCablePort("", deviceID)
+	if !probe {
+		return
+	}
+	if _, err := s.resolveCablePort("", deviceID); errcode.Of(err) == errcode.TransportSerialOpen {
+		s.legacyCableProbeMu.Lock()
+		if key == s.legacyCableProbePorts {
+			s.legacyCableProbeTries--
+			s.legacyCableProbeBusy++
+		}
+		s.legacyCableProbeMu.Unlock()
 	}
 }
 
@@ -1739,6 +1782,8 @@ func (s *Server) withConfiguredConnectionState(
 		s.connectionStates[key] = state
 	}
 
+	themeNotDrawn := state.themeStaysUndrawn(device.Display, now)
+
 	// Connectivity must stay evidence based. A healthy display stream is real
 	// evidence (the device acknowledged a frame inside the bounded ready-age
 	// window). A provider-setup stream entry alone is not: it only proves the
@@ -1781,9 +1826,17 @@ func (s *Server) withConfiguredConnectionState(
 	// window above keeps an unreachable device Connected, and that one really
 	// is reconnecting.
 	if streamConnected || (reachable && device.Paired) {
-		if device.Display != nil && device.Display.ThemeSpec != nil && !device.Display.ThemeSpec.Active {
-			device.ConnectionState = deviceConnectionSetup
-			return device
+		if device.Display != nil && device.Display.ThemeSpec != nil {
+			spec := device.Display.ThemeSpec
+			if !spec.Active {
+				device.ConnectionState = deviceConnectionSetup
+				return device
+			}
+			if themeNotDrawn &&
+				(device.Stream == nil || device.Stream.ErrorCode != "provider_setup_required") {
+				device.ConnectionState = deviceConnectionRenderFailed
+				return device
+			}
 		}
 		device.ConnectionState = deviceConnectionNoProvider
 		return device
@@ -1795,6 +1848,90 @@ func (s *Server) withConfiguredConnectionState(
 // A reachable, paired device whose only missing piece is AI usage is not
 // reconnecting. Naming that separately keeps the connection story honest.
 const deviceConnectionNoProvider = "provider_setup_required"
+
+// Issue #498: a reachable, paired device that cannot draw its active theme has
+// a theme problem. Calling it "provider setup required" sent the customer to
+// the AI provider and the firmware.
+const deviceConnectionRenderFailed = "display_render_failed"
+
+// themeNotDrawnConfirmTime is how far apart two health readings must be to
+// count as two. Status is polled every 5 s and a health answer is reused for
+// deviceProbeCacheTime, so the app's next poll confirms a reading and a second
+// reader of the same answer does not.
+const themeNotDrawnConfirmTime = 3 * time.Second
+
+// themeNotDrawnForgetTime is how far apart two health readings may be and
+// still be "in a row": three status polls, so one or two missed health answers
+// of a busy VibeTV do not start the count over.
+const themeNotDrawnForgetTime = 15 * time.Second
+
+// themeStaysUndrawn reports a theme that themeCannotBeDrawn named on two
+// health readings in a row, for the same theme path and render error (issue
+// #530). One reading can be a single failed buffer allocation that the next
+// animation tick repairs, and the firmware's failure counters only ever grow.
+// A reading that can be drawn, another theme path or another render error
+// starts over; another VibeTV has its own state. No reading changes nothing.
+func (c *configuredDeviceConnection) themeStaysUndrawn(display *deviceDisplayInfo, now time.Time) bool {
+	if display == nil || display.ThemeSpec == nil {
+		return false
+	}
+	spec := display.ThemeSpec
+	if !themeCannotBeDrawn(spec) {
+		c.themeNotDrawn = ""
+		return false
+	}
+	// A reading remembered from before the VibeTV was away for a while says
+	// nothing about now, so it does not confirm the first reading after that.
+	if reading := spec.Path + "\n" + spec.RenderError; c.themeNotDrawn != reading ||
+		now.Sub(c.themeNotDrawnLastAt) > themeNotDrawnForgetTime {
+		c.themeNotDrawn, c.themeNotDrawnAt = reading, now
+	}
+	c.themeNotDrawnLastAt = now
+	return now.Sub(c.themeNotDrawnAt) >= themeNotDrawnConfirmTime
+}
+
+// renderOk=false also covers states the firmware leaves on its own, and one
+// health reading has to tell them apart.
+//   - "low_heap" ("low_heap_full_render" on older firmware): a full redraw
+//     found no heap and retries after 750 ms. One
+//     reading cannot tell a single miss from a theme that never fits, so it is
+//     not named here and stays "waiting for an image".
+//   - "parse_fail": also what a valid theme reports while its scene found no
+//     heap; the firmware retries the full render. An invalid spec is refused
+//     at activation and in the frame (#66), so this reading is the retry.
+//   - "low_heap_cba_buffer": the animation found no frame buffer. The error
+//     stays up until a whole clean pass has been drawn, which takes seconds
+//     after one tight moment. While the VibeTV holds a frame buffer it is
+//     drawing again; a theme that never fits (#498) never gets one.
+//
+// Everything else is a spec or an asset the VibeTV cannot use.
+func themeCannotBeDrawn(spec *themeSpecHealth) bool {
+	if spec.RenderOK == nil || *spec.RenderOK {
+		return false
+	}
+	switch spec.RenderError {
+	case "low_heap", "low_heap_full_render", "parse_fail":
+		return false
+	case "low_heap_cba_buffer":
+		return spec.cbaBufferBytes == 0
+	}
+	return true
+}
+
+// rememberConfiguredDeviceSeen keeps the saved VibeTV inside the anti-flap
+// grace window of withConfiguredConnectionState without calling it reachable.
+func (s *Server) rememberConfiguredDeviceSeen(cfg runtimeconfig.Config) {
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+	if s.connectionStates == nil {
+		s.connectionStates = make(map[string]*configuredDeviceConnection)
+	}
+	key := configuredDeviceKey(cfg)
+	if s.connectionStates[key] == nil {
+		s.connectionStates[key] = &configuredDeviceConnection{}
+	}
+	s.connectionStates[key].lastSeenAt = s.currentTime()
+}
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {
 	if id := strings.ToLower(strings.TrimSpace(cfg.DeviceID)); id != "" {
@@ -3657,9 +3794,12 @@ func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mo
 	// restarting VibeTV (#481) is the same move back from WiFi.
 	wifiSwitchPending := mode == "cable" && cfg.WiFiTransitionPending() &&
 		s.currentTime().Sub(time.Unix(cfg.WiFiTransitionStartedAt, 0)) < cableTransitionWait
-	transitioningFromWiFi := wifiSwitchPending || (mode == "cable" &&
+	// Another VibeTV picked on the cable is a new selection, not the saved
+	// WiFi VibeTV moving to its cable; looking for the saved one there fails.
+	savedDeviceRequested := requestedDeviceID == "" || strings.EqualFold(requestedDeviceID, strings.TrimSpace(cfg.DeviceID))
+	transitioningFromWiFi := savedDeviceRequested && (wifiSwitchPending || (mode == "cable" &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
-		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != "")
+		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != ""))
 	var port string
 	var hello protocol.DeviceHello
 	cableHelloReady := false
@@ -3753,6 +3893,10 @@ func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mo
 		(deviceMode == "legacy-wifi-only" && mode == "wifi")
 	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
 	cableToken := strings.TrimSpace(cfg.DeviceToken)
+	if saved := strings.TrimSpace(cfg.DeviceID); saved != "" && !strings.EqualFold(saved, hello.DeviceID) {
+		// The saved token belongs to the saved VibeTV, not to this one.
+		cableToken = ""
+	}
 	if known && strings.TrimSpace(knownDevice.DeviceToken) != "" {
 		cableToken = strings.TrimSpace(knownDevice.DeviceToken)
 	}
@@ -5413,13 +5557,19 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	}
 	var hello protocol.DeviceHello
 	ok := true
+	// Issue #526: a WiFi VibeTV without heap for its capabilities still names
+	// itself, and that is all an update start needs. The update is what gives
+	// it the heap back, so "not found" would lock out the VibeTV that needs it.
+	// What its capabilities would decide (cable-only updates, legacy WiFi) is
+	// left undecided.
+	identityOnly := false
 	if req.Rescue {
 		// The device cannot pass the paired checks below: it has no identity
 		// yet. The updater finds exactly one such VibeTV and refuses the rest.
 	} else if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		_, hello, ok = s.requireCableControlDevice(w, cfg)
 	} else {
-		cfg, hello, ok = s.requireDevice(w, r)
+		cfg, hello, identityOnly, ok = s.requireDeviceIdentity(w, r, true)
 		if transport := hello.Normalize().Capabilities.Transport; ok &&
 			transport.CableOnlyUpdates != nil && *transport.CableOnlyUpdates {
 			// Issue #522: this firmware refuses an upload over WiFi. If this
@@ -5462,7 +5612,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
-	if transport := hello.Normalize().Capabilities.Transport; !req.Rescue &&
+	if transport := hello.Normalize().Capabilities.Transport; !req.Rescue && !identityOnly &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" &&
 		(transport.CableOnlyUpdates == nil || !*transport.CableOnlyUpdates) {
 		// The update restarts this VibeTV in legacy WiFi mode (issue #498).
@@ -6571,6 +6721,10 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	token := strings.TrimSpace(cfg.DeviceToken)
 	s.setFirmwareUpdateStage(jobID, "verifying_firmware")
 	hello, err := s.getHello(ctx, target, token)
+	if identity, ok := protocol.HelloIdentity(err); ok {
+		// Device ID and firmware are all this check reads (issue #526).
+		hello, err = identity, nil
+	}
 	if err != nil {
 		return "", "", fmt.Errorf("verify installed firmware: %w", err)
 	}
@@ -6958,6 +7112,14 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 type firmwareUpdateEvent = firmwareupdate.Event
 
 func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEvent) {
+	if event.UploadAccepted && strings.HasPrefix(strings.ToLower(strings.TrimSpace(event.Target)), "http") {
+		// Only firmware without cable-only updates takes an upload over WiFi
+		// (docs/firmware-ota-contract.md), so this is the same fact the update
+		// start reads from the hello. A hello without capabilities (issue
+		// #526) could not say it there, and the new firmware has not started
+		// yet, so nothing has ended its legacy mode over the cable.
+		s.rememberLegacyWiFiDevice(event.DeviceID)
+	}
 	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 		if stage := strings.TrimSpace(event.Stage); stage != "" {
 			job.Stage = stage
@@ -7682,19 +7844,37 @@ func (s *Server) updateConfig(mutate func(*runtimeconfig.Config)) (runtimeconfig
 }
 
 func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimeconfig.Config, protocol.DeviceHello, bool) {
+	cfg, hello, _, ok := s.requireDeviceIdentity(w, r, false)
+	return cfg, hello, ok
+}
+
+// requireDeviceIdentity is requireDevice for a caller that says whether the
+// identity of the saved VibeTV is enough for it (issue #526). identityOnly
+// reports a hello without capabilities: device ID, board, firmware and
+// features are real, transport mode, limits and theme capabilities are empty
+// because they are not known.
+func (s *Server) requireDeviceIdentity(w http.ResponseWriter, r *http.Request, identityIsEnough bool) (
+	_ runtimeconfig.Config, _ protocol.DeviceHello, identityOnly bool, _ bool,
+) {
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
 	if strings.TrimSpace(cfg.DeviceTarget) == "" {
 		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
 	// Reuse the central single-flight probe: a dead device must not occupy the
 	// serialized per-host gate for the full 15s device timeout and starve the
 	// 5s status poll (head-of-line blocking during cold start).
 	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+	if identity, ok := protocol.HelloIdentity(err); ok && identityIsEnough &&
+		strings.EqualFold(strings.TrimSpace(cfg.DeviceID), identity.DeviceID) && !cfg.WiFiTransitionPending() {
+		// Whether a WiFi transition is pending on the device is not known
+		// either, so only a VibeTV this Mac is not waiting for passes.
+		return cfg, identity, true, true
+	}
 	if err != nil {
 		// A read-only status poll must never fan out into a subnet scan. The
 		// Control Center polls this endpoint frequently; when VibeTV is offline,
@@ -7702,15 +7882,15 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		// recovery or OTA update starts. Discovery remains available through the
 		// explicit /v1/device/discover and /v1/device/repair actions.
 		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
 	if err := s.confirmPendingWiFiTransition(
 		r.Context(), cfg.DeviceTarget, cfg.DeviceToken, cfg.DeviceID, hello,
 	); err != nil {
 		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
-	return cfg, hello, true
+	return cfg, hello, false, true
 }
 
 func (s *Server) clearConfiguredDeviceState() {
@@ -8453,6 +8633,7 @@ type deviceHealth struct {
 			RenderError      string `json:"renderError"`
 			RenderErrorAsset string `json:"renderErrorAsset"`
 			RenderFailures   uint64 `json:"renderFailures"`
+			CBABufferBytes   uint64 `json:"cbaBufferBytes"`
 		} `json:"themeSpec"`
 	} `json:"display"`
 	Render struct {
@@ -8964,6 +9145,10 @@ func (s *Server) do(req *http.Request, out any) error {
 	if out == nil {
 		return nil
 	}
+	if hello, ok := out.(*protocol.DeviceHello); ok {
+		*hello, err = protocol.DecodeWiFiHello(resp.Body)
+		return err
+	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
@@ -9164,6 +9349,11 @@ func themeInstallErrorPayload(err error) (int, apiError) {
 	message := "Theme install failed."
 	if detail := sanitizeErrorDetail(err); detail != "" {
 		message = "Theme install failed: " + detail
+	}
+	// Issue #498: the theme is on the VibeTV but it cannot draw it. The raw
+	// render health is for the support report, not for the customer's dialog.
+	if errors.Is(err, themeinstall.ErrThemeNotRendered) {
+		code, message, next = "display_render_failed", "VibeTV can't show this theme.", "Choose another theme."
 	}
 	return http.StatusBadGateway, apiError{
 		Code:       code,
@@ -9392,6 +9582,7 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 				RenderError:      strings.TrimSpace(health.Display.ThemeSpec.RenderError),
 				RenderErrorAsset: strings.TrimSpace(health.Display.ThemeSpec.RenderErrorAsset),
 				RenderFailures:   health.Display.ThemeSpec.RenderFailures,
+				cbaBufferBytes:   health.Display.ThemeSpec.CBABufferBytes,
 			},
 		}
 	}
@@ -10012,6 +10203,13 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
+	}
+	// Without its budget a trust statement would make the preview stop
+	// trusting the frame at once, so the two only count together.
+	if trustSecs, ok := int64FieldFromDisplayStreamLog(line, "resetTrustSecs"); ok {
+		frame.ResetTrustSec = trustSecs
+	} else {
+		frame.ResetTrust = ""
 	}
 	if sessionTokens, ok := int64FieldFromDisplayStreamLog(line, "sessionTokens"); ok {
 		frame.SessionTokens = sessionTokens

@@ -11,6 +11,7 @@
 namespace {
 
 using codexbar_display::themespec::FrameData;
+using codexbar_display::themespec::kResetSecsIdle;
 using codexbar_display::themespec::GifCommand;
 using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
@@ -558,6 +559,164 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
 }
 
+// A customer received a VibeTV showing "Resets in Reset unavailable" on the
+// Claude Creature theme: Session at 0% with no active Claude session, so
+// Anthropic sent no session deadline, and the theme's hard-coded "Resets in "
+// prefix stood in front of the unavailable text. The line has to collapse to a
+// single string, and an idle window says so plainly instead of reporting a
+// fault; a template that still substitutes real values keeps its prefix.
+void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
+  FrameData frame;
+  frame.label = "Claude";
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1Percent = 0;
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2Percent = 32;
+  frame.usageSlot2ResetSecs = 4 * 24 * 3600;
+  frame.usageSlot2Available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"},
+        {"t":"tx","x":0,"y":20,"v":"Resets in {usageSlot2Reset}"},
+        {"t":"tx","x":0,"y":40,"v":"{usageSlot1Label} {usageSlot1Reset}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  // The idle session line collapses instead of reading "Resets in Reset unavailable",
+  // and names the idle state rather than reporting a fault.
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
+  // A window that does have a deadline is untouched.
+  TEST_ASSERT_EQUAL_STRING("Resets in 4d 0h", sink.commands[2].text.c_str());
+  // A template carrying another real value keeps substituting in place.
+  TEST_ASSERT_EQUAL_STRING("Session No active session", sink.commands[3].text.c_str());
+}
+
+// The compact aliases bind the same countdown as the long names; a theme that
+// writes {us1r} or {pv1r} must collapse identically or the doubled sentence
+// survives on exactly the devices whose themes use the short form.
+void testIdleCountdownCollapsesForCompactResetAliases() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1Percent = 0;
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.providerSlots[0].label = "Claude";
+  frame.providerSlots[0].percent = 0;
+  frame.providerSlots[0].resetSecs = kResetSecsIdle;
+  frame.providerSlots[0].available = true;
+  frame.providerSlots[1].label = "Codex";
+  frame.providerSlots[1].percent = 40;
+  frame.providerSlots[1].resetSecs = 3 * 3600;
+  frame.providerSlots[1].available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-reset-short","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {us1r}"},
+        {"t":"tx","x":0,"y":20,"v":"Resets in {pv1r}"},
+        {"t":"tx","x":0,"y":40,"v":"Resets in {pv2r}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Resets in 3h 0m", sink.commands[3].text.c_str());
+}
+
+// The idle wording is only for a reading the device stands behind. A countdown
+// the device cannot justify keeps saying so: an idle window and a stale one
+// look identical in the numbers (percent 0, no deadline) and only the trust
+// flag tells them apart. Getting this backwards would report a fresh, healthy
+// account as broken, or dress up an untrustworthy screen as merely idle.
+void testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot() {
+  FrameData stale;
+  stale.usageSlot1Label = "Session";
+  stale.usageSlot1Percent = 0;
+  stale.usageSlot1ResetSecs = 0;
+  stale.usageSlot1Available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-vs-stale","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"},
+        {"t":"tx","x":0,"y":20,"b":"us1r"}
+      ]})JSON";
+
+  RecordingSink staleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, stale, staleSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", staleSink.commands[1].text.c_str());
+  // A bare binding carries no prose to collapse and reports the same state.
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", staleSink.commands[2].text.c_str());
+
+  FrameData idle = stale;
+  idle.usageSlot1ResetSecs = kResetSecsIdle;
+  RecordingSink idleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, idle, idleSink));
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[2].text.c_str());
+}
+
+// One template binding two countdowns cannot claim everything is merely idle
+// while one of its values is untrustworthy, so a mixed line stays on the
+// unavailable wording.
+void testMixedIdleAndStaleCountdownsKeepTheUnavailableWording() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2ResetSecs = 0;
+  frame.usageSlot2Available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"mixed-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"{usageSlot1Reset} / {usageSlot2Reset}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+}
+
+// The root {reset} token owns no window of its own. It may only claim the idle
+// state when every window the frame carries is idle; otherwise a stale basis
+// would be dressed up as an idle account.
+void testRootResetTokenFollowsTheWindowsItSummarises() {
+  FrameData idle;
+  idle.resetSecs = 0;
+  idle.usageWindows[0].label = "Session";
+  idle.usageWindows[0].resetSecs = kResetSecsIdle;
+  idle.usageWindows[0].available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"root-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Reset in {reset}"}
+      ]})JSON";
+
+  RecordingSink idleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, idle, idleSink));
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[1].text.c_str());
+
+  // No windows at all: nothing says the account is idle, so the wording stays.
+  FrameData bare;
+  bare.resetSecs = 0;
+  RecordingSink bareSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, bare, bareSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", bareSink.commands[1].text.c_str());
+
+  // Usage that could not be read at all is never idle.
+  FrameData unavailable = idle;
+  unavailable.usageUnavailable = true;
+  RecordingSink unavailableSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, unavailable, unavailableSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", unavailableSink.commands[1].text.c_str());
+}
+
 void testUsageWindowOwnershipHidesCompleteMissingLane() {
   const char* spec = R"JSON({
     "v":1,
@@ -729,6 +888,43 @@ void testUsageWindowResetCountdownsTickIndependently() {
       String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON")).UsesUsageWindowReset(1));
 }
 
+// The periodic countdown redraw has to ask for every kind of reset a theme
+// binds, not just the root and the usage windows. Night Clock binds nothing
+// but {pv1l}/{pv1r}/{pv2l}/{pv2r}, so a screen whose only live values are
+// provider-slot countdowns would never be asked to repaint: an idle slot
+// reading "No active session" would keep that wording after the trust budget
+// expired, presenting a value the device can no longer stand behind.
+//
+void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
+  const auto countdownFieldsOf = [](const char* spec) {
+    return codexbar_display::core::ThemeSpecCountdownFields(
+        codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec)));
+  };
+
+  // The shipped Night Clock shape: provider slots only.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldProviderSlots,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"nc","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"pv1l"},)JSON"
+          R"JSON({"t":"tx","x":0,"y":20,"b":"pv1r"},{"t":"tx","x":0,"y":40,"b":"pv2r"}]})JSON"));
+  // The shipped Claude Creature shape: a usage-window countdown in prose.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldUsageWindowReset,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"cc","rev":1,"p":[)JSON"
+          R"JSON({"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"}]})JSON"));
+  // The root token keeps its own field.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldReset,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"rt","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"}]})JSON"));
+  // A theme with no countdown at all asks for no countdown repaint.
+  TEST_ASSERT_EQUAL_UINT32(
+      0,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"cl","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"tm"}]})JSON"));
+}
+
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   std::string frameLine;
   const auto appendEscapedText = [&frameLine](size_t decodedBytes, size_t variant) {
@@ -893,6 +1089,39 @@ void testUsageCountdownRefreshDoesNotRepaintBatteryArea() {
       TEST_ASSERT_TRUE(clipped);
     }
   }
+}
+
+void testCountdownRepaintsOnlyWhenItsMinuteChanges() {
+  // A frame every ~2 s with a few seconds less must not repaint "2h 48m".
+  const String spec("{\"v\":1,\"id\":\"countdown\",\"rev\":1,\"p\":[{\"t\":\"tx\",\"x\":0,\"y\":0,\"b\":\"r\"},{\"t\":\"tx\",\"x\":0,\"y\":20,\"b\":\"us1r\"}]}");
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(spec);
+  codexbar_display::core::Frame before;
+  before.resetSecs = 10110;  // 2h 48m 30s
+  before.usageWindows[0].available = true;
+  before.usageWindows[0].percent = 42;
+  before.usageWindows[0].resetSecs = 3630;
+  auto sameMinute = before;
+  sameMinute.resetSecs = 10088;
+  sameMinute.usageWindows[0].resetSecs = 3608;
+  TEST_ASSERT_FALSE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, sameMinute, use));
+  TEST_ASSERT_EQUAL_UINT32(0, codexbar_display::core::ThemeSpecLiveChangedFields(before, sameMinute, use));
+
+  auto nextMinute = before;
+  nextMinute.resetSecs = 10079;  // 2h 47m
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, nextMinute, use));
+  TEST_ASSERT_TRUE((codexbar_display::core::ThemeSpecLiveChangedFields(before, nextMinute, use) &
+                    codexbar_display::themespec::kThemeSpecFieldReset) != 0);
+
+  auto windowNextMinute = before;
+  windowNextMinute.usageWindows[0].resetSecs = 3599;
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, windowNextMinute, use));
+
+  // "Reset unavailable" (0) and the last minute (1..59 s) are different texts.
+  auto unavailable = before;
+  unavailable.resetSecs = 0;
+  auto lastMinute = before;
+  lastMinute.resetSecs = 30;
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(unavailable, lastMinute, use));
 }
 
 void testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme() {
@@ -2987,6 +3216,90 @@ void testStoredThemeBootActivationRejectsInvalidRaw() {
   TEST_ASSERT_FALSE(event.frameAccepted);
 }
 
+// Issue #66: what a stored theme file can turn into -- cut off by a power
+// loss, overwritten with the wrong shape, or grown past the device limits --
+// never becomes the frame, and the theme that was up stays up.
+void testCorruptStoredThemeSpecKeepsLastKnownGood() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String good =
+      R"JSON({"v":1,"id":"good","rev":3,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "good", 3, good, 1000, event));
+
+  String tooManyPrimitives = R"JSON({"v":1,"id":"big","rev":1,"p":[)JSON";
+  for (size_t i = 0; i <= codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives; ++i) {
+    tooManyPrimitives += i == 0 ? "" : ",";
+    tooManyPrimitives += R"JSON({"t":"tx","x":1,"y":2,"s":1,"v":"x"})JSON";
+  }
+  tooManyPrimitives += "]}";
+
+  const String corrupt[] = {
+      good.substring(0, good.length() / 2),
+      good.substring(0, good.length() - 2),
+      R"JSON({"v":1,"id":"bad","rev":1,"p":"tx"})JSON",
+      R"JSON({"v":1,"id":"bad","rev":1,"p":{"t":"tx"}})JSON",
+      R"JSON({"v":1,"id":"bad","rev":1,"p":[{"t":"rc","x":1,"y":2,"w":0,"h":4},{"t":"tx","x":1,"y":2,"s":0,"v":"x"}]})JSON",
+      R"JSON([{"t":"tx","x":1,"y":2,"s":1,"v":"p"}])JSON",
+      tooManyPrimitives,
+  };
+  for (const String& raw : corrupt) {
+    TEST_ASSERT_FALSE_MESSAGE(
+        RestoreStoredThemeSpecFrame(state, "bad", 1, raw, 2000, event), raw.c_str());
+    TEST_ASSERT_FALSE(event.frameAccepted);
+    TEST_ASSERT_EQUAL_STRING("good", state.current.themeSpecId.c_str());
+    TEST_ASSERT_EQUAL_INT(3, state.current.themeSpecRev);
+    TEST_ASSERT_EQUAL_STRING("good", state.cachedThemeId.c_str());
+    TEST_ASSERT_EQUAL_STRING(good.c_str(), ThemeSpecRawForFrame(state, state.current).c_str());
+  }
+
+  // Nothing was up before: the frame stays empty instead of naming a theme
+  // that cannot draw, so the device shows its own "Theme missing" screen.
+  RuntimeState fresh;
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(fresh, "bad", 1, corrupt[0], 2000, event));
+  TEST_ASSERT_FALSE(fresh.hasFrame);
+  TEST_ASSERT_FALSE(fresh.current.hasThemeSpec);
+}
+
+// The same rule for a spec a frame carries: one that can never compile used to
+// replace the cached theme and stay the frame's theme, so every render failed
+// until the next restart.
+void testFrameCarriedInvalidThemeSpecKeepsLastKnownGood() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String good =
+      R"JSON({"v":1,"id":"good","rev":3,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "good", 3, good, 1000, event));
+
+  const char* invalid[] = {
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"bad","rev":1,"p":[{"t":"unsupported"}]}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":12,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"bad","rev":1,"p":"tx"}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":13,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"good","rev":3,"p":[]}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":14,"weekly":20,"resetSecs":3600})JSON",
+  };
+  for (const char* line : invalid) {
+    TEST_ASSERT_TRUE_MESSAGE(ConsumeFrameLine(state, line, 2000, event), line);
+    TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+    TEST_ASSERT_EQUAL_STRING("good", state.current.themeSpecId.c_str());
+    TEST_ASSERT_EQUAL_INT(3, state.current.themeSpecRev);
+    TEST_ASSERT_EQUAL_STRING(good.c_str(), ThemeSpecRawForFrame(state, state.current).c_str());
+  }
+  // The usage values of those frames still arrive.
+  TEST_ASSERT_EQUAL_INT(14, state.current.session);
+
+  // A valid spec still replaces the theme.
+  const char* next = R"JSON({"v":2,"provider":"codex","label":"Codex","session":15,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"next","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"ok"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, next, 3000, event));
+  TEST_ASSERT_EQUAL_STRING("next", state.current.themeSpecId.c_str());
+  TEST_ASSERT_EQUAL_STRING("next", state.cachedThemeId.c_str());
+
+  // Nothing was up before: the frame names no theme, so the device shows its
+  // own "Theme missing" screen instead of failing to draw.
+  RuntimeState fresh;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(fresh, invalid[0], 4000, event));
+  TEST_ASSERT_FALSE(fresh.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("", fresh.cachedThemeSpecRaw.c_str());
+}
+
 void testThemeSpecErrorFrameUsesFullRender() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -3609,6 +3922,88 @@ void testMalformedAndControlLinesNeverBecomeFrames() {
   TEST_ASSERT_TRUE(event.frameAccepted);
 }
 
+// The customer's exact wire frame: Claude with an idle 5-hour session (no
+// deadline at all) beside a weekly window that does have one. The device must
+// read the session window as idle and the weekly one as a running countdown,
+// which is what separates "nothing started yet" from "cannot be trusted".
+void testIdleWindowIsDistinguishedFromAnUntrustworthyOne() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* idleSession =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","session":0,"weekly":32,)JSON"
+      R"JSON("resetSecs":345600,"resetTrustSecs":18000,"resetSource":"claude:secondary","resetTrust":"live",)JSON"
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":32,"resetSecs":345600}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleSession, 1000, event));
+
+  // The session window carries no deadline and is current: idle, not stale.
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 0, 1000)));
+  // Idle travels as the negative sentinel.
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  // The weekly window has a real deadline, so it is a countdown, not idle.
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 1, 1000)));
+  TEST_ASSERT_EQUAL_INT64(345600, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+
+  // Past the trust horizon nothing is idle any more: the basis is stale and
+  // the renderer must go back to reporting the countdown as unavailable.
+  const unsigned long stale = 1000 + 6 * kHourMs;
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 0, stale)));
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 1, stale)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, stale));
+  // ...and that counts as a new minute bucket, which is what asks the periodic
+  // redraw to repaint the line. It must not depend on another countdown
+  // moving at the same moment: the weekly one may have run out long before.
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(
+      CurrentUsageWindowRemainingSecs(state, 0, stale),
+      codexbar_display::core::RemainingMinuteBucket(CurrentUsageWindowRemainingSecs(state, 0, 1000))));
+  // A real countdown keeps its whole-minute buckets.
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(119, 1));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(59, 1));
+}
+
+// Review of #524: the host sends resetSecs 0 not only for a window without a
+// deadline but also for a deadline that ran out before the frame left and for
+// a provider that names none. "No active session" beside 93% used claimed a
+// state the device cannot know. Idle needs both: no deadline and nothing used.
+void testWindowWithUsageAndNoDeadlineIsNotIdle() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* prefix =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":345600,"resetTrustSecs":18000,)JSON"
+      R"JSON("resetSource":"claude:secondary","resetTrust":"live",)JSON";
+  const String used = String(prefix) +
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":93,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"extra","label":"Extra","percent":32,"resetSecs":345600}],)JSON"
+      R"JSON("providerSlots":[{"id":"codex","label":"Codex","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, used.c_str(), 1000, event));
+  // Usage without a deadline: unavailable, as before.
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  // Nothing used and no deadline: idle.
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  // A provider slot is only sent with a deadline, so 0 there is one that ran
+  // out, whatever its percent says.
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+
+  // In "remaining" mode the host sends what is left: nothing used reads 100,
+  // and 0 means everything is used.
+  const String remaining = String(prefix) +
+      R"JSON("usageMode":"remaining",)JSON"
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":100,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"extra","label":"Extra","percent":68,"resetSecs":345600}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remaining.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 0, 2000));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 1, 2000));
+}
+
 // The selected provider can lack a reset while another fresh provider has one.
 // providerResetSlots still ships that countdown, so trust must not hinge on the
 // legacy root projection being positive.
@@ -3640,15 +4035,136 @@ void testProviderSlotDeadlineAloneKeepsTrust() {
       codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, afterBudget));
 }
 
-// A frame with no deadline anywhere still has nothing to be trusted about.
-void testFrameWithoutAnyDeadlineStaysStale() {
+// Issue #532. What the theme prints for the root {reset} token, built the way
+// the device builds its frame data from the runtime state.
+const char* rootResetTextFor(const RuntimeState& state, unsigned long now) {
+  FrameData frame;
+  frame.resetSecs = CurrentRemainingSecs(state, now);
+  frame.usageUnavailable = state.current.usageUnavailable;
+  for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows; ++i) {
+    frame.usageWindows[i].resetSecs = CurrentUsageWindowRemainingSecs(state, i, now);
+    frame.usageWindows[i].available =
+        state.current.usageWindows[i].available && !state.current.usageUnavailable;
+  }
+  return frame.resetSecs > 0 ? "countdown" : codexbar_display::themespec::RootResetUnavailableText(frame);
+}
+
+const char* const kNoDeadlineWindows =
+    R"JSON("usageWindows":[{"id":"session","label":"Session","percent":0,"resetSecs":0},)JSON"
+    R"JSON({"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}]})JSON";
+
+// An account in which no window has a reset time (#532). The host says the
+// basis is current with resetTrust "live"; that statement stands without a
+// deadline, so the windows are idle and not unavailable.
+void testLiveFrameWithoutAnyDeadlineIsIdle() {
   RuntimeState state;
   SerialConsumeEvent event;
-  const char* empty =
-      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 1000, event));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+  const String idle =
+      String(R"JSON({"v":2,"provider":"claude","label":"Claude","resetAgeSecs":12,"resetTrustSecs":17988,)JSON"
+             R"JSON("resetSource":"claude","resetTrust":"live",)JSON") +
+      kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idle.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
                         static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 1000));
+  // Nothing to count down, so nothing is handed over a restart.
+  TEST_ASSERT_EQUAL_STRING("", EncodeResetTrustRecord(state.reset, 1000).c_str());
+
+  // Without further frames the basis is no longer current, but it stays inside
+  // its budget: still idle, exactly like an idle window beside a deadline.
+  const unsigned long silent = 1000 + 10UL * 60UL * 1000UL;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(state.reset, silent)));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, silent));
+
+  // The budget the host sent bounds it. Past it nothing is idle any more.
+  const unsigned long afterBudget = 1000 + 17988UL * 1000UL + 1000UL;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterBudget)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, afterBudget));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, afterBudget));
+
+  // "remaining" mode: nothing used reads 100.
+  const String remaining =
+      String(R"JSON({"v":2,"provider":"claude","usageMode":"remaining","resetTrustSecs":18000,)JSON"
+             R"JSON("resetSource":"claude","resetTrust":"live",)JSON"
+             R"JSON("usageWindows":[{"id":"session","label":"Session","percent":100,"resetSecs":0}]})JSON");
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remaining.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 2000));
+}
+
+// The idle rule itself is unchanged: a window with usage and no deadline, a
+// provider slot, and unavailable usage are never idle, live basis or not.
+void testLiveFrameWithoutAnyDeadlineKeepsTheIdleRuleStrict() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* prefix =
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live",)JSON";
+  const String used = String(prefix) +
+      R"JSON("usageWindows":[{"id":"session","label":"Session","percent":40,"resetSecs":0},)JSON"
+      R"JSON({"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}],)JSON"
+      R"JSON("providerSlots":[{"id":"codex","label":"Codex","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, used.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+  // One window is not idle, so the root line is not either.
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 1000));
+
+  const String unavailable = String(prefix) + R"JSON("usageUnavailable":true,)JSON" + kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, unavailable.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 2000));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 2000));
+
+  // A live frame with no windows at all has nothing to call idle.
+  const char* empty =
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 3000, event));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 3000));
+}
+
+// Only the host's "live" stands without a deadline. What a Companion before
+// #532 sends for the same account (stale, with or without a source), an
+// offline resend, a live frame without budget or source, and a frame that
+// predates the trust contract all stay unavailable.
+void testFrameWithoutAnyDeadlineStaysStaleUnlessTheHostSaysLive() {
+  const char* const heads[] = {
+      R"JSON({"v":2,"provider":"claude","resetTrust":"stale",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetAgeSecs":12,"resetSource":"claude","resetTrust":"stale",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"offline",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetSource":"claude","resetTrust":"live",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetTrust":"live",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,)JSON",
+  };
+  for (const char* head : heads) {
+    RuntimeState state;
+    SerialConsumeEvent event;
+    const String line = String(head) + kNoDeadlineWindows;
+    TEST_ASSERT_TRUE_MESSAGE(ConsumeFrameLine(state, line.c_str(), 1000, event), head);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(ResetTrust::kStale),
+                                  static_cast<int>(CurrentResetTrust(state.reset, 1000)), head);
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(0, CurrentUsageWindowRemainingSecs(state, 0, 1000), head);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("Reset unavailable", rootResetTextFor(state, 1000), head);
+  }
+
+  // A stale frame also takes back an idle basis that was live a moment ago.
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String live =
+      String(R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live",)JSON") +
+      kNoDeadlineWindows;
+  const String stale = String(heads[1]) + kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, live.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 1000));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, stale.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 2000));
 }
 
 }  // namespace
@@ -3667,16 +4183,23 @@ int main() {
   RUN_TEST(testConsumeFrameLineTracksTokenTotalPresence);
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
+  RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
+  RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);
+  RUN_TEST(testMixedIdleAndStaleCountdownsKeepTheUnavailableWording);
+  RUN_TEST(testRootResetTokenFollowsTheWindowsItSummarises);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testTokenTotalsRenderCompactAndTruncated);
   RUN_TEST(testProviderSlotBindingsRenderLabelAndFormattedReset);
   RUN_TEST(testProviderSlotsParseTickAndTriggerLiveRedraw);
   RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
+  RUN_TEST(testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testUsageCountdownRefreshDoesNotRepaintBatteryArea);
+  RUN_TEST(testCountdownRepaintsOnlyWhenItsMinuteChanges);
   RUN_TEST(testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme);
   RUN_TEST(testCompactKeysThatAreNotBindingsDoNotRepaint);
   RUN_TEST(testStaticWordsAndAssetPathsAreNotBindings);
@@ -3763,6 +4286,8 @@ int main() {
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testStoredThemeBootActivationRestoresFrameAndFullRenderIntent);
   RUN_TEST(testStoredThemeBootActivationRejectsInvalidRaw);
+  RUN_TEST(testCorruptStoredThemeSpecKeepsLastKnownGood);
+  RUN_TEST(testFrameCarriedInvalidThemeSpecKeepsLastKnownGood);
   RUN_TEST(testThemeSpecErrorFrameUsesFullRender);
   RUN_TEST(testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
@@ -3789,7 +4314,9 @@ int main() {
   RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
   RUN_TEST(testAShortRootDeadlineDoesNotBlankLongerWindows);
   RUN_TEST(testProviderSlotDeadlineAloneKeepsTrust);
-  RUN_TEST(testFrameWithoutAnyDeadlineStaysStale);
+  RUN_TEST(testLiveFrameWithoutAnyDeadlineIsIdle);
+  RUN_TEST(testLiveFrameWithoutAnyDeadlineKeepsTheIdleRuleStrict);
+  RUN_TEST(testFrameWithoutAnyDeadlineStaysStaleUnlessTheHostSaysLive);
   RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
   RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
   RUN_TEST(testResetTrustRecoversFromStaleWithFreshDataWithoutRestart);
@@ -3799,5 +4326,7 @@ int main() {
   RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
   RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
+  RUN_TEST(testIdleWindowIsDistinguishedFromAnUntrustworthyOne);
+  RUN_TEST(testWindowWithUsageAndNoDeadlineIsNotIdle);
   return UNITY_END();
 }

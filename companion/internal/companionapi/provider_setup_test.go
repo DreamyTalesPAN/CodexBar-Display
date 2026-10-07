@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -887,4 +888,26 @@ func diagnosticCheckByName(checks []diagnosticCheck, name string) *diagnosticChe
 		}
 	}
 	return nil
+}
+
+// #527: the row and the setup log only carry the generic settings sentence.
+// The runtime log gets the source and CodexBar's reason, redacted.
+func TestProviderCheckLogsRedactedCauseOfSettingsError(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	var lines []string
+	server.logf = func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
+	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{Status: "setup_required", Providers: []codexbar.ProviderReadiness{
+			{
+				ID: id, Status: codexbar.ProviderConfigError,
+				Cause: "inventory: Failed to decode /Users/paul/.codexbar/config.json for hallo@dreamytales.de",
+			},
+			{ID: "codex", Status: codexbar.ProviderAuthRequired},
+		}}
+	}
+	server.currentExactProviderSetup(context.Background(), "claude")
+	want := "VibeTV provider check: claude is config_error (inventory: Failed to decode ~/.codexbar/config.json for [redacted])"
+	if len(lines) != 1 || lines[0] != want {
+		t.Fatalf("unexpected log lines:\n got %q\nwant %q", lines, want)
+	}
 }

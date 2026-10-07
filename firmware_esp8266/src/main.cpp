@@ -974,6 +974,14 @@ void appendClockJSON(String& out) {
   out += "\"},";
 }
 
+// The screensaver is not where an update is announced: screensavers have no
+// notice slot, so every phase toggle forced a full repaint of the whole
+// screensaver about every 1.5 s. Standby and the post-install preview both put
+// one on screen; the notice returns with the live theme.
+bool screensaverOwnsDisplay() {
+  return standbyState.active || screensaverPreviewState.showing;
+}
+
 void markFirmwareUpdateNoticeDirty() {
   if (!codexbar_display::app::HasFrame(runtimeCtx) ||
       codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
@@ -992,6 +1000,7 @@ void markFirmwareUpdateNoticeDirty() {
 bool shouldShowFirmwareUpdateNotice() {
   return firmwareUpdate.noticeEnabled &&
          firmwareUpdate.notice.visible &&
+         !screensaverOwnsDisplay() &&
          !setupMode &&
          !waitStatusRendered &&
          !frameStaleStatusRendered &&
@@ -1055,6 +1064,7 @@ void clearFirmwareUpdateNotice() {
 
 void maintainFirmwareUpdateNotice() {
   if (!firmwareUpdate.noticeEnabled ||
+      screensaverOwnsDisplay() ||
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
@@ -2055,7 +2065,7 @@ bool parseConnectionModeRequest(
     String& expectedDeviceID,
     String& error) {
   JsonDocument doc;
-  if (deserializeJson(doc, webServer.arg("plain"))) {
+  if (deserializeJson(doc, webServer.arg("plain").c_str())) {
     error = "invalid JSON body";
     return false;
   }
@@ -2108,7 +2118,7 @@ void handleConnectionModeConfirmation() {
     return;
   }
   JsonDocument doc;
-  if (deserializeJson(doc, webServer.arg("plain"))) {
+  if (deserializeJson(doc, webServer.arg("plain").c_str())) {
     webServer.send(400, "text/plain; charset=utf-8", "invalid JSON body");
     return;
   }
@@ -2250,7 +2260,7 @@ void leaveLegacyWifiOnCableContact() {
 
 bool handleSerialControlLine(const String& line) {
   JsonDocument doc;
-  if (deserializeJson(doc, line)) {
+  if (deserializeJson(doc, line.c_str())) {
     return false;
   }
   const char* kind = doc["kind"] | "";
@@ -3275,7 +3285,7 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   filter["rev"] = true;
 
   JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, raw, DeserializationOption::Filter(filter));
+  const DeserializationError err = deserializeJson(doc, raw.c_str(), DeserializationOption::Filter(filter));
   if (err) {
     error = String("bad theme json: ") + err.c_str();
     return false;
@@ -3548,7 +3558,7 @@ void handleThemeActive() {
     }
 
     JsonDocument doc;
-    const DeserializationError err = deserializeJson(doc, body);
+    const DeserializationError err = deserializeJson(doc, body.c_str());
     if (err) {
       addCorsHeaders();
       webServer.send(400, "text/plain; charset=utf-8", "bad theme activation json");
@@ -3622,7 +3632,7 @@ void handleScreensaverActive() {
   }
 
   JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, body);
+  const DeserializationError err = deserializeJson(doc, body.c_str());
   if (err) {
     webServer.send(400, "text/plain; charset=utf-8", "bad screensaver activation json");
     return;

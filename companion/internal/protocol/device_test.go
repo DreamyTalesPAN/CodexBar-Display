@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -283,5 +285,58 @@ func TestCapabilitiesFromHelloAdvertisesProviderAssetsColorStopsAndValign(t *tes
 	})
 	if legacy.SupportsProviderAssetsV1 || legacy.SupportsColorStopsV1 || legacy.SupportsTextValignV1 {
 		t.Fatalf("provider-slots-v1 must not imply the new ThemeSpec capabilities: %+v", legacy)
+	}
+}
+
+// Issue #526: the answer firmware 1.0.45 gave to GET /hello over WiFi at low
+// heap, captured byte for byte from VibeTV 16198106 on 2026-10-06.
+func TestDecodeWiFiHelloNamesTheHelloWithoutCapabilities(t *testing.T) {
+	body, err := os.ReadFile("testdata/wifi-hello-1.0.45-without-capabilities.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != 397 || !bytes.HasSuffix(body, []byte(`"maxFrameBytes":2048,"capabilities":}`)) {
+		t.Fatalf("fixture is not the captured answer: %d bytes", len(body))
+	}
+
+	hello, err := DecodeWiFiHello(bytes.NewReader(body))
+	if err == nil {
+		t.Fatalf("a hello without capabilities must not pass as a complete hello: %+v", hello)
+	}
+	if hello.DeviceID != "" || CapabilitiesFromHello(hello).Known {
+		t.Fatalf("the failed decode must not hand out a usable hello: %+v", hello)
+	}
+	identity, ok := HelloIdentity(err)
+	if !ok {
+		t.Fatalf("the known truncation must keep the identity, got %v", err)
+	}
+	if identity.DeviceID != "16198106" || identity.Board != "esp8266-smalltv-st7789" ||
+		identity.Firmware != "1.0.45" || !identity.HasFeature(FeatureCableTransferV1) {
+		t.Fatalf("unexpected identity: %+v", identity)
+	}
+	if transport := identity.Capabilities.Transport; transport.Mode != "" || transport.Active != "" ||
+		len(transport.Supported) != 0 || transport.CableOnlyUpdates != nil {
+		t.Fatalf("capabilities that were not sent must stay empty: %+v", transport)
+	}
+
+	for name, broken := range map[string]string{
+		"cut elsewhere":      `{"kind":"hello","deviceId":"16198106","capabilities":{"transport":`,
+		"no device ID":       `{"kind":"hello","board":"esp8266-smalltv-st7789","capabilities":}`,
+		"broken before then": `{"kind":"hello","deviceId":,"capabilities":}`,
+		"not a hello at all": `<html>busy</html>`,
+		"empty answer":       ``,
+	} {
+		_, err := DecodeWiFiHello(strings.NewReader(broken))
+		if err == nil {
+			t.Fatalf("%s: expected an error", name)
+		}
+		if _, ok := HelloIdentity(err); ok {
+			t.Fatalf("%s: only the known truncation keeps an identity", name)
+		}
+	}
+
+	complete, err := DecodeWiFiHello(strings.NewReader(`{"kind":"hello","deviceId":" 16198106 ","capabilities":{"transport":{"mode":"WiFi"}}}`))
+	if err != nil || complete.DeviceID != "16198106" || complete.Capabilities.Transport.Mode != "wifi" {
+		t.Fatalf("a complete hello must decode normalized: %+v %v", complete, err)
 	}
 }

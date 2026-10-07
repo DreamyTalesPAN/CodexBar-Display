@@ -1734,11 +1734,14 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 			Body:       strings.TrimSpace(string(body)),
 		}
 	}
-	var hello protocol.DeviceHello
-	if err := json.NewDecoder(resp.Body).Decode(&hello); err != nil {
-		return protocol.DeviceHello{}, err
+	hello, err := protocol.DecodeWiFiHello(resp.Body)
+	if identity, ok := protocol.HelloIdentity(err); ok {
+		// Issue #526: the update reads only device ID, board and firmware
+		// from a WiFi hello, and those are intact when the VibeTV had no heap
+		// for its capabilities. This update is what gives it that heap back.
+		return identity, nil
 	}
-	return hello.Normalize(), nil
+	return hello, err
 }
 
 func uploadFirmwareOTA(ctx context.Context, base, imagePath, token, currentFirmware string) error {

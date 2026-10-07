@@ -159,6 +159,10 @@ export function ProviderList({
       health: provider.health.state, label: provider.label,
       detail: provider.health.message, reportedMessage: provider.health.reported,
     });
+    // A stale row still shows its last reading and recovers by itself, e.g.
+    // while CodexBar starts after the runtime restarted. Nothing for the
+    // customer to do, so its message opens only from the row's warning icon.
+    if (provider.health.state === "stale" && dismissedIssues[provider.id] !== "") return [];
     return message && dismissedIssues[provider.id] !== message
       ? [{ provider, message }] : [];
   })[0];

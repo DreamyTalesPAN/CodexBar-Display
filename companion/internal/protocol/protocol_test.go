@@ -574,6 +574,50 @@ func TestApplyResetTrustReanchorsAllResetCountdowns(t *testing.T) {
 	}
 }
 
+// Issue #532: an account in which no window has a reset time is measured and
+// idle, not stale. Only a current collection may say so.
+func TestApplyResetTrustWithoutAnyDeadline(t *testing.T) {
+	sendAt := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	collectedAt := sendAt.Add(-12 * time.Second)
+	idle := func() Frame {
+		return Frame{
+			V:        ProtocolVersionV2,
+			Provider: "claude",
+			UsageWindows: []UsageWindow{
+				{ID: "session", Label: "Session"},
+				{ID: "weekly", Label: "Weekly"},
+			},
+		}
+	}
+
+	live := idle().ApplyResetTrust(collectedAt, sendAt, true)
+	wantTrustSec := int64(ResetTrustHorizon/time.Second) - 12
+	if live.ResetTrust != ResetTrustLive || live.ResetTrustSec != wantTrustSec ||
+		live.ResetSource != "claude" || live.ResetSec != 0 {
+		t.Fatalf("fresh frame without a deadline must be live under the provider key, got %+v", live)
+	}
+
+	withDeadline := idle()
+	withDeadline.UsageWindows[0].ResetSec = 5
+	unavailable := idle()
+	unavailable.UsageUnavailable = true
+	unattributable := idle()
+	unattributable.Provider = ""
+	stale := map[string]Frame{
+		"last good resend after a failed collection": idle().ApplyResetTrust(collectedAt, sendAt, false),
+		"unknown collection time":                    idle().ApplyResetTrust(time.Time{}, sendAt, true),
+		"deadline ran out before the send":           withDeadline.ApplyResetTrust(collectedAt, sendAt, true),
+		"usage unavailable":                          unavailable.ApplyResetTrust(collectedAt, sendAt, true),
+		"beyond the trust horizon":                   idle().ApplyResetTrust(sendAt.Add(-ResetTrustHorizon), sendAt, true),
+		"no provider to attribute it to":             unattributable.ApplyResetTrust(collectedAt, sendAt, true),
+	}
+	for name, got := range stale {
+		if got.ResetTrust != ResetTrustStale || got.ResetTrustSec != 0 || hasResetCountdown(got) {
+			t.Errorf("%s must stay stale without a budget or countdown, got %+v", name, got)
+		}
+	}
+}
+
 func TestMaximumUsageSlotFrameStaysInsideDocumentedBudget(t *testing.T) {
 	frame := Frame{
 		V:         2,
