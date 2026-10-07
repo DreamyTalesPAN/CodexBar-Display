@@ -108,6 +108,26 @@ describe("validateThemeSpec", () => {
     },
   );
 
+  // The Mac App refuses such a pack, so Theme Studio must not call it valid.
+  // Themes saved before single pictures were named .cbi still hold the first.
+  it.each([
+    ["face.cba", "CBI1\n1 1\n1\n#FFFFFF\na\n", "a single picture saved as an animation"],
+    ["blink.cbi", "CBA1\n1 1 2 8\n1\n#FFFFFF\na\na\n", "an animation saved as a single picture"],
+  ])("rejects the sprite %s whose name does not match its content", (file, data, problem) => {
+    const spec = validSpec();
+    const assetPath = `/themes/u/${file}`;
+    spec.primitives = [
+      { assetPath, height: 1, type: "sprite", width: 1, x: 0, y: 0 },
+    ];
+    const assets = {
+      [assetPath]: { contentType: "text/plain", data, encoding: "text" as const },
+    };
+    const error = `Element 1: ${assetPath} is ${problem}. Remove this element and import the sprite again.`;
+
+    expect(validateThemeSpec(spec, assets).errors).toEqual([error]);
+    expect(() => buildThemePack(spec, "Mismatched sprite", assets)).toThrow(error);
+  });
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [

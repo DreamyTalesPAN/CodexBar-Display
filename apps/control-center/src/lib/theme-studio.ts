@@ -1087,6 +1087,18 @@ function validatePrimitive(
       if (asset && !sprite) {
         errors.push(`${prefix}: ${assetPath} is not a valid sprite asset.`);
       }
+      // VibeTV animates a sprite by its .cba name alone, so the Mac App
+      // refuses a pack in which a file's name and content disagree.
+      const animated = sprite?.kind === "CBA1";
+      if (sprite && animated !== /\.cba$/i.test(assetPath)) {
+        errors.push(
+          `${prefix}: ${assetPath} is ${
+            animated
+              ? "an animation saved as a single picture"
+              : "a single picture saved as an animation"
+          }. Remove this element and import the sprite again.`,
+        );
+      }
       const width = sprite?.width ?? primitive.width ?? 0;
       const height = sprite?.height ?? primitive.height ?? 0;
       const frames = sprite?.frameCount ?? primitive.frameCount ?? 1;
