@@ -284,6 +284,14 @@ export function ThemeStudioScreen({
         : null,
     [assets, deviceCapabilities, spec],
   );
+  // Why Send is unavailable. The toolbar disables the button on it and says it.
+  // A failed check comes first: it also keeps Save unavailable, so asking the
+  // customer to save would name a button that cannot be pressed.
+  const sendBlockedReason =
+    validation.errors[0] ||
+    (dirty
+      ? `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`
+      : deviceValidation?.errors[0] || "");
   const visibleSelectedIndices = useMemo(
     () => normalizeSelectedIndices(selectedIndices, spec.primitives.length),
     [selectedIndices, spec.primitives.length],
@@ -1015,27 +1023,7 @@ export function ThemeStudioScreen({
   }
 
   async function sendTheme() {
-    if (dirty) {
-      setDeviceStatus({
-        tone: "attention",
-        message: `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`,
-      });
-      return;
-    }
-    const checked = validateThemeSpec(spec, assets, usage);
-    if (checked.errors.length > 0) {
-      setDeviceStatus({
-        tone: "attention",
-        message: checked.errors[0],
-      });
-      return;
-    }
-    if (deviceValidation && deviceValidation.errors.length > 0) {
-      setDeviceStatus({
-        tone: "attention",
-        message: deviceValidation.errors[0],
-      });
-      setAdvancedTab("device");
+    if (sendBlockedReason) {
       return;
     }
 
@@ -1175,11 +1163,6 @@ export function ThemeStudioScreen({
             canSave={
               validation.errors.length === 0 && !saveBlockedReason
             }
-            canSend={
-              !dirty &&
-              validation.errors.length === 0 &&
-              (deviceValidation?.errors.length || 0) === 0
-            }
             canUndo={editorState.past.length > 0}
             onExport={exportThemePack}
             onRedo={() => dispatchEditor({ type: "redo" })}
@@ -1187,6 +1170,7 @@ export function ThemeStudioScreen({
             onSend={() => void sendTheme()}
             onUndo={() => dispatchEditor({ type: "undo" })}
             saving={saving}
+            sendBlockedReason={sendBlockedReason}
             sending={sending}
             showSave={Boolean(onSaveToLibrary)}
           />

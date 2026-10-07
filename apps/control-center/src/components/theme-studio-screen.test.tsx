@@ -110,3 +110,38 @@ it("lets the customer name the theme in the header, without opening Advanced", a
   expect(screen.getAllByLabelText("Name")).toHaveLength(1);
   expect(screen.getByLabelText("ID")).toBeTruthy();
 });
+
+// Issue #551: a greyed-out Send to VibeTV gave no reason.
+it("says why Send to VibeTV is unavailable, and stops once it is available", async () => {
+  renderStudio("blank");
+  const reason = "Save this theme before sending it to VibeTV.";
+  expect(button("Send to VibeTV").disabled).toBe(false);
+  expect(screen.queryByText(reason)).toBeNull();
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(screen.getByText(reason)).toBeTruthy();
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(button("Send to VibeTV").disabled).toBe(false));
+  expect(screen.queryByText(reason)).toBeNull();
+});
+
+it("names a failed check instead of asking to save while Save is unavailable too", () => {
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.change(screen.getByLabelText("ID"), { target: { value: "x" } });
+
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(button("Save theme").disabled).toBe(true);
+  // Once above the buttons, once in the Inspector's Validation box.
+  expect(screen.getAllByText("Theme ID must be lowercase and 3-64 characters.")).toHaveLength(2);
+  expect(screen.queryByText("Save this theme before sending it to VibeTV.")).toBeNull();
+});
+
+it("names the VibeTV's own limit when that is what keeps Send unavailable", () => {
+  renderStudio("custom", { deviceCapabilities: { supportsStoredThemes: false } });
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(button("Save theme").disabled).toBe(false);
+  expect(screen.getByText("This VibeTV does not support stored themes.")).toBeTruthy();
+});
