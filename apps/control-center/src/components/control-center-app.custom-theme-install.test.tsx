@@ -241,3 +241,23 @@ it("says what to do with a saved theme whose single picture is named .cba", asyn
   // The Mac App would refuse this theme file, so it is not sent at all.
   expect(page.installs).toEqual([]);
 });
+
+// The refusal never becomes an install job, and /v1/status keeps naming the
+// earlier one. Needs defect2-control-center-app.patch: without it the next
+// status read puts that earlier "Installed" over the failure.
+it("keeps the failure dialog when the Mac App refuses a theme from Theme Studio", async () => {
+  const page = await openThemesWithSavedTheme({
+    type: "rect",
+    x: 10,
+    y: 10,
+    width: 20,
+    height: 20,
+    color: "#FFFFFF",
+  });
+
+  await installSavedTheme(page.wait);
+
+  expect(page.installs).toHaveLength(1);
+  const dialog = screen.getByRole("dialog", { name: "Theme file is invalid." });
+  expect(within(dialog).getByText("Export the theme again, then retry.")).toBeTruthy();
+});

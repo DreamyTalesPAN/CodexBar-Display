@@ -633,6 +633,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerRecoveryAutomaticAt = useRef(0);
   const providerRecoveryManualAttempted = useRef(false);
   const themeInstallPollJobRef = useRef("");
+  const lastStatusThemeInstallRef = useRef("");
   const activeThemeUpgradeAttemptRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
@@ -1276,7 +1277,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
-        if (payload.themeInstall) {
+        if (statusThemeInstallIsNews(lastStatusThemeInstallRef, payload.themeInstall)) {
           applyThemeInstallJob(payload.themeInstall);
           if (payload.themeInstall.phase === "installing") {
             setActiveTab("theme-library");
@@ -1440,7 +1441,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
-      if (payload.themeInstall) {
+      if (statusThemeInstallIsNews(lastStatusThemeInstallRef, payload.themeInstall)) {
         applyThemeInstallJob(payload.themeInstall);
         if (payload.themeInstall.phase === "installing") {
           void resumeThemeInstallJob(payload.themeInstall);
@@ -5640,6 +5641,22 @@ export async function pollFirmwareUpdateJob({
     message: "VibeTV update is taking longer than expected.",
     nextAction: "Keep VibeTV powered on, then create a support report.",
   } satisfies ApiError;
+}
+
+// /v1/status names the latest install job on every read. A finished job is
+// news once: applied again, it replaced a later failure that never became a
+// job (the Mac App refused the theme file) with that older job's "Installed".
+function statusThemeInstallIsNews(
+  seen: { current: string },
+  job: ThemeInstallJob | undefined,
+): job is ThemeInstallJob {
+  if (!job) {
+    return false;
+  }
+  const key = `${job.id}:${job.phase}`;
+  const news = job.phase === "installing" || seen.current !== key;
+  seen.current = key;
+  return news;
 }
 
 function themeInstallStatusFromJob(
