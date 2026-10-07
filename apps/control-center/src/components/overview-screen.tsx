@@ -154,7 +154,9 @@ export function OverviewScreen({
               label="Display"
               value={
                 displayReady
-                  ? "Live"
+                  ? device?.standby?.active === true
+                    ? "Screensaver"
+                    : "Live"
                   : updateOwnedDisconnect
                     ? "Update running"
                   : themeNotShown

@@ -219,6 +219,33 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Change connection");
   });
 
+  // Issue #558: while the screensaver is on screen, VibeTV does not show live
+  // usage, and the Display tile must not say it does.
+  it("names the screensaver on the Display tile while it is on screen (#558)", () => {
+    const overview = (standby?: { active?: boolean; screensaverPath?: string }) =>
+      renderToStaticMarkup(
+        <OverviewScreen
+          companionStatus="online"
+          device={{ active: true, connected: true, paired: true, ready: true, standby }}
+        />,
+      );
+
+    const screensaver = overview({ active: true, screensaverPath: "/themes/s/r3-2.json" });
+    expect(screensaver).toContain("VibeTV is connected");
+    expect(screensaver).toContain(">Screensaver<");
+    expect(screensaver).not.toContain(">Live<");
+
+    // The screensaver is installed but not on screen, and firmware that
+    // reports no standby state at all.
+    for (const html of [
+      overview({ active: false, screensaverPath: "/themes/s/r3-2.json" }),
+      overview(),
+    ]) {
+      expect(html).toContain(">Live<");
+      expect(html).not.toContain(">Screensaver<");
+    }
+  });
+
   // Issues #438/#460: the Windows app must not call itself a Mac App. The
   // Mac wording is asserted too, because it must not change at all.
   it.each([
