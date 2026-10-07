@@ -1561,8 +1561,11 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	case codexbar.SelectionReasonUsageDelta:
 		activity = "coding"
 		state.lastCodingAt = now
-		state.lastCodingTokenScanAt = time.Time{}
-		if decision.Selected.Frame.TokenTotalsKnown {
+		// The mark names the token scan that showed this work. A provider
+		// without token totals, or one whose history is still being read
+		// in, has no such scan; its delta leaves alone the scan another
+		// provider's work is still waiting for.
+		if decision.Selected.Frame.TokenTotalsKnown && !decision.Selected.TokenHistoryGrowing {
 			state.lastCodingTokenScanAt = decision.Selected.TokenStatsCollectedAt
 		}
 		state.lastIdleEvidenceAt = time.Time{}
@@ -1609,6 +1612,9 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 		reason = "no-usage-delta"
 	}
 
+	if activity == "idle" {
+		state.lastCodingTokenScanAt = time.Time{}
+	}
 	state.lastActivityAt = collectedAt
 	state.lastActivityObservedAt = activityObservedAt
 	state.lastActivity = activity

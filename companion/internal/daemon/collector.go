@@ -21,6 +21,10 @@ const (
 	// This cadence applies only once a provider's history stopped growing;
 	// see tokenStatsHistorySettled.
 	tokenStatsScanCooldown = 5 * time.Minute
+	// A failed scan is tried again sooner. After the full cadence the retry
+	// found the stored totals expired (ten minutes), took the new ones for a
+	// first reading and could show no work for one more scan period.
+	tokenStatsFailedScanCooldown = time.Minute
 )
 
 type providerSnapshot struct {
@@ -260,11 +264,15 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 	// A still-growing history must be corrected by the next scan instead of
 	// waiting out the completed-scan cadence. Single-flight still prevents
 	// overlapping scans.
+	cooldown := c.tokenStatsCooldown
+	if c.tokenStatsFailed {
+		cooldown = min(cooldown, tokenStatsFailedScanCooldown)
+	}
 	cooling := !c.tokenStatsRescan &&
 		(c.tokenStatsSettled || c.tokenStatsFailed) &&
-		c.tokenStatsCooldown > 0 &&
+		cooldown > 0 &&
 		!c.tokenStatsLastCompleted.IsZero() &&
-		now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))
+		now.Before(c.tokenStatsLastCompleted.Add(cooldown))
 	if c.tokenStatsRunning || cooling {
 		c.tokenStatsMu.Unlock()
 		cancel()

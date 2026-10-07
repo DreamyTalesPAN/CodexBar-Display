@@ -1810,12 +1810,14 @@ func TestApplySelectionActivityHoldsCodingUntilTheNextTokenScanFindsNothing(t *t
 
 	scan := time.Date(2026, 10, 7, 15, 40, 43, 0, time.UTC)
 	nextScan := scan.Add(5*time.Minute + 30*time.Second)
-	// CodexBar 0.63 stamps its cost answer with the scan time; the Windows
-	// engine keeps the time of the last activity. Either way one scan
-	// without new tokens ends coding.
-	for name, observedAt := range map[string]func(tokenScanAt time.Time) time.Time{
-		"activity time follows the scan": func(tokenScanAt time.Time) time.Time { return tokenScanAt },
-		"activity time stays":            func(time.Time) time.Time { return scan },
+	// CodexBar 0.63 stamps its cost answer with the scan time and its usage
+	// answer with the collection time (seen on the bench Mac); an engine may
+	// also keep the time of the last activity. In every case one scan without
+	// new tokens ends coding, and usage collections without a delta do not.
+	for name, observedAt := range map[string]func(tokenScanAt, collectedAt time.Time) time.Time{
+		"activity time follows the scan":       func(tokenScanAt, _ time.Time) time.Time { return tokenScanAt },
+		"activity time stays":                  func(time.Time, time.Time) time.Time { return scan },
+		"activity time follows the collection": func(_, collectedAt time.Time) time.Time { return collectedAt },
 	} {
 		t.Run(name, func(t *testing.T) {
 			state := &runtimeState{}
@@ -1827,7 +1829,7 @@ func TestApplySelectionActivityHoldsCodingUntilTheNextTokenScanFindsNothing(t *t
 						Frame: protocol.Frame{Provider: "claude", TokenTotalsKnown: true},
 						// Usage is collected every 30 seconds.
 						CollectedAt:           now.Truncate(30 * time.Second),
-						ActivityObservedAt:    observedAt(tokenScanAt),
+						ActivityObservedAt:    observedAt(tokenScanAt, now.Truncate(30*time.Second)),
 						TokenStatsCollectedAt: tokenScanAt,
 					},
 					Reason: codexbar.SelectionReasonStickyCurrent,
@@ -1858,6 +1860,66 @@ func TestApplySelectionActivityHoldsCodingUntilTheNextTokenScanFindsNothing(t *t
 				t.Fatalf("expected idle to stay, got %q", got)
 			}
 		})
+	}
+}
+
+// Automatic may move to another provider while the first one's work is still
+// waiting for its token scan. A provider without token totals has no scan of
+// its own; its percent tick must not cut the wait short.
+func TestApplySelectionActivityKeepsWaitingForTheTokenScanAcrossAProviderSwitch(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(activityHoldEnvVar, "180")
+	t.Setenv(activityIdleEvidenceEnvVar, "2")
+
+	scan := time.Date(2026, 10, 7, 23, 0, 0, 0, time.UTC)
+	state := &runtimeState{}
+	step := func(after time.Duration, provider string, tokens bool, tokenScanAt time.Time, delta bool) string {
+		t.Helper()
+		now := scan.Add(after)
+		decision := codexbar.SelectionDecision{
+			Selected: codexbar.ParsedFrame{
+				Frame:                 protocol.Frame{Provider: provider, TokenTotalsKnown: tokens},
+				CollectedAt:           now.Truncate(30 * time.Second),
+				ActivityObservedAt:    now.Truncate(30 * time.Second),
+				TokenStatsCollectedAt: tokenScanAt,
+			},
+			Reason: codexbar.SelectionReasonStickyCurrent,
+		}
+		if delta {
+			decision.Reason = codexbar.SelectionReasonUsageDelta
+			decision.ActivitySignalReason = codexbar.SelectionReasonUsageDelta
+		}
+		frame, _ := applySelectionActivity(protocol.Frame{Provider: provider}, decision, state, now)
+		return frame.Activity
+	}
+
+	if got := step(0, "claude", true, scan, true); got != "coding" {
+		t.Fatalf("expected Claude's token delta to show coding, got %q", got)
+	}
+	// One minute later Cursor, which has no token totals, ticks up a percent
+	// and Automatic shows it. A completed scan stamps every provider.
+	if got := step(time.Minute, "cursor", false, scan, true); got != "coding" {
+		t.Fatalf("expected the percent rise to show coding, got %q", got)
+	}
+	for _, after := range []time.Duration{90 * time.Second, 3 * time.Minute, 4*time.Minute + 30*time.Second, 5 * time.Minute} {
+		if got := step(after, "cursor", false, scan, false); got != "coding" {
+			t.Fatalf("%s after the first delta the token scan is still pending, got %q", after, got)
+		}
+	}
+	nextScan := scan.Add(5*time.Minute + 30*time.Second)
+	if got := step(5*time.Minute+31*time.Second, "cursor", false, nextScan, false); got != "idle" {
+		t.Fatalf("expected idle once the pending token scan found nothing, got %q", got)
+	}
+	// With nothing pending, a provider without token totals follows the
+	// older rule again: hold, then two readings without a delta.
+	if got := step(10*time.Minute, "cursor", false, nextScan, true); got != "coding" {
+		t.Fatalf("expected a later percent rise to show coding, got %q", got)
+	}
+	if got := step(13*time.Minute+30*time.Second, "cursor", false, nextScan, false); got != "coding" {
+		t.Fatalf("one reading without a delta is not enough yet, got %q", got)
+	}
+	if got := step(14*time.Minute, "cursor", false, nextScan, false); got != "idle" {
+		t.Fatalf("expected idle after hold and two readings without a delta, got %q", got)
 	}
 }
 
@@ -5827,7 +5889,13 @@ func TestProviderCollectorFailedTokenScanUsesPostCompletionCooldown(t *testing.T
 		t.Fatal("activity tick immediately restarted a failed token scan")
 	}
 
-	clockNanos.Add(int64(tokenStatsScanCooldown))
+	// A failed scan is retried after a minute, not after the five-minute
+	// cadence of a completed one: by then the stored totals would be gone.
+	clockNanos.Add(int64(tokenStatsFailedScanCooldown - time.Second))
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a failed token scan was retried inside its cooldown")
+	}
+	clockNanos.Add(int64(time.Second))
 	if !collector.requestTokenStatsScan(context.Background()) {
 		t.Fatal("expected failed token scan to retry after cooldown")
 	}
