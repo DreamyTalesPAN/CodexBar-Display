@@ -323,11 +323,22 @@ func resolveVibeTVCandidatesForControl(
 	matches := make([]string, 0, 1)
 	foreignDeviceAnswered := false
 	var legacy *LegacyCableFirmwareError
+	// Issue #529: a port another program holds was not asked. When that is
+	// true of every port, "no VibeTV answered" would be a claim about devices
+	// nobody spoke to, so the open error is the answer.
+	var openErr error
+	asked := false
 	for _, candidate := range candidates {
 		hello, err := readHello(candidate)
 		if err != nil {
+			if errcode.Of(err) == errcode.TransportSerialOpen {
+				openErr = err
+			} else {
+				asked = true
+			}
 			continue
 		}
+		asked = true
 		hello = hello.Normalize()
 		mode := hello.Capabilities.Transport.Mode
 		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
@@ -374,6 +385,9 @@ func resolveVibeTVCandidatesForControl(
 				"Update VibeTV over WiFi first, then reconnect the Cable.",
 				legacy,
 			)
+		}
+		if openErr != nil && !asked {
+			return "", openErr
 		}
 		detail := "no matching Cable VibeTV answered hello"
 		if expectedDeviceID != "" {

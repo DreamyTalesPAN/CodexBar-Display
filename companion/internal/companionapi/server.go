@@ -1626,7 +1626,10 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 }
 
 // A VibeTV plugged in over USB restarts and does not answer the cable while it
-// joins WiFi, so a new port set is asked a few times, spaced apart.
+// joins WiFi, so a new port set is asked a few times, spaced apart. A try in
+// which no port could be opened asked nobody and reopened nothing, so it is
+// spaced like the others but not counted (issue #529): the cable is asked once
+// the other program lets go of the port.
 const (
 	legacyCableProbeAttempts   = 3
 	legacyCableProbeRetryDelay = 10 * time.Second
@@ -1653,9 +1656,10 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		if key != s.legacyCableProbePorts {
 			s.legacyCableProbePorts = key
 			s.legacyCableProbeTries = 0
+			s.legacyCableProbeAt = time.Time{}
 		}
 		return len(ports) > 0 && s.legacyCableProbeTries < legacyCableProbeAttempts &&
-			(s.legacyCableProbeTries == 0 || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
+			(s.legacyCableProbeAt.IsZero() || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
 	}
 	s.legacyCableProbeMu.Lock()
 	probe := due()
@@ -1675,8 +1679,15 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		s.legacyCableProbeAt = s.now()
 	}
 	s.legacyCableProbeMu.Unlock()
-	if probe {
-		_, _ = s.resolveCablePort("", deviceID)
+	if !probe {
+		return
+	}
+	if _, err := s.resolveCablePort("", deviceID); errcode.Of(err) == errcode.TransportSerialOpen {
+		s.legacyCableProbeMu.Lock()
+		if key == s.legacyCableProbePorts {
+			s.legacyCableProbeTries--
+		}
+		s.legacyCableProbeMu.Unlock()
 	}
 }
 

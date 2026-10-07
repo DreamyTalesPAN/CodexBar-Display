@@ -262,3 +262,30 @@ func TestDiscoverVibeTVsReportsTheLegacyVibeTVItFound(t *testing.T) {
 		t.Fatalf("legacy VibeTV = %+v, want board %s firmware 1.0.39", found, legacy.Board)
 	}
 }
+
+// Issue #529: a port another program holds was never asked. Only when that is
+// every port does the resolver say so; one silent port that was opened keeps
+// the usual "no VibeTV answered".
+func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testing.T) {
+	busy := wrapTransportError(errcode.TransportSerialOpen, "open-port", "/dev/cu.usbserial-busy", "", errors.New("resource busy"))
+	silent := wrapTransportError(errcode.ProtocolDeviceHelloUnavailable, "read-hello", "/dev/cu.usbserial-silent", "", ErrDeviceHelloUnavailable)
+	readHello := func(path string) (protocol.DeviceHello, error) {
+		if strings.Contains(path, "busy") {
+			return protocol.DeviceHello{}, busy
+		}
+		return protocol.DeviceHello{}, silent
+	}
+	for _, tc := range []struct {
+		name  string
+		ports []string
+		want  errcode.Code
+	}{
+		{"only busy ports", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-busy2"}, errcode.TransportSerialOpen},
+		{"a silent port was asked", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-silent"}, errcode.TransportNoMatchingDevice},
+		{"only silent ports", []string{"/dev/cu.usbserial-silent"}, errcode.TransportNoMatchingDevice},
+	} {
+		if _, err := resolveVibeTVCandidatesForControl(tc.ports, "", "14799300", readHello, true); errcode.Of(err) != tc.want {
+			t.Fatalf("%s: got %v, want code %s", tc.name, err, tc.want)
+		}
+	}
+}

@@ -306,6 +306,116 @@ func TestStatusAsksNewSerialPortsOnceForLegacyWiFiVibeTV(t *testing.T) {
 	}
 }
 
+type serialOpenError struct{}
+
+func (serialOpenError) Error() string           { return "serial port is busy" }
+func (serialOpenError) ErrorCode() errcode.Code { return errcode.TransportSerialOpen }
+
+// Issue #529: while another program holds the serial port nobody is asked, so
+// those tries must not use up the three the port set gets. They stay spaced
+// apart, and once the port opens the cable is asked the usual three times.
+func TestStatusKeepsAskingLegacyWiFiVibeTVAfterBusySerialPort(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/hello" {
+			_, _ = io.WriteString(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.61","deviceId":"legacy-device","capabilities":{"transport":{"active":"wifi","mode":"legacy-wifi-only","supported":["wifi"],"cableOnlyUpdates":false}}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "legacy-device"})
+	now := time.Date(2026, 10, 7, 6, 40, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.listCablePorts = func() ([]string, error) { return []string{"/dev/cu.usbserial-1"}, nil }
+	busy := true
+	probes := 0
+	server.resolveCablePort = func(string, string) (string, error) {
+		probes++
+		if busy {
+			return "", serialOpenError{}
+		}
+		return "", errors.New("no VibeTV answered")
+	}
+	status := func() {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+
+	status()
+	status()
+	if probes != 1 {
+		t.Fatalf("a busy port must not be tried on every poll, got %d tries", probes)
+	}
+	for range 2 * legacyCableProbeAttempts {
+		now = now.Add(legacyCableProbeRetryDelay)
+		status()
+		status()
+	}
+	if want := 1 + 2*legacyCableProbeAttempts; probes != want {
+		t.Fatalf("a busy port must be tried again every %s, got %d tries, want %d", legacyCableProbeRetryDelay, probes, want)
+	}
+
+	busy = false
+	probes = 0
+	for range 2 * legacyCableProbeAttempts {
+		now = now.Add(legacyCableProbeRetryDelay)
+		status()
+	}
+	if probes != legacyCableProbeAttempts {
+		t.Fatalf("once the port opens it must be asked %d times, got %d", legacyCableProbeAttempts, probes)
+	}
+}
+
+// Issue #529 asked why "Changing how VibeTV connects" was logged twice in one
+// run. The flag cannot ask twice: the first connection-mode request drops the
+// Companion's note, whether or not the switch works, and status stops
+// reporting it. The second request in that run came from setup connecting the
+// Cable VibeTV its search had found, which any app start does.
+func TestConnectionModeRequestEndsLegacyCableAnswered(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/hello" {
+			_, _ = io.WriteString(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.61","deviceId":"legacy-device","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"],"cableOnlyUpdates":true}}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi", DeviceTarget: device.URL, DeviceID: "legacy-device", DeviceToken: "pair-token",
+		LegacyWiFiDeviceID: "legacy-device",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	server.resolveCablePort = func(string, string) (string, error) { return "", usb.ErrDeviceHelloUnavailable }
+	answered := func() bool {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("status=%d err=%v body=%s", rec.Code, err, rec.Body.String())
+		}
+		return got.Device.LegacyCableAnswered
+	}
+
+	if !answered() || !answered() {
+		t.Fatal("the remembered legacy VibeTV left legacy mode; status must say so until the app acts")
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable","deviceId":"legacy-device"}`)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("the cable is silent in this test, so the switch must fail: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if answered() {
+		t.Fatal("one connection-mode request settles the automatic switch; status must not ask for it again")
+	}
+}
+
 func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
