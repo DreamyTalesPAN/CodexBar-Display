@@ -180,8 +180,9 @@ it("names the VibeTV's own limit when that is what keeps Send unavailable", () =
 
 // Issue #551: Export ZIP did not say where the file went. Windows saves a
 // download without asking (see #545); the Mac asks where and can be cancelled.
+// Windows gets no file name: it saves a second export as "… (1).zip".
 it.each([
-  [true, "Saved as vibetv-theme-my-theme.zip in your Downloads folder. Nothing was sent."],
+  [true, "Saved in your Downloads folder. Nothing was sent."],
   [false, "vibetv-theme-my-theme.zip exported. Nothing was sent."],
 ])("says after Export ZIP where the file is when the app saved it itself (windows=%s)", (windowsHost, message) => {
   // jsdom has neither blob URLs nor downloads.

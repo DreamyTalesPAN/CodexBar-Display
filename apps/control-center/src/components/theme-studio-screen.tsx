@@ -1016,9 +1016,11 @@ export function ThemeStudioScreen({
       setExportStatus({
         tone: "ready",
         // Windows saves a download without asking where, so the app can name
-        // the folder. The Mac asks and can be cancelled; it gets no claim.
+        // the folder. It cannot name the file: a second export of the same
+        // theme is saved as "… (1).zip". The Mac asks where and can be
+        // cancelled; it gets no claim about a folder.
         message: windowsHost
-          ? `Saved as ${pack.fileName} in your Downloads folder. Nothing was sent.`
+          ? "Saved in your Downloads folder. Nothing was sent."
           : `${pack.fileName} exported. Nothing was sent.`,
       });
     } catch (error) {
