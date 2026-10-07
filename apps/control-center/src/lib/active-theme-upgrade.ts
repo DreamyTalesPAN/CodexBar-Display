@@ -140,16 +140,24 @@ export function resolveActiveThemeUpgrade(
 }
 
 // The catalog screensaver in VibeTV's screensaver slot, in whichever revision.
-// VibeTV reports that slot only as a path.
+// VibeTV reports that slot only as a path, so the same rule as for the live
+// slot in standby applies: a revision-1 path may be the customer's own
+// screensaver from Screensaver Studio and names a catalog screensaver only when
+// it is that screensaver's exact path. Taking it for an old revision would
+// install the catalog pack over the customer's own. The price: a catalog
+// screensaver that is still on revision 1 on VibeTV is not updated by itself.
 export function resolveInstalledScreensaver(
   themes: ThemeProduct[],
   screensaverPath: string | null | undefined,
 ): ThemeProduct | undefined {
   const installedPath = screensaverPath?.trim();
+  const mayBeCustomerScreensaver = FIRST_REVISION_PATH.test(installedPath ?? "");
   return themes.find(
     (candidate) =>
       candidate.usage === "screensaver" &&
-      sameVersionedThemePath(candidate.themeSpecPath, installedPath),
+      (mayBeCustomerScreensaver
+        ? candidate.themeSpecPath?.trim() === installedPath
+        : sameVersionedThemePath(candidate.themeSpecPath, installedPath)),
   );
 }
 

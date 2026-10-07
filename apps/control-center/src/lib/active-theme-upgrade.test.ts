@@ -14,6 +14,8 @@ import {
   activeLiveThemeId,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
+  NO_THEME_UPGRADE,
+  resolveInstalledScreensaver,
   resolveScreensaverUpgrade,
 } from "./active-theme-upgrade";
 
@@ -252,6 +254,18 @@ describe("resolveScreensaverUpgrade", () => {
   it("stays idle without a selected screensaver", () => {
     expect(resolveScreensaverUpgrade(catalog, undefined).needed).toBe(false);
     expect(resolveScreensaverUpgrade(catalog, "  ").needed).toBe(false);
+  });
+
+  // Screensaver Studio saves under the first characters of the id as
+  // revision 1. An own screensaver whose id starts like a catalog one's file
+  // name is not that catalog screensaver in an old revision.
+  it("leaves the customer's own screensaver alone when its file name starts like a catalog one", () => {
+    expect(
+      resolveScreensaverUpgrade(catalog, "/themes/s/nc-1-0a1b2c3d.json"),
+    ).toEqual(NO_THEME_UPGRADE);
+    expect(
+      resolveInstalledScreensaver(catalog, "/themes/s/nc-1-0a1b2c3d.json"),
+    ).toBeUndefined();
   });
 
   // A studio-built screensaver has no catalog entry to upgrade towards, so the
