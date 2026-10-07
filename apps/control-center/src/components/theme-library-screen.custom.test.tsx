@@ -45,7 +45,7 @@ const catalogTheme: ThemeProduct = {
   usage: "live",
 };
 
-async function renderLibrary() {
+async function renderLibrary(themes: ThemeProduct[] = [catalogTheme]) {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -62,7 +62,7 @@ async function renderLibrary() {
         selectedThemeId=""
         storefrontConfigured={false}
         themeInstallEnabled={false}
-        themes={[catalogTheme]}
+        themes={themes}
         usage="live"
       />,
     );
@@ -110,6 +110,23 @@ describe("ThemeLibraryScreen custom themes", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(document.activeElement).toBe(opener);
+    await act(async () => cleanup());
+  });
+
+  // Issue #551: Save keeps a new theme's id clear of the catalog, but a later
+  // catalog can add a theme under an id the customer already used. Both rows
+  // were then listed under the same React key.
+  it("lists an own theme and a later catalog theme with the same id as two rows", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { html, cleanup } = await renderLibrary([
+      catalogTheme,
+      { ...catalogTheme, id: "my-theme", themeId: "my-theme", title: "Catalog Namesake" },
+    ]);
+
+    expect(html).toContain('aria-label="Preview My Theme"');
+    expect(html).toContain('aria-label="Preview Catalog Namesake"');
+    expect(errors.mock.calls.flat().join(" ")).not.toContain("same key");
+    errors.mockRestore();
     await act(async () => cleanup());
   });
 });

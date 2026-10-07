@@ -629,7 +629,9 @@ export function ThemeLibraryScreen({
                   displayThemeId={displayTheme?.themeId}
                   item={theme}
                   installStatus={statusForHost(installStatus, windowsHost)}
-                  key={theme.themeId}
+                  // Not the theme id: an own theme can carry the id a later
+                  // catalog gave one of its themes.
+                  key={`${theme.kind}:${theme.id}`}
                   lastInstall={lastInstall}
                   liveThemeId={liveThemeId}
                   loadingEditorThemeId={loadingEditorThemeId}
