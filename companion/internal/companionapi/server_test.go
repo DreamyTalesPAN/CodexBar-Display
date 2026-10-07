@@ -369,6 +369,24 @@ func TestStatusKeepsAskingLegacyWiFiVibeTVAfterBusySerialPort(t *testing.T) {
 	if probes != legacyCableProbeAttempts {
 		t.Fatalf("once the port opens it must be asked %d times, got %d", legacyCableProbeAttempts, probes)
 	}
+
+	// A port that never opens reports the same error as a busy one. It is
+	// tried for five minutes and then left alone until the port set changes.
+	server.listCablePorts = func() ([]string, error) { return []string{"/dev/cu.usbserial-2"}, nil }
+	busy = true
+	probes = 0
+	for range 2 * legacyCableProbeBusyAttempts {
+		now = now.Add(legacyCableProbeRetryDelay)
+		status()
+	}
+	if probes != legacyCableProbeBusyAttempts {
+		t.Fatalf("a port that never opens must be tried %d times and then left alone, got %d", legacyCableProbeBusyAttempts, probes)
+	}
+	server.listCablePorts = func() ([]string, error) { return []string{"/dev/cu.usbserial-3"}, nil }
+	status()
+	if probes != legacyCableProbeBusyAttempts+1 {
+		t.Fatal("another port set must be asked again")
+	}
 }
 
 // Issue #529 asked why "Changing how VibeTV connects" was logged twice in one
@@ -5869,6 +5887,16 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 	}
 	if got := nextPoll(); got.ConnectionState != deviceConnectionRenderFailed {
 		t.Fatalf("the other theme failed twice in a row, got %q", got.ConnectionState)
+	}
+	// Hours later the remembered reading says nothing about now.
+	now = now.Add(3 * time.Hour)
+	if got := status(); got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("a reading remembered from hours ago must not confirm a single new one")
+	}
+	// Two missed polls in between still count as readings in a row.
+	now = now.Add(themeNotDrawnForgetTime)
+	if got := status(); got.ConnectionState != deviceConnectionRenderFailed {
+		t.Fatalf("the same failing reading three polls later is a theme problem, got %q", got.ConnectionState)
 	}
 	server.clearConfiguredDeviceState()
 	if got := nextPoll(); got.ConnectionState == deviceConnectionRenderFailed {
@@ -11751,6 +11779,56 @@ func TestFirmwareUpdateInstallAcceptsHelloWithoutCapabilities(t *testing.T) {
 	}
 }
 
+// Issue #526 follow-up: the hello without capabilities cannot say whether this
+// VibeTV has cable-only updates, so the update start leaves the legacy note
+// alone. The upload over WiFi going through says it: only firmware without
+// cable-only updates accepts one. Without the note the automatic switch to
+// USB-C (#504) is lost when the cable is asked before the first complete hello.
+func TestAcceptedWiFiUploadRemembersLegacyVibeTVAfterHelloWithoutCapabilities(t *testing.T) {
+	device := helloWithoutCapabilitiesDevice(t)
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: device.URL, DeviceID: "16198106", DeviceToken: "pair-token"})
+	server.resolveCablePort = func(string, string) (string, error) { return "", usb.ErrDeviceHelloUnavailable }
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	noted := make(chan string, 1)
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		before, _ := server.config()
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"rebooting","phase":"installing","firmware":"1.0.62","target":"`+device.URL+`","deviceId":"16198106","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		after, _ := server.config()
+		noted <- before.LegacyWiFiDeviceID + "->" + after.LegacyWiFiDeviceID
+		return errors.New("stop after the upload")
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case got := <-noted:
+		if got != "->16198106" {
+			t.Fatalf("the note must be set by the accepted upload, not before: %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("update did not start")
+	}
+	for attempt := 0; ; attempt++ {
+		if _, running := server.activeFirmwareUpdateJob(); !running {
+			break
+		}
+		if attempt == 1000 {
+			t.Fatal("update job did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// An upload over the cable says nothing about WiFi updates.
+	cable := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "16198106", DeviceToken: "pair-token"})
+	cable.applyFirmwareUpdateEvent("no-job", firmwareUpdateEvent{Stage: "rebooting", Target: cableDeviceTarget, DeviceID: "16198106", UploadAccepted: true})
+	if cfg, _ := cable.config(); cfg.LegacyWiFiDeviceID != "" {
+		t.Fatalf("a Cable upload remembered a legacy WiFi VibeTV: %q", cfg.LegacyWiFiDeviceID)
+	}
+}
+
 func TestHelloWithoutCapabilitiesStartsNoUpdateForAnotherVibeTV(t *testing.T) {
 	device := helloWithoutCapabilitiesDevice(t)
 	for name, cfg := range map[string]runtimeconfig.Config{
@@ -14720,6 +14798,40 @@ func TestWiFiPairingNotFoundAsksForCable(t *testing.T) {
 	writePairingError(rec, &pairingAuthorizationError{statusCode: http.StatusNotFound, err: errors.New("404")}, "1.0.61")
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"cable_pairing_required"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// The preview rebuilds the frame from the line the daemon writes. Reader and
+// writer are two pieces of code in two packages, so this test formats the line
+// with the daemon's own writer: usageUnavailable was read here and never
+// written there, and the preview saw it as false (#532).
+func TestDisplayStreamLogLineFromDaemonKeepsTrustAndUnavailable(t *testing.T) {
+	sent := protocol.Frame{
+		V: 1, Provider: "claude", Label: "Claude", UsageMode: "used",
+		Session: 12, Weekly: 34, ResetSec: 0,
+		UsageUnavailable: true, SessionUnavailable: true,
+		Activity: "idle", Time: "10:00", Date: "07.10.2026",
+		ResetTrust: "live", ResetTrustSec: 17990, ResetSource: "claude:session",
+	}
+	line := "2026-10-07T08:00:00Z " + daemon.SentFrameLogLine("cable://vibetv", "usb", "16198106", "codexbar-dashboard", true, sent, "fresh", "", "")
+	frame, ok := frameFromDisplayStreamLogLine(line)
+	if !ok {
+		t.Fatalf("the daemon's own line was not read: %s", line)
+	}
+	if !frame.UsageUnavailable || !frame.SessionUnavailable || frame.WeeklyUnavailable {
+		t.Fatalf("unavailable flags lost: %+v", frame)
+	}
+	if frame.ResetTrust != "live" || frame.ResetTrustSec != 17990 || frame.ResetSource != "claude:session" {
+		t.Fatalf("trust fields lost: %+v", frame)
+	}
+	if frame.Provider != "claude" || frame.Session != 12 || frame.Weekly != 34 || frame.Activity != "idle" {
+		t.Fatalf("frame changed on the way: %+v", frame)
+	}
+
+	sent.UsageUnavailable, sent.SessionUnavailable = false, false
+	frame, ok = frameFromDisplayStreamLogLine("2026-10-07T08:00:00Z " + daemon.SentFrameLogLine("cable://vibetv", "usb", "16198106", "codexbar-dashboard", true, sent, "fresh", "", ""))
+	if !ok || frame.UsageUnavailable || frame.SessionUnavailable || frame.ResetTrustSec != 17990 {
+		t.Fatalf("available usage must read back as available: ok=%t %+v", ok, frame)
 	}
 }
 

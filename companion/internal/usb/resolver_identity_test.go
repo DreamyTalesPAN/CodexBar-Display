@@ -263,9 +263,9 @@ func TestDiscoverVibeTVsReportsTheLegacyVibeTVItFound(t *testing.T) {
 	}
 }
 
-// Issue #529: a port another program holds was never asked. Only when that is
-// every port does the resolver say so; one silent port that was opened keeps
-// the usual "no VibeTV answered".
+// Issue #529: a port another program holds was never asked, and the VibeTV may
+// be on it, so the resolver says so whatever the other ports did. A device
+// that answered is still named, and a matching VibeTV is still found.
 func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testing.T) {
 	busy := wrapTransportError(errcode.TransportSerialOpen, "open-port", "/dev/cu.usbserial-busy", "", errors.New("resource busy"))
 	silent := wrapTransportError(errcode.ProtocolDeviceHelloUnavailable, "read-hello", "/dev/cu.usbserial-silent", "", ErrDeviceHelloUnavailable)
@@ -273,7 +273,16 @@ func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testi
 		if strings.Contains(path, "busy") {
 			return protocol.DeviceHello{}, busy
 		}
+		if strings.Contains(path, "foreign") {
+			return protocol.DeviceHello{Kind: "hello", Board: "some-other-board"}, nil
+		}
+		if strings.Contains(path, "vibetv") {
+			return cableHello("14799300"), nil
+		}
 		return protocol.DeviceHello{}, silent
+	}
+	if got, err := resolveVibeTVCandidatesForControl([]string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-vibetv"}, "", "14799300", readHello, true); err != nil || got != "/dev/cu.usbserial-vibetv" {
+		t.Fatalf("a busy port next to the VibeTV must not hide it: got=%q err=%v", got, err)
 	}
 	for _, tc := range []struct {
 		name  string
@@ -281,7 +290,8 @@ func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testi
 		want  errcode.Code
 	}{
 		{"only busy ports", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-busy2"}, errcode.TransportSerialOpen},
-		{"a silent port was asked", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-silent"}, errcode.TransportNoMatchingDevice},
+		{"a busy port next to a silent one", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-silent"}, errcode.TransportSerialOpen},
+		{"a busy port next to a foreign device", []string{"/dev/cu.usbserial-busy", "/dev/cu.usbserial-foreign"}, errcode.TransportForeignDevice},
 		{"only silent ports", []string{"/dev/cu.usbserial-silent"}, errcode.TransportNoMatchingDevice},
 	} {
 		if _, err := resolveVibeTVCandidatesForControl(tc.ports, "", "14799300", readHello, true); errcode.Of(err) != tc.want {

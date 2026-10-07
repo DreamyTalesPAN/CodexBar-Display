@@ -247,6 +247,7 @@ type Server struct {
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string
 	legacyCableProbeTries  int
+	legacyCableProbeBusy   int
 	legacyCableProbeAt     time.Time
 	updateHoldUntil        time.Time
 	updateHoldRefusals     atomic.Uint64
@@ -414,8 +415,9 @@ type configuredDeviceConnection struct {
 	lastSeenAt time.Time
 	// The theme path and render error of the last health reading that
 	// themeCannotBeDrawn named, and when that run of readings began.
-	themeNotDrawn   string
-	themeNotDrawnAt time.Time
+	themeNotDrawn       string
+	themeNotDrawnAt     time.Time
+	themeNotDrawnLastAt time.Time
 }
 
 func (e *repairStageError) Error() string {
@@ -1640,10 +1642,14 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 // joins WiFi, so a new port set is asked a few times, spaced apart. A try in
 // which no port could be opened asked nobody and reopened nothing, so it is
 // spaced like the others but not counted (issue #529): the cable is asked once
-// the other program lets go of the port.
+// the other program lets go of the port. A port that never opens (no
+// permission, a Bluetooth COM port) reports the same error, so those tries are
+// capped too: five minutes cover a program that is busy with the port, and
+// after that the port set is left alone until it changes.
 const (
-	legacyCableProbeAttempts   = 3
-	legacyCableProbeRetryDelay = 10 * time.Second
+	legacyCableProbeAttempts     = 3
+	legacyCableProbeBusyAttempts = 30
+	legacyCableProbeRetryDelay   = 10 * time.Second
 )
 
 // probeLegacyWiFiCable asks newly connected serial ports whether one of them
@@ -1667,9 +1673,11 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		if key != s.legacyCableProbePorts {
 			s.legacyCableProbePorts = key
 			s.legacyCableProbeTries = 0
+			s.legacyCableProbeBusy = 0
 			s.legacyCableProbeAt = time.Time{}
 		}
 		return len(ports) > 0 && s.legacyCableProbeTries < legacyCableProbeAttempts &&
+			s.legacyCableProbeBusy < legacyCableProbeBusyAttempts &&
 			(s.legacyCableProbeAt.IsZero() || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
 	}
 	s.legacyCableProbeMu.Lock()
@@ -1697,6 +1705,7 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		s.legacyCableProbeMu.Lock()
 		if key == s.legacyCableProbePorts {
 			s.legacyCableProbeTries--
+			s.legacyCableProbeBusy++
 		}
 		s.legacyCableProbeMu.Unlock()
 	}
@@ -1851,6 +1860,11 @@ const deviceConnectionRenderFailed = "display_render_failed"
 // reader of the same answer does not.
 const themeNotDrawnConfirmTime = 3 * time.Second
 
+// themeNotDrawnForgetTime is how far apart two health readings may be and
+// still be "in a row": three status polls, so one or two missed health answers
+// of a busy VibeTV do not start the count over.
+const themeNotDrawnForgetTime = 15 * time.Second
+
 // themeStaysUndrawn reports a theme that themeCannotBeDrawn named on two
 // health readings in a row, for the same theme path and render error (issue
 // #530). One reading can be a single failed buffer allocation that the next
@@ -1866,10 +1880,13 @@ func (c *configuredDeviceConnection) themeStaysUndrawn(display *deviceDisplayInf
 		c.themeNotDrawn = ""
 		return false
 	}
-	if reading := spec.Path + "\n" + spec.RenderError; c.themeNotDrawn != reading {
+	// A reading remembered from before the VibeTV was away for a while says
+	// nothing about now, so it does not confirm the first reading after that.
+	if reading := spec.Path + "\n" + spec.RenderError; c.themeNotDrawn != reading ||
+		now.Sub(c.themeNotDrawnLastAt) > themeNotDrawnForgetTime {
 		c.themeNotDrawn, c.themeNotDrawnAt = reading, now
-		return false
 	}
+	c.themeNotDrawnLastAt = now
 	return now.Sub(c.themeNotDrawnAt) >= themeNotDrawnConfirmTime
 }
 
@@ -7095,6 +7112,14 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 type firmwareUpdateEvent = firmwareupdate.Event
 
 func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEvent) {
+	if event.UploadAccepted && strings.HasPrefix(strings.ToLower(strings.TrimSpace(event.Target)), "http") {
+		// Only firmware without cable-only updates takes an upload over WiFi
+		// (docs/firmware-ota-contract.md), so this is the same fact the update
+		// start reads from the hello. A hello without capabilities (issue
+		// #526) could not say it there, and the new firmware has not started
+		// yet, so nothing has ended its legacy mode over the cable.
+		s.rememberLegacyWiFiDevice(event.DeviceID)
+	}
 	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 		if stage := strings.TrimSpace(event.Stage); stage != "" {
 			job.Stage = stage
