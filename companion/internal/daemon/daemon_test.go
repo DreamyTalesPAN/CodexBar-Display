@@ -6404,8 +6404,11 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	resume := make(chan time.Time, 1)
+	// One tick ends the wait after the first cycle, the other ends the pause.
+	resume := make(chan time.Time, 2)
 	resume <- time.Now()
+	resume <- time.Now()
+	now := time.Now()
 	var pauseChecks atomic.Int32
 	var cycleCalls atomic.Int32
 	var logged strings.Builder
@@ -6413,10 +6416,16 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	err := runDaemonLoop(ctx, Options{
 		Interval: time.Second,
 		PauseDeviceWrites: func() bool {
-			return pauseChecks.Add(1) == 1
+			// Issue #536: a firmware update pauses the loop after a cycle and
+			// for longer than the sleep-wake threshold.
+			if pauseChecks.Add(1) != 2 {
+				return false
+			}
+			now = now.Add(2 * time.Minute)
+			return true
 		},
 	}, runtimeDeps{
-		now: time.Now,
+		now: func() time.Time { return now },
 		after: func(time.Duration) <-chan time.Time {
 			return resume
 		},
@@ -6424,16 +6433,17 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 			logged.WriteString(fmt.Sprintf(format, args...))
 		},
 	}, func(context.Context) error {
-		cycleCalls.Add(1)
-		cancel()
+		if cycleCalls.Add(1) == 2 {
+			cancel()
+		}
 		return nil
 	})
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected loop cancellation after resumed cycle, got %v", err)
 	}
-	if got := cycleCalls.Load(); got != 1 {
-		t.Fatalf("device cycle calls=%d want 1 after resume", got)
+	if got := cycleCalls.Load(); got != 2 {
+		t.Fatalf("device cycle calls=%d want 2, one before the pause and one after", got)
 	}
 	log := logged.String()
 	if !strings.Contains(log, "runtime event=device-writes-paused reason=device-maintenance") {
@@ -6441,6 +6451,9 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	}
 	if !strings.Contains(log, "runtime event=device-writes-resumed reason=device-maintenance-complete") {
 		t.Fatalf("missing resume log: %q", log)
+	}
+	if strings.Contains(log, "runtime event=sleep-wake") {
+		t.Fatalf("maintenance pause logged as sleep-wake: %q", log)
 	}
 }
 

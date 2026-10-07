@@ -543,6 +543,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if deviceWritesPaused {
 			deps.logf("runtime event=device-writes-resumed reason=device-maintenance-complete\n")
 			deviceWritesPaused = false
+			// Issue #536: the pause is not a sleep, so its length must not be
+			// logged as a sleep-wake gap.
+			lastCycleStart = time.Time{}
 		}
 		cycleStart := deps.now()
 		if startedAt.IsZero() {
