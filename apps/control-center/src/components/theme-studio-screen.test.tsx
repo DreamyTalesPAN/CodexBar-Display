@@ -165,3 +165,25 @@ it.each([
   expect(download).toHaveBeenCalledTimes(1);
   expect(screen.getByText(message)).toBeTruthy();
 });
+
+// Issue #551: the notices sat under the Inspector's fields, below the fold
+// for an element with many fields.
+it("shows what Save, Export and Send answered above the Inspector's fields", async () => {
+  renderStudio("blank");
+  fireEvent.click(button("Save theme"));
+  const notice = await screen.findByText("Saved to library.");
+  expect(
+    notice.compareDocumentPosition(screen.getByText("Inspector")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+// The Inspector box is hidden in a window narrower than 1024 px; the Windows
+// app can be 960 px wide. The notices must not be hidden with it.
+it("keeps those notices outside the box a narrow window hides", async () => {
+  renderStudio("blank");
+  fireEvent.click(button("Save theme"));
+  const notice = await screen.findByText("Saved to library.");
+  expect(screen.getByText("Inspector").closest("aside")!.className).toContain("hidden");
+  expect(notice.closest("aside")).toBeNull();
+});

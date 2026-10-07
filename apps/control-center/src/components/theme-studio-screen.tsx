@@ -1612,7 +1612,50 @@ export function ThemeStudioScreen({
             />
           </main>
 
-          <aside className="order-3 hidden gap-4 rounded-[var(--radius-card)] border bg-card p-4 lg:grid lg:max-h-full lg:overflow-y-auto">
+          {/* The right-hand column. A narrow window has no such column and
+              hides the Inspector, so there the notices stand above the preview. */}
+          <div className="order-3 min-h-0 gap-4 max-lg:contents lg:flex lg:max-h-full lg:flex-col">
+            {/* What Save, Export and Send answered comes first: under the
+                Inspector's fields it was below the fold. */}
+            <div className="grid gap-4 empty:hidden">
+              {libraryStatus ? (
+                <StatusLine
+                  detail={libraryStatus.message}
+                  icon={
+                    libraryStatus.tone === "attention" ? (
+                      <AlertTriangle size={16} aria-hidden />
+                    ) : (
+                      <CheckCircle2 size={16} aria-hidden />
+                    )
+                  }
+                  title="Library"
+                  tone={libraryStatus.tone}
+                />
+              ) : null}
+              {exportStatus.message !== "Export is ready after validation." ? (
+                <StatusLine
+                  detail={exportStatus.message}
+                  icon={
+                    exportStatus.tone === "attention" ? (
+                      <AlertTriangle size={16} aria-hidden />
+                    ) : (
+                      <CheckCircle2 size={16} aria-hidden />
+                    )
+                  }
+                  title="Export"
+                  tone={exportStatus.tone}
+                />
+              ) : null}
+              {showDeviceStatus ? (
+                <StatusLine
+                  detail={deviceStatus.message}
+                  icon={<Send size={16} aria-hidden />}
+                  title="VibeTV"
+                  tone={deviceStatus.tone}
+                />
+              ) : null}
+            </div>
+            <aside className="hidden min-h-0 gap-4 rounded-[var(--radius-card)] border bg-card p-4 lg:grid lg:overflow-y-auto">
             <div>
               <PanelTitle
                 icon={<LayoutGrid size={16} aria-hidden />}
@@ -1667,43 +1710,8 @@ export function ThemeStudioScreen({
                 </div>
               </Card>
             ) : null}
-            {libraryStatus ? (
-              <StatusLine
-                detail={libraryStatus.message}
-                icon={
-                  libraryStatus.tone === "attention" ? (
-                    <AlertTriangle size={16} aria-hidden />
-                  ) : (
-                    <CheckCircle2 size={16} aria-hidden />
-                  )
-                }
-                title="Library"
-                tone={libraryStatus.tone}
-              />
-            ) : null}
-            {exportStatus.message !== "Export is ready after validation." ? (
-              <StatusLine
-                detail={exportStatus.message}
-                icon={
-                  exportStatus.tone === "attention" ? (
-                    <AlertTriangle size={16} aria-hidden />
-                  ) : (
-                    <CheckCircle2 size={16} aria-hidden />
-                  )
-                }
-                title="Export"
-                tone={exportStatus.tone}
-              />
-            ) : null}
-            {showDeviceStatus ? (
-              <StatusLine
-                detail={deviceStatus.message}
-                icon={<Send size={16} aria-hidden />}
-                title="VibeTV"
-                tone={deviceStatus.tone}
-              />
-            ) : null}
-          </aside>
+            </aside>
+          </div>
         </section>
       </section>
 
