@@ -2,8 +2,9 @@
 
 Updated for issue #431 on 2026-09-08; Mini Classic and Claude Creature were
 recaptured for issue #258 on 2026-09-21; Token Counter (#202) and Retro 3D
-(#261) were added on 2026-10-07. All seven live themes and four screensavers
-use the same normal Control Center preview, without product mockups.
+(#261) were added on 2026-10-07; Duo (#200) was added on 2026-10-08. All eight
+live themes and four screensavers use the same normal Control Center preview,
+without product mockups.
 
 Captured from `ThemeSpecPreview` at commit `c9192e6`, using unmodified current
 render packs, `THEME_CATALOG_PREVIEW_FRAME`, and `animate={false}`. The 240 × 240
@@ -14,6 +15,7 @@ These are static example states, not live device readings.
 | --- | --- | --- | --- |
 | [Claude Creature](vibetv-theme-claude-creature.png) | [render pack](../../dist/theme-packs/render/claude-creature/claude--7-4963df.json) | `/themes/u/claude--7-4963df.json` | `4963dfb7` |
 | [Clippy](vibetv-theme-clippy.png) | [render pack](../../dist/theme-packs/render/clippy/clippy-5-4f3746.json) | `/themes/u/clippy-5-4f3746.json` | `4f37467f` |
+| [Duo](vibetv-theme-duo.png) | [render pack](../../dist/theme-packs/render/duo/duo-2-9052dec6.json) | `/themes/u/duo-2-9052dec6.json` | `c778dc4f` |
 | [Mini Classic](vibetv-theme-mini-classic.png) | [render pack](../../dist/theme-packs/render/mini-classic/mini-cl-7-c7cbf4.json) | `/themes/u/mini-cl-7-c7cbf4.json` | `c7cbf455` |
 | [Night Clock](vibetv-screensaver-night-clock.png) | [render pack](../../dist/theme-packs/render/night-clock/nc-3-e18e4217.json) | `/themes/s/nc-3-e18e4217.json` | `7c0481b8` |
 | [Pixel Battery](vibetv-theme-pixel-battery.png) | [render pack](../../dist/theme-packs/render/pixel-battery/pba-16-f46829.json) | `/themes/u/pba-16-f46829.json` | `6c0dcf25` |

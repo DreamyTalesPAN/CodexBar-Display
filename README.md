@@ -18,7 +18,7 @@ important changes before they interrupt your work.
 
 ## Themes
 
-VibeTV comes with 7 pre-built themes, but you can also
+VibeTV comes with 8 pre-built themes, but you can also
 [build your own](docs/theme-dev-guide.md).
 
 <table>
@@ -34,9 +34,10 @@ VibeTV comes with 7 pre-built themes, but you can also
     <td align="center"><img src="docs/assets/vibetv-theme-pixel-battery.png" alt="Pixel Battery screen preview with segmented usage batteries" width="180"></td>
     <td align="center"><img src="docs/assets/vibetv-theme-tiny-office.png" alt="Tiny Office screen preview with a pixel-art developer desk" width="180"></td>
   </tr>
-  <tr><th>Token Counter</th></tr>
+  <tr><th>Token Counter</th><th>Duo</th></tr>
   <tr>
     <td align="center"><img src="docs/assets/vibetv-theme-token-counter.png" alt="Token Counter screen preview with one large session token total" width="180"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-duo.png" alt="Duo screen preview with the usage of two providers" width="180"></td>
   </tr>
 </table>
 

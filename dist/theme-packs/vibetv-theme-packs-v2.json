@@ -33,6 +33,23 @@
       "bytes": 18640
     },
     {
+      "id": "duo",
+      "title": "Duo",
+      "usage": "live",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/u/duo-2-9052dec6.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "provider-slots-v1",
+        "text-valign-v1"
+      ],
+      "downloadAsset": "vibetv-theme-duo-v0.1.0.zip",
+      "sha256": "4307a3362e240e1dc4ac64e091f1dd05407ef79b587deca410e4e88c6d38668c",
+      "bytes": 823
+    },
+    {
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
