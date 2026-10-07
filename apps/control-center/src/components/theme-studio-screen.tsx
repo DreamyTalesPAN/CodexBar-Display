@@ -49,6 +49,7 @@ import {
   ItemGroup,
   ItemTitle,
 } from "@/components/ui/item";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -1116,9 +1117,13 @@ export function ThemeStudioScreen({
                   </Button>
                 </div>
               ) : null}
-              <h3 className="truncate text-3xl font-black leading-tight text-foreground">
-                {packName || (screensaver ? "Untitled screensaver" : "Untitled theme")}
-              </h3>
+              <Input
+                aria-label="Name"
+                className="h-12 max-w-xl text-2xl font-black md:text-2xl"
+                onChange={(event) => setPackName(event.target.value)}
+                placeholder={screensaver ? "Untitled screensaver" : "Untitled theme"}
+                value={packName}
+              />
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {screensaver ? (
                   <StatusPill label="Screensaver" tone="neutral" />
@@ -1245,7 +1250,6 @@ export function ThemeStudioScreen({
                   ) : <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">Select an element.</p>}
                   <div className="grid gap-3 border-t pt-5">
                     <PanelTitle icon={<Palette aria-hidden />} title="Project" />
-                    <TextField label="Name" value={packName} onChange={setPackName} />
                     <ColorField label="Background" value={spec.bgColor || COLOR_FALLBACK} onChange={(value) => updateSpec((draft) => { Object.assign(draft, updateThemeColors(draft, { background: value })); })} />
                   </div>
                   <StatusLine
@@ -1374,7 +1378,6 @@ export function ThemeStudioScreen({
                   id="theme-studio-panel-project"
                   role="tabpanel"
                 >
-                  <TextField label="Name" value={packName} onChange={setPackName} />
                   <TextField
                     label="ID"
                     value={spec.themeId}

@@ -86,3 +86,27 @@ it("shows the theme as it is in the JSON tab after Save renamed its id and after
   fireEvent.click(button("Reset JSON"));
   expect(json().value).toContain('"id": "my-theme-2"');
 });
+
+// Issue #551: the name could only be changed under Advanced › Project, so
+// themes were saved as "New Theme".
+it("lets the customer name the theme in the header, without opening Advanced", async () => {
+  const saved: string[] = [];
+  renderStudio("blank", {
+    onSaveToLibrary: async payload => {
+      saved.push(payload.packName);
+      return {
+        document: { assets: payload.assets, packName: payload.packName, spec: payload.spec },
+        libraryId: payload.spec.themeId, savedAt: "2026-10-08T00:00:00Z",
+      };
+    },
+  });
+
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retro Clock" } });
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(saved).toEqual(["Retro Clock"]));
+
+  // The field moved; Advanced › Project no longer holds a second one.
+  fireEvent.click(button("Advanced"));
+  expect(screen.getAllByLabelText("Name")).toHaveLength(1);
+  expect(screen.getByLabelText("ID")).toBeTruthy();
+});
