@@ -337,6 +337,7 @@ export function UpdatesScreen({
         macAppMigrationReady={macAppMigrationReady}
         macAppUpdateAvailable={macAppUpdateAvailable}
         onClick={runPrimaryUpdate}
+        refreshing={refreshing}
         updateReady={Boolean(
           macAppCheckFailed
             ? onCheckUpdates
@@ -363,6 +364,7 @@ function PrimaryUpdateAction({
   macAppMigrationReady,
   macAppUpdateAvailable,
   onClick,
+  refreshing,
   updateReady,
 }: {
   checking: boolean;
@@ -376,6 +378,8 @@ function PrimaryUpdateAction({
   macAppMigrationReady: boolean;
   macAppUpdateAvailable: boolean;
   onClick: () => void | Promise<void>;
+  /** The check the customer started with this button is running. */
+  refreshing: boolean;
   updateReady: boolean;
 }) {
   if (
@@ -437,10 +441,14 @@ function PrimaryUpdateAction({
 
   return (
     <Button
-      className="h-14 w-full text-base font-bold"
+      // During the customer's own check the button looks closed and ignores a
+      // second press, but is not disabled: that drops keyboard focus to the
+      // page (issue #558).
+      aria-disabled={refreshing || undefined}
+      className="h-14 w-full text-base font-bold aria-disabled:pointer-events-none aria-disabled:opacity-50"
       disabled={
         disabled ||
-        checking ||
+        (checking && !refreshing) ||
         !updateReady ||
         (!firmwareUpdateAvailable &&
           macAppMigrationRequired &&
@@ -449,7 +457,7 @@ function PrimaryUpdateAction({
           macAppUpdateAvailable &&
           !macAppCheckFailed)
       }
-      onClick={onClick}
+      onClick={refreshing ? undefined : onClick}
       size="lg"
       type="button"
     >

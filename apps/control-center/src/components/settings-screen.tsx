@@ -126,9 +126,11 @@ export function SettingsScreen({
   const maxBrightness =
     device?.capabilities?.display?.brightness?.maxPercent ?? 100;
   const currentBrightness = brightness ?? minBrightness;
+  // Saving brightness, the screensaver or the display mode closes nothing
+  // here: a control that closes during its own save drops keyboard focus to
+  // the page, and the next arrow key goes nowhere (issue #558). The app sends
+  // these writes one after the other, so the next change can follow at once.
   const localActionBusy =
-    busyAction === "brightness" ||
-    busyAction === "standby" ||
     busyAction === "connection-mode" ||
     busyAction === "reset-setup" ||
     busyAction === "erase-device" ||
@@ -173,9 +175,6 @@ export function SettingsScreen({
     ? currentProviderId
     : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
-  // Optional prop: `undefined` means "nothing pending", the same as null.
-  // Comparing against null alone left both mode cards disabled forever.
-  const displaySavePending = Boolean(providerPicker.displayPendingProviderId);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
   const usageDisplay = displayPreferences.find(
@@ -346,7 +345,6 @@ export function SettingsScreen({
             id: item.providerId,
             label: item.label,
           }))}
-          saving={displaySavePending}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
         />
         {displayMode === "automatic" && rotation ? (

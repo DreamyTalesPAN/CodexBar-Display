@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { expectNoAxeViolations } from "@/test/axe";
+import { expectKeepsFocus } from "@/test/focus";
 import { ControlCenterApp } from "./control-center-app";
 
 const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7" };
@@ -58,10 +59,33 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-// The Mac App as this window sees it: one stored display preference.
+const claude = {
+  id: "codexbar.providers.claude.enabled",
+  section: "providers",
+  owner: "codexbar",
+  type: "boolean",
+  label: "Claude",
+  providerId: "claude",
+  value: true,
+  effectiveValue: true,
+  allowsDefault: false,
+  availability: { state: "available" },
+  health: { state: "healthy", service: "operational", message: "Provider is working." },
+  writeStrategy: "codexbar_command",
+  writable: true,
+};
+
+// The Mac App as this window sees it: one stored display preference, and what
+// VibeTV holds for brightness, screensaver and display mode.
 function startWindow() {
   const companion = {
     stored: usageDisplay,
+    settings: {
+      display: { brightnessPercent: 20 },
+      standby: { enabled: false, timeoutMinutes: 1, brightnessPercent: 20 },
+    },
+    selection: { mode: "automatic", providerIds: [] as string[], configured: true, valid: true },
+    providers: [] as (typeof claude)[],
     refuseWrites: false,
     requests: [] as string[],
     // While set, a read of the display preferences answers late, with the
@@ -69,6 +93,11 @@ function startWindow() {
     holdRead: null as Promise<void> | null,
     // While set, the next write is stored late.
     holdWrite: null as Promise<void> | null,
+  };
+  const takeHeldWrite = () => {
+    const held = companion.holdWrite;
+    companion.holdWrite = null;
+    return held;
   };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
@@ -127,33 +156,46 @@ function startWindow() {
         return jsonResponse({ ok: true, items: [found] });
       }
       if (url.endsWith("/v1/preferences?section=providers")) {
-        return jsonResponse({ ok: true, items: [] });
+        return jsonResponse({ ok: true, items: companion.providers });
       }
       if (url.endsWith(`/v1/preferences/${usageDisplay.id}`) && method === "PATCH") {
         if (companion.refuseWrites) {
           return jsonResponse({ ok: false, error: refused }, 502);
         }
         const { value } = JSON.parse(String(init?.body));
-        const held = companion.holdWrite;
-        companion.holdWrite = null;
-        await held;
+        await takeHeldWrite();
         companion.stored = { ...usageDisplay, value, effectiveValue: value ?? "used" };
         return jsonResponse({ ok: true, item: companion.stored });
       }
       if (url.endsWith("/v1/settings")) {
-        const standby = init?.body
-          ? JSON.parse(String(init.body)).standby
-          : { enabled: false, timeoutMinutes: 1, brightnessPercent: 20 };
-        return jsonResponse({ ok: true, settings: { standby } });
+        if (init?.body) {
+          const { brightnessPercent, standby } = JSON.parse(String(init.body));
+          await takeHeldWrite();
+          companion.settings = standby
+            ? { ...companion.settings, standby }
+            : { ...companion.settings, display: { brightnessPercent } };
+        }
+        return jsonResponse({ ok: true, settings: companion.settings });
       }
       if (url.endsWith("/v1/provider-display")) {
-        return jsonResponse({
-          ok: true,
-          selection: { mode: "automatic", providerIds: [], configured: true, valid: true },
-        });
+        if (init?.body) {
+          await takeHeldWrite();
+          companion.selection = {
+            ...JSON.parse(String(init.body)),
+            configured: true,
+            valid: true,
+          };
+        }
+        return jsonResponse({ ok: true, selection: companion.selection });
       }
       if (url.includes("/v1/usage")) {
-        return jsonResponse({ ok: true, usageMode: "used", providers: [] });
+        return jsonResponse({
+          ok: true,
+          usageMode: "used",
+          providers: companion.providers.map(({ providerId, label }) => ({
+            id: providerId, label, session: 12, weekly: 34, resetSecs: 0, usageMode: "used",
+          })),
+        });
       }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
@@ -176,6 +218,25 @@ function startWindow() {
     companion,
     text: () => view.container.ownerDocument.body.textContent || "",
     wait,
+    // The next write is stored only once the returned function is called.
+    holdNextWrite: () => {
+      let store = () => {};
+      companion.holdWrite = new Promise<void>((resolve) => {
+        store = resolve;
+      });
+      return store;
+    },
+    // What was sent to VibeTV's settings, in the order it was sent.
+    settingsWrites: () =>
+      companion.requests
+        .filter((request) => request.startsWith("POST /api/local-companion/v1/settings "))
+        .map((request) => JSON.parse(request.slice(request.indexOf("{")))),
+    // One key press or click, then what the app starts in answer to it. In the
+    // app two presses are two events with that work in between.
+    step: async (event: () => void) => {
+      event();
+      await act(async () => {});
+    },
     usageDisplay: () => screen.getByRole("combobox", { name: "Usage display" }),
     choose: async (option: string) => {
       fireEvent.keyDown(screen.getByRole("combobox", { name: "Usage display" }), { key: "Enter" });
@@ -287,6 +348,135 @@ it("names a one-minute screensaver in the singular", async () => {
   expect(window.text()).toContain(
     "The screensaver starts after 1 minute at 20% brightness.",
   );
+});
+
+// Issue #558, seen in the Windows app: a control was closed while its change
+// was saved. That dropped keyboard focus to the page, so a slider moved one
+// step and ignored the next arrow key.
+it("keeps Brightness focused through two arrow keys and saves both in order", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const slider = screen.getByRole("slider", { name: "Brightness" });
+  slider.focus();
+
+  const store = window.holdNextWrite();
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  expectKeepsFocus(slider);
+  expect(slider.getAttribute("aria-valuenow")).toBe("22");
+  expect(window.settingsWrites()).toEqual([{ brightnessPercent: 21 }]);
+
+  store();
+  await window.wait(1);
+  expectKeepsFocus(slider);
+  expect(slider.getAttribute("aria-valuenow")).toBe("22");
+  expect(window.settingsWrites()).toEqual([
+    { brightnessPercent: 21 },
+    { brightnessPercent: 22 },
+  ]);
+});
+
+// A held arrow key repeats faster than VibeTV stores a value. The values in
+// between are not sent one by one after the key is let go.
+it("sends the first and the last value of a held arrow key", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const slider = screen.getByRole("slider", { name: "Brightness" });
+  slider.focus();
+
+  const store = window.holdNextWrite();
+  for (let repeat = 0; repeat < 5; repeat += 1) {
+    await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  }
+  store();
+  await window.wait(1);
+
+  expectKeepsFocus(slider);
+  expect(slider.getAttribute("aria-valuenow")).toBe("25");
+  expect(window.settingsWrites()).toEqual([
+    { brightnessPercent: 21 },
+    { brightnessPercent: 25 },
+  ]);
+});
+
+it("keeps Brightness in screensaver focused through two arrow keys", async () => {
+  const window = startWindow();
+  const standby = { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 };
+  window.companion.settings.standby = standby;
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const slider = screen.getByRole("slider", { name: "Brightness in screensaver" });
+  slider.focus();
+
+  const store = window.holdNextWrite();
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  expectKeepsFocus(slider);
+  expect(slider.getAttribute("aria-valuenow")).toBe("22");
+
+  store();
+  await window.wait(1);
+  expectKeepsFocus(slider);
+  expect(slider.getAttribute("aria-valuenow")).toBe("22");
+  expect(window.settingsWrites()).toEqual([
+    { standby: { ...standby, brightnessPercent: 21 } },
+    { standby: { ...standby, brightnessPercent: 22 } },
+  ]);
+});
+
+it.each([
+  ["Settings", ["Settings"]],
+  ["Screensavers", ["Appearance", "Screensavers"]],
+])("keeps Show screensaver in %s focused while it is saved", async (_, tabs) => {
+  const window = startWindow();
+  await window.wait(10);
+  for (const tab of tabs) {
+    fireEvent.click(screen.getByRole("button", { name: tab }));
+    await window.wait(1);
+  }
+  const toggle = screen.getByRole("switch", { name: "Show screensaver" });
+  toggle.focus();
+
+  const store = window.holdNextWrite();
+  await window.step(() => fireEvent.click(toggle));
+  expectKeepsFocus(toggle);
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+  store();
+  await window.wait(1);
+  expectKeepsFocus(toggle);
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(window.companion.settings.standby.enabled).toBe(true);
+});
+
+it("keeps the display mode cards focused while the mode is saved", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  window.companion.selection.providerIds = ["claude"];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  for (const [name, mode] of [[/Manual/, "fixed"], [/Automatic/, "automatic"]] as const) {
+    const card = screen.getByRole("button", { name });
+    card.focus();
+
+    const store = window.holdNextWrite();
+    await window.step(() => fireEvent.click(card));
+    expectKeepsFocus(card);
+    expect(card.getAttribute("aria-pressed")).toBe("true");
+
+    store();
+    await window.wait(1);
+    expectKeepsFocus(card);
+    expect(card.getAttribute("aria-pressed")).toBe("true");
+    expect(window.companion.selection.mode).toBe(mode);
+  }
 });
 
 // Issue #546: "Run setup again" started at once, from Settings and from

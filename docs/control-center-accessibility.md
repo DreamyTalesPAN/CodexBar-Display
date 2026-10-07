@@ -26,6 +26,9 @@ What the Control Center does for them:
 - When setup moves on, the button that was pressed is gone. The new title
   takes focus (`SetupWizardTitle`), so the keyboard and the screen reader carry
   on from the new step.
+- A control keeps focus while its change is saved. Brightness, the screensaver
+  settings, the display mode and `Check for updates` are not disabled for that
+  moment, so the next key press still reaches them.
 - A control without visible text has a name that says what it acts on, for
   example `Delete My Theme` or `Check Codex again`.
 - A progress bar has a name and reports its percentage. A usage lane without a
@@ -67,6 +70,13 @@ npx vitest run src/components/usage-screen.test.tsx
 Focus has its own tests in the same files: into the factory reset question and
 back to its button, into a setup dialog and back, back to Delete from the
 delete question, and onto the new title after a setup step.
+
+That a control keeps focus while its change is saved is checked with
+`expectKeepsFocus` (`src/test/focus.ts`) in
+`control-center-app.display-preferences.test.tsx` and
+`control-center-app.update-check.test.tsx`. jsdom leaves
+`document.activeElement` on a control that was disabled, so comparing that
+alone proves nothing.
 
 When a screen, a dialog or a state is added, add a check to its test file. A
 finding is fixed in the component. Do not switch a rule off to get a green run.

@@ -598,6 +598,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<SupportDiagnostics | null>(null);
   const brightnessDirtyRef = useRef(false);
   const standbyDirtyRef = useRef(false);
+  const deviceSettingWritesRef = useRef({
+    queue: Promise.resolve(),
+    brightness: 0,
+    standby: 0,
+  });
   // Last standby settings the device confirmed (loaded or saved). A failed
   // save rolls back to this, never to the in-flight slider value.
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
@@ -2128,58 +2133,95 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     await resetSetup();
   }, [addEvent, resetSetup, runCompanion]);
 
-  const saveBrightness = useCallback(
-    async (value: number) => {
+  // Brightness and screensaver changes reach VibeTV one write at a time. A
+  // change made while a write is on its way replaces an earlier one of the
+  // same setting that was still waiting, and only the newest one moves its
+  // control, reports and ends the busy state. That is what lets these controls
+  // stay usable while a change is saved: closing them dropped keyboard focus
+  // to the page, so a slider took one arrow key and ignored the next (issue
+  // #558).
+  const queueDeviceSettingWrite = useCallback(
+    (
+      setting: "brightness" | "standby",
+      write: (newest: () => boolean) => Promise<void>,
+    ) => {
+      const writes = deviceSettingWritesRef.current;
       const setupGeneration = setupGenerationRef.current;
+      const turn = (writes[setting] += 1);
+      const newest = () =>
+        setupGeneration === setupGenerationRef.current &&
+        turn === writes[setting];
+      setBusyAction(setting);
+      const run = async () => {
+        if (!newest()) {
+          return;
+        }
+        try {
+          await write(newest);
+        } finally {
+          if (newest()) {
+            setBusyAction((busy) => (busy === setting ? null : busy));
+          }
+        }
+      };
+      writes.queue = writes.queue.then(run, run);
+      return writes.queue;
+    },
+    [],
+  );
+
+  const saveBrightness = useCallback(
+    (value: number) => {
       brightnessDirtyRef.current = true;
       setBrightness(value);
-      setBusyAction("brightness");
-      try {
-        const payload = await runCompanion<SettingsResponse>("/v1/settings", {
-          method: "POST",
-          body: JSON.stringify({ brightnessPercent: value }),
-        });
-        if (setupGeneration !== setupGenerationRef.current) {
-          return;
+      return queueDeviceSettingWrite("brightness", async (newest) => {
+        try {
+          const payload = await runCompanion<SettingsResponse>(
+            "/v1/settings",
+            {
+              method: "POST",
+              body: JSON.stringify({ brightnessPercent: value }),
+            },
+          );
+          if (!newest()) {
+            return;
+          }
+          const savedValue =
+            payload.settings?.display?.brightnessPercent ?? value;
+          brightnessDirtyRef.current = false;
+          setBrightness(savedValue);
+          addEvent({
+            label: "Brightness saved",
+            detail: `Display brightness is set to ${savedValue}%.`,
+            tone: "ready",
+          });
+        } catch (error) {
+          if (!newest()) {
+            return;
+          }
+          const normalized = normalizeCaughtError(
+            error,
+            "Brightness needs attention.",
+          );
+          if (isLocalNetworkAccessError(normalized)) {
+            markCompanionAccessBlocked();
+          } else if (isCompanionMissingError(normalized)) {
+            markCompanionUnavailable();
+          }
+          setLastError(normalized);
+          addEvent({
+            label: "Brightness save needs attention",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
         }
-        const savedValue =
-          payload.settings?.display?.brightnessPercent ?? value;
-        brightnessDirtyRef.current = false;
-        setBrightness(savedValue);
-        addEvent({
-          label: "Brightness saved",
-          detail: `Display brightness is set to ${savedValue}%.`,
-          tone: "ready",
-        });
-      } catch (error) {
-        if (setupGeneration !== setupGenerationRef.current) {
-          return;
-        }
-        const normalized = normalizeCaughtError(
-          error,
-          "Brightness needs attention.",
-        );
-        if (isLocalNetworkAccessError(normalized)) {
-          markCompanionAccessBlocked();
-        } else if (isCompanionMissingError(normalized)) {
-          markCompanionUnavailable();
-        }
-        setLastError(normalized);
-        addEvent({
-          label: "Brightness save needs attention",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
-      } finally {
-        if (setupGeneration === setupGenerationRef.current) {
-          setBusyAction(null);
-        }
-      }
+      });
     },
     [
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      queueDeviceSettingWrite,
       runCompanion,
     ],
   );
@@ -2190,61 +2232,67 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
 
   const saveStandby = useCallback(
-    async (value: StandbySettings) => {
+    (value: StandbySettings) => {
       const setupGeneration = setupGenerationRef.current;
       standbyDirtyRef.current = true;
       setStandby(value);
-      setBusyAction("standby");
-      try {
-        const payload = await runCompanion<SettingsResponse>("/v1/settings", {
-          method: "POST",
-          body: JSON.stringify({ standby: value }),
-        });
-        if (setupGeneration !== setupGenerationRef.current) {
-          return;
+      return queueDeviceSettingWrite("standby", async (newest) => {
+        try {
+          const payload = await runCompanion<SettingsResponse>(
+            "/v1/settings",
+            {
+              method: "POST",
+              body: JSON.stringify({ standby: value }),
+            },
+          );
+          if (setupGeneration !== setupGenerationRef.current) {
+            return;
+          }
+          const saved = payload.settings?.standby ?? value;
+          // VibeTV holds this now, also when a newer change is already
+          // waiting: if that one fails, this is what the controls go back to.
+          lastSavedStandbyRef.current = saved;
+          if (!newest()) {
+            return;
+          }
+          standbyDirtyRef.current = false;
+          setStandby(saved);
+          addEvent({
+            label: "Screensaver saved",
+            detail: saved.enabled
+              ? `The screensaver starts after ${standbyTimeoutLabel(saved.timeoutMinutes)} at ${saved.brightnessPercent}% brightness.`
+              : "The screensaver is off.",
+            tone: "ready",
+          });
+        } catch (error) {
+          if (!newest()) {
+            return;
+          }
+          standbyDirtyRef.current = false;
+          setStandby(lastSavedStandbyRef.current);
+          const normalized = normalizeCaughtError(
+            error,
+            "Screensaver needs attention.",
+          );
+          if (isLocalNetworkAccessError(normalized)) {
+            markCompanionAccessBlocked();
+          } else if (isCompanionMissingError(normalized)) {
+            markCompanionUnavailable();
+          }
+          setLastError(normalized);
+          addEvent({
+            label: "Screensaver save needs attention",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
         }
-        const saved = payload.settings?.standby ?? value;
-        standbyDirtyRef.current = false;
-        lastSavedStandbyRef.current = saved;
-        setStandby(saved);
-        addEvent({
-          label: "Screensaver saved",
-          detail: saved.enabled
-            ? `The screensaver starts after ${standbyTimeoutLabel(saved.timeoutMinutes)} at ${saved.brightnessPercent}% brightness.`
-            : "The screensaver is off.",
-          tone: "ready",
-        });
-      } catch (error) {
-        if (setupGeneration !== setupGenerationRef.current) {
-          return;
-        }
-        standbyDirtyRef.current = false;
-        setStandby(lastSavedStandbyRef.current);
-        const normalized = normalizeCaughtError(
-          error,
-          "Screensaver needs attention.",
-        );
-        if (isLocalNetworkAccessError(normalized)) {
-          markCompanionAccessBlocked();
-        } else if (isCompanionMissingError(normalized)) {
-          markCompanionUnavailable();
-        }
-        setLastError(normalized);
-        addEvent({
-          label: "Screensaver save needs attention",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
-      } finally {
-        if (setupGeneration === setupGenerationRef.current) {
-          setBusyAction(null);
-        }
-      }
+      });
     },
     [
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      queueDeviceSettingWrite,
       runCompanion,
     ],
   );
@@ -4503,7 +4551,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       )
         ? providerDisplayNotice.message
         : null,
-    displayPendingProviderId: pendingProviderDisplayId,
     items: providerPreferences,
     preferencesError: providerPreferencesError,
     pendingCheckIds: pendingProviderCheckIds,

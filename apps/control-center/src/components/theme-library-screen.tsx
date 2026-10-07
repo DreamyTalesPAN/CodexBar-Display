@@ -579,7 +579,9 @@ export function ThemeLibraryScreen({
             <Switch
               aria-label="Show screensaver"
               checked={standby.enabled}
-              disabled={busyAction === "standby" || device?.ready !== true}
+              // Not closed while its own change is saved: that drops keyboard
+              // focus to the page (issue #558). The app queues these writes.
+              disabled={device?.ready !== true}
               id="vibetv-library-standby"
               onCheckedChange={(enabled) =>
                 onSaveStandby?.({ ...standby, enabled })

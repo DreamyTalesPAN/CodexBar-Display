@@ -9,6 +9,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { expectKeepsFocus } from "@/test/focus";
 import { ControlCenterApp } from "./control-center-app";
 
 const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7" };
@@ -48,6 +49,7 @@ async function openUpdates() {
     statusReads: [] as string[],
     statusReadsInFlight: 0,
     statusReadMs: 0,
+    firmwareChecks: 0,
   };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
@@ -95,6 +97,7 @@ async function openUpdates() {
         });
       }
       if (url.includes("/api/firmware/latest")) {
+        companion.firmwareChecks += 1;
         return jsonResponse({
           checkedAt: "2026-10-07T12:34:07Z",
           installedFirmware: device.firmware,
@@ -185,4 +188,28 @@ it("a click during a status read is answered by the next status read", async () 
   fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
   await window.wait(10);
   expect(window.text()).toContain(lastChecked(secondCheck));
+});
+
+// Issue #558, seen in the Windows app: the button was disabled during its own
+// check. That dropped keyboard focus to the page.
+it("Check for updates keeps keyboard focus during the check and after it", async () => {
+  const window = await openUpdates();
+  window.companion.statusReadMs = 3000;
+  const button = screen.getByRole("button", { name: "Check for updates" });
+  button.focus();
+  const checksBefore = window.companion.firmwareChecks;
+
+  fireEvent.click(button);
+  await window.wait(1);
+  expect(button.textContent).toBe("Checking updates");
+  expectKeepsFocus(button);
+
+  // A second press during the check starts no second check.
+  fireEvent.click(button);
+  await window.wait(1);
+  expect(window.companion.firmwareChecks).toBe(checksBefore + 1);
+
+  await window.wait(10);
+  expect(button.textContent).toBe("Check for updates");
+  expectKeepsFocus(button);
 });
