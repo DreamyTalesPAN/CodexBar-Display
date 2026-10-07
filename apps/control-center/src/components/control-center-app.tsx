@@ -5332,6 +5332,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           <LogsScreen
             busyAction={busyAction}
             device={device}
+            themes={catalog.themes}
             diagnostics={supportDiagnostics}
             events={logs}
             lastError={errorForHost(lastError, windowsHost)}

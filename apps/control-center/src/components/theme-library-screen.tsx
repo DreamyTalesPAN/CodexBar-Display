@@ -58,6 +58,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { cn } from "@/lib/utils";
 import { statusForHost } from "@/lib/customer-platform";
@@ -100,6 +101,7 @@ export type ThemeLibraryDeviceInfo = {
   board?: string;
   firmware?: string;
   activeTheme?: string;
+  standby?: { active?: boolean; liveThemePath?: string };
   capabilities?: {
     display?: {
       heightPx?: number;
@@ -207,6 +209,7 @@ export function ThemeLibraryScreen({
     (theme) => (theme.usage || "live") === usage,
   );
   const screensavers = usage === "screensaver";
+  const liveThemeId = activeLiveThemeId(themes, device);
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
   const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
   const [editingTheme, setEditingTheme] =
@@ -628,6 +631,7 @@ export function ThemeLibraryScreen({
                   installStatus={statusForHost(installStatus, windowsHost)}
                   key={theme.themeId}
                   lastInstall={lastInstall}
+                  liveThemeId={liveThemeId}
                   loadingEditorThemeId={loadingEditorThemeId}
                   onEditTheme={openThemeEditor}
                   onDeleteTheme={requestDeleteTheme}
@@ -858,6 +862,7 @@ function ThemeListItem({
   item,
   installStatus,
   lastInstall,
+  liveThemeId,
   loadingEditorThemeId,
   onDeleteTheme,
   onEditTheme,
@@ -877,6 +882,7 @@ function ThemeListItem({
   item: ThemeLibraryItem;
   installStatus?: ThemeInstallStatus | null;
   lastInstall?: ThemeInstallResult;
+  liveThemeId?: string;
   loadingEditorThemeId: string;
   onDeleteTheme: (theme: UserThemeRecord) => void;
   onEditTheme: (item: ThemeLibraryItem) => void;
@@ -894,7 +900,7 @@ function ThemeListItem({
   const isCustom = item.kind === "custom";
   const installed =
     lastInstall?.themeId === item.themeId ||
-    (usage === "live" && device?.activeTheme === item.themeId);
+    (usage === "live" && liveThemeId === item.themeId);
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallThemeId === item.themeId;

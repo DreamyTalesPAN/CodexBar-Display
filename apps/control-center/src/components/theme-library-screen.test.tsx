@@ -176,6 +176,39 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain("Wait");
   });
 
+  // Seen on a real VibeTV in standby: every theme offered Install, the live
+  // one included, because the screensaver was reported as the active theme.
+  it("keeps the live theme installed while the screensaver is on screen", () => {
+    const livePath = "/themes/u/live-th-3-1a2b3c.json";
+    const render = (standby?: ThemeLibraryDeviceInfo["standby"]) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{
+            ...device,
+            ready: true,
+            activeTheme: standby ? "night-clock" : "live-theme",
+            standby,
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={[{ ...themes[0], themeSpecPath: livePath }, themes[1]]}
+          usage="live"
+        />,
+      );
+
+    expect(render()).toContain("Theme is already installed.");
+    expect(render({ active: true, liveThemePath: livePath })).toContain(
+      "Theme is already installed.",
+    );
+  });
+
   it("lets a VibeTV that cannot show its theme install another one", () => {
     const render = (connectionState: string) =>
       renderToStaticMarkup(

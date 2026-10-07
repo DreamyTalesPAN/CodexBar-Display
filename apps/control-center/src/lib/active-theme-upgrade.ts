@@ -18,9 +18,11 @@ export const NO_THEME_UPGRADE: ActiveThemeUpgrade = Object.freeze({
   unresolved: false,
 });
 
+type LiveSlotDevice = Pick<DeviceInfo, "activeTheme" | "standby">;
+
 export function resolveActiveLiveTheme(
   themes: ThemeProduct[],
-  device: DeviceInfo | null | undefined,
+  device: LiveSlotDevice | null | undefined,
 ): ThemeProduct | undefined {
   if (device?.standby?.active === true) {
     const livePath = device.standby.liveThemePath?.trim();
@@ -35,6 +37,18 @@ export function resolveActiveLiveTheme(
       candidate.usage !== "screensaver" &&
       candidate.themeId === device?.activeTheme,
   );
+}
+
+// The theme the customer chose for the live slot, for every place that names
+// the active theme. `activeTheme` is what VibeTV draws, which during standby is
+// the screensaver. A live theme the catalog does not list (a Theme Studio
+// theme) cannot be named from its path, so standby still reports the
+// screensaver for it.
+export function activeLiveThemeId(
+  themes: ThemeProduct[],
+  device: LiveSlotDevice | null | undefined,
+): string | undefined {
+  return resolveActiveLiveTheme(themes, device)?.themeId ?? device?.activeTheme;
 }
 
 export function resolveActiveThemeUpgrade(

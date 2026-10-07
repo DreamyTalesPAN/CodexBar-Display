@@ -21,3 +21,38 @@ it("shows a connected VibeTV as connected while its theme fails to render", () =
   expect(html).not.toContain("Not connected");
   expect(html).not.toContain("No VibeTV is currently connected.");
 });
+
+// Seen on a real VibeTV in standby: Support named the screensaver as the
+// active theme while the customer's live theme was Mini Classic.
+it("names the live theme while the screensaver is on screen", () => {
+  const html = renderToStaticMarkup(
+    <LogsScreen
+      device={{
+        active: true,
+        connected: true,
+        paired: true,
+        ready: true,
+        activeTheme: "night-clock",
+        standby: {
+          active: true,
+          liveThemePath: "/themes/u/mini-cl-9-6d1af3.json",
+          screensaverPath: "/themes/s/nc-3-e18e4217.json",
+        },
+      }}
+      themes={[
+        {
+          id: "mini-classic",
+          isFree: true,
+          priceLabel: "Free",
+          source: "github-catalog",
+          themeId: "mini-classic",
+          themeSpecPath: "/themes/u/mini-cl-9-6d1af3.json",
+          title: "Mini Classic",
+        },
+      ]}
+    />,
+  );
+
+  expect(html).toContain("Mini Classic");
+  expect(html).not.toContain("Night Clock");
+});

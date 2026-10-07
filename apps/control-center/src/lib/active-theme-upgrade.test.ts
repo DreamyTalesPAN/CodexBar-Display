@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DeviceInfo } from "@/components/control-center-types";
 import type { ThemeProduct } from "@/lib/themes";
 import {
+  activeLiveThemeId,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
   resolveScreensaverUpgrade,
@@ -123,6 +124,29 @@ describe("resolveActiveThemeUpgrade", () => {
         standby: { active: true },
       }),
     ).toBeUndefined();
+  });
+
+  // Seen on a real VibeTV: in standby `activeTheme` named the screensaver, and
+  // the theme library then showed no live theme as installed.
+  it("names the live theme whether or not a screensaver is on screen", () => {
+    const catalog = [screensaver, slotTheme];
+    const awake = device(true, "/themes/u/synthwa-2-5f8ac7.json");
+    const inStandby: DeviceInfo = {
+      ...device(true, "/themes/s/night-clock.json"),
+      activeTheme: "night-clock",
+      standby: {
+        active: true,
+        liveThemePath: "/themes/u/synthwa-2-5f8ac7.json",
+      },
+    };
+
+    expect(activeLiveThemeId(catalog, awake)).toBe("synthwave");
+    expect(activeLiveThemeId(catalog, inStandby)).toBe("synthwave");
+    // A theme the catalog does not list is named as VibeTV reports it.
+    expect(activeLiveThemeId(catalog, { ...awake, activeTheme: "my-theme" })).toBe(
+      "my-theme",
+    );
+    expect(activeLiveThemeId(catalog, null)).toBeUndefined();
   });
 
   it("reinstalls a cataloged ThemeSpec missing from the device status", () => {

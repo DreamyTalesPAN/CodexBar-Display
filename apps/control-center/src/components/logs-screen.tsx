@@ -34,7 +34,9 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { copyForHost } from "@/lib/customer-platform";
+import type { ThemeProduct } from "@/lib/themes";
 import {
   deviceIsCustomerConnected,
   deviceIsReady,
@@ -56,6 +58,8 @@ export type LogEvent = {
 export type LogsScreenProps = {
   events?: LogEvent[];
   device?: DeviceInfo | null;
+  /** The catalog, to name the live theme while a screensaver is on screen. */
+  themes?: ThemeProduct[];
   diagnostics?: SupportDiagnostics | null;
   lastError?: {
     code: string;
@@ -76,6 +80,7 @@ export type LogsScreenProps = {
 export function LogsScreen({
   events = [],
   device,
+  themes = [],
   diagnostics,
   lastError,
   onLoadDiagnostics,
@@ -127,7 +132,7 @@ export function LogsScreen({
               />
               <SupportFact
                 label="Active theme"
-                value={activeThemeLabel(device)}
+                value={activeThemeLabel(themes, device)}
               />
             </dl>
           </CardContent>
@@ -261,8 +266,11 @@ function formatDeviceAddress(value?: string): string {
 }
 
 
-function activeThemeLabel(device: DeviceInfo | null | undefined): string {
-  const theme = device?.activeTheme?.trim();
+function activeThemeLabel(
+  themes: ThemeProduct[],
+  device: DeviceInfo | null | undefined,
+): string {
+  const theme = activeLiveThemeId(themes, device)?.trim();
   if (!theme) return deviceIsReady(device) ? "Default" : "Not available";
   return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
