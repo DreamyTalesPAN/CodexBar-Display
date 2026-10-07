@@ -1445,6 +1445,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	if r.URL.Query().Has("checkAppUpdate") {
+		// The customer clicked "Check for updates": this read asks the release
+		// source again instead of repeating an answer up to six hours old.
+		s.macAppReleaseMu.Lock()
+		s.macAppReleaseChecked = false
+		s.macAppReleaseMu.Unlock()
+	}
 	cfg, _ := s.config()
 	statusTarget := configuredStatusTarget(cfg)
 	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"

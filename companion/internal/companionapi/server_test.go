@@ -2787,6 +2787,40 @@ func TestStatusReportsCachedMacAppUpdateState(t *testing.T) {
 	}
 }
 
+// Observed on the Windows app on 2026-10-07: "Check for updates" left the app
+// card's "Last checked" where it was, because the click read the same status
+// as the background reads and got the answer of up to six hours ago.
+func TestStatusAsksForTheAppReleaseAgainWhenTheCustomerChecks(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	calls := 0
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		calls++
+		return githubRelease{TagName: "v1.0.99"}, nil
+	}
+	read := func(path string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for %s, got %d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	read("/v1/status")
+	read("/v1/status")
+	if calls != 1 {
+		t.Fatalf("background status reads must share one release check, got %d", calls)
+	}
+	read("/v1/status?checkAppUpdate=1")
+	if calls != 2 {
+		t.Fatalf("a check the customer asked for must ask the release source again, got %d calls", calls)
+	}
+	read("/v1/status")
+	if calls != 2 {
+		t.Fatalf("the status read after it must reuse that answer, got %d calls", calls)
+	}
+}
+
 func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 	t.Setenv(macAppVersionEnv, "1.0.98")
 	t.Setenv(macAppBuildEnv, "198")

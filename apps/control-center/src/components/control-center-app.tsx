@@ -619,6 +619,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const legacyRecoverySearchInFlight = useRef(false);
   const lastCompanionRequestAt = useRef(0);
   const statusPollInFlight = useRef(false);
+  // Set by "Check for updates"; the next status read takes it along.
+  const appUpdateCheckRequested = useRef(false);
   const deviceRecoveryGateRef = useRef<DeviceRecoveryGateState>(
     createDeviceRecoveryGateState(),
   );
@@ -1259,7 +1261,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           firmwareUpdate?: FirmwareUpdateJob;
           providerSetup?: ProviderSetupInfo;
           setup?: ProviderSelectionSetup;
-        }>("/v1/status", undefined, { preserveLastError: quiet });
+        }>(takeStatusPath(appUpdateCheckRequested), undefined, {
+          preserveLastError: quiet,
+        });
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
@@ -1425,7 +1429,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         firmwareUpdate?: FirmwareUpdateJob;
         providerSetup?: ProviderSetupInfo;
         setup?: ProviderSelectionSetup;
-      }>("/v1/status", undefined, { preserveLastError: true });
+      }>(takeStatusPath(appUpdateCheckRequested), undefined, {
+        preserveLastError: true,
+      });
       if (setupGeneration !== setupGenerationRef.current) {
         return;
       }
@@ -2777,6 +2783,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const checkUpdates = useCallback(async () => {
     setBusyAction("firmware-check");
+    appUpdateCheckRequested.current = true;
     try {
       const checks: Array<Promise<unknown>> = [
         checkCompanion({ quiet: true }),
@@ -5657,6 +5664,18 @@ export async function pollFirmwareUpdateJob({
     message: "VibeTV update is taking longer than expected.",
     nextAction: "Keep VibeTV powered on, then create a support report.",
   } satisfies ApiError;
+}
+
+// The app's own latest version comes with the status and is repeated there for
+// six hours. After "Check for updates" the next status read asks for it again.
+// The flag waits for that read, because the click's own read is skipped while
+// another one is under way.
+function takeStatusPath(appUpdateCheckRequested: { current: boolean }): string {
+  const path = appUpdateCheckRequested.current
+    ? "/v1/status?checkAppUpdate=1"
+    : "/v1/status";
+  appUpdateCheckRequested.current = false;
+  return path;
 }
 
 // /v1/status names the latest install job on every read. A finished job is
