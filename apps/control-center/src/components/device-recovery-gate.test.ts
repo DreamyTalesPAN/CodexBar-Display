@@ -166,6 +166,85 @@ describe("device recovery gate", () => {
     expect(result.acceptDevice).toBe(false);
     expect(result.state.preferredDeviceId).toBe("stable-a");
   });
+
+  // Observed on hardware on 2026-10-07: the window was paired with a WiFi
+  // VibeTV when the connection was changed to another VibeTV on the cable
+  // through the Companion. Every status from then on named the cable VibeTV
+  // as connected, and the window counted each one as a miss of the WiFi one.
+  describe("when the Companion reports another VibeTV as its connected one", () => {
+    const wifi = {
+      active: true,
+      connected: true,
+      deviceId: "16198106",
+      paired: true,
+      target: "http://192.168.178.183",
+    };
+    const cable = {
+      active: true,
+      connected: true,
+      deviceId: "16199235",
+      paired: true,
+      target: "cable://vibetv",
+    };
+
+    it("follows it instead of counting a miss", () => {
+      const state = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+        device: wifi,
+      }).state;
+
+      const result = applyDeviceRecoveryStatus(state, { device: cable });
+
+      expect(result.acceptDevice).toBe(true);
+      expect(result.openPicker).toBe(false);
+      expect(result.state).toEqual({
+        preferredDeviceId: "16199235",
+        failedNormalChecks: 0,
+        pickerReason: null,
+      });
+    });
+
+    it("closes a confirmed-loss picker, on a counted and on a diagnostic read", () => {
+      let state = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+        device: wifi,
+      }).state;
+      for (let i = 0; i < DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT; i += 1) {
+        state = applyDeviceRecoveryStatus(state, { device: null }).state;
+      }
+      expect(state.pickerReason).toBe("confirmed-loss");
+
+      for (const countFailure of [true, false]) {
+        const result = applyDeviceRecoveryStatus(state, {
+          countFailure,
+          device: cable,
+        });
+        expect(result.acceptDevice).toBe(true);
+        expect(result.closePicker).toBe(true);
+        expect(result.state.pickerReason).toBeNull();
+        expect(result.state.preferredDeviceId).toBe("16199235");
+      }
+    });
+
+    it("keeps the lost VibeTV while the other one is not connected, active and paired", () => {
+      let state = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+        device: wifi,
+      }).state;
+      for (let i = 0; i < DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT; i += 1) {
+        state = applyDeviceRecoveryStatus(state, { device: null }).state;
+      }
+
+      for (const device of [
+        { ...cable, connected: false },
+        { ...cable, active: false },
+        { ...cable, paired: false },
+      ]) {
+        const result = applyDeviceRecoveryStatus(state, { device });
+        expect(result.acceptDevice).toBe(false);
+        expect(result.closePicker).toBe(false);
+        expect(result.state.pickerReason).toBe("confirmed-loss");
+        expect(result.state.preferredDeviceId).toBe("16198106");
+      }
+    });
+  });
 });
 
 describe("deviceRecoveryConfirmedLoss", () => {
