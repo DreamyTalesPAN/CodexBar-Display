@@ -3,6 +3,7 @@ import {
   type ThemeStudioPrimitive,
   type ThemeStudioSpec,
 } from "@/lib/theme-studio";
+import { themeFirmwareTextMetrics } from "../live-vibetv-preview";
 
 export const DISPLAY_SIZE = 240;
 
@@ -299,11 +300,12 @@ export function textPrimitiveNaturalWidth(
   const text = primitive.binding
     ? boundText(primitive.binding)
     : substituteText(primitive.text || "Text");
-  const renderFontSize = textPrimitiveRenderFontSize(primitive, fontSize);
-  return Math.min(
-    Math.max(1, DISPLAY_SIZE - primitive.x),
-    Math.ceil(text.length * renderFontSize * 0.6),
-  );
+  // The preview draws fonts 1 and 2 with the firmware's glyph widths; the box
+  // around the text has to be measured the same way or it ends short of it.
+  const width =
+    themeFirmwareTextMetrics(text, primitive.font || 1, fontSize)?.width ??
+    text.length * textPrimitiveRenderFontSize(primitive, fontSize) * 0.6;
+  return Math.min(Math.max(1, DISPLAY_SIZE - primitive.x), Math.ceil(width));
 }
 
 function textPrimitiveRenderFontSize(

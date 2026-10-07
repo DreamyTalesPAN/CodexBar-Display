@@ -232,6 +232,9 @@ export function ThemeStudioScreen({
     Boolean(initialTheme?.recovered),
   );
   const dirty = recoveryDirty || isThemeStudioDirty(editorState);
+  // Only a theme that is in the library can be called saved; a new or
+  // published one opened here has no changes yet and is still just a draft.
+  const [inLibrary, setInLibrary] = useState(initialTheme?.source === "custom");
   recoverySnapshotRef.current = {
     dirty,
     document: editorState.present,
@@ -448,6 +451,7 @@ export function ThemeStudioScreen({
         libraryIdRef.current = result.libraryId;
       }
       sourceRef.current = "custom";
+      setInLibrary(true);
       recoveryWrittenRef.current = false;
       setRecoveryDirty(false);
       dispatchEditor({
@@ -1144,7 +1148,7 @@ export function ThemeStudioScreen({
                   }
                 />
                 <StatusPill
-                  label={`${validation.primitiveCount} elements`}
+                  label={`${validation.primitiveCount} ${validation.primitiveCount === 1 ? "element" : "elements"}`}
                   tone={validation.primitiveCount > 32 ? "attention" : "neutral"}
                 />
                 <StatusPill
@@ -1152,8 +1156,10 @@ export function ThemeStudioScreen({
                   tone={assetCount > 0 ? "warn" : "neutral"}
                 />
                 <StatusPill
-                  label={dirty ? "Unsaved changes" : "Saved"}
-                  tone={dirty ? "warn" : "ready"}
+                  label={
+                    dirty ? "Unsaved changes" : inLibrary ? "Saved" : "Draft"
+                  }
+                  tone={dirty ? "warn" : inLibrary ? "ready" : "neutral"}
                 />
               </div>
             </div>

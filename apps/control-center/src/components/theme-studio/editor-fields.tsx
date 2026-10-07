@@ -18,6 +18,9 @@ import {
 } from "@/components/ui/select";
 
 const COLOR_FALLBACK = "#000000";
+// Radix Select reads "" as "nothing chosen" and leaves the trigger blank, so
+// an option whose value is "" (Always, None) travels under this stand-in.
+const EMPTY_OPTION = "__empty__";
 
 export function TextField({
   label,
@@ -159,14 +162,17 @@ export function SelectField({
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Select onValueChange={onChange} value={value}>
+      <Select
+        onValueChange={(next) => onChange(next === EMPTY_OPTION ? "" : next)}
+        value={value || EMPTY_OPTION}
+      >
         <SelectTrigger className="h-11 w-full rounded-[var(--radius-control)]" id={id}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
             {options.map(([optionValue, optionLabel]) => (
-              <SelectItem key={optionValue} value={optionValue}>
+              <SelectItem key={optionValue} value={optionValue || EMPTY_OPTION}>
                 {optionLabel}
               </SelectItem>
             ))}
