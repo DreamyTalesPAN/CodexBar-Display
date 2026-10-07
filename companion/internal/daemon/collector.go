@@ -1089,14 +1089,15 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			frame.Provider = key
 		}
 		frames = append(frames, codexbar.ParsedFrame{
-			Frame:              frame,
-			Provider:           key,
-			Source:             snapshot.Source,
-			Meta:               snapshot.Meta,
-			CollectedAt:        snapshot.Collected,
-			ActivityObservedAt: snapshot.ActivityObservedAt,
-			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
-			Terminal:           snapshot.Terminal,
+			Frame:                 frame,
+			Provider:              key,
+			Source:                snapshot.Source,
+			Meta:                  snapshot.Meta,
+			CollectedAt:           snapshot.Collected,
+			ActivityObservedAt:    snapshot.ActivityObservedAt,
+			TokenStatsCollectedAt: snapshot.TokenStatsCollected,
+			Stale:                 snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Terminal:              snapshot.Terminal,
 		})
 	}
 	return frames

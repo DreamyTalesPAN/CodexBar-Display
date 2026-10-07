@@ -261,6 +261,7 @@ type runtimeState struct {
 	lastIdleEvidenceAt     time.Time
 	idleEvidenceCount      int
 	lastCodingAt           time.Time
+	lastCodingTokenScanAt  time.Time
 	lastActivity           string
 	lastActivityCause      string
 	deviceTarget           string
@@ -1497,6 +1498,10 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	case codexbar.SelectionReasonUsageDelta:
 		activity = "coding"
 		state.lastCodingAt = now
+		state.lastCodingTokenScanAt = time.Time{}
+		if decision.Selected.Frame.TokenTotalsKnown {
+			state.lastCodingTokenScanAt = decision.Selected.TokenStatsCollectedAt
+		}
 		state.lastIdleEvidenceAt = time.Time{}
 		state.idleEvidenceCount = 0
 	default:
@@ -1511,10 +1516,14 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 					state.lastIdleEvidenceAt = activityObservedAt
 					state.idleEvidenceCount++
 				}
-				if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
+				// Token totals only move with a token scan. Until the next
+				// scan has completed, usage refreshes without a delta say
+				// nothing about whether the customer stopped working.
+				awaitingTokenScan := !state.lastCodingTokenScanAt.IsZero() && !decision.Selected.TokenStatsCollectedAt.After(state.lastCodingTokenScanAt)
+				if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() || awaitingTokenScan {
 					activity = "coding"
 					signalReason = "coding-waiting-for-idle-evidence"
-					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
+					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d awaiting_token_scan=%t observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), awaitingTokenScan, activityObservedAt.Format(time.RFC3339))
 				} else {
 					state.lastIdleEvidenceAt = time.Time{}
 					state.idleEvidenceCount = 0
@@ -2321,7 +2330,9 @@ func activityHoldDuration() time.Duration {
 
 func activityCodingMaxAge() time.Duration {
 	const (
-		def = 5 * time.Minute
+		// Longer than one token scan period (cooldown plus the scan itself),
+		// so continuous work is not cut to idle just before the next scan.
+		def = tokenStatsScanCooldown + tokenStatsCollectorTimeout + time.Minute
 		min = 30 * time.Second
 		max = 30 * time.Minute
 	)

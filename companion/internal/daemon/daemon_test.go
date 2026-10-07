@@ -1761,6 +1761,75 @@ func TestApplySelectionActivityShowsCodingForTokenDeltaOnUnchangedUsageSnapshot(
 	}
 }
 
+func TestApplySelectionActivityHoldsCodingUntilTheNextTokenScanFindsNothing(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(activityHoldEnvVar, "180")
+	t.Setenv(activityIdleEvidenceEnvVar, "2")
+
+	scan := time.Date(2026, 10, 7, 15, 40, 43, 0, time.UTC)
+	state := &runtimeState{}
+	step := func(after time.Duration, tokenScanAt time.Time, delta bool) string {
+		t.Helper()
+		now := scan.Add(after)
+		decision := codexbar.SelectionDecision{
+			Selected: codexbar.ParsedFrame{
+				Frame:                 protocol.Frame{Provider: "claude", TokenTotalsKnown: true},
+				CollectedAt:           now,
+				ActivityObservedAt:    now,
+				TokenStatsCollectedAt: tokenScanAt,
+			},
+			Reason: codexbar.SelectionReasonStickyCurrent,
+		}
+		if delta {
+			decision.Reason = codexbar.SelectionReasonUsageDelta
+			decision.ActivitySignalReason = codexbar.SelectionReasonUsageDelta
+			decision.ActivityDetail = "source=usage-delta"
+		}
+		frame, _ := applySelectionActivity(protocol.Frame{Provider: "claude"}, decision, state, now)
+		return frame.Activity
+	}
+
+	if got := step(0, scan, true); got != "coding" {
+		t.Fatalf("expected the token delta to show coding, got %q", got)
+	}
+	// Hold over and two usage refreshes without a delta, but no newer token
+	// scan yet: the customer may well still be working.
+	for _, after := range []time.Duration{2 * time.Minute, 4 * time.Minute, 5 * time.Minute} {
+		if got := step(after, scan, false); got != "coding" {
+			t.Fatalf("expected coding %s after the delta while the next token scan is pending, got %q", after, got)
+		}
+	}
+	nextScan := scan.Add(5*time.Minute + 30*time.Second)
+	if got := step(5*time.Minute+31*time.Second, nextScan, false); got != "idle" {
+		t.Fatalf("expected idle once a newer token scan found no new tokens, got %q", got)
+	}
+}
+
+func TestApplySelectionActivityExpiresCodingWhenNoTokenScanCompletes(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	scan := time.Date(2026, 10, 7, 15, 40, 43, 0, time.UTC)
+	state := &runtimeState{}
+	selected := func(now time.Time) codexbar.ParsedFrame {
+		return codexbar.ParsedFrame{
+			Frame:                 protocol.Frame{Provider: "claude", TokenTotalsKnown: true},
+			CollectedAt:           now,
+			ActivityObservedAt:    now,
+			TokenStatsCollectedAt: scan,
+		}
+	}
+	applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
+		Selected:             selected(scan),
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+	}, state, scan)
+
+	now := scan.Add(activityCodingMaxAge() + time.Second)
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{Selected: selected(now)}, state, now)
+	if frame.Activity != "idle" || !strings.Contains(detail, "coding-max-age-expired") {
+		t.Fatalf("expected coding to expire when token scans stop completing, got %q detail=%q", frame.Activity, detail)
+	}
+}
+
 func TestApplySelectionActivityTreatsCachedCodexBarSnapshotAsNotFreshIdleEvidence(t *testing.T) {
 	prepareFastTestEnv(t)
 	t.Setenv(activityHoldEnvVar, "20")

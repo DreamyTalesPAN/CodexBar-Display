@@ -479,7 +479,10 @@ type ParsedFrame struct {
 	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
-	Stale              bool
+	// TokenStatsCollectedAt is when the last token scan for this provider
+	// completed, with or without new tokens.
+	TokenStatsCollectedAt time.Time
+	Stale                 bool
 	// Terminal marks a provider error CodexBar states as permanent (see
 	// providerErrorIsTerminal): retained quota for that provider is void.
 	Terminal bool
