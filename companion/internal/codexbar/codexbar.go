@@ -482,8 +482,9 @@ type ParsedFrame struct {
 	// TokenStatsCollectedAt is when the last token scan for this provider
 	// completed, with or without new tokens.
 	TokenStatsCollectedAt time.Time
-	// TokenHistoryGrowing is set while the token history is still being read
-	// in: the totals rise from scan to scan without anyone working.
+	// TokenHistoryGrowing is set until the token history has settled once
+	// since the start: while it is first read in, the totals rise from scan
+	// to scan without anyone working.
 	TokenHistoryGrowing bool
 	Stale               bool
 	// Terminal marks a provider error CodexBar states as permanent (see

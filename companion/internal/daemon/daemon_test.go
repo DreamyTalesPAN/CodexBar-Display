@@ -5639,6 +5639,64 @@ func TestProviderCollectorScansTokensForANewlyEnabledProviderWithoutWaitingOutTh
 	collector.shutdownTokenStatsScan()
 }
 
+func TestProviderCollectorCountsTokenGrowthAsWorkOnceTheHistoryHasSettled(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 7, 18, 0, 0, 0, time.UTC)
+	var total atomic.Int64
+	// The shape the Windows engine reports: no separate "latest" figure, so
+	// today's whole total is part of the history and changes with every scan
+	// that finds new tokens.
+	stats := func() codexbar.ProviderTokenStats {
+		tokens := total.Load()
+		return codexbar.ProviderTokenStats{
+			SessionTokens: tokens,
+			WeekTokens:    tokens,
+			TotalTokens:   tokens,
+			UpdatedAt:     now,
+			Cost: &codexbar.ProviderCostUsage{
+				Daily: []codexbar.ProviderCostDay{{Day: now.Format("2006-01-02"), TotalTokens: tokens}},
+			},
+		}
+	}
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 20, 26, 3600)}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{"claude": stats()}, true
+		},
+	}
+	growing := func(tokens int64) bool {
+		t.Helper()
+		total.Store(tokens)
+		collector.collectTokenStatsOnce(context.Background())
+		frames := collector.providerFrames(now)
+		if len(frames) != 1 {
+			t.Fatalf("expected one provider, got %#v", frames)
+		}
+		return frames[0].TokenHistoryGrowing
+	}
+
+	collector.collectOnce(context.Background())
+	if !growing(1000) {
+		t.Fatal("the first scan after a start must not count as settled history")
+	}
+	if growing(1000) {
+		t.Fatal("two scans that agree must settle the history")
+	}
+	for _, tokens := range []int64{1500, 2200} {
+		if growing(tokens) {
+			t.Fatalf("new tokens (%d) after the history settled were left out as history growth", tokens)
+		}
+	}
+}
+
 func TestProviderCollectorFailedTokenScanUsesPostCompletionCooldown(t *testing.T) {
 	prepareFastTestEnv(t)
 

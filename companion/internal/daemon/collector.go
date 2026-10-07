@@ -97,6 +97,9 @@ type providerCollector struct {
 	tokenStatsRescan        bool
 	tokenStatsFailed        bool
 	tokenHistoryPrints      map[string]string
+	// tokenHistoryRead marks providers whose token history has settled once
+	// since this start: from then on a higher total is new work.
+	tokenHistoryRead map[string]bool
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -845,6 +848,12 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		// a provider must not keep the collector scanning.
 		providerSettled := stats.Cost == nil || (hadPrevious && previousPrint == print)
 		settled = settled && providerSettled
+		if providerSettled {
+			if c.tokenHistoryRead == nil {
+				c.tokenHistoryRead = make(map[string]bool)
+			}
+			c.tokenHistoryRead[key] = true
+		}
 
 		c.providers[key] = providerSnapshot{
 			Provider:  key,
@@ -874,6 +883,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		}
 		if hadTokenStats {
 			clearSnapshotTokenStats(&snapshot)
+			delete(c.tokenHistoryRead, key)
 		}
 		// TokenStatsCollected is also the completion marker for a successful
 		// empty result. A failed provider remains in seen and keeps its
@@ -1096,7 +1106,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			CollectedAt:           snapshot.Collected,
 			ActivityObservedAt:    snapshot.ActivityObservedAt,
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected,
-			TokenHistoryGrowing:   snapshotHasTokenStats(snapshot) && !snapshot.TokenHistorySettled,
+			TokenHistoryGrowing:   snapshotHasTokenStats(snapshot) && !c.tokenHistoryRead[key],
 			Stale:                 snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 			Terminal:              snapshot.Terminal,
 		})
