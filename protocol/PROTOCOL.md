@@ -183,7 +183,7 @@ Trust states:
 
 | State | Meaning | Rendering |
 |---|---|---|
-| `live` | Deadline from current usage data. | `4h 12m` |
+| `live` | Current usage data: its deadline, or the statement that no window has one. | `4h 12m`, or `No active session` for a window with nothing used |
 | `offline` | Usage source is not reachable, deadline still inside its trust budget. | `4h 12m` plus a discreet offline hint |
 | `stale` | Expired, unknown, unattributable, or beyond the trust budget. | `—` |
 
@@ -204,6 +204,16 @@ Rules:
   only downgrade it, never upgrade it.
 - The host never sends a deadline it does not trust: a `stale` frame carries
   `resetSecs:0` and `resetTrustSecs:0`.
+- A frame in which no window has a reset time is `live` when, and only when,
+  it comes from a current collection with a known collection time and usage is
+  not unavailable. It then carries the usual `resetTrustSecs` (horizon minus
+  `resetAgeSecs`) and the provider key as `resetSource` (`claude`, with no
+  `:window` part, because no window owns a deadline). It says that nothing is
+  scheduled to reset, not that a countdown exists. The same frame is `stale`
+  when it is a resend of the last good frame after a failed collection, when
+  the collection time is unknown, when usage is unavailable, and when it had
+  reset times that all ran out before the send. A frame without a deadline is
+  never `offline`.
 - A deadline is never inherited across a `resetSource` change. On any change the
   device drops the previous deadline instead of continuing it.
 - A frame that carries no reset fields at all (for example a ThemeSpec-only apply
@@ -244,6 +254,18 @@ theme cannot bind its way around this.
   and the periodic redraw repaints the line. This is device-internal only:
   the wire format is unchanged and still sends `0` for a window with no
   deadline.
+- Only a `live` frame is trusted without a deadline (`ApplyFrameResetTrust`).
+  An `offline` frame and a frame without `resetTrust` need at least one reset
+  time to form a basis, as before. So an account in which no window has a
+  reset time reads `No active session` for as long as the budget of its last
+  `live` frame lasts, and `Reset unavailable` as soon as a `stale` frame
+  arrives or the budget runs out. `/health` then reports `reset.trust` `live`
+  (or `offline` after 150 seconds without a frame) with `deadlineSecs` 0, and
+  nothing is written to `/rt`.
+- Mixed versions: firmware before this rule requires a deadline for every
+  basis, so it treats the new `live` frame without one as `stale` and shows
+  `Reset unavailable`, as it does today. A Companion before this rule sends
+  that account as `stale`, which this firmware shows as `Reset unavailable`.
 - The device does not parse `resetAgeSecs`. The age is exactly
   `kResetTrustHorizonSecs - resetTrustSecs`, so it derives it from the budget.
 - A `live` frame whose derived basis age exceeds 150 seconds is shown as

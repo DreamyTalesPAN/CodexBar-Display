@@ -1277,19 +1277,22 @@ export function buildFrameData(
     Boolean(slot.id?.trim() && slot.label?.trim()),
   );
   // Mirrors ApplyFrameResetTrust and CurrentResetTrust in
-  // codexbar_display_core.h: the device stands behind a frame's countdowns only
-  // while the frame carries at least one deadline, is not marked stale, and its
-  // trust budget has not run out. Without that basis a window with no deadline
-  // is unavailable, not idle.
+  // codexbar_display_core.h: the device stands behind a frame only while it is
+  // not marked stale and its trust budget has not run out. A "live" frame is
+  // the host's statement that the basis is current and stands without a
+  // deadline (an account in which no window has a reset time, #532); every
+  // other frame needs at least one deadline. Without that basis a window with
+  // no deadline is unavailable, not idle.
   const trustEnforced =
     displayFrame.resetTrust === "live" || displayFrame.resetTrust === "offline";
   const basisTrusted =
     displayFrame.resetTrust !== "stale" &&
     // Retained windows of a failed collection stay unavailable, as on the device.
     displayFrame.usageUnavailable !== true &&
-    [displayFrame, ...slots, ...providerSlots].some(
-      (carrier) => (carrier.resetSecs ?? 0) > 0,
-    ) &&
+    (displayFrame.resetTrust === "live" ||
+      [displayFrame, ...slots, ...providerSlots].some(
+        (carrier) => (carrier.resetSecs ?? 0) > 0,
+      )) &&
     (!trustEnforced ||
       (Boolean(displayFrame.resetSource) &&
         (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0));

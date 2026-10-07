@@ -4035,15 +4035,136 @@ void testProviderSlotDeadlineAloneKeepsTrust() {
       codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, afterBudget));
 }
 
-// A frame with no deadline anywhere still has nothing to be trusted about.
-void testFrameWithoutAnyDeadlineStaysStale() {
+// Issue #532. What the theme prints for the root {reset} token, built the way
+// the device builds its frame data from the runtime state.
+const char* rootResetTextFor(const RuntimeState& state, unsigned long now) {
+  FrameData frame;
+  frame.resetSecs = CurrentRemainingSecs(state, now);
+  frame.usageUnavailable = state.current.usageUnavailable;
+  for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows; ++i) {
+    frame.usageWindows[i].resetSecs = CurrentUsageWindowRemainingSecs(state, i, now);
+    frame.usageWindows[i].available =
+        state.current.usageWindows[i].available && !state.current.usageUnavailable;
+  }
+  return frame.resetSecs > 0 ? "countdown" : codexbar_display::themespec::RootResetUnavailableText(frame);
+}
+
+const char* const kNoDeadlineWindows =
+    R"JSON("usageWindows":[{"id":"session","label":"Session","percent":0,"resetSecs":0},)JSON"
+    R"JSON({"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}]})JSON";
+
+// An account in which no window has a reset time (#532). The host says the
+// basis is current with resetTrust "live"; that statement stands without a
+// deadline, so the windows are idle and not unavailable.
+void testLiveFrameWithoutAnyDeadlineIsIdle() {
   RuntimeState state;
   SerialConsumeEvent event;
-  const char* empty =
-      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 1000, event));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+  const String idle =
+      String(R"JSON({"v":2,"provider":"claude","label":"Claude","resetAgeSecs":12,"resetTrustSecs":17988,)JSON"
+             R"JSON("resetSource":"claude","resetTrust":"live",)JSON") +
+      kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idle.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
                         static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 1000));
+  // Nothing to count down, so nothing is handed over a restart.
+  TEST_ASSERT_EQUAL_STRING("", EncodeResetTrustRecord(state.reset, 1000).c_str());
+
+  // Without further frames the basis is no longer current, but it stays inside
+  // its budget: still idle, exactly like an idle window beside a deadline.
+  const unsigned long silent = 1000 + 10UL * 60UL * 1000UL;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(state.reset, silent)));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, silent));
+
+  // The budget the host sent bounds it. Past it nothing is idle any more.
+  const unsigned long afterBudget = 1000 + 17988UL * 1000UL + 1000UL;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterBudget)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, afterBudget));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, afterBudget));
+
+  // "remaining" mode: nothing used reads 100.
+  const String remaining =
+      String(R"JSON({"v":2,"provider":"claude","usageMode":"remaining","resetTrustSecs":18000,)JSON"
+             R"JSON("resetSource":"claude","resetTrust":"live",)JSON"
+             R"JSON("usageWindows":[{"id":"session","label":"Session","percent":100,"resetSecs":0}]})JSON");
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remaining.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 2000));
+}
+
+// The idle rule itself is unchanged: a window with usage and no deadline, a
+// provider slot, and unavailable usage are never idle, live basis or not.
+void testLiveFrameWithoutAnyDeadlineKeepsTheIdleRuleStrict() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* prefix =
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live",)JSON";
+  const String used = String(prefix) +
+      R"JSON("usageWindows":[{"id":"session","label":"Session","percent":40,"resetSecs":0},)JSON"
+      R"JSON({"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}],)JSON"
+      R"JSON("providerSlots":[{"id":"codex","label":"Codex","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, used.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+  // One window is not idle, so the root line is not either.
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 1000));
+
+  const String unavailable = String(prefix) + R"JSON("usageUnavailable":true,)JSON" + kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, unavailable.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 2000));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 2000));
+
+  // A live frame with no windows at all has nothing to call idle.
+  const char* empty =
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 3000, event));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 3000));
+}
+
+// Only the host's "live" stands without a deadline. What a Companion before
+// #532 sends for the same account (stale, with or without a source), an
+// offline resend, a live frame without budget or source, and a frame that
+// predates the trust contract all stay unavailable.
+void testFrameWithoutAnyDeadlineStaysStaleUnlessTheHostSaysLive() {
+  const char* const heads[] = {
+      R"JSON({"v":2,"provider":"claude","resetTrust":"stale",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetAgeSecs":12,"resetSource":"claude","resetTrust":"stale",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"offline",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetSource":"claude","resetTrust":"live",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetTrust":"live",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,)JSON",
+  };
+  for (const char* head : heads) {
+    RuntimeState state;
+    SerialConsumeEvent event;
+    const String line = String(head) + kNoDeadlineWindows;
+    TEST_ASSERT_TRUE_MESSAGE(ConsumeFrameLine(state, line.c_str(), 1000, event), head);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(ResetTrust::kStale),
+                                  static_cast<int>(CurrentResetTrust(state.reset, 1000)), head);
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(0, CurrentUsageWindowRemainingSecs(state, 0, 1000), head);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("Reset unavailable", rootResetTextFor(state, 1000), head);
+  }
+
+  // A stale frame also takes back an idle basis that was live a moment ago.
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String live =
+      String(R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live",)JSON") +
+      kNoDeadlineWindows;
+  const String stale = String(heads[1]) + kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, live.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 1000));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, stale.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 2000));
 }
 
 }  // namespace
@@ -4193,7 +4314,9 @@ int main() {
   RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
   RUN_TEST(testAShortRootDeadlineDoesNotBlankLongerWindows);
   RUN_TEST(testProviderSlotDeadlineAloneKeepsTrust);
-  RUN_TEST(testFrameWithoutAnyDeadlineStaysStale);
+  RUN_TEST(testLiveFrameWithoutAnyDeadlineIsIdle);
+  RUN_TEST(testLiveFrameWithoutAnyDeadlineKeepsTheIdleRuleStrict);
+  RUN_TEST(testFrameWithoutAnyDeadlineStaysStaleUnlessTheHostSaysLive);
   RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
   RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
   RUN_TEST(testResetTrustRecoversFromStaleWithFreshDataWithoutRestart);

@@ -3301,6 +3301,35 @@ func gzipString(t *testing.T, text string) string {
 	return buf.String()
 }
 
+// Issue #526: firmware 1.0.45 over WiFi at low heap answers /hello without its
+// capabilities block. The updater reads device ID, board and firmware from a
+// WiFi hello and nothing else, so this answer must not stop the update that
+// frees the heap.
+func TestFirmwareUpdateReadsIdentityFromHelloWithoutCapabilities(t *testing.T) {
+	body, err := os.ReadFile("../../internal/protocol/testdata/wifi-hello-1.0.45-without-capabilities.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	for _, token := range []string{"", "pair-token"} {
+		hello, err := fetchDeviceHelloHTTPWithToken(context.Background(), server.URL, token)
+		if err != nil {
+			t.Fatalf("token=%q: %v", token, err)
+		}
+		if hello.DeviceID != "16198106" || hello.Board != "esp8266-smalltv-st7789" || hello.Firmware != "1.0.45" {
+			t.Fatalf("token=%q: unexpected identity %+v", token, hello)
+		}
+	}
+	if err := waitForHTTPFirmwareVersion(context.Background(), server.URL, "1.0.45", time.Second); err != nil {
+		t.Fatalf("the firmware check after the update must read the version: %v", err)
+	}
+}
+
 // DO NOT weaken: this locks a device-proven transport rule. Sending the pairing
 // token in the header AND the query string at once makes the real
 // esp8266-smalltv-st7789 close the connection without a response (24/30 requests

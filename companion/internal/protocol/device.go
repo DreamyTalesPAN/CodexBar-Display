@@ -1,6 +1,12 @@
 package protocol
 
-import "strings"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+	"strings"
+)
 
 const (
 	FeatureTheme            = "theme"
@@ -138,6 +144,53 @@ type WiFiNetwork struct {
 	SSID      string `json:"ssid"`
 	RSSI      int    `json:"rssi"`
 	Encrypted bool   `json:"encrypted"`
+}
+
+// HelloWithoutCapabilitiesError is a WiFi hello whose capabilities block is
+// missing (issue #526). Firmware 1.0.45 at low heap ends its answer with
+// `"capabilities":}`, which is not JSON. Everything before that is intact, so
+// Hello names the VibeTV: device ID, board, firmware, features. Transport
+// mode, limits and theme capabilities are not known. It is an error so that
+// every reader of a hello treats it as a failed hello unless it asks for the
+// identity with HelloIdentity.
+type HelloWithoutCapabilitiesError struct {
+	Hello DeviceHello
+}
+
+func (e *HelloWithoutCapabilitiesError) Error() string {
+	return "VibeTV /hello arrived without capabilities"
+}
+
+// HelloIdentity returns the identity of a hello that failed only because its
+// capabilities block was missing.
+func HelloIdentity(err error) (DeviceHello, bool) {
+	var incomplete *HelloWithoutCapabilitiesError
+	if !errors.As(err, &incomplete) {
+		return DeviceHello{}, false
+	}
+	return incomplete.Hello, true
+}
+
+const helloWithoutCapabilitiesSuffix = `,"capabilities":}`
+
+// DecodeWiFiHello is the one decoder for the body of GET /hello.
+func DecodeWiFiHello(r io.Reader) (DeviceHello, error) {
+	body, err := io.ReadAll(io.LimitReader(r, 64*1024))
+	if err != nil {
+		return DeviceHello{}, err
+	}
+	var hello DeviceHello
+	err = json.Unmarshal(body, &hello)
+	if err == nil {
+		return hello.Normalize(), nil
+	}
+	if head, cut := bytes.CutSuffix(bytes.TrimSpace(body), []byte(helloWithoutCapabilitiesSuffix)); cut {
+		var identity DeviceHello
+		if json.Unmarshal(append(bytes.Clone(head), '}'), &identity) == nil && strings.TrimSpace(identity.DeviceID) != "" {
+			return DeviceHello{}, &HelloWithoutCapabilitiesError{Hello: identity.Normalize()}
+		}
+	}
+	return DeviceHello{}, err
 }
 
 func (h DeviceHello) Normalize() DeviceHello {

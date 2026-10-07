@@ -189,8 +189,10 @@ func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabil
 		return protocol.DeviceCapabilities{}, fmt.Errorf("get device hello: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var hello protocol.DeviceHello
-	if err := json.NewDecoder(resp.Body).Decode(&hello); err != nil {
+	// A hello without capabilities (issue #526) is an error here: frames and
+	// theme installs need the limits it does not carry.
+	hello, err := protocol.DecodeWiFiHello(resp.Body)
+	if err != nil {
 		return protocol.DeviceCapabilities{}, fmt.Errorf("decode device hello: %w", err)
 	}
 	return protocol.CapabilitiesFromHello(hello), nil
