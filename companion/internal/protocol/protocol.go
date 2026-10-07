@@ -425,6 +425,14 @@ func ResetSourceKey(provider string, window string) string {
 // collectedAt is when the underlying usage data was read, sendAt when this frame
 // leaves the host, and sourceLive reports whether that data is current rather
 // than a resend of the last known good frame.
+//
+// A frame in which no window has a reset time is still a statement about the
+// account: nothing is scheduled to reset. It leaves as `live` with the usual
+// budget, under the provider key as its source (ResetSourceKey with no window),
+// so the device can tell a measured idle account from data it cannot stand
+// behind. That holds only for a current collection. A resend of the last good
+// frame, unavailable usage, and deadlines that ran out before the frame left
+// stay `stale`: none of them says the account is idle now.
 func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLive bool) Frame {
 	if sendAt.IsZero() {
 		sendAt = time.Now()
@@ -441,6 +449,7 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 	if f.ResetTrustSec < 0 {
 		f.ResetTrustSec = 0
 	}
+	hadCountdown := hasResetCountdown(f)
 	f.ResetSec = reanchorResetSec(f.ResetSec, age)
 	for i := range f.UsageWindows {
 		f.UsageWindows[i].ResetSec = reanchorResetSec(f.UsageWindows[i].ResetSec, age)
@@ -455,8 +464,10 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 		f.ResetSource = ResetSourceKey(f.Provider, "")
 	}
 
+	noCountdown := !hasResetCountdown(f)
 	switch {
-	case !basisKnown, !hasResetCountdown(f), f.ResetTrustSec <= 0, f.ResetSource == "":
+	case !basisKnown, f.ResetTrustSec <= 0, f.ResetSource == "",
+		noCountdown && (hadCountdown || !sourceLive || f.UsageUnavailable):
 		// Expired, unknown, or unattributable: never hand the device a number
 		// it could keep counting down as if it were real.
 		f.ResetTrust = ResetTrustStale
