@@ -210,10 +210,12 @@ describe("setup theme catalog", () => {
 describe("recent activity", () => {
   const loaded = { id: "1", label: "Settings loaded", detail: "Brightness is set to 20%." };
 
-  it("does not repeat the newest entry", () => {
-    const events = [loaded];
+  it("does not repeat the newest entry, and gives it the time of the repeat", () => {
+    const events = [{ ...loaded, at: "2026-10-07T17:00:00Z" }];
 
-    expect(recentEventsWith(events, { ...loaded, id: "2" })).toBe(events);
+    expect(
+      recentEventsWith(events, { ...loaded, id: "2", at: "2026-10-07T17:05:00Z" }),
+    ).toEqual([{ ...loaded, at: "2026-10-07T17:05:00Z" }]);
   });
 
   it("puts a different entry first, also one that was seen before", () => {

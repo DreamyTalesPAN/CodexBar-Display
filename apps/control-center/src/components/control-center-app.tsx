@@ -5449,7 +5449,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 /**
  * Recent activity, newest first. An entry that says the same as the newest one
  * is not written again: the Support page showed "Settings loaded" with the same
- * brightness several times in a row.
+ * brightness several times in a row. The entry keeps the time of the latest
+ * occurrence, so a failure that repeats does not look like an old one.
  */
 export function recentEventsWith(
   events: ControlCenterEvent[],
@@ -5457,7 +5458,7 @@ export function recentEventsWith(
 ): ControlCenterEvent[] {
   const newest = events[0];
   if (newest?.label === event.label && newest.detail === event.detail) {
-    return events;
+    return [{ ...newest, at: event.at ?? newest.at }, ...events.slice(1)];
   }
   return [event, ...events].slice(0, RECENT_EVENT_LIMIT);
 }

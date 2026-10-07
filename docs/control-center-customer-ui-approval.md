@@ -5250,3 +5250,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Drafted in the overnight batch of 2026-10-08 and covered by Paul's blanket approval of 2026-10-07 for that batch. Paul has not yet seen this result.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new screen, dialog, button, or wording. In Settings, `Usage display` and `Switch providers` keep the value the customer just chose when a read of these settings that had started earlier answers afterwards; before, the control could jump back to the old value although the new one was stored. Found by the automated review of pull request #541.
 - Scope: `control-center-app.tsx`, one test in `control-center-app.display-preferences.test.tsx`, and this approval record. This is a draft for the branch only, not approval for merge, release, installation, or a device operation.
+
+## 2026-10-08 — A repeated activity entry shows the time of its latest occurrence
+
+- User approval: Drafted in the overnight batch of 2026-10-08 and covered by Paul's blanket approval of 2026-10-07 for that batch. Paul has not yet seen this result.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new wording. Support, `Recent activity`: when the same entry would be written again directly after itself (same title and detail), the one entry that stays now carries the time of the latest occurrence instead of the first. Before this correction three identical failures in a row showed as one entry with the oldest time. Found by the second code review of the batch.
+- Scope: `recentEventsWith` in `control-center-app.tsx`, its test in `control-center-app.test.ts`, and this approval record. This is a draft for the branch only, not approval for merge, release, installation, or a device operation.
