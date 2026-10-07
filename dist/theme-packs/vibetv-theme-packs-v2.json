@@ -97,6 +97,21 @@
       "bytes": 2596
     },
     {
+      "id": "retro-3d",
+      "title": "Retro 3D",
+      "usage": "screensaver",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/s/r3d-2-d2a77fd8.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-retro-3d-v0.1.0.zip",
+      "sha256": "7a4f227e584840e5f8014db2b28fc3c3d170e458f31dabff6cf142efd87ea2f4",
+      "bytes": 8044
+    },
+    {
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",

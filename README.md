@@ -42,9 +42,9 @@ VibeTV comes with 7 pre-built themes, but you can also
 
 ## Screensavers
 
-| Night Clock | Reset Countdown | Token Fire |
-| --- | --- | --- |
-| <img src="docs/assets/vibetv-screensaver-night-clock.png" alt="Night Clock screensaver preview showing the time and next resets" width="180"> | <img src="docs/assets/vibetv-screensaver-reset-countdown.png" alt="Reset Countdown screensaver preview with a forest and reset timer" width="180"> | <img src="docs/assets/vibetv-screensaver-token-fire.png" alt="Token Fire screensaver preview with a fireplace and token totals" width="180"> |
+| Night Clock | Reset Countdown | Token Fire | Retro 3D |
+| --- | --- | --- | --- |
+| <img src="docs/assets/vibetv-screensaver-night-clock.png" alt="Night Clock screensaver preview showing the time and next resets" width="180"> | <img src="docs/assets/vibetv-screensaver-reset-countdown.png" alt="Reset Countdown screensaver preview with a forest and reset timer" width="180"> | <img src="docs/assets/vibetv-screensaver-token-fire.png" alt="Token Fire screensaver preview with a fireplace and token totals" width="180"> | <img src="docs/assets/vibetv-screensaver-retro-3d.png" alt="Retro 3D screensaver preview with a spinning glossy ring and the time" width="180"> |
 
 See [docs/themes.md](docs/themes.md) for included themes, screensavers, and custom
 theme development.

@@ -28,6 +28,7 @@ theme selection. The current catalog includes:
 | Night Clock | <img src="assets/vibetv-screensaver-night-clock.png" alt="Night Clock screensaver preview" width="180"> | Clock and upcoming provider resets. |
 | Reset Countdown | <img src="assets/vibetv-screensaver-reset-countdown.png" alt="Reset Countdown screensaver preview" width="180"> | Forest scene with a provider reset countdown. |
 | Token Fire | <img src="assets/vibetv-screensaver-token-fire.png" alt="Token Fire screensaver preview" width="180"> | Animated fireplace with token totals. |
+| Retro 3D | <img src="assets/vibetv-screensaver-retro-3d.png" alt="Retro 3D screensaver preview" width="180"> | Spinning glossy 3D ring with a dim clock. |
 
 All previews are rendered from the current theme packs with example data.
 Available usage, reset, and token values depend on the provider and data freshness.
