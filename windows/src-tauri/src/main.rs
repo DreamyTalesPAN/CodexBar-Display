@@ -308,6 +308,7 @@ fn show_next_provider(app: &AppHandle) {
     let origin = app.state::<Shell>().runtime_origin.lock().unwrap().clone();
     let http = runtime_http();
     if !runtime_identity_matches(&http, &origin) {
+        log("next provider skipped: the runtime did not answer at its known address");
         return;
     }
     let url = origin.join("/v1/provider-display/next").expect("static path");
