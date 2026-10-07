@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -11462,6 +11463,159 @@ func TestFirmwareUpdateInstallUsesCableForCableOnlyWiFiVibeTV(t *testing.T) {
 			}
 			t.Fatal("update job did not finish")
 		})
+	}
+}
+
+// Issue #526: firmware 1.0.45 over WiFi at low heap answers /hello without its
+// capabilities block. Device ID, board and firmware are intact, and the update
+// that fixes the low heap needs nothing else to start.
+func helloWithoutCapabilitiesDevice(t *testing.T) *httptest.Server {
+	t.Helper()
+	body, err := os.ReadFile("../protocol/testdata/wifi-hello-1.0.45-without-capabilities.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/hello" {
+			_, _ = w.Write(body)
+			return
+		}
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(device.Close)
+	return device
+}
+
+func TestFirmwareUpdateInstallAcceptsHelloWithoutCapabilities(t *testing.T) {
+	device := helloWithoutCapabilitiesDevice(t)
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: device.URL, DeviceID: "16198106", DeviceToken: "pair-token"})
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("unknown capabilities must not send the update to the cable")
+		return "", usb.ErrDeviceHelloUnavailable
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
+	updated := make(chan runtimeconfig.Config, 1)
+	// The updater found nothing newer; the hello after it is the same answer.
+	server.updateFirmware = func(_ context.Context, _ string, cfg runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		updated <- cfg
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"complete","outcome":"already_current","firmware":"1.0.45","target":"`+device.URL+`","deviceId":"16198106","artifactValidated":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case cfg := <-updated:
+		if cfg.ConnectionMode != "wifi" || cfg.DeviceTarget != device.URL || cfg.DeviceID != "16198106" {
+			t.Fatalf("update ran for %+v", cfg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("update did not start")
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 500; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The update's own check after the upload reads device ID and firmware.
+	if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified {
+		t.Fatalf("the hello check after the update must accept the identity: %+v result=%+v", job, job.Result)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LegacyWiFiDeviceID != "" {
+		t.Fatalf("whether this VibeTV is a legacy WiFi one is not known, but it was remembered as %q", cfg.LegacyWiFiDeviceID)
+	}
+}
+
+func TestHelloWithoutCapabilitiesStartsNoUpdateForAnotherVibeTV(t *testing.T) {
+	device := helloWithoutCapabilitiesDevice(t)
+	for name, cfg := range map[string]runtimeconfig.Config{
+		"another saved VibeTV":    {ConnectionMode: "wifi", DeviceTarget: device.URL, DeviceID: "other-device", DeviceToken: "pair-token"},
+		"WiFi transition pending": {CableAutoBindDisabled: true, DeviceTarget: device.URL, DeviceID: "16198106", DeviceToken: "pair-token"},
+	} {
+		if (name == "WiFi transition pending") != cfg.WiFiTransitionPending() {
+			t.Fatalf("%s: unexpected pending transition in the test config", name)
+		}
+		server := newTestServer(t, cfg)
+		server.resolveCablePort = func(string, string) (string, error) { return "", usb.ErrDeviceHelloUnavailable }
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+		if rec.Code == http.StatusAccepted {
+			t.Fatalf("%s: update started: %s", name, rec.Body.String())
+		}
+	}
+}
+
+// What needs transport mode, limits or theme capabilities reads this answer as
+// a hello that failed; status keeps the VibeTV found and undecided.
+func TestHelloWithoutCapabilitiesDecidesNothingButIdentity(t *testing.T) {
+	device := helloWithoutCapabilitiesDevice(t)
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:     "wifi",
+		DeviceTarget:       device.URL,
+		DeviceID:           "16198106",
+		DeviceToken:        "pair-token",
+		DeviceTransports:   []string{"usb", "wifi"},
+		LegacyWiFiDeviceID: "16198106",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	server.listCablePorts = func() ([]string, error) { return []string{"/dev/cu.usbserial-1"}, nil }
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Error("the cable must not be asked while the transport mode is unknown")
+		return "", usb.ErrDeviceHelloUnavailable
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var status statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("status=%d err=%v body=%s", rec.Code, err, rec.Body.String())
+	}
+	got := status.Device
+	if !got.Connected || got.Board != "esp8266-smalltv-st7789" || got.Firmware != "1.0.45" || got.DeviceID != "16198106" {
+		t.Fatalf("the VibeTV that answered must stay found with its board and firmware: %+v", got)
+	}
+	if got.Ready || got.ConnectionState != deviceConnectionRetrying || got.LegacyCableAnswered {
+		t.Fatalf("nothing but the identity may be concluded: %+v", got)
+	}
+	if got.Capabilities == nil || !slices.Equal(got.Capabilities.Transport.Supported, []string{"usb", "wifi"}) ||
+		got.Capabilities.Transport.Mode != "" {
+		t.Fatalf("the saved transports must not be replaced by empty ones: %+v", got.Capabilities)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.LegacyWiFiDeviceID != "16198106" || !slices.Equal(cfg.DeviceTransports, []string{"usb", "wifi"}) {
+		t.Fatalf("status changed the saved connection: %+v", cfg)
+	}
+
+	// /v1/device hands the hello's capabilities to the app: not found, as before.
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/device", nil))
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "device_not_found") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

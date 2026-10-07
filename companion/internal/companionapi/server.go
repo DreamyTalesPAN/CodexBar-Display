@@ -1461,7 +1461,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			s.firmwareUpdateStartMu.Unlock()
 		}
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
-		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
+		hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+		if identity, ok := protocol.HelloIdentity(err); ok && strings.EqualFold(strings.TrimSpace(cfg.DeviceID), identity.DeviceID) {
+			// Issue #526: the saved VibeTV answered, without capabilities. It
+			// stays found and keeps the board and firmware the Updates tab
+			// needs. Everything a complete hello decides below stays undecided,
+			// as after a hello that failed.
+			device.Board, device.Firmware = identity.Board, identity.Firmware
+			s.rememberConfiguredDeviceSeen(cfg)
+		}
+		if err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)
 			observedID := strings.TrimSpace(hello.DeviceID)
 			identityMismatch = configuredID != "" && observedID != "" &&
@@ -1838,6 +1847,17 @@ func themeCannotBeDrawn(spec *themeSpecHealth) bool {
 		return spec.cbaBufferBytes == 0
 	}
 	return true
+}
+
+// rememberConfiguredDeviceSeen keeps the saved VibeTV inside the anti-flap
+// grace window of withConfiguredConnectionState without calling it reachable.
+func (s *Server) rememberConfiguredDeviceSeen(cfg runtimeconfig.Config) {
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+	if s.connectionStates == nil {
+		s.connectionStates = make(map[string]*configuredDeviceConnection)
+	}
+	s.connectionStates[configuredDeviceKey(cfg)] = &configuredDeviceConnection{lastSeenAt: s.currentTime()}
 }
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {
@@ -5464,13 +5484,19 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	}
 	var hello protocol.DeviceHello
 	ok := true
+	// Issue #526: a WiFi VibeTV without heap for its capabilities still names
+	// itself, and that is all an update start needs. The update is what gives
+	// it the heap back, so "not found" would lock out the VibeTV that needs it.
+	// What its capabilities would decide (cable-only updates, legacy WiFi) is
+	// left undecided.
+	identityOnly := false
 	if req.Rescue {
 		// The device cannot pass the paired checks below: it has no identity
 		// yet. The updater finds exactly one such VibeTV and refuses the rest.
 	} else if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		_, hello, ok = s.requireCableControlDevice(w, cfg)
 	} else {
-		cfg, hello, ok = s.requireDevice(w, r)
+		cfg, hello, identityOnly, ok = s.requireDeviceIdentity(w, r, true)
 		if transport := hello.Normalize().Capabilities.Transport; ok &&
 			transport.CableOnlyUpdates != nil && *transport.CableOnlyUpdates {
 			// Issue #522: this firmware refuses an upload over WiFi. If this
@@ -5513,7 +5539,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
-	if transport := hello.Normalize().Capabilities.Transport; !req.Rescue &&
+	if transport := hello.Normalize().Capabilities.Transport; !req.Rescue && !identityOnly &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" &&
 		(transport.CableOnlyUpdates == nil || !*transport.CableOnlyUpdates) {
 		// The update restarts this VibeTV in legacy WiFi mode (issue #498).
@@ -6622,6 +6648,10 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	token := strings.TrimSpace(cfg.DeviceToken)
 	s.setFirmwareUpdateStage(jobID, "verifying_firmware")
 	hello, err := s.getHello(ctx, target, token)
+	if identity, ok := protocol.HelloIdentity(err); ok {
+		// Device ID and firmware are all this check reads (issue #526).
+		hello, err = identity, nil
+	}
 	if err != nil {
 		return "", "", fmt.Errorf("verify installed firmware: %w", err)
 	}
@@ -7733,19 +7763,37 @@ func (s *Server) updateConfig(mutate func(*runtimeconfig.Config)) (runtimeconfig
 }
 
 func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimeconfig.Config, protocol.DeviceHello, bool) {
+	cfg, hello, _, ok := s.requireDeviceIdentity(w, r, false)
+	return cfg, hello, ok
+}
+
+// requireDeviceIdentity is requireDevice for a caller that says whether the
+// identity of the saved VibeTV is enough for it (issue #526). identityOnly
+// reports a hello without capabilities: device ID, board, firmware and
+// features are real, transport mode, limits and theme capabilities are empty
+// because they are not known.
+func (s *Server) requireDeviceIdentity(w http.ResponseWriter, r *http.Request, identityIsEnough bool) (
+	_ runtimeconfig.Config, _ protocol.DeviceHello, identityOnly bool, _ bool,
+) {
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
 	if strings.TrimSpace(cfg.DeviceTarget) == "" {
 		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
 	// Reuse the central single-flight probe: a dead device must not occupy the
 	// serialized per-host gate for the full 15s device timeout and starve the
 	// 5s status poll (head-of-line blocking during cold start).
 	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+	if identity, ok := protocol.HelloIdentity(err); ok && identityIsEnough &&
+		strings.EqualFold(strings.TrimSpace(cfg.DeviceID), identity.DeviceID) && !cfg.WiFiTransitionPending() {
+		// Whether a WiFi transition is pending on the device is not known
+		// either, so only a VibeTV this Mac is not waiting for passes.
+		return cfg, identity, true, true
+	}
 	if err != nil {
 		// A read-only status poll must never fan out into a subnet scan. The
 		// Control Center polls this endpoint frequently; when VibeTV is offline,
@@ -7753,15 +7801,15 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		// recovery or OTA update starts. Discovery remains available through the
 		// explicit /v1/device/discover and /v1/device/repair actions.
 		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
 	if err := s.confirmPendingWiFiTransition(
 		r.Context(), cfg.DeviceTarget, cfg.DeviceToken, cfg.DeviceID, hello,
 	); err != nil {
 		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false, false
 	}
-	return cfg, hello, true
+	return cfg, hello, false, true
 }
 
 func (s *Server) clearConfiguredDeviceState() {
@@ -9015,6 +9063,10 @@ func (s *Server) do(req *http.Request, out any) error {
 	}
 	if out == nil {
 		return nil
+	}
+	if hello, ok := out.(*protocol.DeviceHello); ok {
+		*hello, err = protocol.DecodeWiFiHello(resp.Body)
+		return err
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
