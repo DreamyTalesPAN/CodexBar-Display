@@ -3,7 +3,7 @@
 // Issue #183: Settings reads the app's own display preferences from the
 // registry, saves a change at once, and keeps the stored value when the write
 // is refused.
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -226,4 +226,32 @@ it("names a one-minute screensaver in the singular", async () => {
   expect(window.text()).toContain(
     "The screensaver starts after 1 minute at 20% brightness.",
   );
+});
+
+// Issue #546: "Run setup again" started at once, from Settings and from
+// Support; the factory reset beside it asked first.
+it("asks before running setup again and lets the customer cancel", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  const resets = () =>
+    window.companion.requests.filter((request) => request.includes("/v1/setup/reset"));
+  const question = () => screen.queryByRole("dialog", { name: "Run setup again?" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  expect(question()?.textContent).toContain(
+    "VibeTV keeps its WiFi details, settings and themes.",
+  );
+  fireEvent.click(within(question()!).getByRole("button", { name: "Cancel" }));
+  expect(question()).toBeNull();
+  expect(resets()).toEqual([]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(within(question()!).getByRole("button", { name: "Run setup again" }));
+  await window.wait(1);
+  expect(question()).toBeNull();
+  expect(resets()).toHaveLength(1);
 });

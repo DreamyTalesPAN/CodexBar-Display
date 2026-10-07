@@ -123,6 +123,7 @@ import {
   setupUsageCauseFor,
 } from "./setup/setup-usage-dialog";
 import { SetupDevicePickerDialog } from "./setup/setup-device-dialogs";
+import { SetupDialog } from "./setup/setup-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
@@ -586,6 +587,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
+  // "Run setup again" asks first, from Settings and from Support alike.
+  const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
@@ -5255,7 +5258,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 }
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
-            onResetSetup={resetSetup}
+            onResetSetup={() => setSetupAgainRequested(true)}
             onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
             onRunDiagnostics={runDiagnosticsFromSettings}
@@ -5347,7 +5350,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
-            onRunSetupAgain={resetSetup}
+            onRunSetupAgain={() => setSetupAgainRequested(true)}
             repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}
@@ -5413,6 +5416,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onRepair={retryUsageService}
           open
           windowsHost={windowsHost}
+        />
+      ) : null}
+      {setupAgainRequested ? (
+        <SetupDialog
+          description="You connect VibeTV and choose your AI providers and display mode again. VibeTV keeps its WiFi details, settings and themes."
+          onOpenChange={setSetupAgainRequested}
+          open
+          primaryAction={{
+            label: "Run setup again",
+            onSelect: () => {
+              setSetupAgainRequested(false);
+              void resetSetup();
+            },
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onSelect: () => setSetupAgainRequested(false),
+          }}
+          showCloseButton={false}
+          title="Run setup again?"
         />
       ) : null}
     </SetupEventsContext.Provider>
