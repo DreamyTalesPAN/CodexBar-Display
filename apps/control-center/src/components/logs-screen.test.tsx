@@ -58,6 +58,25 @@ it("names the live theme while the screensaver is on screen", () => {
   expect(html).not.toContain("Night Clock");
 });
 
+// Issue #265: Support names the signal of a VibeTV on WiFi the way the Mac App
+// judged it.
+it("shows the WiFi signal of a connected VibeTV, and none where there is no reading", () => {
+  const support = (connected: boolean, wifi?: { rssi: number; weak?: boolean }) =>
+    renderToStaticMarkup(
+      <LogsScreen
+        device={{ active: true, connected, paired: true, ready: connected, health: { ok: true, wifi } }}
+      />,
+    );
+
+  expect(support(true, { rssi: -82, weak: true })).toContain("Weak (-82 dBm)");
+  // One low reading is not yet a weak signal, and it is not a good one either.
+  expect(support(true, { rssi: -48 })).toContain(">-48 dBm<");
+  expect(support(true, { rssi: -85 })).not.toContain("Good");
+  // The Cable and older firmware report no signal.
+  expect(support(true)).not.toContain("WiFi signal");
+  expect(support(false, { rssi: -48 })).not.toContain("WiFi signal");
+});
+
 it("has no accessibility violations with diagnostics, recent activity and an error", async () => {
   await expectNoAxeViolations(
     renderToStaticMarkup(

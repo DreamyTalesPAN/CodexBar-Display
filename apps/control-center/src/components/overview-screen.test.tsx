@@ -50,6 +50,36 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Waiting for first image");
   });
 
+  // Issue #265: the Mac App decides that the signal is weak; the page says so.
+  it("names a weak WiFi signal and what to do about it (#265)", () => {
+    const overview = (connected: boolean, health?: { ok: boolean; wifi?: { rssi: number; weak?: boolean } }) =>
+      renderToStaticMarkup(
+        <OverviewScreen
+          companionStatus="online"
+          device={{ active: true, connected, paired: true, ready: connected, health }}
+        />,
+      );
+
+    const weak = overview(true, { ok: true, wifi: { rssi: -82, weak: true } });
+    expect(weak).toContain("VibeTV is connected");
+    expect(weak).toContain("Weak WiFi signal");
+    expect(weak).toContain("Move VibeTV closer to your router.");
+
+    // A good signal, a low reading the Mac App has not named weak, a VibeTV
+    // that reports no signal (the Cable, older firmware), and a reading kept
+    // from a VibeTV that has gone away.
+    for (const html of [
+      overview(true, { ok: true, wifi: { rssi: -48 } }),
+      overview(true, { ok: true, wifi: { rssi: -85 } }),
+      overview(true, { ok: true }),
+      overview(true),
+      overview(false, { ok: true, wifi: { rssi: -82, weak: true } }),
+    ]) {
+      expect(html).not.toContain("Weak WiFi signal");
+      expect(html).not.toContain("closer to your router");
+    }
+  });
+
   it("keeps a genuinely disconnected selected VibeTV not connected", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen

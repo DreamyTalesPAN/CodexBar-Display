@@ -299,6 +299,14 @@ export type DeviceInfo = {
     resetReason?: string;
     lastResetAt?: string;
     error?: string;
+    /**
+     * The signal reading of a VibeTV on WiFi, in dBm. The Mac App decides
+     * `weak`; the page never compares the number itself.
+     */
+    wifi?: {
+      rssi: number;
+      weak?: boolean;
+    };
   };
   display?: {
     themeSpec?: {

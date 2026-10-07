@@ -65,6 +65,8 @@ export function OverviewScreen({
   // Issue #498: the Companion names a theme the VibeTV cannot draw.
   const themeNotShown =
     connected && device?.connectionState === "display_render_failed";
+  // Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
+  const weakWiFiSignal = connected && device?.health?.wifi?.weak === true;
   const reconnecting =
     deviceIsActive(device) &&
     !deviceIsReady(device) &&
@@ -121,10 +123,15 @@ export function OverviewScreen({
               )}
             />
             <StatusItem
+              detail={
+                weakWiFiSignal ? "Move VibeTV closer to your router." : undefined
+              }
               icon={<ArrowUpFromLine aria-hidden />}
               label="VibeTV"
               value={
-                connected
+                weakWiFiSignal
+                  ? "Weak WiFi signal"
+                  : connected
                   ? "Connected"
                   : updateOwnedDisconnect
                     ? "Restarting"

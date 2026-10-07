@@ -93,6 +93,9 @@ export function LogsScreen({
   windowsHost = false,
 }: LogsScreenProps) {
   const deviceConnected = deviceIsCustomerConnected(device);
+  // Issue #265: only a VibeTV on WiFi reports a signal, and a reading kept
+  // from before it went away says nothing about now.
+  const wifi = deviceConnected ? device?.health?.wifi : undefined;
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
@@ -134,6 +137,12 @@ export function LogsScreen({
                 label="Active theme"
                 value={activeThemeLabel(themes, device)}
               />
+              {wifi ? (
+                <SupportFact
+                  label="WiFi signal"
+                  value={wifi.weak ? `Weak (${wifi.rssi} dBm)` : `${wifi.rssi} dBm`}
+                />
+              ) : null}
             </dl>
           </CardContent>
           {onRunSetupAgain ? (
