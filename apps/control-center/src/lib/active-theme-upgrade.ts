@@ -135,6 +135,20 @@ export function resolveActiveThemeUpgrade(
   };
 }
 
+// The catalog screensaver in VibeTV's screensaver slot, in whichever revision.
+// VibeTV reports that slot only as a path.
+export function resolveInstalledScreensaver(
+  themes: ThemeProduct[],
+  screensaverPath: string | null | undefined,
+): ThemeProduct | undefined {
+  const installedPath = screensaverPath?.trim();
+  return themes.find(
+    (candidate) =>
+      candidate.usage === "screensaver" &&
+      sameVersionedThemePath(candidate.themeSpecPath, installedPath),
+  );
+}
+
 // The screensaver slot drifts exactly like the live slot when the catalog ships a
 // new revision, but nothing else catches it: the device reports only the path it
 // has, and `activeTheme` describes the live slot alone. Without this the customer
@@ -144,14 +158,7 @@ export function resolveScreensaverUpgrade(
   screensaverPath: string | null | undefined,
 ): ActiveThemeUpgrade {
   const installedPath = screensaverPath?.trim();
-  if (!installedPath) {
-    return NO_THEME_UPGRADE;
-  }
-  const theme = themes.find(
-    (candidate) =>
-      candidate.usage === "screensaver" &&
-      sameVersionedThemePath(candidate.themeSpecPath, installedPath),
-  );
+  const theme = resolveInstalledScreensaver(themes, installedPath);
   const expectedPath = theme?.themeSpecPath?.trim();
   if (!theme || !expectedPath || expectedPath === installedPath) {
     return NO_THEME_UPGRADE;

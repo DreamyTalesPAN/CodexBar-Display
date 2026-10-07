@@ -9,8 +9,20 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
+import { buildThemePack, createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
-import { ThemeLibraryScreen } from "./theme-library-screen";
+import {
+  ThemeLibraryScreen,
+  type ThemeLibraryScreenProps,
+} from "./theme-library-screen";
+
+// The customer's own screensaver as it is saved in the library.
+const ownScreensaver = {
+  assets: {},
+  packName: "My Screensaver",
+  spec: { ...createBlankThemeSpec(), themeId: "my-screensaver" },
+  usage: "screensaver" as const,
+};
 
 vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -26,6 +38,7 @@ vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
             spec: { themeId: "my-theme", usage: "live" },
           },
         },
+        { id: "u-2", updatedAt: "2026-07-01T00:00:00Z", document: ownScreensaver },
       ],
     },
   }),
@@ -45,7 +58,10 @@ const catalogTheme: ThemeProduct = {
   usage: "live",
 };
 
-async function renderLibrary(themes: ThemeProduct[] = [catalogTheme]) {
+async function renderLibrary(
+  themes: ThemeProduct[] = [catalogTheme],
+  props: Partial<ThemeLibraryScreenProps> = {},
+) {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -64,6 +80,7 @@ async function renderLibrary(themes: ThemeProduct[] = [catalogTheme]) {
         themeInstallEnabled={false}
         themes={themes}
         usage="live"
+        {...props}
       />,
     );
   });
@@ -128,5 +145,39 @@ describe("ThemeLibraryScreen custom themes", () => {
     expect(errors.mock.calls.flat().join(" ")).not.toContain("same key");
     errors.mockRestore();
     await act(async () => cleanup());
+  });
+
+  // VibeTV names its screensaver only by the path of the theme file. For the
+  // customer's own screensaver that is the path its file is sent under.
+  it("keeps the customer's own screensaver installed after a theme was installed", async () => {
+    const sentPath = buildThemePack(
+      ownScreensaver.spec,
+      ownScreensaver.packName,
+      ownScreensaver.assets,
+      "screensaver",
+    ).manifest.themeSpec.path;
+    const render = (screensaverPath: string) =>
+      renderLibrary([catalogTheme], {
+        device: { connected: true, paired: true, ready: true, standby: { screensaverPath } },
+        lastInstall: {
+          activePath: "/themes/u/live-th-3-1a2b3c.json",
+          name: "Live Theme",
+          packId: "live-theme-3",
+          themeId: "live-theme",
+          themeRev: 3,
+        },
+        standby: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 },
+        themeInstallEnabled: true,
+        usage: "screensaver",
+      });
+
+    const installed = await render(sentPath);
+    expect(installed.html).toContain("My Screensaver");
+    expect(installed.html).toContain("Theme is already installed.");
+    await act(async () => installed.cleanup());
+
+    const other = await render("/themes/s/other-1-abc123.json");
+    expect(other.html).not.toContain("Theme is already installed.");
+    await act(async () => other.cleanup());
   });
 });

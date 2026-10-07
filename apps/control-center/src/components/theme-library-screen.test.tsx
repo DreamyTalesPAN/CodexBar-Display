@@ -210,6 +210,49 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     );
   });
 
+  // Seen on the Windows app on 2026-10-07: Retro 3D said "Install" again after
+  // a theme was installed, although it was still VibeTV's screensaver. The row
+  // only knew the last install made from the app.
+  it("keeps the screensaver installed after a theme was installed", () => {
+    const render = (screensaverPath?: string) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{ ...device, ready: true, standby: { screensaverPath } }}
+          lastInstall={{
+            activePath: "/themes/u/live-th-3-1a2b3c.json",
+            name: "Live Theme",
+            packId: "live-theme-3",
+            themeId: "live-theme",
+            themeRev: 3,
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={[
+            themes[0],
+            { ...themes[1], themeSpecPath: "/themes/s/nc-3-e18e4217.json" },
+          ]}
+          usage="screensaver"
+        />,
+      );
+
+    expect(render()).not.toContain("Theme is already installed.");
+    expect(render("/themes/s/nc-3-e18e4217.json")).toContain(
+      "Theme is already installed.",
+    );
+    // An older revision in the slot is still this screensaver.
+    expect(render("/themes/s/nc-2-cb6d64ba.json")).toContain(
+      "Theme is already installed.",
+    );
+  });
+
   it("lets a VibeTV that cannot show its theme install another one", () => {
     const render = (connectionState: string) =>
       renderToStaticMarkup(

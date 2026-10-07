@@ -13,7 +13,7 @@ import {
   Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -58,7 +58,10 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
+import {
+  activeLiveThemeId,
+  resolveInstalledScreensaver,
+} from "@/lib/active-theme-upgrade";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { cn } from "@/lib/utils";
 import { statusForHost } from "@/lib/customer-platform";
@@ -67,6 +70,7 @@ import {
   createBlankThemeSpec,
   importThemeSpec,
   normalizeThemeSpec,
+  validateThemeSpec,
   type ThemeStudioAsset,
   type ThemeStudioUsage,
 } from "@/lib/theme-studio";
@@ -101,7 +105,11 @@ export type ThemeLibraryDeviceInfo = {
   board?: string;
   firmware?: string;
   activeTheme?: string;
-  standby?: { active?: boolean; liveThemePath?: string };
+  standby?: {
+    active?: boolean;
+    liveThemePath?: string;
+    screensaverPath?: string;
+  };
   capabilities?: {
     display?: {
       heightPx?: number;
@@ -209,8 +217,17 @@ export function ThemeLibraryScreen({
     (theme) => (theme.usage || "live") === usage,
   );
   const screensavers = usage === "screensaver";
-  const liveThemeId = activeLiveThemeId(themes, device);
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
+  // What VibeTV itself reports in the slot this list fills, not what was
+  // installed last from here: an install into the other slot changes nothing.
+  const screensaverPath = device?.standby?.screensaverPath?.trim();
+  const screensaverThemeId = useMemo(
+    () => installedScreensaverThemeId(themes, userThemes, screensaverPath),
+    [screensaverPath, themes, userThemes],
+  );
+  const installedThemeId = screensavers
+    ? screensaverThemeId
+    : activeLiveThemeId(themes, device);
   const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
   const [editingTheme, setEditingTheme] =
     useState<ThemeStudioEditorTheme | null>(null);
@@ -632,8 +649,8 @@ export function ThemeLibraryScreen({
                   // Not the theme id: an own theme can carry the id a later
                   // catalog gave one of its themes.
                   key={`${theme.kind}:${theme.id}`}
+                  installedThemeId={installedThemeId}
                   lastInstall={lastInstall}
-                  liveThemeId={liveThemeId}
                   loadingEditorThemeId={loadingEditorThemeId}
                   onEditTheme={openThemeEditor}
                   onDeleteTheme={requestDeleteTheme}
@@ -687,6 +704,28 @@ function themeDocumentUsage(
   document: UserThemeRecord["document"],
 ): ThemeStudioUsage {
   return document.usage || "live";
+}
+
+// VibeTV names its screensaver slot only by a path: a catalog screensaver's in
+// whichever revision, or the path of exactly the saved version of the
+// customer's own, which is the path its theme file is sent under.
+function installedScreensaverThemeId(
+  themes: ThemeProduct[],
+  userThemes: UserThemeRecord[],
+  screensaverPath: string | undefined,
+): string | undefined {
+  if (!screensaverPath) {
+    return undefined;
+  }
+  return (
+    resolveInstalledScreensaver(themes, screensaverPath)?.themeId ??
+    userThemes.find(
+      ({ document }) =>
+        themeDocumentUsage(document) === "screensaver" &&
+        validateThemeSpec(document.spec, document.assets, "screensaver")
+          .themeSpecPath === screensaverPath,
+    )?.document.spec.themeId
+  );
 }
 
 function themeStudioCapabilitiesFromDevice(
@@ -863,8 +902,8 @@ function ThemeListItem({
   displayThemeId,
   item,
   installStatus,
+  installedThemeId,
   lastInstall,
-  liveThemeId,
   loadingEditorThemeId,
   onDeleteTheme,
   onEditTheme,
@@ -883,8 +922,8 @@ function ThemeListItem({
   displayThemeId?: string;
   item: ThemeLibraryItem;
   installStatus?: ThemeInstallStatus | null;
+  installedThemeId?: string;
   lastInstall?: ThemeInstallResult;
-  liveThemeId?: string;
   loadingEditorThemeId: string;
   onDeleteTheme: (theme: UserThemeRecord) => void;
   onEditTheme: (item: ThemeLibraryItem) => void;
@@ -901,8 +940,7 @@ function ThemeListItem({
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
   const installed =
-    lastInstall?.themeId === item.themeId ||
-    (usage === "live" && liveThemeId === item.themeId);
+    lastInstall?.themeId === item.themeId || installedThemeId === item.themeId;
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallThemeId === item.themeId;
