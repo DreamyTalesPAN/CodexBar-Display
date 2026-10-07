@@ -442,6 +442,57 @@ describe("dynamic usage slot preview", () => {
     ).toBe("Reset unavailable");
   });
 
+  // Issue #532: an account in which no window has a reset time. The host
+  // marks the current collection "live"; that stands without a deadline, on
+  // the device and here. Anything else without a deadline stays unavailable.
+  it("calls an account with no reset time anywhere idle only on a live frame", () => {
+    const savedAt = "2026-10-07T10:30:00Z";
+    const idleAccount = {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      resetTrust: "live",
+      resetSource: "claude",
+      resetTrustSecs: 17988,
+      usageWindows: [
+        { id: "session", label: "Session", percent: 0, resetSecs: 0 },
+        { id: "weekly", label: "Weekly", percent: 0, resetSecs: 0 },
+      ],
+    };
+    const textFor = (frame: object, now = savedAt) => {
+      const data = buildFrameData(savedAt, frame, new Date(now));
+      return [
+        boundValue("reset", data),
+        boundValue("us1r", data),
+        renderTextPrimitive({ t: "tx", v: "Resets in {usageSlot2Reset}" }, data),
+      ];
+    };
+    const idle = ["No active session", "No active session", "No active session"];
+    const unavailable = ["Reset unavailable", "Reset unavailable", "Reset unavailable"];
+    expect(textFor(idleAccount)).toEqual(idle);
+    // Past the budget the host sent.
+    expect(textFor(idleAccount, "2026-10-07T15:29:49Z")).toEqual(unavailable);
+    // What a Companion before #532 sends, and a resend after a failed collection.
+    expect(textFor({ ...idleAccount, resetTrust: "stale", resetTrustSecs: 0 })).toEqual(
+      unavailable,
+    );
+    expect(textFor({ ...idleAccount, resetTrust: "offline" })).toEqual(unavailable);
+    expect(textFor({ ...idleAccount, resetTrust: undefined })).toEqual(unavailable);
+    expect(textFor({ ...idleAccount, resetSource: "" })).toEqual(unavailable);
+    expect(textFor({ ...idleAccount, usageUnavailable: true })).toEqual(unavailable);
+    // A window with usage and no deadline is still not idle, and neither is
+    // the root line that speaks for all windows.
+    expect(
+      textFor({
+        ...idleAccount,
+        usageWindows: [
+          { id: "session", label: "Session", percent: 40, resetSecs: 0 },
+          { id: "weekly", label: "Weekly", percent: 0, resetSecs: 0 },
+        ],
+      }),
+    ).toEqual(["Reset unavailable", "Reset unavailable", "No active session"]);
+  });
+
   // Review of #524: the host sends resetSecs 0 not only for a window without
   // a deadline but also for a deadline that ran out before the frame left and
   // for a provider that names none. Idle needs nothing used as well, exactly
