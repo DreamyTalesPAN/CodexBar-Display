@@ -518,9 +518,10 @@ func (s *Sender) ReadHealth(path, deviceID string) ([]byte, error) {
 		return nil, err
 	}
 	line = append(line, '\n')
-	// A request or its answer can be lost while VibeTV is busy drawing. Ask
-	// again every step, like hello does, instead of holding the port (and
-	// every frame behind it) for the whole boot window.
+	// An answer can arrive garbled, or a request be lost, while VibeTV is busy
+	// drawing. Ask again every step, like hello does, so one bad exchange
+	// costs a step and not the whole boot window with every frame queued
+	// behind it.
 	deadline := time.Now().Add(s.helloWindow)
 	for {
 		_ = s.port.ResetInputBuffer()
