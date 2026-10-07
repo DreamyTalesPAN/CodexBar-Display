@@ -36,18 +36,18 @@
       "id": "duo",
       "title": "Duo",
       "usage": "live",
-      "version": "0.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/duo-2-9052dec6.json",
+      "version": "0.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/duo-3-f542242a.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
         "provider-slots-v1",
         "text-valign-v1"
       ],
-      "downloadAsset": "vibetv-theme-duo-v0.1.0.zip",
-      "sha256": "4307a3362e240e1dc4ac64e091f1dd05407ef79b587deca410e4e88c6d38668c",
-      "bytes": 823
+      "downloadAsset": "vibetv-theme-duo-v0.1.1.zip",
+      "sha256": "4d22917d4c9ef5e34f27089005d4147d3de2c632a8b6ab68d4d3a1c1a484fbc9",
+      "bytes": 828
     },
     {
       "id": "mini-classic",

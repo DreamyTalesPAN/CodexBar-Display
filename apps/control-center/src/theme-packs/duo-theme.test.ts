@@ -19,7 +19,7 @@ const primitives = (pack.spec?.p || []) as ThemePrimitive[];
 const texts = primitives.filter((p) => p.t === "tx");
 const clock = new Date("2026-10-08T12:00:00Z");
 const claude = { id: "claude", label: "Claude", percent: 64, resetSecs: 8078 };
-const codex = { id: "codex", label: "Codex", percent: 100, resetSecs: 86340 };
+const codex = { id: "codex", label: "Codex", percent: 100, resetSecs: 604740 };
 type Frame = ReturnType<typeof buildFrameData>;
 
 function frame(providerSlots: Array<typeof claude>, extra: Record<string, unknown> = {}) {
@@ -55,15 +55,17 @@ describe("Duo theme pack", () => {
     // The smaller of the two device limits: 2048 bytes inline, 4096 bytes stored.
     expect(Buffer.byteLength(rawSpec)).toBeLessThan(2048);
     expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.42", requiredCapabilities: ["usage-slots-v1", "provider-slots-v1", "text-valign-v1"] });
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/duo-2-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/duo-3-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(manifest.themeSpec.sha256).toBe(createHash("sha256").update(rawSpec).digest("hex"));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
 
   it("shows two providers, each with label, percentage, usage mode and reset", () => {
+    // A slot carries the provider's fullest window and its soonest reset, so the
+    // line names the provider's next reset, not the reset of the number above it.
     expect(screen(frame([claude, codex]))).toEqual({
-      lines: ["Codex", "Claude", "64%", "used", "Reset in 2h 14m", "Codex", "100%", "used", "Reset in 23h 59m"],
+      lines: ["Codex", "Claude", "64%", "used", "Next reset 2h 14m", "Codex", "100%", "used", "Next reset 6d 23h"],
       dividers: 2,
     });
     // The lower half is the upper half moved down and bound to the second slot.
@@ -75,11 +77,11 @@ describe("Duo theme pack", () => {
   it("names the usage mode the frame carries and shows the percentages as sent", () => {
     // The Companion turns the slot percentages for "remaining"; the theme must not turn them again.
     const data = frame([{ ...claude, percent: 36 }, { ...codex, percent: 0 }], { usageMode: "remaining" });
-    expect(screen(data).lines).toEqual(["Codex", "Claude", "36%", "remaining", "Reset in 2h 14m", "Codex", "0%", "remaining", "Reset in 23h 59m"]);
+    expect(screen(data).lines).toEqual(["Codex", "Claude", "36%", "remaining", "Next reset 2h 14m", "Codex", "0%", "remaining", "Next reset 6d 23h"]);
   });
 
   it("leaves the lower half empty below its divider with one provider", () => {
-    expect(screen(frame([codex]))).toEqual({ lines: ["Codex", "Codex", "100%", "used", "Reset in 23h 59m"], dividers: 2 });
+    expect(screen(frame([codex]))).toEqual({ lines: ["Codex", "Codex", "100%", "used", "Next reset 6d 23h"], dividers: 2 });
   });
 
   it("shows only the provider line without a provider slot", () => {
@@ -96,9 +98,9 @@ describe("Duo theme pack", () => {
     const slot = (label: string, percent: number, resetSecs: number) => ({ id: label.toLowerCase(), label, percent, resetSecs });
     const frames = [
       frame([claude, codex]),
-      frame([slot("Cursor", 0, 2591940), slot("Copilot", 7, 300)], { usageMode: "remaining", label: "Update available" }),
+      frame([slot("Cursor", 0, 17940), slot("Copilot", 7, 300)], { usageMode: "remaining", label: "Update available" }),
       frame([slot("Gemini", 42, 0), slot("Factory", 99, 59)], { label: "Open VibeTV Mac App" }),
-      frame([slot("OpenRouter", 100, 8078), slot("Antigravity", 100, 8078)], { usageMode: "remaining" }),
+      frame([slot("OpenRouter", 100, 86340), slot("Antigravity", 100, 2591940)], { usageMode: "remaining" }),
     ];
     const sizes = new Map<string, number[]>();
     for (const data of frames) {
@@ -108,10 +110,12 @@ describe("Duo theme pack", () => {
         sizes.set(value, [size, p.s!]);
       }
     }
-    // Only the long update notice and long provider names drop a size.
+    // Only the long update notice, long provider names and the two widest countdowns drop a
+    // size: two-digit hours with two-digit minutes need 244 px at full size, two-digit days
+    // with two-digit hours 242 px, both more than the panel has.
     const shrunk = [...sizes].filter(([, [size, full]]) => size < full).map(([value]) => value);
-    expect(shrunk.sort()).toEqual(["Antigravity", "Open VibeTV Mac App", "OpenRouter"]);
-    for (const value of ["Update available", "Copilot", "Factory", "0%", "100%", "remaining", "Reset in 23h 59m", "Reset in 29d 23h", "Reset unavailable"]) {
+    expect(shrunk.sort()).toEqual(["Antigravity", "Next reset 23h 59m", "Next reset 29d 23h", "Open VibeTV Mac App", "OpenRouter"]);
+    for (const value of ["Update available", "Copilot", "Factory", "0%", "100%", "remaining", "Next reset 4h 59m", "Next reset 6d 23h", "Reset unavailable"]) {
       expect(sizes.has(value), value).toBe(true);
     }
   });
@@ -121,6 +125,7 @@ describe("Duo theme pack", () => {
       // The firmware clips a line to its font height plus four pixels.
       const height = { 1: 8, 2: 16, 4: 26 }[p.f ?? 1]! * p.s! + 4;
       expect(p.y! + Math.max(p.h ?? 0, height), `${p.v ?? p.b} bottom`).toBeLessThanOrEqual(240);
+      expect(p.x! + p.w!, `${p.v ?? p.b} right edge`).toBeLessThanOrEqual(240);
     }
     const markup = render(THEME_CATALOG_PREVIEW_FRAME);
     expect(markup).toContain('viewBox="0 0 240 240"');

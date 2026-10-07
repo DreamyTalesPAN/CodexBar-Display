@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "duo",
   "name": "Duo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minFirmware": "1.0.42",
   "usage": "live",
   "requiredCapabilities": [
@@ -12,10 +12,10 @@
     "text-valign-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/duo-2-9052dec6.json",
+    "path": "/themes/u/duo-3-f542242a.json",
     "file": "theme.json",
-    "bytes": 1049,
-    "sha256": "9052dec67904b1aa6d394a62dc7d50321a10b40c453607bfce22790521a4e065",
+    "bytes": 1095,
+    "sha256": "f542242a7c66d3f6f39793c984d80a4f2a961496a5d88b511343ac7dcfae6cef",
     "contentType": "application/json"
   },
   "assets": []
