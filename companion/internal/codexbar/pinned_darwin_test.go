@@ -60,8 +60,12 @@ func TestValidatePinnedCLIEnforcesTrustBeforeExecuting(t *testing.T) {
 				}
 				return nil, nil
 			}
-			runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+			runVersionCommandFn = func(_ context.Context, timeout time.Duration, _ string, _ ...string) ([]byte, error) {
 				versionCalled = true
+				// The first start of a new copy takes about 3 s on a busy Mac.
+				if timeout < 10*time.Second {
+					return nil, context.DeadlineExceeded
+				}
 				if failure == "version" {
 					return []byte("CodexBar 0.45.0"), nil
 				}

@@ -624,17 +624,17 @@ func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 			return parseLooseVersion(pinned)
 		}
 	}
-	return reportedVersion(ctx, bin)
+	return reportedVersion(ctx, bin, versionCheckTimeout)
 }
 
 // reportedVersion runs the CLI and reads the version it reports.
-func reportedVersion(ctx context.Context, bin string) (looseVersion, error) {
+func reportedVersion(ctx context.Context, bin string, timeout time.Duration) (looseVersion, error) {
 	bin = strings.TrimSpace(bin)
 	if bin == "" {
 		return looseVersion{}, errors.New("CodexBar binary path is empty")
 	}
 
-	if out, err := runVersionCommandFn(ctx, versionCheckTimeout, bin, "--version"); err == nil {
+	if out, err := runVersionCommandFn(ctx, timeout, bin, "--version"); err == nil {
 		if version, ok := extractLooseVersion(string(out)); ok {
 			return version, nil
 		}

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"golang.org/x/sys/unix"
@@ -20,6 +21,13 @@ import (
 const pinnedSHA256 = "e53c76f7184fd061472a277550a9fecddfdc7ffd1f9749b490afbc95b72000d7"
 const pinnedTeam = "Y5PE65HELJ"
 const pinnedBundle = "com.steipete.codexbar"
+
+// pinnedFirstRunTimeout bounds the version read of a pinned CodexBar. A copy
+// that was unpacked a moment ago is checked by macOS on its first start: that
+// takes 0.5-0.9 s on an idle Mac and about 3 s on a busy one. Under the 2 s
+// every later version read gets, a new customer's first screen was "Usage
+// service needs repair" (#556). The caller's deadline still bounds the call.
+const pinnedFirstRunTimeout = 30 * time.Second
 
 var pinnedRun = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
@@ -44,7 +52,7 @@ func ValidatePinnedCLI(ctx context.Context, app string) (string, error) {
 	if out, err := pinnedRun(ctx, "/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=4", app); err != nil {
 		return "", fmt.Errorf("assess CodexBar: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
-	version, err := reportedVersion(ctx, bin)
+	version, err := reportedVersion(ctx, bin, pinnedFirstRunTimeout)
 	if err != nil {
 		return "", err
 	}
