@@ -1,0 +1,77 @@
+name: CODEX Board PR Review
+
+# Puts every pull request that is ready for review into the Review column of
+# the VibeTV Backlog board. The board's built-in workflows can only set one
+# status for all new items, so pull requests are handled here.
+#
+# pull_request_target runs this file from main and never checks out pull
+# request code, so the board token is not exposed to forks.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: codex-board-pr-review-${{ github.event.pull_request.number || 'backfill' }}
+  cancel-in-progress: false
+
+jobs:
+  review-column:
+    if: >-
+      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
+      (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add pull requests to the board in Review
+        env:
+          # Classic token with the `project` scope. The board belongs to a
+          # user account, which the workflow's own token cannot reach.
+          # Dependabot pull requests read it from the Dependabot secrets.
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_OWNER: DreamyTalesPAN
+          PROJECT_NUMBER: '2'
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+        run: |
+          set -euo pipefail
+          [[ -n "$GH_TOKEN" ]] || { echo 'PROJECT_TOKEN is not available to this run' >&2; exit 1; }
+
+          gh api graphql -F number="$PROJECT_NUMBER" -f owner="$PROJECT_OWNER" -f query='
+            query($owner: String!, $number: Int!) {
+              user(login: $owner) {
+                projectV2(number: $number) {
+                  id
+                  field(name: "Status") {
+                    ... on ProjectV2SingleSelectField { id options { id name } }
+                  }
+                }
+              }
+            }' > project.json
+          project_id="$(jq -er '.data.user.projectV2.id' project.json)"
+          field_id="$(jq -er '.data.user.projectV2.field.id' project.json)"
+          review_id="$(jq -er '.data.user.projectV2.field.options[] | select(.name == "Review") | .id' project.json)"
+
+          if [[ -n "$PR_NODE_ID" ]]; then
+            pr_ids="$PR_NODE_ID"
+          else
+            # Manual run: catch up on every open pull request that is not a draft.
+            pr_ids="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+              --jq '.[] | select(.draft | not) | .node_id')"
+          fi
+
+          for pr_id in $pr_ids; do
+            item_id="$(gh api graphql -f project="$project_id" -f content="$pr_id" -f query='
+              mutation($project: ID!, $content: ID!) {
+                addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } }
+              }' --jq '.data.addProjectV2ItemById.item.id')"
+            gh api graphql -f project="$project_id" -f item="$item_id" -f field="$field_id" -f option="$review_id" -f query='
+              mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $project, itemId: $item, fieldId: $field,
+                  value: {singleSelectOptionId: $option}
+                }) { projectV2Item { id } }
+              }' > /dev/null
+            echo "Review: $pr_id"
+          done
