@@ -58,6 +58,7 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 		probe = codexbar.ProbeProviderSetup
 	}
 	setup := probe(ctx, s.home)
+	s.logProviderCheckCauses(setup)
 	s.providerSetupCache = setup
 	s.providerSetupCachedAt = now
 	s.providerSetupMu.Unlock()
@@ -370,6 +371,7 @@ func (s *Server) currentExactProviderSetup(ctx context.Context, providerID strin
 		probe = codexbar.ProbeProviderSetupForProvider
 	}
 	setup := probe(ctx, s.home, providerID)
+	s.logProviderCheckCauses(setup)
 
 	s.exactProviderProbeMu.Lock()
 	flight.setup = setup
@@ -377,6 +379,21 @@ func (s *Server) currentExactProviderSetup(ctx context.Context, providerID strin
 	delete(s.exactProviderProbes, providerID)
 	s.exactProviderProbeMu.Unlock()
 	return setup
+}
+
+// logProviderCheckCauses writes why a check ended as a settings error (or
+// lost its inventory read) to the runtime log, redacted like every reported
+// provider message. The row and the setup log only carry the generic sentence,
+// so without this line the cause of #527 could not be read back afterwards.
+func (s *Server) logProviderCheckCauses(setup codexbar.ProviderSetup) {
+	if s.logf == nil {
+		return
+	}
+	for _, provider := range setup.Providers {
+		if provider.Cause != "" {
+			s.logf("VibeTV provider check: %s is %s (%s)", provider.ID, provider.Status, reportedProviderMessage(provider.Cause))
+		}
+	}
 }
 
 func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.ProviderSetup {

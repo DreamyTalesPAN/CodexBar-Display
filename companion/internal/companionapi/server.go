@@ -191,9 +191,12 @@ type Options struct {
 	// Supplied only by the process supervising the actual worker. Running alone
 	// never establishes frame freshness or device readiness.
 	DisplayStreamRunning func() bool
+	// Logf writes one line to the runtime's log. Nil outside the runtime.
+	Logf func(string, ...any)
 }
 
 type Server struct {
+	logf                   func(string, ...any)
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
@@ -1056,6 +1059,7 @@ func New(opts Options) (*Server, error) {
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
+		logf:                  opts.Logf,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
 		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
