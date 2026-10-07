@@ -7103,6 +7103,14 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 type firmwareUpdateEvent = firmwareupdate.Event
 
 func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEvent) {
+	if event.UploadAccepted && strings.HasPrefix(strings.ToLower(strings.TrimSpace(event.Target)), "http") {
+		// Only firmware without cable-only updates takes an upload over WiFi
+		// (docs/firmware-ota-contract.md), so this is the same fact the update
+		// start reads from the hello. A hello without capabilities (issue
+		// #526) could not say it there, and the new firmware has not started
+		// yet, so nothing has ended its legacy mode over the cable.
+		s.rememberLegacyWiFiDevice(event.DeviceID)
+	}
 	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 		if stage := strings.TrimSpace(event.Stage); stage != "" {
 			job.Stage = stage

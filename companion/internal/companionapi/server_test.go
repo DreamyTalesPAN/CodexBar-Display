@@ -11767,6 +11767,56 @@ func TestFirmwareUpdateInstallAcceptsHelloWithoutCapabilities(t *testing.T) {
 	}
 }
 
+// Issue #526 follow-up: the hello without capabilities cannot say whether this
+// VibeTV has cable-only updates, so the update start leaves the legacy note
+// alone. The upload over WiFi going through says it: only firmware without
+// cable-only updates accepts one. Without the note the automatic switch to
+// USB-C (#504) is lost when the cable is asked before the first complete hello.
+func TestAcceptedWiFiUploadRemembersLegacyVibeTVAfterHelloWithoutCapabilities(t *testing.T) {
+	device := helloWithoutCapabilitiesDevice(t)
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: device.URL, DeviceID: "16198106", DeviceToken: "pair-token"})
+	server.resolveCablePort = func(string, string) (string, error) { return "", usb.ErrDeviceHelloUnavailable }
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	noted := make(chan string, 1)
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		before, _ := server.config()
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"rebooting","phase":"installing","firmware":"1.0.62","target":"`+device.URL+`","deviceId":"16198106","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		after, _ := server.config()
+		noted <- before.LegacyWiFiDeviceID + "->" + after.LegacyWiFiDeviceID
+		return errors.New("stop after the upload")
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case got := <-noted:
+		if got != "->16198106" {
+			t.Fatalf("the note must be set by the accepted upload, not before: %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("update did not start")
+	}
+	for attempt := 0; ; attempt++ {
+		if _, running := server.activeFirmwareUpdateJob(); !running {
+			break
+		}
+		if attempt == 1000 {
+			t.Fatal("update job did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// An upload over the cable says nothing about WiFi updates.
+	cable := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "16198106", DeviceToken: "pair-token"})
+	cable.applyFirmwareUpdateEvent("no-job", firmwareUpdateEvent{Stage: "rebooting", Target: cableDeviceTarget, DeviceID: "16198106", UploadAccepted: true})
+	if cfg, _ := cable.config(); cfg.LegacyWiFiDeviceID != "" {
+		t.Fatalf("a Cable upload remembered a legacy WiFi VibeTV: %q", cfg.LegacyWiFiDeviceID)
+	}
+}
+
 func TestHelloWithoutCapabilitiesStartsNoUpdateForAnotherVibeTV(t *testing.T) {
 	device := helloWithoutCapabilitiesDevice(t)
 	for name, cfg := range map[string]runtimeconfig.Config{
