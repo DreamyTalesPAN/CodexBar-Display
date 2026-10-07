@@ -403,7 +403,9 @@ func TestConnectionModeRequestEndsLegacyCableAnswered(t *testing.T) {
 		return got.Device.LegacyCableAnswered
 	}
 
-	if !answered() || !answered() {
+	// Asked twice: reading the status must not consume the answer.
+	first, second := answered(), answered()
+	if !first || !second {
 		t.Fatal("the remembered legacy VibeTV left legacy mode; status must say so until the app acts")
 	}
 	rec := httptest.NewRecorder()
