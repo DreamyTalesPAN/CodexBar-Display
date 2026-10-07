@@ -1140,6 +1140,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/preferences", s.handlePreferences)
 	mux.HandleFunc("/v1/preferences/", s.handlePreference)
 	mux.HandleFunc("/v1/provider-display", s.handleProviderDisplay)
+	mux.HandleFunc("/v1/provider-display/next", s.handleProviderDisplayNext)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)

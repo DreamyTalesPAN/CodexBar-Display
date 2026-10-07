@@ -125,6 +125,20 @@ come up to 30 seconds late. The `coding`/`idle` state in the frame is the same
 in both cases and covers all providers, so the screensaver does not depend on
 which provider is on screen. Manual ignores this preference.
 
+### Showing the next provider
+
+```http
+POST /v1/provider-display/next
+```
+
+The runtime stores Manual on the provider after the one on screen, exactly as
+`PATCH /v1/provider-display` does for a choice made in Settings, so Automatic
+does not take the screen back. The order is the provider list's and wraps after
+the last. Only providers Manual offers take part: switched on, in working
+order, and with a reading that can be shown. With fewer than two of them the
+stored choice stays as it is. The answer is the selection now stored, in the
+shape of `GET /v1/provider-display`. Nothing about a provider is changed.
+
 Brightness and the screensaver stay on `/v1/settings`; they are device
 settings and are not part of this section.
 
