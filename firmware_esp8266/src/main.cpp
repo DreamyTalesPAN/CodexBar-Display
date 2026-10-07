@@ -2585,7 +2585,7 @@ String healthJSON() {
   // Sized for the full payload: #280 added the clock block, #279 the reset
   // trust block, #284 the standby state and #221 the failing sprite asset
   // path, and growing this String mid-build fragments a tight heap.
-  out.reserve(1408);
+  out.reserve(1472);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -2646,6 +2646,8 @@ String healthJSON() {
   out += snapshot.cbaBufferAllocationFailures;
   out += ",\"cbaLastPushDurationUs\":";
   out += snapshot.cbaLastPushDurationUs;
+  out += ",\"animationLowHeapSkips\":";
+  out += snapshot.animationLowHeapSkips;
   out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
@@ -2654,6 +2656,8 @@ String healthJSON() {
   out += snapshot.gifDecoderAllocated ? "true" : "false";
   out += ",\"decoderOpen\":";
   out += snapshot.gifDecoderOpen ? "true" : "false";
+  out += ",\"framesPlayed\":";
+  out += snapshot.gifFramesPlayed;
   out += ",\"lastError\":";
   appendJSONNullableString(out, snapshot.gifLastErrorStage);
   out += "}},\"render\":{\"fullCount\":";
@@ -3364,6 +3368,10 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
 // for nothing.
 bool activateStoredThemePath(
     const String& path, bool persist, String& themeId, int& themeRev, String& error) {
+  // Reading and compiling the stored theme needs the heap that the running
+  // theme's GIF decoder holds. In WiFi mode the activation otherwise answers
+  // "theme spec not renderable" for a theme that renders (#521).
+  renderer.ResetGifStateForAssetUpdate();
   String raw;
   if (!readValidatedStoredThemeSpec(path, raw, themeId, themeRev, error)) {
     return false;

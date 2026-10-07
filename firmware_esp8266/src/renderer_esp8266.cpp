@@ -80,10 +80,14 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   snapshot.cbaBufferAllocationFailures = themeSpecStats.cbaBufferAllocationFailures;
   snapshot.cbaLastPushDurationUs = themeSpecStats.cbaLastPushDurationUs;
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
+  // A GIF frame skipped because its work buffers found no block is a low-heap
+  // skip as well; without it a frozen GIF would report zero skips.
+  snapshot.animationLowHeapSkips = themeSpecStats.animationLowHeapSkips + gif.workspaceSkips;
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
   snapshot.gifDecoderAllocated = gif.decoderAllocated;
   snapshot.gifDecoderOpen = gif.decoderOpen;
+  snapshot.gifFramesPlayed = gif.framesPlayed;
   snapshot.gifLastErrorStage = gif.lastErrorStage;
 #else
   snapshot.activeTheme = "probe";

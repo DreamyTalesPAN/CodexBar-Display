@@ -4928,3 +4928,27 @@ issue scope, or release permission never implies UI permission.
   same picker again. No other copy, control, or layout changes.
 - Approved files: `control-center-app.tsx`, `device-recovery-gate.ts`, its
   test, and this approval record.
+
+## 2026-10-05 — A legacy WiFi VibeTV that answers the cable switches to USB-C
+
+- User approval: On 2026-10-05 Marcus approved the fix for issue #498 ("ja mach das"): a VibeTV that setup found and updated over WiFi stays in WiFi mode, where an animated theme can run out of memory. Setup switches it to the cable when the same VibeTV answers over the USB cable; a VibeTV without USB data stays on WiFi.
+- Approved customer-visible result: While the app runs and the VibeTV it uses over WiFi leaves legacy WiFi mode because it answered over the USB cable, the app switches it to USB-C once, the same switch as choosing USB-C in Settings. Settings then shows USB-C selected. If the switch fails, VibeTV keeps working over WiFi without an error dialog and Settings still offers USB-C. A WiFi VibeTV that never answers the cable, and one whose customer chose WiFi on current firmware, stay on WiFi. No copy, layout or other control changes.
+- Scope: `control-center-app.tsx`, `control-center-types.ts` and its test. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — Merge of main into the legacy WiFi cable switch (#504)
+
+- User approval: Same decision as the entry "A legacy WiFi VibeTV that answers the cable switches to USB-C" (2026-10-05, Marcus: "ja mach das"). No new decision was needed.
+- Approved customer-visible result: Unchanged from that entry. `main` now contains #490 as one squashed commit, so this branch was merged with `main`; the result is `main` plus the unchanged change of that entry. No screen, copy, control or layout changes.
+- Scope: The merge commit only. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — The cable switch for a legacy WiFi VibeTV no longer depends on the open window
+
+- User approval: Same decision as the entry "A legacy WiFi VibeTV that answers the cable switches to USB-C" (2026-10-05, Marcus: "ja mach das"). On 2026-10-06 Paul asked for the switch to be made more robust after one hardware run stayed on WiFi ("noch nicht mergen … die Umschaltung robuster haben, falls das nötig ist", relayed by his release coordination session, which also relayed his choice of this variant).
+- Approved customer-visible result: Unchanged from that entry: the app switches such a VibeTV to USB-C once, the same switch as choosing USB-C in Settings; a failed switch leaves WiFi working without an error dialog; a VibeTV that never answers the cable and one whose customer chose WiFi on current firmware stay on WiFi. New is only when it works: the switch also happens when the app window did not itself see legacy WiFi mode, for example because another reader of the status or the app's own device search reached the VibeTV first, or because the window was opened later. No copy, layout or other control changes.
+- Scope: `control-center-app.tsx`, `control-center-types.ts` and its test, plus the Companion (`server.go`, `runtimeconfig.go`). This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — A WiFi VibeTV that takes updates only over the cable is updated over the cable (#522)
+
+- User approval: On 2026-10-06 Paul named issue #522 a blocker for the 1.0.62 release (recorded in the issue). In chat on 2026-10-06 he asked for #520, #521 and #522 to be fixed in one pull request ("bearbeite diese 3 issues, mach PR fertig"); the behaviour chosen for it: when such a VibeTV answers on the USB cable the update runs over the cable, otherwise it is refused before the upload with a message that says what to do. On 2026-10-06 Paul approved the shortened sentence below in chat: asked "Gibst du den neuen Satz frei?" with the new and the old wording side by side, he chose "Freigeben". Hardware run on 2026-10-06 (Mac, VibeTV 16198106): update started while the app was on WiFi, the app switched to USB-C within 11 s and the update finished with "Update complete."
+- Approved customer-visible result: When an update is started for a VibeTV that is connected by WiFi and accepts updates only over the cable, and this VibeTV answers on the USB cable, the app connects it by USB-C (the same switch as choosing USB-C in Settings) and installs the update over the cable; Settings then shows USB-C selected. When it does not answer on the cable, the update stops before "Uploading firmware" with "VibeTV installs updates only over the USB cable." and "Connect VibeTV to this Mac with the USB cable, then update again." (before: the same message after the upload had failed, with "switch to USB-C in Settings" as an extra step; the Windows app shows "this computer" instead of "this Mac", as for every Companion message). A VibeTV still in legacy WiFi mode keeps updating over WiFi. No layout or control changes. The customer-flow contract test now expects the long request timeout on the update start as well.
+- Scope: The Companion (`server.go` and its test) and the request timeout of the update start in `control-center-app.tsx`. This approves the pull request only, not merge, release, installation, or a device operation.

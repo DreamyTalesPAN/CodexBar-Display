@@ -13613,12 +13613,14 @@ async function assertCompanionRequestTimeoutContract() {
   // select, connection-mode, reload-display, and the Cable factory reset
   // (it waits for the device's erase reply). There is no separate repair
   // call: selectDevice pairs by force on the server, so the wizard's Connect
-  // already is the repair the old Pair again button used to send.
+  // already is the repair the old Pair again button used to send. The update
+  // start is the fifth: for a WiFi VibeTV that takes updates only over the
+  // cable it first runs the connection-mode switch (#522).
   const repairTimeoutUses =
     source.match(/timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS/g) || [];
   assert(
-    repairTimeoutUses.length === 4,
-    `Exactly select, connection-mode, reload-display, and factory-reset must use the long repair timeout, got ${repairTimeoutUses.length} uses`,
+    repairTimeoutUses.length === 5,
+    `Exactly select, connection-mode, reload-display, factory-reset, and the update start must use the long repair timeout, got ${repairTimeoutUses.length} uses`,
   );
   const statusPollGuards =
     source.match(/if \(statusPollInFlight\.current\)/g) || [];

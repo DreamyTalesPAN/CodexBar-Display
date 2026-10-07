@@ -59,6 +59,7 @@ bool cbaBufferUnavailableThisAttempt = false;
 CbaContentionWatch cbaBufferContention;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
+unsigned long themeSpecAnimationLowHeapSkips = 0;
 String lastSuccessfulThemeSpecId = "";
 int lastSuccessfulThemeSpecRev = 0;
 uint32_t lastSuccessfulThemeSpecRawHash = 0;
@@ -1412,6 +1413,7 @@ bool TickThemeSpecGifs() {
     return true;
   }
   if (!hasThemeSpecHeap(true)) {
+    ++themeSpecAnimationLowHeapSkips;
     nextThemeSpecAnimatedTickAtMs = now + kThemeSpecAnimatedTickMs;
     return true;
   }
@@ -1584,6 +1586,7 @@ ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
   stats.cbaBufferAllocationFailures = cbaBufferAllocationFailures;
   stats.cbaLastPushDurationUs = cbaLastPushDurationUs;
   stats.partialSuccesses = themeSpecPartialSuccesses;
+  stats.animationLowHeapSkips = themeSpecAnimationLowHeapSkips;
   return stats;
 }
 

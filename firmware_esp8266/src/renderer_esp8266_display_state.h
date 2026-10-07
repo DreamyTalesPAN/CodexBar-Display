@@ -141,6 +141,7 @@ struct ThemeSpecRuntimeStats {
   unsigned long cbaBufferAllocationFailures = 0;
   unsigned long cbaLastPushDurationUs = 0;
   unsigned long partialSuccesses = 0;
+  unsigned long animationLowHeapSkips = 0;
 };
 ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot();
 

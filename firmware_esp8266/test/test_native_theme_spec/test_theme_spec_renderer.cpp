@@ -3260,6 +3260,14 @@ void testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap() {
       ThemeSpecRuntimePolicy::kMinAnimationMaxFreeBlockBytes - 1));
 }
 
+// Mini Classic in WiFi mode (#520): with the old 13 KB decoder held for good,
+// 6456 bytes stayed free with a largest block of 2632. Animating anyway made
+// the WiFi VibeTV restart with "Exception" every 3-20 minutes, so that heap
+// must stay refused; the decoder now lends its work buffers per frame instead.
+void testThemeSpecRuntimePolicyRefusesAnimationBelowWifiReserve() {
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanAnimate(6456, 2632));
+}
+
 void testCbaHeaderParserAcceptsWhitespaceAndExactIntegers() {
   int values[4] = {0, 0, 0, 0};
   TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ParseCbaHeader(" \t52  52\t12 6 \r\n", values, 4));
@@ -3769,6 +3777,7 @@ int main() {
   RUN_TEST(testUnconfirmedThemeSpecNullKeepsCachedLayout);
   RUN_TEST(testConfirmedThemeSpecNullClearsCachedLayout);
   RUN_TEST(testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap);
+  RUN_TEST(testThemeSpecRuntimePolicyRefusesAnimationBelowWifiReserve);
   RUN_TEST(testCbaHeaderParserAcceptsWhitespaceAndExactIntegers);
   RUN_TEST(testCbaHeaderParserRejectsMalformedOrTrailingInput);
   RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
