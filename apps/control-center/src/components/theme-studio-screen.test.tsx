@@ -159,6 +159,18 @@ it("names a failed check instead of asking to save while Save is unavailable too
   expect(screen.queryByText("Save this theme before sending it to VibeTV.")).toBeNull();
 });
 
+// While the library cannot be written, Save is unavailable as well.
+it("names why the theme cannot be saved instead of asking to save it", () => {
+  const locked = "Saved themes contain invalid data. The original data was left unchanged.";
+  renderStudio("blank", { saveBlockedReason: locked });
+
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(button("Save theme").disabled).toBe(true);
+  // Once above the buttons, once as the Library notice.
+  expect(screen.getAllByText(locked)).toHaveLength(2);
+  expect(screen.queryByText("Save this theme before sending it to VibeTV.")).toBeNull();
+});
+
 it("names the VibeTV's own limit when that is what keeps Send unavailable", () => {
   renderStudio("custom", { deviceCapabilities: { supportsStoredThemes: false } });
   expect(button("Send to VibeTV").disabled).toBe(true);
