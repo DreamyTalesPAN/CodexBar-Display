@@ -1,5 +1,14 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { DeviceInfo } from "@/components/control-center-types";
+import {
+  buildThemePack,
+  createBlankThemeSpec,
+  importThemeSpec,
+  validateThemeSpec,
+} from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   activeLiveThemeId,
@@ -96,30 +105,36 @@ describe("resolveActiveThemeUpgrade", () => {
   });
 
   it("resolves the saved live theme while a screensaver is on screen", () => {
+    // Two catalog revisions: in standby revision 1 is a Theme Studio theme.
+    const current = {
+      ...slotTheme,
+      themeRev: 3,
+      themeSpecPath: "/themes/u/synthwa-3-619665.json",
+    };
     const inStandby: DeviceInfo = {
       ...device(true, "/themes/s/night-clock.json"),
       activeTheme: "night-clock",
       standby: {
         active: true,
-        liveThemePath: "/themes/u/synthwa-1-6b39a3.json",
+        liveThemePath: slotTheme.themeSpecPath,
       },
     };
 
-    expect(resolveActiveLiveTheme([screensaver, slotTheme], inStandby)).toBe(
-      slotTheme,
+    expect(resolveActiveLiveTheme([screensaver, current], inStandby)).toBe(
+      current,
     );
     expect(
-      resolveActiveThemeUpgrade([screensaver, slotTheme], inStandby),
+      resolveActiveThemeUpgrade([screensaver, current], inStandby),
     ).toEqual({
       needed: true,
       needsFirmwareCapability: false,
       needsThemeSpec: true,
-      theme: slotTheme,
+      theme: current,
       unresolved: false,
     });
 
     expect(
-      resolveActiveLiveTheme([screensaver, slotTheme], {
+      resolveActiveLiveTheme([screensaver, current], {
         ...inStandby,
         standby: { active: true },
       }),
@@ -290,5 +305,120 @@ describe("versioned path matching against shipped paths", () => {
       } as never);
       expect(found?.themeSpecPath).toBe(path);
     }
+  });
+});
+
+// Found on 2026-10-08: a Theme Studio copy of Mini Classic lands on VibeTV as
+// /themes/u/mini-cl-1-<hash>.json, the catalog theme as mini-cl-9-<hash>.json.
+// During standby the live theme is known by its path alone, the copy was taken
+// for revision 1 of the catalog theme, and the automatic update installed the
+// catalog theme over it and swept the customer's files off the device.
+describe("a Theme Studio theme in the live slot during standby", () => {
+  const dist = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../../dist/theme-packs",
+  );
+  const readJson = (file: string) =>
+    JSON.parse(readFileSync(path.join(dist, file), "utf8"));
+  // The catalog this build ships, not a fixture.
+  const catalog: ThemeProduct[] = readJson("vibetv-theme-packs-v2.json").themes.map(
+    (entry: ThemeProduct & { id: string }) => ({
+      ...slotTheme,
+      ...entry,
+      themeId: entry.id,
+    }),
+  );
+  const liveThemes = catalog.filter((theme) => theme.usage === "live");
+  const inStandby = (liveThemePath: string): DeviceInfo => ({
+    ...device(true, "/themes/s/nc-3-e18e4217.json"),
+    activeTheme: "night-clock",
+    standby: { active: true, liveThemePath },
+  });
+  // What "Edit" on a catalog theme in the Themes library opens: the published
+  // spec under the id `<catalog id>-custom`.
+  const customCopy = (themeId: string) => {
+    const published = readJson(`render/${themeId}.json`);
+    const spec = importThemeSpec(published.spec);
+    spec.themeId = `${themeId}-custom`;
+    return { assets: published.assets, name: `${published.name} Custom`, spec };
+  };
+  // The file name Theme Studio gives it on VibeTV.
+  const customCopyPath = (themeId: string): string => {
+    const copy = customCopy(themeId);
+    return validateThemeSpec(copy.spec, copy.assets).themeSpecPath;
+  };
+
+  it("sends the copy to VibeTV under the catalog theme's file name prefix", () => {
+    const copy = customCopy("mini-classic");
+    const sent = buildThemePack(copy.spec, copy.name, copy.assets);
+
+    expect(sent.manifest.themeSpec.path).toBe(customCopyPath("mini-classic"));
+    expect(sent.manifest.themeSpec.path).toMatch(
+      /^\/themes\/u\/mini-cl-1-[0-9a-f]{6}\.json$/,
+    );
+  });
+
+  it.each(liveThemes.map((theme) => theme.themeId))(
+    "leaves a customised copy of %s alone",
+    (themeId) => {
+      const standby = inStandby(customCopyPath(themeId));
+
+      expect(resolveActiveLiveTheme(catalog, standby)).toBeUndefined();
+      expect(resolveActiveThemeUpgrade(catalog, standby)).toEqual({
+        needed: false,
+        needsFirmwareCapability: false,
+        needsThemeSpec: false,
+        unresolved: false,
+      });
+      // Not named after the catalog theme either.
+      expect(activeLiveThemeId(catalog, standby)).toBe("night-clock");
+    },
+  );
+
+  it("leaves a theme made from scratch alone", () => {
+    const spec = createBlankThemeSpec();
+    const standby = inStandby(
+      buildThemePack(spec, "New Theme").manifest.themeSpec.path,
+    );
+
+    expect(resolveActiveThemeUpgrade(catalog, standby).needed).toBe(false);
+  });
+
+  it("still updates every later revision the catalog has shipped", () => {
+    let checked = 0;
+    for (const theme of liveThemes) {
+      for (const file of readdirSync(path.join(dist, "render", theme.themeId))) {
+        const shipped = `/themes/u/${file}`;
+        if (shipped === theme.themeSpecPath || /-1-[0-9a-f]+\.json$/.test(file)) {
+          continue;
+        }
+        expect(
+          resolveActiveThemeUpgrade(catalog, inStandby(shipped)),
+          shipped,
+        ).toMatchObject({ needed: true, needsThemeSpec: true, theme });
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  // Revision 1 is where every Theme Studio theme lives, so the catalog's own
+  // first revision (public release v1.0.52) waits for VibeTV to wake up: then
+  // it reports the theme by id and is updated as before.
+  it("updates the catalog's own first revision once VibeTV is awake", () => {
+    const firstRevision = "/themes/u/mini-cl-1-e4fe6b.json";
+
+    expect(
+      resolveActiveThemeUpgrade(catalog, inStandby(firstRevision)).needed,
+    ).toBe(false);
+    expect(
+      resolveActiveThemeUpgrade(catalog, {
+        ...device(true, firstRevision),
+        activeTheme: "mini-classic",
+      }),
+    ).toMatchObject({
+      needed: true,
+      theme: { themeId: "mini-classic" },
+    });
   });
 });

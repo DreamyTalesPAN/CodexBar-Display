@@ -20,16 +20,28 @@ export const NO_THEME_UPGRADE: ActiveThemeUpgrade = Object.freeze({
 
 type LiveSlotDevice = Pick<DeviceInfo, "activeTheme" | "standby">;
 
+// Theme Studio saves every theme as revision 1 under the first seven
+// characters of its id, so a customer's copy of Mini Classic lands on VibeTV as
+// mini-cl-1-<hash> beside the catalog's mini-cl-9-<hash>. In standby the path
+// is all VibeTV reports of the live slot, so a revision-1 path only names a
+// catalog theme when it is that theme's exact path; taking it for an old
+// revision installed the catalog theme over the customer's own. The catalog's
+// own first revision is updated once VibeTV is awake and reports its id.
+const FIRST_REVISION_PATH = /-1-[0-9a-f]{6,}\.json$/i;
+
 export function resolveActiveLiveTheme(
   themes: ThemeProduct[],
   device: LiveSlotDevice | null | undefined,
 ): ThemeProduct | undefined {
   if (device?.standby?.active === true) {
     const livePath = device.standby.liveThemePath?.trim();
+    const mayBeCustomerTheme = FIRST_REVISION_PATH.test(livePath ?? "");
     return themes.find(
       (candidate) =>
         candidate.usage !== "screensaver" &&
-        sameVersionedThemePath(candidate.themeSpecPath, livePath),
+        (mayBeCustomerTheme
+          ? candidate.themeSpecPath?.trim() === livePath
+          : sameVersionedThemePath(candidate.themeSpecPath, livePath)),
     );
   }
   return themes.find(
