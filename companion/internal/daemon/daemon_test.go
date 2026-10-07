@@ -5697,6 +5697,70 @@ func TestProviderCollectorCountsTokenGrowthAsWorkOnceTheHistoryHasSettled(t *tes
 	}
 }
 
+func TestProviderCollectorReadsTheTokenHistoryInAgainAfterAProviderWasOff(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	var on atomic.Bool
+	on.Store(true)
+	var total atomic.Int64
+	total.Store(1000)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			if !on.Load() {
+				return nil, nil
+			}
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 20, 26, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: on.Load()}}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			tokens := total.Load()
+			return map[string]codexbar.ProviderTokenStats{"claude": {
+				SessionTokens: tokens, WeekTokens: tokens, TotalTokens: tokens, UpdatedAt: now,
+				Cost: &codexbar.ProviderCostUsage{
+					Daily: []codexbar.ProviderCostDay{{Day: now.Format("2006-01-02"), TotalTokens: tokens}},
+				},
+			}}, true
+		},
+	}
+	growing := func() bool {
+		t.Helper()
+		collector.collectTokenStatsOnce(context.Background())
+		frames := collector.providerFrames(now)
+		if len(frames) != 1 {
+			t.Fatalf("expected one provider, got %#v", frames)
+		}
+		return frames[0].TokenHistoryGrowing
+	}
+
+	collector.collectOnce(context.Background())
+	if growing(); growing() {
+		t.Fatal("two scans that agree must settle the history")
+	}
+	on.Store(false)
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(now); len(frames) != 0 {
+		t.Fatalf("a provider that was switched off is still listed: %#v", frames)
+	}
+	// Back on, with a history that differs from the one read before.
+	on.Store(true)
+	total.Store(5000)
+	collector.collectOnce(context.Background())
+	if !growing() {
+		t.Fatal("the first scan after switching a provider on again counted as settled history")
+	}
+	if growing() {
+		t.Fatal("two scans that agree must settle the history again")
+	}
+}
+
 func TestProviderCollectorFailedTokenScanUsesPostCompletionCooldown(t *testing.T) {
 	prepareFastTestEnv(t)
 

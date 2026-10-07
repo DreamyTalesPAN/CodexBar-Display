@@ -559,6 +559,8 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 			continue
 		}
 		delete(c.providers, key)
+		// Switched on again, its history is read in from the start.
+		delete(c.tokenHistoryRead, key)
 		updated = true
 	}
 	return updated
