@@ -460,6 +460,8 @@ describe("UsageScreen", () => {
     expect(html).toContain("Weekly: 57% used");
     expect(html).not.toContain("Weekly: ??");
     expect(html).not.toContain("Session: 0%");
+    // A screen reader hears the same: a percentage only for the lane that has one.
+    expect(html.match(/aria-valuenow="\d+"/g)).toEqual(['aria-valuenow="57"']);
   });
 
   it("has no accessibility violations with usage, unavailable limits, no provider and while refreshing", async () => {

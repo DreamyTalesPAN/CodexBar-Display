@@ -527,7 +527,7 @@ function UsageBar({
             : `${label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
-        value={unavailable ? 0 : percent}
+        value={unavailable ? null : percent}
       />
       {unavailable ? (
         <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
@@ -628,7 +628,7 @@ function UsageWindowBar({
             : `${window.label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
-        value={unavailable ? 0 : percent}
+        value={unavailable ? null : percent}
       />
       {unavailable ? (
         <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>

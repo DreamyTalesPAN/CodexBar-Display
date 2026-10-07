@@ -440,6 +440,18 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     expect(html).not.toContain("Mac");
   });
 
+  it("names the update progress bar and says how far it is", () => {
+    render(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        updateStatus={{ phase: "installing", startedAt: "2026-08-09T13:01:00Z", progress: 40, logs: [] }}
+      />,
+    );
+    expect(
+      screen.getByRole("progressbar", { name: "Updating VibeTV" }).getAttribute("aria-valuenow"),
+    ).toBe("40");
+  });
+
   it.each([
     ["offered", undefined],
     ["running", { phase: "installing" as const, startedAt: "2026-08-09T13:01:00Z", progress: 40, logs: [] }],
