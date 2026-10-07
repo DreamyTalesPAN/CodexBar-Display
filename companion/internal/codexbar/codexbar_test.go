@@ -656,6 +656,30 @@ func TestProviderSelectorSwitchesOnUsageDelta(t *testing.T) {
 	}
 }
 
+func TestProviderSelectorFirstReadingAfterUnavailableUsageIsNotActivity(t *testing.T) {
+	selector := newSelectorWithoutLocalActivity()
+
+	// App start: the provider is known but its limits have not been read yet.
+	selector.Select([]ParsedFrame{{
+		Provider: "claude",
+		Stale:    true,
+		Frame:    protocol.Frame{Provider: "claude", UsageUnavailable: true},
+	}})
+
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{testParsedFrame("claude", 27, 27, 15000)})
+	if !ok {
+		t.Fatal("expected a selected provider")
+	}
+	if decision.ActivitySignalReason == SelectionReasonUsageDelta {
+		t.Fatalf("the first real reading after unavailable usage counted as activity: %#v", decision)
+	}
+
+	decision, _ = selector.SelectWithDecision([]ParsedFrame{testParsedFrame("claude", 28, 27, 14940)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("a real rise after that must still count as activity: %#v", decision)
+	}
+}
+
 func TestProviderSelectorSticksWithoutNewActivity(t *testing.T) {
 	selector := newSelectorWithoutLocalActivity()
 

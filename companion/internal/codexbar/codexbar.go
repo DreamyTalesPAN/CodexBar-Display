@@ -1534,6 +1534,9 @@ type providerSnapshot struct {
 	sessionTokens int64
 	weekTokens    int64
 	totalTokens   int64
+	// usageUnavailable marks a reading without percentages. They read as
+	// zero, so the first real reading after it is not a rise.
+	usageUnavailable bool
 }
 
 type activityScore struct {
@@ -1830,11 +1833,12 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 	next := make(map[string]providerSnapshot, len(all))
 	for _, p := range all {
 		next[providerKey(p)] = providerSnapshot{
-			session:       p.Frame.Session,
-			weekly:        p.Frame.Weekly,
-			sessionTokens: p.Frame.SessionTokens,
-			weekTokens:    p.Frame.WeekTokens,
-			totalTokens:   p.Frame.TotalTokens,
+			session:          p.Frame.Session,
+			weekly:           p.Frame.Weekly,
+			sessionTokens:    p.Frame.SessionTokens,
+			weekTokens:       p.Frame.WeekTokens,
+			totalTokens:      p.Frame.TotalTokens,
+			usageUnavailable: !providerUsageAvailable(p),
 		}
 	}
 	s.snapshots = next
@@ -2533,7 +2537,7 @@ func computeActivityScore(prev providerSnapshot, cur protocol.Frame) activitySco
 		return tokenScore
 	}
 
-	if comparableTokenStats(prev, cur) {
+	if comparableTokenStats(prev, cur) || prev.usageUnavailable {
 		return score
 	}
 
