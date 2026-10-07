@@ -1,8 +1,9 @@
 # README image sources
 
 Updated for issue #431 on 2026-09-08; Mini Classic and Claude Creature were
-recaptured for issue #258 on 2026-09-21. All six live themes and three
-screensavers use the same normal Control Center preview, without product mockups.
+recaptured for issue #258 on 2026-09-21; Token Counter was added for issue #202
+on 2026-10-07. All seven live themes and three screensavers use the same normal
+Control Center preview, without product mockups.
 
 Captured from `ThemeSpecPreview` at commit `c9192e6`, using unmodified current
 render packs, `THEME_CATALOG_PREVIEW_FRAME`, and `animate={false}`. The 240 × 240
@@ -19,6 +20,7 @@ These are static example states, not live device readings.
 | [Reset Countdown](vibetv-screensaver-reset-countdown.png) | [render pack](../../dist/theme-packs/render/reset-countdown/rcf-6-03e818f0.json) | `/themes/s/rcf-6-03e818f0.json` | `6db1710c` |
 | [Synthwave](vibetv-theme-synthwave.png) | [render pack](../../dist/theme-packs/render/synthwave/synthwa-5-0f760a.json) | `/themes/u/synthwa-5-0f760a.json` | `0f760a70` |
 | [Tiny Office](vibetv-theme-tiny-office.png) | [render pack](../../dist/theme-packs/render/tiny-office/to-7-d7799cec.json) | `/themes/u/to-7-d7799cec.json` | `6b398ec9` |
+| [Token Counter](vibetv-theme-token-counter.png) | [render pack](../../dist/theme-packs/render/token-counter/tc-2-d5ddb991.json) | `/themes/u/tc-2-d5ddb991.json` | `cdf665b8` |
 | [Token Fire](vibetv-screensaver-token-fire.png) | [render pack](../../dist/theme-packs/render/token-fire/tf-5-9aeed240.json) | `/themes/s/tf-5-9aeed240.json` | `f589d51e` |
 
 ## Hero image
