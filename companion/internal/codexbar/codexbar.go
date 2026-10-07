@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
@@ -613,18 +614,85 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
+// reuseEngineAnswers is true on Windows. There every poll started a new CLI
+// process only to hear the CLI's version again (#555). That answer cannot
+// change unless the CLI file does, so it is kept for as long as engineStamp
+// of the file stays the same. The Mac is left as it is: its app-managed CLI
+// is not run for its version at all (installedVersion). A variable so the
+// Windows path is testable on the Mac.
+var reuseEngineAnswers = runtime.GOOS == "windows"
+
+// engineStampSettle is how long a file must have been left alone before an
+// answer read from it is kept. A second write inside one step of the file
+// system's clock (2 s on FAT) leaves size and modification time as they were.
+const engineStampSettle = 3 * time.Second
+
+// engineStamp names the state of the files an answer depends on: path, size
+// and modification time of each. It is empty, and nothing is kept, where
+// answers are not reused, when a file cannot be read, and while a file is
+// younger than engineStampSettle. Take it before asking the CLI: a file that
+// changes during the call then no longer matches the answer.
+func engineStamp(paths ...string) string {
+	if !reuseEngineAnswers {
+		return ""
+	}
+	var stamp strings.Builder
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil || time.Since(info.ModTime()) < engineStampSettle {
+			return ""
+		}
+		fmt.Fprintf(&stamp, "%s\x00%d\x00%d\x00", path, info.Size(), info.ModTime().UnixNano())
+	}
+	return stamp.String()
+}
+
+// engineAnswer is the CLI's last answer to one question and the engineStamp
+// it was read under.
+type engineAnswer[T any] struct {
+	mu    sync.Mutex
+	stamp string
+	value T
+}
+
+func (a *engineAnswer[T]) load(stamp string) (T, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.value, stamp != "" && stamp == a.stamp
+}
+
+// store keeps value for stamp. An empty stamp forgets the answer.
+func (a *engineAnswer[T]) store(stamp string, value T) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.stamp, a.value = stamp, value
+}
+
+var engineVersion engineAnswer[looseVersion]
+
 // installedVersion is the CLI's version. The app-managed copy is not run for
 // it: its path is keyed by the pinned version, and that version was checked
 // against the binary itself when the copy was installed. Running it again on
 // every probe and settings read hit the 2 s deadline on a fresh Mac, which
 // reported a broken engine and sent the app to reinstall it (#508).
+//
+// Windows has no pinned copy: its CLI sits next to the Companion. It is run
+// once per state of that file (reuseEngineAnswers).
 func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 	if pinned := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); pinned != "" {
 		if managed, err := findAppManagedBinary(pinned); err == nil && managed == strings.TrimSpace(bin) {
 			return parseLooseVersion(pinned)
 		}
 	}
-	return reportedVersion(ctx, bin, versionCheckTimeout)
+	stamp := engineStamp(strings.TrimSpace(bin))
+	if version, ok := engineVersion.load(stamp); ok {
+		return version, nil
+	}
+	version, err := reportedVersion(ctx, bin, versionCheckTimeout)
+	if err == nil {
+		engineVersion.store(stamp, version)
+	}
+	return version, err
 }
 
 // reportedVersion runs the CLI and reads the version it reports.
