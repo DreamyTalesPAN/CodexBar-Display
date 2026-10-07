@@ -64,6 +64,7 @@ function SpriteHarness({ type }: { type: "gif" | "sprite" }) {
 it("makes the picked sprite color transparent", () => {
   render(createElement(SpriteHarness, { type: "sprite" }));
   const swatches = () => screen.getByRole("group", { name: "Transparent color" });
+  expect(swatches().textContent).toContain("On VibeTV, transparent areas show the theme background.");
   expect(swatches().querySelectorAll("[aria-pressed]")).toHaveLength(3);
   expect(screen.queryByRole("button", { name: "Make transparent" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "#000000" }));

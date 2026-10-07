@@ -400,6 +400,9 @@ function SpriteTransparentColor({
           Make transparent
         </Button>
       ) : null}
+      <p className="text-xs text-muted-foreground">
+        On VibeTV, transparent areas show the theme background.
+      </p>
     </div>
   );
 }
