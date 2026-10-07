@@ -267,7 +267,7 @@ bool hasThemeSpecHeap(bool animation) {
   const uint32_t freeHeap = ESP.getFreeHeap();
   const uint32_t maxFreeBlock = ESP.getMaxFreeBlockSize();
   return animation
-             ? ThemeSpecRuntimePolicy::CanAnimate(freeHeap, maxFreeBlock, GifCore().DecoderBytes())
+             ? ThemeSpecRuntimePolicy::CanAnimate(freeHeap, maxFreeBlock)
              : ThemeSpecRuntimePolicy::CanRender(freeHeap, maxFreeBlock);
 }
 

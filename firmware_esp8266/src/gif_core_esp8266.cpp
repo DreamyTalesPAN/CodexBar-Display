@@ -6,14 +6,43 @@
 #include "gif_asset_validator_file.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace codexbar_display {
 namespace esp8266 {
 
-static_assert(sizeof(AnimatedGIF) <= 15U * 1024U, "AnimatedGIF decoder exceeds the ESP8266 heap profile");
+static_assert(sizeof(AnimatedGIF) <= 1536U, "AnimatedGIF decoder state exceeds the ESP8266 heap profile");
+static_assert(GIF_WORKSPACE_SIZE <= 12U * 1024U, "AnimatedGIF workspace exceeds the ESP8266 heap profile");
 
 namespace {
+
+// Lends the decoder its work buffers for one call. A GIF then holds only its
+// small decoder state between frames, so the heap the WiFi stack needs stays
+// free while it animates (#520). The decode itself never yields, so nothing
+// else runs while the buffers are lent.
+class LentWorkspace {
+ public:
+  explicit LentWorkspace(AnimatedGIF* decoder)
+      : decoder_(decoder), bytes_(static_cast<uint8_t*>(malloc(GIF_WORKSPACE_SIZE))) {
+    if (decoder_ != nullptr && bytes_ != nullptr) {
+      decoder_->setWorkspace(bytes_);
+    }
+  }
+  ~LentWorkspace() {
+    if (decoder_ != nullptr) {
+      decoder_->setWorkspace(nullptr);
+    }
+    free(bytes_);
+  }
+  LentWorkspace(const LentWorkspace&) = delete;
+  LentWorkspace& operator=(const LentWorkspace&) = delete;
+  bool ok() const { return decoder_ != nullptr && bytes_ != nullptr; }
+
+ private:
+  AnimatedGIF* decoder_;
+  uint8_t* bytes_;
+};
 
 }  // namespace
 
@@ -233,6 +262,12 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   }
 
   decoder_->begin(BIG_ENDIAN_PIXELS);
+  LentWorkspace workspace(decoder_);
+  if (!workspace.ok()) {
+    NoteFailure(request.assetPath, "decoder_alloc");
+    Stop();
+    return false;
+  }
   if (!decoder_->open(
           request.assetPath,
           OpenCallback,
@@ -260,6 +295,15 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
   tft_ = &tft;
   const unsigned long frameStartMs = now;
   int delayMs = 0;
+
+  LentWorkspace workspace(decoder_);
+  if (decoder_ != nullptr && !workspace.ok()) {
+    // No block for the work buffers right now: skip this frame and retry on
+    // the next tick instead of counting it as a playback failure. /health
+    // reports it with the other animation low-heap skips.
+    ++workspaceSkips_;
+    return true;
+  }
 
   bool played = false;
   {
@@ -312,6 +356,7 @@ GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
   snapshot.decoderAllocated = decoder_ != nullptr;
   snapshot.decoderOpen = decoderOpen_;
   snapshot.framesPlayed = framesPlayed_;
+  snapshot.workspaceSkips = workspaceSkips_;
   snapshot.lastErrorStage = lastErrorStage_;
   return snapshot;
 }
