@@ -1208,6 +1208,30 @@ func TestRunCycleWithDepsUsageDisplayPreferenceOverridesCodexBar(t *testing.T) {
 	}
 }
 
+// A theme can bind the percentage of a cross-provider row. With Remaining
+// chosen it has to read like the windows of the same frame.
+func TestApplyUsageBarsPreferenceShowsProviderSlotsTheSameWayAsTheWindows(t *testing.T) {
+	frame := protocol.Frame{
+		V:             protocol.ProtocolVersionV2,
+		Provider:      "claude",
+		UsageWindows:  []protocol.UsageSlot{{ID: "session", Label: "Session", Percent: 30, ResetSec: 600}},
+		ProviderSlots: []protocol.UsageSlot{{ID: "claude", Label: "Claude", Percent: 30, ResetSec: 600}, {ID: "codex", Label: "Codex", Percent: 7, ResetSec: 900}},
+	}.Normalize()
+
+	remaining := applyUsageBarsPreference(frame.Normalize(), false)
+	if remaining.UsageMode != "remaining" || remaining.UsageWindows[0].Percent != 70 ||
+		remaining.ProviderSlots[0].Percent != 70 || remaining.ProviderSlots[1].Percent != 93 {
+		t.Fatalf("remaining must flip provider rows together with the windows: %#v", remaining)
+	}
+	used := applyUsageBarsPreference(frame.Normalize(), true)
+	if used.UsageMode != "used" || used.ProviderSlots[0].Percent != 30 || used.ProviderSlots[1].Percent != 7 {
+		t.Fatalf("used must leave provider rows as collected: %#v", used)
+	}
+	if frame.ProviderSlots[0].Percent != 30 {
+		t.Fatalf("the collected frame was changed: %#v", frame.ProviderSlots)
+	}
+}
+
 func TestRunCycleWithDepsUsesConfiguredUsageModeWhenShowingUsed(t *testing.T) {
 	prepareFastTestEnv(t)
 

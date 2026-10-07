@@ -2225,6 +2225,12 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 		frame.UsageMode = "used"
 		return frame
 	}
+	// The cross-provider rows carry a percentage of their own, which a theme
+	// can bind; it has to read the same way as everything else in a frame
+	// that says "remaining", also when the shown provider has no usage.
+	for i := range frame.ProviderSlots {
+		frame.ProviderSlots[i].Percent = 100 - clampPercent(frame.ProviderSlots[i].Percent)
+	}
 	if frame.UsageUnavailable {
 		frame.UsageMode = "remaining"
 		return frame
