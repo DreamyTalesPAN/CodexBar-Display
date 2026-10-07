@@ -304,7 +304,12 @@ export function SettingsScreen({
                 preview.providerLabel ===
                 displayable.find(
                   (item) =>
-                    item.providerId === providerPicker.display?.providerIds[0],
+                    // While Manual is chosen, the provider VibeTV is pinned
+                    // to; otherwise the one a click on Manual would pin.
+                    item.providerId ===
+                    (displayMode === "fixed"
+                      ? currentProviderId
+                      : manualProviderId),
                 )?.label,
             ) ?? null
           }

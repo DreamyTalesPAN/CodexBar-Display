@@ -7,6 +7,7 @@ import type {
 } from "./control-center-types";
 import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
+import type { SetupDisplayModePreview } from "./setup/setup-display-mode-screen";
 
 const providerPicker: ProviderPickerProps = {
   usage: { providers: ["codex", "claude", "cursor"].map((id) => ({
@@ -108,10 +109,11 @@ function render(
   connectionMode: "cable" | "wifi" = "cable",
   windowsHost = false,
   displayPreferences: PreferenceDescriptor[] = [],
+  automaticPreviews: SetupDisplayModePreview[] = [],
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
-      automaticPreviews={[]}
+      automaticPreviews={automaticPreviews}
       brightness={brightness}
       busyAction={null}
       connectionMode={connectionMode}
@@ -537,6 +539,39 @@ describe("SettingsScreen standby controls", () => {
 
     expect(displayMode("fixed", [rotation])).not.toContain("Switch providers");
     expect(displayMode("automatic", [])).not.toContain("Switch providers");
+  });
+
+  // Windows walk-through of 2026-10-08: with Automatic chosen and a signed-out
+  // provider first in the list, the Manual card read "No usage yet" although a
+  // click on it showed Claude.
+  it("previews on the Manual card the provider a click on Manual would show", () => {
+    const signedOut: ProviderItem = {
+      ...provider("codex", "Codex", true),
+      health: { message: "Authentication required.", service: "operational", state: "auth_required" },
+    };
+    const manualPanel = (mode: "automatic" | "fixed", providerIds: string[]) => {
+      const panel = render(
+        standbyDevice,
+        savedStandby,
+        {
+          ...providerPicker,
+          display: { mode, providerIds, configured: true, valid: true },
+          items: [signedOut, provider("claude", "Claude", true)],
+        },
+        70, "cable", false, [],
+        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
+      ).split('data-slot="display-mode-preview"')[2] ?? "";
+      return panel.slice(0, panel.indexOf(">Manual<"));
+    };
+
+    const automatic = manualPanel("automatic", ["codex", "claude"]);
+    expect(automatic).toContain("Claude");
+    expect(automatic).toContain("12");
+    expect(automatic).not.toContain("No usage yet");
+
+    // Pinned to a provider that shows nothing, the card keeps saying so.
+    expect(manualPanel("fixed", ["codex"])).toContain("No usage yet");
+    expect(manualPanel("fixed", ["claude"])).toContain("Claude");
   });
 
   it("says why Display mode switched to Automatic", () => {
