@@ -406,6 +406,10 @@ type healthProbeFlight struct {
 
 type configuredDeviceConnection struct {
 	lastSeenAt time.Time
+	// The theme path and render error of the last health reading that
+	// themeCannotBeDrawn named, and when that run of readings began.
+	themeNotDrawn   string
+	themeNotDrawnAt time.Time
 }
 
 func (e *repairStageError) Error() string {
@@ -1762,6 +1766,8 @@ func (s *Server) withConfiguredConnectionState(
 		s.connectionStates[key] = state
 	}
 
+	themeNotDrawn := state.themeStaysUndrawn(device.Display, now)
+
 	// Connectivity must stay evidence based. A healthy display stream is real
 	// evidence (the device acknowledged a frame inside the bounded ready-age
 	// window). A provider-setup stream entry alone is not: it only proves the
@@ -1810,7 +1816,7 @@ func (s *Server) withConfiguredConnectionState(
 				device.ConnectionState = deviceConnectionSetup
 				return device
 			}
-			if themeCannotBeDrawn(spec) &&
+			if themeNotDrawn &&
 				(device.Stream == nil || device.Stream.ErrorCode != "provider_setup_required") {
 				device.ConnectionState = deviceConnectionRenderFailed
 				return device
@@ -1832,8 +1838,36 @@ const deviceConnectionNoProvider = "provider_setup_required"
 // the AI provider and the firmware.
 const deviceConnectionRenderFailed = "display_render_failed"
 
+// themeNotDrawnConfirmTime is how far apart two health readings must be to
+// count as two. Status is polled every 5 s and a health answer is reused for
+// deviceProbeCacheTime, so the app's next poll confirms a reading and a second
+// reader of the same answer does not.
+const themeNotDrawnConfirmTime = 3 * time.Second
+
+// themeStaysUndrawn reports a theme that themeCannotBeDrawn named on two
+// health readings in a row, for the same theme path and render error (issue
+// #530). One reading can be a single failed buffer allocation that the next
+// animation tick repairs, and the firmware's failure counters only ever grow.
+// A reading that can be drawn, another theme path or another render error
+// starts over; another VibeTV has its own state. No reading changes nothing.
+func (c *configuredDeviceConnection) themeStaysUndrawn(display *deviceDisplayInfo, now time.Time) bool {
+	if display == nil || display.ThemeSpec == nil {
+		return false
+	}
+	spec := display.ThemeSpec
+	if !themeCannotBeDrawn(spec) {
+		c.themeNotDrawn = ""
+		return false
+	}
+	if reading := spec.Path + "\n" + spec.RenderError; c.themeNotDrawn != reading {
+		c.themeNotDrawn, c.themeNotDrawnAt = reading, now
+		return false
+	}
+	return now.Sub(c.themeNotDrawnAt) >= themeNotDrawnConfirmTime
+}
+
 // renderOk=false also covers states the firmware leaves on its own, and one
-// health reading has to tell them apart without remembering the last one.
+// health reading has to tell them apart.
 //   - "low_heap" ("low_heap_full_render" on older firmware): a full redraw
 //     found no heap and retries after 750 ms. One
 //     reading cannot tell a single miss from a theme that never fits, so it is
@@ -1868,7 +1902,11 @@ func (s *Server) rememberConfiguredDeviceSeen(cfg runtimeconfig.Config) {
 	if s.connectionStates == nil {
 		s.connectionStates = make(map[string]*configuredDeviceConnection)
 	}
-	s.connectionStates[configuredDeviceKey(cfg)] = &configuredDeviceConnection{lastSeenAt: s.currentTime()}
+	key := configuredDeviceKey(cfg)
+	if s.connectionStates[key] == nil {
+		s.connectionStates[key] = &configuredDeviceConnection{}
+	}
+	s.connectionStates[key].lastSeenAt = s.currentTime()
 }
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {

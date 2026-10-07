@@ -5747,15 +5747,60 @@ func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.
 
 // Issue #498: a theme that fails to render (here Claude Creature on the WiFi
 // heap) is a theme problem. The VibeTV is connected and the provider is fine.
-func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
-	// The VibeTV never gets a frame buffer for the animation: it holds none.
-	renderHealth := `"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":0`
+// Issue #530: a status poll that lands between one failed animation buffer
+// allocation and the next animation tick reads cbaBufferBytes 0 for a theme
+// that is fine. That one reading must not show "Theme not shown".
+func TestStatusDoesNotNameThemeProblemFromOneHealthReading(t *testing.T) {
+	var healthReads atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.45","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
 		case "/health":
-			_, _ = fmt.Fprintf(w, `{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude--9-5c74ca.json","renderOk":false,%s}},"render":{"fullCount":4,"partialCount":9,"lastKind":"theme_spec_usage"}}`, renderHealth)
+			render := `"renderOk":true,"cbaBufferBytes":28800`
+			if healthReads.Add(1) == 1 {
+				render = `"renderOk":false,"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":0`
+			}
+			_, _ = fmt.Fprintf(w, `{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude--9-5c74ca.json",%s}}}`, render)
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "vibetv-canary"})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Healthy: true, Target: device.URL, LastTarget: device.URL}
+	}
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	for poll := 1; poll <= 3; poll++ {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v body=%s", err, rec.Body.String())
+		}
+		if got.Device.ConnectionState == deviceConnectionRenderFailed {
+			t.Fatalf("poll %d named a theme problem from one failing reading: %+v", poll, got.Device)
+		}
+		now = now.Add(5 * time.Second)
+	}
+	if healthReads.Load() != 3 {
+		t.Fatalf("expected one health reading per poll, got %d", healthReads.Load())
+	}
+}
+
+func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
+	// The VibeTV never gets a frame buffer for the animation: it holds none.
+	const noBuffer = `"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":0`
+	renderHealth := noBuffer
+	themePath := "/themes/u/claude--9-5c74ca.json"
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.45","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = fmt.Fprintf(w, `{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":%q,"renderOk":false,%s}},"render":{"fullCount":4,"partialCount":9,"lastKind":"theme_spec_usage"}}`, themePath, renderHealth)
 		default:
 			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 		}
@@ -5769,6 +5814,8 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 	})
 	stream := displayStreamInfo{Running: true, Healthy: true, Target: device.URL, LastTarget: device.URL}
 	server.streamStatus = func(context.Context, string) displayStreamInfo { return stream }
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
 	status := func() deviceInfo {
 		t.Helper()
 		rec := httptest.NewRecorder()
@@ -5779,12 +5826,53 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 		}
 		return got.Device
 	}
+	// The app's next status poll, 5 s later.
+	nextPoll := func() deviceInfo {
+		t.Helper()
+		now = now.Add(5 * time.Second)
+		return status()
+	}
 
+	// Issue #530: one reading can be a single failed buffer allocation that
+	// the next animation tick repairs. Only the same reading on the next poll
+	// names the theme.
 	got := status()
 	if !got.Active || !got.Connected || !got.Paired || got.Ready {
 		t.Fatalf("render failure must leave the VibeTV connected and not ready: %+v", got)
 	}
-	if got.ConnectionState != deviceConnectionRenderFailed {
+	if got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("a single failing reading must not name a theme problem")
+	}
+	now = now.Add(themeNotDrawnConfirmTime - time.Millisecond)
+	if got := status(); got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("a second look inside the same poll window is not a second reading")
+	}
+	if got := nextPoll(); got.ConnectionState != deviceConnectionRenderFailed || !got.Connected || got.Ready {
+		t.Fatalf("the same failing reading on the next poll is a theme problem: %+v", got)
+	}
+
+	// A reading that can be drawn, another theme path and another VibeTV each
+	// start over.
+	renderHealth = `"renderError":"low_heap_cba_buffer","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":28800`
+	if got := nextPoll(); got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("a VibeTV that holds a frame buffer is drawing again")
+	}
+	renderHealth = noBuffer
+	if got := nextPoll(); got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("the first failing reading after a drawable one must not name a theme problem")
+	}
+	themePath = "/themes/u/other-theme.json"
+	if got := nextPoll(); got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("the first failing reading of another theme must not name a theme problem")
+	}
+	if got := nextPoll(); got.ConnectionState != deviceConnectionRenderFailed {
+		t.Fatalf("the other theme failed twice in a row, got %q", got.ConnectionState)
+	}
+	server.clearConfiguredDeviceState()
+	if got := nextPoll(); got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("a newly selected VibeTV starts without a remembered reading")
+	}
+	if got := nextPoll(); got.ConnectionState != deviceConnectionRenderFailed {
 		t.Fatalf("connectionState=%q, want %q", got.ConnectionState, deviceConnectionRenderFailed)
 	}
 
@@ -5799,13 +5887,16 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 		`"renderError":"parse_fail"`,
 	} {
 		renderHealth = recovering
-		if got := status(); got.ConnectionState == deviceConnectionRenderFailed || !got.Connected || got.Ready {
-			t.Fatalf("%s: a recovering render must not be named a theme problem: %+v", recovering, got)
+		for range 2 {
+			if got := nextPoll(); got.ConnectionState == deviceConnectionRenderFailed || !got.Connected || got.Ready {
+				t.Fatalf("%s: a recovering render must not be named a theme problem: %+v", recovering, got)
+			}
 		}
 	}
 	// A spec or asset the VibeTV cannot use stays named.
 	renderHealth = `"renderError":"cba_render_failed","renderErrorAsset":"/themes/u/cld-i.cba","cbaBufferBytes":28800`
-	if got := status(); got.ConnectionState != deviceConnectionRenderFailed {
+	nextPoll()
+	if got := nextPoll(); got.ConnectionState != deviceConnectionRenderFailed {
 		t.Fatalf("a broken asset is a theme problem, got %q", got.ConnectionState)
 	}
 
