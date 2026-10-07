@@ -13,7 +13,7 @@ import {
   Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -939,6 +939,8 @@ function ThemeListItem({
         })
       : `Install ${item.title}`;
   const loadingEdit = loadingEditorThemeId === item.themeId;
+  // A disabled button's tooltip is never read out, so the reason is also text.
+  const installReasonId = useId();
 
   return (
     <Item
@@ -983,6 +985,7 @@ function ThemeListItem({
           <span>{loadingEdit ? "Opening" : "Edit"}</span>
         </Button>
         <Button
+          aria-describedby={disabled ? installReasonId : undefined}
           disabled={disabled}
           onClick={() => {
             if (!blocker) {
@@ -1002,6 +1005,9 @@ function ThemeListItem({
             disabled,
           })}
         </Button>
+        {disabled ? (
+          <span className="sr-only" id={installReasonId}>{title}</span>
+        ) : null}
         {item.kind === "custom" ? (
           <Button
             aria-label={`Delete ${item.title}`}
@@ -1073,7 +1079,7 @@ function InlineInstallProgress({
   const previousSteps = complete ? [] : status.logs.slice(-4, -1);
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
-      <Progress className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
+      <Progress aria-label={complete ? "Installed" : "Installing"} className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
         <AlertTitle>{complete ? "Installed" : "Installing"}</AlertTitle>

@@ -514,7 +514,7 @@ function InlineUpdateProgress({
         "Preparing VibeTV update.";
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
-      <Progress value={progress} />
+      <Progress aria-label={title} value={progress} />
       <Alert>
         {complete || attention ? (
           <ShieldCheck aria-hidden />

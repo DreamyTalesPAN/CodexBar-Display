@@ -142,7 +142,10 @@ export function SetupProviderRow({
       </ItemContent>
       <ItemActions>
         {variant === "checking" ? (
-          <Spinner />
+          <>
+            <span className="sr-only">Checking {label}…</span>
+            <Spinner />
+          </>
         ) : variant === "toggle" ? null : (
           <>
             <SetupProviderRowAction

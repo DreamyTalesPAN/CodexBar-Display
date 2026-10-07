@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -23,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/companionapi"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
@@ -37,6 +40,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -646,7 +650,22 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Everything this run reports to the support timeline carries one ID, so
+	// a restart is visible as a new group of events.
+	runID := make([]byte, 8)
+	_, _ = rand.Read(runID)
+	record := func(event timeline.Event) {
+		event.CorrelationID = hex.EncodeToString(runID)
+		server.Timeline().Record(time.Now(), event)
+	}
+	record(timeline.Event{Component: "companion", State: "started"})
+	record(timeline.Event{Component: "companion_version", State: buildinfo.NormalizedVersion()})
+	// The service manager ends the runtime by killing it, which records
+	// nothing; only a runtime that ends by itself reaches this line.
+	defer record(timeline.Event{Component: "companion", State: "stopped"})
+
 	daemonOpts := opts.Daemon
+	daemonOpts.RecordEvent = record
 	daemonOpts.Wake = wake
 	daemonOpts.RenderWake = renderWake
 	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused

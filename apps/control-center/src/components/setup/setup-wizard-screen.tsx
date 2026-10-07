@@ -2,7 +2,7 @@
 
 import type { SupportDiagnostics } from "../control-center-types";
 import { ChevronLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SetupHelpMenu } from "./setup-help-menu";
@@ -84,12 +84,23 @@ export function SetupWizardTitle({
   children: ReactNode;
   className?: string;
 }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  // Continuing unmounts the button that was pressed and focus falls back to
+  // the window. The new step's title takes it, so the keyboard and VoiceOver
+  // go on from the step instead of from the top.
+  useEffect(() => {
+    if (document.activeElement === document.body) {
+      ref.current?.focus({ preventScroll: true });
+    }
+  }, []);
   return (
     <h1
       className={cn(
-        "mt-2 text-[32px] leading-tight font-black tracking-[-0.04em]",
+        "mt-2 text-[32px] leading-tight font-black tracking-[-0.04em] outline-none",
         className,
       )}
+      ref={ref}
+      tabIndex={-1}
     >
       {children}
     </h1>

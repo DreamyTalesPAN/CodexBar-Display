@@ -159,7 +159,7 @@ export function SetupDeviceNotFoundDialog({
       }}
       title="We couldn't find your VibeTV"
     >
-      <ItemGroup className="gap-3">
+      <div className="flex w-full flex-col gap-3">
         <Item asChild className={notFoundChoiceClass} variant="outline">
           <button
             className="text-left"
@@ -197,7 +197,7 @@ export function SetupDeviceNotFoundDialog({
             </ItemContent>
           </button>
         </Item>
-      </ItemGroup>
+      </div>
     </SetupDialog>
   );
 }
