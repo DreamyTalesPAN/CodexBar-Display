@@ -260,7 +260,7 @@ func TestProviderInventoryAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 		}},
 		// Win-CodexBar answers with its default switches and no error when it
 		// cannot read its settings. Such an answer must not stay for good.
-		{name: "an answer kept for five minutes", aged: inventoryMaxAge},
+		{name: "an answer kept for its longest time", aged: inventoryMaxAge},
 		{name: "the Mac", prepare: func(*testing.T, string) { reuseEngineAnswers = false }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

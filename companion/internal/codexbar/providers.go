@@ -72,8 +72,9 @@ var engineInventory engineAnswer[[]byte]
 // 0.60.3 answers with its default switches, Claude and Codex on, and exit
 // code 0 whenever it cannot read or decrypt settings.json. One answer can
 // therefore be wrong while the file is untouched; asked again, the CLI
-// corrects itself.
-const inventoryMaxAge = 5 * time.Minute
+// corrects itself. A minute keeps that as short as the engine's own refresh
+// and still takes away most of the starts: the five readers asked every 30 s.
+const inventoryMaxAge = time.Minute
 
 // readProviderInventory runs the inventory command with the caller's runner.
 // Where engine answers are reused (Windows, reuseEngineAnswers) it returns
