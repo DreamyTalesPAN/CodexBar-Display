@@ -475,4 +475,82 @@ describe("UpdatesScreen Mac-App-first gate", () => {
       ),
     );
   });
+
+  // Issue #551: "Check for updates" answered within a second and left the
+  // page exactly as it was, so nothing showed that a check had happened.
+  describe("last checked", () => {
+    const checked = {
+      companionStatus: "online" as const,
+      companionRelease: {
+        checkedAt: "2026-10-07T06:12:04Z",
+        status: "available" as const,
+        latestVersion: "1.0.52",
+        updateAvailable: false,
+        message: "Mac App is up to date.",
+      },
+      device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" },
+      firmwareUpdate: {
+        checkedAt: "2026-10-07T12:32:07Z",
+        status: "current" as const,
+        installedFirmware: "1.0.40",
+        latestFirmware: "1.0.40",
+        updateAvailable: false,
+      },
+    };
+    const at = (value: string) =>
+      `Last checked ${new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "medium",
+      }).format(new Date(value))}`;
+    const lines = () =>
+      screen.getAllByText(/^Last checked /).map((line) => line.textContent);
+
+    it("gives each card the time of its own check and moves it after a click", () => {
+      const view = render(<UpdatesScreen {...checked} />);
+      // The app's own check is repeated every six hours at most, so its time
+      // can be hours older than the firmware's.
+      expect(lines()).toEqual([
+        at("2026-10-07T06:12:04Z"),
+        at("2026-10-07T12:32:07Z"),
+      ]);
+
+      // A click two seconds later: the firmware was read again, the app was not.
+      view.rerender(
+        <UpdatesScreen
+          {...checked}
+          firmwareUpdate={{
+            ...checked.firmwareUpdate,
+            checkedAt: "2026-10-07T12:32:09Z",
+          }}
+        />,
+      );
+      expect(lines()).toEqual([
+        at("2026-10-07T06:12:04Z"),
+        at("2026-10-07T12:32:09Z"),
+      ]);
+      expect(lines()[1]).not.toBe(at("2026-10-07T12:32:07Z"));
+    });
+
+    it("claims no check that did not answer", () => {
+      render(
+        <UpdatesScreen
+          {...checked}
+          companionRelease={{
+            checkedAt: "2026-10-07T12:32:07Z",
+            status: "check_failed",
+            latestVersion: "1.0.52",
+            updateAvailable: false,
+            message: "Mac App check failed.",
+          }}
+          firmwareUpdate={{
+            checkedAt: "2026-10-07T12:32:07Z",
+            status: "check_failed",
+            installedFirmware: "1.0.40",
+            updateAvailable: false,
+          }}
+        />,
+      );
+      expect(screen.queryByText(/^Last checked /)).toBeNull();
+    });
+  });
 });

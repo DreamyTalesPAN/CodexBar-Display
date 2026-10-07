@@ -247,6 +247,11 @@ export function UpdatesScreen({
       <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
+          checkedAt={
+            companionRelease?.status === "available"
+              ? companionRelease.checkedAt
+              : undefined
+          }
           description={
             windowsHost
               ? "Software running on this computer."
@@ -261,6 +266,9 @@ export function UpdatesScreen({
         />
 
         <UpdateCard
+          checkedAt={
+            firmwareUpdate?.latestFirmware ? firmwareUpdate.checkedAt : undefined
+          }
           description="Software running on your VibeTV."
           installedLabel="Installed firmware"
           installedValue={installedFirmware}
@@ -553,6 +561,7 @@ function InlineUpdateProgress({
 }
 
 function UpdateCard({
+  checkedAt,
   children,
   description,
   installedLabel,
@@ -562,6 +571,8 @@ function UpdateCard({
   title,
   updateAvailable = false,
 }: {
+  /** When the check that produced latestValue answered; absent if none did. */
+  checkedAt?: string;
   children?: ReactNode;
   description: string;
   installedLabel: string;
@@ -571,6 +582,7 @@ function UpdateCard({
   title: string;
   updateAvailable?: boolean;
 }) {
+  const checked = formatCheckTime(checkedAt);
   return (
     <Card className="border-0">
       <CardHeader>
@@ -596,6 +608,9 @@ function UpdateCard({
             value={latestValue}
           />
         </ItemGroup>
+        {checked ? (
+          <p className="text-sm text-muted-foreground">Last checked {checked}</p>
+        ) : null}
         {children}
       </CardContent>
     </Card>
@@ -624,6 +639,18 @@ function VersionItem({
       </ItemActions>
     </Item>
   );
+}
+
+// With seconds: a check answers within a second, and only a time that moves
+// shows the customer that "Check for updates" did something.
+function formatCheckTime(value: string | undefined): string {
+  const date = new Date(value || "");
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "medium",
+      }).format(date);
 }
 
 function clampUpdateProgress(value: number | undefined): number {
