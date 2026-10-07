@@ -14799,6 +14799,40 @@ func TestWiFiPairingNotFoundAsksForCable(t *testing.T) {
 	}
 }
 
+// The preview rebuilds the frame from the line the daemon writes. Reader and
+// writer are two pieces of code in two packages, so this test formats the line
+// with the daemon's own writer: usageUnavailable was read here and never
+// written there, and the preview saw it as false (#532).
+func TestDisplayStreamLogLineFromDaemonKeepsTrustAndUnavailable(t *testing.T) {
+	sent := protocol.Frame{
+		V: 1, Provider: "claude", Label: "Claude", UsageMode: "used",
+		Session: 12, Weekly: 34, ResetSec: 0,
+		UsageUnavailable: true, SessionUnavailable: true,
+		Activity: "idle", Time: "10:00", Date: "07.10.2026",
+		ResetTrust: "live", ResetTrustSec: 17990, ResetSource: "claude:session",
+	}
+	line := "2026-10-07T08:00:00Z " + daemon.SentFrameLogLine("cable://vibetv", "usb", "16198106", "codexbar-dashboard", true, sent, "fresh", "", "")
+	frame, ok := frameFromDisplayStreamLogLine(line)
+	if !ok {
+		t.Fatalf("the daemon's own line was not read: %s", line)
+	}
+	if !frame.UsageUnavailable || !frame.SessionUnavailable || frame.WeeklyUnavailable {
+		t.Fatalf("unavailable flags lost: %+v", frame)
+	}
+	if frame.ResetTrust != "live" || frame.ResetTrustSec != 17990 || frame.ResetSource != "claude:session" {
+		t.Fatalf("trust fields lost: %+v", frame)
+	}
+	if frame.Provider != "claude" || frame.Session != 12 || frame.Weekly != 34 || frame.Activity != "idle" {
+		t.Fatalf("frame changed on the way: %+v", frame)
+	}
+
+	sent.UsageUnavailable, sent.SessionUnavailable = false, false
+	frame, ok = frameFromDisplayStreamLogLine("2026-10-07T08:00:00Z " + daemon.SentFrameLogLine("cable://vibetv", "usb", "16198106", "codexbar-dashboard", true, sent, "fresh", "", ""))
+	if !ok || frame.UsageUnavailable || frame.SessionUnavailable || frame.ResetTrustSec != 17990 {
+		t.Fatalf("available usage must read back as available: ok=%t %+v", ok, frame)
+	}
+}
+
 // The preview follows the device's trust rule (#448, #532), so the frame it is
 // rebuilt from carries the trust statement together with its budget.
 func TestDisplayStreamLogLineCarriesResetTrust(t *testing.T) {
