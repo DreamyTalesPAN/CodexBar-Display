@@ -18,6 +18,11 @@ import {
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
+import {
+  formatResetCountdown,
+  remainingResetSecs,
+  secondsSince,
+} from "@/lib/reset-countdown";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
@@ -1257,14 +1262,9 @@ export function buildFrameData(
   displayFrame: DisplayFrame,
   currentTime = new Date(),
 ): FrameData {
-  const savedAt = generatedAt ? new Date(generatedAt) : currentTime;
-  const usableSavedAt = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((currentTime.getTime() - usableSavedAt.getTime()) / 1000),
-  );
+  const elapsedSeconds = secondsSince(generatedAt, currentTime);
   const remainingResetSeconds = (seconds: number | undefined) =>
-    Math.max(0, (seconds ?? 0) - elapsedSeconds);
+    remainingResetSecs(seconds, generatedAt, currentTime);
   const sourceUsageMode = frameUsageMode(displayFrame);
   const slots = (
     (displayFrame.usageWindows?.length
@@ -2318,15 +2318,5 @@ function formatReset(seconds?: number, idle = false): string {
   if (!seconds || seconds <= 0) {
     return idle ? RESET_IDLE : RESET_UNAVAILABLE;
   }
-  const totalMinutes = Math.floor(seconds / 60);
-  const days = Math.floor(totalMinutes / (24 * 60));
-  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) {
-    return `${days}d ${hours}h`;
-  }
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
+  return formatResetCountdown(seconds);
 }
