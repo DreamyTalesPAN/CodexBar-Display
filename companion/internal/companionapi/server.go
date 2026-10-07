@@ -247,6 +247,7 @@ type Server struct {
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string
 	legacyCableProbeTries  int
+	legacyCableProbeBusy   int
 	legacyCableProbeAt     time.Time
 	updateHoldUntil        time.Time
 	updateHoldRefusals     atomic.Uint64
@@ -1640,10 +1641,14 @@ func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
 // joins WiFi, so a new port set is asked a few times, spaced apart. A try in
 // which no port could be opened asked nobody and reopened nothing, so it is
 // spaced like the others but not counted (issue #529): the cable is asked once
-// the other program lets go of the port.
+// the other program lets go of the port. A port that never opens (no
+// permission, a Bluetooth COM port) reports the same error, so those tries are
+// capped too: five minutes cover a program that is busy with the port, and
+// after that the port set is left alone until it changes.
 const (
-	legacyCableProbeAttempts   = 3
-	legacyCableProbeRetryDelay = 10 * time.Second
+	legacyCableProbeAttempts     = 3
+	legacyCableProbeBusyAttempts = 30
+	legacyCableProbeRetryDelay   = 10 * time.Second
 )
 
 // probeLegacyWiFiCable asks newly connected serial ports whether one of them
@@ -1667,9 +1672,11 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		if key != s.legacyCableProbePorts {
 			s.legacyCableProbePorts = key
 			s.legacyCableProbeTries = 0
+			s.legacyCableProbeBusy = 0
 			s.legacyCableProbeAt = time.Time{}
 		}
 		return len(ports) > 0 && s.legacyCableProbeTries < legacyCableProbeAttempts &&
+			s.legacyCableProbeBusy < legacyCableProbeBusyAttempts &&
 			(s.legacyCableProbeAt.IsZero() || s.now().Sub(s.legacyCableProbeAt) >= legacyCableProbeRetryDelay)
 	}
 	s.legacyCableProbeMu.Lock()
@@ -1697,6 +1704,7 @@ func (s *Server) probeLegacyWiFiCable(deviceID string) {
 		s.legacyCableProbeMu.Lock()
 		if key == s.legacyCableProbePorts {
 			s.legacyCableProbeTries--
+			s.legacyCableProbeBusy++
 		}
 		s.legacyCableProbeMu.Unlock()
 	}

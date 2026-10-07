@@ -369,6 +369,24 @@ func TestStatusKeepsAskingLegacyWiFiVibeTVAfterBusySerialPort(t *testing.T) {
 	if probes != legacyCableProbeAttempts {
 		t.Fatalf("once the port opens it must be asked %d times, got %d", legacyCableProbeAttempts, probes)
 	}
+
+	// A port that never opens reports the same error as a busy one. It is
+	// tried for five minutes and then left alone until the port set changes.
+	server.listCablePorts = func() ([]string, error) { return []string{"/dev/cu.usbserial-2"}, nil }
+	busy = true
+	probes = 0
+	for range 2 * legacyCableProbeBusyAttempts {
+		now = now.Add(legacyCableProbeRetryDelay)
+		status()
+	}
+	if probes != legacyCableProbeBusyAttempts {
+		t.Fatalf("a port that never opens must be tried %d times and then left alone, got %d", legacyCableProbeBusyAttempts, probes)
+	}
+	server.listCablePorts = func() ([]string, error) { return []string{"/dev/cu.usbserial-3"}, nil }
+	status()
+	if probes != legacyCableProbeBusyAttempts+1 {
+		t.Fatal("another port set must be asked again")
+	}
 }
 
 // Issue #529 asked why "Changing how VibeTV connects" was logged twice in one
