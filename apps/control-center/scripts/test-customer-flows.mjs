@@ -10783,7 +10783,7 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
   await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Screensavers");
   await page.getByRole("button", { name: "Create Screensaver" }).click();
-  await page.getByRole("button", { name: "Save theme" }).click();
+  await page.getByRole("button", { name: "Save screensaver" }).click();
   await page.getByText("Saved to library.", { exact: true }).waitFor({
     timeout: 10_000,
   });

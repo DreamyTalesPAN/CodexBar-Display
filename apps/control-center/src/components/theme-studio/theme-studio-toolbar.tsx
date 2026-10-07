@@ -22,6 +22,7 @@ export function ThemeStudioToolbar({
   onSave,
   onSend,
   onUndo,
+  saveLabel,
   saving,
   sendBlockedReason,
   sending,
@@ -36,6 +37,8 @@ export function ThemeStudioToolbar({
   onSave: () => void;
   onSend: () => void;
   onUndo: () => void;
+  /** "Save theme", or "Save screensaver" in Screensaver Studio. */
+  saveLabel: string;
   saving: boolean;
   /** Why Send to VibeTV is unavailable right now; empty when it is available. */
   sendBlockedReason: string;
@@ -86,7 +89,7 @@ export function ThemeStudioToolbar({
             ) : (
               <Save data-icon="inline-start" />
             )}
-            {saving ? "Saving" : "Save theme"}
+            {saving ? "Saving" : saveLabel}
           </Button>
         ) : null}
       </div>

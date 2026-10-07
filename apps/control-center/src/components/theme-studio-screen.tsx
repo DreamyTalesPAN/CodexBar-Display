@@ -513,7 +513,9 @@ export function ThemeStudioScreen({
       setLibraryStatus({
         tone: "attention",
         message:
-          error instanceof Error ? error.message : "Theme could not be saved.",
+          error instanceof Error
+            ? error.message
+            : `${screensaver ? "Screensaver" : "Theme"} could not be saved.`,
       });
       return false;
     } finally {
@@ -1192,6 +1194,7 @@ export function ThemeStudioScreen({
             onSave={() => void saveThemeToLibrary()}
             onSend={() => void sendTheme()}
             onUndo={() => dispatchEditor({ type: "undo" })}
+            saveLabel={screensaver ? "Save screensaver" : "Save theme"}
             saving={saving}
             sendBlockedReason={sendBlockedReason}
             sending={sending}
