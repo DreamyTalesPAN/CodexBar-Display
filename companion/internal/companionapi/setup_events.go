@@ -231,7 +231,7 @@ func (s *Server) setupStep(stage, started, succeeded string, next http.HandlerFu
 		if started != "" {
 			s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: started})
 		}
-		rec := &setupStepRecorder{ResponseWriter: w, status: http.StatusOK}
+		rec := &setupStepRecorder{ResponseWriter: w, status: http.StatusOK, stage: stage}
 		next(rec, r)
 		if rec.status >= http.StatusBadRequest {
 			var body errorResponse
@@ -248,9 +248,9 @@ func (s *Server) setupStep(stage, started, succeeded string, next http.HandlerFu
 				s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: "Found a VibeTV on the cable that needs a firmware update.", Code: body.Error.Code})
 				return
 			}
-			s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: message, Code: body.Error.Code, NextAction: body.Error.NextAction})
+			s.recordSetupEvent(setupEvent{Stage: rec.stage, Status: "failed", Message: message, Code: body.Error.Code, NextAction: body.Error.NextAction})
 		} else if succeeded != "" {
-			s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: succeeded})
+			s.recordSetupEvent(setupEvent{Stage: rec.stage, Status: "succeeded", Message: succeeded})
 		}
 	}
 }
@@ -259,6 +259,9 @@ type setupStepRecorder struct {
 	http.ResponseWriter
 	status int
 	body   bytes.Buffer
+	// stage is the stage the result is logged under. A step that learns it
+	// from the request (theme or screensaver install) sets it.
+	stage string
 }
 
 func (r *setupStepRecorder) WriteHeader(status int) {

@@ -62,6 +62,27 @@ describe("SetupEventList", () => {
     expect(rows()[2]).toContain("Usage engine 0.17 is too old.");
   });
 
+  // Issue #558: the Mac App files a screensaver install under a stage of its
+  // own. The page has no entry for it and words the stage itself.
+  it("names a screensaver install as one, next to a theme install", () => {
+    const at = "2026-10-08T14:17:00Z";
+    render(
+      <SetupEventList
+        log={{
+          ...log,
+          events: [
+            { seq: 1, at, stage: "theme_install", status: "started", message: "Installing theme." },
+            { seq: 2, at, stage: "screensaver_install", status: "started", message: "Installing screensaver." },
+          ],
+        }}
+      />,
+    );
+    expect(rows()[0]).toContain("Theme install");
+    expect(rows()[1]).toContain("Screensaver install");
+    expect(rows()[1]).toContain("Installing screensaver.");
+    expect(rows()[1]).not.toMatch(/theme/i);
+  });
+
   it("says when older entries were removed", () => {
     render(<SetupEventList log={{ ...log, truncated: true, dropped: 12 }} />);
     expect(rows()[0]).toBe("Older entries were removed.");

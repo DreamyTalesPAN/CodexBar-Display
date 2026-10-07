@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 )
 
 func incompatibleEngineSetup() codexbar.ProviderSetup {
@@ -440,5 +442,54 @@ func TestSetupLogDoesNotCallACableRescueAFailedSearch(t *testing.T) {
 	found := got.Events[1]
 	if found.Status != "succeeded" || found.Code != "cable_firmware_too_old" || found.NextAction != "" || strings.Contains(found.Message, "WiFi") {
 		t.Fatalf("the VibeTV setup is about to update over the cable was logged as %+v", found)
+	}
+}
+
+// Issue #558: the setup log filed a screensaver install under "Theme install"
+// and opened it with "Installing theme." Only the request names the slot.
+func TestSetupLogFilesAScreensaverInstallUnderItsOwnStage(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	install := func(slot string, installErr error) []setupEvent {
+		t.Helper()
+		server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+		server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+			return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, installErr
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"x","packUrl":"https://example.com/x.zip","slot":"`+slot+`","async":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(httptest.NewRecorder(), req)
+		var events []setupEvent
+		for attempt := 0; attempt < 100 && len(events) < 2; attempt++ {
+			time.Sleep(10 * time.Millisecond)
+			events = getSetupLog(t, server).Events
+		}
+		if len(events) != 2 {
+			t.Fatalf("expected a start and a result for the %s slot, got %+v", slot, events)
+		}
+		return events
+	}
+	filed := func(events []setupEvent) string {
+		return fmt.Sprintf("%s/%s/%s | %s/%s", events[0].Stage, events[0].Status, events[0].Message, events[1].Stage, events[1].Status)
+	}
+
+	done := install("screensaver", nil)
+	if got := filed(done); got != "screensaver_install/started/Installing screensaver. | screensaver_install/succeeded" || done[1].Message != "Screensaver is ready on VibeTV." {
+		t.Fatalf("screensaver install was filed as %s: %+v", got, done)
+	}
+	if got := filed(install("screensaver", errors.New("upload failed"))); got != "screensaver_install/started/Installing screensaver. | screensaver_install/failed" {
+		t.Fatalf("failed screensaver install was filed as %s", got)
+	}
+	// A theme install keeps its stage and its lines.
+	theme := install("live", nil)
+	if got := filed(theme); got != "theme_install/started/Installing theme. | theme_install/succeeded" || theme[1].Message != "Theme is active on VibeTV." {
+		t.Fatalf("theme install was filed as %s: %+v", got, theme)
+	}
+
+	// A refusal the route itself logs, after the request named the slot.
+	t.Setenv(themeInstallDisableEnv, "1")
+	if got := filed(install("screensaver", nil)); got != "screensaver_install/started/Installing screensaver. | screensaver_install/failed" {
+		t.Fatalf("refused screensaver install was filed as %s", got)
 	}
 }

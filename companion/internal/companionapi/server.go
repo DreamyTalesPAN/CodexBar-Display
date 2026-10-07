@@ -1174,7 +1174,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/setup/events", s.handleSetupEvents)
 	mux.HandleFunc("/v1/setup/providers/complete", s.setupStep("provider_setup", "", "AI provider setup complete.", s.handleProviderSetupComplete))
 	mux.HandleFunc("/v1/settings", s.handleSettings)
-	mux.HandleFunc("/v1/themes/install", s.setupStep("theme_install", "Installing theme.", "", s.handleThemeInstall))
+	mux.HandleFunc("/v1/themes/install", s.setupStep("theme_install", "", "", s.handleThemeInstall))
 	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
 	mux.HandleFunc("/v1/updates/latest", s.handleFirmwareLatest)
 	mux.HandleFunc("/v1/updates/install", s.setupStep("firmware_update", "Starting the VibeTV update.", "", s.handleFirmwareUpdateInstall))
@@ -5270,6 +5270,14 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_install_slot", "This theme cannot be installed here.", "Reload Control Center, then try again.")
 		return
 	}
+	// The setup log files a screensaver install under screensaver_install.
+	// Only the request names the slot, so the entry opens here and not at the
+	// route, which logs a refusal before this point as theme_install.
+	stage := installText(req.Slot, "theme_install")
+	if step, ok := w.(*setupStepRecorder); ok {
+		step.stage = stage
+	}
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: installText(req.Slot, "Installing theme.")})
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,
@@ -5334,7 +5342,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeThemeInstallError(w, err)
 		return
 	}
-	s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: "Theme installed."})
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: installText(req.Slot, "Theme installed.")})
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool                `json:"ok"`
 		Result themeinstall.Result `json:"result"`
@@ -6279,12 +6287,13 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		defer s.finishThemeInstall()
 		ctx, cancel := context.WithTimeout(context.Background(), themeInstallJobTime)
 		defer cancel()
+		stage := installText(req.Slot, "theme_install")
 		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
 		result, err := s.runThemeInstall(ctx, cfg, req, writer)
 		finishedAt := time.Now().UTC()
 		if err != nil {
 			_, apiErr := themeInstallErrorPayload(err)
-			s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
+			s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
 			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 				job.Phase = "error"
 				job.Progress = 100
@@ -6300,7 +6309,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		if req.Slot == themepack.UsageScreensaver {
 			done = "Screensaver is ready on VibeTV."
 		}
-		s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: done})
+		s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: done})
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
 			// Without a ready provider the VibeTV keeps drawing the error frame,
@@ -6459,12 +6468,18 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 	}
 }
 
-// say makes message the job's current line and logs it. The lines are worded
-// for a theme; a screensaver install names the screensaver instead.
-func (job *themeInstallJob) say(message string) {
-	if job.Slot == themepack.UsageScreensaver {
-		message = strings.NewReplacer("Theme", "Screensaver", "theme", "screensaver").Replace(message)
+// installText words text that is written for a theme install for the slot
+// installed into: a screensaver install names the screensaver instead.
+func installText(slot, text string) string {
+	if slot != themepack.UsageScreensaver {
+		return text
 	}
+	return strings.NewReplacer("Theme", "Screensaver", "theme", "screensaver").Replace(text)
+}
+
+// say makes message the job's current line and logs it.
+func (job *themeInstallJob) say(message string) {
+	message = installText(job.Slot, message)
 	job.Message = message
 	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
 		return
