@@ -561,6 +561,11 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 			if page := browserSignInPage(id, reported); page != "" {
 				state = ProviderHealthBrowserSignIn
 				signInURL = page
+				// The marker is CodexBar's whole diagnosis. The summary around
+				// it lists every source it tried ("Web: No cookies ...; OAuth:
+				// ... rate limited ...") and repeats the marker with its URL, so
+				// it is no guidance and is not kept as the reported sentence.
+				reported = ""
 			}
 		} else if !providerPayloadHasUsage(payload) {
 			state = ProviderHealthNoUsage

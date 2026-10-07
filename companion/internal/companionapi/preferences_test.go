@@ -578,6 +578,53 @@ func TestRateLimitedHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	}
 }
 
+// Seen in the Windows app: Claude was delivering usage, Codex was switched on,
+// and the next health scan met one Claude call the provider throttled. CodexBar
+// marks that summary as a browser sign-in, the row left "healthy" and its
+// dialog opened by itself. A reading that did arrive answers the diagnosis;
+// without one the row still asks for the browser session.
+func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
+	const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]"
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	scanned := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true,
+		Health:    providerHealthFromReadiness(codexbar.ProviderErrorKind("claude", summary)),
+		SignInURL: "https://claude.ai/login",
+	}}
+	if scanned[0].Health != codexbar.ProviderHealthBrowserSignIn {
+		t.Fatalf("the summary must classify as a browser sign-in, got %s", scanned[0].Health)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("claude", "Claude", now), true
+	}
+	items := server.providerDescriptors(scanned)
+	if len(items) != 1 || items[0].Health.State != "healthy" || items[0].Health.SignInURL != "" {
+		t.Fatalf("fresh usage must keep the row healthy: %#v", items[0].Health)
+	}
+
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	// The sentence approved for this row on 2026-09-17, from the health scan
+	// and from the exact check alike: a dismissed message opens again when its
+	// text changes, and the exact check ages out after five minutes.
+	const guidance = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again."
+	for _, source := range []string{"health scan", "exact check"} {
+		items = server.providerDescriptors(scanned)
+		if len(items) != 1 || items[0].Health.State != "browser_sign_in_required" ||
+			items[0].Health.SignInURL != "https://claude.ai/login" ||
+			items[0].Health.Message != guidance || items[0].Health.Reported != "" {
+			t.Fatalf("no reading, %s: the row must ask for the browser session in our words: %#v", source, items[0].Health)
+		}
+		server.providerReadiness = map[string]providerReadinessRecord{"claude": {
+			Status:    codexbar.ProviderBrowserSignInRequired,
+			Detail:    "Claude usage needs a signed-in claude.ai session in your browser.",
+			SignInURL: "https://claude.ai/login", CheckedAt: now,
+		}}
+	}
+}
+
 func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {

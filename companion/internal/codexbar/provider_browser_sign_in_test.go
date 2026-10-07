@@ -34,6 +34,35 @@ func TestClaudeOAuthRefusedWithoutCookiesNeedsBrowserSignIn(t *testing.T) {
 	}
 }
 
+// The summary a Windows customer read in a dialog titled "Claude" while Claude
+// was delivering usage: one throttled OAuth call that CodexBar was already
+// retrying. The marker stays the diagnosis; the summary around it must not
+// travel on as the provider's sentence, on the health scan or the exact check.
+func TestBrowserSignInSummaryIsNotKeptAsReportedSentence(t *testing.T) {
+	const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]"
+
+	scanned := parseProviderHealth([]byte(`[{"provider":"claude","error":{"message":"` + summary + `"}}]`))["claude"]
+	if scanned.health != ProviderHealthBrowserSignIn || scanned.signInURL != "https://claude.ai/login" {
+		t.Fatalf("the marker must stay the diagnosis: %#v", scanned)
+	}
+	if scanned.reported != "" {
+		t.Fatalf("health scan kept the summary: %q", scanned.reported)
+	}
+
+	checked := providerReadinessFromOutput([]byte(`[{"provider":"claude","error":"`+summary+`"}]`), nil, nil)
+	if len(checked) != 1 || checked[0].Status != ProviderBrowserSignInRequired || checked[0].SignInURL != "https://claude.ai/login" {
+		t.Fatalf("the marker must stay the diagnosis: %+v", checked)
+	}
+	if checked[0].Reported != "" {
+		t.Fatalf("exact check kept the summary: %q", checked[0].Reported)
+	}
+	for _, fragment := range []string{"OAuth", "cookies", "[claude:", "configured sources"} {
+		if strings.Contains(checked[0].Detail+checked[0].NextAction, fragment) {
+			t.Fatalf("guidance repeats the summary (%q): %+v", fragment, checked[0])
+		}
+	}
+}
+
 func TestBrowserSignInStaysNarrow(t *testing.T) {
 	cases := map[string]string{
 		// A real sign-out is still auth_required.

@@ -158,6 +158,35 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  // Windows, Claude delivering usage, Codex just switched on: one throttled
+  // check made the usage engine ask for a browser sign-in, and its list of
+  // failed sources opened by itself under the title "Claude". The Mac App now
+  // keeps that row healthy and sends no engine sentence for a browser sign-in.
+  it("opens nothing for a healthy provider and shows no engine text for a browser sign-in", () => {
+    const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: [redacted] error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]";
+    const engineText = /OAuth|cookies|https:\/\/|\[claude:/;
+    const codex = provider({ providerId: "codex", label: "Codex", health: "checking" });
+    const props = { usage, onOpenSignIn: vi.fn(), onContinue: vi.fn(), onCheckAgain: vi.fn(),
+      onToggle: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    // A healthy row has nothing to say, whatever an earlier check left on it.
+    const { rerender } = renderDom(<SetupProvidersScreen {...props}
+      providers={[codex, { ...claude, health: { ...claude.health, reported: summary } }]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show provider message for Claude Code" })).toBeNull();
+    expect(document.body.innerHTML).not.toMatch(engineText);
+
+    // A provider that really needs the browser session says so in our words.
+    const message = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again.";
+    const signIn = provider({ providerId: "claude", label: "Claude Code", health: "browser_sign_in_required", message });
+    rerender(<SetupProvidersScreen {...props}
+      providers={[codex, { ...signIn, health: { ...signIn.health, signInUrl: "https://claude.ai/login" } }]} />);
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText(message)).toBeTruthy();
+    expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open Claude Code sign-in in your browser" })).toBeTruthy();
+    expect(document.body.innerHTML).not.toMatch(engineText);
+  });
+
   it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
     const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
     renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}

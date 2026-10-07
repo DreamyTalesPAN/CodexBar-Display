@@ -651,7 +651,11 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 			status = ProviderNoUsageAvailable
 		}
 		provider := providerResultWithSignIn(id, status, browserSignInPage(id, reported))
-		provider.Reported = reported
+		// A browser sign-in is fully described by the marker (see
+		// parseProviderHealth); its summary is not kept as guidance.
+		if status != ProviderBrowserSignInRequired {
+			provider.Reported = reported
+		}
 		if status == ProviderConfigError {
 			provider.Cause = "provider message: " + reported
 		}
@@ -907,6 +911,13 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 		result.NextAction = "Check this provider, then try again."
 	}
 	return result
+}
+
+// BrowserSignInGuidance is the customer sentence for a provider that needs a
+// signed-in browser session on signInURL.
+func BrowserSignInGuidance(id, signInURL string) string {
+	result := providerResultWithSignIn(id, ProviderBrowserSignInRequired, signInURL)
+	return result.Detail + " " + result.NextAction
 }
 
 func signInHost(url string) string {
