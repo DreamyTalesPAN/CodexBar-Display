@@ -12,7 +12,7 @@ beforeEach(() => {
     matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 function renderStudio(
   source: "blank" | "custom",
@@ -144,4 +144,24 @@ it("names the VibeTV's own limit when that is what keeps Send unavailable", () =
   expect(button("Send to VibeTV").disabled).toBe(true);
   expect(button("Save theme").disabled).toBe(false);
   expect(screen.getByText("This VibeTV does not support stored themes.")).toBeTruthy();
+});
+
+// Issue #551: Export ZIP did not say where the file went. Windows saves a
+// download without asking (see #545); the Mac asks where and can be cancelled.
+it.each([
+  [true, "Saved as vibetv-theme-my-theme.zip in your Downloads folder. Nothing was sent."],
+  [false, "vibetv-theme-my-theme.zip exported. Nothing was sent."],
+])("says after Export ZIP where the file is when the app saved it itself (windows=%s)", (windowsHost, message) => {
+  // jsdom has neither blob URLs nor downloads.
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  const download = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  renderStudio("custom", { windowsHost });
+
+  fireEvent.click(button("Export ZIP"));
+
+  expect(download).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(message)).toBeTruthy();
 });

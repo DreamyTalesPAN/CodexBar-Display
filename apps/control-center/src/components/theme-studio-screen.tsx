@@ -1012,7 +1012,11 @@ export function ThemeStudioScreen({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setExportStatus({
         tone: "ready",
-        message: `${pack.fileName} exported. Nothing was sent.`,
+        // Windows saves a download without asking where, so the app can name
+        // the folder. The Mac asks and can be cancelled; it gets no claim.
+        message: windowsHost
+          ? `Saved as ${pack.fileName} in your Downloads folder. Nothing was sent.`
+          : `${pack.fileName} exported. Nothing was sent.`,
       });
     } catch (error) {
       setExportStatus({
