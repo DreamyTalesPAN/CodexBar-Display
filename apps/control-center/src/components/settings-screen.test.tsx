@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { DeviceInfo, StandbySettings } from "./control-center-types";
+import type {
+  DeviceInfo,
+  PreferenceDescriptor,
+  StandbySettings,
+} from "./control-center-types";
 import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
 
@@ -58,6 +62,24 @@ function provider(
   };
 }
 
+const usageDisplay: PreferenceDescriptor = {
+  allowsDefault: true,
+  availability: { state: "available" },
+  effectiveValue: "used",
+  id: "vibetv.usage.displayMode",
+  label: "Usage display",
+  options: [
+    { value: "used", label: "Used" },
+    { value: "remaining", label: "Remaining" },
+  ],
+  owner: "vibetv",
+  section: "display",
+  type: "enum",
+  value: null,
+  writable: true,
+  writeStrategy: "vibetv_override",
+};
+
 function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
@@ -65,6 +87,7 @@ function render(
   brightness: number | null = 70,
   connectionMode: "cable" | "wifi" = "cable",
   windowsHost = false,
+  displayPreferences: PreferenceDescriptor[] = [],
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
@@ -73,6 +96,7 @@ function render(
       busyAction={null}
       connectionMode={connectionMode}
       device={device}
+      displayPreferences={displayPreferences}
       standby={standby}
       onBrightnessChange={vi.fn()}
       onChooseScreensaver={vi.fn()}
@@ -431,6 +455,27 @@ describe("SettingsScreen standby controls", () => {
     );
 
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // Issue #183: the usage display preference is one row under Display, and a
+  // Mac App that does not send it shows no such row.
+  it("offers the usage display under Display only when the app sends it", () => {
+    const html = render(
+      standbyDevice, savedStandby, providerPicker, 70, "cable", false,
+      [usageDisplay],
+    );
+    const displaySection = html.slice(
+      html.indexOf(">Display</h2>"),
+      html.indexOf(">Display mode</h2>"),
+    );
+
+    expect(displaySection).toMatch(
+      /for="vibetv\.usage\.displayMode"[^>]*>Usage display<\/label>/,
+    );
+    expect(displaySection).toMatch(
+      /role="combobox"[^>]*aria-label="Usage display"[^>]*id="vibetv\.usage\.displayMode"/,
+    );
+    expect(render(standbyDevice)).not.toContain("Usage display");
   });
 
   it("says why Display mode switched to Automatic", () => {

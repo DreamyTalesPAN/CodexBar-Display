@@ -63,6 +63,7 @@ import {
   type ProviderDisplaySelection,
   type ProviderSelectionSetup,
   type PreferenceDescriptor,
+  type PreferenceValue,
   type StandbySettings,
   type SetupLog,
   type SupportDiagnostics,
@@ -495,6 +496,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
   const [providerDisplayError, setProviderDisplayError] =
     useState<ApiError | null>(null);
+  // The app's own display preferences from the registry (issue #183). Empty
+  // until read, and on a Mac App that has none.
+  const [displayPreferences, setDisplayPreferences] = useState<
+    PreferenceDescriptor[]
+  >([]);
   // Says why the display mode changed without the customer choosing it: the
   // provider Manual was pinned to has been switched off.
   const [providerDisplayNotice, setProviderDisplayNotice] = useState<
@@ -3335,6 +3341,46 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [runCompanion],
   );
 
+  const refreshDisplayPreferences = useCallback(async () => {
+    try {
+      const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
+        "/v1/preferences?section=display",
+        undefined,
+        { preserveLastError: true },
+      );
+      setDisplayPreferences(
+        (payload.items || []).filter((item) => item.section === "display"),
+      );
+    } catch {
+      // A Mac App without this section offers no such settings; the rows
+      // stay hidden.
+    }
+  }, [runCompanion]);
+
+  // The control shows the stored value, so a refused write leaves it where it
+  // was and the error says why.
+  const updateDisplayPreference = useCallback(
+    async (item: PreferenceDescriptor, value: PreferenceValue) => {
+      try {
+        const payload = await runCompanion<{ item: PreferenceDescriptor }>(
+          `/v1/preferences/${encodeURIComponent(item.id)}`,
+          { method: "PATCH", body: JSON.stringify({ value }) },
+        );
+        setDisplayPreferences((current) =>
+          current.map((preference) =>
+            preference.id === payload.item.id ? payload.item : preference,
+          ),
+        );
+        void refreshUsage({ quiet: true });
+      } catch (error) {
+        setLastError(
+          normalizeCaughtError(error, "Display settings need attention."),
+        );
+      }
+    },
+    [refreshUsage, runCompanion],
+  );
+
   const checkProvider = useCallback(
     (item: PreferenceDescriptor) => {
       const providerId = item.providerId?.trim().toLowerCase();
@@ -4642,12 +4688,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         refreshProviderPreferences({ quiet: true }),
         refreshProviderDisplay({ quiet: true }),
       ]);
+      if (activeShellTab === "settings") {
+        void refreshDisplayPreferences();
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
     activeShellTab,
     companionStatus,
     providerSelectionSetup?.providerSelectionRequired,
+    refreshDisplayPreferences,
     refreshProviderDisplay,
     refreshProviderPreferences,
   ]);
@@ -5181,6 +5231,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 : "wifi"
             }
             device={device}
+            displayPreferences={displayPreferences}
             standby={standby}
             onBrightnessChange={changeBrightness}
             onChooseScreensaver={() => {
@@ -5200,6 +5251,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
             onRunDiagnostics={runDiagnosticsFromSettings}
+            onDisplayPreferenceChange={updateDisplayPreference}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}
             onSaveStandby={saveStandby}

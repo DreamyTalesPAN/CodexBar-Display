@@ -6,12 +6,14 @@ Control Center settings:
 ```http
 GET /v1/preferences
 GET /v1/preferences?section=providers
+GET /v1/preferences?section=display
 PATCH /v1/preferences/{settingId}
 ```
 
 The first production adapter is the `providers` section. It reads the complete
 provider inventory from the supported CodexBar CLI, changes real CodexBar
-provider enablement, and never stores a second VibeTV provider list.
+provider enablement, and never stores a second VibeTV provider list. The
+`display` section holds the Mac App's own display preferences.
 
 ## Descriptor contract
 
@@ -67,6 +69,31 @@ including stale persisted snapshots.
 The browser receives only stable health states and short recovery messages.
 Local sign-in/setup health and upstream service status remain separate.
 
+## Display adapter
+
+Display preferences are owned by VibeTV (`owner: "vibetv"`,
+`writeStrategy: "vibetv_override"`). They are stored in the Mac App's runtime
+configuration, and a write re-renders the VibeTV frame from the usage already
+collected. No provider is asked again and nothing in CodexBar is changed.
+
+| ID | Type | Values |
+| --- | --- | --- |
+| `vibetv.usage.displayMode` | `enum`, `allowsDefault` | `null` (Default), `"used"`, `"remaining"` |
+
+`vibetv.usage.displayMode` decides whether percentages count what is used or
+what remains, on the VibeTV frame and in `GET /v1/usage` alike. `null` follows
+CodexBar's own setting, as before this preference existed; `effectiveValue`
+then reports the mode in use. An explicit value wins over CodexBar's setting.
+Settings shows it as `Usage display` with `Default`, `Used` and `Remaining`.
+
+```http
+PATCH /v1/preferences/vibetv.usage.displayMode
+{"value": "remaining"}
+```
+
+Brightness and the screensaver stay on `/v1/settings`; they are device
+settings and are not part of this section.
+
 ## Security boundaries
 
 - Never use or expose `config dump`.
@@ -76,6 +103,8 @@ Local sign-in/setup health and upstream service status remain separate.
   `value` and `effectiveValue` stay `null`.
 - Do not put provider state in browser storage, VibeTV runtime configuration,
   Theme Studio drafts, ThemeSpec, or theme packs.
+- Display preferences live in the runtime configuration only. They never
+  change theme drafts, ThemeSpec, theme packs, or Theme Studio dirty state.
 - Credential entry, OAuth, and provider-specific integrations are outside this
   registry slice.
 - No device or firmware write is needed for provider preferences.

@@ -1298,6 +1298,84 @@ func TestPreferenceRegistrySupportsTypedDescriptorsWithoutNewRoutes(t *testing.T
 	}
 }
 
+func TestUsageDisplayPreferenceOverridesCodexBarAndReturnsToDefault(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return collectedAt.Add(time.Minute) }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12, Weekly: 30}, CollectedAt: collectedAt,
+		}}}, true
+	}
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+
+	read := func() preferenceDescriptor {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=display", nil))
+		var response preferencesResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK || len(response.Items) == 0 {
+			t.Fatalf("list display preferences: %d %s", recorder.Code, recorder.Body.String())
+		}
+		return response.Items[0]
+	}
+	patch := func(value string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		body := bytes.NewBufferString(`{"value":` + value + `}`)
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageDisplayModePreferenceID, body))
+		return recorder
+	}
+	usage := func() usageResponse {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+		var response usageResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK || len(response.Providers) != 1 {
+			t.Fatalf("read usage: %d %s", recorder.Code, recorder.Body.String())
+		}
+		return response
+	}
+
+	// Default follows CodexBar, which newTestServer sets to "used", and offers
+	// exactly Used and Remaining beside it.
+	item := read()
+	if item.ID != usageDisplayModePreferenceID || item.Label != "Usage display" || item.Value != nil || item.EffectiveValue != "used" || !item.AllowsDefault ||
+		len(item.Options) != 2 || item.Options[0].Label != "Used" || item.Options[1].Label != "Remaining" {
+		t.Fatalf("unexpected default descriptor: %#v", item)
+	}
+
+	if recorder := patch(`"remaining"`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch remaining: %d %s", recorder.Code, recorder.Body.String())
+	}
+	cfg, _ := server.config()
+	if item = read(); cfg.UsageDisplayMode != "remaining" || item.Value != "remaining" || item.EffectiveValue != "remaining" || renders != 1 {
+		t.Fatalf("remaining was not stored and rendered: cfg=%q item=%#v renders=%d", cfg.UsageDisplayMode, item, renders)
+	}
+	if got := usage(); got.UsageMode != "remaining" || got.Providers[0].Session != 88 || got.Providers[0].Weekly != 70 {
+		t.Fatalf("usage did not follow the preference: %#v", got)
+	}
+
+	if recorder := patch(`"percent"`); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unregistered option was accepted: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	// Back to Default: CodexBar decides again, here "remaining" and then "used".
+	if recorder := patch(`null`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch default: %d %s", recorder.Code, recorder.Body.String())
+	}
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "remaining")
+	cfg, _ = server.config()
+	if item = read(); cfg.UsageDisplayMode != "" || item.Value != nil || item.EffectiveValue != "remaining" || usage().UsageMode != "remaining" {
+		t.Fatalf("default did not follow CodexBar: cfg=%q item=%#v", cfg.UsageDisplayMode, item)
+	}
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "used")
+	if got := usage(); read().EffectiveValue != "used" || got.UsageMode != "used" || got.Providers[0].Session != 12 {
+		t.Fatalf("default did not follow CodexBar back to used: %#v", got)
+	}
+}
+
 func TestPreferenceRegistryRejectsInvalidEnumRangeAndDefault(t *testing.T) {
 	minimum := int64(30)
 	maximum := int64(120)

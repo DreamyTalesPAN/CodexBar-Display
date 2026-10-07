@@ -1166,6 +1166,48 @@ func TestRunCycleWithDepsShowsRemainingWhenUsageBarsShowUsedDisabled(t *testing.
 	}
 }
 
+func TestRunCycleWithDepsUsageDisplayPreferenceOverridesCodexBar(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		mode        string
+		codexBar    bool
+		wantMode    string
+		wantSession int
+	}{
+		{mode: "remaining", codexBar: true, wantMode: "remaining", wantSession: 99},
+		{mode: "used", codexBar: false, wantMode: "used", wantSession: 1},
+		{mode: "", codexBar: false, wantMode: "remaining", wantSession: 99},
+	} {
+		var sentLine []byte
+		err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+			now:               func() time.Time { return now },
+			resolvePort:       func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			usageBarsShowUsed: func() bool { return tt.codexBar },
+			homeDir:           func() (string, error) { return "/tmp/usage-display-test", nil },
+			loadConfig: func(string) (runtimeconfig.Config, error) {
+				return runtimeconfig.Config{UsageDisplayMode: tt.mode}, nil
+			},
+			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+				return []codexbar.ParsedFrame{testParsedFrame("codex", 1, 28, 3600)}, nil
+			},
+			logf: func(string, ...any) {},
+			sendLine: func(_ string, line []byte) error {
+				sentLine = append([]byte(nil), line...)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("mode=%q: expected cycle success, got %v", tt.mode, err)
+		}
+		frame := decodeFrameLine(t, sentLine)
+		if frame.UsageMode != tt.wantMode || frame.Session != tt.wantSession {
+			t.Fatalf("mode=%q codexBar=%t sent usageMode=%q session=%d, want %q/%d", tt.mode, tt.codexBar, frame.UsageMode, frame.Session, tt.wantMode, tt.wantSession)
+		}
+	}
+}
+
 func TestRunCycleWithDepsUsesConfiguredUsageModeWhenShowingUsed(t *testing.T) {
 	prepareFastTestEnv(t)
 

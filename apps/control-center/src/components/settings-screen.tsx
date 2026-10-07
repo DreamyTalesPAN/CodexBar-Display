@@ -25,6 +25,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { PreferenceControl } from "./preference-control";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
   DisplayModeChoice,
@@ -41,6 +42,8 @@ import {
   deviceOffersCable,
   type ApiError,
   type DeviceInfo,
+  type PreferenceDescriptor,
+  type PreferenceValue,
   type StandbySettings,
 } from "./control-center-types";
 
@@ -54,6 +57,8 @@ export type SettingsScreenProps = {
   /** Live usage per provider, in the order Automatic moves through them. */
   automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
+  /** The app's own display preferences; a Mac App without them sends none. */
+  displayPreferences?: PreferenceDescriptor[];
   brightness: number | null;
   busyAction: string | null;
   actionError?: ApiError | null;
@@ -63,6 +68,10 @@ export type SettingsScreenProps = {
   onBrightnessChange: (value: number) => void;
   onChooseScreensaver: () => void;
   onConnectionModeChange: (mode: "cable" | "wifi") => void;
+  onDisplayPreferenceChange?: (
+    item: PreferenceDescriptor,
+    value: PreferenceValue,
+  ) => void | Promise<void>;
   onResetSetup: () => void;
   /** Erases the VibeTV over the USB cable, then starts setup again. */
   onEraseDevice?: () => void;
@@ -79,6 +88,7 @@ export type SettingsScreenProps = {
 export function SettingsScreen({
   automaticPreviews,
   device,
+  displayPreferences = [],
   brightness,
   busyAction,
   actionError,
@@ -88,6 +98,7 @@ export function SettingsScreen({
   onBrightnessChange,
   onChooseScreensaver,
   onConnectionModeChange,
+  onDisplayPreferenceChange,
   onResetSetup,
   onEraseDevice,
   onRunDiagnostics,
@@ -159,6 +170,9 @@ export function SettingsScreen({
   const displaySavePending = Boolean(providerPicker.displayPendingProviderId);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
+  const usageDisplay = displayPreferences.find(
+    (item) => item.id === "vibetv.usage.displayMode",
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
@@ -256,6 +270,13 @@ export function SettingsScreen({
                 : `${brightness}%`
           }
         />
+        {usageDisplay ? (
+          <PreferenceRow
+            descriptor={usageDisplay}
+            disabled={localActionBusy}
+            onChange={onDisplayPreferenceChange}
+          />
+        ) : null}
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
@@ -521,6 +542,28 @@ function SettingsSection({
       </div>
       <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>
     </section>
+  );
+}
+
+/** One registry preference: its label beside the control its type calls for. */
+function PreferenceRow({
+  descriptor,
+  disabled,
+  onChange,
+}: {
+  descriptor: PreferenceDescriptor;
+  disabled: boolean;
+  onChange: SettingsScreenProps["onDisplayPreferenceChange"];
+}) {
+  return (
+    <Field data-disabled={disabled} orientation="horizontal">
+      <FieldLabel htmlFor={descriptor.id}>{descriptor.label}</FieldLabel>
+      <PreferenceControl
+        descriptor={descriptor}
+        disabled={disabled}
+        onChange={(value) => onChange?.(descriptor, value)}
+      />
+    </Field>
   );
 }
 
