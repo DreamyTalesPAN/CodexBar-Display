@@ -5451,6 +5451,77 @@ func TestProviderCollectorSlowTokenScanUsesPostCompletionCooldown(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorScansTokensForANewlyEnabledProviderWithoutWaitingOutTheCooldown(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 7, 15, 34, 0, 0, time.UTC)
+	var claudeEnabled atomic.Bool
+	collector := &providerCollector{
+		now:                func() time.Time { return now },
+		logf:               func(string, ...any) {},
+		snapshotMaxAge:     10 * time.Minute,
+		persistInterval:    time.Minute,
+		tokenStatsCooldown: tokenStatsScanCooldown,
+		providers:          make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frames := []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}
+			if claudeEnabled.Load() {
+				frames = append(frames, testParsedFrame("claude", 20, 26, 3600))
+			}
+			return frames, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: true},
+				{ID: "claude", Enabled: claudeEnabled.Load()},
+			}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex":  {SessionTokens: 10, WeekTokens: 20, TotalTokens: 30, UpdatedAt: now},
+				"claude": {SessionTokens: 5, WeekTokens: 6, TotalTokens: 7, UpdatedAt: now},
+			}, true
+		},
+	}
+	scanFinished := func() {
+		t.Helper()
+		waitForCondition(t, time.Second, func() bool {
+			collector.tokenStatsMu.Lock()
+			defer collector.tokenStatsMu.Unlock()
+			return !collector.tokenStatsRunning
+		})
+	}
+
+	collector.collectOnce(context.Background())
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected the first token scan to start")
+	}
+	scanFinished()
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a settled token scan restarted inside its cooldown")
+	}
+
+	claudeEnabled.Store(true)
+	collector.collectOnce(context.Background())
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a newly enabled provider had to wait out the token scan cooldown")
+	}
+	scanFinished()
+	var claude protocol.Frame
+	for _, provider := range collector.providerFrames(now) {
+		if provider.Provider == "claude" {
+			claude = provider.Frame
+		}
+	}
+	if claude.TotalTokens != 7 || !claude.TokenTotalsKnown {
+		t.Fatalf("newly enabled provider has no token totals after the scan: %#v", claude)
+	}
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("the cooldown did not apply again after the extra scan")
+	}
+	collector.shutdownTokenStatsScan()
+}
+
 func TestProviderCollectorFailedTokenScanUsesPostCompletionCooldown(t *testing.T) {
 	prepareFastTestEnv(t)
 

@@ -94,6 +94,7 @@ type providerCollector struct {
 	tokenStatsCooldown      time.Duration
 	tokenStatsLastCompleted time.Time
 	tokenStatsSettled       bool
+	tokenStatsRescan        bool
 	tokenStatsFailed        bool
 	tokenHistoryPrints      map[string]string
 }
@@ -256,7 +257,8 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 	// A still-growing history must be corrected by the next scan instead of
 	// waiting out the completed-scan cadence. Single-flight still prevents
 	// overlapping scans.
-	cooling := (c.tokenStatsSettled || c.tokenStatsFailed) &&
+	cooling := !c.tokenStatsRescan &&
+		(c.tokenStatsSettled || c.tokenStatsFailed) &&
 		c.tokenStatsCooldown > 0 &&
 		!c.tokenStatsLastCompleted.IsZero() &&
 		now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))
@@ -266,6 +268,7 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 		return false
 	}
 	c.tokenStatsRunning = true
+	c.tokenStatsRescan = false
 	c.tokenStatsCancel = cancel
 	c.tokenStatsWG.Add(1)
 	c.tokenStatsMu.Unlock()
@@ -525,6 +528,19 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 
 func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.ProviderSetting) bool {
 	enabledOrder, enabled := enabledProviderInventory(settings)
+	if c.inventoryKnown {
+		for key := range enabled {
+			if _, had := c.inventoryEnabled[key]; !had {
+				// A provider that was just switched on has no token totals
+				// yet. The last scan could not know about it, so it must not
+				// wait out that scan's cooldown.
+				c.tokenStatsMu.Lock()
+				c.tokenStatsRescan = true
+				c.tokenStatsMu.Unlock()
+				break
+			}
+		}
+	}
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
 	c.inventoryDisabled = make(map[string]struct{}, len(settings))
