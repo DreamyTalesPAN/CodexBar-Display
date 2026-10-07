@@ -1478,7 +1478,11 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
 	}
-	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired {
+	// Token totals are scanned on their own schedule and land on a usage
+	// snapshot that keeps its collection time, so a delta must never be
+	// answered from the remembered activity.
+	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
+		!collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired {
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
 	}

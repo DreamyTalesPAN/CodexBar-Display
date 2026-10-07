@@ -1724,6 +1724,43 @@ func TestApplySelectionActivityHoldsCodingUntilNextUsageFrame(t *testing.T) {
 	}
 }
 
+func TestApplySelectionActivityShowsCodingForTokenDeltaOnUnchangedUsageSnapshot(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 7, 14, 52, 0, 0, time.UTC)
+	observedAt := now.Add(-30 * time.Second)
+	selected := codexbar.ParsedFrame{CollectedAt: now, ActivityObservedAt: observedAt}
+	state := &runtimeState{}
+
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
+		Selected: selected,
+		Reason:   codexbar.SelectionReasonStickyCurrent,
+	}, state, now)
+	if frame.Activity != "idle" {
+		t.Fatalf("expected idle without a usage delta, got %q detail=%q", frame.Activity, detail)
+	}
+
+	// The token scan finishes between two usage collections: same snapshot
+	// times, higher token totals.
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
+		Selected:             selected,
+		Reason:               codexbar.SelectionReasonUsageDelta,
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+		ActivityDetail:       "source=usage-delta score=session+0 weekly+0 sessionTokens+65294",
+	}, state, now.Add(2*time.Second))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected a token delta on an unchanged usage snapshot to show coding, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
+		Selected: selected,
+		Reason:   codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(4*time.Second))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected coding to hold on the next unchanged frame, got %q detail=%q", frame.Activity, detail)
+	}
+}
+
 func TestApplySelectionActivityTreatsCachedCodexBarSnapshotAsNotFreshIdleEvidence(t *testing.T) {
 	prepareFastTestEnv(t)
 	t.Setenv(activityHoldEnvVar, "20")
