@@ -6868,6 +6868,64 @@ func TestDeviceHealthReportsResetReason(t *testing.T) {
 	}
 }
 
+// Issue #265: the signal strength the firmware already reports reaches the
+// status and the support report, which is /v1/diagnostics. Diagnostics only.
+func TestStatusCarriesDeviceWiFiHealth(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.56","deviceId":"vibetv-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"wifi":{"rssi":-67,"channel":6,"phyMode":"11n","sleepMode":"none"}}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "vibetv-wifi"})
+	server.subnetTargets = func() []string { return nil }
+	for _, endpoint := range []string{"/v1/status", "/v1/diagnostics"} {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		var got struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v", endpoint, err)
+		}
+		want := deviceWiFiHealth{RSSI: -67, Channel: 6, PhyMode: "11n", SleepMode: "none"}
+		if got.Device.Health == nil || got.Device.Health.WiFi == nil || *got.Device.Health.WiFi != want {
+			t.Fatalf("%s: device.health.wifi missing or wrong: %s", endpoint, rec.Body.String())
+		}
+	}
+}
+
+// A VibeTV on the Cable has no signal: the ESP8266 reports 31 instead of a
+// negative dBm value, and that must not look like a reading.
+func TestStatusOmitsWiFiHealthForCableDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = []string{protocol.FeatureCableHealthV1}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.WiFi = deviceWiFiHealth{RSSI: 31, PhyMode: "11n", SleepMode: "modem"}
+		return health, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Health == nil || !got.Device.Health.OK || got.Device.Health.WiFi != nil {
+		t.Fatalf("Cable device health must carry no WiFi reading: %s", rec.Body.String())
+	}
+}
+
 func TestDeviceReloadDisplayWaitsForRenderHealth(t *testing.T) {
 	var healthCalls int
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -499,6 +499,15 @@ type deviceHealthInfo struct {
 	LastResetAt string `json:"lastResetAt,omitempty"`
 	RenderKind  string `json:"renderKind,omitempty"`
 	Error       string `json:"error,omitempty"`
+	// Diagnostics only (#265): set when the device reports a signal reading.
+	WiFi *deviceWiFiHealth `json:"wifi,omitempty"`
+}
+
+type deviceWiFiHealth struct {
+	RSSI      int    `json:"rssi"`
+	Channel   int    `json:"channel,omitempty"`
+	PhyMode   string `json:"phyMode,omitempty"`
+	SleepMode string `json:"sleepMode,omitempty"`
 }
 
 type themeSpecHealth struct {
@@ -8623,6 +8632,7 @@ type deviceHealth struct {
 		ResetCount  uint32 `json:"resetCount"`
 		ResetReason string `json:"resetReason"`
 	} `json:"system"`
+	WiFi    deviceWiFiHealth `json:"wifi"`
 	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
@@ -9554,6 +9564,11 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 		ResetReason: strings.TrimSpace(health.System.ResetReason),
 		LastResetAt: lastResetAt,
 		RenderKind:  strings.TrimSpace(health.Render.LastKind),
+	}
+	// Signal strength is negative dBm. A VibeTV that is not on WiFi, such as
+	// one on the Cable, reports 31.
+	if health.WiFi.RSSI < 0 {
+		device.Health.WiFi = &health.WiFi
 	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
 	device.Standby = nil
