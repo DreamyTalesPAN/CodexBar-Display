@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type {
   DeviceInfo,
   PreferenceDescriptor,
@@ -589,5 +590,21 @@ describe("SettingsScreen standby controls", () => {
 
     expect(displaySection).toContain(`role="status">${notice}</p>`);
     expect(render(standbyDevice)).not.toContain("now switches automatically");
+  });
+
+  it("has no accessibility violations with every section shown", async () => {
+    await expectNoAxeViolations(
+      render(
+        standbyDevice,
+        { ...savedStandby, enabled: true },
+        {
+          ...providerPicker,
+          display: { mode: "fixed", providerIds: ["claude"], configured: true, valid: true },
+          items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
+        },
+        70, "cable", false, [usageDisplay, rotation],
+        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
+      ),
+    );
   });
 });

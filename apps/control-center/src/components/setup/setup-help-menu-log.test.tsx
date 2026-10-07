@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { SetupEventsContext } from "../setup-event-log";
 import { SetupHelpMenu } from "./setup-help-menu";
 
@@ -23,6 +24,7 @@ describe("SetupHelpMenu setup log", () => {
     const create = screen.getByRole("menuitem", { name: "Create support report" });
     expect(create.hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("menuitemcheckbox", { name: "Hide setup log" }).getAttribute("aria-checked")).toBe("true");
+    await expectNoAxeViolations(document.body.innerHTML);
   });
 
   it("offers no setup log where the app cannot read one", () => {

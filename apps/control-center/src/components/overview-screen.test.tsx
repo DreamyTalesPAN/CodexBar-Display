@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { OverviewScreen } from "./overview-screen";
 
 describe("OverviewScreen", () => {
@@ -207,5 +208,16 @@ describe("OverviewScreen", () => {
     expect(unknown).toContain(waiting);
     expect(missing.includes("Mac")).toBe(!windowsHost);
     expect(unknown.includes("Mac")).toBe(!windowsHost);
+  });
+
+  it.each([true, false])("has no accessibility violations (connected=%s)", async (connected) => {
+    await expectNoAxeViolations(
+      renderToStaticMarkup(
+        <OverviewScreen
+          companionStatus="online"
+          device={{ active: true, connected, deviceId: "14799300", paired: true, ready: connected }}
+        />,
+      ),
+    );
   });
 });

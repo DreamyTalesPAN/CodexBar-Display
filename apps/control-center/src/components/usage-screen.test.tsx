@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { UsageSnapshot } from "./control-center-types";
 import { UsageScreen } from "./usage-screen";
 
@@ -459,5 +460,17 @@ describe("UsageScreen", () => {
     expect(html).toContain("Weekly: 57% used");
     expect(html).not.toContain("Weekly: ??");
     expect(html).not.toContain("Session: 0%");
+  });
+
+  it("has no accessibility violations with usage, unavailable limits, no provider and while refreshing", async () => {
+    await expectNoAxeViolations(renderUsage());
+    await expectNoAxeViolations(renderUsage("usage", { ...usage, tokenUsageReady: false }));
+    await expectNoAxeViolations(
+      renderUsage(null, {
+        ...usage,
+        providers: [{ ...usage.providers[0], sessionUnavailable: true, stale: true }],
+      }),
+    );
+    await expectNoAxeViolations(renderUsage(null, { ...usage, providers: [] }));
   });
 });

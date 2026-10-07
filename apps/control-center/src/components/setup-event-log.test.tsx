@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { SetupLog } from "./control-center-types";
 import {
   SETUP_EVENTS_POLL_MS,
@@ -81,6 +82,11 @@ describe("SetupEventList", () => {
     render(<SetupEventList log={restarted} windowsHost />);
     expect(rows()[0]).not.toContain("Mac");
     expect(rows()[0]).toContain("The app's background service started again.");
+  });
+
+  it("has no accessibility violations", async () => {
+    render(<SetupEventList log={{ ...log, truncated: true }} />);
+    await expectNoAxeViolations(document.body.innerHTML);
   });
 
   it("has an empty state", () => {

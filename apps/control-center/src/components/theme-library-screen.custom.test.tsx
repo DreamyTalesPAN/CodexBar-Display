@@ -8,6 +8,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { ThemeProduct } from "@/lib/themes";
 import { ThemeLibraryScreen } from "./theme-library-screen";
 
@@ -91,6 +92,24 @@ describe("ThemeLibraryScreen custom themes", () => {
 
     expect(html).toContain("Live Theme");
     expect(html).not.toContain('aria-label="Delete Live Theme"');
+    await act(async () => cleanup());
+  });
+
+  it("has no accessibility violations with the delete question open, and focus returns from it", async () => {
+    const { html, cleanup } = await renderLibrary();
+    await expectNoAxeViolations(html);
+    const opener = document.querySelector<HTMLButtonElement>('[aria-label="Delete My Theme"]')!;
+    opener.focus();
+    await act(async () => opener.click());
+    const question = document.querySelector('[role="alertdialog"]')!;
+    expect(question.contains(document.activeElement)).toBe(true);
+    await expectNoAxeViolations(document.body.innerHTML);
+    // Cancel has focus.
+    await act(async () => {
+      (document.activeElement as HTMLButtonElement).click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(document.activeElement).toBe(opener);
     await act(async () => cleanup());
   });
 });
