@@ -168,6 +168,7 @@ export function LogsScreen({
               creating={supportReportBusy}
               diagnostics={diagnostics}
               onCreate={onLoadDiagnostics}
+              windowsHost={windowsHost}
             />
           </CardContent>
         </Card>
