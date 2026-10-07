@@ -312,7 +312,9 @@ function ModeCard({
   return (
     <Item
       asChild
-      className={cn(selectedItemClass(selected), "overflow-hidden p-0")}
+      // The row stretches both cards to one height; a shorter description
+      // must not move its preview down.
+      className={cn(selectedItemClass(selected), "items-start overflow-hidden p-0")}
       variant="outline"
     >
       <button

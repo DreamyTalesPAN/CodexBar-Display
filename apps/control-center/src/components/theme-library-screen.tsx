@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  CircleAlert,
   Edit3,
+  Info,
   Library,
   Lock,
   Monitor,
@@ -570,8 +570,8 @@ export function ThemeLibraryScreen({
             />
           </Field>
           {!standby.enabled ? (
-            <Alert variant="destructive">
-              <CircleAlert aria-hidden />
+            <Alert>
+              <Info aria-hidden />
               <AlertTitle>Screensaver is turned off</AlertTitle>
               <AlertDescription>
                 Turn on Show screensaver to install and use a screensaver.

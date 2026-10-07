@@ -255,6 +255,12 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain("Screensaver is turned off");
     expect(html).toContain("Night Clock");
     expect(html).not.toContain("Live Theme");
+    // Switched off is a normal state, not an error (#548).
+    const notice = html
+      .split('data-slot="alert"')
+      .find((part) => part.includes("Screensaver is turned off"));
+    expect(notice?.slice(0, notice.indexOf(">"))).toContain("text-card-foreground");
+    expect(notice?.slice(0, notice.indexOf(">"))).not.toContain("text-destructive");
   });
 
   it("locks installs while the screensaver is off but keeps the toggle usable", () => {

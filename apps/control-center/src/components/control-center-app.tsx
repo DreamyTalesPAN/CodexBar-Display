@@ -636,7 +636,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     {
       id: "session-start",
       label: "Control Center opened",
-      detail: "Browser session started.",
+      detail: "This session started.",
       at: "Session",
       tone: "unknown",
     },
@@ -698,14 +698,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const addEvent = useCallback(
     (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
       setEvents((current) =>
-        [
-          {
-            id: `${Date.now()}-${current.length}`,
-            at: event.at || formatTime(),
-            ...event,
-          },
-          ...current,
-        ].slice(0, RECENT_EVENT_LIMIT),
+        recentEventsWith(current, {
+          id: `${Date.now()}-${current.length}`,
+          at: event.at || formatTime(),
+          ...event,
+        }),
       );
     },
     [],
@@ -2426,7 +2423,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           detail: setupVerified
             ? result.name || theme.title
             : "The theme is installed. VibeTV is still confirming its display.",
-          at: finishedAt,
           tone: setupVerified ? "ready" : "unknown",
         });
         return setupVerified;
@@ -5440,6 +5436,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ) : null}
     </SetupEventsContext.Provider>
   );
+}
+
+/**
+ * Recent activity, newest first. An entry that says the same as the newest one
+ * is not written again: the Support page showed "Settings loaded" with the same
+ * brightness several times in a row.
+ */
+export function recentEventsWith(
+  events: ControlCenterEvent[],
+  event: ControlCenterEvent,
+): ControlCenterEvent[] {
+  const newest = events[0];
+  if (newest?.label === event.label && newest.detail === event.detail) {
+    return events;
+  }
+  return [event, ...events].slice(0, RECENT_EVENT_LIMIT);
 }
 
 export function setupThemeCatalogError(

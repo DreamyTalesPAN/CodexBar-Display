@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bindingDisplayLabel,
+  defaultPrimitive,
   primitiveBounds,
   primitiveTitle,
 } from "./editor-geometry";
@@ -33,6 +34,13 @@ describe("bindingDisplayLabel", () => {
   it("keeps unrelated bindings unchanged", () => {
     expect(bindingDisplayLabel("session")).toBe("session");
     expect(bindingDisplayLabel("customBinding")).toBe("customBinding");
+  });
+});
+
+describe("defaultPrimitive", () => {
+  // It was "session", which the Binding list calls "Session (legacy)" (#548).
+  it("binds a new Bar to the first usage window, like the built-in themes", () => {
+    expect(defaultPrimitive("progress", 0).binding).toBe("usageSlot1Percent");
   });
 });
 

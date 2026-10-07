@@ -2403,7 +2403,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		{
 			Name:   "companion_api",
 			Status: "pass",
-			Detail: "Companion API is responding on loopback.",
+			Detail: "Companion API is running.",
 		},
 		usageEngineDiagnosticCheck(providerSetup.Engine),
 		providerDiagnosticCheck(providerSetup),

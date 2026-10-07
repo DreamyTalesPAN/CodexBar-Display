@@ -91,7 +91,7 @@ export function defaultPrimitive(
       y: 118 + Math.min(40, offset),
       width: 190,
       height: 16,
-      binding: "session",
+      binding: "usageSlot1Percent",
       color: "#C7FF68",
       bgColor: "#111111",
       borderColor: "#3B4552",

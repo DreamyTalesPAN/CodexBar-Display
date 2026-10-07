@@ -7020,6 +7020,10 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	if !hasDiagnosticCheck(got.Checks, "device_target", "attention") {
 		t.Fatalf("expected missing target diagnostic, got %+v", got.Checks)
 	}
+	// The Control Center shows this sentence as "Mac App is running."
+	if got.Checks[0].Detail != "Companion API is running." {
+		t.Fatalf("expected the plain app check sentence, got %+v", got.Checks[0])
+	}
 }
 
 func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {

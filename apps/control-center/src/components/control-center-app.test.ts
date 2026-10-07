@@ -3,6 +3,7 @@ import {
   connectionModeChoiceStatus,
   statusConfirmsSubmittedWiFiChoice,
   mergeDeviceInfo,
+  recentEventsWith,
   setupThemeCatalogError,
 } from "./control-center-app";
 import { deviceAwaitsProviderSetup } from "./control-center-types";
@@ -201,5 +202,29 @@ describe("setup theme catalog", () => {
         nextAction: "Themes are not available right now.",
       });
     expect(setupThemeCatalogError(undefined, 1)).toBeNull();
+  });
+});
+
+// Seen on the Support page: "Settings loaded – Brightness is set to 20%."
+// several times in a row (#548).
+describe("recent activity", () => {
+  const loaded = { id: "1", label: "Settings loaded", detail: "Brightness is set to 20%." };
+
+  it("does not repeat the newest entry", () => {
+    const events = [loaded];
+
+    expect(recentEventsWith(events, { ...loaded, id: "2" })).toBe(events);
+  });
+
+  it("puts a different entry first, also one that was seen before", () => {
+    const installed = { id: "2", label: "Screensaver installed", detail: "Night Clock" };
+    const events = recentEventsWith([loaded], installed);
+
+    expect(events).toEqual([installed, loaded]);
+    expect(recentEventsWith(events, { ...loaded, id: "3" }).map((event) => event.id)).toEqual([
+      "3",
+      "2",
+      "1",
+    ]);
   });
 });
