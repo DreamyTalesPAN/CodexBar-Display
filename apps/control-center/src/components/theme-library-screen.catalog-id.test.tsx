@@ -197,6 +197,18 @@ it.each<[string, () => void]>([
   ).toMatchObject({ needed: true, theme: { themeId: "mini-classic" } });
 });
 
+// Save never stores a theme without a name: it names it after its id, and
+// the name field shows that name.
+it.each(["", "   "])("names a theme saved with the name %j after its id", async (name) => {
+  fireEvent.click(button("Create Theme"));
+  const nameField = () => screen.getByLabelText("Name") as HTMLInputElement;
+  fireEvent.change(nameField(), { target: { value: name } });
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(nameField().value).toBe("My Theme"));
+  expect(screen.getByText("Saved to library.")).toBeTruthy();
+});
+
 // An unchanged copy opened with Edit already carries its own id. It is still
 // a draft that no list contains, so it is saved before it can be sent.
 it("sends a copy of a catalog theme under its own id, once it is saved", async () => {

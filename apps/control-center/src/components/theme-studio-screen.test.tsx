@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { createBlankThemeSpec } from "@/lib/theme-studio";
+import {
+  createBlankThemeSpec,
+  THEME_STUDIO_DRAFT_STORAGE_KEY,
+} from "@/lib/theme-studio";
 import { ThemeStudioScreen } from "./theme-studio-screen";
 
 // jsdom has no matchMedia; the preview asks it about reduced motion.
@@ -109,6 +112,39 @@ it("lets the customer name the theme in the header, without opening Advanced", a
   fireEvent.click(button("Advanced"));
   expect(screen.getAllByLabelText("Name")).toHaveLength(1);
   expect(screen.getByLabelText("ID")).toBeTruthy();
+});
+
+// Seen on the Windows app on 2026-10-07: emptying the name raised a red Library
+// notice about the recovery copy, and typing a name again did not remove it.
+it("takes an emptied name without a notice and still keeps the recovery copy", async () => {
+  window.localStorage.clear();
+  renderStudio("blank");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "" } });
+
+  // The copy is stored under the name Save would give the theme.
+  await waitFor(() =>
+    expect(
+      JSON.parse(window.localStorage.getItem(THEME_STUDIO_DRAFT_STORAGE_KEY) || "{}")
+        .recovery?.document.packName,
+    ).toBe("My Theme"),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
+});
+
+it("drops the notice of a recovery copy that was not written once a later one is", async () => {
+  window.localStorage.clear();
+  const failed = "Theme data could not be saved to this browser.";
+  vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
+    throw new Error("storage failed");
+  });
+  renderStudio("blank");
+
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "First" } });
+  expect(await screen.findByText(failed)).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Second" } });
+  await waitFor(() => expect(screen.queryByText(failed)).toBeNull());
 });
 
 // Issue #551: a greyed-out Send to VibeTV gave no reason.

@@ -267,7 +267,11 @@ export function ThemeStudioScreen({
     tone: "unknown",
     message: "",
   });
-  const [libraryStatus, setLibraryStatus] = useState<EditorStatus | null>(() =>
+  // recovery: the recovery copy could not be written. That notice leaves with
+  // the next write of the copy that succeeds.
+  const [libraryStatus, setLibraryStatus] = useState<
+    (EditorStatus & { recovery?: boolean }) | null
+  >(() =>
     saveBlockedReason
       ? { message: saveBlockedReason, tone: "attention" }
       : null,
@@ -412,23 +416,30 @@ export function ThemeStudioScreen({
     if (!snapshot?.dirty) {
       return true;
     }
+    const { document } = snapshot;
     const result = writeThemeStudioRecovery({
-      document: snapshot.document,
+      // A name emptied while typing is no error. The copy cannot be stored
+      // without one, so it gets the name Save gives a theme without a name.
+      document: document.packName.trim()
+        ? document
+        : { ...document, packName: titleFromThemeId(document.spec.themeId) },
       libraryId: libraryIdRef.current,
       originThemeId:
         sourceRef.current === "published" ? libraryIdRef.current : undefined,
       source: sourceRef.current,
       updatedAt: new Date().toISOString(),
     });
-    if (!result.ok) {
-      setLibraryStatus({
-        tone: "attention",
-        message: result.error.message,
-      });
-      return false;
+    if (result.ok) {
+      recoveryWrittenRef.current = true;
     }
-    recoveryWrittenRef.current = true;
-    return true;
+    setLibraryStatus((current) =>
+      !result.ok
+        ? { tone: "attention", message: result.error.message, recovery: true }
+        : current?.recovery
+          ? null
+          : current,
+    );
+    return result.ok;
   }, []);
 
   async function saveThemeToLibrary(): Promise<boolean> {
@@ -961,26 +972,10 @@ export function ThemeStudioScreen({
         return () => window.clearTimeout(statusTimer);
       }
     }
-    const timer = window.setTimeout(() => {
-      const result = writeThemeStudioRecovery({
-        document: editorState.present,
-        libraryId: libraryIdRef.current,
-        originThemeId:
-          sourceRef.current === "published" ? libraryIdRef.current : undefined,
-        source: sourceRef.current,
-        updatedAt: new Date().toISOString(),
-      });
-      if (!result.ok) {
-        setLibraryStatus({
-          tone: "attention",
-          message: result.error.message,
-        });
-      } else {
-        recoveryWrittenRef.current = true;
-      }
-    }, 300);
+    // Every change to the theme starts this wait again.
+    const timer = window.setTimeout(persistThemeStudioRecovery, 300);
     return () => window.clearTimeout(timer);
-  }, [dirty, editorState.present, onRecoveryDiscarded]);
+  }, [dirty, editorState.present, onRecoveryDiscarded, persistThemeStudioRecovery]);
 
   function insertToken(token: string) {
     updateSelectedPrimitive((primitive) => {

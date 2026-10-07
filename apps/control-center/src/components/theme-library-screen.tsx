@@ -380,7 +380,7 @@ export function ThemeLibraryScreen({
     const nextRecord: UserThemeRecord = {
       document: {
         assets: payload.assets,
-        packName: payload.packName || titleFromThemeId(spec.themeId),
+        packName: payload.packName.trim() || titleFromThemeId(spec.themeId),
         spec,
         ...(savedUsage === "screensaver" ? { usage: savedUsage } : {}),
       },
