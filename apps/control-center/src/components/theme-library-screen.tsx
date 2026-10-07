@@ -70,6 +70,7 @@ import {
   createBlankThemeSpec,
   importThemeSpec,
   normalizeThemeSpec,
+  validateThemeSpec,
   type ThemeStudioAsset,
   type ThemeStudioUsage,
 } from "@/lib/theme-studio";
@@ -104,6 +105,7 @@ export type ThemeLibraryDeviceInfo = {
   board?: string;
   firmware?: string;
   activeTheme?: string;
+  display?: { themeSpec?: { path?: string } };
   standby?: {
     active?: boolean;
     liveThemePath?: string;
@@ -237,8 +239,9 @@ export function ThemeLibraryScreen({
   const [deleteError, setDeleteError] = useState("");
   const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
   const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
-  const [loadingEditorThemeId, setLoadingEditorThemeId] = useState("");
-  const [preparingInstallThemeId, setPreparingInstallThemeId] = useState("");
+  const [loadingEditorRow, setLoadingEditorRow] = useState("");
+  const [preparingInstallRow, setPreparingInstallRow] = useState("");
+  const [installRow, setInstallRow] = useState("");
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
@@ -260,6 +263,32 @@ export function ThemeLibraryScreen({
       title: product.title,
     })),
   ];
+  // A later catalog can give one of its themes the id of a theme the customer
+  // made. That id then names two rows, so for those the theme file decides which
+  // one VibeTV holds: an own theme is sent under a path only it has.
+  const ownPathBySharedId = new Map(
+    libraryThemes.flatMap((item) =>
+      item.kind === "custom" &&
+      visibleThemes.some((theme) => theme.themeId === item.themeId)
+        ? [
+            [
+              item.themeId,
+              validateThemeSpec(
+                item.custom.document.spec,
+                item.custom.document.assets,
+                usage,
+              ).themeSpecPath,
+            ] as const,
+          ]
+        : [],
+    ),
+  );
+  const heldPath = screensavers
+    ? screensaverPath
+    : (device?.standby?.active === true
+        ? device.standby.liveThemePath
+        : device?.display?.themeSpec?.path
+      )?.trim();
   const displayTheme =
     selectedTheme ||
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
@@ -357,7 +386,7 @@ export function ThemeLibraryScreen({
       return;
     }
 
-    setLoadingEditorThemeId(item.themeId);
+    setLoadingEditorRow(rowKey(item));
     try {
       const payload = await fetchThemePackForEditing(
         item.product.themeId,
@@ -379,7 +408,7 @@ export function ThemeLibraryScreen({
         error instanceof Error ? error.message : "Theme could not be opened.",
       );
     } finally {
-      setLoadingEditorThemeId("");
+      setLoadingEditorRow("");
     }
   }
 
@@ -492,13 +521,14 @@ export function ThemeLibraryScreen({
 
   async function installLibraryTheme(item: ThemeLibraryItem) {
     setLibraryError("");
+    setInstallRow(rowKey(item));
     onSelectTheme(item.themeId);
     if (item.kind === "published") {
       await onInstallTheme(item.product);
       return;
     }
 
-    setPreparingInstallThemeId(item.themeId);
+    setPreparingInstallRow(rowKey(item));
     try {
       await onInstallCustomTheme({
         assets: item.custom.document.assets,
@@ -513,7 +543,7 @@ export function ThemeLibraryScreen({
         error instanceof Error ? error.message : "Theme could not be prepared.",
       );
     } finally {
-      setPreparingInstallThemeId("");
+      setPreparingInstallRow("");
     }
   }
 
@@ -647,17 +677,18 @@ export function ThemeLibraryScreen({
                   displayThemeId={displayTheme?.themeId}
                   item={theme}
                   installStatus={statusForHost(installStatus, windowsHost)}
-                  // Not the theme id: an own theme can carry the id a later
-                  // catalog gave one of its themes.
-                  key={`${theme.kind}:${theme.id}`}
+                  key={rowKey(theme)}
+                  heldPath={heldPath}
+                  installRow={installRow}
                   installedThemeId={installedThemeId}
                   lastInstall={lastInstall}
-                  loadingEditorThemeId={loadingEditorThemeId}
+                  loadingEditorRow={loadingEditorRow}
                   onEditTheme={openThemeEditor}
                   onDeleteTheme={requestDeleteTheme}
                   onInstallTheme={installLibraryTheme}
                   onPreviewTheme={setPreviewTheme}
-                  preparingInstallThemeId={preparingInstallThemeId}
+                  ownPathOfSharedId={ownPathBySharedId.get(theme.themeId)}
+                  preparingInstallRow={preparingInstallRow}
                   selectedThemeId={selectedThemeId}
                   usage={usage}
                   themeInstallBlockedReason={readiness.buttonReason}
@@ -875,20 +906,29 @@ function MissingRequestedThemeNotice({
   );
 }
 
+// Not the theme id: an own theme can carry the id a later catalog gave one of
+// its themes.
+function rowKey(item: ThemeLibraryItem): string {
+  return `${item.kind}:${item.id}`;
+}
+
 function ThemeListItem({
   busyAction,
   device,
   displayThemeId,
+  heldPath,
   item,
+  installRow,
   installStatus,
   installedThemeId,
   lastInstall,
-  loadingEditorThemeId,
+  loadingEditorRow,
   onDeleteTheme,
   onEditTheme,
   onInstallTheme,
   onPreviewTheme,
-  preparingInstallThemeId,
+  ownPathOfSharedId,
+  preparingInstallRow,
   screensaverInstallLocked = false,
   selectedThemeId,
   usage,
@@ -899,16 +939,19 @@ function ThemeListItem({
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
   displayThemeId?: string;
+  heldPath?: string;
   item: ThemeLibraryItem;
+  installRow: string;
   installStatus?: ThemeInstallStatus | null;
   installedThemeId?: string;
   lastInstall?: ThemeInstallResult;
-  loadingEditorThemeId: string;
+  loadingEditorRow: string;
   onDeleteTheme: (theme: UserThemeRecord) => void;
   onEditTheme: (item: ThemeLibraryItem) => void;
   onInstallTheme: (item: ThemeLibraryItem) => void;
   onPreviewTheme: (theme: ThemeLibraryItem) => void;
-  preparingInstallThemeId: string;
+  ownPathOfSharedId?: string;
+  preparingInstallRow: string;
   screensaverInstallLocked?: boolean;
   selectedThemeId: string;
   usage: ThemeStudioUsage;
@@ -918,17 +961,25 @@ function ThemeListItem({
 }) {
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
+  const sharesId = ownPathOfSharedId !== undefined;
+  const installedPath =
+    lastInstall?.themeId === item.themeId ? lastInstall.activePath : heldPath;
   const installed =
-    lastInstall?.themeId === item.themeId || installedThemeId === item.themeId;
+    (lastInstall?.themeId === item.themeId ||
+      installedThemeId === item.themeId) &&
+    (!sharesId ||
+      (isCustom
+        ? installedPath === ownPathOfSharedId
+        : Boolean(installedPath) && installedPath !== ownPathOfSharedId));
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
-  const preparingInstall = preparingInstallThemeId === item.themeId;
+  const preparingInstall = preparingInstallRow === rowKey(item);
   const actionInFlight = Boolean(
-    busyAction || preparingInstallThemeId || installInFlight,
+    busyAction || preparingInstallRow || installInFlight,
   );
-  const visibleInstallStatus = Boolean(
-    installStatus?.themeId === item.themeId,
-  );
+  const visibleInstallStatus =
+    installStatus?.themeId === item.themeId &&
+    (!sharesId || !installRow || installRow === rowKey(item));
   const retryingFailedInstall = visibleInstallStatus && installStatus?.phase === "error";
   const screensaverLockBlocker: ThemeInstallBlocker | null =
     screensaverInstallLocked
@@ -963,7 +1014,7 @@ function ThemeListItem({
           blocker,
         })
       : `Install ${item.title}`;
-  const loadingEdit = loadingEditorThemeId === item.themeId;
+  const loadingEdit = loadingEditorRow === rowKey(item);
 
   return (
     <Item
@@ -994,7 +1045,7 @@ function ThemeListItem({
         )}
       >
         <Button
-          disabled={Boolean(loadingEditorThemeId)}
+          disabled={Boolean(loadingEditorRow)}
           onClick={() => void onEditTheme(item)}
           size="sm"
           type="button"

@@ -9,10 +9,16 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
-import { buildThemePack, createBlankThemeSpec } from "@/lib/theme-studio";
+import {
+  buildThemePack,
+  createBlankThemeSpec,
+  validateThemeSpec,
+  type ThemeStudioSpec,
+} from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   ThemeLibraryScreen,
+  type ThemeInstallStatus,
   type ThemeLibraryScreenProps,
 } from "./theme-library-screen";
 
@@ -145,6 +151,132 @@ describe("ThemeLibraryScreen custom themes", () => {
     expect(errors.mock.calls.flat().join(" ")).not.toContain("same key");
     errors.mockRestore();
     await act(async () => cleanup());
+  });
+
+  // Both rows share the id, so only the file VibeTV holds tells them apart.
+  // Judged by the id alone, installing one marked both as installed and the
+  // customer could not switch to the other.
+  it("marks only the row whose file VibeTV holds when an own and a catalog theme share an id", async () => {
+    const namesake: ThemeProduct = {
+      ...catalogTheme,
+      id: "my-theme",
+      themeId: "my-theme",
+      themeSpecPath: "/themes/my-them-4-abcdef.json",
+      title: "Catalog Namesake",
+    };
+    const ownPath = validateThemeSpec({
+      themeId: "my-theme",
+      usage: "live",
+    } as unknown as ThemeStudioSpec).themeSpecPath;
+    const installTitle = (title: string) =>
+      document
+        .querySelector(`[aria-label="Preview ${title}"]`)!
+        .closest('[role="listitem"]')!
+        .querySelector<HTMLButtonElement>('button[title*="nstall"]')!.title;
+    const render = (path: string, props: Partial<ThemeLibraryScreenProps> = {}) =>
+      renderLibrary([catalogTheme, namesake], {
+        device: {
+          activeTheme: "my-theme",
+          capabilities: { theme: { supportsThemeSpecV1: true } },
+          connected: true,
+          display: { themeSpec: { path } },
+          paired: true,
+          ready: true,
+        },
+        themeInstallEnabled: true,
+        ...props,
+      });
+
+    const own = await render(ownPath);
+    expect(installTitle("My Theme")).toBe("Theme is already installed.");
+    expect(installTitle("Catalog Namesake")).toBe("Install Catalog Namesake");
+    await act(async () => own.cleanup());
+    document.body.innerHTML = "";
+
+    const catalog = await render(namesake.themeSpecPath!);
+    expect(installTitle("My Theme")).toBe("Install My Theme");
+    expect(installTitle("Catalog Namesake")).toBe("Theme is already installed.");
+    await act(async () => catalog.cleanup());
+    document.body.innerHTML = "";
+
+    // An install from here is known before VibeTV reports it.
+    const justInstalled = await render(namesake.themeSpecPath!, {
+      lastInstall: {
+        activePath: ownPath,
+        name: "My Theme",
+        packId: "my-theme-1",
+        themeId: "my-theme",
+        themeRev: 1,
+      },
+    });
+    expect(installTitle("My Theme")).toBe("Theme is already installed.");
+    expect(installTitle("Catalog Namesake")).toBe("Install Catalog Namesake");
+    await act(async () => justInstalled.cleanup());
+  });
+
+  it("shows the install progress only in the row that was installed when two rows share an id", async () => {
+    const namesake: ThemeProduct = {
+      ...catalogTheme,
+      id: "my-theme",
+      themeId: "my-theme",
+      themeSpecPath: "/themes/my-them-4-abcdef.json",
+      title: "Catalog Namesake",
+    };
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const screen = (installStatus?: ThemeInstallStatus) => (
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{
+          activeTheme: "live-theme",
+          capabilities: { theme: { supportsThemeSpecV1: true } },
+          connected: true,
+          paired: true,
+          ready: true,
+        }}
+        installStatus={installStatus}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSaveStandby={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        storefrontConfigured={false}
+        themeInstallEnabled
+        themes={[catalogTheme, namesake]}
+        usage="live"
+      />
+    );
+    const row = (title: string) =>
+      document
+        .querySelector(`[aria-label="Preview ${title}"]`)!
+        .closest<HTMLElement>('[role="listitem"]')!;
+    await act(async () => {
+      root.render(screen());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      row("Catalog Namesake")
+        .querySelector<HTMLButtonElement>('button[title="Install Catalog Namesake"]')!
+        .click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      root.render(
+        screen({
+          logs: [],
+          phase: "installing",
+          startedAt: "10:00:00",
+          themeId: "my-theme",
+          title: "Catalog Namesake",
+        }),
+      );
+    });
+
+    expect(row("Catalog Namesake").textContent).toContain("Installing");
+    expect(row("My Theme").textContent).not.toContain("Installing");
+    await act(async () => root.unmount());
   });
 
   // VibeTV names its screensaver only by the path of the theme file. For the
