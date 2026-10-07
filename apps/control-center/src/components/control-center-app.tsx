@@ -532,6 +532,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const displayPreferencesRevisionRef = useRef(0);
+  const displayPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const setupResetInProgressRef = useRef(false);
   const providerPoolReconcilesAfterResetRef = useRef<Array<() => void>>([]);
   const providerPoolReconcileRetryRef = useRef<
@@ -3367,26 +3368,32 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [runCompanion]);
 
   // The control shows the stored value, so a refused write leaves it where it
-  // was and the error says why.
+  // was and the error says why. Writes go out one after the other: two quick
+  // changes must reach the Mac App, and the control, in the order they were
+  // made.
   const updateDisplayPreference = useCallback(
-    async (item: PreferenceDescriptor, value: PreferenceValue) => {
+    (item: PreferenceDescriptor, value: PreferenceValue) => {
       displayPreferencesRevisionRef.current += 1;
-      try {
-        const payload = await runCompanion<{ item: PreferenceDescriptor }>(
-          `/v1/preferences/${encodeURIComponent(item.id)}`,
-          { method: "PATCH", body: JSON.stringify({ value }) },
-        );
-        setDisplayPreferences((current) =>
-          current.map((preference) =>
-            preference.id === payload.item.id ? payload.item : preference,
-          ),
-        );
-        void refreshUsage({ quiet: true });
-      } catch (error) {
-        setLastError(
-          normalizeCaughtError(error, "Display settings need attention."),
-        );
-      }
+      const write = displayPreferenceWritesRef.current.then(async () => {
+        try {
+          const payload = await runCompanion<{ item: PreferenceDescriptor }>(
+            `/v1/preferences/${encodeURIComponent(item.id)}`,
+            { method: "PATCH", body: JSON.stringify({ value }) },
+          );
+          setDisplayPreferences((current) =>
+            current.map((preference) =>
+              preference.id === payload.item.id ? payload.item : preference,
+            ),
+          );
+          void refreshUsage({ quiet: true });
+        } catch (error) {
+          setLastError(
+            normalizeCaughtError(error, "Display settings need attention."),
+          );
+        }
+      });
+      displayPreferenceWritesRef.current = write;
+      return write;
     },
     [refreshUsage, runCompanion],
   );

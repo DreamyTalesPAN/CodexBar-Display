@@ -5268,3 +5268,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Drafted in the overnight batch of 2026-10-08 and covered by Paul's blanket approval of 2026-10-07 for that batch. Paul has not yet seen this result.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No visible change against the entry for #544: `Refreshing usage` still ends within a few seconds of the new values. Behind it, only the usage reading is asked for every 3 seconds while a refresh is pending; the provider list keeps its 30 second cadence, so a pending refresh no longer starts a provider check in the usage engine every ten seconds. Found by the second code review of the batch.
 - Scope: `control-center-app.tsx`, `control-center-app.usage-refresh.test.tsx`, and this approval record. This is a draft for the branch only, not approval for merge, release, installation, or a device operation.
+
+## 2026-10-08 — Two quick changes of a display setting are stored in the order they were made
+
+- User approval: Drafted in the overnight batch of 2026-10-08 and covered by Paul's blanket approval of 2026-10-07 for that batch. Paul has not yet seen this result.
+- Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No new screen, dialog, button, or wording. In Settings, when the customer changes `Usage display` or `Switch providers` twice in quick succession, the second choice is the one that is stored and shown; before, a slow first write could finish last and leave the first choice stored. Found by the automated review of pull request #541.
+- Scope: `control-center-app.tsx`, one test in `control-center-app.display-preferences.test.tsx`, and this approval record. This is a draft for the branch only, not approval for merge, release, installation, or a device operation.

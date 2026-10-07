@@ -66,6 +66,8 @@ function startWindow() {
     // While set, a read of the display preferences answers late, with the
     // value it found when it started.
     holdRead: null as Promise<void> | null,
+    // While set, the next write is stored late.
+    holdWrite: null as Promise<void> | null,
   };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
@@ -131,6 +133,9 @@ function startWindow() {
           return jsonResponse({ ok: false, error: refused }, 502);
         }
         const { value } = JSON.parse(String(init?.body));
+        const held = companion.holdWrite;
+        companion.holdWrite = null;
+        await held;
         companion.stored = { ...usageDisplay, value, effectiveValue: value ?? "used" };
         return jsonResponse({ ok: true, item: companion.stored });
       }
@@ -244,6 +249,27 @@ it("keeps a saved usage display when an older read answers afterwards", async ()
   answerRead();
   await window.wait(1);
   expect(window.usageDisplay().textContent).toBe("Remaining");
+});
+
+// Two changes in a row: the Mac App must end up with the second one, also when
+// it is slow to store the first.
+it("stores two quick changes of the usage display in the order they were made", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  let storeFirst = () => {};
+  window.companion.holdWrite = new Promise<void>((resolve) => {
+    storeFirst = resolve;
+  });
+  await window.choose("Remaining");
+  await window.choose("Used");
+  storeFirst();
+  await window.wait(1);
+
+  expect(window.companion.stored.value).toBe("used");
+  expect(window.usageDisplay().textContent).toBe("Used");
 });
 
 // The activity entry counts minutes the way the "Show after" list does.
