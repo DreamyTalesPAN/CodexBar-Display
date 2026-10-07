@@ -1865,7 +1865,13 @@ func TestApplySelectionActivityExpiresCodingWhenNoTokenScanCompletes(t *testing.
 		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
 	}, state, scan)
 
+	// Past the plain maximum the next scan is still awaited ...
 	now := scan.Add(activityCodingMaxAge() + time.Second)
+	if frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{Selected: selected(now)}, state, now); frame.Activity != "coding" {
+		t.Fatalf("expected coding to wait for the next token scan, got %q detail=%q", frame.Activity, detail)
+	}
+	// ... but not longer than one scan period.
+	now = scan.Add(tokenStatsScanCooldown + tokenStatsCollectorTimeout + time.Minute + time.Second)
 	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{Selected: selected(now)}, state, now)
 	if frame.Activity != "idle" || !strings.Contains(detail, "coding-max-age-expired") {
 		t.Fatalf("expected coding to expire when token scans stop completing, got %q detail=%q", frame.Activity, detail)
@@ -6878,11 +6884,21 @@ func TestSelectCycleFrameRotatesAutomaticProvidersOnTheInterval(t *testing.T) {
 	expectShown(104*time.Second, "claude")
 	expectShown(105*time.Second, "cursor")
 
+	// One collection fails for every provider: nothing can be rotated for
+	// that cycle, but cursor keeps its turn and its timer.
+	claude.Stale, cursor.Stale = true, true
+	if result := expectShown(110*time.Second, "claude"); result.selectionReason == "timed-rotation" {
+		t.Fatalf("providers without a current reading were rotated: %s", result.selectionDetail)
+	}
+	claude.Stale, cursor.Stale = false, false
+	expectShown(115*time.Second, "cursor")
+	expectShown(135*time.Second, "claude")
+
 	// With one provider left there is nothing to rotate; it stays on screen.
 	cursor.Frame.UsageUnavailable = true
-	for _, after := range []time.Duration{110 * time.Second, 10 * time.Minute} {
-		if result := expectShown(after, "claude"); result.selectionReason == "timed-rotation" || state.rotationProvider != "" {
-			t.Fatalf("after %s: a single provider was still rotated: reason=%s rotation=%q", after, result.selectionReason, state.rotationProvider)
+	for _, after := range []time.Duration{140 * time.Second, 10 * time.Minute} {
+		if result := expectShown(after, "claude"); result.selectionReason == "timed-rotation" {
+			t.Fatalf("after %s: a single provider was still rotated: reason=%s", after, result.selectionReason)
 		}
 	}
 }

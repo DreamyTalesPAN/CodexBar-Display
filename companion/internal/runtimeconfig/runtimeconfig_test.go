@@ -331,7 +331,7 @@ func TestUsageDisplayModeOverridesCodexBarAndSurvivesRestart(t *testing.T) {
 	}
 }
 
-func TestDisplayRotateSecondsSurvivesRestartAndNeverGoesNegative(t *testing.T) {
+func TestDisplayRotateSecondsSurvivesRestartAndKeepsOnlyOfferedIntervals(t *testing.T) {
 	home := t.TempDir()
 	if err := Save(home, Config{DisplayRotateSeconds: 30}); err != nil {
 		t.Fatal(err)
@@ -341,10 +341,13 @@ func TestDisplayRotateSecondsSurvivesRestartAndNeverGoesNegative(t *testing.T) {
 		t.Fatalf("rotation interval did not persist: %+v err=%v", loaded, err)
 	}
 
-	negative := Config{DisplayRotateSeconds: -5}
-	negative.Normalize()
-	if negative.DisplayRotateSeconds != 0 {
-		t.Fatalf("negative rotation interval was kept: %d", negative.DisplayRotateSeconds)
+	// Settings offers 30, 60 and 300 seconds; anything else is no timer.
+	for _, other := range []int{-5, 45} {
+		cfg := Config{DisplayRotateSeconds: other}
+		cfg.Normalize()
+		if cfg.DisplayRotateSeconds != 0 {
+			t.Fatalf("rotation interval %d was kept as %d", other, cfg.DisplayRotateSeconds)
+		}
 	}
 }
 

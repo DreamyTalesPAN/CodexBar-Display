@@ -394,7 +394,11 @@ func (cfg *Config) Normalize() {
 	if cfg.UsageDisplayMode != "used" && cfg.UsageDisplayMode != "remaining" {
 		cfg.UsageDisplayMode = ""
 	}
-	cfg.DisplayRotateSeconds = max(cfg.DisplayRotateSeconds, 0)
+	switch cfg.DisplayRotateSeconds {
+	case 30, 60, 300:
+	default:
+		cfg.DisplayRotateSeconds = 0
+	}
 	for index := range cfg.DeviceTransports {
 		cfg.DeviceTransports[index] = strings.TrimSpace(strings.ToLower(cfg.DeviceTransports[index]))
 	}

@@ -680,6 +680,50 @@ func TestProviderSelectorFirstReadingAfterUnavailableUsageIsNotActivity(t *testi
 	}
 }
 
+func TestProviderSelectorCountsARiseAfterAStaleReadingThatKeptItsPercentages(t *testing.T) {
+	selector := newSelectorWithoutLocalActivity()
+	selector.Select([]ParsedFrame{testParsedFrame("codex", 40, 10, 12000)})
+
+	// One collection fails: the reading is kept, marked stale.
+	stale := testParsedFrame("codex", 40, 10, 11970)
+	stale.Stale = true
+	selector.Select([]ParsedFrame{stale})
+
+	decision, _ := selector.SelectWithDecision([]ParsedFrame{testParsedFrame("codex", 43, 10, 11940)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("a rise after a stale reading was not counted as activity: %#v", decision)
+	}
+}
+
+func TestProviderSelectorIgnoresTokenGrowthWhileTheHistoryIsStillReadIn(t *testing.T) {
+	selector := newSelectorWithoutLocalActivity()
+	frame := func(weekTokens int64, growing bool, session int) ParsedFrame {
+		p := testParsedFrame("claude", session, 20, 15000)
+		p.Frame.SessionTokens = 1_000_000
+		p.Frame.WeekTokens = weekTokens
+		p.Frame.TotalTokens = weekTokens
+		p.TokenHistoryGrowing = growing
+		return p
+	}
+	selector.Select([]ParsedFrame{frame(10_000_000, true, 20)})
+
+	// The second scan read in an older day: more tokens, nobody working.
+	decision, _ := selector.SelectWithDecision([]ParsedFrame{frame(17_000_000, true, 20)})
+	if decision.ActivitySignalReason == SelectionReasonUsageDelta {
+		t.Fatalf("history that was still being read in counted as activity: %#v", decision)
+	}
+	// A percentage that ticks over during that time is still activity.
+	decision, _ = selector.SelectWithDecision([]ParsedFrame{frame(24_000_000, true, 21)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("a percentage rise while the history was read in was not counted: %#v", decision)
+	}
+	// History settled: new tokens are work again.
+	decision, _ = selector.SelectWithDecision([]ParsedFrame{frame(24_050_000, false, 21)})
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("new tokens on a settled history were not counted: %#v", decision)
+	}
+}
+
 func TestProviderSelectorSticksWithoutNewActivity(t *testing.T) {
 	selector := newSelectorWithoutLocalActivity()
 

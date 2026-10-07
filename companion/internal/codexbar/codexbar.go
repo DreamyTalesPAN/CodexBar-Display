@@ -482,7 +482,10 @@ type ParsedFrame struct {
 	// TokenStatsCollectedAt is when the last token scan for this provider
 	// completed, with or without new tokens.
 	TokenStatsCollectedAt time.Time
-	Stale                 bool
+	// TokenHistoryGrowing is set while the token history is still being read
+	// in: the totals rise from scan to scan without anyone working.
+	TokenHistoryGrowing bool
+	Stale               bool
 	// Terminal marks a provider error CodexBar states as permanent (see
 	// providerErrorIsTerminal): retained quota for that provider is void.
 	Terminal bool
@@ -1838,7 +1841,7 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 			sessionTokens:    p.Frame.SessionTokens,
 			weekTokens:       p.Frame.WeekTokens,
 			totalTokens:      p.Frame.TotalTokens,
-			usageUnavailable: !providerUsageAvailable(p),
+			usageUnavailable: p.Frame.UsageUnavailable,
 		}
 	}
 	s.snapshots = next
@@ -1947,7 +1950,7 @@ func (s *ProviderSelector) activityScoreForSelected(selected ParsedFrame) (activ
 	if !ok {
 		return activityScore{}, false
 	}
-	score := computeActivityScore(prev, selected.Frame)
+	score := providerActivityScore(prev, selected)
 	if !score.hasSignal() {
 		return activityScore{}, false
 	}
@@ -1963,7 +1966,7 @@ func (s *ProviderSelector) selectBestDeltaFromCandidates(all []ParsedFrame, conf
 		if !ok {
 			continue
 		}
-		score := computeActivityScore(prev, all[candidate.idx].Frame)
+		score := providerActivityScore(prev, all[candidate.idx])
 		if !score.hasSignal() {
 			continue
 		}
@@ -1990,7 +1993,7 @@ func (s *ProviderSelector) selectByUsageDelta(all []ParsedFrame) (ParsedFrame, a
 			continue
 		}
 
-		score := computeActivityScore(prev, p.Frame)
+		score := providerActivityScore(prev, p)
 		if !score.hasSignal() {
 			continue
 		}
@@ -2524,6 +2527,17 @@ func plausibleTokenDelta(delta int64) int64 {
 		return 0
 	}
 	return delta
+}
+
+// providerActivityScore leaves token totals out while the history is still
+// being read in; percentages still count.
+func providerActivityScore(prev providerSnapshot, provider ParsedFrame) activityScore {
+	cur := provider.Frame
+	if provider.TokenHistoryGrowing {
+		prev.sessionTokens, prev.weekTokens, prev.totalTokens = 0, 0, 0
+		cur.SessionTokens, cur.WeekTokens, cur.TotalTokens = 0, 0, 0
+	}
+	return computeActivityScore(prev, cur)
 }
 
 func computeActivityScore(prev providerSnapshot, cur protocol.Frame) activityScore {

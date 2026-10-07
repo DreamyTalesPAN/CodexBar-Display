@@ -1096,6 +1096,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			CollectedAt:           snapshot.Collected,
 			ActivityObservedAt:    snapshot.ActivityObservedAt,
 			TokenStatsCollectedAt: snapshot.TokenStatsCollected,
+			TokenHistoryGrowing:   snapshotHasTokenStats(snapshot) && !snapshot.TokenHistorySettled,
 			Stale:                 snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 			Terminal:              snapshot.Terminal,
 		})

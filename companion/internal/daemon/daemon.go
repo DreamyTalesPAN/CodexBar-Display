@@ -1237,8 +1237,8 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 
 	// A timed rotation changes which provider is shown, nothing else: the
-	// coding/idle verdict below stays the selector's, read from all providers,
-	// because the VibeTV starts its screensaver from it.
+	// coding/idle verdict below stays the one for the provider the selector
+	// chose, because the VibeTV starts its screensaver from it.
 	activity := decision
 	if provider, detail, ok := rotateShownProvider(state, allProviders, decision.Selected, now, deps); ok {
 		decision.Selected, decision.Reason, decision.Detail = provider, "timed-rotation", detail
@@ -1286,16 +1286,19 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 func rotateShownProvider(state *runtimeState, providers []codexbar.ParsedFrame, selected codexbar.ParsedFrame, now time.Time, deps runtimeDeps) (codexbar.ParsedFrame, string, bool) {
 	cfg, _ := loadRuntimeConfig(deps)
 	interval := time.Duration(cfg.DisplayRotateSeconds) * time.Second
+	if interval <= 0 || (cfg.ProviderDisplay != nil && cfg.ProviderDisplay.Mode != "automatic") {
+		state.rotationProvider = ""
+		return codexbar.ParsedFrame{}, "", false
+	}
 	var available []codexbar.ParsedFrame
-	if interval > 0 && (cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic") {
-		for _, provider := range providers {
-			if !provider.Stale && !provider.Frame.UsageUnavailable {
-				available = append(available, provider)
-			}
+	for _, provider := range providers {
+		if !provider.Stale && !provider.Frame.UsageUnavailable {
+			available = append(available, provider)
 		}
 	}
 	if len(available) < 2 {
-		state.rotationProvider = ""
+		// The turn is kept: a collection that fails once must not restart
+		// the rotation.
 		return codexbar.ParsedFrame{}, "", false
 	}
 
@@ -1527,7 +1530,7 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	if activityObservedAt.IsZero() {
 		activityObservedAt = collectedAt
 	}
-	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state.lastCodingAt, now)
+	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state, now)
 	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
 		!activityObservedAt.IsZero() &&
 		activityObservedAt.Equal(state.lastActivityObservedAt) &&
@@ -1561,7 +1564,7 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 		state.idleEvidenceCount = 0
 	default:
 		if state.lastActivity == "coding" {
-			if codingMaxAgeExpired(state.lastCodingAt, now) {
+			if codingMaxAgeExpired(state, now) {
 				state.lastIdleEvidenceAt = time.Time{}
 				state.idleEvidenceCount = 0
 				signalReason = "coding-max-age-expired"
@@ -1616,14 +1619,21 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 	return now.Sub(lastCodingAt) <= activityHoldDuration()
 }
 
-func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
-	if lastCodingAt.IsZero() {
+func codingMaxAgeExpired(state *runtimeState, now time.Time) bool {
+	if state.lastCodingAt.IsZero() {
 		return false
 	}
-	if now.Before(lastCodingAt) {
+	if now.Before(state.lastCodingAt) {
 		return false
 	}
-	return now.Sub(lastCodingAt) > activityCodingMaxAge()
+	maxAge := activityCodingMaxAge()
+	if !state.lastCodingTokenScanAt.IsZero() {
+		// Coding that waits for the next token scan must outlast one scan
+		// period (cooldown plus the scan itself), or continuous work is cut
+		// to idle just before that scan.
+		maxAge = max(maxAge, tokenStatsScanCooldown+tokenStatsCollectorTimeout+time.Minute)
+	}
+	return now.Sub(state.lastCodingAt) > maxAge
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
@@ -2386,9 +2396,7 @@ func activityHoldDuration() time.Duration {
 
 func activityCodingMaxAge() time.Duration {
 	const (
-		// Longer than one token scan period (cooldown plus the scan itself),
-		// so continuous work is not cut to idle just before the next scan.
-		def = tokenStatsScanCooldown + tokenStatsCollectorTimeout + time.Minute
+		def = 5 * time.Minute
 		min = 30 * time.Second
 		max = 30 * time.Minute
 	)
