@@ -296,14 +296,65 @@ function rgbFromHex(color: string): [number, number, number] {
   ];
 }
 
+function spriteLines(raw: string): string[] {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+// The colors of an encoded sprite, each once. Empty when it is not a sprite.
+export function spritePalette(raw: string | undefined): string[] {
+  if (!raw || !spriteMetadata(raw)) {
+    return [];
+  }
+  const lines = spriteLines(raw);
+  return [
+    ...new Set(
+      lines.slice(3, 3 + Number(lines[2])).map((color) => color.toUpperCase()),
+    ),
+  ];
+}
+
+// Turns one palette color of an encoded sprite into the transparent marker in
+// every frame and drops it from the palette. The sprite is returned unchanged
+// when the color is not in the palette, or is its only color: the format needs
+// at least one.
+export function keySpriteColor(raw: string, color: string): string {
+  const palette = spritePalette(raw);
+  const key = color.toUpperCase();
+  if (!palette.includes(key) || palette.length < 2) {
+    return raw;
+  }
+  const lines = spriteLines(raw);
+  const rowStart = 3 + Number(lines[2]);
+  const kept: string[] = [];
+  const tokens = lines.slice(3, rowStart).map((entry) => {
+    if (entry.toUpperCase() === key) {
+      return ".";
+    }
+    kept.push(entry);
+    return String.fromCharCode(96 + kept.length);
+  });
+  const rows = lines.slice(rowStart).map((row) =>
+    row
+      .replace(/[a-z]/g, (token) => tokens[token.charCodeAt(0) - 97] ?? token)
+      // The keyed runs now touch the transparent runs beside them: merge them.
+      .replace(/(?:\d*\.){2,}/g, (runs) => {
+        const counts = runs.split(".").slice(0, -1);
+        return `${counts.reduce((sum, count) => sum + (Number(count) || 1), 0)}.`;
+      }),
+  );
+  return ensureTrailingNewline(
+    [lines[0], lines[1], String(kept.length), ...kept, ...rows].join("\n"),
+  );
+}
+
 export function spriteMetadata(raw: string | undefined): SpriteMetadata | null {
   if (!raw) {
     return null;
   }
-  const lines = raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const lines = spriteLines(raw);
   const kind = lines[0];
   if (kind !== "CBI1" && kind !== "CBA1") {
     return null;

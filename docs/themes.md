@@ -106,10 +106,18 @@ Theme Studio can:
 
 - edit 240x240 layouts
 - import sprites and GIFs in the local Control Center
+- make one color of a sprite transparent with **Transparent color** in the
+  sprite's Inspector (GIFs are not keyed)
 - preview usage bindings with neutral example values
 - export theme packs from Control Center without an automatic hardware write
 - install the generated pack through the Mac App only after the customer clicks
   **Send to VibeTV**
+
+VibeTV paints the transparent pixels of a sprite with the theme background
+color, or with the sprite's own `bgColor` when it has one (always for an
+animated sprite, on partial redraws for a static one), while the Theme Studio
+preview shows what lies underneath, so a sprite with transparent pixels matches
+the preview only where it sits on the plain background.
 
 For reliable hardware themes, keep static visual detail in streamed assets and
 keep ThemeSpec JSON focused on live fields. Start with

@@ -81,6 +81,7 @@ import {
   fileToBase64,
   formatBytes,
   importSpriteFile,
+  keySpriteColor,
   spriteMetadata,
   themeAssetPathForFile,
 } from "@/lib/theme-studio-assets";
@@ -767,6 +768,16 @@ export function ThemeStudioScreen({
     });
   }
 
+  function keySelectedSpriteColor(color: string) {
+    const assetPath = selectedPrimitive?.assetPath;
+    updateDocument((document) => {
+      const asset = assetPath ? document.assets[assetPath] : undefined;
+      if (asset) {
+        asset.data = keySpriteColor(asset.data, color);
+      }
+    });
+  }
+
   function removeAsset(assetPath: string) {
     updateDocument((document) => {
       delete document.assets[assetPath];
@@ -1222,7 +1233,9 @@ export function ThemeStudioScreen({
                       onChange={(field, value) => updateSelectedPrimitive((primitive) => setPrimitiveField(primitive, field, value))}
                       onDelete={deleteSelectedPrimitives}
                       onInsertToken={insertToken}
+                      onKeySpriteColor={keySelectedSpriteColor}
                       primitive={selectedPrimitive}
+                      spriteData={assets[selectedPrimitive.assetPath || ""]?.data}
                     />
                   ) : <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">Select an element.</p>}
                   <div className="grid gap-3 border-t pt-5">
@@ -1621,7 +1634,9 @@ export function ThemeStudioScreen({
                   }
                   onDelete={deleteSelectedPrimitives}
                   onInsertToken={insertToken}
+                  onKeySpriteColor={keySelectedSpriteColor}
                   primitive={selectedPrimitive}
+                  spriteData={assets[selectedPrimitive.assetPath || ""]?.data}
                 />
               ) : (
                 <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">
