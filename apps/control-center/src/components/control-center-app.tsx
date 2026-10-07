@@ -4634,9 +4634,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return startUsageSurfacePolling({
       refreshUsage: () => refreshUsage({ quiet: true }),
       refreshProviderHealth: () => refreshProviderPreferences({ quiet: true }),
-      intervalMs: usageRefreshPending
-        ? USAGE_REFRESH_PENDING_POLL_INTERVAL_MS
-        : undefined,
     });
   }, [
     activeShellTab,
@@ -4645,8 +4642,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshProviderPreferences,
     refreshUsage,
     hasEnteredControlCenter,
-    usageRefreshPending,
   ]);
+
+  // A manual refresh ends on the first usage read after the new snapshot, so
+  // usage alone is read faster meanwhile. Provider health keeps its cadence:
+  // every read past its cache starts a scan in the usage engine.
+  useEffect(() => {
+    if (!usageRefreshPending || companionStatus !== "online") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshUsage({ quiet: true });
+    }, USAGE_REFRESH_PENDING_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [companionStatus, refreshUsage, usageRefreshPending]);
 
   // Settings and the provider step show the display selection; setup also has
   // to read it, because it cannot tell whether one exists — or whether this

@@ -38,7 +38,7 @@ afterEach(() => {
 
 it("ends Refreshing usage within seconds of the new values", async () => {
   // The Mac App: a manual refresh stays "refreshing" until the new snapshot.
-  const companion = { refreshing: false };
+  const companion = { refreshing: false, providerReads: 0 };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
@@ -86,6 +86,9 @@ it("ends Refreshing usage within seconds of the new values", async () => {
         });
       }
       if (url.includes("/v1/preferences")) {
+        if (url.endsWith("section=providers")) {
+          companion.providerReads += 1;
+        }
         return jsonResponse({ ok: true, items: [] });
       }
       if (url.endsWith("/v1/provider-display")) {
@@ -132,6 +135,12 @@ it("ends Refreshing usage within seconds of the new values", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
   await wait(1);
   expect(text()).toContain("Refreshing usage");
+
+  // Only usage is read faster meanwhile. Each provider read past its 10 s
+  // cache starts a scan in the usage engine.
+  const providerReads = companion.providerReads;
+  await wait(12);
+  expect(companion.providerReads - providerReads).toBeLessThanOrEqual(1);
 
   companion.refreshing = false;
   await wait(4);
