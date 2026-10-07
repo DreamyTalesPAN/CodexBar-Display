@@ -77,9 +77,11 @@ const claude = {
 
 // The Mac App as this window sees it: one stored display preference, and what
 // VibeTV holds for brightness, screensaver and display mode.
-function startWindow() {
+function startWindow(themes: unknown[] = []) {
   const companion = {
     stored: usageDisplay,
+    // What VibeTV reports about its screensaver slot, if it reports it.
+    slot: undefined as { screensaverPath?: string } | undefined,
     settings: {
       display: { brightnessPercent: 20 },
       standby: { enabled: false, timeoutMinutes: 1, brightnessPercent: 20 },
@@ -126,7 +128,7 @@ function startWindow() {
         return jsonResponse({
           ok: true,
           companion: { version: "9.9.9", installationMode: "dmg" },
-          device,
+          device: { ...device, standby: companion.slot },
         });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
@@ -204,7 +206,7 @@ function startWindow() {
     createElement(
       TooltipProvider,
       null,
-      createElement(ControlCenterApp, { catalog: { themes: [] } as never }),
+      createElement(ControlCenterApp, { catalog: { themes } as never }),
     ),
   );
   const wait = async (seconds: number) => {
@@ -477,6 +479,30 @@ it("keeps the display mode cards focused while the mode is saved", async () => {
     expect(card.getAttribute("aria-pressed")).toBe("true");
     expect(window.companion.selection.mode).toBe(mode);
   }
+});
+
+// Issue #558: Settings said neither which screensaver "Show screensaver" shows
+// nor that none is installed. VibeTV reports its slot with the status.
+it("names the installed screensaver in Settings, or says that there is none", async () => {
+  const nightClock = {
+    id: "night-clock",
+    themeId: "night-clock",
+    themeSpecPath: "/themes/s/nc-3-e18e4217.json",
+    title: "Night Clock",
+    usage: "screensaver",
+  };
+  const window = startWindow([nightClock]);
+  window.companion.settings.standby = { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 };
+  window.companion.slot = {};
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect(window.text()).toContain("No screensaver is installed yet.");
+
+  window.companion.slot = { screensaverPath: nightClock.themeSpecPath };
+  await window.wait(10);
+  expect(window.text()).toContain("Night Clock is installed.");
+  expect(window.text()).not.toContain("No screensaver is installed yet.");
 });
 
 // Issue #546: "Run setup again" started at once, from Settings and from

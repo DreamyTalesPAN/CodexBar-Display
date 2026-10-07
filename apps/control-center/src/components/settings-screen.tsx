@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleArrowRight, Wifi } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Item, ItemSeparator } from "@/components/ui/item";
@@ -25,6 +25,9 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { installedScreensaver } from "@/lib/active-theme-upgrade";
+import { loadUserThemes } from "@/lib/theme-studio-storage";
+import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
@@ -86,6 +89,8 @@ export type SettingsScreenProps = {
   providerShortcut?: "available" | "unavailable" | null;
   onSaveStandby: (value: StandbySettings) => void;
   onStandbyBrightnessChange: (value: number) => void;
+  /** The catalog, to name the screensaver VibeTV has installed. */
+  themes?: ThemeProduct[];
   /** The app runs on Windows; the Mac wording stays exactly as it is. */
   windowsHost?: boolean;
 };
@@ -112,6 +117,7 @@ export function SettingsScreen({
   providerShortcut = null,
   onSaveStandby,
   onStandbyBrightnessChange,
+  themes = [],
   windowsHost = false,
 }: SettingsScreenProps) {
   const thisHost = windowsHost ? "this computer" : "this Mac";
@@ -147,6 +153,25 @@ export function SettingsScreen({
     !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
+  // The customer's own screensavers are saved in this browser, by Theme Studio.
+  const [ownThemes] = useState(() => {
+    const saved = loadUserThemes();
+    return saved.ok ? saved.value.themes : saved.data?.themes || [];
+  });
+  const screensaverPath = device?.standby?.screensaverPath?.trim();
+  const screensaver = useMemo(
+    () => installedScreensaver(themes, ownThemes, screensaverPath),
+    [ownThemes, screensaverPath, themes],
+  );
+  // Which screensaver the switch shows, said only while it is on and VibeTV
+  // reports its slot. A path that no listed or saved screensaver has is still
+  // a screensaver, in the word the Themes list uses for the customer's own.
+  const screensaverLine =
+    !standbyValues.enabled || !device?.standby
+      ? null
+      : !screensaverPath
+        ? "No screensaver is installed yet."
+        : `${screensaver?.title ?? "A custom screensaver"} is installed.`;
   const supportedTransports = device?.capabilities?.transport?.supported;
   const cableSupported =
     connectionMode === "cable" || deviceOffersCable(device);
@@ -417,6 +442,11 @@ export function SettingsScreen({
               valueLabel={`${standbyValues.brightnessPercent}%`}
             />
             <div className="pt-1">
+              {screensaverLine ? (
+                <span className="mr-2 text-sm text-muted-foreground">
+                  {screensaverLine}
+                </span>
+              ) : null}
               <a
                 aria-disabled={standbyDetailsDisabled}
                 className={

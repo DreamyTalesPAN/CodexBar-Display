@@ -1,4 +1,6 @@
 import type { DeviceInfo } from "@/components/control-center-types";
+import { validateThemeSpec } from "@/lib/theme-studio";
+import type { UserThemeRecord } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 
 export type ActiveThemeUpgrade = {
@@ -159,6 +161,31 @@ export function resolveInstalledScreensaver(
         ? candidate.themeSpecPath?.trim() === installedPath
         : sameVersionedThemePath(candidate.themeSpecPath, installedPath)),
   );
+}
+
+// What VibeTV has in its screensaver slot, for every place that names it: a
+// catalog screensaver in whichever revision, or the customer's own in exactly
+// the saved version, whose path is the one its theme file is sent under.
+export function installedScreensaver(
+  themes: ThemeProduct[],
+  userThemes: UserThemeRecord[],
+  screensaverPath: string | null | undefined,
+): Pick<ThemeProduct, "themeId" | "title"> | undefined {
+  const installedPath = screensaverPath?.trim();
+  if (!installedPath) {
+    return undefined;
+  }
+  const listed = resolveInstalledScreensaver(themes, installedPath);
+  if (listed) {
+    return listed;
+  }
+  const own = userThemes.find(
+    ({ document }) =>
+      document.usage === "screensaver" &&
+      validateThemeSpec(document.spec, document.assets, "screensaver")
+        .themeSpecPath === installedPath,
+  )?.document;
+  return own && { themeId: own.spec.themeId, title: own.packName };
 }
 
 // The screensaver slot drifts exactly like the live slot when the catalog ships a

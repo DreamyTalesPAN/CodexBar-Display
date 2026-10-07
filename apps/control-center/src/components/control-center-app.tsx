@@ -5358,6 +5358,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             providerShortcut={nativeProviderShortcut(navigator.userAgent)}
             onSaveStandby={saveStandby}
             onStandbyBrightnessChange={changeStandbyBrightness}
+            themes={catalog.themes}
           />
         ) : null}
 

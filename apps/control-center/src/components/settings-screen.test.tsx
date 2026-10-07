@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
+import type { ThemeProduct } from "@/lib/themes";
 import type {
   DeviceInfo,
   PreferenceDescriptor,
@@ -637,10 +638,88 @@ describe("SettingsScreen standby controls", () => {
     expect(render(standbyDevice)).not.toContain("now switches automatically");
   });
 
+  // Issue #558, seen in the Windows app: "Show screensaver" could be switched
+  // on with no screensaver installed, and Settings never said which one it
+  // shows.
+  describe("the installed screensaver", () => {
+    const nightClock: ThemeProduct = {
+      id: "night-clock",
+      isFree: true,
+      priceLabel: "Free",
+      source: "github-catalog",
+      themeId: "night-clock",
+      themeSpecPath: "/themes/s/nc-3-e18e4217.json",
+      title: "Night Clock",
+      usage: "screensaver",
+    };
+    const block = (
+      enabled: boolean,
+      slot?: NonNullable<DeviceInfo["standby"]>,
+    ) => {
+      const html = renderToStaticMarkup(
+        <SettingsScreen
+          automaticPreviews={[]}
+          brightness={70}
+          busyAction={null}
+          connectionMode="cable"
+          device={{ ...standbyDevice, standby: slot }}
+          standby={{ ...savedStandby, enabled }}
+          onBrightnessChange={vi.fn()}
+          onChooseScreensaver={vi.fn()}
+          onConnectionModeChange={vi.fn()}
+          onDismissError={vi.fn()}
+          onResetSetup={vi.fn()}
+          onSaveBrightness={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onStandbyBrightnessChange={vi.fn()}
+          providerPicker={providerPicker}
+          themes={[nightClock]}
+        />,
+      );
+      return html.slice(
+        html.indexOf(">Screensaver</h2>"),
+        html.indexOf(">Setup</h2>"),
+      );
+    };
+    const link = /<a aria-disabled="false"[^>]*>Choose screensaver<\/a>/;
+
+    it("is named beside Choose screensaver while the screensaver is on", () => {
+      // An older revision in the slot is still this screensaver.
+      const named = block(true, { screensaverPath: "/themes/s/nc-2-cb6d64ba.json" });
+      expect(named).toMatch(/>Night Clock is installed\.<\/span><a /);
+      expect(named).toMatch(link);
+
+      // A screensaver neither the catalog nor this computer knows.
+      const unknown = block(true, { screensaverPath: "/themes/s/other-1-abc123.json" });
+      expect(unknown).toContain(">A custom screensaver is installed.</span>");
+    });
+
+    it("says that none is installed, with Choose screensaver as the way out", () => {
+      const none = block(true, { active: false });
+
+      expect(none).toMatch(/>No screensaver is installed yet\.<\/span><a /);
+      expect(none).toMatch(link);
+    });
+
+    it("leaves the block as it is while the screensaver is off", () => {
+      const off = block(false, { screensaverPath: "/themes/s/nc-3-e18e4217.json" });
+
+      expect(off).not.toContain("installed");
+      expect(off).toBe(block(false));
+      expect(block(false, { active: false })).toBe(off);
+    });
+
+    // Without the slot in the device status nothing is known about it.
+    it("says nothing while VibeTV does not report its screensaver", () => {
+      expect(block(true)).not.toContain("installed");
+    });
+  });
+
   it("has no accessibility violations with every section shown", async () => {
     await expectNoAxeViolations(
       render(
-        standbyDevice,
+        // With the line that names the installed screensaver.
+        { ...standbyDevice, standby: { screensaverPath: "/themes/s/nc-3-e18e4217.json" } },
         { ...savedStandby, enabled: true },
         {
           ...providerPicker,

@@ -60,7 +60,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
   activeLiveThemeId,
-  resolveInstalledScreensaver,
+  installedScreensaver,
 } from "@/lib/active-theme-upgrade";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { cn } from "@/lib/utils";
@@ -70,7 +70,6 @@ import {
   createBlankThemeSpec,
   importThemeSpec,
   normalizeThemeSpec,
-  validateThemeSpec,
   type ThemeStudioAsset,
   type ThemeStudioUsage,
 } from "@/lib/theme-studio";
@@ -222,7 +221,7 @@ export function ThemeLibraryScreen({
   // installed last from here: an install into the other slot changes nothing.
   const screensaverPath = device?.standby?.screensaverPath?.trim();
   const screensaverThemeId = useMemo(
-    () => installedScreensaverThemeId(themes, userThemes, screensaverPath),
+    () => installedScreensaver(themes, userThemes, screensaverPath)?.themeId,
     [screensaverPath, themes, userThemes],
   );
   const installedThemeId = screensavers
@@ -706,28 +705,6 @@ function themeDocumentUsage(
   document: UserThemeRecord["document"],
 ): ThemeStudioUsage {
   return document.usage || "live";
-}
-
-// VibeTV names its screensaver slot only by a path: a catalog screensaver's in
-// whichever revision, or the path of exactly the saved version of the
-// customer's own, which is the path its theme file is sent under.
-function installedScreensaverThemeId(
-  themes: ThemeProduct[],
-  userThemes: UserThemeRecord[],
-  screensaverPath: string | undefined,
-): string | undefined {
-  if (!screensaverPath) {
-    return undefined;
-  }
-  return (
-    resolveInstalledScreensaver(themes, screensaverPath)?.themeId ??
-    userThemes.find(
-      ({ document }) =>
-        themeDocumentUsage(document) === "screensaver" &&
-        validateThemeSpec(document.spec, document.assets, "screensaver")
-          .themeSpecPath === screensaverPath,
-    )?.document.spec.themeId
-  );
 }
 
 function themeStudioCapabilitiesFromDevice(
