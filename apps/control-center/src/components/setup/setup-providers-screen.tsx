@@ -116,6 +116,15 @@ export function setupProviderOwnAppNotice(label: string): string {
   return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
 }
 
+/**
+ * The message the customer acknowledged, per provider, while the window is
+ * open. Outside the list because the list unmounts when the customer leaves
+ * Settings: kept in its state alone, the same message opened again on every
+ * visit. Only an acknowledgement is kept here; a message the customer asked
+ * for (warning icon, Check again, the switch) stays in the list's state.
+ */
+export const acknowledgedProviderIssues = new Map<string, string>();
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
@@ -151,7 +160,9 @@ export function ProviderList({
 }: ProviderListProps) {
   // One acknowledged message per provider: polling must not reopen a dismissed
   // popup, while a new message or an explicit retry may show it again.
-  const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>({});
+  const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>(
+    () => Object.fromEntries(acknowledgedProviderIssues),
+  );
   const issue = providers.flatMap((provider) => {
     if (!provider.value || pendingCheckIds.has(provider.providerId) ||
         pendingPreferenceIds.has(provider.id)) return [];
@@ -167,9 +178,12 @@ export function ProviderList({
       ? [{ provider, message }] : [];
   })[0];
   const dismissIssue = () => {
-    if (issue) setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
+    if (!issue) return;
+    acknowledgedProviderIssues.set(issue.provider.id, issue.message);
+    setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
   };
   const resetIssue = (provider: ProviderItem) => {
+    acknowledgedProviderIssues.delete(provider.id);
     setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
   };
   const [query, setQuery] = useState("");

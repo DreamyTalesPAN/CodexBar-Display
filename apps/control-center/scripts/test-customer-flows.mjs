@@ -7508,7 +7508,10 @@ async function testProviderCheckWinsOverOlderPreferenceRead(browser, appUrl) {
     "navigation must start the stale read used by the provider-check race",
   );
 
-  await page.getByRole("dialog", { name: "Codex", exact: true }).getByRole("button", { name: "OK", exact: true }).click();
+  assert(
+    (await page.getByRole("dialog", { name: "Codex", exact: true }).count()) === 0,
+    "a provider message acknowledged before leaving Settings must not open again",
+  );
   await checkAgain.click();
   await waitForCondition(
     () =>

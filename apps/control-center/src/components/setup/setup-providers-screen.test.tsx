@@ -14,8 +14,10 @@ import type { PreferenceHealthState, UsageSnapshot } from "../control-center-typ
 import type { ProviderItem } from "../provider-picker";
 import {
   PROVIDER_LOADING_LOG_INTERVAL_MS,
+  ProviderList,
   SIGN_IN_PROVIDER_IDS,
   SetupProvidersScreen,
+  acknowledgedProviderIssues,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
   setupProviderOffersSignIn,
@@ -24,6 +26,7 @@ import {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  acknowledgedProviderIssues.clear();
 });
 
 function provider(fields: {
@@ -155,6 +158,51 @@ describe("SetupProvidersScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
     expect(within(screen.getByRole("dialog")).getByText(stale.health.message)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // Settings takes the list off the page whenever the customer leaves it.
+  // Remembered in the list alone, an acknowledged message opened again on
+  // every visit and took the click meant for another control.
+  it("keeps an acknowledged message closed when the list is shown again", () => {
+    const signedOut = provider({ providerId: "codex", label: "Codex",
+      health: "auth_required", message: "Authentication required." });
+    const props = { usage, onCheckAgain: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const setup = renderDom(<SetupProvidersScreen {...props} onContinue={vi.fn()}
+      providers={[signedOut, claude]} />);
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    setup.unmount();
+
+    // Settings shows this same list.
+    const settings = renderDom(<ProviderList {...props} providers={[{ ...signedOut }, claude]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The row still carries the message, and asking for it shows it.
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
+    expect(within(screen.getByRole("dialog")).getByText("Authentication required.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    settings.unmount();
+
+    // A different problem is new to the customer.
+    const timedOut = provider({ providerId: "codex", label: "Codex",
+      health: "timeout", message: "The provider check timed out." });
+    renderDom(<ProviderList {...props} providers={[timedOut, claude]} />);
+    expect(within(screen.getByRole("dialog")).getByText("The provider check timed out.")).toBeTruthy();
+  });
+
+  // Only the acknowledgement outlives the list. A switch pressed on one visit
+  // must not let a stale message open by itself on a later one.
+  it("does not open a stale message by itself on a later visit", () => {
+    const off = provider({ providerId: "codex", label: "Codex", health: "disabled", value: false });
+    const props = { usage, onCheckAgain: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const first = renderDom(<ProviderList {...props} providers={[off, claude]} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Codex" }));
+    first.unmount();
+
+    const stale = provider({ providerId: "codex", label: "Codex", health: "stale",
+      message: "Live usage is unavailable; the last successful reading is still saved." });
+    renderDom(<ProviderList {...props} providers={[stale, claude]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
