@@ -14720,3 +14720,23 @@ func TestWiFiPairingNotFoundAsksForCable(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// The preview follows the device's trust rule (#448, #532), so the frame it is
+// rebuilt from carries the trust statement together with its budget.
+func TestDisplayStreamLogLineCarriesResetTrust(t *testing.T) {
+	const head = `2026-10-07T08:00:00Z sent frame -> cable://vibetv transport=usb deviceId=16198106 source=codexbar-dashboard fresh=true usageMode=used provider=claude label=Claude session=0 weekly=0 reset=0s activity="idle" time="10:00" date="07.10.2026" error="" reason=fresh detail="" activityDetail=""`
+	frame, ok := frameFromDisplayStreamLogLine(head + ` resetTrust=live resetTrustSecs=17990 resetSource="claude"`)
+	if !ok || frame.ResetTrust != "live" || frame.ResetTrustSec != 17990 || frame.ResetSource != "claude" {
+		t.Fatalf("trust fields lost: ok=%t %+v", ok, frame)
+	}
+	// A line from an older runtime has no budget; a bare trust word must not
+	// make the preview stop trusting the frame.
+	frame, ok = frameFromDisplayStreamLogLine(head + ` resetTrust=live`)
+	if !ok || frame.ResetTrust != "" || frame.ResetTrustSec != 0 {
+		t.Fatalf("trust without budget must be dropped: ok=%t %+v", ok, frame)
+	}
+	frame, ok = frameFromDisplayStreamLogLine(head)
+	if !ok || frame.ResetTrust != "" || frame.Activity != "idle" {
+		t.Fatalf("old line changed: ok=%t %+v", ok, frame)
+	}
+}

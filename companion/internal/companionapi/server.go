@@ -176,6 +176,9 @@ var displayStreamLogKeys = []string{
 	"reason",
 	"detail",
 	"activityDetail",
+	"resetTrust",
+	"resetTrustSecs",
+	"resetSource",
 }
 
 type Options struct {
@@ -10175,6 +10178,13 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
+	}
+	// Without its budget a trust statement would make the preview stop
+	// trusting the frame at once, so the two only count together.
+	if trustSecs, ok := int64FieldFromDisplayStreamLog(line, "resetTrustSecs"); ok {
+		frame.ResetTrustSec = trustSecs
+	} else {
+		frame.ResetTrust = ""
 	}
 	if sessionTokens, ok := int64FieldFromDisplayStreamLog(line, "sessionTokens"); ok {
 		frame.SessionTokens = sessionTokens
