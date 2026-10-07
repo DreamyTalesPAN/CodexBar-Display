@@ -197,16 +197,19 @@ it.each<[string, () => void]>([
   ).toMatchObject({ needed: true, theme: { themeId: "mini-classic" } });
 });
 
-// The one theme that can be sent without saving first: an unchanged copy
-// opened with Edit, which already carries its own id.
-it("sends an unsaved copy of a catalog theme under its own id", async () => {
+// An unchanged copy opened with Edit already carries its own id. It is still
+// a draft that no list contains, so it is saved before it can be sent.
+it("sends a copy of a catalog theme under its own id, once it is saved", async () => {
   const miniClassic = screen
     .getAllByRole("listitem")
     .find((row) => within(row).queryByText("Mini Classic"))!;
   fireEvent.click(within(miniClassic).getByRole("button", { name: "Edit" }));
   fireEvent.click(await screen.findByRole("button", { name: "Advanced" }));
   await waitFor(() => expect(idField().value).toBe("mini-classic-custom"));
+  expect(button("Send to VibeTV").disabled).toBe(true);
 
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(button("Send to VibeTV").disabled).toBe(false));
   fireEvent.click(button("Send to VibeTV"));
   await waitFor(() => expect(sent).toHaveLength(1));
 

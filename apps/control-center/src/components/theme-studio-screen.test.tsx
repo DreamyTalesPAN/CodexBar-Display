@@ -113,12 +113,32 @@ it("lets the customer name the theme in the header, without opening Advanced", a
 
 // Issue #551: a greyed-out Send to VibeTV gave no reason.
 it("says why Send to VibeTV is unavailable, and stops once it is available", async () => {
-  renderStudio("blank");
+  renderStudio("custom");
   const reason = "Save this theme before sending it to VibeTV.";
   expect(button("Send to VibeTV").disabled).toBe(false);
   expect(screen.queryByText(reason)).toBeNull();
 
   fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(screen.getByText(reason)).toBeTruthy();
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(button("Send to VibeTV").disabled).toBe(false));
+  expect(screen.queryByText(reason)).toBeNull();
+});
+
+// Seen on the Windows app on 2026-10-07: a new theme was sent before it was
+// ever saved. VibeTV then showed a theme that no list in the app contained.
+it.each([
+  ["live", "Save this theme before sending it to VibeTV."],
+  ["screensaver", "Save this screensaver before sending it to VibeTV."],
+] as const)("keeps Send to VibeTV unavailable until a new %s theme is saved", async (usage, reason) => {
+  renderStudio("blank", {
+    initialTheme: {
+      assets: {}, packName: "New", source: "blank", spec: createBlankThemeSpec(), usage,
+    },
+  });
+  expect(screen.getByText("Draft")).toBeTruthy();
   expect(button("Send to VibeTV").disabled).toBe(true);
   expect(screen.getByText(reason)).toBeTruthy();
 

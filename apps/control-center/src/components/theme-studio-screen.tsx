@@ -286,10 +286,11 @@ export function ThemeStudioScreen({
   );
   // Why Send is unavailable. The toolbar disables the button on it and says it.
   // A failed check comes first: it also keeps Save unavailable, so asking the
-  // customer to save would name a button that cannot be pressed.
+  // customer to save would name a button that cannot be pressed. Only what is
+  // in the library is sent: a draft on VibeTV would appear in no list.
   const sendBlockedReason =
     validation.errors[0] ||
-    (dirty
+    (dirty || !inLibrary
       ? `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`
       : deviceValidation?.errors[0] || "");
   const visibleSelectedIndices = useMemo(

@@ -10431,9 +10431,15 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "migrated first-window layer should explain when it is visible",
   );
   await captureMigrationScreenshot(page, "08-theme-studio-1180x820.png");
+  // A copy that was never saved is not sent. The line above the buttons names
+  // saving, not a failed check; Send is asserted after Save below.
   assert(
-    await sendButton.isEnabled(),
-    "published themes with validated large static sprites should remain editable and installable",
+    (await page
+      .getByText("Save this theme before sending it to VibeTV.", {
+        exact: true,
+      })
+      .count()) === 1,
+    "an unsaved copy of a published theme should ask to be saved before it is sent",
   );
   assert(
     await page.getByRole("button", { name: "Save theme" }).isEnabled(),
@@ -10534,6 +10540,10 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     await page.locator("[data-theme-studio-root]").isVisible(),
     "saving should keep Theme Studio open",
   );
+  assert(
+    await sendButton.isEnabled(),
+    "published themes with validated large static sprites should remain editable and installable",
+  );
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await page.getByText("Synthwave Customer Copy", { exact: true }).waitFor({
     timeout: 10_000,
@@ -10544,16 +10554,11 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     .filter({ hasText: "Fixture Clippy Theme" });
   await clippyThemeRow.waitFor({ timeout: 10_000 });
   await clippyThemeRow.getByRole("button", { name: "Edit" }).click();
-  await page.waitForFunction(() =>
-    Array.from(document.querySelectorAll("button")).some(
-      (button) =>
-        button.textContent?.trim() === "Send to VibeTV" && !button.disabled,
-    ),
-  );
-  assert(
-    await page.getByRole("button", { name: "Send to VibeTV" }).isEnabled(),
-    "Clippy's validated large static background should remain editable and installable",
-  );
+  // The unsaved copy is held back only by not being saved yet: a failed check
+  // would stand on this line instead and disable Save and Export as well.
+  await page
+    .getByText("Save this theme before sending it to VibeTV.", { exact: true })
+    .waitFor({ timeout: 10_000 });
   assert(
     await page.getByRole("button", { name: "Save theme" }).isEnabled(),
     "Clippy's validated large static background should remain saveable",
@@ -10568,6 +10573,14 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     name: "Send to VibeTV",
   });
   await blankThemeSendButton.waitFor({ timeout: 10_000 });
+  assert(
+    await blankThemeSendButton.isDisabled(),
+    "a new theme should not be sent before it is saved",
+  );
+  await page.getByRole("button", { name: "Save theme" }).click();
+  await page.getByText("Saved to library.", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
   await blankThemeSendButton.click();
   await waitForCondition(
     () => themeInstallRequests.length === 1,
@@ -10770,6 +10783,10 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
   await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Screensavers");
   await page.getByRole("button", { name: "Create Screensaver" }).click();
+  await page.getByRole("button", { name: "Save theme" }).click();
+  await page.getByText("Saved to library.", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
   await page.getByRole("button", { name: "Send to VibeTV" }).click();
   await waitForCondition(
     () => themeInstallRequests.length === 1,

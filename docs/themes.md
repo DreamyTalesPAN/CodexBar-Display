@@ -97,7 +97,7 @@ Theme Studio now lives inside the local Control Center served by the Mac App.
 Open Control Center, choose **Theme Library**, then create a new theme or edit
 an existing one. Theme Studio can create a local draft, open ThemeSpec JSON,
 edit the 240x240 layout, validate it, export an installable theme-pack ZIP, and
-send the current theme to VibeTV from an explicit **Send to VibeTV** action.
+send the saved theme to VibeTV from an explicit **Send to VibeTV** action.
 The Mac App performs the same device, pairing, capability, upload, and render
 checks as every other theme install.
 
