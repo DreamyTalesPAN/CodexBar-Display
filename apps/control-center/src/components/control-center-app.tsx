@@ -3987,6 +3987,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             themeInstallStatus,
             usage,
           },
+          windowsHost,
         );
         if (setupGeneration !== setupGenerationRef.current) {
           return null;
@@ -4060,6 +4061,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       runtimeSurface,
       themeInstallStatus,
       usage,
+      windowsHost,
     ]);
 
   const retryProviderSetup = useCallback(async () => {

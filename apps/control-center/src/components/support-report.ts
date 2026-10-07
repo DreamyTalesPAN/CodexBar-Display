@@ -7,14 +7,17 @@ import {
   isNativeControlCenterApp,
   nativeControlCenterAppBuild,
 } from "./control-center-runtime";
+import { copyForHost } from "@/lib/customer-platform";
 
 export async function collectSupportReport(
   loadDiagnostics: () => Promise<SupportDiagnostics>,
   state: SupportReportClientState,
+  /** The app runs on Windows; the report then names that app as its surface. */
+  windowsHost = false,
 ): Promise<SupportDiagnostics> {
   const generatedAt = new Date().toISOString();
   const client = {
-    environment: readClientEnvironment(),
+    environment: readClientEnvironment(windowsHost),
     state,
   };
 
@@ -55,7 +58,16 @@ export async function collectSupportReport(
 }
 
 export function serializeSupportReport(report: SupportDiagnostics): string {
-  return JSON.stringify(redactSensitiveValues(report), null, 2);
+  // The runtime's texts name the Mac on every system. A report from the
+  // Windows app says what that app's screens say (issue #558).
+  const windowsHost =
+    report.client?.environment.surface === "native-windows-app";
+  return JSON.stringify(
+    redactSensitiveValues(report),
+    (_key, value) =>
+      typeof value === "string" ? copyForHost(value, windowsHost) : value,
+    2,
+  );
 }
 
 export function downloadSupportReport(report: SupportDiagnostics): void {
@@ -80,7 +92,7 @@ export function supportReportFilename(value?: string): string {
   return `vibetv-support-report-${safeTimestamp}.json`;
 }
 
-function readClientEnvironment() {
+function readClientEnvironment(windowsHost: boolean) {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return {};
   }
@@ -95,7 +107,11 @@ function readClientEnvironment() {
     viewport: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     visibility: document.visibilityState,
-    surface: native ? "native-mac-app" : "browser",
+    surface: native
+      ? windowsHost
+        ? "native-windows-app"
+        : "native-mac-app"
+      : "browser",
     appVersion: version,
     appBuild: build,
     // A loopback route is only served to the native Mac App: in a browser the

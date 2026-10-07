@@ -190,7 +190,7 @@ export type SupportDiagnostics = {
       viewport?: string;
       timezone?: string;
       visibility?: string;
-      surface?: "native-mac-app" | "browser";
+      surface?: "native-mac-app" | "native-windows-app" | "browser";
       appVersion?: string;
       appBuild?: string;
       /** Loopback runtime address. Diagnostic only; not navigable. */
