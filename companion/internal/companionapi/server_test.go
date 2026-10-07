@@ -11541,6 +11541,71 @@ func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
 	}
 }
 
+// Issue #558: the progress of a screensaver install read "Uploading theme
+// files." The lines are written for a theme; a screensaver job says what it
+// installs.
+func TestScreensaverInstallProgressSaysScreensaver(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	install := func(installErr error) themeInstallJob {
+		t.Helper()
+		server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+		server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+			_, _ = io.WriteString(opts.Out, "Preparing theme: Retro 3D\n")
+			_, _ = io.WriteString(opts.Out, "Uploading theme files...\n")
+			_, _ = io.WriteString(opts.Out, "Uploaded asset: /themes/s/r3.cbi bytes=123\n")
+			_, _ = io.WriteString(opts.Out, "Uploaded theme spec: /themes/s/r3-2.json bytes=456\n")
+			if installErr != nil {
+				return themeinstall.Result{}, installErr
+			}
+			_, _ = io.WriteString(opts.Out, "Done: screensaver retro-3d installed on VibeTV\n")
+			return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, nil
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"retro-3d","packUrl":"https://example.com/r3.zip","slot":"screensaver","async":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		var started themeInstallJobResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil || rec.Code != http.StatusAccepted {
+			t.Fatalf("start screensaver install: status=%d err=%v body=%s", rec.Code, err, rec.Body.String())
+		}
+		if started.Job.Message != "Preparing screensaver install." {
+			t.Fatalf("expected the first line to name the screensaver, got %q", started.Job.Message)
+		}
+		for attempt := 0; attempt < 100; attempt++ {
+			if job, ok := server.themeInstallJobSnapshot(started.Job.ID); ok && job.Phase != "installing" {
+				return job
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("screensaver install job did not finish")
+		return themeInstallJob{}
+	}
+
+	done := install(nil)
+	want := []string{
+		"Preparing screensaver install.",
+		"Preparing screensaver files.",
+		"Uploading screensaver files.",
+		"Uploaded screensaver file 1.",
+		"Uploaded screensaver layout.",
+		"Screensaver installed.",
+		"Screensaver is ready on VibeTV.",
+	}
+	if done.Phase != "complete" || !slices.Equal(done.Logs, want) || done.Message != want[len(want)-1] {
+		t.Fatalf("unexpected screensaver progress: phase=%q message=%q logs=%q", done.Phase, done.Message, done.Logs)
+	}
+
+	failed := install(errors.New("upload failed"))
+	if failed.Phase != "error" || failed.Message != "Screensaver install failed." || failed.Logs[len(failed.Logs)-1] != failed.Message {
+		t.Fatalf("unexpected failed screensaver job: phase=%q message=%q logs=%q", failed.Phase, failed.Message, failed.Logs)
+	}
+	if text := strings.ToLower(strings.Join(failed.Logs, "\n")); strings.Contains(text, "theme") {
+		t.Fatalf("a screensaver install still says theme: %q", text)
+	}
+}
+
 func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -2334,7 +2334,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setSelectedThemeId(theme.themeId);
       }
       const startedAt = formatTime();
-      const initialLogs = ["Preparing theme install."];
+      // What this install installs, in the words of its progress and of the
+      // entries under Recent activity (issue #558).
+      const noun = theme.usage === "screensaver" ? "Screensaver" : "Theme";
+      const initialLogs = [`Preparing ${noun.toLowerCase()} install.`];
       const completeMessage =
         theme.usage === "screensaver"
           ? "Screensaver is ready on VibeTV."
@@ -2357,8 +2360,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             phase === "complete" || phase === "error"
               ? formatTime()
               : undefined,
-          message:
-            job.message || logs[logs.length - 1] || "Preparing theme install.",
+          message: job.message || logs[logs.length - 1],
           progress: clampProgress(job.progress),
           logs,
           result: job.result,
@@ -2375,7 +2377,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         logs: initialLogs,
       });
       addEvent({
-        label: "Theme install started",
+        label: `${noun} install started`,
         detail: `${theme.title} is ready for device install.`,
         at: startedAt,
         tone: "unknown",
@@ -2437,7 +2439,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             throw (
               finishedJob.error || {
                 code: "theme_install_failed",
-                message: "Theme install failed.",
+                message: `${noun} install failed.`,
                 nextAction: "Keep VibeTV powered on and retry the install.",
               }
             );
@@ -2449,7 +2451,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!result) {
           throw {
             code: "theme_install_failed",
-            message: "Theme install failed.",
+            message: `${noun} install failed.`,
             nextAction: "Keep VibeTV powered on and retry the install.",
           } satisfies ApiError;
         }
@@ -2488,7 +2490,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
-          "Theme install needs attention.",
+          `${noun} install needs attention.`,
         );
         if (isLocalNetworkAccessError(normalized)) {
           markCompanionAccessBlocked();
@@ -2509,7 +2511,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           failure: normalized,
         });
         addEvent({
-          label: "Theme install needs attention",
+          label: `${noun} install needs attention`,
           detail: normalized.nextAction,
           tone: "attention",
         });

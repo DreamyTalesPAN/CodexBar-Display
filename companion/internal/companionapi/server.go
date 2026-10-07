@@ -6231,11 +6231,10 @@ func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob 
 		ThemeName: strings.TrimSpace(req.ThemeName),
 		Slot:      slot,
 		Phase:     "installing",
-		Message:   "Preparing theme install.",
 		Progress:  5,
 		StartedAt: time.Now().UTC(),
-		Logs:      []string{"Preparing theme install."},
 	}
+	job.say("Preparing theme install.")
 	s.installJobs[id] = job
 	return cloneThemeInstallJob(job)
 }
@@ -6288,11 +6287,10 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 			s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
 			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 				job.Phase = "error"
-				job.Message = "Theme install failed."
 				job.Progress = 100
 				job.FinishedAt = &finishedAt
 				job.Error = &apiErr
-				appendInstallJobLog(job, "Theme install failed.")
+				job.say("Theme install failed.")
 			})
 			return
 		}
@@ -6310,8 +6308,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 			// looking at. The install still succeeded: the provider outcome owns
 			// the final message and says what is still missing.
 			if job.Message != themeInstallAwaitingProviderMessage {
-				job.Message = done
-				appendInstallJobLog(job, done)
+				job.say(done)
 			}
 			job.Progress = 100
 			job.FinishedAt = &finishedAt
@@ -6411,11 +6408,10 @@ func (w *themeInstallProgressWriter) noteLine(line string) {
 		if !ok {
 			return
 		}
-		job.Message = message
 		if progress > job.Progress {
 			job.Progress = progress
 		}
-		appendInstallJobLog(job, message)
+		job.say(message)
 	})
 }
 
@@ -6463,11 +6459,13 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 	}
 }
 
-func appendInstallJobLog(job *themeInstallJob, message string) {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return
+// say makes message the job's current line and logs it. The lines are worded
+// for a theme; a screensaver install names the screensaver instead.
+func (job *themeInstallJob) say(message string) {
+	if job.Slot == themepack.UsageScreensaver {
+		message = strings.NewReplacer("Theme", "Screensaver", "theme", "screensaver").Replace(message)
 	}
+	job.Message = message
 	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
 		return
 	}
