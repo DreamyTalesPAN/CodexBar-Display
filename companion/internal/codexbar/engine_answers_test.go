@@ -3,8 +3,10 @@ package codexbar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -16,6 +18,7 @@ func withEngineAnswerReuse(t *testing.T) {
 	original := reuseEngineAnswers
 	forget := func() {
 		engineVersion.store("", looseVersion{})
+		engineInventory.store("", nil)
 	}
 	t.Cleanup(func() {
 		reuseEngineAnswers = original
@@ -136,4 +139,151 @@ func TestInstalledVersionAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
 			t.Fatalf("the Mac path changed: its CLI was asked %d times, want 2", *runs)
 		}
 	})
+}
+
+// settledEngine switches the reuse on and points FindBinary at a CLI file and
+// APPDATA at a settings.json that were both last changed an hour ago. It
+// returns the settings path.
+func settledEngine(t *testing.T) string {
+	t.Helper()
+	withEngineAnswerReuse(t)
+	t.Setenv(appManagedCodexBarVersionEnvVar, "")
+	bin := filepath.Join(t.TempDir(), "codexbar-cli.exe")
+	writeFileChangedAgo(t, bin, "engine", time.Hour)
+	t.Setenv("CODEXBAR_BIN", bin)
+	appData := t.TempDir()
+	t.Setenv("APPDATA", appData)
+	settings := filepath.Join(appData, "CodexBar", "settings.json")
+	writeFileChangedAgo(t, settings, `{"enabled_providers":["claude"]}`, time.Hour)
+	reported := "codexbar-cli 0.60.3"
+	stubVersionCommand(t, &reported, nil)
+	return settings
+}
+
+// stubEngineCommands answers every CLI call of the inventory readers and
+// counts the "config providers" processes among them.
+func stubEngineCommands(t *testing.T, inventory func() ([]byte, error)) *int {
+	t.Helper()
+	originalProvider, originalUsage := runProviderCommandFn, runUsageCommandFn
+	t.Cleanup(func() { runProviderCommandFn, runUsageCommandFn = originalProvider, originalUsage })
+	runs := 0
+	run := func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if !slices.Equal(args, providerInventoryArgs()) {
+			return []byte(`[{"provider":"claude","usage":{"primary":{"usedPercent":8}}}]`), nil
+		}
+		runs++
+		return inventory()
+	}
+	runProviderCommandFn, runUsageCommandFn = run, run
+	return &runs
+}
+
+func inventoryWithClaude(on bool) []byte {
+	return []byte(fmt.Sprintf(`[{"provider":"claude","displayName":"Claude","enabled":%t}]`, on))
+}
+
+// Windows started "codexbar-cli.exe config providers" for the collector, the
+// usage and settings reads, the health check and the setup check, nine times
+// in ninety seconds with the window open (#555). Win-CodexBar builds the
+// inventory from its settings.json, so one state of that file is read once.
+func TestProviderInventoryRunsTheCLIOncePerSettingsFileOnWindows(t *testing.T) {
+	settings := settledEngine(t)
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
+	claudeOn := true
+	runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(claudeOn), nil })
+
+	for range 2 {
+		inventory, err := FetchProviderInventory(context.Background())
+		if err != nil || len(inventory) != 1 || !inventory[0].Enabled {
+			t.Fatalf("inventory=%+v err=%v", inventory, err)
+		}
+	}
+	if _, err := FetchProviderSettings(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runUsageAllEnabled(context.Background(), time.Second, os.Getenv("CODEXBAR_BIN"), "--web-timeout", "8"); err != nil {
+		t.Fatal(err)
+	}
+	if *runs != 1 {
+		t.Fatalf("unchanged settings were read by %d CLI processes, want 1", *runs)
+	}
+
+	// Anyone may write settings.json, the customer's own Win-CodexBar
+	// included. The file is the authority, so a changed one is read again.
+	claudeOn = false
+	writeFileChangedAgo(t, settings, `{"enabled_providers":[]}`, time.Minute)
+	inventory, err := FetchProviderInventory(context.Background())
+	if err != nil || len(inventory) != 1 || inventory[0].Enabled || *runs != 2 {
+		t.Fatalf("changed settings must be read again: inventory=%+v err=%v runs=%d", inventory, err, *runs)
+	}
+}
+
+// The Companion's own switch is never answered from before the switch, also
+// when settings.json kept its size and modification time.
+func TestSetProviderEnabledForgetsTheInventoryAtOnce(t *testing.T) {
+	settledEngine(t)
+	claudeOn := true
+	runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(claudeOn), nil })
+	if inventory, err := FetchProviderInventory(context.Background()); err != nil || !inventory[0].Enabled {
+		t.Fatalf("inventory=%+v err=%v", inventory, err)
+	}
+
+	claudeOn = false
+	if err := SetProviderEnabled(context.Background(), "claude", false); err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := FetchProviderInventory(context.Background())
+	if err != nil || inventory[0].Enabled || *runs != 2 {
+		t.Fatalf("the switch must be read back from the CLI: inventory=%+v err=%v runs=%d", inventory, err, *runs)
+	}
+}
+
+// A stale inventory is worse than one more process.
+func TestProviderInventoryAsksAgainWheneverTheAnswerMayNotHold(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		prepare func(t *testing.T, settings string)
+		first   func() ([]byte, error)
+		aged    time.Duration
+	}{
+		{name: "an answer that is no inventory", first: func() ([]byte, error) { return []byte("Error: Failed to decode"), nil }},
+		{name: "a read that failed", first: func() ([]byte, error) { return inventoryWithClaude(false), errors.New("exit status 1") }},
+		{name: "settings that were just written", prepare: func(t *testing.T, settings string) {
+			writeFileChangedAgo(t, settings, `{"enabled_providers":["claude"]}`, 0)
+		}},
+		{name: "no settings file", prepare: func(t *testing.T, settings string) {
+			if err := os.Remove(settings); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		// Win-CodexBar answers with its default switches and no error when it
+		// cannot read its settings. Such an answer must not stay for good.
+		{name: "an answer kept for five minutes", aged: inventoryMaxAge},
+		{name: "the Mac", prepare: func(*testing.T, string) { reuseEngineAnswers = false }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settings := settledEngine(t)
+			if tc.prepare != nil {
+				tc.prepare(t, settings)
+			}
+			answer := tc.first
+			runs := stubEngineCommands(t, func() ([]byte, error) {
+				if answer != nil {
+					defer func() { answer = nil }()
+					return answer()
+				}
+				return inventoryWithClaude(true), nil
+			})
+			_, _ = FetchProviderInventory(context.Background())
+			engineInventory.mu.Lock()
+			engineInventory.at = engineInventory.at.Add(-tc.aged)
+			engineInventory.mu.Unlock()
+			inventory, err := FetchProviderInventory(context.Background())
+			if err != nil || len(inventory) != 1 || !inventory[0].Enabled || *runs != 2 {
+				t.Fatalf("the CLI must be asked again: inventory=%+v err=%v runs=%d", inventory, err, *runs)
+			}
+		})
+	}
 }

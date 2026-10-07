@@ -136,20 +136,29 @@ func EnsureConfig(home string) (string, error) {
 	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
 }
 
+// windowsSettingsPath is the one file Win-CodexBar keeps its settings in,
+// the provider switches among them (#415). Empty without APPDATA.
+func windowsSettingsPath() string {
+	appData := strings.TrimSpace(os.Getenv("APPDATA"))
+	if appData == "" {
+		return ""
+	}
+	return filepath.Join(appData, "CodexBar", "settings.json")
+}
+
 // ensureWindowsConfigDir preserves existing settings verbatim. Only a missing
 // file receives an empty provider selection; Win-CodexBar 0.56.8 fills omitted
 // settings with its own defaults. Publish the complete seed without replacing
 // a config another process may have created during startup.
 func ensureWindowsConfigDir() (string, error) {
-	appData := strings.TrimSpace(os.Getenv("APPDATA"))
-	if appData == "" {
+	path := windowsSettingsPath()
+	if path == "" {
 		return "", errors.New("APPDATA is not set")
 	}
-	dir := filepath.Join(appData, "CodexBar")
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create CodexBar config directory: %w", err)
 	}
-	path := filepath.Join(dir, "settings.json")
 	probe, err := os.CreateTemp(dir, ".vibetv-write-check-*")
 	if err != nil {
 		return path, fmt.Errorf("CodexBar config directory is not writable: %w", err)
@@ -567,7 +576,7 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 			return providers
 		}
 	}
-	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
+	raw, runErr := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
 		return providers

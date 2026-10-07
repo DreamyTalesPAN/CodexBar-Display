@@ -615,10 +615,12 @@ func (v looseVersion) Compare(other looseVersion) int {
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
 // reuseEngineAnswers is true on Windows. There every poll started a new CLI
-// process only to hear the CLI's version again (#555). That answer cannot
-// change unless the CLI file does, so it is kept for as long as engineStamp
-// of the file stays the same. The Mac is left as it is: its app-managed CLI
-// is not run for its version at all (installedVersion). A variable so the
+// process only to hear the CLI's version and the provider inventory again
+// (#555). Neither answer can change unless a file does, so each is kept for
+// as long as engineStamp of its files stays the same. The Mac is left as it
+// is: its app-managed CLI is not run for its version at all
+// (installedVersion), and which files its inventory is built from has only
+// been checked for Win-CodexBar (readProviderInventory). A variable so the
 // Windows path is testable on the Mac.
 var reuseEngineAnswers = runtime.GOOS == "windows"
 
@@ -647,25 +649,28 @@ func engineStamp(paths ...string) string {
 	return stamp.String()
 }
 
-// engineAnswer is the CLI's last answer to one question and the engineStamp
-// it was read under.
+// engineAnswer is the CLI's last answer to one question, the engineStamp it
+// was read under and when.
 type engineAnswer[T any] struct {
 	mu    sync.Mutex
 	stamp string
+	at    time.Time
 	value T
 }
 
-func (a *engineAnswer[T]) load(stamp string) (T, bool) {
+// load returns the answer kept for stamp unless it is older than maxAge.
+// Zero accepts any age.
+func (a *engineAnswer[T]) load(stamp string, maxAge time.Duration) (T, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.value, stamp != "" && stamp == a.stamp
+	return a.value, stamp != "" && stamp == a.stamp && (maxAge == 0 || time.Since(a.at) < maxAge)
 }
 
 // store keeps value for stamp. An empty stamp forgets the answer.
 func (a *engineAnswer[T]) store(stamp string, value T) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.stamp, a.value = stamp, value
+	a.stamp, a.at, a.value = stamp, time.Now(), value
 }
 
 var engineVersion engineAnswer[looseVersion]
@@ -685,7 +690,7 @@ func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 		}
 	}
 	stamp := engineStamp(strings.TrimSpace(bin))
-	if version, ok := engineVersion.load(stamp); ok {
+	if version, ok := engineVersion.load(stamp, 0); ok {
 		return version, nil
 	}
 	version, err := reportedVersion(ctx, bin, versionCheckTimeout)
