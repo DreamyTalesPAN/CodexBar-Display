@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
@@ -13,7 +14,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-function renderStudio(source: "blank" | "custom") {
+function renderStudio(
+  source: "blank" | "custom",
+  props: Partial<ComponentProps<typeof ThemeStudioScreen>> = {},
+) {
   render(
     <TooltipProvider>
       <ThemeStudioScreen
@@ -24,10 +28,13 @@ function renderStudio(source: "blank" | "custom") {
           document: { assets: payload.assets, packName: payload.packName, spec: payload.spec },
           libraryId: payload.spec.themeId, savedAt: "2026-10-08T00:00:00Z",
         })}
+        {...props}
       />
     </TooltipProvider>,
   );
 }
+const button = (name: string) =>
+  screen.getByRole("button", { name }) as HTMLButtonElement;
 
 it("calls a new theme a draft until it is saved, and counts one element", async () => {
   renderStudio("blank");
@@ -46,4 +53,36 @@ it("calls a new theme a draft until it is saved, and counts one element", async 
 it("calls a theme opened from the library saved", () => {
   renderStudio("custom");
   expect(screen.getByText("Saved")).toBeTruthy();
+});
+
+// Issue #551: the JSON tab kept a copy of the theme that only an edit renewed.
+it("shows the theme as it is in the JSON tab after Save renamed its id and after Undo", async () => {
+  renderStudio("blank", {
+    // The library gives a theme whose id is taken a free one.
+    onSaveToLibrary: async payload => ({
+      document: {
+        assets: payload.assets, packName: payload.packName,
+        spec: { ...payload.spec, themeId: "my-theme-2" },
+      },
+      libraryId: "my-theme-2", savedAt: "2026-10-08T00:00:00Z",
+    }),
+  });
+  fireEvent.click(button("Advanced"));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  const json = () => screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  expect(json().value).toContain('"id": "my-theme"');
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(json().value).toContain('"id": "my-theme-2"'));
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(json().value).toContain('"t": "tx"');
+  fireEvent.click(button("Undo"));
+  expect(json().value).not.toContain('"t": "tx"');
+
+  // An emptied field stays empty, so new JSON can be pasted into it.
+  fireEvent.change(json(), { target: { value: "" } });
+  expect(json().value).toBe("");
+  fireEvent.click(button("Reset JSON"));
+  expect(json().value).toContain('"id": "my-theme-2"');
 });

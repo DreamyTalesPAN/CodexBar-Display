@@ -240,10 +240,10 @@ export function ThemeStudioScreen({
     document: editorState.present,
   };
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0]);
-  const [jsonText, setJsonText] = useState(() =>
-    prettyJson(createStarterThemeSpec()),
-  );
-  const [jsonDirty, setJsonDirty] = useState(false);
+  // What the customer typed into the JSON tab and has not applied; without it
+  // the tab shows the theme as it is, also after Save, Undo and Redo.
+  const [jsonDraft, setJsonDraft] = useState<string | null>(null);
+  const jsonDirty = jsonDraft !== null;
   const [loadingPreset, setLoadingPreset] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -359,8 +359,7 @@ export function ThemeStudioScreen({
       type: markSaved ? "load" : "update",
     });
     setSelectedIndices(normalized.primitives.length > 0 ? [0] : []);
-    setJsonText(prettyJson(normalized));
-    setJsonDirty(false);
+    setJsonDraft(null);
     if (status) {
       setJsonStatus(status);
     }
@@ -376,9 +375,7 @@ export function ThemeStudioScreen({
         mutate: (draft) => {
           updater(draft);
           draft.spec = normalizeThemeSpec(draft.spec);
-          if (!jsonDirty) {
-            setJsonText(prettyJson(draft.spec));
-          } else {
+          if (jsonDirty) {
             setJsonStatus({
               tone: "unknown",
               message: "JSON is out of date. Apply or reset it before editing JSON.",
@@ -624,7 +621,9 @@ export function ThemeStudioScreen({
 
   function applyJson() {
     try {
-      const imported = importThemeSpec(JSON.parse(jsonText));
+      const imported = importThemeSpec(
+        JSON.parse(jsonDraft ?? prettyJson(spec)),
+      );
       replaceLoadedTheme({
         assets,
         packName: titleFromThemeId(imported.themeId),
@@ -1519,15 +1518,14 @@ export function ThemeStudioScreen({
                     aria-label="Theme JSON"
                     className="min-h-[220px] resize-y font-mono text-xs leading-5"
                     onChange={(event) => {
-                      setJsonText(event.target.value);
-                      setJsonDirty(true);
+                      setJsonDraft(event.target.value);
                       setJsonStatus({
                         tone: "unknown",
                         message: "JSON has local edits.",
                       });
                     }}
                     spellCheck={false}
-                    value={jsonText || prettyJson(spec)}
+                    value={jsonDraft ?? prettyJson(spec)}
                   />
                   <div className="grid gap-2">
                     {jsonDirty || showJsonStatus ? (
@@ -1550,8 +1548,7 @@ export function ThemeStudioScreen({
                     <Button
                       className="w-full"
                       onClick={() => {
-                        setJsonText(prettyJson(spec));
-                        setJsonDirty(false);
+                        setJsonDraft(null);
                         setJsonStatus({ tone: "ready", message: "JSON reset." });
                       }}
                       type="button"
