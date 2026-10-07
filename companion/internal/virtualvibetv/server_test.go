@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -94,15 +95,13 @@ func TestScenariosExposeRequiredFailureStates(t *testing.T) {
 				server.mu.Lock()
 				server.updateUploads = 1
 				server.mu.Unlock()
-				resp, err := http.Get(baseURL + "/hello")
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer resp.Body.Close()
-				if resp.StatusCode != http.StatusServiceUnavailable {
-					t.Fatalf("status = %s", resp.Status)
-				}
+				assertUnavailable(t, baseURL)
 			},
+		},
+		{
+			name: "unavailable",
+			cfg:  Scenarios["unavailable"],
+			want: func(t *testing.T, _ *Server, baseURL string) { assertUnavailable(t, baseURL) },
 		},
 		{
 			name: "unhealthy",
@@ -133,6 +132,18 @@ func TestScenariosExposeRequiredFailureStates(t *testing.T) {
 			t.Cleanup(func() { _ = running.Close() })
 			tt.want(t, running.Server, running.HTTPURL)
 		})
+	}
+}
+
+func assertUnavailable(t *testing.T, baseURL string) {
+	t.Helper()
+	resp, err := http.Get(baseURL + "/hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %s", resp.Status)
 	}
 }
 
@@ -198,6 +209,7 @@ func TestCapabilitiesMatchFirmware(t *testing.T) {
 		{"maxFrameBytes", hello.MaxFrameBytes, firmware(mainCpp, `constexpr int kMaxFrameBytes = (\d+);`)},
 		{"maxThemeSpecBytes", theme.MaxThemeSpecBytes, firmware(mainCpp, `maxThemeSpecBytes\\":(\d+),\\"maxThemePrimitives\\":";`)},
 		{"maxStoredThemeSpecBytes", theme.MaxStoredThemeSpecBytes, firmware(mainCpp, `kMaxStoredThemeSpecBytes = (\d+);`)},
+		{"maxThemeActivationBodyBytes", maxThemeActivationBodyBytes, firmware(mainCpp, `body\.length\(\) > (\d+)\) \{\s+addCorsHeaders\(\);\s+webServer\.send\(400, "text/plain; charset=utf-8", "invalid theme activation body"\);`)},
 		{"maxThemePrimitives", theme.MaxThemePrimitives, firmware(renderer, `kMaxCompiledThemeSpecPrimitives = (\d+);`)},
 		{"maxUsageWindows", theme.MaxUsageWindows, firmware("firmware_shared/usage_window_contract.h", `kMaxWindows = (\d+);`)},
 		{"maxThemeGifAssets", theme.MaxThemeGifAssets, firmware(renderer, `kMaxThemeSpecGifAssets = (\d+);`)},
@@ -240,6 +252,59 @@ func TestFrameLimitBoundary(t *testing.T) {
 	}
 	if got := frame(MaxFrameBytes + 1); got != http.StatusBadRequest {
 		t.Fatalf("frame of %d bytes: status %d, want 400", MaxFrameBytes+1, got)
+	}
+}
+
+// Like the ESP8266, activation refuses a stored spec above 4,096 bytes or 32
+// primitives and a request body above 160 bytes (#354).
+func TestThemeActivationLimitBoundaries(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	const path = "/themes/u/limit.json"
+	padded := func(prefix string, size int) string {
+		return prefix + strings.Repeat("a", size-len(prefix)-len(`"}`)) + `"}`
+	}
+	for _, tt := range []struct {
+		name                             string
+		primitives, specBytes, bodyBytes int
+		wantStatus                       int
+		wantBody                         string
+	}{
+		{"largest stored spec", 1, maxStoredThemeSpecBytes, 64, http.StatusOK, ""},
+		{"stored spec one byte over", 1, maxStoredThemeSpecBytes + 1, 64, http.StatusBadRequest, "theme file too large"},
+		{"most primitives", maxThemePrimitives, 1024, 64, http.StatusOK, ""},
+		{"one primitive over", maxThemePrimitives + 1, 1024, 64, http.StatusBadRequest, "theme spec has no renderable content"},
+		{"largest activation body", 1, 1024, maxThemeActivationBodyBytes, http.StatusOK, ""},
+		{"activation body one byte over", 1, 1024, maxThemeActivationBodyBytes + 1, http.StatusBadRequest, "invalid theme activation body"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			primitives := strings.TrimSuffix(strings.Repeat(`{"t":"r"},`, tt.primitives), ",")
+			spec := padded(`{"id":"limit","rev":1,"p":[`+primitives+`],"pad":"`, tt.specBytes)
+			running.mu.Lock()
+			running.assets[path] = []byte(spec)
+			running.mu.Unlock()
+			body := padded(`{"path":"`+path+`","pad":"`, tt.bodyBytes)
+			req, err := http.NewRequest(http.MethodPost, running.HTTPURL+"/theme/active", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("X-VibeTV-Token", cfg.PairingToken)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			answer, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != tt.wantStatus || !strings.Contains(string(answer), tt.wantBody) {
+				t.Fatalf("spec=%d bytes, %d primitives, body=%d bytes: status %d %q, want %d %q",
+					len(spec), tt.primitives, len(body), resp.StatusCode, answer, tt.wantStatus, tt.wantBody)
+			}
+		})
 	}
 }
 

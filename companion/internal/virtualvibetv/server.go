@@ -1,6 +1,7 @@
 package virtualvibetv
 
 import (
+	"bytes"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,6 +26,16 @@ const maxUploadBytes = 8 << 20
 // and every advertised theme limit in step (#354).
 const MaxFrameBytes = 2048
 
+// Theme activation limits of the ESP8266, kept in step by the same test:
+// kMaxStoredThemeSpecBytes and the request body limit of handleThemeActive in
+// firmware_esp8266/src/main.cpp, kMaxCompiledThemeSpecPrimitives in
+// firmware_shared/theme_spec_renderer_core.h.
+const (
+	maxStoredThemeSpecBytes     = 4096
+	maxThemePrimitives          = 32
+	maxThemeActivationBodyBytes = 160
+)
+
 // Config describes one deterministic Virtual VibeTV scenario.
 type Config struct {
 	HTTPListenAddr                string
@@ -38,6 +49,7 @@ type Config struct {
 	ExpectedFirmwareSHA256        string
 	RebootUnavailableRequests     int
 	NeverReturnsAfterUpdate       bool
+	Unavailable                   bool
 	HealthUnhealthy               bool
 	RenderVerificationFails       bool
 	StreamRestartFails            bool
@@ -48,6 +60,7 @@ type Config struct {
 // Scenarios are the deterministic failures the CLI can start with.
 var Scenarios = map[string]func(*Config){
 	"healthy":                    func(*Config) {},
+	"unavailable":                func(cfg *Config) { cfg.Unavailable = true },
 	"unhealthy":                  func(cfg *Config) { cfg.HealthUnhealthy = true },
 	"render-rejected":            func(cfg *Config) { cfg.RenderVerificationFails = true },
 	"lost-ota-response":          func(cfg *Config) { cfg.DropUpdateResponseAfterAccept = true },
@@ -310,8 +323,8 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 				MaxUsageWindows:          3,
 				SupportsStoredThemes:     true,
 				MaxThemeSpecBytes:        2048,
-				MaxStoredThemeSpecBytes:  4096,
-				MaxThemePrimitives:       32,
+				MaxStoredThemeSpecBytes:  maxStoredThemeSpecBytes,
+				MaxThemePrimitives:       maxThemePrimitives,
 				MaxThemeGifAssets:        1,
 				MaxThemeGifBytes:         24 * 1024,
 				MaxThemeGifWidth:         80,
@@ -522,17 +535,24 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	body = bytes.TrimSpace(body)
+	if err != nil || len(body) == 0 || len(body) > maxThemeActivationBodyBytes {
+		s.respond(w, r, http.StatusBadRequest, "invalid theme activation body", "invalid theme activation")
+		return
+	}
 	var request struct {
 		Path string `json:"path"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&request); err != nil {
-		s.respond(w, r, http.StatusBadRequest, "invalid theme activation", "invalid theme activation")
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&request); err != nil {
+		s.respond(w, r, http.StatusBadRequest, "bad theme activation json", "invalid theme activation")
 		return
 	}
 	path := cleanAssetPath(request.Path)
 	s.mu.Lock()
 	data, ok := s.assets[path]
-	if ok {
+	refusal := storedThemeRefusal(data)
+	if ok && refusal == "" {
 		s.activeThemePath = path
 		s.activeTheme = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		s.activeThemeSHA256 = sha256Hex(data)
@@ -542,7 +562,34 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 		s.respond(w, r, http.StatusNotFound, "theme not found", "theme activation missing asset")
 		return
 	}
+	if refusal != "" {
+		s.respond(w, r, http.StatusBadRequest, refusal, "theme activation refused: "+refusal)
+		return
+	}
 	s.writeJSON(w, r, http.StatusOK, map[string]any{"ok": true, "path": path, "hash": sha256Hex(data)}, "theme activated "+path)
+}
+
+// storedThemeRefusal is the firmware's 400 answer for a stored spec it will not
+// activate (activateStoredThemePath in firmware_esp8266/src/main.cpp):
+// readStoredThemeSpec refuses the file size, CompileThemeSpecObject a
+// primitive array above the limit. The firmware also refuses a spec without
+// id/rev or without one drawable primitive; that is not mirrored here.
+func storedThemeRefusal(spec []byte) string {
+	if len(spec) == 0 || len(spec) > maxStoredThemeSpecBytes {
+		return "theme file too large"
+	}
+	var parsed struct {
+		Long  []json.RawMessage `json:"primitives"`
+		Short []json.RawMessage `json:"p"`
+	}
+	_ = json.Unmarshal(spec, &parsed)
+	if parsed.Long == nil {
+		parsed.Long = parsed.Short
+	}
+	if len(parsed.Long) > maxThemePrimitives {
+		return "theme spec has no renderable content"
+	}
+	return ""
 }
 
 func (s *Server) handleFirmwareUpdate(w http.ResponseWriter, r *http.Request) {
@@ -602,7 +649,7 @@ func (s *Server) handleFramebuffer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) temporarilyUnavailable(w http.ResponseWriter, r *http.Request) bool {
 	s.mu.Lock()
 	unavailable := false
-	if s.cfg.NeverReturnsAfterUpdate && s.updateUploads > 0 {
+	if s.cfg.Unavailable || (s.cfg.NeverReturnsAfterUpdate && s.updateUploads > 0) {
 		unavailable = true
 	} else if s.offlineRequestsLeft > 0 {
 		s.offlineRequestsLeft--

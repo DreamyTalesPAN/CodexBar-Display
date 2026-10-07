@@ -48,10 +48,13 @@ an unclear OTA result stops without retry or automatic rollback.
 
 `companion/cmd/virtual-vibetv` answers with the ESP8266 limits read from the
 firmware sources: frame size, ThemeSpec bytes and primitives, stored-theme
-bytes, usage windows and GIF limits. `TestCapabilitiesMatchFirmware` fails CI
+bytes, usage windows and GIF limits. Like the firmware, theme activation
+refuses a stored spec above 4,096 bytes or 32 primitives and a request body
+above 160 bytes. `TestCapabilitiesMatchFirmware` fails CI
 when the two drift, and `--scenario` starts the deterministic failures
-(`healthy`, `unhealthy`, `render-rejected`, `lost-ota-response`,
+(`healthy`, `unavailable`, `unhealthy`, `render-rejected`, `lost-ota-response`,
 `never-returns-after-update`, `allow-second-flash`; comma-separated).
+`unavailable` answers every request with 503, like the reboot window.
 
 It does not prove the firmware's own parsing and drawing, WiFi joining and
 roaming, the ROM bootloader and flash writes, power cycles, or what the
