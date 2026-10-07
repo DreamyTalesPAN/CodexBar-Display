@@ -79,6 +79,7 @@ collected. No provider is asked again and nothing in CodexBar is changed.
 | ID | Type | Values |
 | --- | --- | --- |
 | `vibetv.usage.displayMode` | `enum`, `allowsDefault` | `null` (Default), `"used"`, `"remaining"` |
+| `vibetv.display.rotateSeconds` | `enum` | `"0"` (When activity changes), `"30"`, `"60"`, `"300"` |
 
 `vibetv.usage.displayMode` decides whether percentages count what is used or
 what remains, on the VibeTV frame and in `GET /v1/usage` alike. `null` follows
@@ -90,6 +91,39 @@ Settings shows it as `Usage display` with `Default`, `Used` and `Remaining`.
 PATCH /v1/preferences/vibetv.usage.displayMode
 {"value": "remaining"}
 ```
+
+`vibetv.display.rotateSeconds` decides when the Automatic display mode moves
+to another provider. Settings shows it under the Automatic card as
+`Switch providers`. It is stored beside the display selection, not inside it,
+so saving `/v1/provider-display` never changes it.
+
+```http
+PATCH /v1/preferences/vibetv.display.rotateSeconds
+{"value": "30"}
+```
+
+### What Automatic does
+
+Automatic shows one provider at a time. Only providers that are switched on
+and have a current reading take part; a provider without one is skipped, and a
+single remaining provider simply stays on screen.
+
+- `"0"`, `When activity changes` (the default): VibeTV shows the provider whose
+  usage rose since the previous reading. If several rose, the larger rise wins
+  (token counts before percentages), and an equal rise goes to the provider
+  that comes first in CodexBar's order. While nothing rises, the provider on
+  screen stays. With no provider shown yet, the first one in CodexBar's order
+  is shown.
+- `"30"`, `"60"`, `"300"`: the timer alone decides. Each provider keeps the
+  screen for that many seconds, then the next one in CodexBar's order follows.
+  Usage on another provider does not cut a turn short. Switching the timer on
+  starts with the provider already on screen.
+
+The timer is checked each time a frame is sent. The Mac App sends one every 2
+seconds over USB-C and every 30 seconds over WiFi, so over WiFi a switch can
+come up to 30 seconds late. The `coding`/`idle` state in the frame is the same
+in both cases and covers all providers, so the screensaver does not depend on
+which provider is on screen. Manual ignores this preference.
 
 Brightness and the screensaver stay on `/v1/settings`; they are device
 settings and are not part of this section.

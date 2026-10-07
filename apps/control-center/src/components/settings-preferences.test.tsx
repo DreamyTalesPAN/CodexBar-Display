@@ -37,6 +37,26 @@ const usageDisplay: PreferenceDescriptor = {
   writeStrategy: "vibetv_override",
 };
 
+const rotation: PreferenceDescriptor = {
+  allowsDefault: false,
+  availability: { state: "available" },
+  effectiveValue: "0",
+  id: "vibetv.display.rotateSeconds",
+  label: "Switch providers",
+  options: [
+    { value: "0", label: "When activity changes" },
+    { value: "30", label: "Every 30 seconds" },
+    { value: "60", label: "Every minute" },
+    { value: "300", label: "Every 5 minutes" },
+  ],
+  owner: "vibetv",
+  section: "display",
+  type: "enum",
+  value: "0",
+  writable: true,
+  writeStrategy: "vibetv_override",
+};
+
 function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProps {
   return {
     automaticPreviews: [],
@@ -93,6 +113,33 @@ describe("SettingsScreen display preferences", () => {
     openSelect("Usage display");
     choose("Default");
     expect(onChange).toHaveBeenLastCalledWith(usageDisplay, null);
+  });
+
+  // Issue #322: Automatic switches when activity changes unless the customer
+  // picks one of three intervals.
+  it("offers the three rotation intervals beside the activity rule", () => {
+    const onChange = vi.fn();
+    render(
+      <SettingsScreen
+        {...props({
+          displayPreferences: [usageDisplay, rotation],
+          onDisplayPreferenceChange: onChange,
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Switch providers" }).textContent).toBe(
+      "When activity changes",
+    );
+    expect(openSelect("Switch providers")).toEqual([
+      "When activity changes",
+      "Every 30 seconds",
+      "Every minute",
+      "Every 5 minutes",
+    ]);
+    choose("Every 30 seconds");
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith(rotation, "30");
   });
 
   it("shows Default without naming where the value comes from", () => {

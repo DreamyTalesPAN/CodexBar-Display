@@ -61,6 +61,9 @@ type Config struct {
 	// UsageDisplayMode is the customer's own "used" or "remaining" choice.
 	// Empty follows CodexBar's setting (issue #183).
 	UsageDisplayMode string `json:"usageDisplayMode,omitempty"`
+	// DisplayRotateSeconds makes Automatic move to the next provider on a
+	// timer. Zero keeps the activity-based choice (issue #322).
+	DisplayRotateSeconds int `json:"displayRotateSeconds,omitempty"`
 }
 
 type ProviderDisplayConfig struct {
@@ -391,6 +394,7 @@ func (cfg *Config) Normalize() {
 	if cfg.UsageDisplayMode != "used" && cfg.UsageDisplayMode != "remaining" {
 		cfg.UsageDisplayMode = ""
 	}
+	cfg.DisplayRotateSeconds = max(cfg.DisplayRotateSeconds, 0)
 	for index := range cfg.DeviceTransports {
 		cfg.DeviceTransports[index] = strings.TrimSpace(strings.ToLower(cfg.DeviceTransports[index]))
 	}

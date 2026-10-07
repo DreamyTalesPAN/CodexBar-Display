@@ -1376,6 +1376,79 @@ func TestUsageDisplayPreferenceOverridesCodexBarAndReturnsToDefault(t *testing.T
 	}
 }
 
+func TestDisplayRotatePreferenceStoresTheIntervalAndSurvivesProviderDisplayWrites(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(method, path, bytes.NewBufferString(body)))
+		return recorder
+	}
+	read := func() preferenceDescriptor {
+		t.Helper()
+		recorder := request(http.MethodGet, "/v1/preferences?section=display", "")
+		var response preferencesResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK {
+			t.Fatalf("list display preferences: %d %s", recorder.Code, recorder.Body.String())
+		}
+		for _, item := range response.Items {
+			if item.ID == displayRotatePreferenceID {
+				return item
+			}
+		}
+		t.Fatalf("rotation preference is not listed: %s", recorder.Body.String())
+		return preferenceDescriptor{}
+	}
+
+	item := read()
+	labels := make([]string, 0, len(item.Options))
+	for _, option := range item.Options {
+		labels = append(labels, option.Value+"="+option.Label)
+	}
+	if item.Label != "Switch providers" || item.Value != "0" || item.AllowsDefault ||
+		strings.Join(labels, "|") != "0=When activity changes|30=Every 30 seconds|60=Every minute|300=Every 5 minutes" {
+		t.Fatalf("unexpected rotation descriptor: %#v", item)
+	}
+
+	path := "/v1/preferences/" + displayRotatePreferenceID
+	if recorder := request(http.MethodPatch, path, `{"value":"30"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch 30 seconds: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 30 || read().Value != "30" || renders != 1 {
+		t.Fatalf("interval was not stored and rendered: cfg=%d renders=%d", cfg.DisplayRotateSeconds, renders)
+	}
+	for _, invalid := range []string{`"45"`, `30`, `null`} {
+		if recorder := request(http.MethodPatch, path, `{"value":`+invalid+`}`); recorder.Code != http.StatusBadRequest {
+			t.Fatalf("value %s was accepted: %d %s", invalid, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// The Control Center rewrites the display selection whenever a provider is
+	// switched on or off. That write must leave the interval alone.
+	if recorder := request(http.MethodPatch, "/v1/provider-display", `{"mode":"automatic","providerIds":["codex","claude"]}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch provider display: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 30 || cfg.ProviderDisplay == nil {
+		t.Fatalf("provider display write lost the interval: %+v", cfg)
+	}
+
+	if recorder := request(http.MethodPatch, path, `{"value":"0"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch back to activity: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 0 || read().Value != "0" {
+		t.Fatalf("interval was not cleared: %d", cfg.DisplayRotateSeconds)
+	}
+}
+
 func TestPreferenceRegistryRejectsInvalidEnumRangeAndDefault(t *testing.T) {
 	minimum := int64(30)
 	maximum := int64(120)

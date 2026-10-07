@@ -331,6 +331,23 @@ func TestUsageDisplayModeOverridesCodexBarAndSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestDisplayRotateSecondsSurvivesRestartAndNeverGoesNegative(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{DisplayRotateSeconds: 30}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(home)
+	if err != nil || loaded.DisplayRotateSeconds != 30 {
+		t.Fatalf("rotation interval did not persist: %+v err=%v", loaded, err)
+	}
+
+	negative := Config{DisplayRotateSeconds: -5}
+	negative.Normalize()
+	if negative.DisplayRotateSeconds != 0 {
+		t.Fatalf("negative rotation interval was kept: %d", negative.DisplayRotateSeconds)
+	}
+}
+
 func TestResetDeviceBindingPreservesAuthenticationProfiles(t *testing.T) {
 	cfg := Config{
 		DeviceID:         "device-a",

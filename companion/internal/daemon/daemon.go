@@ -270,6 +270,10 @@ type runtimeState struct {
 	// providers instead of a blank screen. Tied to that selection: a later
 	// Manual choice must not inherit the fallback frame.
 	providerDisplayFallback string
+	// rotationProvider is the provider the timed rotation of Automatic shows,
+	// and rotationAt is when its turn began. Empty while nothing rotates.
+	rotationProvider string
+	rotationAt       time.Time
 }
 
 type cycleResult struct {
@@ -1232,6 +1236,14 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		return finalizeCycleResult(state, result, now)
 	}
 
+	// A timed rotation changes which provider is shown, nothing else: the
+	// coding/idle verdict below stays the selector's, read from all providers,
+	// because the VibeTV starts its screensaver from it.
+	activity := decision
+	if provider, detail, ok := rotateShownProvider(state, allProviders, decision.Selected, now, deps); ok {
+		decision.Selected, decision.Reason, decision.Detail = provider, "timed-rotation", detail
+	}
+
 	result.frame = decision.Selected.Frame
 	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) {
 		// Providers are enumerated but none has ever delivered usage: for the
@@ -1255,13 +1267,56 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	collectedAt := decision.Selected.CollectedAt
 	if collectedAt.IsZero() {
 		collectedAt = now
-		decision.Selected.CollectedAt = collectedAt
 	}
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
 	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
-	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
+	result.frame, result.activityDetail = applySelectionActivity(result.frame, activity, state, now)
 	return result
+}
+
+// rotateShownProvider is the timed rotation of Automatic (issue #322). With an
+// interval set, the timer alone decides which provider is shown: each one keeps
+// the screen for the interval, then the next in CodexBar's order follows, and a
+// usage change elsewhere does not cut a turn short. Only providers with a
+// current reading take a turn, and fewer than two of them leave nothing to
+// rotate. The first turn, and the one after the provider on screen lost its
+// reading, goes to selected: the provider Automatic would show anyway, so
+// switching the timer on does not change the screen.
+func rotateShownProvider(state *runtimeState, providers []codexbar.ParsedFrame, selected codexbar.ParsedFrame, now time.Time, deps runtimeDeps) (codexbar.ParsedFrame, string, bool) {
+	cfg, _ := loadRuntimeConfig(deps)
+	interval := time.Duration(cfg.DisplayRotateSeconds) * time.Second
+	var available []codexbar.ParsedFrame
+	if interval > 0 && (cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic") {
+		for _, provider := range providers {
+			if !provider.Stale && !provider.Frame.UsageUnavailable {
+				available = append(available, provider)
+			}
+		}
+	}
+	if len(available) < 2 {
+		state.rotationProvider = ""
+		return codexbar.ParsedFrame{}, "", false
+	}
+
+	position := func(key string) int {
+		for i, provider := range available {
+			if normalizeProviderKey(provider.Frame.Provider) == key {
+				return i
+			}
+		}
+		return -1
+	}
+	index := position(state.rotationProvider)
+	if index < 0 {
+		index = max(position(normalizeProviderKey(selected.Frame.Provider)), 0)
+		state.rotationAt = now
+	} else if now.Sub(state.rotationAt) >= interval {
+		index = (index + 1) % len(available)
+		state.rotationAt = now
+	}
+	state.rotationProvider = normalizeProviderKey(available[index].Frame.Provider)
+	return available[index], fmt.Sprintf("provider=%s every=%s", state.rotationProvider, interval), true
 }
 
 func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc) []codexbar.ParsedFrame {

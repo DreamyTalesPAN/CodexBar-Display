@@ -152,7 +152,11 @@ type DisplayModeChoiceProps = Pick<
   | "providers"
   | "saving"
   | "selectedProviderId"
-> & { className?: string };
+> & {
+  /** Settings says so when Automatic follows a timer instead of activity. */
+  automaticDescription?: string;
+  className?: string;
+};
 
 /**
  * The display-mode choice itself: two cards showing what each mode would put
@@ -163,6 +167,7 @@ type DisplayModeChoiceProps = Pick<
  * Settings ended up offering "Always show one" against the wizard's "Manual".
  */
 export function DisplayModeChoice({
+  automaticDescription = "VibeTV switches between your providers based on recent activity and usage.",
   automaticPreview,
   automaticPreviews,
   className,
@@ -185,7 +190,7 @@ export function DisplayModeChoice({
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <div className="grid w-full grid-cols-2 items-stretch gap-4">
         <ModeCard
-          description="VibeTV switches between your providers based on recent activity and usage."
+          description={automaticDescription}
           disabled={saving}
           onSelect={() => onSelectMode("automatic")}
           selected={mode === "automatic"}

@@ -6807,6 +6807,166 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderOmittedWhileEnabled(t *t
 	}
 }
 
+func rotationTestDeps(rotateSeconds int, display *runtimeconfig.ProviderDisplayConfig) runtimeDeps {
+	return runtimeDeps{
+		homeDir: func() (string, error) { return "/tmp/provider-rotation-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ProviderDisplay: display, DisplayRotateSeconds: rotateSeconds}, nil
+		},
+		logf: func(string, ...any) {},
+	}
+}
+
+// rotationTestProvider has a live reset countdown, so it owns a provider slot.
+func rotationTestProvider(provider string, session int) codexbar.ParsedFrame {
+	parsed := testParsedFrame(provider, session, 40, 3600)
+	parsed.Frame.UsageWindows = []protocol.UsageWindow{{ID: "session", Label: "Session", Percent: session, ResetSec: 3600}}
+	return parsed
+}
+
+func TestSelectCycleFrameRotatesAutomaticProvidersOnTheInterval(t *testing.T) {
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := rotationTestDeps(30, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude", "cursor"}})
+	codex := rotationTestProvider("codex", 10)
+	claude := rotationTestProvider("claude", 30)
+	cursor := rotationTestProvider("cursor", 50)
+	cycle := func(after time.Duration) cycleResult {
+		return selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{codex, claude, cursor}, start.Add(after), deps, nil, "select-provider", "", "", "codexbar")
+	}
+	expectShown := func(after time.Duration, want string) cycleResult {
+		t.Helper()
+		result := cycle(after)
+		if result.frame.Provider != want || result.failureErr != nil {
+			t.Fatalf("after %s: shown=%q reason=%s err=%v, want %q", after, result.frame.Provider, result.selectionReason, result.failureErr, want)
+		}
+		return result
+	}
+
+	// Cursor has no reading, so it never takes a turn. Each of the other two
+	// keeps the screen for the whole interval, and every provider with a
+	// countdown keeps its row whichever one is shown.
+	cursor.Frame.UsageUnavailable = true
+	for _, step := range []struct {
+		after time.Duration
+		want  string
+	}{
+		{0, "codex"},
+		{29 * time.Second, "codex"},
+		{30 * time.Second, "claude"},
+		{59 * time.Second, "claude"},
+		{60 * time.Second, "codex"},
+	} {
+		result := expectShown(step.after, step.want)
+		if result.selectionReason != "timed-rotation" || len(result.frame.ProviderSlots) != 2 {
+			t.Fatalf("after %s: reason=%s slots=%+v, want timed-rotation with both provider rows", step.after, result.selectionReason, result.frame.ProviderSlots)
+		}
+	}
+
+	// Usage on Claude does not cut Codex's turn short, but the frame still
+	// reports coding: that verdict covers every provider.
+	claude.Frame.Session = 35
+	if result := expectShown(70*time.Second, "codex"); result.frame.Activity != "coding" {
+		t.Fatalf("usage on another provider was not reported as coding: %s", result.activityDetail)
+	}
+
+	// The provider on screen loses its reading: the rotation restarts with the
+	// provider Automatic would show now and moves on from there.
+	codex.Frame.UsageUnavailable = true
+	cursor.Frame.UsageUnavailable = false
+	expectShown(75*time.Second, "claude")
+	expectShown(104*time.Second, "claude")
+	expectShown(105*time.Second, "cursor")
+
+	// With one provider left there is nothing to rotate; it stays on screen.
+	cursor.Frame.UsageUnavailable = true
+	for _, after := range []time.Duration{110 * time.Second, 10 * time.Minute} {
+		if result := expectShown(after, "claude"); result.selectionReason == "timed-rotation" || state.rotationProvider != "" {
+			t.Fatalf("after %s: a single provider was still rotated: reason=%s rotation=%q", after, result.selectionReason, state.rotationProvider)
+		}
+	}
+}
+
+func TestSelectCycleFrameRotatesOnlyInAutomaticWithAnInterval(t *testing.T) {
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	for name, tt := range map[string]struct {
+		deps runtimeDeps
+		want []string
+	}{
+		// No interval: today's Automatic, where usage on Claude takes over.
+		"when activity changes": {
+			deps: rotationTestDeps(0, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude"}}),
+			want: []string{"codex", "codex", "claude"},
+		},
+		"manual ignores the interval": {
+			deps: rotationTestDeps(30, &runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"codex"}}),
+			want: []string{"codex", "codex", "codex"},
+		},
+		// An install from before the display choice counts as Automatic.
+		"no stored display choice": {
+			deps: rotationTestDeps(30, nil),
+			want: []string{"codex", "claude", "claude"},
+		},
+	} {
+		state := &runtimeState{selector: codexbar.NewProviderSelector()}
+		claude := rotationTestProvider("claude", 30)
+		for i, after := range []time.Duration{0, 30 * time.Second, 40 * time.Second} {
+			if i == 2 {
+				claude.Frame.Session = 35
+			}
+			providers := []codexbar.ParsedFrame{rotationTestProvider("codex", 10), claude}
+			result := selectCycleFrameFromProviders(state, providers, start.Add(after), tt.deps, nil, "select-provider", "", "", "codexbar")
+			if result.frame.Provider != tt.want[i] {
+				t.Fatalf("%s: after %s shown=%q reason=%s, want %q", name, after, result.frame.Provider, result.selectionReason, tt.want[i])
+			}
+		}
+	}
+}
+
+func TestRunCycleWithDepsSendsTheRotatedProviderAndKeepsItAsLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	var sent []protocol.Frame
+	deps := rotationTestDeps(30, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic", ProviderIDs: []string{"codex", "claude"}})
+	deps.now = func() time.Time { return current }
+	deps.resolvePort = func(string) (string, error) { return "test-port", nil }
+	deps.deviceCaps = func(string) (protocol.DeviceCapabilities, error) { return protocol.DeviceCapabilities{}, nil }
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{rotationTestProvider("codex", 10), rotationTestProvider("claude", 30)}, nil
+	}
+	deps.sendLine = func(_ string, line []byte) error {
+		sent = append(sent, decodeFrameLine(t, line))
+		return nil
+	}
+
+	for _, want := range []string{"codex", "claude"} {
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("expected cycle success, got %v", err)
+		}
+		if got := sent[len(sent)-1]; got.Provider != want || got.UsageUnavailable {
+			t.Fatalf("sent provider=%q unavailable=%t, want a current %q frame", got.Provider, got.UsageUnavailable, want)
+		}
+		current = current.Add(30 * time.Second)
+	}
+	if state.lastGood.Provider != "claude" {
+		t.Fatalf("last-good provider=%q, want the rotated provider on screen", state.lastGood.Provider)
+	}
+
+	// A failed collection keeps the provider that was on screen; the rotation
+	// does not move through readings it no longer has.
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("temporary failure")}
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected last-good fallback, got %v", err)
+	}
+	if got := sent[len(sent)-1]; got.Provider != "claude" {
+		t.Fatalf("failed collection showed %q, want the last shown provider", got.Provider)
+	}
+}
+
 func disabledProviders(ids ...string) providerOffFunc {
 	return func(provider string) (bool, bool) {
 		for _, id := range ids {

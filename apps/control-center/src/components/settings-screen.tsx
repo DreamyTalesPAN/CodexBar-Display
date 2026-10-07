@@ -173,6 +173,9 @@ export function SettingsScreen({
   const usageDisplay = displayPreferences.find(
     (item) => item.id === "vibetv.usage.displayMode",
   );
+  const rotation = displayPreferences.find(
+    (item) => item.id === "vibetv.display.rotateSeconds",
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
@@ -288,6 +291,11 @@ export function SettingsScreen({
           </p>
         ) : null}
         <DisplayModeChoice
+          automaticDescription={
+            rotation && rotation.value !== "0"
+              ? "VibeTV switches between your providers on a timer."
+              : undefined
+          }
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}
           manualPreview={
@@ -328,6 +336,13 @@ export function SettingsScreen({
           saving={displaySavePending}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
         />
+        {displayMode === "automatic" && rotation ? (
+          <PreferenceRow
+            descriptor={rotation}
+            disabled={localActionBusy}
+            onChange={onDisplayPreferenceChange}
+          />
+        ) : null}
       </SettingsSection>
 
       {standbySupport ? (

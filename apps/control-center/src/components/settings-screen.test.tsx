@@ -80,6 +80,26 @@ const usageDisplay: PreferenceDescriptor = {
   writeStrategy: "vibetv_override",
 };
 
+const rotation: PreferenceDescriptor = {
+  allowsDefault: false,
+  availability: { state: "available" },
+  effectiveValue: "0",
+  id: "vibetv.display.rotateSeconds",
+  label: "Switch providers",
+  options: [
+    { value: "0", label: "When activity changes" },
+    { value: "30", label: "Every 30 seconds" },
+    { value: "60", label: "Every minute" },
+    { value: "300", label: "Every 5 minutes" },
+  ],
+  owner: "vibetv",
+  section: "display",
+  type: "enum",
+  value: "0",
+  writable: true,
+  writeStrategy: "vibetv_override",
+};
+
 function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
@@ -476,6 +496,47 @@ describe("SettingsScreen standby controls", () => {
       /role="combobox"[^>]*aria-label="Usage display"[^>]*id="vibetv\.usage\.displayMode"/,
     );
     expect(render(standbyDevice)).not.toContain("Usage display");
+  });
+
+  // Issue #322: the timed rotation is one select under the Automatic card.
+  it("offers the rotation under Display mode only while Automatic is chosen", () => {
+    const displayMode = (
+      mode: "automatic" | "fixed",
+      preferences: PreferenceDescriptor[],
+    ) => {
+      const html = render(
+        standbyDevice,
+        savedStandby,
+        {
+          ...providerPicker,
+          display: { mode, providerIds: ["claude"], configured: true, valid: true },
+          items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+        },
+        70, "cable", false, preferences,
+      );
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Screensaver</h2>"),
+      );
+    };
+    const byActivity =
+      "VibeTV switches between your providers based on recent activity and usage.";
+    const onATimer = "VibeTV switches between your providers on a timer.";
+
+    const automatic = displayMode("automatic", [rotation]);
+    expect(automatic).toMatch(
+      /for="vibetv\.display\.rotateSeconds"[^>]*>Switch providers<\/label>/,
+    );
+    expect(automatic).toContain(byActivity);
+    expect(automatic).not.toContain(onATimer);
+
+    // The Automatic card says what the chosen timer makes it do.
+    const timed = displayMode("automatic", [{ ...rotation, value: "30" }]);
+    expect(timed).toContain(onATimer);
+    expect(timed).not.toContain(byActivity);
+
+    expect(displayMode("fixed", [rotation])).not.toContain("Switch providers");
+    expect(displayMode("automatic", [])).not.toContain("Switch providers");
   });
 
   it("says why Display mode switched to Automatic", () => {
