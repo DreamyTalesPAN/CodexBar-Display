@@ -139,7 +139,10 @@ import {
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
-import { startUsageSurfacePolling } from "./usage-surface-polling";
+import {
+  startUsageSurfacePolling,
+  USAGE_REFRESH_PENDING_POLL_INTERVAL_MS,
+} from "./usage-surface-polling";
 
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 // What the Companion calls the VibeTV connected by Cable.
@@ -4610,6 +4613,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     syncLocalStatus,
   ]);
 
+  const usageRefreshPending = usage?.refresh?.state === "refreshing";
   useEffect(() => {
     if (
       companionStatus !== "online" ||
@@ -4623,6 +4627,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return startUsageSurfacePolling({
       refreshUsage: () => refreshUsage({ quiet: true }),
       refreshProviderHealth: () => refreshProviderPreferences({ quiet: true }),
+      intervalMs: usageRefreshPending
+        ? USAGE_REFRESH_PENDING_POLL_INTERVAL_MS
+        : undefined,
     });
   }, [
     activeShellTab,
@@ -4631,6 +4638,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshProviderPreferences,
     refreshUsage,
     hasEnteredControlCenter,
+    usageRefreshPending,
   ]);
 
   // Settings and the provider step show the display selection; setup also has
