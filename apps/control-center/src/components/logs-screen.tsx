@@ -281,6 +281,13 @@ function activeThemeLabel(
   device: DeviceInfo | null | undefined,
 ): string {
   const theme = activeLiveThemeId(themes, device)?.trim();
-  if (!theme) return deviceIsReady(device) ? "Default" : "Not available";
+  if (!theme) {
+    // During standby a Theme Studio theme in the live slot has no name here;
+    // the screensaver on screen is not it.
+    if (device?.standby?.active === true && device.standby.liveThemePath?.trim()) {
+      return "Custom theme";
+    }
+    return deviceIsReady(device) ? "Default" : "Not available";
+  }
   return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

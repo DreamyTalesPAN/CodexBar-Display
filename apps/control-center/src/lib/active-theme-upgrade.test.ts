@@ -370,8 +370,9 @@ describe("a Theme Studio theme in the live slot during standby", () => {
         needsThemeSpec: false,
         unresolved: false,
       });
-      // Not named after the catalog theme either.
-      expect(activeLiveThemeId(catalog, standby)).toBe("night-clock");
+      // Not named after the catalog theme, and not after the screensaver
+      // that is on screen.
+      expect(activeLiveThemeId(catalog, standby)).toBeUndefined();
     },
   );
 

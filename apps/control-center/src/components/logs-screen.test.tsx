@@ -58,6 +58,29 @@ it("names the live theme while the screensaver is on screen", () => {
   expect(html).not.toContain("Night Clock");
 });
 
+it("does not name the screensaver as active theme when a Theme Studio theme is live", () => {
+  const html = renderToStaticMarkup(
+    <LogsScreen
+      device={{
+        active: true,
+        connected: true,
+        paired: true,
+        ready: true,
+        activeTheme: "retro-3d",
+        standby: {
+          active: true,
+          liveThemePath: "/themes/u/my-the-1-0a1b2c.json",
+          screensaverPath: "/themes/s/r3d-2-d2a77fd8.json",
+        },
+      }}
+      themes={[]}
+    />,
+  );
+
+  expect(html).toContain("Custom theme");
+  expect(html).not.toContain("Retro 3d");
+});
+
 // Issue #265: Support names the signal of a VibeTV on WiFi the way the Mac App
 // judged it.
 it("shows the WiFi signal of a connected VibeTV, and none where there is no reading", () => {
