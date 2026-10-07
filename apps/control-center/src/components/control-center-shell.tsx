@@ -9,7 +9,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { useLayoutEffect, type CSSProperties, type ReactNode } from "react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -101,6 +101,12 @@ export function ControlCenterShell({
 }: ControlCenterShellProps) {
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
+  // The window scrolls, not the tab. A button far down one tab that opens
+  // another (Settings › Run diagnostics, Choose screensaver) would leave the
+  // new tab scrolled past its heading (issue #558).
+  useLayoutEffect(() => {
+    document.documentElement.scrollTop = 0;
+  }, [activeTab, activeAppearanceSection]);
   return (
     <SidebarProvider
       className="control-center-shell overflow-x-hidden bg-background text-foreground"
