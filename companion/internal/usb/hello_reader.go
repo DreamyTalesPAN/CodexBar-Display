@@ -254,6 +254,8 @@ func readSettingsFromPort(port SerialPort, window time.Duration, deviceID string
 	return settings, nil
 }
 
+var errHealthUnanswered = errors.New("device did not acknowledge health request")
+
 func readHealthFromPort(port SerialPort, window time.Duration, deviceID string) ([]byte, error) {
 	var health []byte
 	var responseErr error
@@ -294,7 +296,7 @@ func readHealthFromPort(port SerialPort, window time.Duration, deviceID string) 
 		return nil, responseErr
 	}
 	if !seen {
-		return nil, errors.New("device did not acknowledge health request")
+		return nil, errHealthUnanswered
 	}
 	return health, nil
 }
