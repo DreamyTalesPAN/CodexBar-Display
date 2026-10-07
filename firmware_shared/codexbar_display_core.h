@@ -180,6 +180,8 @@ struct Frame {
 // own monotonic clock. Everything the renderer shows for `reset` is derived
 // from this, so a countdown the device cannot justify cannot reach a theme.
 struct ResetTrustState {
+  // A basis the device stands behind. Its deadline may be 0: a live frame
+  // without any reset time is a basis too.
   bool hasDeadline = false;
   // True once a contract-aware frame was seen: the trust budget is enforced.
   // Legacy frames keep the old unbounded local countdown.
@@ -490,7 +492,11 @@ inline void ApplyFrameResetTrust(ResetTrustState& state, const Frame& frame, uns
     }
   }
 
-  const bool usable = FrameCarriesResetDeadline(frame) &&
+  // A live frame is the host's statement that the basis is current, and it
+  // stands without a deadline too: an account in which no window has a reset
+  // time has nothing scheduled to reset (#532). Every other frame is trusted
+  // for its deadline and needs one.
+  const bool usable = (frame.resetTrust == ResetTrust::kLive || FrameCarriesResetDeadline(frame)) &&
                       frame.resetTrust != ResetTrust::kStale &&
                       (!enforced || (trustSecs > 0 && frame.resetSource.length() > 0));
   state = ResetTrustState{};
