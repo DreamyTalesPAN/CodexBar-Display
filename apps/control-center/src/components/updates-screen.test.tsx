@@ -418,6 +418,25 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     expect(html.includes("Mac")).toBe(!windowsHost);
   });
 
+  // Issue #558: the cards were titled "App" and "VibeTV update": one named
+  // what is updated, the other the update.
+  it.each([
+    [false, "Mac App"],
+    [true, "App"],
+  ])("titles both cards with what they update (windows=%s)", (windowsHost, app) => {
+    render(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        onInstallUpdate={() => true}
+        windowsHost={windowsHost}
+      />,
+    );
+
+    expect(
+      screen.getAllByRole("heading", { level: 3 }).map((title) => title.textContent),
+    ).toEqual([app, "VibeTV"]);
+  });
+
   it("asks a Windows customer to update the app first", () => {
     const html = renderMarkup(
       <UpdatesScreen

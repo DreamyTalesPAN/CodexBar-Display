@@ -274,7 +274,7 @@ export function UpdatesScreen({
           installedValue={installedFirmware}
           latestLabel="Available firmware"
           latestValue={latestFirmware}
-          title="VibeTV update"
+          title="VibeTV"
           updateAvailable={vibetvUpdateAvailable}
         >
           {firmwareUpdateBlocked ? (
