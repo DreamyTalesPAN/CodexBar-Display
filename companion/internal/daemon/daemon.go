@@ -1531,11 +1531,16 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 		activityObservedAt = collectedAt
 	}
 	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state, now)
+	// A token scan that completed after the one that showed the work, and
+	// brought no delta, is the answer coding was waiting for. It must be
+	// looked at, not answered from the remembered activity.
+	tokenScanAnswered := state.lastActivity == "coding" && !state.lastCodingTokenScanAt.IsZero() &&
+		decision.Selected.TokenStatsCollectedAt.After(state.lastCodingTokenScanAt)
 	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
 		!activityObservedAt.IsZero() &&
 		activityObservedAt.Equal(state.lastActivityObservedAt) &&
 		state.lastActivity != "" &&
-		!codingExpired {
+		!codingExpired && !tokenScanAnswered {
 		state.lastActivityAt = collectedAt
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
@@ -1544,7 +1549,7 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	// snapshot that keeps its collection time, so a delta must never be
 	// answered from the remembered activity.
 	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
-		!collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired {
+		!collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired && !tokenScanAnswered {
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
 	}
@@ -1576,9 +1581,12 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 				}
 				// Token totals only move with a token scan. Until the next
 				// scan has completed, usage refreshes without a delta say
-				// nothing about whether the customer stopped working.
-				awaitingTokenScan := !state.lastCodingTokenScanAt.IsZero() && !decision.Selected.TokenStatsCollectedAt.After(state.lastCodingTokenScanAt)
-				if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() || awaitingTokenScan {
+				// nothing about whether the customer stopped working. That
+				// scan covers the whole time since the last one, so it is
+				// all the idle evidence there can be.
+				awaitingTokenScan := !state.lastCodingTokenScanAt.IsZero() && !tokenScanAnswered
+				needsIdleEvidence := !tokenScanAnswered && state.idleEvidenceCount < activityIdleEvidenceRequired()
+				if codingHoldActive(state.lastCodingAt, now) || needsIdleEvidence || awaitingTokenScan {
 					activity = "coding"
 					signalReason = "coding-waiting-for-idle-evidence"
 					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d awaiting_token_scan=%t observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), awaitingTokenScan, activityObservedAt.Format(time.RFC3339))

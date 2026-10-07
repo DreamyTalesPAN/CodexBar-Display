@@ -1809,41 +1809,55 @@ func TestApplySelectionActivityHoldsCodingUntilTheNextTokenScanFindsNothing(t *t
 	t.Setenv(activityIdleEvidenceEnvVar, "2")
 
 	scan := time.Date(2026, 10, 7, 15, 40, 43, 0, time.UTC)
-	state := &runtimeState{}
-	step := func(after time.Duration, tokenScanAt time.Time, delta bool) string {
-		t.Helper()
-		now := scan.Add(after)
-		decision := codexbar.SelectionDecision{
-			Selected: codexbar.ParsedFrame{
-				Frame:                 protocol.Frame{Provider: "claude", TokenTotalsKnown: true},
-				CollectedAt:           now,
-				ActivityObservedAt:    now,
-				TokenStatsCollectedAt: tokenScanAt,
-			},
-			Reason: codexbar.SelectionReasonStickyCurrent,
-		}
-		if delta {
-			decision.Reason = codexbar.SelectionReasonUsageDelta
-			decision.ActivitySignalReason = codexbar.SelectionReasonUsageDelta
-			decision.ActivityDetail = "source=usage-delta"
-		}
-		frame, _ := applySelectionActivity(protocol.Frame{Provider: "claude"}, decision, state, now)
-		return frame.Activity
-	}
-
-	if got := step(0, scan, true); got != "coding" {
-		t.Fatalf("expected the token delta to show coding, got %q", got)
-	}
-	// Hold over and two usage refreshes without a delta, but no newer token
-	// scan yet: the customer may well still be working.
-	for _, after := range []time.Duration{2 * time.Minute, 4 * time.Minute, 5 * time.Minute} {
-		if got := step(after, scan, false); got != "coding" {
-			t.Fatalf("expected coding %s after the delta while the next token scan is pending, got %q", after, got)
-		}
-	}
 	nextScan := scan.Add(5*time.Minute + 30*time.Second)
-	if got := step(5*time.Minute+31*time.Second, nextScan, false); got != "idle" {
-		t.Fatalf("expected idle once a newer token scan found no new tokens, got %q", got)
+	// CodexBar 0.63 stamps its cost answer with the scan time; the Windows
+	// engine keeps the time of the last activity. Either way one scan
+	// without new tokens ends coding.
+	for name, observedAt := range map[string]func(tokenScanAt time.Time) time.Time{
+		"activity time follows the scan": func(tokenScanAt time.Time) time.Time { return tokenScanAt },
+		"activity time stays":            func(time.Time) time.Time { return scan },
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := &runtimeState{}
+			step := func(after time.Duration, tokenScanAt time.Time, delta bool) string {
+				t.Helper()
+				now := scan.Add(after)
+				decision := codexbar.SelectionDecision{
+					Selected: codexbar.ParsedFrame{
+						Frame: protocol.Frame{Provider: "claude", TokenTotalsKnown: true},
+						// Usage is collected every 30 seconds.
+						CollectedAt:           now.Truncate(30 * time.Second),
+						ActivityObservedAt:    observedAt(tokenScanAt),
+						TokenStatsCollectedAt: tokenScanAt,
+					},
+					Reason: codexbar.SelectionReasonStickyCurrent,
+				}
+				if delta {
+					decision.Reason = codexbar.SelectionReasonUsageDelta
+					decision.ActivitySignalReason = codexbar.SelectionReasonUsageDelta
+					decision.ActivityDetail = "source=usage-delta"
+				}
+				frame, _ := applySelectionActivity(protocol.Frame{Provider: "claude"}, decision, state, now)
+				return frame.Activity
+			}
+
+			if got := step(0, scan, true); got != "coding" {
+				t.Fatalf("expected the token delta to show coding, got %q", got)
+			}
+			// Hold over and usage refreshes without a delta, but no newer
+			// token scan yet: the customer may well still be working.
+			for _, after := range []time.Duration{2 * time.Second, 2 * time.Minute, 4 * time.Minute, 5 * time.Minute} {
+				if got := step(after, scan, false); got != "coding" {
+					t.Fatalf("expected coding %s after the delta while the next token scan is pending, got %q", after, got)
+				}
+			}
+			if got := step(5*time.Minute+31*time.Second, nextScan, false); got != "idle" {
+				t.Fatalf("expected idle once a newer token scan found no new tokens, got %q", got)
+			}
+			if got := step(5*time.Minute+33*time.Second, nextScan, false); got != "idle" {
+				t.Fatalf("expected idle to stay, got %q", got)
+			}
+		})
 	}
 }
 
