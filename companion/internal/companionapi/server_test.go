@@ -5886,6 +5886,16 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 	if got := nextPoll(); got.ConnectionState != deviceConnectionRenderFailed {
 		t.Fatalf("the other theme failed twice in a row, got %q", got.ConnectionState)
 	}
+	// Hours later the remembered reading says nothing about now.
+	now = now.Add(3 * time.Hour)
+	if got := status(); got.ConnectionState == deviceConnectionRenderFailed {
+		t.Fatal("a reading remembered from hours ago must not confirm a single new one")
+	}
+	// Two missed polls in between still count as readings in a row.
+	now = now.Add(themeNotDrawnForgetTime)
+	if got := status(); got.ConnectionState != deviceConnectionRenderFailed {
+		t.Fatalf("the same failing reading three polls later is a theme problem, got %q", got.ConnectionState)
+	}
 	server.clearConfiguredDeviceState()
 	if got := nextPoll(); got.ConnectionState == deviceConnectionRenderFailed {
 		t.Fatal("a newly selected VibeTV starts without a remembered reading")

@@ -415,8 +415,9 @@ type configuredDeviceConnection struct {
 	lastSeenAt time.Time
 	// The theme path and render error of the last health reading that
 	// themeCannotBeDrawn named, and when that run of readings began.
-	themeNotDrawn   string
-	themeNotDrawnAt time.Time
+	themeNotDrawn       string
+	themeNotDrawnAt     time.Time
+	themeNotDrawnLastAt time.Time
 }
 
 func (e *repairStageError) Error() string {
@@ -1859,6 +1860,11 @@ const deviceConnectionRenderFailed = "display_render_failed"
 // reader of the same answer does not.
 const themeNotDrawnConfirmTime = 3 * time.Second
 
+// themeNotDrawnForgetTime is how far apart two health readings may be and
+// still be "in a row": three status polls, so one or two missed health answers
+// of a busy VibeTV do not start the count over.
+const themeNotDrawnForgetTime = 15 * time.Second
+
 // themeStaysUndrawn reports a theme that themeCannotBeDrawn named on two
 // health readings in a row, for the same theme path and render error (issue
 // #530). One reading can be a single failed buffer allocation that the next
@@ -1874,10 +1880,13 @@ func (c *configuredDeviceConnection) themeStaysUndrawn(display *deviceDisplayInf
 		c.themeNotDrawn = ""
 		return false
 	}
-	if reading := spec.Path + "\n" + spec.RenderError; c.themeNotDrawn != reading {
+	// A reading remembered from before the VibeTV was away for a while says
+	// nothing about now, so it does not confirm the first reading after that.
+	if reading := spec.Path + "\n" + spec.RenderError; c.themeNotDrawn != reading ||
+		now.Sub(c.themeNotDrawnLastAt) > themeNotDrawnForgetTime {
 		c.themeNotDrawn, c.themeNotDrawnAt = reading, now
-		return false
 	}
+	c.themeNotDrawnLastAt = now
 	return now.Sub(c.themeNotDrawnAt) >= themeNotDrawnConfirmTime
 }
 
