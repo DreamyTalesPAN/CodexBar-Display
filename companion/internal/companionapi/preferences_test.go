@@ -625,6 +625,31 @@ func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	}
 }
 
+// A fresh reading speaks over a browser sign-in diagnosis only until the next
+// collection. A customer who really signed out stops delivering usage: that
+// collection fails, the reading is merely kept, and the row leaves "healthy".
+func TestBrowserSignInHealthScanIsOnlyOverriddenByAFreshReading(t *testing.T) {
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	scanned := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true,
+		Health:    codexbar.ProviderHealthBrowserSignIn,
+		SignInURL: "https://claude.ai/login",
+	}}
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("claude", "Claude", now.Add(-40*time.Second))
+		usage.Providers[0].Retained = true
+		usage.Providers[0].Stale = true
+		return usage, true
+	}
+
+	items := server.providerDescriptors(scanned)
+	if len(items) != 1 || items[0].Health.State != providerHealthStateStale {
+		t.Fatalf("a reading that is only kept must not report the provider healthy: %#v", items[0].Health)
+	}
+}
+
 func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
