@@ -12,12 +12,14 @@ import {
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import {
   NO_THEME_UPGRADE,
+  ownThemePaths,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
   resolveScreensaverUpgrade,
 } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildThemePack } from "@/lib/theme-studio";
+import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
@@ -4253,8 +4255,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // re-run the install effect on every poll, because each poll hands back a
   // fresh object.
   const screensaverPath = device?.standby?.screensaverPath?.trim() || undefined;
+  // The customer's saved screensavers are read whenever VibeTV reports another
+  // file in the slot. One is saved before it is sent, so the one saved a
+  // moment ago counts as theirs.
   const screensaverUpgrade = useMemo(
-    () => resolveScreensaverUpgrade(catalog.themes, screensaverPath),
+    () =>
+      resolveScreensaverUpgrade(
+        catalog.themes,
+        screensaverPath,
+        savedThemePaths(),
+      ),
     [catalog.themes, screensaverPath],
   );
   // While standby is up the screensaver IS the screen on display, and
@@ -6251,6 +6261,14 @@ function mergeDeviceCapabilities(
       ? { ...current.transport, ...next.transport }
       : current.transport,
   };
+}
+
+// The paths of the themes and screensavers the customer saved in this browser.
+// Theme Studio changes them without the app hearing of it, so they are read
+// where they are needed.
+function savedThemePaths(): string[] {
+  const saved = loadUserThemes();
+  return ownThemePaths(saved.ok ? saved.value.themes : saved.data?.themes || []);
 }
 
 function readInitialDeviceTarget(): string {

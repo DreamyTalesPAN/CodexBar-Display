@@ -141,25 +141,37 @@ export function resolveActiveThemeUpgrade(
   };
 }
 
+// The paths the customer's saved themes and screensavers are sent to VibeTV
+// under. A file VibeTV reports under one of them is the customer's own.
+export function ownThemePaths(userThemes: UserThemeRecord[]): string[] {
+  return userThemes.map(
+    ({ document }) =>
+      validateThemeSpec(document.spec, document.assets, document.usage)
+        .themeSpecPath,
+  );
+}
+
 // The catalog screensaver in VibeTV's screensaver slot, in whichever revision.
-// VibeTV reports that slot only as a path, so the same rule as for the live
-// slot in standby applies: a revision-1 path may be the customer's own
-// screensaver from Screensaver Studio and names a catalog screensaver only when
-// it is that screensaver's exact path. Taking it for an old revision would
-// install the catalog pack over the customer's own. The price: a catalog
-// screensaver that is still on revision 1 on VibeTV is not updated by itself.
+// VibeTV reports that slot only as a path, and the file of a screensaver the
+// customer made can start like a catalog one's. So a path one of their saved
+// screensavers is sent under is never a catalog screensaver: taking it for an
+// old revision would install the catalog pack over the customer's own. Every
+// other path is told by its file name, revision 1 included, because catalog
+// screensavers were shipped at revision 1 too (Token Fire as tf-1-874fd8e2)
+// and VibeTVs that still hold one must get the update.
 export function resolveInstalledScreensaver(
   themes: ThemeProduct[],
   screensaverPath: string | null | undefined,
+  ownPaths: string[] = [],
 ): ThemeProduct | undefined {
   const installedPath = screensaverPath?.trim();
-  const mayBeCustomerScreensaver = FIRST_REVISION_PATH.test(installedPath ?? "");
+  if (installedPath && ownPaths.includes(installedPath)) {
+    return undefined;
+  }
   return themes.find(
     (candidate) =>
       candidate.usage === "screensaver" &&
-      (mayBeCustomerScreensaver
-        ? candidate.themeSpecPath?.trim() === installedPath
-        : sameVersionedThemePath(candidate.themeSpecPath, installedPath)),
+      sameVersionedThemePath(candidate.themeSpecPath, installedPath),
   );
 }
 
@@ -175,17 +187,15 @@ export function installedScreensaver(
   if (!installedPath) {
     return undefined;
   }
-  const listed = resolveInstalledScreensaver(themes, installedPath);
-  if (listed) {
-    return listed;
-  }
   const own = userThemes.find(
     ({ document }) =>
       document.usage === "screensaver" &&
       validateThemeSpec(document.spec, document.assets, "screensaver")
         .themeSpecPath === installedPath,
   )?.document;
-  return own && { themeId: own.spec.themeId, title: own.packName };
+  return own
+    ? { themeId: own.spec.themeId, title: own.packName }
+    : resolveInstalledScreensaver(themes, installedPath);
 }
 
 // The screensaver slot drifts exactly like the live slot when the catalog ships a
@@ -195,9 +205,10 @@ export function installedScreensaver(
 export function resolveScreensaverUpgrade(
   themes: ThemeProduct[],
   screensaverPath: string | null | undefined,
+  ownPaths: string[] = [],
 ): ActiveThemeUpgrade {
   const installedPath = screensaverPath?.trim();
-  const theme = resolveInstalledScreensaver(themes, installedPath);
+  const theme = resolveInstalledScreensaver(themes, installedPath, ownPaths);
   const expectedPath = theme?.themeSpecPath?.trim();
   if (!theme || !expectedPath || expectedPath === installedPath) {
     return NO_THEME_UPGRADE;

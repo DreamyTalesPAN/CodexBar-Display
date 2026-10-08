@@ -9,13 +9,15 @@ import {
   importThemeSpec,
   validateThemeSpec,
 } from "@/lib/theme-studio";
+import type { UserThemeRecord } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   activeLiveThemeId,
+  installedScreensaver,
+  ownThemePaths,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
   NO_THEME_UPGRADE,
-  resolveInstalledScreensaver,
   resolveScreensaverUpgrade,
 } from "./active-theme-upgrade";
 
@@ -257,15 +259,70 @@ describe("resolveScreensaverUpgrade", () => {
   });
 
   // Screensaver Studio saves under the first characters of the id as
-  // revision 1. An own screensaver whose id starts like a catalog one's file
-  // name is not that catalog screensaver in an old revision.
-  it("leaves the customer's own screensaver alone when its file name starts like a catalog one", () => {
+  // revision 1, so the customer's screensaver `rcf` lies on VibeTV as
+  // rcf-1-<hash> beside the catalog's Reset Countdown, rcf-6-03e818f0. The
+  // path a saved screensaver is sent under is what makes the file theirs.
+  it("leaves a screensaver the customer saved alone when its file name starts like a catalog one", () => {
+    const resetCountdown = {
+      ...screensaver,
+      id: "reset-countdown",
+      themeId: "reset-countdown",
+      themeSpecPath: "/themes/s/rcf-6-03e818f0.json",
+      title: "Reset Countdown",
+    } satisfies ThemeProduct;
+    const own: UserThemeRecord = {
+      document: {
+        assets: {},
+        packName: "My Fire",
+        spec: { ...createBlankThemeSpec(), themeId: "rcf" },
+        usage: "screensaver",
+      },
+      id: "rcf",
+      updatedAt: "2026-10-08T00:00:00Z",
+    };
+    const ownPaths = ownThemePaths([own]);
+    expect(ownPaths[0]).toMatch(/^\/themes\/s\/rcf-1-[0-9a-f]{6}\.json$/);
+
     expect(
-      resolveScreensaverUpgrade(catalog, "/themes/s/nc-1-0a1b2c3d.json"),
+      resolveScreensaverUpgrade([resetCountdown], ownPaths[0], ownPaths),
     ).toEqual(NO_THEME_UPGRADE);
+    expect(installedScreensaver([resetCountdown], [own], ownPaths[0])).toEqual({
+      themeId: "rcf",
+      title: "My Fire",
+    });
+    // Changed and saved again since it was sent: the file on VibeTV is no
+    // saved screensaver's any more and is told by its name.
     expect(
-      resolveInstalledScreensaver(catalog, "/themes/s/nc-1-0a1b2c3d.json"),
-    ).toBeUndefined();
+      resolveScreensaverUpgrade(
+        [resetCountdown],
+        "/themes/s/rcf-1-0a1b2c.json",
+        ownPaths,
+      ).theme,
+    ).toBe(resetCountdown);
+  });
+
+  // Token Fire 0.1.3 was shipped as tf-1-874fd8e2. Taking every revision-1
+  // path for the customer's own left its holders without the update.
+  it("updates a catalog screensaver that is still on its first revision", () => {
+    const tokenFire = {
+      ...screensaver,
+      id: "token-fire",
+      themeId: "token-fire",
+      themeSpecPath: "/themes/s/tf-5-9aeed240.json",
+      title: "Token Fire",
+    } satisfies ThemeProduct;
+    const firstRevision = "/themes/s/tf-1-874fd8e2.json";
+
+    expect(resolveScreensaverUpgrade([tokenFire], firstRevision)).toEqual({
+      needed: true,
+      needsFirmwareCapability: false,
+      needsThemeSpec: true,
+      theme: tokenFire,
+      unresolved: false,
+    });
+    expect(installedScreensaver([tokenFire], [], firstRevision)?.title).toBe(
+      "Token Fire",
+    );
   });
 
   // A studio-built screensaver has no catalog entry to upgrade towards, so the
