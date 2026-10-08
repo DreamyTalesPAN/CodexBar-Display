@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const reportedHomeNameWord = `[^\\/\s"<>|:*?;,]+`
+
 const reportedCredentialName = `[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|pass(?:word|phrase|code)|bearer|credential)[A-Za-z0-9._-]*`
 
 // CodexBar's own provider sentence is the only sign-in guidance that exists, so
@@ -19,7 +21,18 @@ const reportedCredentialName = `[A-Za-z0-9._-]*(?:token|cookie|secret|key|sessio
 // it: those words are the guidance, and a visible marker is honest where a
 // silently dropped sentence would not be.
 var (
-	reportedHomePath = regexp.MustCompile(`(?i)/Users/[^/\s)]+`)
+	// The folder under the home root is the account name: `/Users/<name>`,
+	// `/home/<name>` and, from the Windows engine, `C:\Users\<name>` on any
+	// drive, with either slash, in JSON with doubled backslashes. A name may
+	// hold spaces, apostrophes and brackets (`Jane O'Doe`, `Jane (Work)`), so
+	// the whole component goes: words joined by single spaces through the
+	// separator that ends them, otherwise everything up to closing
+	// punctuation. Words after an unterminated name go with it: a support
+	// report may lose some prose but never part of the account name. `/home`
+	// counts only where it starts a path, so a web address
+	// (`example.com/home/...`) stays whole.
+	reportedHomePath = regexp.MustCompile(`(?i)(?:\b[A-Z]:[\\/]+Users|/Users|(^|[^A-Za-z0-9.-])/home)[\\/]+` +
+		`(?:` + reportedHomeNameWord + `(?: ` + reportedHomeNameWord + `)*?([\\/])|[^\\/\r\n"<>|:*?)\]},;]+)`)
 	// URL userinfo carries credentials before the host (`https://token@host` or
 	// `https://user:pass@host`).
 	// Redact it as one span so neither the username nor password reaches the UI.
@@ -47,6 +60,12 @@ var (
 	// private path standing. Only the evidenced diagnostic starts get that
 	// benefit: arbitrary cookie, token and password values remain secrets.
 	reportedCookieProse = regexp.MustCompile(`(?i)cookies:\s*(?:missing|permission)$`)
+	// The Windows engine joins what each source answered as "<source>:
+	// <error>" with the sources Web, OAuth and CLI. That "OAuth:" is a label
+	// in front of a sentence ("OAuth: OAuth error: ... rate limited"), not a
+	// credential key. Only a plain word after it is prose; `OAuth=...`, any
+	// longer key and any other value stay secrets.
+	reportedSourceLabel = regexp.MustCompile(`^[^A-Za-z]?OAuth:\s+[A-Za-z]+$`)
 	// The same credential with no key in front of it. It is the only rule that
 	// catches a short scheme-prefixed token (`Bearer abc12345`); a long one is
 	// caught by reportedOpaque.
@@ -77,7 +96,7 @@ func reportedProviderMessage(raw string) string {
 	message = reportedCodexBarAntigravity.ReplaceAllString(message, "Antigravity")
 	// Order matters: a redacted span must never be rescanned as a secret, and
 	// the pair rule must claim `Authorization: Bearer x` before the bare rule.
-	message = reportedHomePath.ReplaceAllString(message, "~")
+	message = reportedHomePath.ReplaceAllString(message, "${1}~${2}")
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
 	message = reportedCookieHeader.ReplaceAllString(message, "${1}"+reportedRedacted)
 	message = reportedStructuredCredential.ReplaceAllString(message, "${1}\""+reportedRedacted+"\"")
@@ -87,7 +106,7 @@ func reportedProviderMessage(raw string) string {
 			return match
 		}
 		prefix, value := match[idx[2]:idx[3]], match[idx[3]:]
-		if reportedCookieProse.MatchString(prefix + value) {
+		if reportedCookieProse.MatchString(prefix+value) || reportedSourceLabel.MatchString(match) {
 			return match
 		}
 		return prefix + reportedRedacted

@@ -655,7 +655,8 @@ func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 		}
 		// The engine's summary travels beside the message, for "Copy provider
 		// message" only (issue #551).
-		if !strings.HasPrefix(items[0].Health.Reported, "Claude usage failed from all configured sources.") {
+		// Word for word: nothing in this summary is a secret.
+		if items[0].Health.Reported != summary {
 			t.Fatalf("no reading, %s: support needs the engine's summary to copy: %#v", source, items[0].Health)
 		}
 		server.providerReadiness = map[string]providerReadinessRecord{"claude": {

@@ -253,7 +253,7 @@ describe("SetupProvidersScreen", () => {
   // failed sources opened by itself under the title "Claude". The Mac App now
   // keeps that row healthy and sends no engine sentence for a browser sign-in.
   it("opens nothing for a healthy provider and shows no engine text for a browser sign-in", () => {
-    const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: [redacted] error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]";
+    const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]";
     const engineText = /OAuth|cookies|https:\/\/|\[claude:/;
     const codex = provider({ providerId: "codex", label: "Codex", health: "checking" });
     const props = { usage, onOpenSignIn: vi.fn(), onContinue: vi.fn(), onCheckAgain: vi.fn(),
