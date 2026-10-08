@@ -5426,3 +5426,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
 - Approved customer-visible result: Choosing a provider name, usage or reset countdown for a text keeps its box as wide as the reading, so right-aligned and centred provider texts stay in place. The AI can set every text size the editor offers, up to 8.
+
+
+## 2026-10-08 — Figures beside the picture stay put
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: An animated figure the customer placed beside the picture stays where it is when the AI changes something else in the scene; it only moves when the AI is asked to move it.

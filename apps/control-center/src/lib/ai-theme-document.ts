@@ -77,8 +77,17 @@ export function applyAIThemeCandidate(
           };
         // Companion positions arrive relative to the picture at its default
         // place; follow the picture to where the customer put it.
-        if (isCompanionSprite(p.assetPath) && keepsPlace)
-          return { ...p, x: p.x + artwork!.x - incomingArt!.x, y: p.y + artwork!.y - incomingArt!.y };
+        if (isCompanionSprite(p.assetPath) && keepsPlace) {
+          const placed = { ...p, x: p.x + artwork!.x - incomingArt!.x, y: p.y + artwork!.y - incomingArt!.y };
+          // A companion the customer put beside the picture was described to
+          // the helper at the nearest spot on it. When the helper left it
+          // there, it stays where the customer put it.
+          const old = current.spec.primitives.find((q) => q.assetPath === p.assetPath);
+          const described = old && onPicture(old, artwork!);
+          return old && described && described.x + artwork!.x === placed.x && described.y + artwork!.y === placed.y && (old.width || 0) === placed.width
+            ? { ...placed, x: old.x, y: old.y }
+            : placed;
+        }
         if (p.assetPath === ANIMATION && oldCharacter)
           return {
             ...p,
@@ -173,6 +182,14 @@ export function setAIAnimationSpeed(
 }
 
 // Reconstruct references from the current saved/undone document, never from a
+// Where a companion is for the helper: relative to the picture and on it.
+function onPicture(p: { x: number; y: number; width?: number }, picture: { x: number; y: number; height?: number }) {
+  const size = p.width || 48;
+  return {
+    x: Math.max(0, Math.min(p.x - picture.x, 240 - size)),
+    y: Math.max(0, Math.min(p.y - picture.y, (picture.height || 128) - size)),
+  };
+}
 // previous full-resolution response kept outside the document's undo history.
 export function conceptFromDocument(
   document: ThemeStudioDocument,
@@ -196,7 +213,7 @@ export function conceptFromDocument(
   const companions: AIThemeCompanion[] = document.spec.primitives.filter(p=>isCompanionSprite(p.assetPath)).map(p=>({
     id: p.assetPath!.includes("pet-1") ? "pet-1" : "pet-2",
     // The helper places companions on the picture; one dragged off it is described at the nearest spot on it.
-    x:Math.max(0,Math.min(p.x-placed.x,240-(p.width||48))),y:Math.max(0,Math.min(p.y-placed.y,(placed.height||128)-(p.width||48))),size:p.width || 48,fps:p.fps ?? 4,frameCount:8,keyColor:"#FF00FF",reuse:true,sheetBase64:spritePNG(document.assets[p.assetPath!].data,true),
+    ...onPicture(p, placed),size:p.width || 48,fps:p.fps ?? 4,frameCount:8,keyColor:"#FF00FF",reuse:true,sheetBase64:spritePNG(document.assets[p.assetPath!].data,true),
   }));
   return {
     ...(companions.length ? {companions} : {}),

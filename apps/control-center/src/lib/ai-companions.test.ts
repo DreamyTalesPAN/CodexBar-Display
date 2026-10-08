@@ -95,4 +95,15 @@ describe("flexible picture layouts",()=>{
   expect(kept.spec.primitives.some(p=>p.binding==='session'||p.text?.includes('{session}'))).toBe(false);
   expect(kept.spec.primitives.some(p=>p.type==='rect')).toBe(true);
  });
+ it('leaves a companion beside the picture where the customer put it when the AI changes something else',()=>{
+  const f=fixture(1);const first=f.candidate();
+  const document={assets:first.assets,spec:first.spec,packName:'Mine',usage:'live' as const};
+  const pet=document.spec.primitives.find(p=>p.assetPath==='/themes/u/ai-pet-1.cba')!;
+  pet.x=30;pet.y=180;
+  // What the helper is told (the nearest spot on the picture) and returns unchanged for a reused companion.
+  Object.assign(f.concept.companions![0],{x:30,y:96,reuse:true});
+  expect(applyAIThemeCandidate(document,f.candidate(),'auto').spec.primitives.find(p=>p.assetPath==='/themes/u/ai-pet-1.cba')).toMatchObject({x:30,y:180});
+  Object.assign(f.concept.companions![0],{x:100,y:40});
+  expect(applyAIThemeCandidate(document,f.candidate(),'auto').spec.primitives.find(p=>p.assetPath==='/themes/u/ai-pet-1.cba')).toMatchObject({x:100,y:40});
+ });
 });
