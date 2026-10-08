@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupportDiagnostics } from "./control-center-types";
 import {
@@ -186,6 +186,22 @@ describe("customer support text", () => {
     expect(text).toContain("Display updates");
     expect(text).toContain("VibeTV is receiving your usage.");
     expect(text).not.toMatch(/stream|frames/i);
+  });
+
+  // Seen on the Windows app: the row "VibeTV address" read "cable://vibetv"
+  // under a Connected VibeTV box that already said "USB-C cable".
+  it("shows the cable as the connection and an address only for a VibeTV on WiFi", () => {
+    const row = (detail: string) => {
+      const view = render(
+        <DiagnosticsPanel diagnostics={{ checks: [{ name: "device_target", status: "pass", detail }] }} />,
+      );
+      const text = within(view.container).getByRole("listitem").textContent ?? "";
+      view.unmount();
+      return text;
+    };
+
+    expect(row("cable://vibetv")).toBe("ConnectionPassUSB-C cable");
+    expect(row("192.168.1.42")).toBe("VibeTV addressPass192.168.1.42");
   });
 
   it("says App instead of Mac App in the Windows app", () => {

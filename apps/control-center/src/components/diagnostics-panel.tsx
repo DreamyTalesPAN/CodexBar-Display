@@ -199,17 +199,22 @@ function UsageEngineBlock({
 function CheckRow({ check, windowsHost }: { check: Check; windowsHost: boolean }) {
   const state = checkState(check.status);
   const hostText = (value: string) => copyForHost(value, windowsHost);
+  // A VibeTV on the cable has no address; the report keeps "cable://vibetv".
+  const cable =
+    check.name === "device_target" && /^cable:/i.test(check.detail ?? "");
   return (
     <li className="grid gap-1 rounded-lg border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">
-          {hostText(CHECK_LABELS[check.name] ?? humanize(check.name))}
+          {cable
+            ? "Connection"
+            : hostText(CHECK_LABELS[check.name] ?? humanize(check.name))}
         </span>
         <StatusLine icon={state} text={CHECK_STATE_TEXT[state]} />
       </div>
       {check.detail ? (
         <p className="break-words text-sm text-muted-foreground">
-          {hostText(formatCustomerSupportText(check.detail))}
+          {cable ? "USB-C cable" : hostText(formatCustomerSupportText(check.detail))}
         </p>
       ) : null}
       {state !== "pass" && check.nextAction ? (
