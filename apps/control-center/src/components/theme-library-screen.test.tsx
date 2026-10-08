@@ -210,6 +210,53 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     );
   });
 
+  // An own theme and a later catalog theme shared the id `my-theme`. The
+  // customer changed the own theme and saved it, which gave the saved copy
+  // another id. The awake VibeTV still reports the id and holds the old file,
+  // and the catalog row read Installed with its Install closed.
+  it("offers Install for a catalog theme while VibeTV holds another theme's file under its id", () => {
+    const render = (path?: string) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{
+            ...device,
+            ready: true,
+            activeTheme: "my-theme",
+            display: { themeSpec: { path } },
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={[
+            {
+              ...themes[0],
+              id: "my-theme",
+              themeId: "my-theme",
+              themeSpecPath: "/themes/u/mt-4-abcdef.json",
+              title: "Catalog Namesake",
+            },
+          ]}
+          usage="live"
+        />,
+      );
+
+    const oldOwnFile = render("/themes/u/my-them-1-0a1b2c.json");
+    expect(oldOwnFile).toContain('title="Install Catalog Namesake"');
+    expect(oldOwnFile).not.toContain("Theme is already installed.");
+    // The catalog theme's file in an older revision is still that theme, and
+    // without a reported file the id decides as before.
+    expect(render("/themes/u/mt-3-123456.json")).toContain(
+      "Theme is already installed.",
+    );
+    expect(render()).toContain("Theme is already installed.");
+  });
+
   // Seen on the Windows app on 2026-10-07: Retro 3D said "Install" again after
   // a theme was installed, although it was still VibeTV's screensaver. The row
   // only knew the last install made from the app.

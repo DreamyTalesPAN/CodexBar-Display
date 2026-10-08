@@ -161,7 +161,7 @@ describe("ThemeLibraryScreen custom themes", () => {
       ...catalogTheme,
       id: "my-theme",
       themeId: "my-theme",
-      themeSpecPath: "/themes/my-them-4-abcdef.json",
+      themeSpecPath: "/themes/u/mt-4-abcdef.json",
       title: "Catalog Namesake",
     };
     const ownPath = validateThemeSpec({
@@ -212,6 +212,20 @@ describe("ThemeLibraryScreen custom themes", () => {
     expect(installTitle("My Theme")).toBe("Theme is already installed.");
     expect(installTitle("Catalog Namesake")).toBe("Install Catalog Namesake");
     await act(async () => justInstalled.cleanup());
+    document.body.innerHTML = "";
+
+    // The own theme's file from before it was changed and saved again is
+    // neither row's; an older revision of the catalog theme is the catalog's.
+    const earlierOwn = await render("/themes/u/my-them-1-0a1b2c.json");
+    expect(installTitle("My Theme")).toBe("Install My Theme");
+    expect(installTitle("Catalog Namesake")).toBe("Install Catalog Namesake");
+    await act(async () => earlierOwn.cleanup());
+    document.body.innerHTML = "";
+
+    const olderCatalog = await render("/themes/u/mt-3-123456.json");
+    expect(installTitle("My Theme")).toBe("Install My Theme");
+    expect(installTitle("Catalog Namesake")).toBe("Theme is already installed.");
+    await act(async () => olderCatalog.cleanup());
   });
 
   it("shows the install progress only in the row that was installed when two rows share an id", async () => {

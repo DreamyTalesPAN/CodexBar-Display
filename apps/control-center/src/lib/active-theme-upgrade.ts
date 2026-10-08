@@ -230,6 +230,24 @@ export function resolveScreensaverUpgrade(
   };
 }
 
+// Whether a file VibeTV holds can be this catalog theme's, for a caller that
+// knows the theme by id too. Awake, VibeTV reports the id of a theme the
+// customer made as well, so the id alone does not make it the catalog theme. A
+// file with a revision in its name is the catalog theme's only under that
+// theme's file name. One without, as early packs had, cannot be told by its
+// name and is left to the id, like a path that is not known.
+export function pathMayNameCatalogTheme(
+  themeSpecPath: string | undefined,
+  heldPath: string | undefined,
+): boolean {
+  return (
+    !themeSpecPath ||
+    !heldPath ||
+    !versionedThemePathBase(heldPath) ||
+    sameVersionedThemePath(themeSpecPath, heldPath)
+  );
+}
+
 function sameVersionedThemePath(
   candidatePath: string | undefined,
   activePath: string | undefined,

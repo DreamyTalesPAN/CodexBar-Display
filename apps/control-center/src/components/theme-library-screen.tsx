@@ -61,6 +61,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   activeLiveThemeId,
   installedScreensaver,
+  pathMayNameCatalogTheme,
 } from "@/lib/active-theme-upgrade";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { cn } from "@/lib/utils";
@@ -983,7 +984,8 @@ function ThemeListItem({
     (!sharesId ||
       (isCustom
         ? installedPath === ownPathOfSharedId
-        : Boolean(installedPath) && installedPath !== ownPathOfSharedId));
+        : Boolean(installedPath) && installedPath !== ownPathOfSharedId)) &&
+    (isCustom || pathMayNameCatalogTheme(theme?.themeSpecPath, installedPath));
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallRow === rowKey(item);
