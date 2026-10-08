@@ -234,6 +234,18 @@ describe("SetupProvidersScreen", () => {
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Open Claude Code sign-in in your browser" })).toBeTruthy();
     expect(document.body.innerHTML).not.toMatch(engineText);
+
+    // Issue #551: support still gets the engine's summary. It can be copied
+    // from this dialog and is not shown in it.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    rerender(<SetupProvidersScreen {...props} providers={[codex, { ...signIn,
+      health: { ...signIn.health, signInUrl: "https://claude.ai/login", reported: summary } }]} />);
+    expect(dialog.getByText(message)).toBeTruthy();
+    expect(document.body.innerHTML).not.toMatch(engineText);
+    fireEvent.click(dialog.getByRole("button", { name: "Copy provider message for Claude Code" }));
+    expect(writeText).toHaveBeenCalledWith(summary);
+    vi.unstubAllGlobals();
   });
 
   // Issue #558: the button copied the message and showed nothing. It answers

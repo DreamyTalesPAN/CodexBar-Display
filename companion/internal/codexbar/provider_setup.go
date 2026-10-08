@@ -660,11 +660,7 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 			status = ProviderNoUsageAvailable
 		}
 		provider := providerResultWithSignIn(id, status, browserSignInPage(id, reported))
-		// A browser sign-in is fully described by the marker (see
-		// parseProviderHealth); its summary is not kept as guidance.
-		if status != ProviderBrowserSignInRequired {
-			provider.Reported = reported
-		}
+		provider.Reported = reported
 		if status == ProviderConfigError {
 			provider.Cause = "provider message: " + reported
 		}

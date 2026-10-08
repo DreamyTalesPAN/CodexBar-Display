@@ -689,7 +689,11 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			!providerIsDiscontinued(setting, readiness, readinessApplies) {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
-			if reported != "" {
+			// A stale row shows what it reports. A browser sign-in's summary is
+			// the engine's list of every source it tried, kept for copying only.
+			if setting.Health == codexbar.ProviderHealthBrowserSignIn {
+				reported = ""
+			} else if reported != "" {
 				reported = message + " " + reported
 			}
 		} else if _, fresh := freshSuccess[setting.ID]; setting.Health == codexbar.ProviderHealthChecking &&
@@ -735,9 +739,11 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			if signInURL == "" {
 				signInURL = setting.SignInURL
 			}
-			// CodexBar's summary is not kept for this state, so this sentence
-			// is the row's message. The exact check and the health scan share
-			// it: a dismissed message opens again when its text changes.
+			// CodexBar's summary lists every source it tried and is no
+			// guidance, so this sentence is the row's message and the summary
+			// stays in Reported for "Copy provider message" only. The exact
+			// check and the health scan share the sentence: a dismissed
+			// message opens again when its text changes.
 			message = codexbar.BrowserSignInGuidance(setting.ID, signInURL)
 			// The background scan carries no exact-check next action; the
 			// close-the-browser step is the one that makes the re-check work
