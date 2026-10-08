@@ -10545,8 +10545,8 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     page.getByRole("button", { name: "Export ZIP" }).click(),
   ]);
   assert(
-    download.suggestedFilename() === "vibetv-theme-synthwave-copy.zip",
-    `Theme Studio should export the edited theme ID, got ${download.suggestedFilename()}`,
+    download.suggestedFilename() === "vibetv-theme-synthwave-customer-copy.zip",
+    `Theme Studio should name the export after the theme's name, got ${download.suggestedFilename()}`,
   );
   const downloadPath = await download.path();
   assert(

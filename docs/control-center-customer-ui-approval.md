@@ -5848,3 +5848,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new control. (1) Settings › Display › `Usage display`: while `Default` is chosen, one line under the row says what it shows at the moment: `Default is the same as Used.` or `Default is the same as Remaining.` With `Used` or `Remaining` chosen there is no line. As before, the row does not name where the default comes from. The row and its three choices are unchanged. (2) Usage, notice `Token history is unavailable`: with exactly one provider shown, the text reads `No token history was found for Codex on this Mac. Your usage limits are shown below.` with that provider's name, and `… on this computer.` on Windows. With two or more providers it reads as before: `Complete local token history is not available for every selected provider. Available usage limits are shown below.` The title and the `Refresh` button are unchanged.
 - Scope: `apps/control-center/src/components/settings-screen.tsx` and `usage-screen.tsx`, tests in `settings-preferences.test.tsx` and `usage-screen.test.tsx`, and this approval record. Checked with unit tests only; not seen in the built app.
 - What's new: none — an explanation and a wording correction
+
+## 2026-10-09 — Customer flow test follows the export name
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; no wording, nothing for him to see.
+- Approved customer-visible result: Nothing changes for the customer. The automated customer flow now expects the Theme Studio export under the theme's name (`vibetv-theme-synthwave-customer-copy.zip`), as the entry `Theme Studio: the exported ZIP is named after the theme's name` above describes it; before, it still expected the name built from the id.
+- Scope: one expectation in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record.
+- What's new: none — a test only
