@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -297,6 +297,65 @@ it.each([
 
   expect(download).toHaveBeenCalledTimes(1);
   expect(screen.getByText(message)).toBeTruthy();
+});
+
+// Issue #582: the Mac app says how its save dialog ended. A saved file is
+// confirmed, after Cancel the notice goes, and an older Mac app, which says
+// nothing, keeps the sentence about the dialog.
+function exportInMacApp() {
+  vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("VibeTVControlCenter/1.0");
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  renderStudio("custom");
+  fireEvent.click(button("Export ZIP"));
+}
+
+function macAppSaveDialogEnded(fileName: string, saved: boolean) {
+  act(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:download-finished", { detail: { fileName, saved } }),
+    );
+  });
+}
+
+const ASKED = "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent.";
+
+it("confirms the exported ZIP once the Mac app says it was saved", () => {
+  exportInMacApp();
+  expect(screen.getByText(ASKED)).toBeTruthy();
+
+  macAppSaveDialogEnded("vibetv-theme-new-theme.zip", true);
+
+  expect(screen.queryByText(ASKED)).toBeNull();
+  expect(screen.getByText("vibetv-theme-new-theme.zip saved. Nothing was sent.")).toBeTruthy();
+});
+
+it("takes the export notice away when the Mac app's save dialog was cancelled", () => {
+  exportInMacApp();
+  expect(screen.getByText("Export")).toBeTruthy();
+
+  macAppSaveDialogEnded("vibetv-theme-new-theme.zip", false);
+
+  expect(screen.queryByText(ASKED)).toBeNull();
+  expect(screen.queryByText("Export")).toBeNull();
+});
+
+it("keeps the export notice when the Mac app reports another file", () => {
+  exportInMacApp();
+
+  macAppSaveDialogEnded("vibetv-support-report-2026-10-08.json", true);
+  macAppSaveDialogEnded("vibetv-support-report-2026-10-08.json", false);
+
+  expect(screen.getByText(ASKED)).toBeTruthy();
+});
+
+it("confirms no export for a save the Mac app reports when none was asked for", () => {
+  renderStudio("custom");
+
+  macAppSaveDialogEnded("vibetv-theme-new-theme.zip", true);
+
+  expect(screen.queryByText("vibetv-theme-new-theme.zip saved. Nothing was sent.")).toBeNull();
 });
 
 // Issue #551: the notices sat under the Inspector's fields, below the fold

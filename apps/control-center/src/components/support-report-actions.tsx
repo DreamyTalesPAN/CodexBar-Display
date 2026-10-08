@@ -1,10 +1,11 @@
 "use client";
 
 import { Clipboard, Download, FileText, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { onNativeDownloadFinished } from "./control-center-runtime";
 import type { SupportDiagnostics } from "./control-center-types";
 import {
   downloadSupportReport,
@@ -40,6 +41,20 @@ export function SupportReportActions({
     null,
   );
   const downloaded = Boolean(diagnostics) && savedReport === diagnostics;
+  // Issue #582: the Mac app says when its save dialog saved the report.
+  useEffect(() => {
+    if (!diagnostics) {
+      return;
+    }
+    return onNativeDownloadFinished(
+      supportReportFilename(diagnostics.generatedAt),
+      (saved) => {
+        if (saved) {
+          setSavedReport(diagnostics);
+        }
+      },
+    );
+  }, [diagnostics]);
   const diagnosticsText = diagnostics
     ? serializeSupportReport(diagnostics)
     : "";
@@ -74,7 +89,7 @@ export function SupportReportActions({
     if (diagnostics) {
       downloadSupportReport(diagnostics);
       // The Mac asks where to save and can be cancelled, so only the silent
-      // save on Windows is confirmed here.
+      // save on Windows is confirmed here; the Mac app confirms its own.
       if (windowsHost) {
         setSavedReport(diagnostics);
       }
@@ -153,7 +168,8 @@ export function SupportReportActions({
           {statusMessage}
         </p>
       ) : null}
-      {downloaded && diagnostics ? (
+      {/* On the Mac the customer chose the folder, so none is named there. */}
+      {downloaded && diagnostics && windowsHost ? (
         <p
           className={cn(
             "text-sm text-muted-foreground",

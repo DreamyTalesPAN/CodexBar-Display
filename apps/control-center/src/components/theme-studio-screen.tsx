@@ -142,6 +142,7 @@ import {
 import type { ThemeRenderPack } from "./live-vibetv-preview";
 import {
   isNativeControlCenterApp,
+  onNativeDownloadFinished,
   themeRenderPackUrl,
 } from "./control-center-runtime";
 
@@ -299,6 +300,8 @@ export function ThemeStudioScreen({
     message: "Draft ready.",
   });
   const [exportStatus, setExportStatus] = useState(EXPORT_IDLE);
+  // The file the Mac app's save dialog is asking about, while its notice stands.
+  const [exportAwaitingSave, setExportAwaitingSave] = useState("");
   // Why a chosen file was not opened. The button for it is on another tab
   // than the JSON notice, so it is answered where Save, Export and Send are.
   const [importError, setImportError] = useState("");
@@ -318,6 +321,7 @@ export function ThemeStudioScreen({
   function clearAnswers() {
     setLibraryStatus(withoutLibraryAnswer);
     setExportStatus(EXPORT_IDLE);
+    setExportAwaitingSave("");
     setDeviceStatus(SEND_IDLE);
     setImportError("");
     // What Apply JSON refused is an answer as well; the typed text stays.
@@ -434,6 +438,7 @@ export function ThemeStudioScreen({
       setJsonStatus(status);
     }
     setExportStatus(EXPORT_IDLE);
+    setExportAwaitingSave("");
   }
 
   const updateDocument = useCallback(
@@ -1045,6 +1050,26 @@ export function ThemeStudioScreen({
     return () => window.clearTimeout(timer);
   }, [dirty, editorState.present, onRecoveryDiscarded, persistThemeStudioRecovery]);
 
+  // Issue #582: the Mac app says how its save dialog ended. A saved file is
+  // confirmed; after Cancel nothing was exported and the notice goes. An older
+  // Mac app says nothing, and the sentence about the dialog stays.
+  useEffect(() => {
+    if (!exportAwaitingSave) {
+      return;
+    }
+    return onNativeDownloadFinished(exportAwaitingSave, (saved) => {
+      setExportAwaitingSave("");
+      setExportStatus(
+        saved
+          ? {
+              tone: "ready",
+              message: `${exportAwaitingSave} saved. Nothing was sent.`,
+            }
+          : EXPORT_IDLE,
+      );
+    });
+  }, [exportAwaitingSave]);
+
   function insertToken(token: string) {
     updateSelectedPrimitive((primitive) => {
       if (primitive.type !== "text") {
@@ -1083,16 +1108,18 @@ export function ThemeStudioScreen({
       // folder. It cannot name the file: a second export under the same name
       // is saved as "… (1).zip", so that one is counted instead, or the
       // sentence would stand unchanged. The Mac app asks where and can be
-      // cancelled, and the page does not learn which: its sentence says what
-      // is asked and claims no saved file. A plain browser, which a pre-DMG
+      // cancelled: its sentence says what is asked and claims no saved file
+      // until the app says how that ended. A plain browser, which a pre-DMG
       // install still opens this page in, saves or asks as it is set.
+      const nativeMacApp = !windowsHost && isNativeControlCenterApp();
+      setExportAwaitingSave(nativeMacApp ? pack.fileName : "");
       setExportStatus({
         tone: windowsHost ? "ready" : "unknown",
         message: windowsHost
           ? exportCount > 1
             ? `Saved again in your Downloads folder (export ${exportCount}). Nothing was sent.`
             : "Saved in your Downloads folder. Nothing was sent."
-          : isNativeControlCenterApp()
+          : nativeMacApp
             ? `Choose where to save ${pack.fileName}. Nothing was sent.`
             : `Export started in your browser: ${pack.fileName}. Nothing was sent.`,
       });

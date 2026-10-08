@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { downloadSupportReport } from "./support-report";
@@ -51,6 +51,32 @@ describe("SupportReportActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
 
     expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  // Issue #582: the Mac app says how its save dialog ended.
+  it("confirms a download on the Mac once the Mac app says the report was saved", () => {
+    render(
+      <SupportReportActions
+        diagnostics={{ ok: true, generatedAt: "2026-10-07T06:58:00.000Z" }}
+        onCreate={vi.fn()}
+      />,
+    );
+    const saveDialogEnded = (fileName: string, saved: boolean) =>
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent("vibetv:download-finished", { detail: { fileName, saved } }),
+        );
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+    saveDialogEnded("vibetv-support-report-2026-10-07T06-58-00-000Z.json", false);
+    saveDialogEnded("vibetv-theme-new-theme.zip", true);
+    expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+
+    saveDialogEnded("vibetv-support-report-2026-10-07T06-58-00-000Z.json", true);
+    expect(screen.getByRole("button", { name: "Downloaded" })).toBeTruthy();
+    // The customer chose the folder, so the Downloads folder is not named.
     expect(screen.queryByRole("status")).toBeNull();
   });
 
