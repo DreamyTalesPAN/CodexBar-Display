@@ -177,3 +177,39 @@ it("calls a theme the customer saved by the name they gave it", () => {
   // A theme that is not in the library keeps the name made from its id.
   expect(support({ activeTheme: "other-theme" })).toContain("Other Theme");
 });
+
+// Found in review: a later catalog can give one of its themes the id of a
+// theme the customer saved. Awake, VibeTV reports that id for both, and the
+// customer's theme was then called by the catalog theme's name. The file
+// VibeTV holds tells them apart.
+it("tells the customer's theme from a catalog theme of the same id by the file VibeTV holds", () => {
+  const spec = { ...createBlankThemeSpec(), themeId: "mini-classic" };
+  saved.themes = [
+    { id: "u-1", updatedAt: "2026-10-09T00:00:00Z", document: { assets: {}, packName: "Night Shift", spec } },
+  ];
+  const catalogPath = "/themes/u/mini-cl-9-6d1af3.json";
+  const support = (path: string) =>
+    renderToStaticMarkup(
+      <LogsScreen
+        device={{
+          active: true, connected: true, paired: true, ready: true,
+          activeTheme: "mini-classic",
+          display: { themeSpec: { path } },
+        }}
+        themes={[
+          {
+            id: "mini-classic", isFree: true, priceLabel: "Free", source: "github-catalog",
+            themeId: "mini-classic", themeSpecPath: catalogPath, title: "Mini Classic",
+          },
+        ]}
+      />,
+    );
+
+  const own = support(validateThemeSpec(spec, {}, "live").themeSpecPath);
+  expect(own).toContain("Night Shift");
+  expect(own).not.toContain("Mini Classic");
+
+  const catalog = support(catalogPath);
+  expect(catalog).toContain("Mini Classic");
+  expect(catalog).not.toContain("Night Shift");
+});

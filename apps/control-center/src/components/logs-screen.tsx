@@ -298,20 +298,30 @@ function activeThemeLabel(
     (saved.ok ? saved.value.themes : saved.data?.themes || []).find(
       ({ document }) => document.usage !== "screensaver" && matches(document),
     )?.document.packName;
+  // The file in the live slot says whose theme it is: a saved theme is sent
+  // under a path only it has, also when a later catalog gave one of its themes
+  // the same id. During standby that file is all VibeTV reports of the slot;
+  // the screensaver on screen is not it.
+  const standbyActive = device?.standby?.active === true;
+  const livePath = (
+    standbyActive
+      ? device.standby?.liveThemePath
+      : device?.display?.themeSpec?.path
+  )?.trim();
+  const ownByFile =
+    livePath &&
+    ownName(
+      (document) =>
+        validateThemeSpec(document.spec, document.assets, "live")
+          .themeSpecPath === livePath,
+    );
+  if (ownByFile) {
+    return ownByFile;
+  }
   const theme = activeLiveThemeId(themes, device)?.trim();
   if (!theme) {
-    // During standby VibeTV reports a Theme Studio theme in the live slot as
-    // its file only; the screensaver on screen is not it.
-    const livePath =
-      device?.standby?.active === true && device.standby.liveThemePath?.trim();
-    if (livePath) {
-      return (
-        ownName(
-          (document) =>
-            validateThemeSpec(document.spec, document.assets, "live")
-              .themeSpecPath === livePath,
-        ) || "Custom theme"
-      );
+    if (standbyActive && livePath) {
+      return "Custom theme";
     }
     return deviceIsReady(device) ? "Default" : "Not available";
   }
