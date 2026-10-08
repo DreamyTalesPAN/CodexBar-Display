@@ -237,6 +237,7 @@ export function ThemeStudioScreen({
     document: ThemeStudioDocument;
   } | null>(null);
   const spriteInputRef = useRef<HTMLInputElement>(null);
+  const exportCountRef = useRef(0);
   const libraryIdRef = useRef(initialTheme?.libraryId);
   const sourceRef = useRef<ThemeStudioEditorSource>(
     initialTheme?.source || "custom",
@@ -1060,14 +1061,18 @@ export function ThemeStudioScreen({
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      exportCountRef.current += 1;
       setExportStatus({
         tone: "ready",
         // Windows saves a download without asking where, so the app can name
         // the folder. It cannot name the file: a second export of the same
-        // theme is saved as "… (1).zip". The Mac asks where and can be
+        // theme is saved as "… (1).zip", so that one is counted instead, or
+        // the sentence would stand unchanged. The Mac asks where and can be
         // cancelled; it gets no claim about a folder.
         message: windowsHost
-          ? "Saved in your Downloads folder. Nothing was sent."
+          ? exportCountRef.current > 1
+            ? `Saved again in your Downloads folder (export ${exportCountRef.current}). Nothing was sent.`
+            : "Saved in your Downloads folder. Nothing was sent."
           : `${pack.fileName} exported. Nothing was sent.`,
       });
     } catch (error) {

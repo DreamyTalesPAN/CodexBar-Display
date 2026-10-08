@@ -455,3 +455,19 @@ it("says in one plain sentence that typed or imported JSON is not valid, and kee
   expect(screen.queryByText(/Unexpected token/)).toBeNull();
   expect(json.value).toBe('{"p": [QA-TYPED');
 });
+
+// Seen on the Windows app on 2026-10-09: a second Export ZIP left the same
+// sentence standing, so nothing showed that it had saved another file.
+it("says on Windows that a repeated Export ZIP saved again", () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  renderStudio("custom", { windowsHost: true });
+
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved in your Downloads folder. Nothing was sent.")).toBeTruthy();
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved again in your Downloads folder (export 2). Nothing was sent.")).toBeTruthy();
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved again in your Downloads folder (export 3). Nothing was sent.")).toBeTruthy();
+});
