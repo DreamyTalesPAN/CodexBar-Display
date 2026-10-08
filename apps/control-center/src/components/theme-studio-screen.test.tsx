@@ -391,6 +391,32 @@ it("asks before Mini theme or an opened file replaces a draft with changes", asy
   expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
+// JSON typed under Advanced › JSON and not applied is a change too: what is
+// opened would throw it away, and Undo does not bring it back.
+it("asks before Mini theme replaces JSON that was typed and not applied", async () => {
+  const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  const json = screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  const unchanged = json.value;
+
+  // Typed text that is the theme as it is: nothing would be lost.
+  fireEvent.change(json, { target: { value: unchanged } });
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Project" }));
+  fireEvent.click(button("Mini theme"));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  fireEvent.change(screen.getByLabelText("Theme JSON"), { target: { value: `${unchanged} ` } });
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Project" }));
+  fireEvent.click(button("Mini theme"));
+  expect(screen.getByRole("alertdialog", { name: "Replace your changes?" })).toBeTruthy();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 it("opens Mini theme at once in a draft without changes", async () => {
   const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
   vi.stubGlobal("fetch", fetchMock);

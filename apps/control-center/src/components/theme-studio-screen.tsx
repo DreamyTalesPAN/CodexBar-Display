@@ -559,7 +559,8 @@ export function ThemeStudioScreen({
   }
 
   function replaceDraft(run: () => void) {
-    if (dirty) {
+    // JSON typed and not applied is lost too, and Undo does not hold it.
+    if (dirty || (jsonDraft !== null && jsonDraft !== prettyJson(spec))) {
       setReplacement(() => run);
     } else {
       run();
