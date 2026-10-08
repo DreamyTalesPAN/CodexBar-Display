@@ -414,9 +414,14 @@ export function ThemeLibraryScreen({
 
   async function saveThemeFromEditor(payload: ThemeStudioSavePayload) {
     const now = new Date().toISOString();
-    const currentId = payload.libraryId
-      ? userThemes.find((theme) => theme.id === payload.libraryId)?.id
-      : undefined;
+    // Only a theme opened from the customer's own row names one of their
+    // records. For a catalog theme opened to edit, libraryId is the catalog
+    // theme's id; a later catalog can give a theme the id of one of the
+    // customer's own, and saving the copy then replaced that one.
+    const currentId =
+      payload.source === "custom" && payload.libraryId
+        ? userThemes.find((theme) => theme.id === payload.libraryId)?.id
+        : undefined;
     const existingIds = allThemeIds(themes, userThemes, currentId);
     const spec = normalizeThemeSpec(payload.spec);
     const savedUsage = payload.usage || editingTheme?.usage || usage;
