@@ -17,6 +17,8 @@ const files = [
 );
 
 const approvedCustomerCopy = new Set([
+  // The customer supplies their OpenAI credential in Theme Studio.
+  "Change API key",
   "Open the downloaded DMG.",
   "Drag VibeTV Control Center to Applications and wait for the copy to finish.",
   "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",

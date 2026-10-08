@@ -316,7 +316,7 @@ export function EditableThemePreview({
   });
 
   return (
-    <div className="relative aspect-square w-full max-w-[480px] overflow-hidden border border-[#1B1B1B] bg-black p-0">
+    <div className="relative aspect-square w-full max-w-[480px] overflow-hidden rounded-lg border border-[#1B1B1B] bg-black p-0">
       <ThemeSpecPreview
         animate={animate ?? !prefersReducedMotion}
         pack={pack}

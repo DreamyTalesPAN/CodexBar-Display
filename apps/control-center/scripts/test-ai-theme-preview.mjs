@@ -49,6 +49,7 @@ try {
   let configured=false,verificationRequired=false,rejectKey=true,temporaryFailure=false,kind="static",slow=false;
   let credentialWrites=0,credentialDeletes=0;
   const requests=[];
+  const layoutRequests=[];
   const style={packName:"Office",title:"Office",notes:"A quiet office.",artPrompt:"An office",environmentPrompt:"A quiet room",animationMode:"static",animationPrompt:"",backgroundColor:"#112233",panelColor:"#112233",textColor:"#FFFFFF",sessionColor:"#FFFFFF",weeklyColor:"#FFFFFF",progressStyle:"solid",borderRadius:0};
   await page.route("**/api/local-companion/v1/ai-theme/**",async route=>{
     const path=new URL(route.request().url()).pathname;
@@ -60,7 +61,10 @@ try {
       verificationRequired=false;return route.fulfill({json:{verified:true}});
     }
     if(path.endsWith("/concepts")){
-      if(route.request().postDataJSON().target==="layout") return route.fulfill({json:{mode:"scene",notes:"Scene request",edits:[]}});
+      if(route.request().postDataJSON().target==="layout") {
+        layoutRequests.push(route.request().postDataJSON());
+        return route.fulfill({json:{mode:"scene",notes:"Scene request",edits:[]}});
+      }
       const input=route.request().postDataJSON();requests.push(input);
       assert.equal(input.target,"companions","Selection must never choose the AI target");
       if(slow) await new Promise(r=>setTimeout(r,700));
@@ -80,8 +84,19 @@ try {
   await page.reload();
   const input=page.getByLabel("Your idea",{exact:true});
   const create=page.getByRole("button",{name:"Create with AI",exact:true});
+  const openDetails=async()=>{
+    const details=page.getByRole("button",{name:"Details",exact:true});
+    if(await details.getAttribute("aria-expanded")!=="true") await details.click();
+  };
   await input.waitFor();
   assert.equal(await page.getByRole("textbox").count(),1,"Input is visible before connecting");
+  assert.equal(await page.getByRole("button",{name:"More options",exact:true}).count(),0);
+  await page.getByRole("button",{name:"Settings",exact:true}).click();
+  const settings=page.getByRole("dialog",{name:"Settings",exact:true});
+  assert.equal(await settings.getByRole("textbox").count(),0,"First key entry belongs to the creation flow");
+  await settings.getByRole("button",{name:"New design",exact:true}).waitFor();
+  await settings.getByRole("button",{name:"Open saved design",exact:true}).waitFor();
+  await page.keyboard.press("Escape");
   for(const label of ["Animate scene","Adjust scene motion","Update animation","Edit whole scene","Find motion area with AI","Set up AI"]){
     assert.equal(await page.getByRole("button",{name:label,exact:true}).count(),0);
   }
@@ -105,17 +120,13 @@ try {
   assert.equal(await page.getByLabel("Replace OpenAI key",{exact:true}).inputValue(),"");
   assert.equal(credentialWrites,2);assert.equal(credentialDeletes,0);assert.equal(requests.length,0);
   await page.screenshot({path:join(output,"connection-retry-desktop.png")});
-  await page.setViewportSize({width:390,height:740});
-  await page.screenshot({path:join(output,"connection-retry-mobile.png")});
-  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  await page.setViewportSize({width:1200,height:1000});
   // A reload must not turn a saved-but-unverified credential into readiness.
   await page.reload();await input.waitFor();await input.fill("A quiet office");await create.click();
   await page.getByText("Key saved · check needed",{exact:true}).waitFor();
   assert.equal(requests.length,0);
   temporaryFailure=false;
   await page.getByRole("button",{name:"Retry connection check",exact:true}).click();
-  await page.getByText("AI plan: A quiet office. Preview the result; Undo takes you back.",{exact:true}).waitFor();
+  await page.getByText("AI plan: A quiet office. Preview the result; Undo takes you back.",{exact:true}).waitFor({state:"attached"});
   assert.equal(credentialWrites,2);assert.equal(credentialDeletes,0);
   assert.equal(requests.length,1,"Connect continues the original create, no second AI click");
   assert.equal(await input.inputValue(),"");
@@ -123,39 +134,62 @@ try {
   await page.getByRole("textbox").waitFor({state:"visible"});
   assert.equal(await page.getByRole("textbox").count(),1);
   console.log("PASS connection diagnostics, retry without re-pasting, pending after reload, no generation before verification, one automatic continuation");
+  const beforeSettings=requests.length;
+  await page.getByRole("button",{name:"Settings",exact:true}).click();
+  await settings.waitFor();
+  await settings.getByRole("button",{name:"Change API key",exact:true}).click();
+  const updateKey=settings.getByRole("button",{name:"Update key",exact:true});
+  assert.equal(await updateKey.isDisabled(),true);
+  await settings.getByLabel("Replace OpenAI key",{exact:true}).fill("fixture-replacement-key");
+  await updateKey.click();
+  await settings.waitFor({state:"hidden"});
+  assert.equal(credentialWrites,3);
+  assert.equal(requests.length,beforeSettings,"Changing a key must not start generation");
+  console.log("PASS unified Settings, separate first-use setup and key replacement without generation");
 
-  await page.getByRole("button",{name:"Add element",exact:true}).click();
+  await page.getByRole("button",{name:"Add manually",exact:true}).click();
   await page.getByRole("button",{name:/^Text Add a name/}).click();
+  await openDetails();
   await page.getByLabel("Your text",{exact:true}).fill("My note");
   await page.getByRole("button",{name:"Move right",exact:true}).click();
   assert.equal(await input.count(),1,"Manual selection keeps the same AI input");
-  await page.getByRole("button",{name:"Add element",exact:true}).click();
+  await page.getByRole("button",{name:"Add manually",exact:true}).click();
   await page.getByRole("button",{name:/^Reset countdown/}).click();
+  await openDetails();
   await page.getByLabel("Reset for",{exact:true}).selectOption("2");
   await page.getByRole("button",{name:"Deselect element",exact:true}).click();
 
+  const attachmentPicker=page.locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]');
+  await attachmentPicker.setInputFiles({name:"reference.png",mimeType:"image/png",buffer:Buffer.from(fixtures.background,"base64")});
+  await page.getByRole("img",{name:"reference.png",exact:true}).waitFor();
   kind="character";
   await input.fill("A little cat should live here");
   await create.click();
-  await page.getByText("AI plan: A little character joins the scene. Preview the result; Undo takes you back.",{exact:true}).waitFor();
+  await page.getByText("AI plan: A little character joins the scene. Preview the result; Undo takes you back.",{exact:true}).waitFor({state:"attached"});
+  assert.equal(requests.at(-1).referenceImages.length,1);
+  assert.deepEqual(layoutRequests.at(-1).referenceImages,requests.at(-1).referenceImages);
+  assert.equal(await page.getByRole("img",{name:"reference.png",exact:true}).count(),0);
   const character=page.getByLabel("Select Animated character 2",{exact:true});
   await character.click();
+  await openDetails();
   await page.getByRole("button",{name:"Move right",exact:true}).click();
   const characterX=await character.getAttribute("x");
   assert.equal(await page.getByLabel("Animation speed",{exact:true}).count(),0);
   await input.fill("The cat should rest more calmly");
   await create.click();
-  await page.getByText("AI plan: A little character joins the scene. Preview the result; Undo takes you back.",{exact:true}).waitFor();
+  await page.getByText("AI plan: A little character joins the scene. Preview the result; Undo takes you back.",{exact:true}).waitFor({state:"attached"});
   await create.waitFor();
   assert.equal(await character.getAttribute("x"),characterX);
   assert(requests.at(-1).previous.referenceImageBase64,"Director sees actual composed artwork");
+  assert(layoutRequests.at(-1).layout.some((element)=>element.selected),"Selected context reaches the planner");
+  assert(requests.at(-1).history[0].content.includes("Animated character"));
   assert(requests.at(-1).previous.animationSheetBase64);
   console.log("PASS same input with selected figure, current visual reference and preserved character position");
 
   kind="scene";
   await input.fill("Make the office itself feel alive");
   await create.click();
-  await page.getByText("AI plan: The monitor code moves. Preview the result; Undo takes you back.",{exact:true}).waitFor();
+  await page.getByText("AI plan: The monitor code moves. Preview the result; Undo takes you back.",{exact:true}).waitFor({state:"attached"});
   assert.equal(await character.count(),0);
   assert.equal(await page.getByLabel(/Select Scene motion area/).count(),0);
   assert.equal(await page.getByLabel("Scene motion style",{exact:true}).count(),0);
@@ -163,11 +197,8 @@ try {
   const renderedFrames=new Set();
   for(let i=0;i<8;i++){await page.waitForTimeout(160);renderedFrames.add(await renderer.innerHTML());}
   assert(renderedFrames.size>1,"Genuine frame playback in the renderer");
-  await page.getByRole("button",{name:"Pause animation",exact:true}).click();
-  const paused=await renderer.innerHTML();await page.waitForTimeout(350);
-  assert.equal(await renderer.innerHTML(),paused);
-  await page.getByRole("button",{name:"Play animation",exact:true}).click();
-  await page.getByRole("button",{name:/Save (design|changes)/}).click();
+  assert.equal(await page.getByRole("button",{name:"Pause animation",exact:true}).count(),0);
+  await page.getByRole("button",{name:"Save theme",exact:true}).click();
   const saved=await page.evaluate(()=>localStorage.getItem("vibetv.controlCenter.userThemes"));
   const savedDoc=JSON.parse(saved).themes[0].document;
   assert(savedDoc.assets["/themes/u/ai-scene-loop.cba"]);
@@ -175,13 +206,13 @@ try {
   assert(savedDoc.spec.primitives.some(p=>p.text?.includes("{usageSlot2Reset}")));
   assert(!saved.includes("fixture-good-key")&&!saved.includes("imageBase64"));
   await page.reload();
-  await page.getByText("Your saved design is ready.",{exact:true}).waitFor();
+  await page.getByRole("button",{name:/^Select My note /}).waitFor();
   assert.equal(await page.getByRole("textbox").count(),1);
-  console.log("PASS AI-chosen scene representation, no area controls, real playback/pause, labels/reset preserved and save/reload");
+  console.log("PASS AI-chosen scene representation, no area controls, real playback, labels/reset preserved and save/reload");
 
   const exportDesign=async()=>{
-    await page.getByRole("button",{name:"More options",exact:true}).click();
-    await page.locator("summary").filter({hasText:"Import & export"}).click();
+    await page.getByRole("button",{name:"Settings",exact:true}).click();
+    await page.getByRole("button",{name:"Import & export",exact:true}).click();
     const download=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
     const file=await download;const location=join(output,"editable-"+Date.now()+".json");await file.saveAs(location);
@@ -195,10 +226,6 @@ try {
   await page.getByRole("alert").filter({hasText:"Motion area selection. AI assessment: No suitable area fits the display."}).waitFor();
   assert.equal(await page.getByRole("status").filter({hasText:"AI is designing"}).count(),0,"No stale progress after failure");
   await page.screenshot({path:join(output,"diagnostic-error-desktop.png"),fullPage:true,animations:"disabled"});
-  await page.setViewportSize({width:390,height:900});
-  await page.screenshot({path:join(output,"diagnostic-error-mobile.png"),fullPage:true,animations:"disabled"});
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-  await page.setViewportSize({width:1200,height:1000});
   assert.deepEqual(await exportDesign(),beforeFailure,"Quality failure keeps exact previous document");
   kind="static";slow=true;
   await input.fill("Make everything still");
@@ -207,14 +234,14 @@ try {
   assert.deepEqual(await exportDesign(),beforeFailure,"Cancellation never applies a late result");
   slow=false;
   await create.click();
-  await page.getByText("AI plan: A quiet office. Preview the result; Undo takes you back.",{exact:true}).waitFor();
+  await page.getByText("AI plan: A quiet office. Preview the result; Undo takes you back.",{exact:true}).waitFor({state:"attached"});
   assert.equal(await page.getByRole("button",{name:"Pause animation",exact:true}).count(),0);
   await page.getByRole("button",{name:"Undo last edit",exact:true}).click();
   assert.deepEqual(await exportDesign(),beforeFailure,"Undo restores full scene animation");
   console.log("PASS invalid region, cancellation, static conversion and exact undo");
 
-  await page.getByRole("button",{name:"More options",exact:true}).click();
-  await page.locator("summary").filter({hasText:"Import & export"}).click();
+  await page.getByRole("button",{name:"Settings",exact:true}).click();
+  await page.getByRole("button",{name:"Import & export",exact:true}).click();
   const download=page.waitForEvent("download");
   await page.getByRole("button",{name:"Export theme pack",exact:true}).click();
   const zip=await download;await zip.saveAs(join(output,"scene.zip"));
@@ -232,11 +259,11 @@ try {
   assert.deepEqual((await exportDesign()).spec,beforeFailure.spec);
   for(const dark of [false,true]){
     await page.evaluate(d=>document.documentElement.classList.toggle("dark",d),dark);
-    for(const width of [1200,768,390,352]){
+    for(const width of [1200]){
       await page.setViewportSize({width,height:900});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       assert.equal(await input.count(),1);
-      if(width===1200||width===390) await page.screenshot({path:join(output,(dark?"dark":"light")+"-"+width+".png"),fullPage:true,animations:"disabled"});
+      if(width===1200) await page.screenshot({path:join(output,(dark?"dark":"light")+"-"+width+".png"),fullPage:true,animations:"disabled"});
     }
   }
   // Another tab can have a connected helper but no billing consent yet.
@@ -250,7 +277,7 @@ try {
   await page.getByRole("dialog",{name:"Create with AI",exact:true}).waitFor();
   await page.getByLabel(/I agree to send/).check();
   await page.getByRole("button",{name:"Continue",exact:true}).click();
-  await page.getByText("AI plan: A quiet office. Preview the result; Undo takes you back.",{exact:true}).waitFor();
+  await page.getByText("AI plan: A quiet office. Preview the result; Undo takes you back.",{exact:true}).waitFor({state:"attached"});
   await page.getByRole("textbox").waitFor();
   assert.equal(requests.length,beforeConsent+1,"Existing key + fresh consent continues the original request");
   configured=false;
@@ -263,6 +290,6 @@ try {
   await page.keyboard.press("Escape");
   assert.equal(await input.inputValue(),"A softer atmosphere");
   assert.deepEqual(errors,[]);
-  console.log("PASS ZIP, JSON round trip, invalid import safety, desktop/mobile light/dark, lost-key reconnect, no JS errors");
+  console.log("PASS ZIP, JSON round trip, invalid import safety, desktop light/dark, lost-key reconnect, no JS errors");
   console.log("Integration fixtures only; no paid AI requests. Screenshots: "+output);
 } finally {await browser.close();}

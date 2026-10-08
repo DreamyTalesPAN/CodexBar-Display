@@ -73,6 +73,9 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 	}, "id", "x", "y", "size", "fps", "reuse", "subject", "motion")
 	schema := aiObjectSchema(map[string]any{"style": styleSchema, "companions": map[string]any{"type": "array", "maxItems": 2, "items": petSchema}}, "style", "companions")
 	content := []any{aiText("Customer request: " + req.Prompt)}
+	for _, message := range req.History {
+		content = append(content, aiText(message.Role+": "+message.Content))
+	}
 	old := map[string]aiCompanion{}
 	if req.Previous != nil {
 		style, _ := json.Marshal(req.Previous.Style)
@@ -88,6 +91,7 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 			content = append(content, aiText(fmt.Sprintf("Existing %s: x=%d y=%d size=%d fps=%d; keep this ID for this subject. All eight poses:", p.ID, p.X, p.Y, p.Size, p.FPS)), aiVisionImage(p.SheetBase64))
 		}
 	}
+	content = append(content, aiThemeReferenceContent(req.ReferenceImages)...)
 	raw, e := a.structuredAIReply(ctx, key, `You design a 240x128 pixel-art scene for a tiny display. The background is ALWAYS STATIC. The customer has one free-text prompt, no technical settings. Choose ONE or TWO independently animated foreground sprites to best match their request; explicit requested counts take precedence. Animated elements need not be pets: small characters, floating objects or effects are fine. Two is not automatically better. For explicitly no animation choose zero companions and static; otherwise choose one or two and four_frame (legacy mode name; each actual sprite has eight frames). Do not choose scene_loop or animate a background crop. Never use a rig or video. Respect the customer's scene and art direction. Plan simple readable complete cyclic actions for tiny sprites, with fixed character size, body anchor and camera; do not promise complex physical interaction with scenery. Match palette, perspective, lighting and scale. Each sprite is a square DISPLAY size16..80 (stored animation frames remain at most64; the renderer scales them), x/y are TOP LEFT in the 240x128 image; keep all sprite rectangles inside and non-overlapping. Grounded subjects need their feet at about 88 percent of sprite height on a visible ground surface; hovering subjects need clear space. artPrompt describes overall intent; environmentPrompt must describe only the static setting, NO duplicate animated subjects, and reserve clear space at the planned sprite locations. Describe protected static scenery and correct grounding. Preserve existing IDs, placement, sizes and unaffected sprites when refining unless requested otherwise. reuse=true means keep an existing sprite's exact drawings and motion; false generates/revises its eight-pose sheet. New IDs must use reuse=false. preserveArtwork=true means keep the exact existing BACKGROUND layer; never use the composed picture as background, which would duplicate the pets. Set false when changing scenery or replacing a legacy scene whose animated subject was painted into its background. Existing companion backgrounds are already clean and should normally be preserved for animation-only changes. Zero companions also means animationPrompt empty; otherwise animationPrompt briefly summarizes their actions. Notes plainly explain chosen subjects/actions, no claims of verified quality. Return only the strict schema.`, content, schema, "vibetv_companion_direction")
 	if e != nil {
 		return result, e

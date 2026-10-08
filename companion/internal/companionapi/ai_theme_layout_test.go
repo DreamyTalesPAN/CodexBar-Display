@@ -57,11 +57,15 @@ func TestLayoutSceneAndUnsupportedDoNotGenerateImages(t *testing.T) {
 	for _, mode := range []string{"scene", "unsupported"} {
 		calls := 0
 		s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+			body, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(body), "Customer attachment:") {
+				t.Fatal("Missing customer reference image")
+			}
 			calls++
 			return autoTextResponse(map[string]any{"mode": mode, "notes": "Route or clarify", "edits": []any{}}), nil
 		}))
 		_ = s.aiTheme.store.Set("openai", "fixture-secret")
-		resp := aiCall(s, "POST", "/v1/ai-theme/concepts", `{"prompt":"Change","target":"layout","layout":[]}`)
+		resp := aiCall(s, "POST", "/v1/ai-theme/concepts", `{"prompt":"Change","target":"layout","layout":[],"referenceImages":["`+aiTestPNG()+`"]}`)
 		if resp.Code != 200 || calls != 1 {
 			t.Fatalf("Routing failed %s %d", resp.Body.String(), calls)
 		}

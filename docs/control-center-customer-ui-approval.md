@@ -3955,3 +3955,9 @@ issue scope, or release permission never implies UI permission.
   beginnings `missing` and `permission` remain readable.**
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
+
+
+## 2026-10-08 — Theme Studio desktop refinement
+
+- User approval: Paul requested the visible changes through browser comments in this chat, then authorized refactoring and pushing the complete batch.
+- Approved customer-visible result: One desktop canvas with a larger rounded display, a wide prompt beneath it, selected-element reference chips, rotating typewriter inspirations, image attachments, Create with AI and Add manually actions, collapsed element Details, automatic draft recovery and Save theme in the header. One Settings menu replaces the ellipsis menu; it supports changing an existing API key, while first-use connection remains in the creation flow. Remove the display caption, pause control, elements list, shortcut help and preview-specific explanatory copy. Use existing shared UI controls; no mobile work.

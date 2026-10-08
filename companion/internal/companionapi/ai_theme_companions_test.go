@@ -52,7 +52,7 @@ func TestCompanionRouteModelChoosesCount(t *testing.T) {
 				body, _ := io.ReadAll(r.Body)
 				if r.URL.Path == "/v1/responses" {
 					plans++
-					if !strings.Contains(string(body), "vibetv_companion_direction") {
+					if !strings.Contains(string(body), "vibetv_companion_direction") || !strings.Contains(string(body), "Customer attachment:") || !strings.Contains(string(body), "Selected element: fox") {
 						t.Fatal("Wrong planner")
 					}
 					return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
@@ -64,7 +64,7 @@ func TestCompanionRouteModelChoosesCount(t *testing.T) {
 				return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheet()+`"}]}`), nil
 			}))
 			_ = s.aiTheme.store.Set("openai", "fixture-secret")
-			req, _ := json.Marshal(aiThemeConceptRequest{Target: "companions", Prompt: "Make it lovely", Previous: &aiThemePreviousConcept{Style: aiTestStyle(), ImageContentType: "image/png", ImageBase64: aiTestPNG()}})
+			req, _ := json.Marshal(aiThemeConceptRequest{Target: "companions", Prompt: "Make it lovely", ReferenceImages: []string{aiTestPNG()}, History: []aiThemeMessage{{Role: "user", Content: "Selected element: fox"}}, Previous: &aiThemePreviousConcept{Style: aiTestStyle(), ImageContentType: "image/png", ImageBase64: aiTestPNG()}})
 			resp := aiCall(s, "POST", "/v1/ai-theme/concepts", string(req))
 			if resp.Code != 200 {
 				t.Fatalf("%d %s", resp.Code, resp.Body.String())

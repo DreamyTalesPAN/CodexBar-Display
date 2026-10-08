@@ -42,14 +42,14 @@ try {
     throw new Error(`Unexpected AI request: ${path}`);
   });
   await page.goto(origin + "/internal/theme-studio-preview");
-  await page.getByText("Your saved design is ready.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Select Hello 10", exact: true }).waitFor();
   const canvas = page.getByRole("region", { name: "Design canvas", exact: true });
   const idea = page.getByLabel("Your idea", { exact: true });
-  const openTools = async () => page.getByRole("button", { name: "More options", exact: true }).click();
+  const openTools = async () => page.getByRole("button", { name: "Settings", exact: true }).click();
   async function snapshot() {
     if (!await page.getByRole("dialog").count()) await openTools();
-    const details = page.locator("details").filter({ has: page.locator("summary", { hasText: "Import & export" }) });
-    if (!await details.getAttribute("open").then((value) => value !== null)) await details.locator("summary").click();
+    const details = page.getByRole("button", { name: "Import & export", exact: true });
+    if (await details.getAttribute("aria-expanded") !== "true") await details.click();
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download editable design", exact: true }).click();
     const file = await download;
@@ -57,10 +57,6 @@ try {
     await page.keyboard.press("Escape");
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     return data;
-  }
-  async function elements() {
-    await openTools();
-    await page.locator("summary").filter({ hasText: "Elements in this design" }).click();
   }
   async function selectHello() {
     await canvas.getByRole("button", { name: "Select Hello 10", exact: true }).click();
@@ -95,12 +91,16 @@ try {
   console.log("PASS preview focus, 1/10-pixel arrows, Mac/Windows undo-redo, Delete and Backspace");
 
   await selectHello();
+  await page.getByRole("button", {name:"Details",exact:true}).click();
   const textInput = page.getByLabel("Your text", { exact: true });
   await textInput.fill("Hello again");
   await textInput.press("ArrowLeft");
   await textInput.press("Backspace");
   assert.equal(await textInput.inputValue(), "Hello agan");
   assert.equal((await snapshot()).spec.primitives.length, 10);
+  await page.reload();
+  await canvas.getByRole("button",{name:"Select Hello agan 10",exact:true}).waitFor();
+  assert.equal((await snapshot()).spec.primitives[9].text,"Hello agan","Draft restores without Save theme");
   await idea.fill("one");
   await idea.press("Meta+Enter");
   await idea.press("Control+Enter");
@@ -118,48 +118,16 @@ try {
   assert.equal(requests.length, 1, "Blank Enter does not submit");
   console.log("PASS native text editing, Enter submits once, Mac/Windows/Shift newline, IME and blank guards");
 
-  await elements();
-  await page.locator('[data-design-row="window-0"]').dragTo(page.locator('[data-design-row="window-1"]'));
-  current = await snapshot();
-  assert.deepEqual(current.spec.primitives.slice(1, 9).map((p) => p.y), [184, 184, 204, 220, 134, 134, 154, 170]);
-  assert.deepEqual(current.spec.primitives[0], original.spec.primitives[0]);
-  await page.keyboard.press("Control+z");
-  assert.deepEqual((await snapshot()).spec.primitives.slice(0, 9), original.spec.primitives.slice(0, 9));
-  await elements();
-  await page.getByLabel("Keep usage sections together").uncheck();
-  await page.locator('[data-design-row="element-1"]').dragTo(page.locator('[data-design-row="element-5"]'));
-  current = await snapshot();
-  assert.equal(current.spec.primitives[1].y, 184);
-  assert.equal(current.spec.primitives[5].y, 134);
-  assert.equal(current.spec.primitives[2].y, 134, "Ungrouped move leaves other elements alone");
-  await page.keyboard.press("Meta+z");
-  await elements();
-  await page.getByLabel("Arrange elements", { exact: true }).selectOption("layers");
-  await page.locator('[data-design-row="element-1"]').dragTo(page.locator('[data-design-row="element-5"]'));
-  current = await snapshot();
-  assert.equal(current.spec.primitives[5].text, "SESSION");
-  assert.equal(current.spec.primitives[5].y, 134, "Layer reordering does not change position");
-  await page.keyboard.press("Meta+z");
-  await elements();
-  await page.getByRole("button", { name: "Move down: Session section", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  assert.equal((await snapshot()).spec.primitives[1].y, 184);
-  await page.keyboard.press("Meta+z");
-  await elements();
-  await page.getByRole("button", { name: "Move down: Session section", exact: true }).click();
-  await page.keyboard.press("Control+z");
-  assert.equal((await snapshot()).spec.primitives[1].y, 134, "Undo also works while arranging in the dialog");
-  console.log("PASS drag/drop whole usage sections, individual position, layer order, keyboard alternative and exact undo");
-
   for (const name of ["Text", "Usage bar", "Reset countdown", "Session usage", "Weekly usage", "Usage direction", "Other live information", "Shape", "Clock"]) {
     const before = (await snapshot()).spec.primitives.length;
-    await page.getByRole("button", { name: "Add element", exact: true }).click();
+    await page.getByRole("button", { name: "Add manually", exact: true }).click();
     await page.getByRole("dialog").getByRole("button", { name: new RegExp(`^${name} `) }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     assert.equal((await snapshot()).spec.primitives.length, before + 1, name);
   }
   const last = (await snapshot()).spec.primitives.length;
   await canvas.getByRole("button", { name: `Select Clock ${last}`, exact: true }).click();
+  await page.getByRole("button", {name:"Details",exact:true}).click();
   const reading = page.getByLabel("Live information to show", { exact: true });
   const options = await reading.locator("option").evaluateAll((nodes) => nodes.map((node) => node.value));
   for (const key of options) {
@@ -179,27 +147,13 @@ try {
   assert.equal(await page.getByRole("region", { name: "Selected element tools" }).count(), 0);
   console.log(`PASS all 9 add actions, ${options.length} live reading options, Windows save/select-all and Escape`);
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await page.evaluate(() => document.documentElement.classList.add("dark"));
-  await elements();
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  const dialog = page.getByRole("dialog");
-  assert.equal(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth), true);
-  await page.screenshot({ path: join(output, "mobile-elements.png"), fullPage: true });
-  await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Add element", exact: true }).click();
-  await page.screenshot({ path: join(output, "mobile-add.png"), fullPage: true });
-  await page.keyboard.press("Escape");
-  await page.setViewportSize({ width: 1200, height: 1000 });
-  await page.emulateMedia({ colorScheme: "light" });
   await page.reload();
-  await page.getByText("Your saved design is ready.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Select Weekly usage 7", exact: true }).waitFor();
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
   await canvas.getByRole("button", { name: "Select Weekly usage 7", exact: true }).click();
   await page.screenshot({ path: join(output, "desktop.png"), fullPage: true });
   assert.deepEqual(errors, []);
-  console.log("PASS mobile overflow, dark/reduced-motion rendering and no browser errors");
+  console.log("PASS desktop rendering and no browser errors");
   console.log(`Screenshots: ${output}`);
 } finally {
   await browser.close();

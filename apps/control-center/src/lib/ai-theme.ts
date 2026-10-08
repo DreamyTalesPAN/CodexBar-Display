@@ -138,6 +138,7 @@ export async function generateAIThemeConcept(
   input: {
     history: AIThemeMessage[];
     previous?: AIThemeConcept;
+    referenceImages?: string[];
     prompt: string;
     target?: "scene" | "animation" | "scene_motion" | "auto" | "companions";
   },
@@ -146,6 +147,7 @@ export async function generateAIThemeConcept(
   return aiRequest<AIThemeConcept>("/v1/ai-theme/concepts", {
     body: JSON.stringify({
       prompt: input.prompt,
+      referenceImages: input.referenceImages,
       target: input.target,
       history: input.history
         .slice(-AI_THEME_TRANSMITTED_HISTORY_LIMIT)
@@ -167,9 +169,9 @@ export async function generateAIThemeConcept(
   });
 }
 
-export async function planAIThemeLayout(prompt: string, layout: ReturnType<typeof layoutContext>, signal?: AbortSignal): Promise<AIThemeLayoutPlan> {
+export async function planAIThemeLayout(prompt: string, layout: ReturnType<typeof layoutContext>, signal?: AbortSignal, referenceImages?: string[]): Promise<AIThemeLayoutPlan> {
   return aiRequest<AIThemeLayoutPlan>("/v1/ai-theme/concepts", {
-    body: JSON.stringify({prompt,target:"layout",layout}),
+    body: JSON.stringify({prompt,target:"layout",layout,referenceImages}),
     headers: {"Content-Type":"application/json"}, method:"POST", signal,
   });
 }
