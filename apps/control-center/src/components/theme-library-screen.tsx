@@ -1235,6 +1235,13 @@ function ThemeListItem({
         <ItemFooter className="block">
           <InlineInstallProgress
             canRetry={!disabled}
+            // While Show screensaver is off VibeTV shows none, so "ready on
+            // VibeTV" said too much (issue #579): the sentence Settings uses.
+            installedDetail={
+              screensaverInstallBlockedReason === SCREENSAVER_OFF_REASON
+                ? `${item.title} is installed.`
+                : undefined
+            }
             onRetry={() => onInstallTheme(item)}
             status={installStatus!}
             usage={usage}
@@ -1247,11 +1254,13 @@ function ThemeListItem({
 
 function InlineInstallProgress({
   canRetry,
+  installedDetail,
   onRetry,
   status,
   usage,
 }: {
   canRetry: boolean;
+  installedDetail?: string;
   onRetry: () => void;
   status: ThemeInstallStatus;
   usage: ThemeStudioUsage;
@@ -1293,7 +1302,7 @@ function InlineInstallProgress({
   }
   const complete = status.phase === "complete";
   const detail = complete
-    ? status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
+    ? installedDetail || status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
     : status.message || status.logs[status.logs.length - 1] || `Preparing ${noun.toLowerCase()} install.`;
   const previousSteps = complete ? [] : status.logs.slice(-4, -1);
   const title = complete ? "Installed" : "Installing";

@@ -491,6 +491,40 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain("Night Clock");
   });
 
+  // Issue #579: with Show screensaver off, the installed row still read
+  // "Screensaver is ready on VibeTV." below the notice that it is turned off.
+  it("says only that the screensaver is installed while Show screensaver is off", () => {
+    const list = (enabled: boolean) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{ connected: true, paired: true, ready: true }}
+          installStatus={{
+            logs: [],
+            message: "Screensaver is ready on VibeTV.",
+            phase: "complete",
+            startedAt: "10:00:00",
+            themeId: "night-clock",
+            title: "Night Clock",
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          standby={{ enabled, timeoutMinutes: 10, brightnessPercent: 20 }}
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={themes}
+          usage="screensaver"
+        />,
+      );
+
+    expect(list(true)).toContain("Screensaver is ready on VibeTV.");
+    expect(list(false)).toContain("Night Clock is installed.");
+    expect(list(false)).not.toContain("Screensaver is ready on VibeTV.");
+  });
+
   // Issue #558: the Screensavers list said "theme" in these lines of its own.
   it.each([
     ["screensaver", "night-clock", "Screensaver"],

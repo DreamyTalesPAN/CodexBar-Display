@@ -8687,6 +8687,9 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
         installStatusRequests += 1;
       }
     },
+    // A screensaver is installed only while Show screensaver is on; with it
+    // off the finished row says only that the screensaver is installed.
+    standbySettings: { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 },
     statusThemeInstallJob: {
       id: "theme-job-from-closed-window",
       themeId: "night-clock",
