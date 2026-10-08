@@ -153,7 +153,7 @@ func TestProviderCheckAsksTheCLIWheneverServeDoesNotAnswerForIt(t *testing.T) {
 			checks(t, context.Background(), started, "a check the customer started")
 
 			serveUsage.mu.Lock()
-			serveUsage.at = time.Now().Add(-serveUsageMaxAge - time.Second)
+			serveUsage.at = time.Now().Add(-serveUsage.maxAge - time.Second)
 			serveUsage.mu.Unlock()
 			checks(t, poll, started, "a reading serve has not renewed")
 
@@ -232,5 +232,30 @@ func TestServeReadUnderWayDuringAProviderSwitchIsNoReading(t *testing.T) {
 	}
 	if answer, ok := serveUsageAnswer(WithServeReading(context.Background()), []ProviderSetting{{ID: "claude", Enabled: true}}); ok {
 		t.Fatalf("a reading from before the switch stood in for a probe: %s", answer)
+	}
+}
+
+// A serve that still answers while its data stopped refreshing hours ago said
+// "ready" for as long as it was read: the reading was dated by the read, not
+// by the snapshot.
+func TestSnapshotServeNoLongerRefreshesIsNoReading(t *testing.T) {
+	started := serveReadingEngine(t, false, `[{"provider":"claude","displayName":"Claude","enabled":true}]`)
+	generated := time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == dashboardSnapshotPath {
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"generatedAt":"` + generated + `","staleAfterSeconds":180,"providers":[
+				{"id":"claude","windows":[{"kind":"session","label":"Session","usedPercent":8}]}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"provider":"claude","usage":{"primary":{"usedPercent":8,"windowMinutes":300}}}]`))
+	}))
+	defer server.Close()
+	if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ProbeProviderSetup(WithServeReading(context.Background()), t.TempDir())
+	if len(usageProbes(*started)) == 0 {
+		t.Fatal("a snapshot generated three hours ago answered the setup check without a probe")
 	}
 }

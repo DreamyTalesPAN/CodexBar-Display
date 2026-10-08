@@ -29,16 +29,21 @@ var dashboardUsageByProvider = runtime.GOOS == "windows"
 // recordings in testdata/cli show the two forms are the same, for the pinned
 // Mac CLI and for Win-CodexBar.
 var serveUsage struct {
-	mu    sync.Mutex
-	at    time.Time
-	items map[string]json.RawMessage
+	mu sync.Mutex
+	// at and maxAge are the snapshot's own: when serve generated it and how
+	// long serve calls it current. A serve that still answers but no longer
+	// refreshes must not stand in for a probe.
+	at     time.Time
+	maxAge time.Duration
+	items  map[string]json.RawMessage
 	// forgotten counts forgetServeUsage, so that a read which began before a
 	// provider switch does not bring the earlier answer back after it.
 	forgotten int
 }
 
-// serveUsageMaxAge is how long serve's answer stands in for a probe. Serve is
-// read every 30 to 60 s and one read may take as long as its slowest provider.
+// serveUsageMaxAge is how long serve's answer stands in for a probe when the
+// snapshot names no limit of its own. Serve is read every 30 to 60 s and one
+// read may take as long as its slowest provider.
 const serveUsageMaxAge = 2 * time.Minute
 
 type serveReadingKey struct{}
@@ -66,7 +71,7 @@ func serveUsageAnswer(ctx context.Context, settings []ProviderSetting) ([]byte, 
 	}
 	serveUsage.mu.Lock()
 	defer serveUsage.mu.Unlock()
-	if age := time.Since(serveUsage.at); age < 0 || age > serveUsageMaxAge {
+	if age := time.Since(serveUsage.at); age < 0 || age > serveUsage.maxAge {
 		return nil, false
 	}
 	var items []json.RawMessage
@@ -205,7 +210,13 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	}
 	serveUsage.mu.Lock()
 	if serveUsage.forgotten == forgotten {
-		serveUsage.at, serveUsage.items = time.Now(), readings
+		serveUsage.at, serveUsage.maxAge, serveUsage.items = time.Now(), serveUsageMaxAge, readings
+		if snapshot.GeneratedAt != nil {
+			serveUsage.at = *snapshot.GeneratedAt
+		}
+		if snapshot.StaleAfterSeconds > 0 {
+			serveUsage.maxAge = time.Duration(snapshot.StaleAfterSeconds) * time.Second
+		}
 	}
 	serveUsage.mu.Unlock()
 	return out, nil
