@@ -117,11 +117,12 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 	type primitiveJSON Primitive
 	var decoded struct {
 		primitiveJSON
-		Binding   *string `json:"binding"`
-		Text      *string `json:"text"`
-		AssetPath *string `json:"assetPath"`
-		Data      *string `json:"data"`
-		Valign    *string `json:"valign"`
+		Binding       *string `json:"binding"`
+		Text          *string `json:"text"`
+		AssetPath     *string `json:"assetPath"`
+		Data          *string `json:"data"`
+		Valign        *string `json:"valign"`
+		ProgressStyle *string `json:"progressStyle"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
@@ -134,6 +135,7 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 		{decoded.AssetPath, &p.AssetPath, &p.ShortAsset},
 		{decoded.Data, &p.Data, &p.ShortData},
 		{decoded.Valign, &p.Valign, &p.ShortValign},
+		{decoded.ProgressStyle, &p.ProgressStyle, &p.ShortProgressStyle},
 	} {
 		if field.value != nil {
 			*field.target = *field.value

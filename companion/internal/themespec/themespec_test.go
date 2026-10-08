@@ -1175,13 +1175,20 @@ func TestValidateAgainstCapabilitiesRequiresProgressArc(t *testing.T) {
 			t.Fatalf("expected capable device to accept the arc: %v", err)
 		}
 	}
-	bar, wire, err := Parse([]byte(`{"v":1,"id":"bar","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":10,"ps":"segments"}]}`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	caps.SupportsProgressArcV1 = false
-	if err := ValidateAgainstCapabilities(bar, wire, caps); err != nil {
-		t.Fatalf("a bar must not need progress-arc-v1: %v", err)
+	// The device reads the long-form key when it is there, also when it is
+	// empty: the second spec is a straight bar and needs no arc fields.
+	for _, raw := range []string{
+		`{"v":1,"id":"bar","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":10,"ps":"segments"}]}`,
+		`{"v":1,"id":"bar","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":10,"progressStyle":"","ps":"arc"}]}`,
+	} {
+		bar, wire, err := Parse([]byte(raw))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		caps.SupportsProgressArcV1 = false
+		if err := ValidateAgainstCapabilities(bar, wire, caps); err != nil {
+			t.Fatalf("a bar must not need progress-arc-v1: %s: %v", raw, err)
+		}
 	}
 }
 
