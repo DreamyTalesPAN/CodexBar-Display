@@ -1416,6 +1416,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             kind: .welcome,
             welcomeLine: "checking for mac app update"
         )
+        // One limit for the question to the runtime and the update feed.
+        Task { @MainActor [weak self] in
+            try? await Task<Never, Never>.sleep(
+                for: .seconds(launchUpdateCheckLimitSeconds)
+            )
+            self?.finishLaunchUpdateCheck(timedOut: true)
+        }
         Task { @MainActor [weak self] in
             guard let self else {
                 return
@@ -1435,6 +1442,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             case .noAnswer:
                 break
             }
+            // A hung runtime used up the limit and the start went on.
+            guard self.launchUpdateCheck == .waiting else {
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            }
             // Sparkle installs without its dialog only while this default is
             // set, and reads it when the updater is created.
             UserDefaults.standard.set(true, forKey: "SUAutomaticallyUpdate")
@@ -1450,10 +1462,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 return
             }
             updater.checkForUpdatesInBackground()
-            try? await Task<Never, Never>.sleep(
-                for: .seconds(launchUpdateCheckLimitSeconds)
-            )
-            self.finishLaunchUpdateCheck(timedOut: true)
         }
     }
 
