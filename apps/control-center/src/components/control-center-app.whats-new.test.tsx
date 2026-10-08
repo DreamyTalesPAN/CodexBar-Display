@@ -326,6 +326,28 @@ it("closes for another dialog when it was opened from Updates", async () => {
   expect(notice()).not.toBeNull();
 });
 
+// The app can move this window to another page under the notice, for example
+// to Themes when an install was started elsewhere. That page has dialogs of
+// its own, so the notice that was opened on Updates ends there.
+it("closes when the window leaves Updates under the reopened notice", async () => {
+  window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
+  const app = startWindow();
+  await app.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  await app.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "What's new" }));
+  expect(notice()).not.toBeNull();
+
+  // The dialog covers the page; the app itself still can switch it.
+  fireEvent.click(screen.getByRole("button", { name: "Usage", hidden: true }));
+  await app.wait(1);
+  expect(notice()).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  await app.wait(1);
+  expect(notice()).toBeNull();
+});
+
 // A newer app on offer brings up the app's own update prompt. Two dialogs
 // about updates at once would be one too many.
 it("waits while a newer app is on offer", async () => {

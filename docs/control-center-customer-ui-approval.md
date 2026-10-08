@@ -5729,3 +5729,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The wording of the two theme items of the dialog `What's new`, as the entry `What's new: new themes always get an entry and stand first` above lists it: `New theme: Gauge` with `A half ring that fills as you use your limit.`, and `New theme: Token Counter` with `The tokens of your session as one large number.`, each with the link `Show me in Themes`. He has seen them drawn and quoted, not in the built dialog.
 - Scope: this approval record only; it changes no file of the app. The entry named above keeps its status line as written at the time.
 - What's new: none — the two theme entries are named by the entry about the theme rule above
+
+## 2026-10-08 — What's new: the notice opened from Updates stays on Updates
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `90b6d050` on 2026-10-08 to the dialog he chose from a drawing.
+- Approved customer-visible result: No wording, no new control. The notice that was opened with `What's new` on Updates is shown on Updates only. When the app moves the window to another page under it — to Themes, for example, because a theme install was started in another window — the notice is closed and does not come back by itself. Before, it stayed open on that page and could stand together with that page's own dialog, such as the one for a failed install. The notice that opens by itself is shown on Overview only, as before.
+- Scope: when the reopened dialog shows, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
+- What's new: none — a correction to the notice itself

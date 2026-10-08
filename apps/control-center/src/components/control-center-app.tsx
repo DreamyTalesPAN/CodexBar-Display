@@ -5014,7 +5014,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [whatsNewIsNotNews]);
   // The notice opens by itself on Overview, and again from Updates, once
   // nothing else asks for the customer: not during setup or a firmware update,
-  // and under no other dialog.
+  // and under no other dialog. It stays on the page it was opened on: other
+  // pages have dialogs of their own.
   const somethingElseAsks =
     setupOwnsScreen ||
     firmwareUpdateInProgress ||
@@ -5023,17 +5024,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (usageFailure && !usageFailureHidden);
   const whatsNewEntries = somethingElseAsks
     ? []
-    : whatsNewReopened
+    : whatsNewReopened && activeShellTab === "updates"
       ? newestWhatsNew()
       : // While a newer app is on offer its own prompt asks first; what is new
         // is told after that update.
         activeShellTab === "overview" && !macAppUpdateAvailable
         ? newestWhatsNew(whatsNewSeen)
         : [];
-  // Opened from Updates and taken away by something else, the notice does not
-  // come back by itself: what follows may be a dialog this condition does not
-  // know, as the one Updates shows when an update failed.
-  const whatsNewReopenIsOver = somethingElseAsks && whatsNewReopened;
+  // Opened from Updates and taken away by something else, or by the window
+  // moving to another page, the notice does not come back by itself: what
+  // follows may be a dialog this condition does not know, as the one Updates
+  // shows when an update failed.
+  const whatsNewReopenIsOver =
+    whatsNewReopened && (somethingElseAsks || activeShellTab !== "updates");
   useEffect(() => {
     if (!whatsNewReopenIsOver) {
       return;
