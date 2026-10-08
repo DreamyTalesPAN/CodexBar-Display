@@ -188,6 +188,12 @@ firmware renders it and decides nothing itself.
   cadence would flip a working device to idle between two healthy frames. The
   firmware has no default and no constant of its own, and caps the value at
   86400.
+- **A running Companion keeps writing.** While it has a device it sends a
+  frame every interval, also when it has no fresh reading for the shown
+  provider: it then restates the last good frame with the current activity.
+  Silence therefore means the writer is gone or cannot reach the device
+  (stopped, Mac asleep, cable pulled, device writes held for setup or a
+  firmware update), and only then does the bound run out.
 - **Every accepted frame restarts the countdown** with its own value. After
   the writer returns, the first frame is taken at its word; nothing from before
   the gap is replayed.

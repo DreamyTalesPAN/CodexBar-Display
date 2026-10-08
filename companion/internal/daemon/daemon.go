@@ -1725,8 +1725,24 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {
-			deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
-			return nil
+			if state == nil || !state.hasLastGood {
+				deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
+				return nil
+			}
+			// The reading is only retained, so there is nothing new to show.
+			// Falling silent would look like a lost writer to the device,
+			// which then ends a working state on its own (#369). Restate the
+			// last good frame instead, as a failed collection does, with the
+			// activity verdict of this cycle.
+			authoritativeFrame = state.lastGood
+			authoritativeFrame.Activity, authoritativeFrame.Update = result.frame.Activity, result.frame.Update
+			if !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge()) {
+				authoritativeFrame.UsageUnavailable = true
+			}
+			result.resetBasisAt = state.lastGoodAt
+			result.usageSource = "last-good"
+			result.selectionReason, result.selectionDetail = "usage-waiting", "usage-not-fresh"
+			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), cfg.UsageShowsUsed(deps.usageBarsShowUsed))
 		}
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
@@ -1822,7 +1838,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	// classification. Loading already marks an expired frame unavailable, and
 	// a provider switched off in inventory still clears it deliberately
 	// (invalidateLastGoodDisabledByInventory).
-	if !frame.UsageUnavailable && result.failureErr == nil {
+	if result.usageFresh && !frame.UsageUnavailable && result.failureErr == nil {
 		collectedAt := result.collectedAt
 		if collectedAt.IsZero() {
 			collectedAt = deps.now()

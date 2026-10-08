@@ -463,8 +463,14 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected later unavailable usage to keep the valid frame, got %v", err)
 	}
-	if len(sentLines) != 2 {
-		t.Fatalf("expected unavailable usage to preserve the valid frame, got %d sends", len(sentLines))
+	// The valid frame is preserved by restating it: a device that hears
+	// nothing would take the writer for gone and end a working state (#369).
+	if len(sentLines) != 3 {
+		t.Fatalf("expected unavailable usage to restate the valid frame, got %d sends", len(sentLines))
+	}
+	frame = decodeFrameLine(t, sentLines[2])
+	if frame.Provider != "claude" || frame.Weekly != 11 || frame.UsageUnavailable {
+		t.Fatalf("expected the valid Claude usage frame to be restated, got %+v", frame)
 	}
 
 	now = now.Add(providerSnapshotMaxAge() + time.Second)
@@ -472,10 +478,10 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}
-	if len(sentLines) != 3 {
+	if len(sentLines) != 4 {
 		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
 	}
-	frame = decodeFrameLine(t, sentLines[2])
+	frame = decodeFrameLine(t, sentLines[3])
 	if frame.Provider != "claude" || !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 || frame.UsageMode != "remaining" {
 		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
 	}
@@ -540,6 +546,68 @@ func TestRunCycleWithDepsWritesActivityTTLIntoEveryFrame(t *testing.T) {
 	}
 	if frame := send("usb", failed); frame.Error == "" || frame.ActivityTTLSec != 10 {
 		t.Fatalf("expected an error frame valid for 10s on the cable, got %+v", frame)
+	}
+}
+
+// Issue #369: the device's activity bound guards against the writer going
+// away. A Companion that is running and merely has no fresh reading for the
+// shown provider is not gone, so it keeps saying what it last knew instead of
+// falling silent, and a working VibeTV does not drop to idle beside it.
+func TestRunCycleWithDepsKeepsSendingTheLastGoodFrameWhileTheReadingIsOnlyRetained(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	retained := false
+	var sent []protocol.Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 12, 30, 3600)
+			frame.Frame.Activity = "coding"
+			if retained {
+				// The retained reading may differ; the device keeps the last good one.
+				frame.Frame.Session = 99
+				frame.Frame.Activity = "idle"
+			}
+			frame.Stale = retained
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sent = append(sent, decodeFrameLine(t, line))
+			return nil
+		},
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil || len(sent) != 1 {
+		t.Fatalf("first cycle: err=%v sent=%d", err, len(sent))
+	}
+	lastGoodAt := state.lastGoodAt
+
+	retained = true
+	for i := 1; i <= 30; i++ {
+		now = now.Add(2 * time.Second)
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("retained cycle %d: %v", i, err)
+		}
+		if len(sent) != i+1 {
+			t.Fatalf("retained cycle %d sent no frame; a frame valid for 10s was the last one", i)
+		}
+	}
+	last := sent[len(sent)-1]
+	if last.Session != 12 || last.UsageUnavailable || last.Error != "" {
+		t.Fatalf("expected the last good reading to be restated, got %+v", last)
+	}
+	if last.Activity != "idle" || last.ActivityTTLSec != 10 {
+		t.Fatalf("expected the current activity verdict with its bound, got activity=%q ttl=%d", last.Activity, last.ActivityTTLSec)
+	}
+	if last.ResetTrust != protocol.ResetTrustOffline || last.ResetSec != 3600-60 {
+		t.Fatalf("expected the countdown to continue from the last good reading, got trust=%q reset=%d", last.ResetTrust, last.ResetSec)
+	}
+	if !state.lastGoodAt.Equal(lastGoodAt) {
+		t.Fatalf("restating the last good frame must not renew it: %s -> %s", lastGoodAt, state.lastGoodAt)
 	}
 }
 
