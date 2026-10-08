@@ -225,20 +225,27 @@ describe("ThemeLibraryScreen custom themes", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
-    const screen = (installStatus?: ThemeInstallStatus) => (
+    // The app answers once the install is through, and with whether it worked.
+    let finishInstall: (installed: boolean) => void = () => {};
+    const install = () =>
+      new Promise<boolean>((resolve) => {
+        finishInstall = resolve;
+      });
+    const screen = (installStatus?: ThemeInstallStatus, heldPath?: string) => (
       <ThemeLibraryScreen
         busyAction={null}
         companionStatus="online"
         device={{
-          activeTheme: "live-theme",
+          activeTheme: heldPath ? "my-theme" : "live-theme",
           capabilities: { theme: { supportsThemeSpecV1: true } },
           connected: true,
+          display: { themeSpec: { path: heldPath } },
           paired: true,
           ready: true,
         }}
         installStatus={installStatus}
         onInstallCustomTheme={async () => false}
-        onInstallTheme={vi.fn()}
+        onInstallTheme={install}
         onSaveStandby={vi.fn()}
         onSelectTheme={vi.fn()}
         selectedThemeId=""
@@ -276,6 +283,33 @@ describe("ThemeLibraryScreen custom themes", () => {
 
     expect(row("Catalog Namesake").textContent).toContain("Installing");
     expect(row("My Theme").textContent).not.toContain("Installing");
+
+    // A later install that no row started, here Send to VibeTV in Theme
+    // Studio, is not the pressed row's; the automatic update is another. While
+    // it runs nothing tells which of the two it installs; finished, it is
+    // shown in the row whose file VibeTV holds.
+    await act(async () => finishInstall(true));
+    const fromElsewhere: ThemeInstallStatus = {
+      logs: [],
+      phase: "installing",
+      startedAt: "10:05:00",
+      themeId: "my-theme",
+      title: "My Theme",
+    };
+    await act(async () => root.render(screen(fromElsewhere)));
+    expect(row("My Theme").textContent).toContain("Installing");
+
+    const ownPath = validateThemeSpec({
+      themeId: "my-theme",
+      usage: "live",
+    } as unknown as ThemeStudioSpec).themeSpecPath;
+    await act(async () =>
+      root.render(screen({ ...fromElsewhere, phase: "complete" }, ownPath)),
+    );
+    expect(row("My Theme").textContent).toContain("Theme is active on VibeTV.");
+    expect(row("Catalog Namesake").textContent).not.toContain(
+      "Theme is active on VibeTV.",
+    );
     await act(async () => root.unmount());
   });
 

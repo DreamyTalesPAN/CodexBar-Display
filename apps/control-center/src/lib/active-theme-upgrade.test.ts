@@ -168,6 +168,38 @@ describe("resolveActiveThemeUpgrade", () => {
     expect(activeLiveThemeId(catalog, null)).toBeUndefined();
   });
 
+  // A later catalog can give one of its themes the id of a theme the customer
+  // saved earlier. Awake, VibeTV names both by that id, and the catalog theme
+  // was installed over the customer's, again after every app start.
+  it("leaves a theme the customer saved alone when a catalog theme has its id", () => {
+    const own: UserThemeRecord = {
+      document: {
+        assets: {},
+        packName: "My Synthwave",
+        spec: { ...createBlankThemeSpec(), themeId: "synthwave" },
+      },
+      id: "synthwave",
+      updatedAt: "2026-10-08T00:00:00Z",
+    };
+    const ownPaths = ownThemePaths([own]);
+    expect(ownPaths[0]).toMatch(/^\/themes\/u\/synthwa-1-[0-9a-f]{6}\.json$/);
+    const awake = device(true, ownPaths[0]);
+
+    expect(resolveActiveThemeUpgrade([slotTheme], awake, ownPaths)).toEqual(
+      NO_THEME_UPGRADE,
+    );
+    // A file that is no saved theme's is judged by the id, as is a VibeTV
+    // that reports no file.
+    expect(resolveActiveThemeUpgrade([slotTheme], awake).needed).toBe(true);
+    expect(
+      resolveActiveThemeUpgrade(
+        [slotTheme],
+        { ...awake, display: { themeSpec: { active: true } } },
+        ownPaths,
+      ).needed,
+    ).toBe(true);
+  });
+
   it("reinstalls a cataloged ThemeSpec missing from the device status", () => {
     const themeWithoutCapabilities = {
       ...slotTheme,

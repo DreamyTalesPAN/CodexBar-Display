@@ -72,6 +72,7 @@ export function activeLiveThemeId(
 export function resolveActiveThemeUpgrade(
   themes: ThemeProduct[],
   device: DeviceInfo | null,
+  ownPaths: string[] = [],
 ): ActiveThemeUpgrade {
   const standbyActive = device?.standby?.active === true;
   const standbyLivePath = standbyActive
@@ -101,7 +102,17 @@ export function resolveActiveThemeUpgrade(
     needsProviderAssets ||
     needsColorStops ||
     needsTextValign;
-  const theme = resolveActiveLiveTheme(themes, device);
+  const activePath = standbyActive
+    ? standbyLivePath
+    : device.display?.themeSpec?.path?.trim();
+  // Awake, VibeTV names its theme by id, and a later catalog can give one of
+  // its themes the id of a theme the customer saved. Under a path one of their
+  // saved themes is sent under, VibeTV draws that theme and not the catalog's;
+  // taking it for an old revision installed the catalog theme over it.
+  const theme =
+    !standbyActive && activePath && ownPaths.includes(activePath)
+      ? undefined
+      : resolveActiveLiveTheme(themes, device);
   if (!theme) {
     return {
       needed: false,
@@ -111,9 +122,6 @@ export function resolveActiveThemeUpgrade(
     };
   }
   const expectedPath = theme.themeSpecPath?.trim();
-  const activePath = standbyActive
-    ? standbyLivePath
-    : device.display?.themeSpec?.path?.trim();
   const pathIsOutdated = Boolean(expectedPath && expectedPath !== activePath);
   if (!theme.requiredCapabilities) {
     return {

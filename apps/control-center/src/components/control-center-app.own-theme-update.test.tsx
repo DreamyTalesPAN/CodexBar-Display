@@ -150,6 +150,32 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// A later catalog can give one of its themes the id of a theme the customer
+// saved earlier. Awake, VibeTV names both by that id.
+it("keeps a saved theme of the customer that has the id of a catalog theme", async () => {
+  const own = saved("mini-classic", "live");
+  const [path] = ownThemePaths([own]);
+  expect(path).toMatch(/^\/themes\/u\/mini-cl-1-/);
+
+  expect(
+    await automaticInstalls(
+      { display: { themeSpec: { active: true, path } } },
+      [own],
+    ),
+  ).toEqual([]);
+});
+
+// Mini Classic as public release v1.0.52 shipped it.
+it("still updates a catalog theme that VibeTV holds in its first revision", async () => {
+  expect(
+    await automaticInstalls({
+      display: {
+        themeSpec: { active: true, path: "/themes/u/mini-cl-1-e4fe6b.json" },
+      },
+    }),
+  ).toEqual(["mini-classic"]);
+});
+
 // Token Fire 0.1.3 was shipped as tf-1-874fd8e2.
 it("updates a catalog screensaver that VibeTV still holds in its first revision", async () => {
   expect(

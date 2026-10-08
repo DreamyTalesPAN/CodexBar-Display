@@ -2855,6 +2855,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const activeThemeUpgrade = resolveActiveThemeUpgrade(
       catalog.themes,
       device,
+      savedThemePaths(),
     );
     const shouldUpgradeActiveTheme = Boolean(
       activeThemeUpgrade.theme && activeThemeUpgrade.needed,
@@ -3048,6 +3049,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const refreshedActiveThemeUpgrade = resolveActiveThemeUpgrade(
         catalog.themes,
         refreshedDevice,
+        savedThemePaths(),
       );
       if (
         refreshedActiveThemeUpgrade.unresolved &&
@@ -3191,6 +3193,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const activeThemeUpgrade = resolveActiveThemeUpgrade(
       catalog.themes,
       device,
+      savedThemePaths(),
     );
     if (!activeThemeUpgrade.theme) {
       return false;
@@ -4246,7 +4249,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
-  const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
+  // Whether the file VibeTV draws is one of the customer's saved themes is
+  // looked up in the library when VibeTV reports another file, not on every
+  // render. A theme is saved before it is sent, so the one saved a moment ago
+  // counts as theirs.
+  const liveThemePath = device?.display?.themeSpec?.path?.trim();
+  const ownLiveThemePaths = useMemo(
+    () => savedThemePaths().filter((path) => path === liveThemePath),
+    [liveThemePath],
+  );
+  const activeThemeUpgrade = resolveActiveThemeUpgrade(
+    catalog.themes,
+    device,
+    ownLiveThemePaths,
+  );
   // Read the slot from the polled VibeTV snapshot, the way the live slot reads
   // its own path. The settings screen carries the same value, but only after
   // someone opens it, so keying the automatic update off that state left every

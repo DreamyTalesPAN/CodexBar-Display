@@ -528,14 +528,19 @@ export function ThemeLibraryScreen({
     setLibraryError("");
     setInstallRow(rowKey(item));
     onSelectTheme(item.themeId);
+    // Once its install is through, the row is no longer the one an install
+    // belongs to: the next one may be the automatic update, which no row
+    // started. A failed install stays with its row, which offers Try again.
     if (item.kind === "published") {
-      await onInstallTheme(item.product);
+      if (await onInstallTheme(item.product)) {
+        setInstallRow("");
+      }
       return;
     }
 
     setPreparingInstallRow(rowKey(item));
     try {
-      await onInstallCustomTheme({
+      const sent = await onInstallCustomTheme({
         assets: item.custom.document.assets,
         packName: item.custom.document.packName,
         spec: item.custom.document.spec,
@@ -543,6 +548,9 @@ export function ThemeLibraryScreen({
           ? { usage: "screensaver" as const }
           : {}),
       });
+      if (sent) {
+        setInstallRow("");
+      }
     } catch (error) {
       setLibraryError(
         error instanceof Error ? error.message : "Theme could not be prepared.",
@@ -982,9 +990,15 @@ function ThemeListItem({
   const actionInFlight = Boolean(
     busyAction || preparingInstallRow || installInFlight,
   );
+  // For a shared id the row that was pressed shows its install. With no such
+  // row a finished install is shown where its file is held, and a running or
+  // failed one in both rows, because nothing tells which it is.
   const visibleInstallStatus =
     installStatus?.themeId === item.themeId &&
-    (!sharesId || !installRow || installRow === rowKey(item));
+    (!sharesId ||
+      (installRow
+        ? installRow === rowKey(item)
+        : installStatus.phase !== "complete" || installed));
   const retryingFailedInstall = visibleInstallStatus && installStatus?.phase === "error";
   const screensaverLockBlocker: ThemeInstallBlocker | null =
     screensaverInstallLocked
