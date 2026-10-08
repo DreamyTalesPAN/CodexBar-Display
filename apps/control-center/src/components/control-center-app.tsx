@@ -5164,9 +5164,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // (issue #584). Every opened page starts at the top; after that, this place
   // is brought into view. The page may still grow above it, or get the place
   // only then: Themes reads the customer's own themes after it opened, and
-  // their rows stand above the catalog's. So the place is brought into view
-  // again each time the page changes its height, until the customer scrolls,
-  // clicks or types, or the window moves to another page.
+  // their rows stand above the catalog's. So for two seconds the place is
+  // brought into view again each time the page changes its height. That ends
+  // earlier when the customer scrolls, clicks or types, or the window moves to
+  // another page. The end in time is for what none of these reports, as a
+  // drag of the scrollbar: a height change later on moves nothing.
   const shownAfterPageOpensRef = useRef("");
   useEffect(() => {
     const id = shownAfterPageOpensRef.current;
@@ -5176,15 +5178,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     const show = () => document.getElementById(id)?.scrollIntoView();
     show();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
     const pageGrows = new ResizeObserver(show);
     pageGrows.observe(document.body);
     const customerActs = ["wheel", "touchmove", "pointerdown", "keydown"];
+    // In the capture phase: a control that keeps an event to itself still ends it.
+    const listening = { capture: true, passive: true };
     const stop = () => {
       pageGrows.disconnect();
-      customerActs.forEach((act) => window.removeEventListener(act, stop));
+      window.clearTimeout(pageHasFilled);
+      customerActs.forEach((act) =>
+        window.removeEventListener(act, stop, listening),
+      );
     };
+    const pageHasFilled = window.setTimeout(stop, 2000);
     customerActs.forEach((act) =>
-      window.addEventListener(act, stop, { passive: true }),
+      window.addEventListener(act, stop, listening),
     );
     return stop;
   }, [activeShellTab, appearanceSection]);

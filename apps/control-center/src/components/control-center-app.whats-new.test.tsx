@@ -511,6 +511,61 @@ it("brings the new theme into view again when the list above it grows, until the
   expect(shown).toEqual([row, row]);
 });
 
+// Found in review: with no end in time, a height change much later (install
+// progress, a notice that goes away) pulled the page back, for a customer who
+// had moved it with the scrollbar, which none of the four inputs reports.
+it("stops bringing the new theme into view two seconds after the link was clicked", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+  pageGrew();
+  expect(shown.length).toBeGreaterThan(1);
+  shown.length = 0;
+
+  await window.wait(1);
+  pageGrew();
+
+  expect(shown).toEqual([]);
+});
+
+it("ends at the customer's input even when a control keeps the event to itself", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  shown.length = 0;
+  const control = screen.getByRole("heading", { name: "Themes" });
+  control.addEventListener("keydown", (event) => event.stopPropagation());
+
+  fireEvent.keyDown(control);
+  pageGrew();
+
+  expect(shown).toEqual([]);
+});
+
+it("brings the place into view once in an app that cannot watch the page's height", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  vi.stubGlobal("ResizeObserver", undefined);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+
+  expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
+  expect(shown).toEqual([
+    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+  ]);
+});
+
 it("leaves a page alone that grows after the customer went on from Themes", async () => {
   const shown = watchScrolling();
   const window = startWindow();
