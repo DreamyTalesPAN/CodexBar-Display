@@ -392,6 +392,9 @@ jobs:
       - name: Test firmware-only provisioning contract
         run: ./scripts/test-vibetv-provision.sh
 
+      - name: Test flash leftovers check
+        run: ./scripts/test-vibetv-flash-leftovers.sh
+
       - name: Test firmware size budget checker
         run: ./scripts/test-firmware-size-budget.sh
 
