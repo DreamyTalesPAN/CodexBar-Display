@@ -39,7 +39,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 function startWindow({ setUp = true, os = "darwin", appVersion = "1.0.63" } = {}) {
   // `usageBroken`: the usage service cannot start, which the app says in a
   // dialog of its own.
-  const companion = { setUp, displayConfigured: setUp, usageBroken: false };
+  // `appUpdate`: a newer app is on offer.
+  const companion = { setUp, displayConfigured: setUp, usageBroken: false, appUpdate: false };
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
@@ -70,6 +71,9 @@ function startWindow({ setUp = true, os = "darwin", appVersion = "1.0.63" } = {}
             installationMode: "dmg",
             app: appVersion ? { version: appVersion } : undefined,
             runtime: { os },
+            update: companion.appUpdate
+              ? { updateAvailable: true, latestVersion: "1.0.64" }
+              : undefined,
           },
           setup,
           providerSetup: companion.usageBroken
@@ -319,6 +323,20 @@ it("closes for another dialog when it was opened from Updates", async () => {
   expect(usageDialog()).toBeNull();
   expect(notice()).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "What's new" }));
+  expect(notice()).not.toBeNull();
+});
+
+// A newer app on offer brings up the app's own update prompt. Two dialogs
+// about updates at once would be one too many.
+it("waits while a newer app is on offer", async () => {
+  const window = startWindow();
+  window.companion.appUpdate = true;
+  await window.wait(10);
+  expect(notice()).toBeNull();
+  expect(seen()).toBeNull();
+
+  window.companion.appUpdate = false;
+  await window.wait(6);
   expect(notice()).not.toBeNull();
 });
 

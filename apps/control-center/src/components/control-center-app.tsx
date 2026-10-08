@@ -5025,7 +5025,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ? []
     : whatsNewReopened
       ? newestWhatsNew()
-      : activeShellTab === "overview"
+      : // While a newer app is on offer its own prompt asks first; what is new
+        // is told after that update.
+        activeShellTab === "overview" && !macAppUpdateAvailable
         ? newestWhatsNew(whatsNewSeen)
         : [];
   // Opened from Updates and taken away by something else, the notice does not
