@@ -104,6 +104,7 @@ async function installsWhileInStandby(liveThemePath: string) {
                 supportsProviderAssetsV1: true,
                 supportsColorStopsV1: true,
                 supportsTextValignV1: true,
+                supportsProgressArcV1: true,
               },
             },
           },

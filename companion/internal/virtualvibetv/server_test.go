@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -220,6 +221,36 @@ func TestCapabilitiesMatchFirmware(t *testing.T) {
 	} {
 		if check.got != check.want {
 			t.Errorf("%s: virtual=%d firmware=%d", check.name, check.got, check.want)
+		}
+	}
+}
+
+// A theme feature the firmware announces is announced here too, in the feature
+// list and in the theme block, or a pack that needs it could not be rehearsed.
+func TestThemeFeaturesMatchFirmware(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "..", "firmware_esp8266", "src", "main.cpp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hello := virtualHello(t)
+	block, err := json.Marshal(hello.Capabilities.Theme)
+	if err != nil {
+		t.Fatal(err)
+	}
+	features := regexp.MustCompile(`\\"([a-z-]+-v\d+)\\"`).FindAllSubmatch(source, -1)
+	flags := regexp.MustCompile(`\\"(supports\w+)\\":true`).FindAllSubmatch(source, -1)
+	if len(features) == 0 || len(flags) == 0 {
+		t.Fatalf("no theme features found in the firmware source: %d features, %d flags", len(features), len(flags))
+	}
+	for _, match := range features {
+		feature := string(match[1])
+		if !strings.HasPrefix(feature, "cable-") && !slices.Contains(hello.Features, feature) {
+			t.Errorf("firmware feature %s is missing from the virtual hello", feature)
+		}
+	}
+	for _, match := range flags {
+		if !bytes.Contains(block, []byte(`"`+string(match[1])+`":true`)) {
+			t.Errorf("firmware theme capability %s is missing from the virtual hello", match[1])
 		}
 	}
 }

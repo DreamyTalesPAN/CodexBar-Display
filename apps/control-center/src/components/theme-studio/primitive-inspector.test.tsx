@@ -2,6 +2,7 @@
 import { createElement, useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { setPrimitiveField } from "./editor-geometry";
 import { PrimitiveInspector } from "./primitive-inspector";
 import { normalizeThemeSpec, type ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { keySpriteColor } from "@/lib/theme-studio-assets";
@@ -14,17 +15,29 @@ const initial: ThemeStudioPrimitive = {
     { gte: 25, color: "#F97316" }, { gte: 0, color: "#EF4444" },
   ],
 };
+// Each change the Inspector reports is one step of Undo in Theme Studio.
+const reported = vi.fn();
 function Harness() {
   const [primitive, setPrimitive] = useState(initial);
   return createElement(PrimitiveInspector, {
     primitive, onDelete: () => {}, onInsertToken: () => {}, onKeySpriteColor: () => {},
-    onChange: (field, value) => setPrimitive(p => normalizeThemeSpec({
-      themeId: "focus-test", themeRev: 1, themeSpecVersion: 1,
-      primitives: [{ ...p, [field]: value }],
-    }).primitives[0]),
+    onChange: (field, value) => {
+      reported(field);
+      setPrimitive(p => {
+        const next = { ...p };
+        setPrimitiveField(next, field, value);
+        return normalizeThemeSpec({
+          themeId: "focus-test", themeRev: 1, themeSpecVersion: 1,
+          primitives: [next],
+        }).primitives[0];
+      });
+    },
   });
 }
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  reported.mockClear();
+});
 
 it("keeps focus and the same color row while typing across other thresholds", () => {
   render(createElement(Harness));
@@ -47,6 +60,28 @@ it("can remove a threshold, add one, and return to a solid color", () => {
   fireEvent.click(screen.getByRole("button", { name: "Use solid bar color" }));
   expect(screen.queryByRole("button", { name: /Remove remaining threshold/ })).toBeNull();
   expect(screen.getByRole("textbox", { name: "Bar color" })).toBeTruthy();
+});
+
+it("turns a bar into an arc that fits its box and edits the arc", () => {
+  render(createElement(Harness));
+  expect(screen.queryByRole("spinbutton", { name: "Sweep" })).toBeNull();
+  // Typing on the closed select picks the option that starts with the key.
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Style" }), { key: "A" });
+  expect(screen.getByRole("combobox", { name: "Style" }).textContent).toBe("Arc");
+  // One change: one Undo takes the whole arc back, not only its thickness.
+  expect(reported.mock.calls).toEqual([["progressStyle"]]);
+  const value = (name: string) =>
+    screen.getByRole("spinbutton", { name }).getAttribute("value");
+  // The 100 x 20 box holds a ring of at most 10 px.
+  expect([value("Start angle"), value("Sweep"), value("Thickness")]).toEqual(["225", "270", "10"]);
+  // A ring has no border and no corners.
+  expect(screen.queryByRole("spinbutton", { name: "Border radius" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Border color" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Track color" })).toBeTruthy();
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Sweep" }), { target: { value: "180" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Start angle" }), { target: { value: "270" } });
+  expect([value("Start angle"), value("Sweep"), value("Thickness")]).toEqual(["270", "180", "10"]);
 });
 
 function SpriteHarness({ type }: { type: "gif" | "sprite" }) {

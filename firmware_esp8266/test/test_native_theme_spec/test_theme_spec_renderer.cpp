@@ -3,6 +3,7 @@
 #include "../../../firmware_shared/update_notice_policy.h"
 #include "../../src/theme_spec_runtime_policy.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -2857,6 +2858,174 @@ void testProgressColorStopsCompileRejectsTooManyEntries() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+// The picture one render leaves behind, built from its FillRect runs. -1 is a
+// pixel no run touched.
+struct ArcPicture {
+  std::vector<int> pixels = std::vector<int>(240 * 240, -1);
+  bool insideBox = true;
+
+  ArcPicture(const RecordingSink& sink, int boxX, int boxY, int boxSize) {
+    for (const RecordedCommand& cmd : sink.commands) {
+      if (cmd.type != CommandType::FillRect) {
+        continue;
+      }
+      insideBox = insideBox && cmd.height == 1 && cmd.width > 0 &&
+                  cmd.x >= boxX && cmd.x + cmd.width <= boxX + boxSize &&
+                  cmd.y >= boxY && cmd.y < boxY + boxSize;
+      for (int x = cmd.x; x < cmd.x + cmd.width; ++x) {
+        pixels[cmd.y * 240 + x] = cmd.color;
+      }
+    }
+  }
+
+  int Count(int color) const {
+    int count = 0;
+    for (int pixel : pixels) {
+      count += pixel == color ? 1 : 0;
+    }
+    return count;
+  }
+};
+
+// The arc under test: a 100 px box at 20,30, so its centre is 70,80, with a
+// 10 px ring from 7:30 clockwise over three quarters of a turn to 4:30.
+const char* const kArcSpec = R"JSON({"v":1,"id":"arc","rev":1,"p":[
+  {"t":"p","x":20,"y":30,"w":100,"h":100,"b":"us1p","ps":"arc","as":225,"aw":270,"at":10,
+   "c":"#00FF00","bg":"#333333","cs":[{"gte":0,"c":"#FF0000"},{"gte":40,"c":"#00FF00"}]}
+]})JSON";
+
+ArcPicture renderArc(int percent, const char* usageMode = "remaining") {
+  FrameData frame = testFrame();
+  frame.usageMode = usageMode;
+  frame.usageSlot1Available = true;
+  frame.usageSlot1Percent = percent;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(kArcSpec, frame, sink));
+  return ArcPicture(sink, 20, 30, 100);
+}
+
+// The pixel in the middle of the ring at an angle clockwise from 12 o'clock.
+int arcPixelAt(const ArcPicture& picture, int degrees) {
+  const double radians = degrees * 3.14159265358979323846 / 180.0;
+  const int x = static_cast<int>(std::floor(70 + 45 * std::sin(radians)));
+  const int y = static_cast<int>(std::floor(80 - 45 * std::cos(radians)));
+  return picture.pixels[y * 240 + x];
+}
+
+void testProgressArcFillsItsSweepClockwiseByPercent() {
+  const int fill = ParseColor("#00FF00", 0);
+  const int track = ParseColor("#333333", 0);
+
+  const ArcPicture empty = renderArc(0, "used");
+  TEST_ASSERT_TRUE(empty.insideBox);
+  TEST_ASSERT_EQUAL_INT(0, empty.Count(fill));
+  for (int degrees : {227, 300, 0, 90, 133}) {
+    TEST_ASSERT_EQUAL_INT(track, arcPixelAt(empty, degrees));
+  }
+  // The open quarter at the bottom is never drawn, and neither is the hole.
+  for (int degrees : {137, 180, 223}) {
+    TEST_ASSERT_EQUAL_INT(-1, arcPixelAt(empty, degrees));
+  }
+  TEST_ASSERT_EQUAL_INT(-1, empty.pixels[80 * 240 + 70]);
+  // Three quarters of a ring between radius 40 and 50.
+  const int ring = empty.Count(track);
+  TEST_ASSERT_INT_WITHIN(40, 2121, ring);
+
+  const ArcPicture half = renderArc(50);
+  TEST_ASSERT_TRUE(half.insideBox);
+  for (int degrees : {227, 300, 358}) {
+    TEST_ASSERT_EQUAL_INT(fill, arcPixelAt(half, degrees));
+  }
+  for (int degrees : {2, 90, 133}) {
+    TEST_ASSERT_EQUAL_INT(track, arcPixelAt(half, degrees));
+  }
+  TEST_ASSERT_EQUAL_INT(-1, arcPixelAt(half, 180));
+  TEST_ASSERT_EQUAL_INT(ring, half.Count(fill) + half.Count(track));
+  TEST_ASSERT_INT_WITHIN(20, ring / 2, half.Count(fill));
+
+  const ArcPicture full = renderArc(100);
+  TEST_ASSERT_TRUE(full.insideBox);
+  TEST_ASSERT_EQUAL_INT(0, full.Count(track));
+  TEST_ASSERT_EQUAL_INT(ring, full.Count(fill));
+  TEST_ASSERT_EQUAL_INT(-1, arcPixelAt(full, 180));
+
+  // Out-of-range values draw what 0 and 100 draw.
+  TEST_ASSERT_TRUE(renderArc(140).pixels == full.pixels);
+  TEST_ASSERT_TRUE(renderArc(-20, "used").pixels == empty.pixels);
+
+  // Every share in between grows the fill and never leaves the sweep.
+  int previous = 0;
+  for (int percent = 0; percent <= 100; ++percent) {
+    const ArcPicture step = renderArc(percent);
+    const int filled = step.Count(fill) + step.Count(ParseColor("#FF0000", 0));
+    TEST_ASSERT_TRUE(step.insideBox);
+    TEST_ASSERT_TRUE(filled >= previous);
+    TEST_ASSERT_EQUAL_INT(ring, filled + step.Count(track));
+    previous = filled;
+  }
+}
+
+void testProgressArcUsesColorStopsLikeTheBar() {
+  // 30 % remaining is below the 40 % stop, and so is 70 % used.
+  TEST_ASSERT_TRUE(renderArc(30).Count(ParseColor("#FF0000", 0)) > 0);
+  TEST_ASSERT_EQUAL_INT(0, renderArc(30).Count(ParseColor("#00FF00", 0)));
+  TEST_ASSERT_TRUE(renderArc(70, "used").Count(ParseColor("#FF0000", 0)) > 0);
+  TEST_ASSERT_TRUE(renderArc(70).Count(ParseColor("#00FF00", 0)) > 0);
+}
+
+void testProgressArcIsNotDrawnForAMissingWindowLikeTheBar() {
+  FrameData frame = testFrame();
+  frame.usageSlot1Available = false;
+  frame.usageSlot1Percent = 50;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(kArcSpec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(1, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+}
+
+void testProgressArcDrawsAFullRingAndAFullDisc() {
+  FrameData frame = testFrame();
+  frame.session = 100;
+  RecordingSink ringSink;
+  TEST_ASSERT_TRUE(renderSpec(
+      R"JSON({"v":1,"id":"ring","rev":1,"p":[{"t":"p","x":0,"y":0,"w":61,"h":40,"ps":"arc","aw":360,"at":20,"c":"#FFFFFF"}]})JSON",
+      frame, ringSink));
+  // A disc of 40 px across in the middle of the wider box: 10.5 px each side.
+  const ArcPicture disc(ringSink, 10, 0, 41);
+  TEST_ASSERT_TRUE(disc.insideBox);
+  TEST_ASSERT_INT_WITHIN(20, 1257, disc.Count(0xFFFF));
+  TEST_ASSERT_EQUAL_INT(0xFFFF, disc.pixels[20 * 240 + 30]);
+}
+
+void testProgressArcOutsideItsLimitsIsSkipped() {
+  for (const char* fields : {
+           R"("as":0,"aw":270)",            // no thickness
+           R"("as":0,"aw":270,"at":0)",
+           R"("as":0,"aw":270,"at":51)",    // thicker than the radius
+           R"("as":0,"at":10)",             // no sweep
+           R"("as":0,"aw":361,"at":10)",
+           R"("as":-1,"aw":270,"at":10)",
+           R"("as":360,"aw":270,"at":10)",
+       }) {
+    const std::string spec = std::string(R"JSON({"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":100,"ps":"arc",)JSON") +
+                             fields + R"JSON(},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON";
+    RecordingSink sink;
+    TEST_ASSERT_TRUE_MESSAGE(renderSpec(spec.c_str(), testFrame(), sink), fields);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2, sink.commands.size(), fields);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
+  }
+  // The long names and the edge of every limit are accepted.
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(
+      R"JSON({"themeSpecVersion":1,"themeId":"arc","themeRev":1,"primitives":[
+        {"type":"progress","x":0,"y":0,"width":100,"height":100,"progressStyle":"arc","arcStart":359,"arcSweep":1,"arcThickness":50,"bgColor":"#111111"},
+        {"type":"progress","x":0,"y":0,"width":100,"height":100,"progressStyle":"arc","arcStart":0,"arcSweep":360,"arcThickness":1,"bgColor":"#222222"}
+      ]})JSON",
+      testFrame(), sink));
+  const ArcPicture picture(sink, 0, 0, 100);
+  TEST_ASSERT_TRUE(picture.Count(ParseColor("#111111", 0)) + picture.Count(ParseColor("#222222", 0)) > 0);
+}
+
 void testStateAssetsUseActivityWithIdleFallback() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -4269,6 +4438,11 @@ int main() {
   RUN_TEST(testProgressColorStopsFallbackToSolidColor);
   RUN_TEST(testProgressColorStopsPreferLongColorAlias);
   RUN_TEST(testProgressColorStopsCompileRejectsTooManyEntries);
+  RUN_TEST(testProgressArcFillsItsSweepClockwiseByPercent);
+  RUN_TEST(testProgressArcUsesColorStopsLikeTheBar);
+  RUN_TEST(testProgressArcIsNotDrawnForAMissingWindowLikeTheBar);
+  RUN_TEST(testProgressArcDrawsAFullRingAndAFullDisc);
+  RUN_TEST(testProgressArcOutsideItsLimitsIsSkipped);
   RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);

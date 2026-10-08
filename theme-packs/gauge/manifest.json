@@ -1,0 +1,23 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "gauge",
+  "name": "Gauge",
+  "version": "0.1.0",
+  "minFirmware": "1.0.42",
+  "usage": "live",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "color-stops-v1",
+    "text-valign-v1",
+    "progress-arc-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/u/ga-2-ad19500f.json",
+    "file": "theme.json",
+    "bytes": 939,
+    "sha256": "ad19500ff522326fca4c11a4763d5ce7753dab56fe42715e5a3459aaa7c2396f",
+    "contentType": "application/json"
+  },
+  "assets": []
+}

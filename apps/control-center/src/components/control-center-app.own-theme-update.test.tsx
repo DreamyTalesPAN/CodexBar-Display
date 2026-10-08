@@ -117,6 +117,7 @@ async function automaticInstalls(
                 supportsProviderAssetsV1: true,
                 supportsColorStopsV1: true,
                 supportsTextValignV1: true,
+                supportsProgressArcV1: true,
               },
             },
             ...device,

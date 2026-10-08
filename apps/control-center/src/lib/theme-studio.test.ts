@@ -562,6 +562,50 @@ describe("buildThemePack capability declaration", () => {
   });
 });
 
+describe("arc-style progress", () => {
+  const arc = { t: "p", x: 20, y: 30, w: 200, h: 180, b: "us1p", ps: "arc", as: 225, aw: 270, at: 16, c: "#22C55E", bg: "#1E293B" };
+  const specWith = (primitive: Record<string, unknown>) =>
+    importThemeSpec({ v: 1, id: "arc-test", rev: 1, bg: "#000000", p: [primitive] });
+
+  it("opens, validates and exports an arc unchanged", () => {
+    const imported = specWith(arc);
+    expect(imported.primitives[0]).toMatchObject({
+      type: "progress", progressStyle: "arc", arcStart: 225, arcSweep: 270, arcThickness: 16,
+      binding: "usageSlot1Percent", bgColor: "#1E293B",
+    });
+    expect(validateThemeSpec(imported).errors).toEqual([]);
+    expect(JSON.parse(deviceThemeSpecJson(imported)).p[0]).toEqual(arc);
+    // Saving normalizes the spec; a second round must not lose the arc either.
+    expect(JSON.parse(deviceThemeSpecJson(normalizeThemeSpec(imported))).p[0]).toEqual(arc);
+    const long = specWith({ type: "progress", x: 0, y: 0, width: 100, height: 100, progressStyle: "arc", arcStart: 0, arcSweep: 360, arcThickness: 50 });
+    expect(validateThemeSpec(long).errors).toEqual([]);
+    expect(JSON.parse(deviceThemeSpecJson(long)).p[0]).toMatchObject({ ps: "arc", as: 0, aw: 360, at: 50 });
+  });
+
+  it("declares progress-arc-v1 for an arc and not for a bar", () => {
+    const pack = buildThemePack(specWith(arc), "Arc");
+    expect(pack.manifest.requiredCapabilities).toEqual(["usage-slots-v1", "progress-arc-v1"]);
+    expect(pack.manifest.minFirmware).toBe("1.0.42");
+    expect(JSON.parse(pack.themeJson).p[0]).toMatchObject({ ps: "arc", as: 225, aw: 270, at: 16 });
+    const bar = buildThemePack(specWith({ ...arc, ps: "segments", h: 12 }), "Bar");
+    expect(bar.manifest.requiredCapabilities).toEqual(["usage-slots-v1"]);
+  });
+
+  it.each([
+    ["a start of a full turn", { arcStart: 360 }, "arc start must be between 0 and 359."],
+    ["a start below 0", { arcStart: -1 }, "arc start must be between 0 and 359."],
+    ["no sweep", { arcSweep: undefined }, "arc sweep must be between 1 and 360."],
+    ["a sweep above a full turn", { arcSweep: 361 }, "arc sweep must be between 1 and 360."],
+    ["a sweep with a fraction", { arcSweep: 90.5 }, "arc sweep must be between 1 and 360."],
+    ["no thickness", { arcThickness: undefined }, "arc thickness must be between 1 and half the smaller of width and height."],
+    ["a ring thicker than the radius", { arcThickness: 91 }, "arc thickness must be between 1 and half the smaller of width and height."],
+  ])("refuses %s, which the device would skip", (_name, change, error) => {
+    const spec = specWith(arc);
+    Object.assign(spec.primitives[0], change);
+    expect(validateThemeSpec(spec).errors).toEqual([`Element 1: ${error}`]);
+  });
+});
+
 describe("feature container aliases match the device", () => {
   it.each([
     ["absent", undefined, undefined, 1, 1],

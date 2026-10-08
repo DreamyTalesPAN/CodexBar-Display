@@ -1621,8 +1621,9 @@ export function ThemeStudioScreen({
                     );
                     return;
                   }
-                  primitive.width = width;
-                  primitive.height = height;
+                  // An arc keeps a ring that fits its box.
+                  setPrimitiveField(primitive, "width", width);
+                  setPrimitiveField(primitive, "height", height);
                 })
               }
               onSelect={selectPrimitiveIndex}

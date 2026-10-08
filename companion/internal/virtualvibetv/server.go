@@ -307,6 +307,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 			protocol.FeatureProviderAssetsV1,
 			protocol.FeatureColorStopsV1,
 			protocol.FeatureTextValignV1,
+			protocol.FeatureProgressArcV1,
 		},
 		MaxFrameBytes: MaxFrameBytes,
 		Capabilities: protocol.CapabilityBlock{
@@ -322,6 +323,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 				SupportsProviderAssetsV1: true,
 				SupportsColorStopsV1:     true,
 				SupportsTextValignV1:     true,
+				SupportsProgressArcV1:    true,
 				MaxUsageWindows:          3,
 				SupportsStoredThemes:     true,
 				MaxThemeSpecBytes:        2048,
