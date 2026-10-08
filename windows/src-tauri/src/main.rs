@@ -21,6 +21,8 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
+mod launch_update;
+
 const WINDOW_LABEL: &str = "main";
 const DEFAULT_RUNTIME_ORIGIN: &str = "http://127.0.0.1:47832";
 const RUNTIME_LABEL: &str = "shop.vibetv.control-center.runtime";
@@ -30,6 +32,9 @@ const RUNTIME_HEALTH_TIMEOUT: Duration = Duration::from_secs(35);
 const RUNTIME_HEALTH_POLL: Duration = Duration::from_millis(500);
 const RUNTIME_HEALTH_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const WINDOW_CLOSE_FLUSH_DELAY: Duration = Duration::from_secs(1);
+// Without an answer from the update source the start goes on after this limit.
+const LAUNCH_UPDATE_CHECK_LIMIT: Duration = Duration::from_secs(5);
+const LAUNCH_UPDATE_MARKER: &str = "launch-update-attempt.txt";
 
 const MENU_OPEN: &str = "open";
 const MENU_RELOAD: &str = "reload";
@@ -49,8 +54,9 @@ struct Shell {
     // Bumped on every present; a delayed hide only applies if nothing
     // presented the window again while it waited.
     presentations: AtomicU64,
-    // One updater at a time: the tray item and vibetv://check-for-updates
-    // must not launch two NSIS installers over the same files.
+    // One updater at a time: the check at launch, the tray item and
+    // vibetv://check-for-updates must not launch two NSIS installers over
+    // the same files.
     updating: AtomicBool,
 }
 
@@ -79,7 +85,10 @@ fn main() {
                 log(&format!("could not enable autostart: {error}"));
             }
             create_window(&handle, register_provider_shortcut(handle.clone()))?;
-            std::thread::spawn(move || prepare_and_load(handle));
+            std::thread::spawn(move || {
+                launch_update_check(&handle);
+                prepare_and_load(handle);
+            });
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -481,8 +490,16 @@ fn dispatch_result(app: &AppHandle, event: &str, success: bool) {
 }
 
 fn show_status(app: &AppHandle, error: Option<&str>) {
+    dispatch_status(app, serde_json::json!({ "error": error }));
+}
+
+// The start screen names the version while the check at launch installs it.
+fn show_updating(app: &AppHandle, version: &str) {
+    dispatch_status(app, serde_json::json!({ "update": version }));
+}
+
+fn dispatch_status(app: &AppHandle, detail: serde_json::Value) {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-        let detail = serde_json::json!({ "error": error });
         let _ = window.eval(format!(
             "window.dispatchEvent(new CustomEvent('vibetv:shell-status', {{ detail: {detail} }}))"
         ));
@@ -677,42 +694,12 @@ fn check_for_updates(app: AppHandle) {
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let result = async {
-            let updater = app.updater().map_err(|error| format!("updater unavailable: {error}"))?;
-            let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
-            let Some(update) = update else {
-                return Ok(UpdateOutcome::UpToDate);
-            };
-            log(&format!("downloading update {}", update.version));
-            let bytes = update
-                .download(|_, _| {}, || {})
-                .await
-                .map_err(|error| format!("update download failed: {error}"))?;
-            // Installing replaces the Companion binary and restarts its task
-            // while a firmware update or theme install may be writing to the
-            // device. The hold lasts one minute, so it is claimed only now,
-            // after the download, right before the installer takes over --
-            // exactly like repair-codexbar.
-            let hold = tauri::async_runtime::spawn_blocking(claim_update_hold)
-                .await
-                .map_err(|error| format!("update hold check failed: {error}"))?;
-            if let UpdateHold::UpdateRunning = hold {
-                return Ok(UpdateOutcome::Busy);
-            }
-            log(&format!("installing update {}", update.version));
-            if let Err(error) = update.install(bytes) {
-                // Nothing was replaced; give the runtime back to device jobs.
-                let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
-                return Err(format!("update install failed: {error}"));
-            }
-            Ok::<UpdateOutcome, String>(UpdateOutcome::Installed)
-        }
-        .await;
+        let result = run_update(&app, false).await;
         // The installer relaunches this process on success; every other
         // outcome frees the guard for the next request.
         app.state::<Shell>().updating.store(false, Ordering::SeqCst);
         match result {
-            Ok(UpdateOutcome::Installed) => {}
+            Ok(UpdateOutcome::Installed) | Ok(UpdateOutcome::AlreadyTried) => {}
             Ok(UpdateOutcome::UpToDate) => show_message("VibeTV Control Center is up to date."),
             Ok(UpdateOutcome::Busy) => {
                 log("update deferred: a firmware update or theme install owns the runtime");
@@ -730,10 +717,98 @@ fn check_for_updates(app: AppHandle) {
     });
 }
 
+// Issue #565: the app installs its own update before it looks for a VibeTV,
+// like the Mac App (#561). Nobody asked for this check, so it answers with
+// nothing but the start screen's update line: no newer version, no answer
+// within the limit, a running VibeTV update or a failed download all let the
+// start go on without a message.
+fn launch_update_check(app: &AppHandle) {
+    if app
+        .state::<Shell>()
+        .updating
+        .swap(true, Ordering::SeqCst)
+    {
+        return;
+    }
+    let result = tauri::async_runtime::block_on(run_update(app, true));
+    app.state::<Shell>().updating.store(false, Ordering::SeqCst);
+    match result {
+        Ok(UpdateOutcome::Installed) => {}
+        Ok(UpdateOutcome::UpToDate) => log("launch update check: no newer version"),
+        Ok(UpdateOutcome::AlreadyTried) => {
+            log("launch update skipped: this version was already installed at an earlier start")
+        }
+        Ok(UpdateOutcome::Busy) => {
+            log("launch update skipped: a firmware update or theme install owns the runtime")
+        }
+        Err(error) => log(&format!("launch update skipped: {error}")),
+    }
+}
+
+// Check, download and install. On Windows a successful install ends this
+// process inside `update.install`.
+async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, String> {
+    let mut builder = app.updater_builder();
+    // The marker keeps the check at launch from installing a version twice.
+    let mut marker: Option<PathBuf> = None;
+    if at_launch {
+        // The limit covers the check only; a found update is downloaded
+        // without one, as it is for the tray item.
+        builder = builder.timeout(LAUNCH_UPDATE_CHECK_LIMIT);
+        let folder = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|error| format!("no folder for the launch update marker: {error}"))?;
+        marker = Some(folder.join(LAUNCH_UPDATE_MARKER));
+    }
+    let updater = builder.build().map_err(|error| format!("updater unavailable: {error}"))?;
+    let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
+    let Some(update) = update else {
+        return Ok(UpdateOutcome::UpToDate);
+    };
+    if let Some(marker) = &marker {
+        if launch_update::tried(marker, &update.version) {
+            return Ok(UpdateOutcome::AlreadyTried);
+        }
+        show_updating(app, &update.version);
+    }
+    log(&format!("downloading update {}", update.version));
+    let bytes = update
+        .download(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("update download failed: {error}"))?;
+    // Installing replaces the Companion binary and restarts its task
+    // while a firmware update or theme install may be writing to the
+    // device. The hold lasts one minute, so it is claimed only now,
+    // after the download, right before the installer takes over --
+    // exactly like repair-codexbar.
+    let hold = tauri::async_runtime::spawn_blocking(claim_update_hold)
+        .await
+        .map_err(|error| format!("update hold check failed: {error}"))?;
+    if let UpdateHold::UpdateRunning = hold {
+        return Ok(UpdateOutcome::Busy);
+    }
+    if let Some(marker) = &marker {
+        if !launch_update::record(marker, &update.version) {
+            let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+            return Err(format!("could not write {}", marker.display()));
+        }
+    }
+    log(&format!("installing update {}", update.version));
+    if let Err(error) = update.install(bytes) {
+        // Nothing was replaced; give the runtime back to device jobs.
+        let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
+        return Err(format!("update install failed: {error}"));
+    }
+    Ok(UpdateOutcome::Installed)
+}
+
 enum UpdateOutcome {
     Installed,
     UpToDate,
     Busy,
+    // Only the check at launch: it installs a version once.
+    AlreadyTried,
 }
 
 // Native message box: works while the webview is hidden or still loading.

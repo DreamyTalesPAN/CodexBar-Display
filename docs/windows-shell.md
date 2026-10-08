@@ -42,6 +42,20 @@ Companion for everything it needs.
   `vibetv://check-for-updates`; `tauri-plugin-updater` fetches
   `latest-windows.json` from the latest GitHub release, verifies the minisign
   signature, runs the NSIS installer in passive mode and relaunches the shell.
+- Update at launch (#565): before the shell registers the Companion and looks
+  for a VibeTV it asks the same update source once, with a limit of 5 seconds.
+  A newer version is downloaded and installed like above, and the start screen
+  reads "Updating VibeTV Control Center…". Every other outcome (no newer
+  version, no answer, a running VibeTV update or theme install, a failed
+  download) is logged to stderr only and the start goes on. A version is
+  installed at launch once: it is written to
+  `%LOCALAPPDATA%\shop.vibetv.control-center\launch-update-attempt.txt` right
+  before the installer runs, and a start that is offered that version again
+  skips it (`src/launch_update.rs`, tested alone in CI with `rustc --test`).
+  The tray item and the Updates tab still install it. There is no switch that
+  turns the check off and no way to point a build at another update source:
+  endpoint and public key are compiled in. The Microsoft Store listing
+  delivers this same installer, so there is no separate Store build.
 - Autostart of the shell: `tauri-plugin-autostart` writes
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\VibeTV Control Center`.
 - Installer: NSIS, x64, per-user. `nsis/hooks.nsh` stops the task before
