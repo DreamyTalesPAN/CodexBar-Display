@@ -274,10 +274,17 @@ it("names the VibeTV's own limit when that is what keeps Send unavailable", () =
 // Seen on the Mac app on 2026-10-09: "… exported." stood while the save dialog
 // was still open and after Cancel. The app does not learn how that dialog
 // ended, so the Mac sentence claims no saved file.
+// Found in review: a pre-DMG install still opens this page in a plain browser,
+// which saves without asking or asks, as it is set; the Mac sentence about a
+// save dialog is said in the Mac app only.
 it.each([
-  [true, "Saved in your Downloads folder. Nothing was sent."],
-  [false, "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent."],
-])("says after Export ZIP where the file is when the app saved it itself (windows=%s)", (windowsHost, message) => {
+  [true, true, "Saved in your Downloads folder. Nothing was sent."],
+  [false, true, "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent."],
+  [false, false, "Export started in your browser: vibetv-theme-new-theme.zip. Nothing was sent."],
+])("says after Export ZIP where the file is when the app saved it itself (windows=%s, app=%s)", (windowsHost, nativeApp, message) => {
+  if (nativeApp) {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("VibeTVControlCenter/1.0");
+  }
   // jsdom has neither blob URLs nor downloads.
   URL.createObjectURL = () => "blob:theme";
   URL.revokeObjectURL = () => {};
@@ -338,7 +345,7 @@ it("shows one answer at a time for Save, Export and Send, errors included", asyn
   URL.revokeObjectURL = () => {};
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   const saved = "Saved to library.";
-  const exported = "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent.";
+  const exported = "Export started in your browser: vibetv-theme-new-theme.zip. Nothing was sent.";
   const sendFailed = "Theme install needs attention. Check the install status.";
   const shown = () => [saved, exported, sendFailed].filter(text => screen.queryByText(text));
   renderStudio("blank", { onInstallTheme: async () => false });
@@ -473,6 +480,15 @@ it("says on Windows that a repeated Export ZIP saved again", () => {
   expect(screen.getByText("Saved again in your Downloads folder (export 2). Nothing was sent.")).toBeTruthy();
   fireEvent.click(button("Export ZIP"));
   expect(screen.getByText("Saved again in your Downloads folder (export 3). Nothing was sent.")).toBeTruthy();
+
+  // Found in review: the count is of one file. Under another name the theme
+  // is saved as another file, and that one for the first time.
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed" } });
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved in your Downloads folder. Nothing was sent.")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Theme" } });
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getByText("Saved again in your Downloads folder (export 4). Nothing was sent.")).toBeTruthy();
 });
 
 // Seen on the Mac app on 2026-10-09: "Import screensaver JSON" does not fit

@@ -140,7 +140,10 @@ import {
   titleFromThemeId,
 } from "./theme-studio/editor-geometry";
 import type { ThemeRenderPack } from "./live-vibetv-preview";
-import { themeRenderPackUrl } from "./control-center-runtime";
+import {
+  isNativeControlCenterApp,
+  themeRenderPackUrl,
+} from "./control-center-runtime";
 
 const COLOR_FALLBACK = "#000000";
 const DEFAULT_GIF_SIZE = 80;
@@ -238,7 +241,8 @@ export function ThemeStudioScreen({
     document: ThemeStudioDocument;
   } | null>(null);
   const spriteInputRef = useRef<HTMLInputElement>(null);
-  const exportCountRef = useRef(0);
+  // How often each file name was exported while this editor is open.
+  const exportCountsRef = useRef<Record<string, number>>({});
   const libraryIdRef = useRef(initialTheme?.libraryId);
   const sourceRef = useRef<ThemeStudioEditorSource>(
     initialTheme?.source || "custom",
@@ -1073,20 +1077,24 @@ export function ThemeStudioScreen({
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      exportCountRef.current += 1;
+      const exportCount = (exportCountsRef.current[pack.fileName] ?? 0) + 1;
+      exportCountsRef.current[pack.fileName] = exportCount;
+      // Windows saves a download without asking where, so the app can name the
+      // folder. It cannot name the file: a second export under the same name
+      // is saved as "… (1).zip", so that one is counted instead, or the
+      // sentence would stand unchanged. The Mac app asks where and can be
+      // cancelled, and the page does not learn which: its sentence says what
+      // is asked and claims no saved file. A plain browser, which a pre-DMG
+      // install still opens this page in, saves or asks as it is set.
       setExportStatus({
         tone: windowsHost ? "ready" : "unknown",
-        // Windows saves a download without asking where, so the app can name
-        // the folder. It cannot name the file: a second export of the same
-        // theme is saved as "… (1).zip", so that one is counted instead, or
-        // the sentence would stand unchanged. The Mac asks where and can be
-        // cancelled, and the app does not learn which: its sentence says
-        // what is asked and claims no saved file.
         message: windowsHost
-          ? exportCountRef.current > 1
-            ? `Saved again in your Downloads folder (export ${exportCountRef.current}). Nothing was sent.`
+          ? exportCount > 1
+            ? `Saved again in your Downloads folder (export ${exportCount}). Nothing was sent.`
             : "Saved in your Downloads folder. Nothing was sent."
-          : `Choose where to save ${pack.fileName}. Nothing was sent.`,
+          : isNativeControlCenterApp()
+            ? `Choose where to save ${pack.fileName}. Nothing was sent.`
+            : `Export started in your browser: ${pack.fileName}. Nothing was sent.`,
       });
     } catch (error) {
       setExportStatus({
