@@ -151,7 +151,7 @@ func TestTerminalVerdictSurvivesRestartAndDropsLastGood(t *testing.T) {
 	now = now.Add(time.Minute)
 	frames = []codexbar.ParsedFrame{terminalTestFrame("gemini", true)}
 	collector.collectOnce(context.Background())
-	if err := persistProviderSnapshots(collector.providers, now); err != nil {
+	if err := persistProviderSnapshots(collector.providers, nil, now); err != nil {
 		t.Fatalf("persist: %v", err)
 	}
 

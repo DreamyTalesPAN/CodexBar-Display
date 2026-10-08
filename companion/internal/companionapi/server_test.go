@@ -7229,6 +7229,34 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsReportsLastCollectionCounts(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	at := time.Date(2026, 10, 9, 1, 2, 3, 0, time.UTC)
+	server.loadCollectorCycle = func() (daemon.CollectorCycle, bool) {
+		return daemon.CollectorCycle{At: at, Providers: 2, Succeeded: 1}, true
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+
+	var got struct {
+		LastCollection map[string]any `json:"lastCollection"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := map[string]any{"at": "2026-10-09T01:02:03Z", "providers": float64(2), "succeeded": float64(1)}
+	if !reflect.DeepEqual(got.LastCollection, want) {
+		t.Fatalf("lastCollection = %#v, want %#v", got.LastCollection, want)
+	}
+
+	server.loadCollectorCycle = func() (daemon.CollectorCycle, bool) { return daemon.CollectorCycle{}, false }
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+	if strings.Contains(rec.Body.String(), "lastCollection") {
+		t.Fatalf("expected no lastCollection before a collection completed, got %s", rec.Body.String())
+	}
+}
+
 func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode: "cable",

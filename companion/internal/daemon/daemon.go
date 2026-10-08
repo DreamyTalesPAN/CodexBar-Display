@@ -2579,7 +2579,7 @@ func providerSnapshotsPath() string {
 	return runtimepaths.Path(home, "provider-snapshots.json")
 }
 
-func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt time.Time) error {
+func persistProviderSnapshots(snapshots map[string]providerSnapshot, cycle *CollectorCycle, savedAt time.Time) error {
 	if savedAt.IsZero() {
 		return nil
 	}
@@ -2592,6 +2592,7 @@ func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt tim
 	payload := persistedProviderSnapshots{
 		SavedAt:   savedAt.UTC(),
 		Providers: make([]providerSnapshot, 0, len(snapshots)),
+		LastCycle: cycle,
 	}
 	for _, key := range sortedSnapshotKeys(snapshots) {
 		snapshot := snapshots[key]
@@ -2658,6 +2659,20 @@ func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.T
 		return nil, time.Time{}, false
 	}
 	return out, saved.SavedAt, true
+}
+
+// LoadCollectorCycle reads the last completed collection the collector
+// stored beside its provider snapshots.
+func LoadCollectorCycle() (CollectorCycle, bool) {
+	raw, err := os.ReadFile(providerSnapshotsPath())
+	if err != nil {
+		return CollectorCycle{}, false
+	}
+	var saved persistedProviderSnapshots
+	if err := json.Unmarshal(raw, &saved); err != nil || saved.LastCycle == nil {
+		return CollectorCycle{}, false
+	}
+	return *saved.LastCycle, true
 }
 
 func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {

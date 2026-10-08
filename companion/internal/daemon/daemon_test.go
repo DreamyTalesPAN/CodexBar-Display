@@ -3147,7 +3147,7 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 				},
 			},
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 	if err := persistLastGood(protocol.Frame{Provider: "claude", Label: "Claude"}, now); err != nil {
@@ -3219,7 +3219,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 			},
 			TokenStatsCollected: collectedAt,
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 
@@ -3265,7 +3265,7 @@ func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 				Weekly:   40,
 			},
 		},
-	}, now); err != nil {
+	}, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 
@@ -3273,7 +3273,7 @@ func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 		t.Fatal("expected persisted provider snapshot before clearing")
 	}
 
-	if err := persistProviderSnapshots(map[string]providerSnapshot{}, now.Add(time.Minute)); err != nil {
+	if err := persistProviderSnapshots(map[string]providerSnapshot{}, nil, now.Add(time.Minute)); err != nil {
 		t.Fatalf("clear persisted provider snapshots: %v", err)
 	}
 	if _, _, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
@@ -4234,6 +4234,43 @@ func TestProviderCollectorLogsProviderFailureKindOnChange(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorStoresLastCycleCountsForDiagnostics(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	if _, ok := LoadCollectorCycle(); ok {
+		t.Fatal("expected no cycle before the first collection")
+	}
+	claudeFails := true
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		claude := testParsedFrame("claude", 28, 35, 7200)
+		if claudeFails {
+			claude.Frame.Error = "Claude usage request timed out after 24s"
+		}
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600), claude}, nil
+	}
+	collector.collectOnce(context.Background())
+	if got, ok := LoadCollectorCycle(); !ok || got != (CollectorCycle{At: now, Providers: 2, Succeeded: 1}) {
+		t.Fatalf("after one failing provider: got %+v ok=%v", got, ok)
+	}
+
+	// A changed count is stored at once, not after the persist interval.
+	now = now.Add(30 * time.Second)
+	claudeFails = false
+	collector.collectOnce(context.Background())
+	if got, ok := LoadCollectorCycle(); !ok || got != (CollectorCycle{At: now, Providers: 2, Succeeded: 2}) {
+		t.Fatalf("after both providers delivered: got %+v ok=%v", got, ok)
+	}
+}
+
 func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4528,7 +4565,7 @@ func TestProviderCollectorKeepsDashboardSnapshotThroughLastGoodWindow(t *testing
 		t.Fatalf("expected sent Codex dashboard frame, got %+v", frame)
 	}
 
-	if err := persistProviderSnapshots(collector.providers, now); err != nil {
+	if err := persistProviderSnapshots(collector.providers, nil, now); err != nil {
 		t.Fatalf("persist provider snapshots: %v", err)
 	}
 	usage, ok := LoadPersistedUsage(now)

@@ -278,6 +278,7 @@ type Server struct {
 	allowMacAppSelfUpdate  bool
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
+	loadCollectorCycle     func() (daemon.CollectorCycle, bool)
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
 	providerSetupMu        sync.Mutex
@@ -726,8 +727,11 @@ type diagnosticsResponse struct {
 	Device           deviceInfo               `json:"device"`
 	ProviderSetup    codexbar.ProviderSetup   `json:"providerSetup"`
 	UsageEngine      diagnosticsUsageEngine   `json:"usageEngine"`
-	SetupLog         setupLog                 `json:"setupLog"`
-	Checks           []diagnosticCheck        `json:"checks"`
+	// LastCollection lets support read "2 providers, 1 delivering" without the
+	// daemon log (#368). Absent until a collection has completed.
+	LastCollection *daemon.CollectorCycle `json:"lastCollection,omitempty"`
+	SetupLog       setupLog               `json:"setupLog"`
+	Checks         []diagnosticCheck      `json:"checks"`
 }
 
 type diagnosticsEnvironment struct {
@@ -1090,6 +1094,7 @@ func New(opts Options) (*Server, error) {
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
+		loadCollectorCycle:    daemon.LoadCollectorCycle,
 		logf:                  opts.Logf,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
@@ -2483,6 +2488,12 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		discovery = <-discoveryResult
 		checks = append(checks, discoveryDiagnosticCheck(discovery))
 	}
+	var lastCollection *daemon.CollectorCycle
+	if s.loadCollectorCycle != nil {
+		if cycle, ok := s.loadCollectorCycle(); ok {
+			lastCollection = &cycle
+		}
+	}
 	writeReport := func(device deviceInfo) {
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
 			OK:            true,
@@ -2506,6 +2517,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Device:           device,
 			ProviderSetup:    providerSetup,
 			UsageEngine:      usageEngineDiagnostics(providerSetup.Engine),
+			LastCollection:   lastCollection,
 			SetupLog:         s.setupEvents.snapshot(s.currentTime()),
 			Checks:           checks,
 		})
