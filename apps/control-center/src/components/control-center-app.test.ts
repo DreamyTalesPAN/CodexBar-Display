@@ -3,6 +3,7 @@ import {
   connectionModeChoiceStatus,
   statusConfirmsSubmittedWiFiChoice,
   mergeDeviceInfo,
+  displayModeChange,
   recentEventsWith,
   setupThemeCatalogError,
 } from "./control-center-app";
@@ -232,5 +233,21 @@ describe("recent activity", () => {
     expect(
       recentEventsWith(events, { ...loaded, id: "4", detail: "Brightness is set to 30%." }),
     ).toHaveLength(3);
+  });
+});
+
+// Found in review of #579: the setup wizard's Continue entered "Display mode
+// saved" for the default nobody had changed, because nothing was read yet.
+describe("display mode entry under Recent activity", () => {
+  const automatic = { mode: "automatic" as const, providerIds: ["claude", "codex"] };
+  const claude = { mode: "fixed" as const, providerIds: ["claude"] };
+
+  it("is written for a changed mode or provider only", () => {
+    expect(displayModeChange(null, automatic)).toBeNull();
+    expect(displayModeChange(automatic, { ...automatic, providerIds: ["claude"] })).toBeNull();
+    expect(displayModeChange(claude, claude)).toBeNull();
+    expect(displayModeChange(null, claude)).toBe("claude");
+    expect(displayModeChange(claude, { ...claude, providerIds: ["codex"] })).toBe("codex");
+    expect(displayModeChange(claude, automatic)).toBe("");
   });
 });

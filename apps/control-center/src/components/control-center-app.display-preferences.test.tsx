@@ -97,6 +97,7 @@ function startWindow(themes: unknown[] = []) {
     selection: { mode: "automatic", providerIds: [] as string[], configured: true, valid: true },
     providers: [] as (typeof claude)[],
     refuseWrites: false as boolean | "once",
+    refuseDisplayWrites: false,
     requests: [] as string[],
     // While set, a read of the display preferences answers late, with the
     // value it found when it started.
@@ -204,6 +205,9 @@ function startWindow(themes: unknown[] = []) {
         return jsonResponse({ ok: true, settings: companion.settings });
       }
       if (url.endsWith("/v1/provider-display")) {
+        if (init?.body && companion.refuseDisplayWrites) {
+          return jsonResponse({ ok: false, error: refused }, 502);
+        }
         if (init?.body) {
           await takeHeldWrite();
           companion.selection = {
@@ -876,6 +880,33 @@ it("enters a refused change of the usage display under Recent activity", async (
   await window.wait(1);
   expect(window.text()).toContain("Usage display save needs attentionTry again in a moment.");
   expect(window.text()).not.toContain("Usage display saved");
+});
+
+// Found in review of #579: with a provider switched on, the app itself writes
+// which providers Automatic moves through, and tries again every five seconds
+// while that fails. Each try put "Display mode save needs attention" at the
+// top of Recent activity with a new time, for a change nobody had made.
+it("enters nothing under Recent activity for what the app writes by itself", async () => {
+  const window = startWindow();
+  window.companion.providers = [{ ...claude, value: false, effectiveValue: false }];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  window.companion.refuseDisplayWrites = true;
+  fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
+  await window.wait(12);
+  expect(
+    window.companion.requests.filter((request) => request.startsWith("PATCH /api/local-companion/v1/provider-display")).length,
+  ).toBeGreaterThan(1);
+  window.companion.refuseDisplayWrites = false;
+  await window.wait(6);
+  expect(window.companion.selection.providerIds).toEqual(["claude"]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  expect(window.text()).toContain("AI provider savedClaude turned on.");
+  expect(window.text()).not.toContain("Display mode save");
 });
 
 it("has no accessibility violations on any tab or in the setup question", async () => {

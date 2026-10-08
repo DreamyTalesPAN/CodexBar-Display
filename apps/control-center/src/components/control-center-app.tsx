@@ -3706,6 +3706,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             current: ProviderDisplaySelection | null,
           ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
       providerId: string,
+      // Only a change the customer made by hand is entered under Recent
+      // activity; the app's own write of the Automatic pool, and its retries
+      // every five seconds, are not.
+      byCustomer = false,
     ) => {
       if (setupResetInProgressRef.current) {
         return Promise.resolve(false);
@@ -3743,14 +3747,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (retiresNotice) {
             setProviderDisplayNotice(null);
           }
-          // Recent activity names a change of what VibeTV shows, in the Setup
-          // log's sentences. A provider switched on or off only changes the
-          // pool Automatic moves through, and has its own entry.
-          const shown = selection.mode === "automatic" ? "" : selection.providerIds[0];
-          if (
-            previous?.mode !== selection.mode ||
-            (shown && previous.providerIds[0] !== shown)
-          ) {
+          // In the Setup log's sentences.
+          const shown = byCustomer
+            ? displayModeChange(previous, selection)
+            : null;
+          if (shown !== null) {
             addEvent({
               label: "Display mode saved",
               detail: shown
@@ -3773,11 +3774,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerDisplayRef.current = previous;
           setProviderDisplay(previous);
           setProviderDisplayError(normalized);
-          addEvent({
-            label: "Display mode save needs attention",
-            detail: normalized.nextAction,
-            tone: "attention",
-          });
+          if (byCustomer) {
+            addEvent({
+              label: "Display mode save needs attention",
+              detail: normalized.nextAction,
+              tone: "attention",
+            });
+          }
           return false;
         } finally {
           setPendingProviderDisplayId(null);
@@ -4715,7 +4718,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     onCheck: checkProvider,
     onOpenSignIn: providerSignInEnabled ? openProviderSignIn : undefined,
     onOpenSetupGuide: providerSignInEnabled ? openProviderSetupGuide : undefined,
-    onDisplayChange: updateProviderDisplay,
+    onDisplayChange: (
+      next: Parameters<typeof updateProviderDisplay>[0],
+      providerId: string,
+    ) => updateProviderDisplay(next, providerId, true),
     onPreferenceChange: updateProviderPreference,
   };
   // The usage-service recovery unregisters the background service on purpose
@@ -5430,6 +5436,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               selection.mode === "automatic"
                 ? enabledProviderIds[0] ?? ""
                 : selection.providerIds[0] ?? "",
+              true,
             )
           }
           onReturnToThemes={() => {
@@ -5791,6 +5798,22 @@ export function recentEventsWith(
       (earlier) => earlier.label !== event.label || earlier.detail !== event.detail,
     ),
   ].slice(0, RECENT_EVENT_LIMIT);
+}
+
+/**
+ * What a saved display selection changed, for Recent activity: the provider
+ * VibeTV now always shows, "" for Automatic, or null when neither the mode nor
+ * that provider changed. Nothing read yet counts as Automatic, the default, so
+ * confirming the default is no change; another pool under Automatic is none
+ * either.
+ */
+export function displayModeChange(
+  previous: Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null,
+  selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+): string | null {
+  const shown = (value: typeof previous) =>
+    !value || value.mode === "automatic" ? "" : value.providerIds[0] ?? "";
+  return shown(previous) === shown(selection) ? null : shown(selection);
 }
 
 export function setupThemeCatalogError(
