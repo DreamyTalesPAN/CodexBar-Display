@@ -3,6 +3,7 @@ package companionapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
@@ -5328,8 +5329,16 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		step.stage = stage
 	}
 	// The start names what is installed: the installs of two different themes
-	// are two entries, and only the same one made again is a repeat.
-	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: installText(req.Slot, "Installing theme."), Subject: req.ThemeID + " " + req.PackURL})
+	// are two entries, and only the same one made again is a repeat. An upload
+	// from Theme Studio has no address and need not name an id, so its file
+	// tells it apart. The subject is not saved: after a restart of the runtime
+	// the entries before it have none, and the restart's own entry stands
+	// between them and the next install anyway.
+	subject := req.ThemeID + " " + req.PackURL
+	if req.PackBytes != nil {
+		subject = fmt.Sprintf("%x", sha256.Sum256(req.PackBytes))
+	}
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: installText(req.Slot, "Installing theme."), Subject: subject})
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,

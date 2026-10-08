@@ -692,10 +692,8 @@ func TestSetupLogFoldsOnlyRepeatsOfTheSameInstall(t *testing.T) {
 		return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, nil
 	}
 	// Installs themeID and returns the log once the install has ended.
-	install := func(themeID string, done func([]setupEvent) bool) []setupEvent {
+	send := func(themeID string, req *http.Request, done func([]setupEvent) bool) []setupEvent {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"`+themeID+`","packUrl":"https://example.com/`+themeID+`.zip","slot":"screensaver","async":true}`))
-		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusAccepted {
@@ -713,6 +711,20 @@ func TestSetupLogFoldsOnlyRepeatsOfTheSameInstall(t *testing.T) {
 		t.Fatalf("install of %s did not end: %+v", themeID, events)
 		return nil
 	}
+	install := func(themeID string, done func([]setupEvent) bool) []setupEvent {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"`+themeID+`","packUrl":"https://example.com/`+themeID+`.zip","slot":"screensaver","async":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		return send(themeID, req, done)
+	}
+	// The customer's own theme comes as a file, without an address and here
+	// without an id: the file itself tells two of them apart.
+	upload := func(name string, pack []byte, done func([]setupEvent) bool) []setupEvent {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true", strings.NewReader(string(pack)))
+		req.Header.Set("Content-Type", "application/zip")
+		return send(name, req, done)
+	}
 	counts := func(events []setupEvent) string {
 		var out []string
 		for _, event := range events {
@@ -729,6 +741,15 @@ func TestSetupLogFoldsOnlyRepeatsOfTheSameInstall(t *testing.T) {
 	other := install("night-clock", func(events []setupEvent) bool { return len(events) == 4 || events[1].Count == 3 })
 	if got := counts(other); got != "started 2, succeeded 2, started 1, succeeded 1" {
 		t.Fatalf("another screensaver was logged as %s", got)
+	}
+
+	first := testThemePackZipRevision(t, "mine", "/themes/u/mine.json", 1, "first")
+	second := testThemePackZipRevision(t, "mine", "/themes/u/mine.json", 1, "second")
+	upload("first file", first, func(events []setupEvent) bool { return len(events) == 6 || events[3].Count == 2 })
+	upload("first file again", first, func(events []setupEvent) bool { return len(events) == 6 && events[5].Count == 2 })
+	uploads := upload("second file", second, func(events []setupEvent) bool { return len(events) == 8 || events[5].Count == 3 })
+	if got := counts(uploads[4:]); got != "started 2, succeeded 2, started 1, succeeded 1" {
+		t.Fatalf("two different uploaded themes were logged as %s", got)
 	}
 }
 
