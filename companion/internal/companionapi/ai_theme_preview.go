@@ -70,12 +70,20 @@ func (t aiThemeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.URL.Scheme != "https" || r.URL.Host != "api.openai.com" || r.URL.User != nil || r.URL.RawQuery != "" || r.URL.Fragment != "" {
 		return nil, errors.New("provider destination rejected")
 	}
-	switch r.URL.Path {
-	case "/v1/responses", "/v1/images/generations", "/v1/images/edits", "/v1/models/" + openAIImageModel:
-	default:
+	if !aiThemeProviderPath(r.URL.Path) {
 		return nil, errors.New("provider path rejected")
 	}
 	return t.transport.RoundTrip(r)
+}
+
+// The only OpenAI paths a credential is ever sent to: the two generation
+// endpoints and the lookups of the two models the connection check verifies.
+func aiThemeProviderPath(path string) bool {
+	switch path {
+	case "/v1/responses", "/v1/images/generations", "/v1/images/edits", "/v1/models/" + openAIImageModel, "/v1/models/" + openAIModel:
+		return true
+	}
+	return false
 }
 
 func newAIThemeTransport() http.RoundTripper {

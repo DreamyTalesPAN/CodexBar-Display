@@ -48,7 +48,7 @@ export async function sendThemeToVibeTV(document: ThemeStudioDocument, onStatus:
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok === false) {
-      throw new Error(payload?.error?.nextAction || payload?.error?.message || "Open the VibeTV Mac App and connect your display.");
+      throw Object.assign(new Error(payload?.error?.nextAction || payload?.error?.message || "Open the VibeTV Mac App and connect your display."), { code: payload?.error?.code });
     }
     return payload;
   };
@@ -72,6 +72,11 @@ export async function sendThemeToVibeTV(document: ThemeStudioDocument, onStatus:
   const job = await pollThemeInstallJob({
     jobId: pendingJob, runCompanion,
     applyInstallJob: (job: InstallJob) => onStatus(job.message || "Sending…"),
+  }).catch((error) => {
+    // A restarted Mac App has forgotten the job: nothing is left to check, so
+    // the next Send starts over. Any other failure keeps the job to check again.
+    if (error?.code === "install_job_not_found") onJob(null);
+    throw error;
   });
   onJob(null);
   if (job.phase === "error") throw new Error(job.error?.nextAction || job.error?.message || job.message || "Theme transfer failed.");

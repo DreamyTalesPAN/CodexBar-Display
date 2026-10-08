@@ -102,3 +102,25 @@ func TestAIThemeVerificationDoesNotVerifyReplacementKey(t *testing.T) {
 		t.Fatal("stale verification authorized a replacement key")
 	}
 }
+
+// The connection check runs through the production transport, which the other
+// tests replace: every path it requests must be on that transport's allowlist.
+func TestAIThemeTransportAllowsEveryVerifiedModel(t *testing.T) {
+	var requested []string
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		requested = append(requested, r.URL.Path)
+		return aiResponse(200, `{"id":"`+path.Base(r.URL.Path)+`"}`), nil
+	}))
+	aiCall(s, "PUT", "/v1/ai-theme/providers/openai/credential", `{"apiKey":"fixture-key-first"}`)
+	if w := aiCall(s, "POST", "/v1/ai-theme/providers/openai/verify", ""); w.Code != 200 || len(requested) != 2 {
+		t.Fatalf("verification failed: %d %v", w.Code, requested)
+	}
+	for _, p := range requested {
+		if !aiThemeProviderPath(p) {
+			t.Fatalf("production transport rejects %s", p)
+		}
+	}
+	if aiThemeProviderPath("/v1/models") || aiThemeProviderPath("/v1/files") {
+		t.Fatal("unexpected provider path allowed")
+	}
+}

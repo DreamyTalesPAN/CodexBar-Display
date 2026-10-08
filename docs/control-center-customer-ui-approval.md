@@ -5408,3 +5408,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked why AI artwork is limited to the top of the display, said this is our own rule and not a technical one, and asked for a far more flexible editor: artwork over the whole screen or at the bottom, designs such as a virtual pet with no session and weekly limits, a name field at the top like in the old editor, the Details section under the display on the left instead of in the chat, and Create as an arrow inside the prompt box.
 - Approved customer-visible result: The AI can draw the picture over the whole 240x240 display or over the top 240x128, and decides from the request whether the design shows the session and weekly readouts; over a full-screen picture the readouts sit directly on it. Asking for a picture of another size draws a new one and replaces the layout. In the chat the picture can be moved, for example to the bottom, and its animated figures move with it. Figures can be placed anywhere on the display, and on VibeTV they show the picture and coloured areas behind them. The design name is edited in a field at the top left of the editor. Details for the selected element opens under the display. Create is an arrow button inside the prompt box. Connecting an OpenAI key checks both models the editor needs. Leaving with edits that could not be stored as a draft asks first. Asking the AI to redraw an imported image is declined in the chat instead of drawing an unrelated picture.
+
+
+## 2026-10-08 — Connection check and forgotten transfers
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Connecting an OpenAI key succeeds again: the check of the text model is no longer blocked before it leaves the Mac. When the Mac App was restarted during a transfer and no longer knows it, Send to VibeTV starts a new transfer instead of staying on Check transfer.
