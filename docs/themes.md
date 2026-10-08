@@ -6,7 +6,7 @@ on the active theme.
 
 ## Included Themes
 
-The current catalog includes eight live themes:
+The current catalog includes seven live themes:
 
 | Theme | Preview | Notes |
 | --- | --- | --- |
@@ -17,7 +17,6 @@ The current catalog includes eight live themes:
 | Pixel Battery | <img src="assets/vibetv-theme-pixel-battery.png" alt="Pixel Battery screen preview" width="180"> | Segmented batteries show usage for two windows. |
 | Tiny Office | <img src="assets/vibetv-theme-tiny-office.png" alt="Tiny Office screen preview" width="180"> | Pixel-art developer desk with an animated monitor; idle and coding scenes. See [tiny-office-theme.md](tiny-office-theme.md). |
 | Token Counter | <img src="assets/vibetv-theme-token-counter.png" alt="Token Counter screen preview" width="180"> | One large session token total with the reset countdown. |
-| Duo | <img src="assets/vibetv-theme-duo.png" alt="Duo screen preview" width="180"> | Two providers at once, each with its usage and reset countdown. |
 
 ## Included Screensavers
 
