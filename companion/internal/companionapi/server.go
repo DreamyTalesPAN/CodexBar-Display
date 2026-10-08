@@ -5252,6 +5252,11 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 			s.finishThemeInstall()
 		}
 	}()
+	// An upload names its slot in the URL, so a refusal while its file is read
+	// is filed under screensaver_install as well.
+	if step, ok := w.(*setupStepRecorder); ok {
+		step.stage = installText(strings.TrimSpace(r.URL.Query().Get("slot")), "theme_install")
+	}
 	req, ok := decodeThemeInstallRequest(w, r)
 	if !ok {
 		return
@@ -5272,7 +5277,8 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	// The setup log files a screensaver install under screensaver_install.
 	// Only the request names the slot, so the entry opens here and not at the
-	// route, which logs a refusal before this point as theme_install.
+	// route. A request that names the slot in its JSON body is still logged as
+	// theme_install when it is refused before this point.
 	stage := installText(req.Slot, "theme_install")
 	if step, ok := w.(*setupStepRecorder); ok {
 		step.stage = stage

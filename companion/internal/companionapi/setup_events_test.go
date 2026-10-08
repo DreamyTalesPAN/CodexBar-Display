@@ -493,3 +493,30 @@ func TestSetupLogFilesAScreensaverInstallUnderItsOwnStage(t *testing.T) {
 		t.Fatalf("refused screensaver install was filed as %s", got)
 	}
 }
+
+// The customer's own screensaver is uploaded with its slot in the URL. A file
+// the Mac App refuses while reading it was still filed under "Theme install".
+func TestSetupLogFilesARefusedScreensaverUploadUnderItsOwnStage(t *testing.T) {
+	refused := func(target string) setupEvent {
+		t.Helper()
+		server := newTestServer(t, runtimeconfig.Config{})
+		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader("not a zip"))
+		req.Header.Set("Content-Type", "application/zip")
+		server.Handler().ServeHTTP(httptest.NewRecorder(), req)
+		events := getSetupLog(t, server).Events
+		if len(events) != 1 || events[0].Status != "failed" || events[0].Code != "invalid_theme_pack" {
+			t.Fatalf("expected one refusal of the file for %s, got %+v", target, events)
+		}
+		return events[0]
+	}
+
+	if got := refused("/v1/themes/install?slot=screensaver&themeId=mine").Stage; got != "screensaver_install" {
+		t.Fatalf("refused screensaver upload was filed under %q", got)
+	}
+	// A theme upload keeps its stage.
+	for _, target := range []string{"/v1/themes/install?slot=live&themeId=mine", "/v1/themes/install?themeId=mine"} {
+		if got := refused(target).Stage; got != "theme_install" {
+			t.Fatalf("refused theme upload %s was filed under %q", target, got)
+		}
+	}
+}
