@@ -60,6 +60,9 @@ entry with:
 codexbar usage --json --provider <id> --source auto --status --web-timeout 8
 ```
 
+Windows leaves `--status` out: Win-CodexBar answers it in a form the adapter
+does not read.
+
 Another working provider cannot make the requested provider appear ready.
 Provider-specific source fallback, authentication checks, and quota/model
 mapping remain owned by CodexBar.
