@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
+import { useSidebar } from "@/components/ui/sidebar";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -37,7 +38,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ControlCenterBrand } from "@/components/control-center-brand";
 import { EditableThemePreview } from "./editable-theme-preview";
 import { friendlyElementName } from "./theme-studio-customer-labels";
 import { createDesignElement, isTypingTarget, LIVE_READINGS, pinnedElement, readingKey, setReading, type AddElementKind } from "./design-controls";
@@ -127,6 +127,14 @@ export function AIThemeStudioScreen({
     } : blank()),
   );
   const nativeInstall = Boolean(onInstallTheme);
+  const sidebar = useSidebar();
+  // Give the editor the width while it is open; the customer can still expand
+  // the navigation, so this runs once and restores the earlier state on leave.
+  useEffect(() => {
+    sidebar.setOpen(false);
+    return () => sidebar.setOpen(sidebar.open);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const document = state.present;
   const dirty = isThemeStudioDirty(state);
   const visibleInstallStatus = installStatus?.themeId === document.spec.themeId ? installStatus : null;
@@ -868,7 +876,7 @@ export function AIThemeStudioScreen({
   return (
     <div
       data-theme-studio-root
-      className="h-dvh overflow-y-auto [scrollbar-gutter:stable] bg-background p-3 text-foreground sm:p-6"
+      className="flex min-h-[calc(100svh-86px)] flex-col pb-6 text-foreground"
       onKeyDown={(event) => {
         if (isTypingTarget(event.target) || locked || panel || pending || event.nativeEvent.isComposing)
           return;
@@ -908,11 +916,9 @@ export function AIThemeStudioScreen({
         }
       }}
     >
-      <div className="mx-auto max-w-6xl">
-        <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
+        <header className="flex items-center gap-3">
           {onBackToLibrary ? <Button variant="ghost" size="icon" aria-label="Back to library" title="Back to library" disabled={locked} onClick={onBackToLibrary}><ArrowLeft /></Button> : null}
-          <ControlCenterBrand showTagline={false} />
-          <h1 className="text-sm font-medium">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h1>
+          <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
@@ -938,8 +944,9 @@ export function AIThemeStudioScreen({
             </Button>
           </div>
         </header>
-        {visibleInstallStatus ? <p role="status" className="px-6 pt-3 text-right text-sm text-muted-foreground">{copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost)}</p> : transferStatus ? <p role="status" className="px-6 pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
-          <main className="px-6 py-5">
+        {visibleInstallStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost)}</p> : transferStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
+          <main className="flex flex-1 flex-col pt-2">
+            <div className="my-auto py-4">
             <div className="mx-auto mb-4 flex max-w-[680px] items-center justify-end gap-2">
               <div className="flex gap-1">
                 <Button
@@ -1066,7 +1073,8 @@ export function AIThemeStudioScreen({
                 </Button>
               </div>
             ) : null}
-            <section className="mx-auto mt-6 flex w-full max-w-[680px] flex-col gap-3" aria-label="AI creation">
+            </div>
+            <section className="mx-auto flex w-full max-w-[680px] flex-col gap-3" aria-label="AI creation">
               <label
                 htmlFor="ai-scene-request"
                 className="sr-only"
@@ -1393,9 +1401,9 @@ export function AIThemeStudioScreen({
               </Collapsible>
             ) : null}
             </section>
-            <div className="space-y-3">
+            <div className="mx-auto mt-3 w-full max-w-[680px] space-y-3">
               {status && !busy ? (
-                <p role="status" className="sr-only">
+                <p role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
                   {status}
                 </p>
               ) : null}
@@ -1413,7 +1421,6 @@ export function AIThemeStudioScreen({
               ) : null}
             </div>
           </main>
-      </div>
 
       <Dialog
         open={panel !== null}

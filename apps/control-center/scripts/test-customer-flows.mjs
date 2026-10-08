@@ -10328,7 +10328,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
   await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
-  assert(await page.locator(".control-center-shell__sidebar").isHidden(), "Studio replaces the native shell");
+  await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
+  assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
   await page.getByLabel("Your idea", { exact: true }).fill("Make it blue");
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByLabel("OpenAI key", { exact: true }).fill("fixture-key-not-a-secret");
