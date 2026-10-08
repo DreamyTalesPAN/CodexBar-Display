@@ -20,7 +20,10 @@ source of truth.
   transports the same state to Control Center and VibeTV.
 - **Control Center** renders the local API. It does not fetch providers directly,
   keep a second usage cache, or decide provider freshness.
-- **VibeTV firmware** renders the generic frame it receives.
+- **VibeTV firmware** renders the generic frame it receives. It does not infer
+  activity. The one rule of its own is the expiry the frame itself declares:
+  when `activityTtlSecs` has passed without a fresh frame, the device shows not
+  working (`protocol/PROTOCOL.md`, Activity and Expiry).
 
 Before changing this path, identify the exact CodexBar version pinned by
 `scripts/fetch-codexbar.sh` and inspect that version's output and source.

@@ -135,6 +135,8 @@ Fields:
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
+- `activity` (string, optional): the Companion's verdict on whether the customer is working right now. There are two states: `coding` (working) and `idle` (not working). The firmware never infers activity: a frame without `activity`, or with any other value, is not working (see Activity and Expiry).
+- `activityTtlSecs` (number, optional): how long this frame's `activity` stays valid, in seconds **from receipt**. When that time passes without a fresh frame, the device shows `idle` on its own. Relative on purpose: the device needs no wall clock, only `millis()`. Missing or `0`: no bound, the activity holds until the next frame.
 - `time` (string, optional): pre-formatted local time `HH:MM`. **Fallback only.** The device runs its own SNTP clock and uses it for the `time`/`tm` binding; this string is used only while the device clock is not established, and only while it is still current (max age 2 minutes).
 - `date` (string, optional): pre-formatted local date `DD.MM.YYYY`. Same fallback rules as `time`.
 - `clockSchedule` (object, optional): the Companion's validated current UTC offset and, when they exist, the next two offset transitions. `currentOffsetMinutes` is the current quarter-hour offset; `transitionEpoch`/`offsetMinutes` are the first upcoming transition and its resulting offset; `followingTransitionEpoch`/`followingOffsetMinutes` are the immediately following pair. The firmware stores both 10-byte transition records and applies them in order against its own SNTP epoch. The device has no timezone database, POSIX TZ string, libc timezone function, or rule parser.
@@ -156,6 +158,53 @@ Theme registry source of truth:
 Golden frame fixtures:
 - `protocol/fixtures/v1/companion_frame_golden.json`
 - `protocol/fixtures/v2/reset_trust_golden.json`
+
+## Activity and Expiry
+
+```json
+{"v":2,"provider":"claude","label":"Claude","session":73,"weekly":45,"resetSecs":8028,"activity":"coding","activityTtlSecs":10}
+```
+
+Activity has exactly two states, working (`coding`) and not working (`idle`).
+The Companion decides which one applies and writes it into every frame; the
+firmware renders it and decides nothing itself.
+
+- **No inference.** A frame without `activity` is not working. Earlier
+  firmware filled the missing value in from forward usage progress; that
+  fallback is removed, because a quota refresh moved the numbers just as
+  coding did. An error frame reports nothing about activity.
+- **Expiry belongs to the device.** `activityTtlSecs` says for how long the
+  frame's activity is valid, counted from the moment the device received it.
+  When it has passed and no fresh frame arrived, the device sets its activity
+  to `idle` and repaints, exactly as if an `idle` frame had come. It does not
+  wait for a last frame from the Companion, which a stopped Companion, a
+  sleeping Mac or a pulled cable can never send. Everything else the last
+  frame carried stays on screen.
+- **The Companion sizes the bound, the firmware only counts.** The Companion
+  writes three frame intervals, and never less than 10 seconds: 10s on the
+  cable (2s cadence), 90s on WiFi (30s cadence), three times a configured
+  `--interval`. The bound guards against the writer going away, not against
+  routine switching, which the Companion's own frames do; a bound below the
+  cadence would flip a working device to idle between two healthy frames. The
+  firmware has no default and no constant of its own, and caps the value at
+  86400.
+- **Every accepted frame restarts the countdown** with its own value. After
+  the writer returns, the first frame is taken at its word; nothing from before
+  the gap is replayed.
+- **Compatibility.** A Companion from before this field sends no
+  `activityTtlSecs`: its frames never expire, as before. Firmware from before
+  this field ignores it and keeps the last activity until the next frame, as
+  before. Existing themes need no change: they keep reading `activity` with the
+  values `coding` and `idle`.
+- **Standby** is not driven by the expiry. Its clock counts from the last frame
+  that reported `coding`, so a device whose writer is gone falls to `idle` at
+  the bound and reaches the screensaver after `settings.standby.timeoutMinutes`
+  from that last working frame, like any idle device.
+- `/health` reports the result as `activity.state` (`coding`, `idle`, or
+  `null` before the first frame) and `activity.ttlSecs` (seconds the state
+  still holds without a fresh frame; `0` when there is no bound or it has run
+  out). When the bound runs out the firmware also prints `activity_expired` on
+  the serial line.
 
 ## Reset Freshness and Trust
 
@@ -334,7 +383,7 @@ Design constraints:
 When the ESP8266 is connected to WiFi, it serves:
 
 - `GET /hello`: returns the same Device Hello JSON shape as Cable Serial. For WiFi, `capabilities.transport.active` is `wifi`. `supported` contains both `usb` and `wifi` only on cutover-capable devices; a legacy WiFi VibeTV (`mode:"legacy-wifi-only"`) contains only `wifi`. `capabilities.transport.cableOnlyUpdates` is `true` on firmware that takes setup, pairing and updates only over the USB cable, `false` on a legacy WiFi VibeTV, and missing on older firmware. The Mac App offers USB-C for a VibeTV on WiFi only when it is `true`.
-- `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts. The `settings.standby` object reports the persisted standby configuration: `enabled`, `timeoutMinutes`, `brightnessPercent`, and `screensaverPath` (the selected slot reference, or `null` when nothing is selected). All of it survives a reboot. The top-level `standby` object reports live state instead of configuration: `active` (the screensaver is on screen right now) and `idleSecs` (seconds since the last frame that moved the usage numbers). Live state never appears in `/hello`, which is a boot snapshot.
+- `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts. The `settings.standby` object reports the persisted standby configuration: `enabled`, `timeoutMinutes`, `brightnessPercent`, and `screensaverPath` (the selected slot reference, or `null` when nothing is selected). All of it survives a reboot. The top-level `activity` object reports what the screen shows as activity right now: `state` (`coding`, `idle`, or `null` before the first frame) and `ttlSecs` (seconds that state still holds without a fresh frame, `0` without a bound or once it ran out). The top-level `standby` object reports live state instead of configuration: `active` (the screensaver is on screen right now) and `idleSecs` (seconds since the last frame that reported `activity:"coding"`). Live state never appears in `/hello`, which is a boot snapshot.
 - Sprite render diagnostics: a CBI/CBA asset that cannot be decoded sets `display.themeSpec.renderOk` to `false` with a stable `renderError` code and names the failing theme asset in `renderErrorAsset`. Codes are `cbi_header_invalid`, `cbi_palette_invalid`, `cbi_truncated`, `cbi_row_invalid`, `cba_render_failed`, `sprite_asset_missing`, `sprite_header_unsupported`, `sprite_unreadable`, and the transient `low_heap_cba_buffer` and `cba_buffer_contention`. The two transient codes leave `renderFailures` unchanged, because neither one decoded the asset: `low_heap_cba_buffer` means the frame buffer could not be allocated and has its own `cbaBufferAllocationFailures` counter, while `cba_buffer_contention` means a theme has more animated sprites contending for the single shared frame buffer than can make progress, so none of them completes a frame. Uploads reject a malformed sprite before it is promoted, so a stored sprite that fails to render indicates damage after the write rather than a bad upload.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
@@ -349,7 +398,7 @@ When the ESP8266 is connected to WiFi, it serves:
 
 Standby behavior:
 - Standby starts when no frame reporting **`activity:"coding"`** has arrived for `settings.standby.timeoutMinutes`. One firmware timer covers both "the Mac is off" (no frames at all) and "the Mac is on but nobody is coding" (frames arrive reporting `idle`). A frame that reports any other activity value, or an error frame, is not activity. The firmware takes the frame's verdict at its word instead of inferring one from usage numbers: percentages are whole numbers, so a customer working against a weekly quota can code for a long time before any value moves, and inferring would keep the screensaver up while they type. The Companion owns the decision, including its hold and idle-evidence rules.
-- Frames that omit `activity` entirely are still resolved by the firmware's existing fallback, which fills in `coding` on forward usage progress and `idle` otherwise. Token totals never make that fallback report `coding`, because history scans can move them without any provider consumption.
+- A frame that omits `activity` reports not working; the firmware has no fallback that infers it. A working state whose `activityTtlSecs` ran out does not touch this timer: it keeps counting from the last frame that reported `coding` (see Activity and Expiry).
 - The first frame that reports `coding` ends standby on the next firmware loop.
 - Both directions load the ThemeSpec from LittleFS; there is no second resident slot. The live theme choice is untouched — no flash write happens on a transition, and a reboot in standby comes back on the live theme.
 - `settings.standby.brightnessPercent` applies on entry, and `settings.display.brightnessPercent` is restored on wake.
@@ -521,7 +570,7 @@ Result:
   host never sends a frame to an unknown or foreign serial device.
 - WiFi Companion usage: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
 - Unknown `theme` values should be ignored by firmware.
-- Host should send at least every 60 seconds.
+- Host should send at least every 60 seconds, and well inside the `activityTtlSecs` it declares.
 - Firmware ticks down `resetSecs` locally between host updates, bounded by `resetTrustSecs` (see Reset Freshness and Trust).
 - Firmware owns `time`/`date` rendering. It runs its own SNTP client (outbound UDP/123 to `pool.ntp.org`) and never fetches public HTTPS manifests. Host-sent clock strings are a fallback; `clockSchedule` carries only the current offset and next two transitions needed for correctness without device-side timezone rules.
 - Companion may resend the last known good frame normally during short CodexBar outages (current default max age: 10 minutes). After that, it keeps provider identity and numeric progress carriers but sets `usageUnavailable:true`.
