@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
@@ -26,8 +27,12 @@ func TestPinnedCheckRunsAgainBeforeItReportsFailure(t *testing.T) {
 	pinnedRetryPause = 0
 
 	calls := 0
-	preparePinnedCLI = func(context.Context, string, bool) (string, error) {
+	started := time.Now()
+	var limits []time.Duration
+	preparePinnedCLI = func(ctx context.Context, _ string, _ bool) (string, error) {
 		calls++
+		deadline, _ := ctx.Deadline()
+		limits = append(limits, deadline.Sub(started))
 		if calls == 1 {
 			return "", errors.New("assess CodexBar: signal: killed")
 		}
@@ -38,6 +43,10 @@ func TestPinnedCheckRunsAgainBeforeItReportsFailure(t *testing.T) {
 	})
 	if err != nil || calls != 2 || strings.TrimSpace(out) != "/private/CodexBarCLI" {
 		t.Fatalf("a check that passes on its second run must succeed: calls=%d out=%q err=%v", calls, out, err)
+	}
+	// The app and the Control Center wait two minutes for this command.
+	if limits[0] > pinnedFirstRunLimit+time.Second || limits[1] <= limits[0] || limits[1] > 2*time.Minute+time.Second {
+		t.Fatalf("both runs must fit into the command's two minutes, got deadlines after %v", limits)
 	}
 	logged, _ := os.ReadFile(logPath)
 	if strings.Count(string(logged), "\n") != 1 || !strings.Contains(string(logged), "engine check failed: assess CodexBar: signal: killed") {

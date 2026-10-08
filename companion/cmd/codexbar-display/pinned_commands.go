@@ -20,15 +20,19 @@ func runPinnedCodexBar(args []string, validate bool) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	check := func() (string, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Both runs share the two minutes this command always had: the app's start
+	// and the Control Center's wait for a repair are sized for that.
+	budget, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	check := func(limit time.Duration) (string, error) {
+		ctx, cancel := context.WithTimeout(budget, limit)
 		defer cancel()
 		if validate {
 			return validatePinnedCLI(ctx, *app)
 		}
 		return preparePinnedCLI(ctx, *archive, *running)
 	}
-	bin, err := check()
+	bin, err := check(pinnedFirstRunLimit)
 	if err != nil {
 		// The check leans on macOS services (Gatekeeper, the first start of a
 		// new binary) that can stall on a busy Mac. The app then shows "Usage
@@ -38,7 +42,7 @@ func runPinnedCodexBar(args []string, validate bool) error {
 		// check fails twice.
 		notePinnedFailure(err)
 		time.Sleep(pinnedRetryPause)
-		bin, err = check()
+		bin, err = check(2 * time.Minute)
 	}
 	if err != nil {
 		notePinnedFailure(err)
@@ -53,6 +57,10 @@ var (
 	validatePinnedCLI = codexbar.ValidatePinnedCLI
 	pinnedRetryPause  = 3 * time.Second
 )
+
+// pinnedFirstRunLimit ends a first run that has stalled while the second can
+// still finish: the check takes 2 to 10 seconds, also on a busy Mac.
+const pinnedFirstRunLimit = 75 * time.Second
 
 // notePinnedFailure keeps why the engine check failed. The app only learns
 // that it failed, and the folder its "Open support log" button opens held no
