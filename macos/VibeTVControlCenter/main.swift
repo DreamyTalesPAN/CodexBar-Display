@@ -1415,7 +1415,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             title: "Starting Control Center",
             detail: "Checking for a Mac App update.",
             failed: false,
-            kind: .welcome
+            kind: .welcome,
+            welcomeLine: "checking for mac app update"
         )
         _ = updaterController
         let updater = updaterController.updater
@@ -2443,7 +2444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     /// Only the first log line is native. Preparing the background service is
     /// the only work this side of the app is doing, and claiming the WiFi scan
     /// or the provider read had started would report work that has not begun.
-    private func installWelcomeContent(in container: NSView) {
+    private func installWelcomeContent(in container: NSView, line: String) {
         let eyebrow = NSTextField(
             labelWithAttributedString: NSAttributedString(
                 string: "WELCOME TO",
@@ -2476,7 +2477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let brand = NSTextField(labelWithAttributedString: brandText)
         brand.alignment = .center
 
-        let logLabel = NSTextField(labelWithString: "> starting background service")
+        let logLabel = NSTextField(labelWithString: "> \(line)")
         logLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         logLabel.textColor = .vibetvMutedForeground
 
@@ -2567,7 +2568,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         detail: String,
         failed: Bool,
         retryTitle: String = "Try again",
-        kind: InstallationStatusKind = .standard
+        kind: InstallationStatusKind = .standard,
+        welcomeLine: String = "starting background service"
     ) {
         installationStatus = InstallationStatus(
             title: title,
@@ -2588,7 +2590,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         container.layer?.backgroundColor = NSColor.vibetvBackground.cgColor
 
         if kind == .welcome, !failed {
-            installWelcomeContent(in: container)
+            installWelcomeContent(in: container, line: welcomeLine)
             presentStatusContainer(container, in: window)
             return
         }
@@ -4328,7 +4330,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 title: "Updating the Mac App",
                 detail: "Installing version \(item.displayVersionString). VibeTV Control Center restarts by itself.",
                 failed: false,
-                kind: .welcome
+                kind: .welcome,
+                welcomeLine: "installing mac app \(item.displayVersionString)"
             )
         case .abandoned:
             // The start already went on. Installing now would restart the
