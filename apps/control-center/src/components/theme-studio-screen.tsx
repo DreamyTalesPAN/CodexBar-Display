@@ -201,6 +201,8 @@ export type ThemeStudioInstallPayload = {
 export type ThemeStudioScreenProps = {
   deviceCapabilities?: ThemeStudioDeviceCapabilities;
   initialTheme?: ThemeStudioEditorTheme;
+  /** Why the library would not install this either, e.g. the screensaver is off. */
+  installBlockedReason?: string;
   onBackToLibrary?: () => void;
   onInstallTheme?: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onRecoveryDiscarded?: () => void;
@@ -215,6 +217,7 @@ export type ThemeStudioScreenProps = {
 export function ThemeStudioScreen({
   deviceCapabilities,
   initialTheme,
+  installBlockedReason,
   onBackToLibrary,
   onInstallTheme,
   onRecoveryDiscarded,
@@ -329,7 +332,7 @@ export function ThemeStudioScreen({
     (dirty || !inLibrary
       ? saveBlockedReason ||
         `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`
-      : deviceValidation?.errors[0] || "");
+      : installBlockedReason || deviceValidation?.errors[0] || "");
   const visibleSelectedIndices = useMemo(
     () => normalizeSelectedIndices(selectedIndices, spec.primitives.length),
     [selectedIndices, spec.primitives.length],

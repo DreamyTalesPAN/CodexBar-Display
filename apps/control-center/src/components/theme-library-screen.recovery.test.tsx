@@ -7,7 +7,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
-import { ThemeLibraryScreen } from "./theme-library-screen";
+import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
 
 const stored = vi.hoisted(() => ({ cleared: 0, recovery: true }));
 
@@ -31,7 +31,9 @@ vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
 }));
 
 vi.mock("./theme-studio-screen", () => ({
-  ThemeStudioScreen: () => <p>Editor open</p>,
+  ThemeStudioScreen: ({ installBlockedReason }: { installBlockedReason?: string }) => (
+    <p>Editor open{installBlockedReason ? `, no send: ${installBlockedReason}` : ""}</p>
+  ),
 }));
 
 afterEach(() => {
@@ -40,7 +42,7 @@ afterEach(() => {
   stored.recovery = true;
 });
 
-function renderLibrary() {
+function renderLibrary(props: Partial<ThemeLibraryScreenProps> = {}) {
   render(
     <ThemeLibraryScreen
       busyAction={null}
@@ -53,6 +55,7 @@ function renderLibrary() {
       storefrontConfigured={false}
       themeInstallEnabled={false}
       themes={[]}
+      {...props}
     />,
   );
 }
@@ -82,4 +85,19 @@ it("opens a new theme at once when no unsaved draft waits", () => {
   fireEvent.click(screen.getByRole("button", { name: "Create Theme" }));
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(screen.getByText("Editor open")).toBeTruthy();
+});
+
+// The list does not install a screensaver while Show screensaver is off;
+// Screensaver Studio sent one all the same.
+it.each([
+  [false, "Editor open, no send: Turn on Show screensaver first."],
+  [true, "Editor open"],
+])("tells Screensaver Studio whether the screensaver is on (%s)", (enabled, editor) => {
+  stored.recovery = false;
+  renderLibrary({
+    standby: { brightnessPercent: 20, enabled, timeoutMinutes: 10 },
+    usage: "screensaver",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create Screensaver" }));
+  expect(screen.getByText(editor)).toBeTruthy();
 });

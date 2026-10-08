@@ -178,6 +178,8 @@ export type ThemeInstallStatus = {
   failure?: ApiError;
 };
 
+const SCREENSAVER_OFF_REASON = "Turn on Show screensaver first.";
+
 export type ThemeLibraryScreenProps = {
   themes: ThemeProduct[];
   usage?: ThemeStudioUsage;
@@ -230,6 +232,10 @@ export function ThemeLibraryScreen({
     (theme) => (theme.usage || "live") === usage,
   );
   const screensavers = usage === "screensaver";
+  // A screensaver is installed only while the screensaver is turned on, from
+  // the list and from Screensaver Studio alike.
+  const screensaverInstallLocked =
+    screensavers && Boolean(standby) && !standby?.enabled;
   // The sentences this page writes itself name what its list holds (issue
   // #558). Only those: a message from storage, the app or the Mac App can
   // carry the customer's own name for a theme and is shown as it came.
@@ -594,6 +600,9 @@ export function ThemeLibraryScreen({
       <ThemeStudioScreen
         deviceCapabilities={themeStudioCapabilitiesFromDevice(device)}
         initialTheme={editingTheme}
+        installBlockedReason={
+          screensaverInstallLocked ? SCREENSAVER_OFF_REASON : undefined
+        }
         onBackToLibrary={() => setEditingTheme(null)}
         onInstallTheme={onInstallCustomTheme}
         onRecoveryDiscarded={() => setRecovery(null)}
@@ -713,9 +722,7 @@ export function ThemeLibraryScreen({
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
-                  screensaverInstallLocked={
-                    screensavers && Boolean(standby) && !standby?.enabled
-                  }
+                  screensaverInstallLocked={screensaverInstallLocked}
                   device={device}
                   displayThemeId={displayTheme?.themeId}
                   item={theme}
@@ -1077,7 +1084,7 @@ function ThemeListItem({
   const retryingFailedInstall = visibleInstallStatus && installStatus?.phase === "error";
   const screensaverLockBlocker: ThemeInstallBlocker | null =
     screensaverInstallLocked
-      ? { reason: "Turn on Show screensaver first." }
+      ? { reason: SCREENSAVER_OFF_REASON }
       : null;
   // The VibeTV cannot draw its active theme (#498): the way out is another
   // theme, so that state must not block installing one.

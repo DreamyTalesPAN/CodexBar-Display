@@ -426,3 +426,12 @@ it("opens Mini theme at once in a draft without changes", async () => {
   expect(screen.queryByRole("alertdialog")).toBeNull();
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 });
+
+// Seen on the Windows app on 2026-10-09: with Show screensaver off the list
+// would not install a screensaver, and Screensaver Studio sent one anyway.
+it("does not send while the library says why nothing can be installed", () => {
+  const reason = "Turn on Show screensaver first.";
+  renderStudio("custom", { installBlockedReason: reason });
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(screen.getByText(reason)).toBeTruthy();
+});
