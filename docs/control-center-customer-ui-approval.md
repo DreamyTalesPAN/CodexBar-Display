@@ -5939,3 +5939,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new wording or control. Settings › Display mode, the line about the shortcut: as long as the app has not read usage (right after opening, or when the read failed), it reads only `Press ⌃⌥⌘P in any app to show the next provider.` (`Ctrl+Alt+Shift+P` on Windows), without a second sentence. Before, it added `This needs two providers with usage.` in that state, although a press worked. Once usage has been read, the line is as approved: with fewer than two providers that have usage it adds `This needs two providers with usage.`, with Automatic chosen it adds `This switches to Manual.`, with Manual chosen it adds nothing. The line for a shortcut that is not available is unchanged.
 - Scope: one condition in `apps/control-center/src/components/settings-screen.tsx`, a case in `settings-screen.test.tsx`, and this approval record. Checked with a unit test only; not seen in the built app.
 - What's new: none — a correction to the shortcut line under Display mode
+
+## 2026-10-09 — The Themes hint about token numbers is never cut off
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. It corrects a layout point an independent review found in the entry `Themes says why a token theme shows --` (#551).
+- Approved customer-visible result: No new wording or control. On Appearance › Themes, the line `Shows -- while token history is unavailable. See Usage.` under a theme with token numbers is shown in full on as many lines as it needs. Before, it was limited to two lines, so a narrow window could cut it off with `…` before `See Usage.` In a window where it fits on one or two lines nothing changes.
+- Scope: one class on that line in `apps/control-center/src/components/theme-library-screen.tsx`, an assertion in `theme-library-screen.custom.test.tsx`, and this approval record. Checked by the class in a unit test only; the row was not looked at in a narrow window.
+- What's new: none — a correction to the layout of the token hint on Themes

@@ -1098,7 +1098,7 @@ function ThemeListItem({
           <Badge variant="secondary">Custom</Badge>
         ) : null}
         {showsNoTokens ? (
-          <ItemDescription>
+          <ItemDescription className="line-clamp-none">
             Shows -- while token history is unavailable. See Usage.
           </ItemDescription>
         ) : null}

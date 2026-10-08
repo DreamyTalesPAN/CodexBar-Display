@@ -122,6 +122,10 @@ describe("ThemeLibraryScreen custom themes", () => {
     // The customer's own theme in this library draws no token number.
     expect(without.html.split(hint)).toHaveLength(2);
     expect(without.html.indexOf(hint)).toBeGreaterThan(without.html.indexOf("Live Theme"));
+    // In a narrow window the sentence takes three lines: it is not cut off.
+    const hintClass = /class="([^"]*)"[^>]*>\s*Shows --/.exec(without.html)?.[1] ?? "";
+    expect(hintClass).toContain("line-clamp-none");
+    expect(hintClass).not.toContain("line-clamp-2");
     await act(async () => without.cleanup());
 
     const known = await renderLibrary();
