@@ -40,6 +40,8 @@ private let hostedControlCenterURLString = "https://app.vibetv.shop"
 private let runtimeInitialHealthTimeout: TimeInterval = 8
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
+// /v1/status waits up to 12 seconds for a VibeTV on WiFi that does not answer.
+private let menuBarStatusRequestTimeout: TimeInterval = 20
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
@@ -1014,6 +1016,175 @@ private struct NativeSupportReportSnapshot: Sendable {
     let crashDirectoryPath: String
 }
 
+// Issue #220: the menu bar item. Its three lines are the Overview tiles
+// "Mac App", "VibeTV" and "Display", read from the same /v1/status.
+enum MenuBarIcon: Equatable {
+    case starting
+    case healthy
+    case actionRequired
+    case offline
+    case updating
+
+    // The state is a shape, never a colour: a struck-through TV, or a mark
+    // beside it.
+    var symbolName: String {
+        self == .offline ? "tv.slash" : "tv"
+    }
+
+    var mark: String {
+        switch self {
+        case .actionRequired: "!"
+        case .updating: "↑"
+        default: ""
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .starting: "VibeTV Control Center"
+        case .healthy: "VibeTV Control Center: VibeTV is connected"
+        case .actionRequired: "VibeTV Control Center: needs attention"
+        case .offline: "VibeTV Control Center: VibeTV is not connected"
+        case .updating: "VibeTV Control Center: VibeTV is updating"
+        }
+    }
+}
+
+struct MenuBarStatus: Equatable {
+    let icon: MenuBarIcon
+    let lines: [String]
+
+    static let starting = MenuBarStatus(
+        icon: .starting,
+        lines: ["Mac App: Starting", "VibeTV: Not connected", "Display: Not available"]
+    )
+}
+
+private struct MenuBarStatusPayload: Decodable {
+    struct Companion: Decodable {
+        let version: String?
+    }
+
+    struct Device: Decodable {
+        struct Stream: Decodable {
+            let healthy: Bool?
+            let running: Bool?
+            let errorCode: String?
+        }
+
+        struct Standby: Decodable {
+            let active: Bool?
+        }
+
+        struct Capabilities: Decodable {
+            struct Transport: Decodable {
+                let active: String?
+                let mode: String?
+            }
+
+            let transport: Transport?
+        }
+
+        let target: String?
+        let deviceId: String?
+        let connected: Bool?
+        let paired: Bool?
+        let ready: Bool?
+        let active: Bool?
+        let connectionState: String?
+        let capabilities: Capabilities?
+        let stream: Stream?
+        let standby: Standby?
+    }
+
+    struct Setup: Decodable {
+        let providerSelectionRequired: Bool?
+    }
+
+    struct FirmwareUpdate: Decodable {
+        let phase: String?
+    }
+
+    let companion: Companion?
+    let device: Device?
+    let setup: Setup?
+    let firmwareUpdate: FirmwareUpdate?
+}
+
+/// What the menu bar item shows for one /v1/status answer; nil when the
+/// background service did not answer. The conditions are the ones Overview
+/// uses (control-center-types.ts, overview-screen.tsx).
+func menuBarStatus(statusJSON: Data?) -> MenuBarStatus {
+    guard let statusJSON,
+          let status = try? JSONDecoder().decode(MenuBarStatusPayload.self, from: statusJSON) else {
+        return MenuBarStatus(
+            icon: .offline,
+            lines: ["Mac App: Not reachable", "VibeTV: Not connected", "Display: Not available"]
+        )
+    }
+    let device = status.device
+    let selected = device?.active == true
+    let pairingRejected = device?.paired == false
+    let connected = selected && device?.connected == true && !pairingRejected
+    let updating = status.firmwareUpdate?.phase == "installing"
+    let transport = device?.capabilities?.transport
+    let cable = (transport?.active == "usb" && transport?.mode == "cable")
+        || device?.target?.lowercased().hasPrefix("cable:") == true
+    // What the Control Center answers with a step of its own: choosing
+    // providers, choosing a theme, signing in to a provider, pairing again.
+    // Any other stream error is a display that is still coming up.
+    let attention = status.setup?.providerSelectionRequired == true
+        || device?.connectionState == "setup_required"
+        || ["provider_setup_required", "device_pairing_required"]
+            .contains(device?.stream?.errorCode ?? "")
+
+    let version = status.companion?.version ?? ""
+    let deviceID = device?.deviceId ?? ""
+    let vibeTV: String
+    let display: String
+    var icon = MenuBarIcon.healthy
+    if connected {
+        vibeTV = cable ? "Connected by Cable" : "Connected over WiFi"
+        if device?.connectionState == "display_render_failed" {
+            display = "Theme not shown"
+            icon = .actionRequired
+        } else if attention {
+            display = "Needs attention"
+            icon = .actionRequired
+        } else if device?.ready == true {
+            display = device?.standby?.active == true ? "Screensaver" : "Live"
+        } else if device?.stream?.running == true,
+                  device?.stream?.healthy != true,
+                  (device?.stream?.errorCode ?? "").isEmpty {
+            display = "Waiting for usage"
+        } else {
+            display = "Waiting for first image"
+        }
+    } else {
+        display = updating ? "Update running" : "Not available"
+        if updating {
+            vibeTV = "Restarting"
+        } else if !selected {
+            vibeTV = "Not set up"
+            icon = .actionRequired
+        } else if pairingRejected {
+            vibeTV = "Needs attention"
+            icon = .actionRequired
+        } else {
+            vibeTV = "Not connected"
+            icon = .offline
+        }
+    }
+    return MenuBarStatus(
+        icon: updating ? .updating : icon,
+        lines: [
+            version.isEmpty ? "Mac App: Online" : "Mac App: Online \(version)",
+            (deviceID.isEmpty ? "VibeTV: " : "VibeTV \(deviceID): ") + vibeTV,
+            "Display: " + display,
+        ]
+    )
+}
+
 struct PendingNativeUpdate: Codable, Equatable {
     let version: String
     let build: String
@@ -1344,7 +1515,7 @@ private final class ShadcnSpinnerView: NSView {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
     /// Suggested file names of downloads whose destination was chosen.
@@ -1373,6 +1544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationStatusFailed = false
     private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
     private var providerShortcutRegistered = false
+    private var menuBarItem: NSStatusItem?
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -1410,6 +1582,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         providerShortcutRegistered = registerProviderShortcut()
+        configureMenuBarItem()
 #if canImport(Sparkle)
         _ = updaterController
 #endif
@@ -2167,6 +2340,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NSApp.mainMenu = mainMenu
     }
 
+    // Issue #220: the menu bar item is there while the app runs. Nothing in
+    // the app watches the status, and the item starts no watch of its own: it
+    // asks once when the Control Center loads and each time its menu opens.
+    private func configureMenuBarItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.imagePosition = .imageLeading
+        let menu = NSMenu()
+        menu.delegate = self
+        for _ in MenuBarStatus.starting.lines {
+            // No action: a line to read, not to click.
+            menu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        }
+        menu.addItem(NSMenuItem.separator())
+        for (title, action) in [
+            ("Open VibeTV Control Center", #selector(openControlCenterFromMenuBar)),
+            ("Check for Updates…", #selector(checkForUpdates)),
+        ] {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            menu.addItem(entry)
+        }
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(
+            NSMenuItem(
+                title: "Quit VibeTV Control Center",
+                action: #selector(NSApplication.terminate(_:)),
+                keyEquivalent: ""
+            )
+        )
+        item.menu = menu
+        menuBarItem = item
+        showMenuBarStatus(.starting)
+    }
+
+    private func showMenuBarStatus(_ status: MenuBarStatus) {
+        guard let item = menuBarItem, let button = item.button else {
+            return
+        }
+        let image = NSImage(
+            systemSymbolName: status.icon.symbolName,
+            accessibilityDescription: nil
+        )
+        image?.isTemplate = true
+        button.image = image
+        button.title = status.icon.mark
+        button.toolTip = status.icon.accessibilityLabel
+        button.setAccessibilityLabel(status.icon.accessibilityLabel)
+        for (line, title) in zip(item.menu?.items ?? [], status.lines) {
+            line.title = title
+        }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshMenuBarStatus()
+    }
+
+    private func refreshMenuBarStatus() {
+        // While the app is still starting there is nothing to ask yet.
+        guard installationReady || installationStatusFailed else {
+            return
+        }
+        let request = URLRequest(
+            url: activeRuntimeOrigin.appendingPathComponent("v1/status"),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: menuBarStatusRequestTimeout
+        )
+        Task { [weak self] in
+            let answer = try? await URLSession.shared.data(for: request)
+            let answered = (answer?.1 as? HTTPURLResponse)?.statusCode == 200
+            self?.showMenuBarStatus(menuBarStatus(statusJSON: answered ? answer?.0 : nil))
+        }
+    }
+
+    // The same as a click on the app in the Dock.
+    @objc private func openControlCenterFromMenuBar() {
+        _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+    }
+
     @objc private func checkForUpdates() {
         guard !installationRequired else {
             presentInstallationRequiredAlert()
@@ -2870,6 +3121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func loadControlCenter(
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     ) {
+        refreshMenuBarStatus()
         let url = activeRuntimeOrigin.appendingPathComponent("control-center")
         activeNavigation = webView?.load(
             URLRequest(
