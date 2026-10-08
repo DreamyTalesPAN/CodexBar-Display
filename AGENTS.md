@@ -83,15 +83,34 @@ head and needs the runs again, so wait for CI and the automated review of the
 head first. For this review no signed candidate is built; the signed merge-gate
 candidate above stays what the merge gate and a release need.
 
-- **Mac:** a local build of the head. `npm run build:local` in
-  `apps/control-center`, copy `out-local` to
-  `companion/internal/companionapi/controlcenter_static`, build the Companion
-  with the candidate version in `buildinfo.Version`, then
-  `scripts/build-macos-control-center-app.sh --local-preview --companion-binary …`,
-  `codesign --force --deep --sign -` and
-  `scripts/build-macos-control-center-dmg.sh`. Build the firmware with
-  PlatformIO (`CODEXBAR_DISPLAY_FW_VERSION=<version> pio run -e esp8266_smalltv_st7789`)
-  and serve it with a manifest from a local port.
+- **Mac:** a local build of the head, with the head's SHA and the candidate
+  version stamped in, from the repository root:
+
+  ```bash
+  V=9999.0.<n>; OUT=tmp/quick; mkdir -p "$OUT/fw"
+  (cd apps/control-center && npm run build:local)
+  rm -rf companion/internal/companionapi/controlcenter_static
+  mkdir -p companion/internal/companionapi/controlcenter_static
+  cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+  git checkout -- companion/internal/companionapi/controlcenter_static/.gitkeep
+  P=github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo
+  (cd companion && CGO_ENABLED=0 go build \
+    -ldflags "-s -w -X $P.Version=$V -X $P.Commit=$(git rev-parse HEAD)" \
+    -o "../$OUT/codexbar-display" ./cmd/codexbar-display)
+  scripts/build-macos-control-center-app.sh --version "$V" --build <n> --local-preview \
+    --companion-binary "$OUT/codexbar-display" --output "$OUT/VibeTV Control Center.app"
+  codesign --force --deep --sign - "$OUT/VibeTV Control Center.app"
+  scripts/build-macos-control-center-dmg.sh --app "$OUT/VibeTV Control Center.app" \
+    --output "$OUT/VibeTV-Control-Center-$V.dmg" --version "$V"
+  (cd firmware_esp8266 && CODEXBAR_DISPLAY_FW_VERSION="$V" pio run -e esp8266_smalltv_st7789)
+  cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin "$OUT/fw/"
+  ```
+
+  Without `Commit` the Companion reports `dev` and the head cannot be told
+  from `/v1/status`; without `--version` the app builder refuses the Companion.
+  The copy empties `controlcenter_static`, so commit with exact paths
+  afterwards, never `git add -A companion`. Serve `$OUT/fw` with a manifest
+  from a local port.
 - **Both redirections, before the first app start:**
   `CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL` and
   `CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL` (a JSON file `{"tag_name":"v<app version>"}`).
@@ -116,8 +135,13 @@ candidate above stays what the merge gate and a release need.
   description: per platform and start the times, the build, the device, and
   what was not checked.
 - The purge leaves the app's web storage in place (`localStorage`, on the Mac
-  `~/Library/WebKit/shop.vibetv.control-center`, #571). A warm start after a
-  cold start inherits what the cold start stored there.
+  `~/Library/WebKit/shop.vibetv.control-center`, #571). Until the purge does it
+  itself: with the app closed, move that folder aside before the cold start
+  and again before the public app of the warm start is installed, and put the
+  first copy back after the last run (it can hold themes saved in Theme
+  Studio). The app creates a fresh one on its next start. Otherwise the cold
+  start reads what an earlier candidate stored, and the warm start reads what
+  the cold start stored.
 - Do not start the Mac's cold start and the Windows preparation in the same
   minute: the Windows VibeTV is on WiFi for a moment, the Mac App then finds
   two VibeTVs and waits for a choice.
