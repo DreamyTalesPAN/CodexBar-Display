@@ -44,15 +44,16 @@ var (
 	// A credential key whose value is a JSON object or array can contain short
 	// nested secrets. Redact the rest of that line before the pair scanner can
 	// consume only the opening delimiter and skip the nested key.
-	reportedStructuredCredential = regexp.MustCompile(`(?is)((?:^|[\s,{(\[?&#])["']?` + reportedCredentialName + `["']?\s*[:=]\s*)[\{\[].*$`)
+	reportedStructuredCredential = regexp.MustCompile(`(?is)((?:^|[\s,;{(\[?&#])["']?` + reportedCredentialName + `["']?\s*[:=]\s*)[\{\[].*$`)
 	// A credential-shaped key and its value: `Cookie: ...`, `sessionKey=...`,
 	// `"access_token": "..."`, `?token=...&session=...`, `#token=...`. Anchored
-	// at a line start or a separator -- a URL's `?`, `&` and `#` among them -- so a
+	// at a line start or a separator -- a URL's `?`, `&` and `#` and a list's
+	// `,` and `;` among them, so `path=~;token=...` loses its token -- so a
 	// host inside a URL (`https://auth.example.com:8443/login`) is not read as
 	// a key, and the value may carry an auth scheme word so `Authorization:
 	// Bearer x` collapses to one marker instead of two. A value ends at `&` or
 	// `#`, so the next pair is judged on its own.
-	reportedCredentialPair = regexp.MustCompile(`(?im)((?:^|[\s,{(\[?&#])["']?` + reportedCredentialName + `["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&#)\]}"']*[^\s,;&#)\]}"'.])`)
+	reportedCredentialPair = regexp.MustCompile(`(?im)((?:^|[\s,;{(\[?&#])["']?` + reportedCredentialName + `["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&#)\]}"']*[^\s,;&#)\]}"'.])`)
 	// One prose family is evidenced in the pinned engine and must survive:
 	// "Safari cookies: permission denied for ...", "Chrome cookies: missing
 	// auth cookie", "Firefox cookies: missing ory_session_* cookie". Without
@@ -63,9 +64,11 @@ var (
 	// The Windows engine joins what each source answered as "<source>:
 	// <error>" with the sources Web, OAuth and CLI. That "OAuth:" is a label
 	// in front of a sentence ("OAuth: OAuth error: ... rate limited"), not a
-	// credential key. Only a plain word after it is prose; `OAuth=...`, any
-	// longer key and any other value stay secrets.
-	reportedSourceLabel = regexp.MustCompile(`^[^A-Za-z]?OAuth:\s+[A-Za-z]+$`)
+	// credential key. Only a sentence after it is prose: a plain word and a
+	// second one behind a space. One token is a value however it is spelled,
+	// and `OAuth=...` and any longer key stay secrets.
+	reportedSourceLabel    = regexp.MustCompile(`^[^A-Za-z]?OAuth:\s+[A-Za-z]+$`)
+	reportedSentenceGoesOn = regexp.MustCompile(`^ [A-Za-z]`)
 	// The same credential with no key in front of it. It is the only rule that
 	// catches a short scheme-prefixed token (`Bearer abc12345`); a long one is
 	// caught by reportedOpaque.
@@ -100,17 +103,22 @@ func reportedProviderMessage(raw string) string {
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
 	message = reportedCookieHeader.ReplaceAllString(message, "${1}"+reportedRedacted)
 	message = reportedStructuredCredential.ReplaceAllString(message, "${1}\""+reportedRedacted+"\"")
-	message = reportedCredentialPair.ReplaceAllStringFunc(message, func(match string) string {
-		idx := reportedCredentialPair.FindStringSubmatchIndex(match)
-		if idx == nil {
-			return match
+	// By hand rather than with ReplaceAllStringFunc: the source label is
+	// judged by what follows the match.
+	var pairs strings.Builder
+	end := 0
+	for _, idx := range reportedCredentialPair.FindAllStringSubmatchIndex(message, -1) {
+		match, prefix := message[idx[0]:idx[1]], message[idx[2]:idx[3]]
+		pairs.WriteString(message[end:idx[0]])
+		end = idx[1]
+		if reportedCookieProse.MatchString(match[idx[2]-idx[0]:]) ||
+			reportedSourceLabel.MatchString(match) && reportedSentenceGoesOn.MatchString(message[end:]) {
+			pairs.WriteString(match)
+			continue
 		}
-		prefix, value := match[idx[2]:idx[3]], match[idx[3]:]
-		if reportedCookieProse.MatchString(prefix+value) || reportedSourceLabel.MatchString(match) {
-			return match
-		}
-		return prefix + reportedRedacted
-	})
+		pairs.WriteString(prefix + reportedRedacted)
+	}
+	message = pairs.String() + message[end:]
 	message = reportedBearer.ReplaceAllString(message, "${1} "+reportedRedacted)
 	message = reportedEmail.ReplaceAllString(message, reportedRedacted)
 	return reportedOpaque.ReplaceAllStringFunc(message, func(run string) string {

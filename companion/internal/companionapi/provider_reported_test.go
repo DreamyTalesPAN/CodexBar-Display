@@ -117,6 +117,15 @@ func TestReportedProviderMessageRedactsEveryHomePath(t *testing.T) {
 		},
 		// Two homes in one sentence: the first must not swallow the second.
 		{in: "Tried /Users/paul and /Users/anna/Library/x", want: "Tried ~~/Library/x"},
+		// A credential right behind a path is still one: the path rule ends
+		// at ";" and ",", and the pair rule takes over from there.
+		{in: "path=/Users/jane;token=abcdef", want: "path=~;token=[redacted]"},
+		{in: "path=/Users/jane,token=abcdef", want: "path=~,token=[redacted]"},
+		// "&" can be part of a folder name, so the path rule takes it along.
+		{in: "path=/Users/jane&token=abcdef", want: "path=~"},
+		{in: "path=/Users/jane/x&token=abcdef", want: "path=~/x&token=[redacted]"},
+		{in: `path=C:\Users\Jane Doe;password=letmein;session=abc`, want: "path=~;password=[redacted];session=[redacted]"},
+		{in: `dir=/home/jane;auth={"k":"v"}`, want: `dir=~;auth=[redacted]`},
 		// A web address is not a home folder.
 		{
 			in:   "Open https://example.com/home/dashboard to sign in.",
@@ -146,6 +155,13 @@ func TestReportedProviderMessageKeepsTheSourceLabelOAuth(t *testing.T) {
 		// Only a word is a sentence's start. Anything else after the label,
 		// and every other key with "auth" in it, is still a credential.
 		{in: "OAuth: abc123def", want: "OAuth: [redacted]"},
+		// A sentence has a second word. One token is a value, also when it
+		// is all letters.
+		{in: "OAuth: hunterpassword", want: "OAuth: [redacted]"},
+		{in: "OAuth: AbCdEfGhIjKlMnOpQrStUvWxYz", want: "OAuth: [redacted]"},
+		{in: "Web: No cookies; OAuth: hunterpassword; CLI: Parse error", want: "Web: No cookies; OAuth: [redacted]; CLI: Parse error"},
+		{in: "OAuth: hunterpassword.", want: "OAuth: [redacted]."},
+		{in: "OAuth: hunter 12345678", want: "OAuth: [redacted] 12345678"},
 		{in: "OAuth: Bearer abcdefgh12", want: "OAuth: [redacted]"},
 		{in: "oauth_token: letmein", want: "oauth_token: [redacted]"},
 		{in: "OAuth=letmein", want: "OAuth=[redacted]"},
