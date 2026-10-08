@@ -85,6 +85,10 @@ type ProviderReadiness struct {
 	// /v1/status or retry responses; the preferences adapter redacts it before
 	// exposing it.
 	Reported string `json:"-"`
+	// Service is the provider's own status page, read by the check of one
+	// provider the customer starts ("--status"). The checks answered from
+	// serve's reading carry none, so this is how an outage reaches the row.
+	Service ProviderServiceState `json:"-"`
 	// Cause names where a config_error came from and carries the raw reason
 	// ("inventory: ...", "provider message: ..."). Internal like Reported: the
 	// Companion redacts it and writes it to its log only (#527).
@@ -473,6 +477,7 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			"usage", "--json",
 			"--provider", exactProvider,
 			"--source", "auto",
+			"--status",
 			"--web-timeout", "8",
 		)
 	} else {
@@ -667,6 +672,7 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 			provider.Cause = "provider message: " + reported
 		}
 		provider.Source = safeProviderSource(firstString(payload, "source"))
+		provider.Service = classifyProviderService(firstStringAtPaths(payload, "status.indicator"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
 			provider.CollectedAt = collectedAt.Format(time.RFC3339)
 		}

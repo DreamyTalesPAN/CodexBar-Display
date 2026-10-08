@@ -36,6 +36,7 @@ type providerReadinessRecord struct {
 	Detail    string
 	Reported  string
 	SignInURL string
+	Service   codexbar.ProviderServiceState
 	CheckedAt time.Time
 }
 
@@ -558,6 +559,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 		Detail:    exactReadiness.Detail,
 		Reported:  exactReadiness.Reported,
 		SignInURL: exactReadiness.SignInURL,
+		Service:   exactReadiness.Service,
 		CheckedAt: checkedAt,
 	}
 
