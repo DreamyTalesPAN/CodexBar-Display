@@ -471,7 +471,7 @@ expected = {
     "CFBundleVersion": "146",
     "CFBundlePackageType": "APPL",
     "LSMinimumSystemVersion": "14.0",
-    "SUEnableAutomaticChecks": False,
+    "SUEnableAutomaticChecks": True,
     "SUFeedURL": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml",
     "SUPublicEDKey": "2txeIAd+ofTbffzPR5hy5J4lvGX8LGclIdG82es1qPA=",
     "VibeTVLocalPreviewRuntime": False,
@@ -703,6 +703,10 @@ required_source = [
     '"--max-time",',
     'title: "Create report"',
     'title: "Starting Control Center"',
+    'detail: "Checking for a Mac App update."',
+    'title: "Updating the Mac App"',
+    "updater.checkForUpdatesInBackground()",
+    "updaterController.updater.automaticallyDownloadsUpdates = false",
     "retryTitle: status.retryTitle",
     "kind: status.kind",
     "case .failure(let failure):",
@@ -785,12 +789,17 @@ launch_end = source.find("func application(_ application:", launch_start)
 launch_method = source[launch_start:launch_end]
 install_guard = launch_method.find("guard !installationRequired else")
 install_alert = launch_method.find("presentInstallationRequiredAlert()", install_guard)
-sparkle_start = launch_method.find("_ = updaterController", install_guard)
-runtime_start = launch_method.find("Task {", install_guard)
-runtime_start = launch_method.find("startRuntimePreparation()", install_guard)
-if not (0 <= install_guard < install_alert < sparkle_start < runtime_start):
+# launch_method reaches to the next delegate method, so it includes the
+# launch update check the launch hands over to.
+update_check = launch_method.find("startLaunchUpdateCheck()", install_guard)
+sparkle_start = launch_method.find("_ = updaterController", update_check)
+runtime_start = launch_method.find("startRuntimePreparation()", sparkle_start)
+if not (
+    0 <= install_guard < install_alert < update_check < sparkle_start
+    < runtime_start
+):
     raise SystemExit(
-        "native app must stop at the install dialog before starting Sparkle, the runtime, or WebView"
+        "native app must stop at the install dialog before starting Sparkle, and check for its own update before the runtime or WebView"
     )
 
 prepare_start = source.find("private func startRuntimePreparation()")

@@ -39,6 +39,8 @@ private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
+// Without an answer from the update feed the start goes on after this limit.
+private let launchUpdateCheckLimitSeconds = 5
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeUnregistrationQuiesceTimeout: TimeInterval = 20
 private let runtimeUnregistrationQuiescePollDelay: Duration = .milliseconds(250)
@@ -1359,6 +1361,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         updaterDelegate: self,
         userDriverDelegate: nil
     )
+    // The Mac App installs its own update before it looks for a VibeTV
+    // (#561). `waiting` and `installing` hold the start back; `abandoned`
+    // means the feed did not answer in time and the start went on without it.
+    private enum LaunchUpdateCheck {
+        case waiting, installing, abandoned, done
+    }
+    private var launchUpdateCheck = LaunchUpdateCheck.done
 #endif
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
@@ -1390,16 +1399,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 #if canImport(Sparkle)
-        _ = updaterController
+        startLaunchUpdateCheck()
+#else
+        startRuntimePreparation()
 #endif
+    }
+
+#if canImport(Sparkle)
+    private func startLaunchUpdateCheck() {
+        // Sparkle installs without its dialog only while this default is set,
+        // and reads it when the updater is created.
+        UserDefaults.standard.set(true, forKey: "SUAutomaticallyUpdate")
+        launchUpdateCheck = .waiting
         presentInstallationStatus(
             title: "Starting Control Center",
-            detail: "Checking the Mac App and your last connected VibeTV.",
+            detail: "Checking for a Mac App update.",
             failed: false,
             kind: .welcome
         )
-        startRuntimePreparation()
+        _ = updaterController
+        let updater = updaterController.updater
+        // A rehearsal turns the automatic checks off to keep the baseline app.
+        guard updater.automaticallyChecksForUpdates else {
+            finishLaunchUpdateCheck(timedOut: false)
+            return
+        }
+        updater.checkForUpdatesInBackground()
+        Task { @MainActor [weak self] in
+            try? await Task<Never, Never>.sleep(
+                for: .seconds(launchUpdateCheckLimitSeconds)
+            )
+            self?.finishLaunchUpdateCheck(timedOut: true)
+        }
     }
+
+    private func finishLaunchUpdateCheck(timedOut: Bool) {
+        let previous = launchUpdateCheck
+        if timedOut {
+            guard previous == .waiting else {
+                return
+            }
+            launchUpdateCheck = .abandoned
+        } else {
+            guard previous != .done else {
+                return
+            }
+            launchUpdateCheck = .done
+            // Later checks show Sparkle's dialog: a silent install would
+            // restart the app under a customer who is using it.
+            updaterController.updater.automaticallyDownloadsUpdates = false
+        }
+        if previous != .abandoned {
+            startRuntimePreparation()
+        }
+    }
+#endif
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard !installationRequired else {
@@ -4254,11 +4308,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     "VibeTV Control Center could not stop its background runtime. Quit and reopen the app, then run the update again."
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
+                finishLaunchUpdateCheck(timedOut: false)
                 return
             }
             installHandler()
         }
         return true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        shouldProceedWithUpdate item: SUAppcastItem,
+        updateCheck: SPUUpdateCheck
+    ) throws {
+        switch launchUpdateCheck {
+        case .waiting:
+            launchUpdateCheck = .installing
+            presentInstallationStatus(
+                title: "Updating the Mac App",
+                detail: "Installing version \(item.displayVersionString). VibeTV Control Center restarts by itself.",
+                failed: false,
+                kind: .welcome
+            )
+        case .abandoned:
+            // The start already went on. Installing now would restart the
+            // app in the middle of setup; the next check offers the update.
+            throw CocoaError(.userCancelled)
+        case .installing, .done:
+            break
+        }
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        willInstallUpdateOnQuit item: SUAppcastItem,
+        immediateInstallationBlock immediateInstallHandler: @escaping () -> Void
+    ) -> Bool {
+        guard launchUpdateCheck == .installing else {
+            return false
+        }
+        immediateInstallHandler()
+        return true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+        error: Error?
+    ) {
+        finishLaunchUpdateCheck(timedOut: false)
     }
 #endif
 
