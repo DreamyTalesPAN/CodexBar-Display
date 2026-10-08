@@ -142,21 +142,22 @@ function diffAddsApprovalEvidence(diff) {
   const addedLines = lines(diff)
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
     .map((line) => line.slice(1).trim());
-  // One block per added entry: its "## " heading starts it. Each one answers
-  // for itself, also when one change adds several.
+  // One block per added entry: its "## " heading starts it. Each one holds its
+  // own approval lines and answers for itself, also when one change adds
+  // several.
   const added = addedLines.join("\n");
   const entries = added.split(/^(?=## )/m).filter((entry) => entry.startsWith("## "));
-  return (
-    APPROVAL_PREFIXES.every((prefix) =>
-      addedLines.some((line) => line.startsWith(prefix)),
-    ) &&
-    [added, ...entries].every((text) => {
-      const whatsNewLines = text
-        .split("\n")
-        .filter((line) => line.startsWith(WHATS_NEW_PREFIX));
-      return whatsNewLines.length > 0 && whatsNewLines.every(namesWhatsNew);
-    })
-  );
+  return [added, ...entries].every((text) => {
+    const textLines = text.split("\n");
+    const whatsNewLines = textLines.filter((line) => line.startsWith(WHATS_NEW_PREFIX));
+    return (
+      APPROVAL_PREFIXES.every((prefix) =>
+        textLines.some((line) => line.startsWith(prefix)),
+      ) &&
+      whatsNewLines.length > 0 &&
+      whatsNewLines.every(namesWhatsNew)
+    );
+  });
 }
 
 function namesWhatsNew(line) {

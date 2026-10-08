@@ -247,6 +247,20 @@ test_every_added_entry_needs_its_whats_new_line() {
   expect_gate_success "$repo"
 }
 
+# Two entries in one change that only together hold both approval lines.
+test_every_added_entry_needs_its_approval_lines() {
+  local repo="${TMP_ROOT}/approval-lines-split"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  printf '\n## First half\n\n- User approval: Explicit test approval.\n%s\n\n## Second half\n\n- Approved customer-visible result: Second half\n%s\n' \
+    "$WHATS_NEW_NONE" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Approve in two halves"
+  expect_gate_due "$repo"
+}
+
 test_pull_request_merge_commit_uses_pr_head() {
   local repo="${TMP_ROOT}/pull-request-merge"
   setup_repo "$repo"
@@ -285,6 +299,7 @@ test_whats_new_entry_id_resets_gate
 test_unknown_whats_new_entry_id_does_not_reset_gate
 test_whats_new_entry_id_is_named_by_one_approval_only
 test_every_added_entry_needs_its_whats_new_line
+test_every_added_entry_needs_its_approval_lines
 test_pull_request_merge_commit_uses_pr_head
 
 printf 'control-center UI review gate tests passed\n'
