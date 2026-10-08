@@ -5090,6 +5090,10 @@ func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
 }
 
 func TestDMGControlCenterRetiresExternalBrowserUI(t *testing.T) {
+	// The page names the host; this test checks the Mac wording on every runner.
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	providerCopyGOOS = "darwin"
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.installationMode = "dmg"
 	server.controlCenterFS = fstest.MapFS{
