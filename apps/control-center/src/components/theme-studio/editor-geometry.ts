@@ -120,11 +120,15 @@ export function setPrimitiveField(
   // A bar that becomes an arc gets its ring in the same change, so one Undo
   // takes all of it back: three quarters of a circle open at the bottom, as
   // thick as the box allows up to 12 px.
-  if (field === "progressStyle" && value === "arc" && primitive.arcSweep === undefined) {
+  // A bar that kept part of an arc, as an imported one may, gets only what is
+  // missing; a start angle that is left out means 12 o'clock.
+  if (field === "progressStyle" && value === "arc") {
     const { height, width } = primitiveBounds(primitive);
-    primitive.arcStart = 225;
-    primitive.arcSweep = 270;
-    primitive.arcThickness = Math.max(1, Math.min(12, Math.floor(Math.min(width, height) / 2)));
+    if (primitive.arcSweep === undefined) {
+      primitive.arcStart ??= 225;
+      primitive.arcSweep = 270;
+    }
+    primitive.arcThickness ??= Math.max(1, Math.min(12, Math.floor(Math.min(width, height) / 2)));
   }
 }
 

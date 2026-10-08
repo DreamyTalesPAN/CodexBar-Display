@@ -5,7 +5,9 @@ import {
   defaultPrimitive,
   primitiveBounds,
   primitiveTitle,
+  setPrimitiveField,
 } from "./editor-geometry";
+import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
 
 describe("bindingDisplayLabel", () => {
   it("shows customer labels for stored usage-window bindings", () => {
@@ -74,5 +76,30 @@ describe("primitiveBounds", () => {
       primitiveBounds({ fontSize: 2, text: "Text", type: "text", x: 32, y: 32 })
         .width,
     ).toBe(48);
+  });
+});
+
+describe("setPrimitiveField", () => {
+  const bar = (): ThemeStudioPrimitive => ({
+    type: "progress", x: 0, y: 0, width: 100, height: 20, binding: "session",
+  });
+
+  it("gives a bar that becomes an arc its ring in the same change", () => {
+    const primitive = bar();
+    setPrimitiveField(primitive, "progressStyle", "arc");
+    expect(primitive).toMatchObject({ arcStart: 225, arcSweep: 270, arcThickness: 10 });
+  });
+
+  // An imported bar may carry part of an arc. Without a thickness the arc
+  // cannot be saved; a sweep without a start angle starts at 12 o'clock.
+  it("adds only what an arc is missing", () => {
+    const primitive = { ...bar(), arcSweep: 180 };
+    setPrimitiveField(primitive, "progressStyle", "arc");
+    expect(primitive).toMatchObject({ arcSweep: 180, arcThickness: 10 });
+    expect(primitive.arcStart).toBeUndefined();
+
+    const noSweep = { ...bar(), arcStart: 90, arcThickness: 4 };
+    setPrimitiveField(noSweep, "progressStyle", "arc");
+    expect(noSweep).toMatchObject({ arcStart: 90, arcSweep: 270, arcThickness: 4 });
   });
 });

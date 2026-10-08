@@ -5652,3 +5652,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: Not separately approved by Paul. Correction from the automated review of head `5a849d94` on 2026-10-08 to the entry `Theme Studio and the previews know a progress element drawn as an arc (#414)` above, whose fields he has not seen.
 - Approved customer-visible result: No wording, no new field. Inspector › Style › `Arc` on a bar without arc values sets the style and the ring's start angle, sweep and thickness as one change. One Undo takes the whole arc back to the bar. Before, the choice was four changes, and one Undo removed only the thickness and left an arc that could not be saved or exported until three more Undos.
 - Scope: `setPrimitiveField` in `apps/control-center/src/components/theme-studio/editor-geometry.ts`, the Style select in `primitive-inspector.tsx`, the test in `primitive-inspector.test.tsx` (its harness now applies changes with `setPrimitiveField`, as the editor does, and counts them), and this approval record; checked with unit tests only.
+
+## 2026-10-08 — Theme Studio: a bar that kept part of an arc gets what is missing
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `78773bbf` on 2026-10-08 to the entry `Theme Studio: choosing Arc is one step of Undo` above.
+- Approved customer-visible result: No wording, no new field. Inspector › Style › `Arc` on a bar that already holds a sweep but no thickness, as an imported theme may, adds the thickness in the same change, so the theme can be saved and exported; the sweep it holds stays, and a start angle that is left out stays left out (12 o'clock). A bar that holds a start angle or a thickness but no sweep keeps them and gets the sweep. A bar without any arc value gets all three, as before.
+- Scope: `setPrimitiveField` in `apps/control-center/src/components/theme-studio/editor-geometry.ts`, two tests in `editor-geometry.test.ts`, and this approval record; checked with unit tests only.
+- What's new: none — a fix inside the arc fields this pull request adds
