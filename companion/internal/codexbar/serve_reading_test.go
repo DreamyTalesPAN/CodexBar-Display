@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	dashboardusage "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar/dashboard"
 )
 
 // serveReadingEngine is a Windows engine whose inventory has Claude and Codex
@@ -171,44 +173,64 @@ func TestProviderCheckAsksTheCLIWheneverServeDoesNotAnswerForIt(t *testing.T) {
 	}
 }
 
-// A provider that was just switched on is not in serve's reading yet. Its
-// check must not wait for serve.
-func TestProviderSwitchedOnIsProbedUntilServeReadsIt(t *testing.T) {
-	started := serveReadingEngine(t, true, strings.Replace(claudeAndCodexOn, `"Gemini","enabled":false`, `"Gemini","enabled":true`, 1))
-	collectFromServe(t)
-	poll := WithServeReading(context.Background())
-
-	if _, err := FetchProviderSettings(poll); err != nil {
-		t.Fatal(err)
-	}
-	ProbeProviderSetup(poll, t.TempDir())
-	probes := strings.Join(usageProbes(*started), "\n")
-	if strings.Count(probes, "--provider gemini") != 2 {
-		t.Fatalf("the new provider must be asked by both checks: %q", probes)
-	}
-}
-
 // The item serve gives must say what the collector made of it; otherwise it
 // is no reading and the CLI is asked.
 func TestServeItemThatContradictsTheCollectorIsNoReading(t *testing.T) {
+	claude := dashboardusage.DashboardProvider{ID: "claude"}
+	// The collector read windows; the probe parser would call this "no usage".
+	if item, ok := serveUsageItem(claude, map[string]any{"provider": "claude", "usage": map[string]any{}}, true); ok {
+		t.Fatalf("an item without the usage the collector read became a reading: %s", item)
+	}
+	if item, ok := serveUsageItem(claude, nil, false); ok {
+		t.Fatalf("a provider serve gave no item for became a reading: %s", item)
+	}
+}
+
+// Serve may still list the providers from before a switch: its own settings
+// read comes later, and a collection can be under way while the customer
+// switches. The setup check then lacked the new provider and started no probe
+// for it on the Mac, where it took serve's list for the switched-on set.
+func TestProviderSwitchedOnIsProbedWhileServeStillListsTheOldSet(t *testing.T) {
+	geminiOn := strings.Replace(claudeAndCodexOn, `"Gemini","enabled":false`, `"Gemini","enabled":true`, 1)
+	for name, perProvider := range map[string]bool{"Windows": true, "Mac": false} {
+		t.Run(name, func(t *testing.T) {
+			started := serveReadingEngine(t, perProvider, geminiOn)
+			collectFromServe(t)
+			poll := WithServeReading(context.Background())
+
+			if _, err := FetchProviderSettings(poll); err != nil {
+				t.Fatal(err)
+			}
+			if len(usageProbes(*started)) == 0 {
+				t.Fatal("the provider rows were answered without the provider that was switched on")
+			}
+			*started = nil
+			ProbeProviderSetup(poll, t.TempDir())
+			if len(usageProbes(*started)) == 0 {
+				t.Fatal("the setup status was answered without the provider that was switched on")
+			}
+		})
+	}
+}
+
+// A serve read that began before a provider switch ends after it and must not
+// bring back the answer the switch ended.
+func TestServeReadUnderWayDuringAProviderSwitchIsNoReading(t *testing.T) {
 	serveReadingEngine(t, true, claudeAndCodexOn)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == dashboardSnapshotPath {
-			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[
-				{"id":"claude","windows":[{"kind":"session","label":"Session","usedPercent":8}]},
-				{"id":"codex","windows":[]}
-			]}`))
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[{"id":"claude","windows":[{"kind":"session","label":"Session","usedPercent":8}]}]}`))
 			return
 		}
-		// Claude has windows in the snapshot and none here; Codex has no item.
-		_, _ = w.Write([]byte(`[{"provider":"claude","usage":{}}]`))
+		forgetServeUsage() // the switch, while serve is answering
+		_, _ = w.Write([]byte(`[{"provider":"claude","usage":{"primary":{"usedPercent":8,"windowMinutes":300}}}]`))
 	}))
 	defer server.Close()
 	if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if answer, ok := serveUsageAnswer(WithServeReading(context.Background()), nil); ok {
-		t.Fatalf("an unclear serve answer stood in for a probe: %s", answer)
+	if answer, ok := serveUsageAnswer(WithServeReading(context.Background()), []ProviderSetting{{ID: "claude", Enabled: true}}); ok {
+		t.Fatalf("a reading from before the switch stood in for a probe: %s", answer)
 	}
 }

@@ -110,22 +110,27 @@ func readProviderInventory(ctx context.Context, timeout time.Duration, bin strin
 // inventory and asks each switched-on provider on its own, side by side, then
 // joins the answers into the same JSON array the Mac CLI returns.
 func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, extra ...string) ([]byte, error) {
-	if !providerProbePerProvider {
-		if answer, ok := serveUsageAnswer(ctx, nil); ok {
-			return answer, nil
-		}
+	if !providerProbePerProvider && !UsesServeReading(ctx) {
 		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
 	}
+	// Serve's reading answers only for the providers the inventory has
+	// switched on, on the Mac too: what serve lists may still be the set from
+	// before a switch.
 	raw, err := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
+	var inventory []ProviderSetting
+	if err == nil {
+		inventory, err = parseProviderSettings(raw)
+	}
+	if err == nil {
+		if answer, ok := serveUsageAnswer(ctx, inventory); ok {
+			return answer, nil
+		}
+	}
+	if !providerProbePerProvider {
+		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read provider inventory: %w", err)
-	}
-	inventory, err := parseProviderSettings(raw)
-	if err != nil {
-		return nil, fmt.Errorf("read provider inventory: %w", err)
-	}
-	if answer, ok := serveUsageAnswer(ctx, inventory); ok {
-		return answer, nil
 	}
 	// One hanging provider CLI must not hold every provider after it for
 	// the collector's 300 s default; each probe gets the same short cap as
