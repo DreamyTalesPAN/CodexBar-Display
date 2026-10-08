@@ -11,7 +11,9 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -570,26 +572,68 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 }
 
 // storedThemeRefusal is the firmware's 400 answer for a stored spec it will not
-// activate (activateStoredThemePath in firmware_esp8266/src/main.cpp):
-// readStoredThemeSpec refuses the file size, CompileThemeSpecObject a
-// primitive array above the limit. The firmware also refuses a spec without
-// id/rev or without one drawable primitive; that is not mirrored here.
+// activate (activateStoredThemePath in firmware_esp8266/src/main.cpp), in the
+// firmware's order: readStoredThemeSpec refuses an empty or oversized file,
+// themeSpecMetadata a spec that is no JSON object or lacks an id or a positive
+// whole revision, CompileThemeSpecObject in
+// firmware_shared/theme_spec_renderer_core.h a primitive array that is missing,
+// empty, above the limit or without one primitive of a type CompilePrimitive
+// knows.
+//
+// Not mirrored: CompilePrimitive's rules for a primitive of a known type
+// (dimensions, font size, slots, asset paths), so a spec in which none compiles
+// activates here, and the limits on GIF primitives, string bytes and provider
+// assets of a whole spec. JSON is judged by Go's parser and refused as "bad
+// theme json": ArduinoJson appends its error name, answers with a later wording
+// where its filtered first pass does not reach the error, takes single quotes
+// and unquoted keys, and refuses more than 10 nested levels.
 func storedThemeRefusal(spec []byte) string {
-	if len(spec) == 0 || len(spec) > maxStoredThemeSpecBytes {
+	if len(bytes.TrimSpace(spec)) == 0 || len(spec) > maxStoredThemeSpecBytes {
 		return "theme file too large"
 	}
-	var parsed struct {
-		Long  []json.RawMessage `json:"primitives"`
-		Short []json.RawMessage `json:"p"`
+	var parsed any
+	decoder := json.NewDecoder(bytes.NewReader(spec))
+	decoder.UseNumber()
+	if decoder.Decode(&parsed) != nil {
+		return "bad theme json"
 	}
-	_ = json.Unmarshal(spec, &parsed)
-	if parsed.Long == nil {
-		parsed.Long = parsed.Short
+	object, isObject := parsed.(map[string]any)
+	if !isObject {
+		return "theme json must be an object"
 	}
-	if len(parsed.Long) > maxThemePrimitives {
+	// spec["themeRev"] | spec["rev"] | 0 in the firmware: "rev" counts only when
+	// "themeRev" is absent, null, false or zero.
+	themeRev := object["themeRev"]
+	number, _ := themeRev.(json.Number)
+	if zero, err := number.Float64(); themeRev == nil || themeRev == false || err == nil && zero == 0 {
+		number, _ = object["rev"].(json.Number)
+	}
+	revision, err := strconv.ParseInt(string(number), 10, 32)
+	if strings.TrimSpace(jsonFor[string](object, "themeId", "id")) == "" || err != nil || revision <= 0 {
+		return "theme id/rev missing"
+	}
+	primitives := jsonFor[[]any](object, "primitives", "p")
+	known := slices.ContainsFunc(primitives, func(primitive any) bool {
+		fields, _ := primitive.(map[string]any)
+		return slices.Contains(themePrimitiveTypes, jsonFor[string](fields, "type", "t"))
+	})
+	if len(primitives) > maxThemePrimitives || !known {
 		return "theme spec has no renderable content"
 	}
 	return ""
+}
+
+// themePrimitiveTypes are the long and short type names CompilePrimitive knows.
+var themePrimitiveTypes = []string{"rect", "r", "text", "tx", "progress", "p", "gif", "g", "sprite", "sp", "image", "img", "pixels", "px"}
+
+// jsonFor is the firmware's JsonStringFor and JsonArrayFor: the long key when
+// it holds a T, otherwise the short key.
+func jsonFor[T any](object map[string]any, long, short string) T {
+	if value, ok := object[long].(T); ok {
+		return value
+	}
+	value, _ := object[short].(T)
+	return value
 }
 
 func (s *Server) handleFirmwareUpdate(w http.ResponseWriter, r *http.Request) {

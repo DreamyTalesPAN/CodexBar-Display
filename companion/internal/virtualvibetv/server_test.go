@@ -285,27 +285,102 @@ func TestThemeActivationLimitBoundaries(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			primitives := strings.TrimSuffix(strings.Repeat(`{"t":"r"},`, tt.primitives), ",")
 			spec := padded(`{"id":"limit","rev":1,"p":[`+primitives+`],"pad":"`, tt.specBytes)
-			running.mu.Lock()
-			running.assets[path] = []byte(spec)
-			running.mu.Unlock()
 			body := padded(`{"path":"`+path+`","pad":"`, tt.bodyBytes)
-			req, err := http.NewRequest(http.MethodPost, running.HTTPURL+"/theme/active", strings.NewReader(body))
-			if err != nil {
-				t.Fatal(err)
-			}
-			req.Header.Set("X-VibeTV-Token", cfg.PairingToken)
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer resp.Body.Close()
-			answer, _ := io.ReadAll(resp.Body)
-			if resp.StatusCode != tt.wantStatus || !strings.Contains(string(answer), tt.wantBody) {
+			status, answer := activateStoredTheme(t, running, path, spec, body)
+			if status != tt.wantStatus || !strings.Contains(answer, tt.wantBody) {
 				t.Fatalf("spec=%d bytes, %d primitives, body=%d bytes: status %d %q, want %d %q",
-					len(spec), tt.primitives, len(body), resp.StatusCode, answer, tt.wantStatus, tt.wantBody)
+					len(spec), tt.primitives, len(body), status, answer, tt.wantStatus, tt.wantBody)
 			}
 		})
 	}
+}
+
+// Like the ESP8266, activation refuses a stored spec that is no JSON object
+// with an id, a positive whole revision and one primitive of a known type, each
+// under its long or short key, and takes every shipped theme.
+func TestThemeActivationRefusesWhatTheFirmwareRefuses(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RebootUnavailableRequests = 0
+	running, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("start virtual VibeTV: %v", err)
+	}
+	t.Cleanup(func() { _ = running.Close() })
+	const (
+		path      = "/themes/u/refusal.json"
+		noJSON    = "bad theme json"
+		noObject  = "theme json must be an object"
+		noIDRev   = "theme id/rev missing"
+		noContent = "theme spec has no renderable content"
+	)
+	type activation struct{ name, spec, wantRefusal string }
+	cases := []activation{
+		{"short keys", `{"id":"a","rev":1,"p":[{"t":"tx"}]}`, ""},
+		{"long keys", `{"themeId":"a","themeRev":1,"primitives":[{"type":"text"}]}`, ""},
+		{"rev behind a themeRev of zero", `{"id":"a","themeRev":0,"rev":1,"p":[{"t":"tx"}]}`, ""},
+		{"only whitespace", " \n", "theme file too large"},
+		{"JSON cut off", `{"id":"a","rev":1,"p":[{"t":"tx"}`, noJSON},
+		{"array instead of object", `[{"t":"tx"}]`, noObject},
+		{"empty object", `{}`, noIDRev},
+		{"no id", `{"rev":1,"p":[{"t":"tx"}]}`, noIDRev},
+		{"blank id", `{"id":" ","rev":1,"p":[{"t":"tx"}]}`, noIDRev},
+		{"id behind an empty themeId", `{"themeId":"","id":"a","rev":1,"p":[{"t":"tx"}]}`, noIDRev},
+		{"keys in upper case", `{"ID":"a","REV":1,"P":[{"T":"tx"}]}`, noIDRev},
+		{"no rev", `{"id":"a","p":[{"t":"tx"}]}`, noIDRev},
+		{"rev zero", `{"id":"a","rev":0,"p":[{"t":"tx"}]}`, noIDRev},
+		{"rev with a fraction", `{"id":"a","rev":1.0,"p":[{"t":"tx"}]}`, noIDRev},
+		{"rev above 32 bits", `{"id":"a","rev":2147483648,"p":[{"t":"tx"}]}`, noIDRev},
+		{"rev behind a themeRev that is text", `{"id":"a","themeRev":"2","rev":1,"p":[{"t":"tx"}]}`, noIDRev},
+		{"no primitives", `{"id":"a","rev":1}`, noContent},
+		{"primitives that are no array", `{"id":"a","rev":1,"p":{"t":"tx"}}`, noContent},
+		{"empty primitives", `{"id":"a","rev":1,"p":[]}`, noContent},
+		{"p behind an empty primitives", `{"id":"a","rev":1,"primitives":[],"p":[{"t":"tx"}]}`, noContent},
+		{"no primitive of a known type", `{"id":"a","rev":1,"p":[{"t":"circle"},{"x":1},7]}`, noContent},
+	}
+	packs, err := filepath.Glob(filepath.Join("..", "..", "..", "theme-packs", "*", "theme.json"))
+	if err != nil || len(packs) == 0 {
+		t.Fatalf("no shipped theme pack found: %v", err)
+	}
+	for _, pack := range packs {
+		spec, err := os.ReadFile(pack)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cases = append(cases, activation{"shipped " + filepath.Base(filepath.Dir(pack)), string(spec), ""})
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			wantStatus := http.StatusBadRequest
+			if tt.wantRefusal == "" {
+				wantStatus = http.StatusOK
+			}
+			status, answer := activateStoredTheme(t, running, path, tt.spec, `{"path":"`+path+`"}`)
+			if status != wantStatus || !strings.Contains(answer, tt.wantRefusal) {
+				t.Fatalf("%s: status %d %q, want %d %q", tt.spec, status, answer, wantStatus, tt.wantRefusal)
+			}
+		})
+	}
+}
+
+// activateStoredTheme stores spec at path on the virtual device and returns its
+// answer to an activation request with that body.
+func activateStoredTheme(t *testing.T, running *RunningServer, path, spec, body string) (int, string) {
+	t.Helper()
+	running.mu.Lock()
+	running.assets[path] = []byte(spec)
+	running.mu.Unlock()
+	req, err := http.NewRequest(http.MethodPost, running.HTTPURL+"/theme/active", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-VibeTV-Token", running.cfg.PairingToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	answer, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(answer)
 }
 
 func virtualHello(t *testing.T) protocol.DeviceHello {
