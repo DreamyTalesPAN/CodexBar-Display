@@ -104,6 +104,9 @@ it("lets the customer name the theme in the header, without opening Advanced", a
     },
   });
 
+  // Issue #579: the name in the theme's file is cut to 80 characters, and the
+  // field took any length. The browser cuts what is typed or pasted beyond it.
+  expect((screen.getByLabelText("Name") as HTMLInputElement).maxLength).toBe(80);
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retro Clock" } });
   fireEvent.click(button("Save theme"));
   await waitFor(() => expect(saved).toEqual(["Retro Clock"]));

@@ -1216,6 +1216,8 @@ export function ThemeStudioScreen({
               <Input
                 aria-label="Name"
                 className="h-12 max-w-xl text-2xl font-black md:text-2xl"
+                // As long as the name in the theme's file may be.
+                maxLength={80}
                 onChange={(event) => setPackName(event.target.value)}
                 placeholder={screensaver ? "Untitled screensaver" : "Untitled theme"}
                 value={packName}
