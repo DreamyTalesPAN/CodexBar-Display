@@ -1408,12 +1408,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
 #if canImport(Sparkle)
     private func startLaunchUpdateCheck() {
-        // Sparkle installs without its dialog only while this default is set,
-        // and reads it when the updater is created.
-        UserDefaults.standard.set(true, forKey: "SUAutomaticallyUpdate")
-        // "Skip This Version" in Sparkle's dialog would otherwise keep that
-        // version away from the launch check as well.
-        UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")
         launchUpdateCheck = .waiting
         presentInstallationStatus(
             title: "Starting Control Center",
@@ -1422,19 +1416,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             kind: .welcome,
             welcomeLine: "checking for mac app update"
         )
-        _ = updaterController
-        let updater = updaterController.updater
-        // A rehearsal turns the automatic checks off to keep the baseline app.
-        guard updater.automaticallyChecksForUpdates else {
-            finishLaunchUpdateCheck(timedOut: false)
-            return
-        }
-        updater.checkForUpdatesInBackground()
         Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+            // The runtime of the last session may still be writing firmware
+            // or a theme, and installing the update stops it. Ask before the
+            // updater exists, so nothing is downloaded that has to wait.
+            switch await self.runtimeClaimUpdateHold() {
+            case .updateRunning, .answeredWithoutField:
+                NSLog(
+                    "VibeTV Control Center skipped its launch update check while a VibeTV update is running"
+                )
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            case .noUpdate:
+                await self.runtimeReleaseUpdateHold()
+            case .noAnswer:
+                break
+            }
+            // Sparkle installs without its dialog only while this default is
+            // set, and reads it when the updater is created.
+            UserDefaults.standard.set(true, forKey: "SUAutomaticallyUpdate")
+            // "Skip This Version" in Sparkle's dialog would otherwise keep
+            // that version away from the launch check as well.
+            UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")
+            _ = updaterController
+            let updater = self.updaterController.updater
+            // A rehearsal turns the automatic checks off to keep the
+            // baseline app.
+            guard updater.automaticallyChecksForUpdates else {
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            }
+            updater.checkForUpdatesInBackground()
             try? await Task<Never, Never>.sleep(
                 for: .seconds(launchUpdateCheckLimitSeconds)
             )
-            self?.finishLaunchUpdateCheck(timedOut: true)
+            self.finishLaunchUpdateCheck(timedOut: true)
         }
     }
 
@@ -4301,21 +4320,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     ) -> Bool {
         Task { @MainActor in
             // A firmware update or theme install lives inside the runtime
-            // and dies with it. The Mac App update is the one that can wait.
-            if await runtimeShouldDeferRepairForUpdate() {
+            // and dies with it. The Mac App update is the one that can wait:
+            // Sparkle holds the install until installHandler runs, so keep
+            // the handler and ask again until the runtime is free.
+            while await runtimeShouldDeferRepairForUpdate() {
                 NSLog(
-                    "VibeTV Control Center held back its own update while a VibeTV update is running"
+                    "VibeTV Control Center holds back its own update while a VibeTV update is running"
                 )
-                if launchUpdateCheck == .done {
-                    let alert = NSAlert()
-                    alert.messageText = "Update paused"
-                    alert.informativeText =
-                        "The update was not installed because a VibeTV update or theme install is running. Try again when it has finished."
-                    alert.addButton(withTitle: "OK")
-                    alert.runModal()
-                }
+                // A launch update must not keep the start screen up for the
+                // length of a firmware update.
                 finishLaunchUpdateCheck(timedOut: false)
-                return
+                try? await Task<Never, Never>.sleep(for: .seconds(10))
             }
             // The replaced app must never leave its old runtime alive and
             // polling the device: that is the stale/duplicate-writer state
