@@ -5396,3 +5396,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul reported that the cat sent to his VibeTV sat in a solid box while the preview showed it cut out, and asked for it to be fixed.
 - Approved customer-visible result: On VibeTV an animated companion shows the artwork around it, as in the preview, instead of a box in the theme background colour. Send to VibeTV and the exported theme pack paint the artwork behind each companion into its frames; the saved, editable design is unchanged.
+
+
+## 2026-10-08 — Theme Studio chat
+
+- User approval: Paul asked for a chat instead of the single prompt box, so the AI keeps the context and can explain things such as why an artwork cannot fill the whole display.
+- Approved customer-visible result: Beside the display Theme Studio shows a conversation with the customer's messages and the AI's replies above the prompt box; below wide-window width it sits under the display. Earlier turns are sent with each request, so follow-ups such as "do it" refer to them. Questions are answered in the chat without changing the design, and a request that is not possible is explained there instead of as a red error. The conversation belongs to the open editor and starts empty with a new or opened design. The editor's settings button is named Design settings to tell it apart from the app's Settings.

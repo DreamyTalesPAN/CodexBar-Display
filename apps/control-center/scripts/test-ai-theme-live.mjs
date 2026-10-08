@@ -35,7 +35,7 @@ try {
     await page.getByText("Design opened.",{exact:true}).waitFor();
     // Compare Undo with the accepted editor state, not unrecognised fields
     // which the normal file importer may have canonicalised on entry.
-    await page.getByRole("button",{name:"Settings",exact:true}).click();
+    await page.getByRole("button",{name:"Design settings",exact:true}).click();
     await page.getByRole("button",{name:"Import & export",exact:true}).click();
     const baseline=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
@@ -77,7 +77,7 @@ try {
     }
     console.log("Distinct rendered samples: "+frames.size);
     if (body.sceneAnimation) assert(frames.size > 1, "Scene does not visibly advance");
-    await page.getByRole("button",{name:"Settings",exact:true}).click();
+    await page.getByRole("button",{name:"Design settings",exact:true}).click();
     await page.getByRole("button",{name:"Import & export",exact:true}).click();
     const download=page.waitForEvent("download");
     await page.getByRole("button",{name:"Download editable design",exact:true}).click();
@@ -90,7 +90,7 @@ try {
     if(process.argv[3]) {
       await page.getByRole("button",{name:"Close",exact:true}).click();
       await page.getByRole("button",{name:"Undo last edit",exact:true}).click();
-      await page.getByRole("button",{name:"Settings",exact:true}).click();
+      await page.getByRole("button",{name:"Design settings",exact:true}).click();
       await page.getByRole("button",{name:"Import & export",exact:true}).click();
       const undone=page.waitForEvent("download");
       await page.getByRole("button",{name:"Download editable design",exact:true}).click();

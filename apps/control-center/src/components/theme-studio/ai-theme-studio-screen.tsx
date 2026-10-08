@@ -87,7 +87,10 @@ import {
   verifyAIThemeCredential,
   deleteAIThemeCredential,
   AI_THEME_ANIMATION_ASSET_PATH,
+  AI_THEME_LOCAL_HISTORY_LIMIT,
+  AI_THEME_TRANSMITTED_HISTORY_LIMIT,
   type AIThemeCapabilities,
+  type AIThemeMessage,
 } from "@/lib/ai-theme";
 import {
   applyAIThemeCandidate,
@@ -156,6 +159,13 @@ export function AIThemeStudioScreen({
   const [connectionError, setConnectionError] = useState("");
   const dialogTrigger = useRef<HTMLElement | null>(null);
   const [prompt, setPrompt] = useState("");
+  // The conversation lives with the open editor: it gives the AI the context
+  // of earlier turns and is not part of the saved design.
+  const [messages, setMessages] = useState<AIThemeMessage[]>([]);
+  const chatEnd = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ block: "nearest" });
+  }, [messages]);
   const [attachments, setAttachments] = useState<{ name: string; data: string }[]>([]);
   const [attaching, setAttaching] = useState(false);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -392,6 +402,7 @@ export function AIThemeStudioScreen({
     setAttachments([]);
     setPending(undefined);
     setError("");
+    setMessages([]);
     setStatus("Design opened.");
   }
   function requestLoad(next: { document: ThemeStudioDocument; id?: string }) {
@@ -685,9 +696,10 @@ export function AIThemeStudioScreen({
     request.current = controller;
     setBusy(true);
     setError("");
-    setStatus(
-      "AI is checking which parts of your design need to change.",
-    );
+    setStatus("");
+    const history = messages;
+    const say = (role: AIThemeMessage["role"], content: string) =>
+      setMessages((all) => [...all, { role, content: content.slice(0, 2000), createdAt: new Date().toISOString() }].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
     try {
       const capabilities = await fetchAIThemeCapabilities(controller.signal);
       if (
@@ -705,11 +717,12 @@ export function AIThemeStudioScreen({
         ...item,
         ...(item.role === "companion" ? {referenceImageBase64: spritePNG(document.assets[document.spec.primitives[i].assetPath!].data, false)} : {}),
       }));
-      const layout = await planAIThemeLayout(prompt, context, controller.signal, attachments.map((image) => image.data));
+      const layout = await planAIThemeLayout(prompt, context, controller.signal, attachments.map((image) => image.data), history);
       if (request.current !== controller || controller.signal.aborted) return;
-      if (layout.mode === "unsupported") {
-        setStatus("");
-        setError(layout.notes);
+      say("user", prompt);
+      if (layout.mode === "unsupported" || layout.mode === "answer") {
+        say("assistant", layout.notes);
+        setPrompt("");
         return;
       }
       if (layout.mode === "layout") {
@@ -722,7 +735,7 @@ export function AIThemeStudioScreen({
         setSelected([]);
         setPrompt("");
         setAttachments([]);
-        setStatus("AI plan: " + layout.notes + " Preview the result; Undo takes you back.");
+        say("assistant", layout.notes);
         return;
       }
       if (layout.mode !== "scene" || layout.edits.length) throw new Error("The AI edit plan is invalid. Your design is unchanged.");
@@ -730,14 +743,14 @@ export function AIThemeStudioScreen({
         {
           prompt,
           referenceImages: attachments.map((image) => image.data),
-          history: selected.length ? [{
-            role: "user",
+          history: [...history.slice(selected.length ? 1 - AI_THEME_TRANSMITTED_HISTORY_LIMIT : -AI_THEME_TRANSMITTED_HISTORY_LIMIT), ...(selected.length ? [{
+            role: "user" as const,
             createdAt: new Date().toISOString(),
             content: `The current request refers to these selected elements: ${selected.map((i) => {
               const p = document.spec.primitives[i];
               return `${i}: ${friendlyElementName(p, document.assets)} at (${p.x}, ${p.y})`;
             }).join("; ")}`.slice(0, 2000),
-          }] : [],
+          }] : [])],
           previous: conceptFromDocument(document),
           target: "companions",
         },
@@ -754,7 +767,7 @@ export function AIThemeStudioScreen({
       setSelected([]);
       setPrompt("");
       setAttachments([]);
-      setStatus("AI plan: " + concept.style.notes + " Preview the result; Undo takes you back.");
+      say("assistant", concept.style.notes);
     } catch (e) {
       if (!controller.signal.aborted) {
         setStatus("");
@@ -878,7 +891,7 @@ export function AIThemeStudioScreen({
   return (
     <div
       data-theme-studio-root
-      className="flex min-h-[calc(100svh-86px)] flex-col pb-6 text-foreground"
+      className="flex min-h-[calc(100svh-86px)] flex-col pb-6 text-foreground lg:h-[calc(100svh-86px)]"
       onKeyDown={(event) => {
         if (isTypingTarget(event.target) || locked || panel || pending || event.nativeEvent.isComposing)
           return;
@@ -925,8 +938,8 @@ export function AIThemeStudioScreen({
             <Button
               variant="ghost"
               size="icon"
-              title="Settings"
-              aria-label="Settings"
+              title="Design settings"
+              aria-label="Design settings"
               disabled={locked}
               onClick={() => openPanel("settings")}
             >
@@ -947,8 +960,8 @@ export function AIThemeStudioScreen({
           </div>
         </header>
         {visibleInstallStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost)}</p> : transferStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
-          <main className="flex flex-1 flex-col pt-2">
-            <div className="my-auto py-4">
+          <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
+            <div className="my-auto min-w-0 flex-1 py-4">
             <div className="mx-auto mb-4 flex max-w-[680px] items-center justify-end gap-2">
               <div className="flex gap-1">
                 <Button
@@ -1076,7 +1089,26 @@ export function AIThemeStudioScreen({
               </div>
             ) : null}
             </div>
-            <section className="mx-auto flex w-full max-w-[680px] flex-col gap-3" aria-label="AI creation">
+            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
+            <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
+              {messages.length ? messages.map((message, i) => (
+                <p
+                  key={i}
+                  className={message.role === "user"
+                    ? "ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]"
+                    : "mr-8 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"}
+                >
+                  {message.content}
+                </p>
+              )) : (
+                <p className="my-auto text-center text-sm text-muted-foreground">
+                  Describe a design, ask for a change, or ask what is possible.
+                </p>
+              )}
+              {busy ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="motion-reduce:animate-none" />Working…</p> : null}
+              <div ref={chatEnd} />
+            </div>
+            <section className="flex w-full flex-col gap-3" aria-label="AI creation">
               <label
                 htmlFor="ai-scene-request"
                 className="sr-only"
@@ -1403,7 +1435,7 @@ export function AIThemeStudioScreen({
               </Collapsible>
             ) : null}
             </section>
-            <div className="mx-auto mt-3 w-full max-w-[680px] space-y-3">
+            <div className="mt-3 w-full space-y-3">
               {status && !busy ? (
                 <p role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
                   {status}
@@ -1421,6 +1453,7 @@ export function AIThemeStudioScreen({
                   {validation.errors[0]}
                 </p>
               ) : null}
+            </div>
             </div>
           </main>
 

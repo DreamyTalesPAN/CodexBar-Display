@@ -72,6 +72,21 @@ func TestLayoutSceneAndUnsupportedDoNotGenerateImages(t *testing.T) {
 	}
 }
 
+func TestLayoutAnswersQuestionsWithTheConversation(t *testing.T) {
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), "Earlier in this conversation, assistant: The artwork fills the top.") {
+			t.Fatal("Missing conversation history")
+		}
+		return autoTextResponse(map[string]any{"mode": "answer", "notes": "Because the picture is 240x128.", "edits": []any{}}), nil
+	}))
+	_ = s.aiTheme.store.Set("openai", "fixture-secret")
+	resp := aiCall(s, "POST", "/v1/ai-theme/concepts", `{"prompt":"Why?","target":"layout","layout":[],"history":[{"role":"user","content":"Make it fullscreen"},{"role":"assistant","content":"The artwork fills the top."}]}`)
+	if resp.Code != 200 || !strings.Contains(resp.Body.String(), `"mode":"answer"`) {
+		t.Fatalf("Answer failed %s", resp.Body.String())
+	}
+}
+
 func TestLayoutTransformsCompanionWithoutImageGeneration(t *testing.T) {
 	if !strings.Contains(aiLayoutCompanionInstructions, "at most two animated companions") || !strings.Contains(aiLayoutCompanionInstructions, "choose mode=unsupported, explain the two-companion limit") {
 		t.Fatal("layout planner must refuse a third companion instead of routing to scene generation")

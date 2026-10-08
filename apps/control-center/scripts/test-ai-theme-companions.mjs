@@ -40,7 +40,7 @@ try {
   for(let n=0;n<8;n++){await page.waitForTimeout(270);samples.add(await render.innerHTML());await render.screenshot({path:join(output,`${count}-frame-${n}.png`)});}
   assert(samples.size>3,'Sprite frames must visibly advance');
   await page.screenshot({path:join(output,`${count}-editor.png`),fullPage:true});
-  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  await page.getByRole('button',{name:'Design settings',exact:true}).click();
   await page.getByRole('button',{name:'Import & export',exact:true}).click();
   const download=page.waitForEvent('download');
   await page.getByRole('button',{name:'Download editable design',exact:true}).click();

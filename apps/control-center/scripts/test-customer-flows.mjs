@@ -10335,7 +10335,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByLabel("OpenAI key", { exact: true }).fill("fixture-key-not-a-secret");
   await page.getByLabel(/I agree to send/).check();
   await page.getByRole("button", { name: "Connect and continue", exact: true }).click();
-  await page.getByText("AI plan: Updated Preview the result; Undo takes you back.", { exact: true }).waitFor();
+  await page.getByRole("log", { name: "Conversation", exact: true }).getByText("Updated", { exact: true }).waitFor();
   assert(plans === 1, "One create click continues after connection");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByText("Saved.", { exact: true }).waitFor();
@@ -10356,7 +10356,7 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   if (screensaver) {
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: "Design settings", exact: true }).click();
     await page.getByRole("button", { name: "New design", exact: true }).click();
     await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
     await page.locator('input[accept="application/json,.json"]').setInputFiles({

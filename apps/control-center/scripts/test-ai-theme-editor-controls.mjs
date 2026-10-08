@@ -49,7 +49,7 @@ try {
   await page.getByRole("button", { name: "Select Hello 10", exact: true }).waitFor();
   const canvas = page.getByRole("region", { name: "Design canvas", exact: true });
   const idea = page.getByLabel("Your idea", { exact: true });
-  const openTools = async () => page.getByRole("button", { name: "Settings", exact: true }).click();
+  const openTools = async () => page.getByRole("button",{name:"Design settings",exact:true}).click();
   async function snapshot() {
     if (!await page.getByRole("dialog").count()) await openTools();
     const details = page.getByRole("button", { name: "Import & export", exact: true });

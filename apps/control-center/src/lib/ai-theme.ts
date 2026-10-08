@@ -169,9 +169,9 @@ export async function generateAIThemeConcept(
   });
 }
 
-export async function planAIThemeLayout(prompt: string, layout: ReturnType<typeof layoutContext>, signal?: AbortSignal, referenceImages?: string[]): Promise<AIThemeLayoutPlan> {
+export async function planAIThemeLayout(prompt: string, layout: ReturnType<typeof layoutContext>, signal?: AbortSignal, referenceImages?: string[], history: AIThemeMessage[] = []): Promise<AIThemeLayoutPlan> {
   return aiRequest<AIThemeLayoutPlan>("/v1/ai-theme/concepts", {
-    body: JSON.stringify({prompt,target:"layout",layout,referenceImages}),
+    body: JSON.stringify({prompt,target:"layout",layout,referenceImages,history:history.slice(-AI_THEME_TRANSMITTED_HISTORY_LIMIT).map(({content,role})=>({content,role}))}),
     headers: {"Content-Type":"application/json"}, method:"POST", signal,
   });
 }

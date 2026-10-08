@@ -12,7 +12,7 @@ export type AIThemeLayoutEdit={
   fontSize?:number|null; color?:string|null; text?:string|null; reading?:string|null;
   fps?:number|null;
 };
-export type AIThemeLayoutPlan={mode:'layout'|'scene'|'unsupported';notes:string;edits:AIThemeLayoutEdit[]};
+export type AIThemeLayoutPlan={mode:'layout'|'scene'|'answer'|'unsupported';notes:string;edits:AIThemeLayoutEdit[]};
 
 // Send geometry and native labels only, never sprite bytes or credentials.
 export function layoutContext(document:ThemeStudioDocument, selected:number[]=[]){
