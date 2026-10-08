@@ -11,7 +11,9 @@ Companion for everything it needs.
   on `http://127.0.0.1:47832/control-center` with the User-Agent
   `VibeTVControlCenter/<version>+<build>`, so the Companion's installation-mode
   gate applies unchanged. Closing the window hides it; the tray keeps the app
-  alive.
+  alive. The window asks for 1280x900 and is created with Tauri's
+  `prevent_overflow()` and `center()`: no larger than the primary monitor's
+  work area and centred in it (#548). No size or position is stored.
 - On start: `codexbar-display service install ...` registers the Companion as
   the per-user Scheduled Task `shop.vibetv.control-center.runtime-<SID>` from
   `%AppData%\codexbar-display\service\shop.vibetv.control-center.runtime.json`.

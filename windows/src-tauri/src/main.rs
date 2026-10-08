@@ -216,6 +216,12 @@ fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> 
         .title("VibeTV Control Center")
         .inner_size(1280.0, 900.0)
         .min_inner_size(960.0, 640.0)
+        // Issue #548: 1280x900 plus the title bar is taller than the space
+        // above the taskbar on a 1080p screen scaled to 125 % or more, and
+        // Windows chose the position. Tauri shrinks the window to the
+        // primary monitor's work area and centres it there.
+        .prevent_overflow()
+        .center()
         .user_agent(&user_agent(app, provider_shortcut))
         // vibetv:// links are the UI's way of asking the shell for something;
         // handled here, so WebView2 never looks for a protocol handler.
