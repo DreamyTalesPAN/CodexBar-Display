@@ -734,3 +734,32 @@ func TestASecondRunOfAStepRecordsItsOwnStartAndEnd(t *testing.T) {
 		t.Fatalf("current = %+v, want the install as succeeded", log.Current)
 	}
 }
+
+func timelineStatesOf(server *Server, component string) string {
+	var got []string
+	for _, event := range server.Timeline().Snapshot(server.currentTime().Add(100 * time.Hour)).Events {
+		if event.Component == component {
+			got = append(got, event.State)
+		}
+	}
+	return strings.Join(got, ",")
+}
+
+// Fourth review: a failure in an earlier setup session must not swallow the
+// start of the same step in a new session.
+func TestAStartAfterAFailureOfAnEarlierSessionIsRecorded(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.recordSetupEvent(setupEvent{Stage: "firmware_install", Status: "started", Message: "Installing."})
+	server.recordSetupEvent(setupEvent{Stage: "firmware_install", Status: "failed", Message: "Failed.", Code: "firmware_update_failed"})
+	// The retry in the same session waits for its result.
+	server.recordSetupEvent(setupEvent{Stage: "firmware_install", Status: "started", Message: "Installing."})
+	if got, want := timelineStatesOf(server, "firmware_install"), "started,failed"; got != want {
+		t.Fatalf("same session = %s, want %s", got, want)
+	}
+
+	server.setupEvents.reset(server.currentTime().Add(72 * time.Hour))
+	server.recordSetupEvent(setupEvent{Stage: "firmware_install", Status: "started", Message: "Installing."})
+	if got, want := timelineStatesOf(server, "firmware_install"), "started,failed,started"; got != want {
+		t.Fatalf("new session = %s, want %s", got, want)
+	}
+}

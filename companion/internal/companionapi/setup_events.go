@@ -220,9 +220,10 @@ func (l *setupEventLog) sessionID(now time.Time) string {
 
 // recordSetupEvent is the one place a setup step is logged: in the setup log
 // the customer sees, and as a transition in the support timeline. A step
-// started again after it failed is a retry: the timeline waits for its result,
-// so a search repeated with the same failure stays one entry, while a second
-// run of a step that had succeeded gets its own start and end.
+// started again after it failed in the same session is a retry: the timeline
+// waits for its result, so a step repeated with the same failure stays one
+// entry, while a second run of a step that had succeeded gets its own start
+// and end.
 func (s *Server) recordSetupEvent(event setupEvent) {
 	s.recordSetupEventAs(event.Stage, event)
 }
@@ -230,8 +231,10 @@ func (s *Server) recordSetupEvent(event setupEvent) {
 // recordSetupEventAs logs a setup step under its own timeline component, for
 // a stage that covers several things with a state each (one per provider).
 func (s *Server) recordSetupEventAs(component string, event setupEvent) {
-	s.setupEvents.record(s.currentTime(), event)
-	if last, ok := s.timeline.Latest(component); ok && last.State == "failed" && event.Status == "started" {
+	now := s.currentTime()
+	s.setupEvents.record(now, event)
+	if last, ok := s.timeline.Latest(component); ok && last.State == "failed" && event.Status == "started" &&
+		last.CorrelationID == s.setupEvents.sessionID(now) {
 		return
 	}
 	s.recordTimeline(timeline.Event{Component: component, State: event.Status, Reason: event.Code})
