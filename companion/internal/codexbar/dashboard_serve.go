@@ -352,6 +352,9 @@ func (s *DashboardServeSupervisor) setStarted(endpoint string, pid int) {
 }
 
 func (s *DashboardServeSupervisor) setStopped(endpoint string, err error) {
+	// The collector does not read a stopped serve, so its last reading ends
+	// here.
+	forgetServeUsage()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if endpoint != "" {

@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -270,5 +271,21 @@ func TestServeReadingAgeCountsTheTimeTheComputerSlept(t *testing.T) {
 	defer serveUsage.mu.Unlock()
 	if serveUsage.at.IsZero() || serveUsage.at != serveUsage.at.Round(0) {
 		t.Fatalf("the reading is dated on the monotonic clock: %v", serveUsage.at)
+	}
+}
+
+// The collector does not read a serve that is not running, so nothing ended
+// the reading when serve stopped or the engine was repaired: it answered the
+// checks for up to its full age.
+func TestStoppedServeLeavesNoReading(t *testing.T) {
+	serveReadingEngine(t, true, claudeAndCodexOn)
+	supervisor, err := NewDashboardServeSupervisor(DashboardServeConfig{Binary: "codexbar-cli"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collectFromServe(t)
+	supervisor.setStopped("", errors.New("exit status 1"))
+	if answer, ok := serveUsageAnswer(WithServeReading(context.Background()), []ProviderSetting{{ID: "claude", Enabled: true}}); ok {
+		t.Fatalf("the reading of a stopped serve stood in for a probe: %s", answer)
 	}
 }
