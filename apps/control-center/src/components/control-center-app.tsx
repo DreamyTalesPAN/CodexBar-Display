@@ -5028,6 +5028,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : activeShellTab === "overview"
         ? newestWhatsNew(whatsNewSeen)
         : [];
+  // Opened from Updates and taken away by something else, the notice does not
+  // come back by itself: what follows may be a dialog this condition does not
+  // know, as the one Updates shows when an update failed.
+  const whatsNewReopenIsOver = somethingElseAsks && whatsNewReopened;
+  useEffect(() => {
+    if (!whatsNewReopenIsOver) {
+      return;
+    }
+    const timer = window.setTimeout(() => setWhatsNewReopened(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [whatsNewReopenIsOver]);
   const closeWhatsNew = () => {
     setWhatsNewSeen(markWhatsNewSeen());
     setWhatsNewReopened(false);
@@ -5541,7 +5552,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }}
             onInstallUpdate={installFirmwareUpdate}
             onRetryThemeUpdate={retryActiveThemeUpgrade}
-            onShowWhatsNew={() => setWhatsNewReopened(true)}
+            onShowWhatsNew={
+              somethingElseAsks ? undefined : () => setWhatsNewReopened(true)
+            }
             requiresMacAppMigration={requiresMacAppMigration}
             supportReportBusy={supportReportBusy}
             themeUpdateAvailable={activeThemeUpdateAvailable}

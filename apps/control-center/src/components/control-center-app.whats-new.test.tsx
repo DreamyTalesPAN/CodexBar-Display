@@ -289,9 +289,9 @@ it("waits until another dialog over Overview is gone", async () => {
   expect(seen()).toBeNull();
 });
 
-// Opened again from Updates, it gives way to a dialog that needs the customer
-// just like the one that opens by itself.
-it("steps back for another dialog when it was opened from Updates", async () => {
+// Opened again from Updates, it gives way to a dialog that needs the customer,
+// and stays closed after it: Updates may follow with a dialog of its own.
+it("closes for another dialog when it was opened from Updates", async () => {
   window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
   const app = startWindow();
   await app.wait(10);
@@ -305,10 +305,14 @@ it("steps back for another dialog when it was opened from Updates", async () => 
   await app.wait(6);
   expect(usageDialog()).not.toBeNull();
   expect(notice()).toBeNull();
+  // While something else asks, Updates does not offer it either.
+  expect(screen.queryByRole("button", { name: "What's new", hidden: true })).toBeNull();
 
   app.companion.usageBroken = false;
   await app.wait(6);
   expect(usageDialog()).toBeNull();
+  expect(notice()).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "What's new" }));
   expect(notice()).not.toBeNull();
 });
 
