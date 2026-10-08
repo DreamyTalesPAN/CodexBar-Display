@@ -5876,3 +5876,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged. A new test opens Settings with a provider that needs a sign-in, lets the app's regular read of the providers answer "working" and then "checking", and checks that the same row on the screen loses its message button and then shows the spinner, without a retry of the provider.
 - Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. No product code, copy, control or state changes.
 - What's new: none — a test, nothing a customer sees
+
+## 2026-10-09 — Windows: the update at launch gives up on a download that stalls or takes longer than 3 minutes (#565)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him.
+- Approved customer-visible result: Draft, to be confirmed by Paul. No wording changed. Correction from the review of the #565 entry above: the start waited for the download of a found update without any limit, so a connection that stopped in the middle left the start screen on "Updating VibeTV Control Center…" for good, at every start. The download now ends after 3 minutes in all, or after 20 seconds in which nothing arrives. The app then starts as usual with the version that is installed, with no message, and the tray item "Check for Updates…" works again. The installer is about 14 MB, so 3 minutes are enough from roughly 0.6 Mbit/s. Not seen on a screen: written without a Windows build.
+- Scope: `windows/src-tauri/src/main.rs`, `docs/windows-shell.md`, and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+- What's new: none — a correction to the update at launch

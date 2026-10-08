@@ -47,7 +47,9 @@ Companion for everything it needs.
 - Update at launch (#565): before the shell registers the Companion and looks
   for a VibeTV it asks the same update source once, with a limit of 5 seconds.
   A newer version is downloaded and installed like above, and the start screen
-  reads "Updating VibeTV Control Center…". Every other outcome (no newer
+  reads "Updating VibeTV Control Center…". The start waits for that download
+  for at most 3 minutes, and for at most 20 seconds without a byte arriving
+  (`Update.timeout` and reqwest's `read_timeout` through `configure_client`). Every other outcome (no newer
   version, no answer, a running VibeTV update or theme install, a failed
   download) is logged to stderr only and the start goes on. A version is
   installed at launch once: it is written to

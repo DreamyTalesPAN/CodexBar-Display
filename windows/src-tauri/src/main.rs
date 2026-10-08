@@ -34,6 +34,11 @@ const RUNTIME_HEALTH_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const WINDOW_CLOSE_FLUSH_DELAY: Duration = Duration::from_secs(1);
 // Without an answer from the update source the start goes on after this limit.
 const LAUNCH_UPDATE_CHECK_LIMIT: Duration = Duration::from_secs(5);
+// The start waits for the download of a found update, so that has limits
+// too: this long in all (the installer is about 14 MB), and this long
+// without a single byte. After either the start goes on without the update.
+const LAUNCH_UPDATE_DOWNLOAD_LIMIT: Duration = Duration::from_secs(180);
+const LAUNCH_UPDATE_STALL_LIMIT: Duration = Duration::from_secs(20);
 const LAUNCH_UPDATE_MARKER: &str = "launch-update-attempt.txt";
 
 const MENU_OPEN: &str = "open";
@@ -726,8 +731,8 @@ fn check_for_updates(app: AppHandle) {
 // Issue #565: the app installs its own update before it looks for a VibeTV,
 // like the Mac App (#561). Nobody asked for this check, so it answers with
 // nothing but the start screen's update line: no newer version, no answer
-// within the limit, a running VibeTV update or a failed download all let the
-// start go on without a message.
+// within the limit, a running VibeTV update, or a download that fails, stalls
+// or takes too long all let the start go on without a message.
 fn launch_update_check(app: &AppHandle) {
     if app
         .state::<Shell>()
@@ -758,9 +763,11 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
     // The marker keeps the check at launch from installing a version twice.
     let mut marker: Option<PathBuf> = None;
     if at_launch {
-        // The limit covers the check only; a found update is downloaded
-        // without one, as it is for the tray item.
-        builder = builder.timeout(LAUNCH_UPDATE_CHECK_LIMIT);
+        // This limit covers the check only: the plugin hands the update
+        // back without one, so the download gets its own below.
+        builder = builder
+            .timeout(LAUNCH_UPDATE_CHECK_LIMIT)
+            .configure_client(|client| client.read_timeout(LAUNCH_UPDATE_STALL_LIMIT));
         let folder = app
             .path()
             .app_local_data_dir()
@@ -769,13 +776,14 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
     }
     let updater = builder.build().map_err(|error| format!("updater unavailable: {error}"))?;
     let update = updater.check().await.map_err(|error| format!("update check failed: {error}"))?;
-    let Some(update) = update else {
+    let Some(mut update) = update else {
         return Ok(UpdateOutcome::UpToDate);
     };
     if let Some(marker) = &marker {
         if launch_update::tried(marker, &update.version) {
             return Ok(UpdateOutcome::AlreadyTried);
         }
+        update.timeout = Some(LAUNCH_UPDATE_DOWNLOAD_LIMIT);
         show_updating(app, &update.version);
     }
     log(&format!("downloading update {}", update.version));
