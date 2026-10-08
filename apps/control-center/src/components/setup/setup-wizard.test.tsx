@@ -567,6 +567,44 @@ describe("SetupWizard: direct connection", () => {
     expect(dialog.textContent).not.toContain("Mac");
   });
 
+  // Issue #548: these two dialogs showed the runtime's sentence as it came.
+  it("words a failed WiFi step and a failed manual address for the Windows app", async () => {
+    const failure = {
+      message: "Mac App did not answer.",
+      nextAction: "Quit VibeTV Control Center, then open it again from Applications.",
+    };
+    render(<SetupWizard {...baseProps({
+      step: "device", windowsHost: true,
+      initialWiFiSetup: { status: "wifi_credentials_required", deviceId: "configured-device" },
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onConfigureWiFi: vi.fn().mockRejectedValue(failure),
+    })} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Enter hidden network" }));
+    fireEvent.change(screen.getByLabelText("WiFi network"), { target: { value: "Home" } });
+    fireEvent.change(screen.getByLabelText("WiFi password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    const wifi = await screen.findByRole("dialog", { name: "WiFi setup failed" });
+    expect(wifi.textContent).toContain(
+      "App did not answer. Quit VibeTV Control Center, then open it again from the Start menu.",
+    );
+    expect(wifi.textContent).not.toContain("Mac");
+    cleanup();
+
+    render(<SetupWizard {...baseProps({
+      step: "welcome", deviceSearchState: "searching", windowsHost: true,
+      onFindManualTarget: vi.fn().mockRejectedValue(failure),
+    })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP address manually" }));
+    fireEvent.change(screen.getByLabelText("IP address"), { target: { value: "192.168.1.42" } });
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Enter IP address" })).getByRole("button", { name: "Connect" }),
+    );
+    const address = await screen.findByText(/did not answer/);
+    expect(address.textContent).toBe(
+      "App did not answer. Quit VibeTV Control Center, then open it again from the Start menu.",
+    );
+  });
+
   it("sends a VibeTV that pairs only over the cable to the cable (#489)", async () => {
     const wifi: DeviceCandidate = { target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" };
     const connect = vi.fn().mockRejectedValue({

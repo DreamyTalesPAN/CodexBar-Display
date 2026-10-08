@@ -26,6 +26,7 @@ import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { installedScreensaver } from "@/lib/active-theme-upgrade";
+import { errorForHost } from "@/lib/customer-platform";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
@@ -221,7 +222,7 @@ export function SettingsScreen({
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
       <SetupStepFailedDialog
-        error={actionError ?? providerError ?? null}
+        error={actionError ?? errorForHost(providerError, windowsHost)}
         onOpenChange={(open) => !open && onDismissError()}
       />
       <SettingsSection title="Connection">
