@@ -83,5 +83,79 @@ refuse "saved WiFi, pairing token" --usb-erase --port /dev/null --package-dir "$
 printf 'x' >>"${WORK}/pkg/firmware.bin"
 refuse "package checksums do not match" --usb-erase --port /dev/null --package-dir "${WORK}/pkg" --yes
 
+# A SHA256SUMS that does not list both images must not get through.
+printf 'fw' >"${WORK}/pkg/firmware.bin"
+printf 'other' >"${WORK}/pkg/other.bin"
+(cd "${WORK}/pkg" && shasum -a 256 other.bin littlefs.bin >SHA256SUMS)
+refuse "SHA256SUMS does not list firmware.bin" --usb-erase --port /dev/null --package-dir "${WORK}/pkg" --yes
+(cd "${WORK}/pkg" && shasum -a 256 firmware.bin littlefs.bin >SHA256SUMS)
+
+# Usage errors are exit 2 with a message, never the LEFTOVERS code.
+refuse "--port needs a value" --port
+head -c 4096 "${WORK}/erased.bin" >"${WORK}/truncated.bin"
+refuse "dump has 4096 bytes" --dump "${WORK}/truncated.bin"
+
+# Serial paths against a fake pio that only writes files. FAKE_PIO decides what
+# the "device" returns; the port is a path that does not exist.
+mkdir "${WORK}/bin" "${WORK}/tmp"
+cat >"${WORK}/bin/pio" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$FAKE_PIO_LOG"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    read_flash)
+      offset="$2"; size="$3"; out="$4"
+      [[ "$FAKE_PIO" == "fail-third-chunk" && "$offset" == "$((0x180000))" ]] && exit 1
+      [[ "$FAKE_PIO" == "short" ]] && size=$((size / 2))
+      head -c "$size" /dev/zero | LC_ALL=C tr '\0' '\377' >"$out"
+      [[ "$FAKE_PIO" == "leftovers" && "$offset" == "$((0x100000))" ]] &&
+        printf 'photo_config.json' | dd of="$out" bs=1 seek=64 conv=notrunc 2>/dev/null
+      exit 0 ;;
+    erase_flash) [[ "$FAKE_PIO" == "fail-erase" ]] && exit 1; exit 0 ;;
+    write_flash) exit 0 ;;
+  esac
+  shift
+done
+FAKE
+chmod +x "${WORK}/bin/pio"
+export FAKE_PIO_LOG="${WORK}/pio.log"
+
+serial() {
+  local mode="$1" want_status="$2" want_text="$3" status=0 output
+  shift 3
+  : >"$FAKE_PIO_LOG"
+  output="$(FAKE_PIO="$mode" TMPDIR="${WORK}/tmp" PATH="${WORK}/bin:${PATH}" \
+    "$SCRIPT" --ldscript "${WORK}/layout.ld" --port "${WORK}/no-such-port" "$@" 2>&1)" || status=$?
+  [[ "$status" == "$want_status" ]] || die "${mode} $*: exit ${status}, expected ${want_status}: ${output}"
+  [[ "$output" == *"$want_text"* ]] || die "${mode} $*: output lacks '${want_text}': ${output}"
+  [[ -z "$(ls -A "${WORK}/tmp")" ]] || die "${mode} $*: temp dump left behind: $(ls -A "${WORK}/tmp")"
+  last_output="$output"
+}
+no_verdict() {
+  [[ "$last_output" != *"verdict:"* && "$last_output" != *"PASS"* ]] ||
+    die "a failed read must not print a verdict or PASS: ${last_output}"
+}
+erase=(--usb-erase --package-dir "${WORK}/pkg" --yes)
+
+serial ok 0 "verdict: CLEAN"
+serial leftovers 1 "verdict: LEFTOVERS"
+serial fail-third-chunk 4 "reading 0x180000 +262144 bytes"
+no_verdict
+serial short 4 "short read"
+no_verdict
+
+serial ok 0 "usb-erase: PASS" "${erase[@]}"
+grep -q 'erase_flash' "$FAKE_PIO_LOG" || die "usb-erase did not erase"
+grep -q "write_flash --flash_size detect 0x000000 ${WORK}/pkg/firmware.bin 0x200000 ${WORK}/pkg/littlefs.bin" "$FAKE_PIO_LOG" ||
+  die "usb-erase wrote to the wrong offsets: $(cat "$FAKE_PIO_LOG")"
+serial fail-third-chunk 4 "reading 0x180000 +262144 bytes" "${erase[@]}"
+no_verdict
+serial short 4 "short read" "${erase[@]}"
+no_verdict
+serial leftovers 1 "usb-erase: FAIL" "${erase[@]}"
+serial fail-erase 4 "erasing the flash" "${erase[@]}"
+grep -q 'write_flash' "$FAKE_PIO_LOG" && die "nothing may be written after a failed erase"
+
 bash -n "$SCRIPT"
 printf 'VibeTV flash leftovers tests passed\n'

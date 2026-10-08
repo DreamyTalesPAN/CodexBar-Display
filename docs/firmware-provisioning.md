@@ -181,6 +181,11 @@ takes about two minutes, and prints the share of erased bytes and a verdict:
 - `NOT ERASED`, exit 3: other data, for example a firmware image that an
   earlier update staged just below `_FS_start`.
 
+Two more exit codes mean that there is no verdict: 2 is a usage or setup error
+(bad arguments, missing tool, bad package), 4 is a serial error (port busy,
+esptool failed, or the read came back short). Only exit 1 says that factory
+leftovers were found.
+
 Full USB erase (option A), for a device that may lose everything it stores:
 
 ```bash
@@ -190,7 +195,8 @@ Full USB erase (option A), for a device that may lose everything it stores:
 ```
 
 This erases the whole flash, writes `firmware.bin` and `littlefs.bin` over the
-cable, runs the check and fails unless the verdict is `CLEAN`. The device loses
+cable, runs the check and fails unless the verdict is `CLEAN`. `SHA256SUMS`
+must list and match both images before anything is erased. The device loses
 its saved WiFi, pairing, themes and settings and has to be set up again over
 the cable. Without `--yes` the command prints what it would erase and stops.
 

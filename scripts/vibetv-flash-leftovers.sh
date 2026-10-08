@@ -37,8 +37,15 @@ Usage:
 --ldscript   Linker script to take the layout from. Default: the one named by
              board_build.ldscript in firmware_esp8266/platformio.ini.
 
-Exit: 0 clean, 1 factory leftovers found, 3 other data found (for example a
-firmware image staged by an earlier update), 2 usage or tool error.
+Exit codes:
+  0  CLEAN: the region is fully erased
+  1  LEFTOVERS: factory leftovers found
+  2  usage or setup error (bad arguments, missing file or tool, bad package,
+     a dump whose length is not the region's)
+  3  NOT ERASED: other data found (for example a firmware image staged by an
+     earlier update)
+  4  serial error: port busy, esptool failed, or the read came back short.
+     No verdict was reached.
 EOF
 }
 
@@ -47,7 +54,24 @@ die() {
   exit 2
 }
 
+serial_error() {
+  printf 'error: %s\n' "$*" >&2
+  exit 4
+}
+
+tmp_dump=""
+cleanup() {
+  if [[ -n "$tmp_dump" ]]; then
+    rm -f "$tmp_dump" "${tmp_dump}.part"
+  fi
+}
+trap cleanup EXIT
+
 while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --port|--dump|--ldscript|--package-dir)
+      [[ $# -ge 2 && -n "$2" ]] || { usage >&2; die "$1 needs a value"; } ;;
+  esac
   case "$1" in
     --port) port="${2:-}"; shift 2 ;;
     --dump) dump="${2:-}"; shift 2 ;;
@@ -94,7 +118,7 @@ require_free_port() {
   holders="$(lsof "$port" 2>/dev/null || true)"
   if [[ -n "$holders" ]]; then
     printf '%s\n' "$holders" >&2
-    die "serial port is busy: $port (quit the VibeTV app and stop its background service)"
+    serial_error "serial port is busy: $port (quit the VibeTV app and stop its background service)"
   fi
 }
 
@@ -104,21 +128,26 @@ read_region() {
   for (( offset = region_start; offset < fs_start; offset += CHUNK )); do
     size=$(( fs_start - offset < CHUNK ? fs_start - offset : CHUNK ))
     printf 'read: 0x%06x +%d bytes\n' "$offset" "$size"
-    esptool --after hard_reset read_flash "$offset" "$size" "${out}.part" >/dev/null
+    esptool --after hard_reset read_flash "$offset" "$size" "${out}.part" >/dev/null ||
+      serial_error "$(printf 'reading 0x%06x +%d bytes from %s failed; no verdict' "$offset" "$size" "$port")"
     cat "${out}.part" >>"$out"
     rm -f "${out}.part"
   done
+  local got
+  got="$(wc -c <"$out" | tr -d ' ')"
+  [[ "$got" == "$region_size" ]] ||
+    serial_error "short read from ${port}: got ${got} of ${region_size} bytes; no verdict"
 }
 
 # Dump file -> verdict. The only part that decides anything; no hardware.
 judge() {
-  python3 - "$1" "$region_start" <<'PY'
+  python3 - "$1" "$region_start" "$region_size" <<'PY'
 import sys
 
-path, base = sys.argv[1], int(sys.argv[2])
+path, base, want = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 data = open(path, "rb").read()
-if not data:
-    print("error: empty dump", file=sys.stderr)
+if len(data) != want:
+    print(f"error: dump has {len(data)} bytes, the region 0x{base:06x}-0x{base + want:06x} has {want}; no verdict", file=sys.stderr)
     sys.exit(2)
 
 erased = 100.0 * data.count(0xFF) / len(data)
@@ -155,12 +184,10 @@ PY
 
 check_device() {
   command -v pio >/dev/null 2>&1 || die "missing required command: pio"
-  local out
-  out="$(mktemp "${TMPDIR:-/tmp}/vibetv-flash-region.XXXXXX")"
-  read_region "$out"
+  tmp_dump="$(mktemp "${TMPDIR:-/tmp}/vibetv-flash-region.XXXXXX")"
+  read_region "$tmp_dump"
   local status=0
-  judge "$out" || status=$?
-  rm -f "$out"
+  judge "$tmp_dump" || status=$?
   return "$status"
 }
 
@@ -183,7 +210,12 @@ firmware="${package_dir}/firmware.bin"
 filesystem="${package_dir}/littlefs.bin"
 [[ -f "$firmware" && -f "$filesystem" && -f "${package_dir}/SHA256SUMS" ]] ||
   die "package needs firmware.bin, littlefs.bin and SHA256SUMS: $package_dir"
-(cd "$package_dir" && shasum -a 256 -c SHA256SUMS >/dev/null) || die "package checksums do not match: $package_dir"
+for name in firmware.bin littlefs.bin; do
+  listed="$(awk -v name="$name" '$2 == name || $2 == "*" name { print $1 }' "${package_dir}/SHA256SUMS")"
+  [[ -n "$listed" ]] || die "SHA256SUMS does not list ${name}: $package_dir"
+  [[ "$listed" == "$(shasum -a 256 "${package_dir}/${name}" | awk '{print $1}')" ]] ||
+    die "package checksums do not match for ${name}: $package_dir"
+done
 firmware_bytes="$(wc -c <"$firmware" | tr -d ' ')"
 filesystem_bytes="$(wc -c <"$filesystem" | tr -d ' ')"
 (( firmware_bytes <= region_start )) || die "firmware.bin (${firmware_bytes} bytes) does not fit the sketch region"
@@ -203,7 +235,13 @@ EOF
 require_free_port
 command -v pio >/dev/null 2>&1 || die "missing required command: pio"
 
-esptool erase_flash
-esptool write_flash --flash_size detect 0x000000 "$firmware" "$(printf '0x%06x' "$fs_start")" "$filesystem"
-check_device || die "the region is not clean after erase and write"
+esptool erase_flash || serial_error "erasing the flash on ${port} failed"
+esptool write_flash --flash_size detect 0x000000 "$firmware" "$(printf '0x%06x' "$fs_start")" "$filesystem" ||
+  serial_error "writing firmware and filesystem to ${port} failed; the device is erased and has to be written again"
+status=0
+check_device || status=$?
+if [[ "$status" != "0" ]]; then
+  printf 'usb-erase: FAIL - the region is not clean after erase and write\n' >&2
+  exit "$status"
+fi
 printf 'usb-erase: PASS\n'
