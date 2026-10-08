@@ -259,3 +259,16 @@ func TestSnapshotServeNoLongerRefreshesIsNoReading(t *testing.T) {
 		t.Fatal("a snapshot generated three hours ago answered the setup check without a probe")
 	}
 }
+
+// The age of a reading is wall-clock time. Go's monotonic clock stands still
+// while the Mac sleeps, so a reading from before the sleep counted as current
+// after waking up.
+func TestServeReadingAgeCountsTheTimeTheComputerSlept(t *testing.T) {
+	serveReadingEngine(t, true, claudeAndCodexOn)
+	collectFromServe(t) // its snapshot names no time, so the read dates it
+	serveUsage.mu.Lock()
+	defer serveUsage.mu.Unlock()
+	if serveUsage.at.IsZero() || serveUsage.at != serveUsage.at.Round(0) {
+		t.Fatalf("the reading is dated on the monotonic clock: %v", serveUsage.at)
+	}
+}

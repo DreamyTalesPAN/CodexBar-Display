@@ -210,7 +210,9 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	}
 	serveUsage.mu.Lock()
 	if serveUsage.forgotten == forgotten {
-		serveUsage.at, serveUsage.maxAge, serveUsage.items = time.Now(), serveUsageMaxAge, readings
+		// Round(0) drops the monotonic reading: the age must count the time
+		// the computer slept.
+		serveUsage.at, serveUsage.maxAge, serveUsage.items = time.Now().Round(0), serveUsageMaxAge, readings
 		if snapshot.GeneratedAt != nil {
 			serveUsage.at = *snapshot.GeneratedAt
 		}
