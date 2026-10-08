@@ -1297,6 +1297,23 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   }
 }
 
+// The device's own activity expiry (#369): once the last frame's bound has
+// passed without a fresh frame, the screen stops showing the customer as
+// working. Standby needs nothing from this: its clock already counts from the
+// last frame that reported working, so a device left without a writer goes
+// idle here and reaches the screensaver on the same countdown as any idle one.
+void maintainActivityExpiry() {
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!codexbar_display::core::ExpireActivity(runtimeCtx.runtime, millis(), event)) {
+    return;
+  }
+  Serial.println("activity_expired");
+  // A status screen owns the display; the frame that ends it repaints in full.
+  if (!statusScreenLocked() && !setupMode && !waitStatusRendered && !frameStaleStatusRendered) {
+    renderAcceptedFrame(event);
+  }
+}
+
 void maintainDeviceClock() {
   const unsigned long nowMs = millis();
   if (static_cast<long>(nowMs - nextDeviceClockPollAtMs) < 0) {
@@ -2595,7 +2612,7 @@ String healthJSON() {
   // Sized for the full payload: #280 added the clock block, #279 the reset
   // trust block, #284 the standby state and #221 the failing sprite asset
   // path, and growing this String mid-build fragments a tight heap.
-  out.reserve(1472);
+  out.reserve(1520);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -2679,6 +2696,13 @@ String healthJSON() {
   out += "\"},";
   appendClockJSON(out);
   appendResetTrustJSON(out);
+  // What the screen shows as activity right now, and how long that still
+  // holds without a fresh frame (0: no bound, or already expired).
+  out += F("\"activity\":{\"state\":");
+  appendJSONNullableString(out, codexbar_display::app::CurrentFrame(runtimeCtx).activity);
+  out += F(",\"ttlSecs\":");
+  out += codexbar_display::core::ActivityTtlRemainingSecs(runtimeCtx.runtime, millis());
+  out += F("},");
   appendStandbyStateJSON(out);
   out += ",";
   appendSettingsJSON(out);
@@ -4745,6 +4769,7 @@ void loop() {
     return;
   }
 
+  maintainActivityExpiry();
   maintainStandby();
   maintainScreensaverPreview();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER

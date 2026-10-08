@@ -21,6 +21,8 @@ namespace codexbar_display {
 namespace core {
 
 constexpr size_t kFrameLineBufferBytes = 2048;
+// One day. Keeps the bound's millisecond count inside 32 bits.
+constexpr int64_t kMaxActivityTtlSecs = 86400;
 constexpr size_t kProviderWireBytes = 32;
 constexpr size_t kProviderLabelWireBytes = 24;
 constexpr size_t kUsageWindowIDWireBytes = 32;
@@ -146,6 +148,9 @@ struct Frame {
   bool hasUsageMode = false;
   String usageMode;
   String activity;
+  // How long `activity` stays valid without a fresh frame, counted from
+  // receipt. 0: the frame carries no bound and its activity never expires.
+  uint32_t activityTtlSecs = 0;
   // Pre-formatted Companion clock strings. Fallback only: the device clock
   // (firmware_shared/device_clock.h) owns {time}/{date} once SNTP answered, and
   // these strings are dropped as soon as they stop being current. Repainting
@@ -226,6 +231,11 @@ struct RuntimeState {
   ResetTrustState reset;
   unsigned long resetBaseMillis = 0;
   int64_t resetBaseSecs = 0;
+  // The current frame's activity bound, anchored to the device's own
+  // monotonic clock at receipt. 0: nothing to expire. 32 bits wide like the
+  // device's millis(), so elapsed time stays right across its wrap-around.
+  uint32_t activityTtlMillis = 0;
+  uint32_t activityBaseMillis = 0;
   String cachedThemeId;
   int cachedThemeRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -247,16 +257,11 @@ struct SerialConsumeEvent {
   bool themeSpecChanged = false;
   bool themeSpecCacheHit = false;
   bool themeSpecPartialRender = false;
-  // The frame moved the usage numbers, which is the only signal the device has
-  // that someone is coding. Standby uses it as its activity clock.
-  bool usageProgressed = false;
   // The frame reports the customer as working. This is the Companion's own
-  // activity verdict, carried in the frame, not something the device infers.
-  // Standby uses it as its activity clock so that a customer who is coding
-  // wakes the device immediately, instead of waiting for a whole usage
-  // percent to tick over. Frames that omit `activity` fall back to
-  // `usageProgressed` through the same field, because ConsumeFrameLine fills
-  // the missing value in before this is computed.
+  // activity verdict, carried in the frame; the device never infers one. A
+  // frame without `activity` reports not working. Standby uses it as its
+  // activity clock so that a customer who is coding wakes the device
+  // immediately, instead of waiting for a whole usage percent to tick over.
   bool reportsWorking = false;
   uint32_t themeSpecChangedFields = 0;
 };
@@ -581,63 +586,6 @@ inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& n
          previous.percent != next.percent ||
          (includeReset && ResetCountdownDisplayChanged(previous.resetSecs, next.resetSecs)) ||
          previous.available != next.available;
-}
-
-inline bool UsagePercentProgressed(
-    const Frame& previous,
-    const Frame& next,
-    int previousPercent,
-    int nextPercent) {
-  if (previous.hasUsageMode != next.hasUsageMode ||
-      previous.usageMode != next.usageMode) {
-    return false;
-  }
-  return next.usageMode == "remaining"
-             ? nextPercent < previousPercent
-             : nextPercent > previousPercent;
-}
-
-inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
-  const bool usageAvailable = !previous.usageUnavailable && !next.usageUnavailable;
-  if (!usageAvailable || previous.provider != next.provider) {
-    return false;
-  }
-
-  bool previousHasWindows = false;
-  bool nextHasWindows = false;
-  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    previousHasWindows = previousHasWindows || previous.usageWindows[i].available;
-    nextHasWindows = nextHasWindows || next.usageWindows[i].available;
-  }
-  if (!previousHasWindows && !nextHasWindows &&
-      ((!previous.sessionUnavailable && !next.sessionUnavailable &&
-        UsagePercentProgressed(previous, next, previous.session, next.session)) ||
-       (!previous.weeklyUnavailable && !next.weeklyUnavailable &&
-        UsagePercentProgressed(previous, next, previous.weekly, next.weekly)))) {
-    return true;
-  }
-
-  for (size_t previousIndex = 0; previousIndex < kMaxUsageWindows; ++previousIndex) {
-    // Countdown, label and availability changes redraw the theme, but do not
-    // mean that the customer used their provider.
-    if (!previous.usageWindows[previousIndex].available) {
-      continue;
-    }
-    for (size_t nextIndex = 0; nextIndex < kMaxUsageWindows; ++nextIndex) {
-      if (next.usageWindows[nextIndex].available &&
-          previous.usageWindows[previousIndex].id == next.usageWindows[nextIndex].id &&
-          UsagePercentProgressed(
-              previous,
-              next,
-              previous.usageWindows[previousIndex].percent,
-              next.usageWindows[nextIndex].percent)) {
-        return true;
-      }
-    }
-  }
-  // Token totals come from history scans. Expiry and recovery can change them
-  // without any provider consumption, so they must not drive standby activity.
-  return false;
 }
 
 inline bool ThemeSpecRawLooksRenderable(const String& raw) {
@@ -1122,6 +1070,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   if (!IsSafeActivityName(out.activity)) {
     out.activity = "";
   }
+  const int64_t activityTtlSecs = NonNegativeInt64(doc["activityTtlSecs"]);
+  out.activityTtlSecs = static_cast<uint32_t>(
+      activityTtlSecs > kMaxActivityTtlSecs ? kMaxActivityTtlSecs : activityTtlSecs);
 
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
@@ -1408,6 +1359,57 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
 #endif
 }
 
+// What the step from `previous` to `next` means for the screen. Needs
+// outEvent.hadFrame and outEvent.themeSpecChanged filled in.
+inline void NoteFrameVisualChange(
+    const RuntimeState& runtimeState,
+    const Frame& previous,
+    const Frame& next,
+    SerialConsumeEvent& outEvent) {
+  const ThemeSpecLiveUse& themeSpecUse = ThemeSpecLiveUseForFrame(runtimeState, next);
+  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedForThemeSpec(previous, next, themeSpecUse) || outEvent.themeSpecChanged;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next, themeSpecUse);
+  outEvent.themeSpecPartialRender = ThemeSpecCanUsePartialRender(
+      previous,
+      next,
+      themeSpecUse,
+      outEvent.hadFrame,
+      outEvent.visualChanged,
+      outEvent.themeSpecChanged);
+#endif
+}
+
+// The device's own activity expiry (#369). A frame says how long its activity
+// is valid; when that time passes without a fresh frame, the writer is gone
+// and the device shows not working instead of holding the last verdict
+// forever. Call it every loop. True when the activity just fell to idle: the
+// caller repaints with outEvent exactly as for an accepted frame.
+inline bool ExpireActivity(RuntimeState& runtimeState, unsigned long nowMillis, SerialConsumeEvent& outEvent) {
+  outEvent = {};
+  if (runtimeState.activityTtlMillis == 0 ||
+      static_cast<uint32_t>(nowMillis) - runtimeState.activityBaseMillis < runtimeState.activityTtlMillis) {
+    return false;
+  }
+  runtimeState.activityTtlMillis = 0;
+  Frame& current = runtimeState.current;
+  if (current.hasError || current.activity == "idle") {
+    return false;
+  }
+  Frame next = current;
+  next.activity = "idle";
+  outEvent.hadFrame = true;
+  NoteFrameVisualChange(runtimeState, current, next, outEvent);
+  current.activity = next.activity;
+  return true;
+}
+
+// Diagnostics: seconds the current activity still holds without a fresh frame.
+inline uint32_t ActivityTtlRemainingSecs(const RuntimeState& runtimeState, unsigned long nowMillis) {
+  const uint32_t elapsed = static_cast<uint32_t>(nowMillis) - runtimeState.activityBaseMillis;
+  return elapsed < runtimeState.activityTtlMillis ? (runtimeState.activityTtlMillis - elapsed + 999U) / 1000U : 0;
+}
+
 inline bool ConsumeFrameLine(
     RuntimeState& runtimeState,
     const char* line,
@@ -1425,30 +1427,18 @@ inline bool ConsumeFrameLine(
 
   const Frame& previous = runtimeState.current;
   ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
-  outEvent.usageProgressed =
-      !next.hasError && runtimeState.hasFrame && UsageProgressChanged(previous, next);
+  // The device never infers activity (#369): the frame's own verdict is taken
+  // at its word, and a frame without one reports not working.
   if (!next.hasError && next.activity.length() == 0) {
-    next.activity = outEvent.usageProgressed ? "coding" : "idle";
+    next.activity = "idle";
   }
-  // Read the activity verdict after the fallback above, so a frame that
-  // carries `activity` is taken at its word and a frame that omits it still
-  // resolves to the inferred value. An error frame reports nothing.
   outEvent.reportsWorking = !next.hasError && next.activity == "coding";
 
   outEvent.hadFrame = runtimeState.hasFrame;
-  const ThemeSpecLiveUse& themeSpecUse = ThemeSpecLiveUseForFrame(runtimeState, next);
-  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedForThemeSpec(previous, next, themeSpecUse) || outEvent.themeSpecChanged;
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next, themeSpecUse);
-  outEvent.themeSpecPartialRender = ThemeSpecCanUsePartialRender(
-      previous,
-      next,
-      themeSpecUse,
-      outEvent.hadFrame,
-      outEvent.visualChanged,
-      outEvent.themeSpecChanged);
-#endif
+  NoteFrameVisualChange(runtimeState, previous, next, outEvent);
 
+  runtimeState.activityTtlMillis = next.activityTtlSecs * 1000U;
+  runtimeState.activityBaseMillis = static_cast<uint32_t>(nowMillis);
   runtimeState.current = next;
   runtimeState.hasFrame = true;
   runtimeState.resetBaseSecs = next.resetSecs;
