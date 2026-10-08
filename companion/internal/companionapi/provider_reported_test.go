@@ -172,6 +172,45 @@ func TestReportedProviderMessageKeepsTheSourceLabelOAuth(t *testing.T) {
 	}
 }
 
+// What the pinned Win-CodexBar can print behind the label "OAuth:" is the
+// text of the error its OAuth source returned (claude_auto_fetch_error joins
+// "<source>: <error>"; nothing else in the engine prints that label). Every
+// such text is a sentence: ProviderError's own wordings and the messages in
+// providers/claude/oauth. Its only one-word error, "Timeout", comes from the
+// CLI source and stands behind "CLI:". So no single word is let through:
+// "Unauthorized", "Forbidden" or "expired" alone are not engine answers, and
+// a one-word value cannot be told from a password.
+func TestReportedProviderMessageKeepsEverySentenceOfTheOAuthSource(t *testing.T) {
+	for _, sentence := range []string{
+		"Authentication required",
+		"OAuth error: API error 401: Unauthorized",
+		"OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.",
+		"OAuth error: Failed to parse OAuth response: expected value at line 1 column 1",
+		"OAuth session expired: OAuth token expired. Run `claude` to refresh.",
+		"OAuth session expired: OAuth token invalid or expired. Run `claude` to re-authenticate.",
+		"OAuth token revoked: OAuth token was revoked. The CLI fallback will be used.",
+		"OAuth error: OAuth token missing 'user:profile' scope (has: user:inference). Run `claude setup-token` to regenerate.",
+		"Claude OAuth credentials not found. Run `claude` to authenticate.",
+		"Claude OAuth access token is empty. Run `claude` to authenticate.",
+		"Network error: error sending request for url (https://api.anthropic.com/api/oauth/usage)",
+		"No cookies available for web API",
+	} {
+		in := "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: " + sentence + "; CLI: Timeout"
+		if got := reportedProviderMessage(in); got != in {
+			t.Fatalf("OAuth source sentence:\n got %q\nwant %q", got, in)
+		}
+	}
+	for _, tc := range []struct{ in, want string }{
+		{in: "OAuth: Unauthorized. Sign in again.", want: "OAuth: [redacted]. Sign in again."},
+		{in: "Web: timeout | OAuth: Forbidden", want: "Web: timeout | OAuth: [redacted]"},
+		{in: "OAuth: expired, run codexbar login", want: "OAuth: [redacted], run codexbar login"},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("one word behind the label:\n  in %q\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // What the engines print about an account is an address: "OpenAI dashboard
 // signed in as ", "Antigravity local session is signed in as " and "OpenAI
 // web session does not match Codex account. Found: <browser>=<address>"
