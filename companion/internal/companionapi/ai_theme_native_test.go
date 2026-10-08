@@ -3,6 +3,7 @@ package companionapi
 import (
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 )
@@ -21,7 +22,7 @@ func TestNativeThemeStudioCredentialAndGeneration(t *testing.T) {
 			t.Fatal("missing native credential")
 		}
 		if r.Method == http.MethodGet {
-			return aiResponse(200, `{"id":"`+openAIImageModel+`"}`), nil
+			return aiResponse(200, `{"id":"`+path.Base(r.URL.Path)+`"}`), nil
 		}
 		return autoTextResponse(map[string]any{"mode": "layout", "notes": "Updated", "edits": []any{}}), nil
 	})}
@@ -48,7 +49,7 @@ func TestNativeThemeStudioCredentialAndGeneration(t *testing.T) {
 			t.Fatal("native AI disabled")
 		}
 	}
-	if calls != 2 {
+	if calls != 3 {
 		t.Fatalf("provider calls = %d", calls)
 	}
 	r := httptest.NewRequest("GET", "http://127.0.0.1:47832/v1/ai-theme/capabilities", nil)

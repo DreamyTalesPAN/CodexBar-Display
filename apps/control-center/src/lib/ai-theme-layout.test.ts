@@ -110,4 +110,13 @@ describe('AI native layout edits',()=>{
   expect(()=>applyAIThemeLayout(before,plan([{action:'remove',index:1},{action:'update',index:1,x:2}]))).toThrow();
   expect(()=>applyAIThemeLayout(before,{mode:'scene',notes:'',edits:[]})).toThrow();
  });
+ it('moves the picture with its companions and nothing else about it',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives=[{type:'sprite',assetPath:'/themes/u/ai-screen.cbi',x:0,y:0,width:240,height:128},{type:'sprite',assetPath:'/themes/u/ai-pet-1.cba',x:100,y:60,width:32,height:32},{type:'text',x:12,y:140,text:'HI',fontSize:1,color:'#FFFFFF'}];
+  const next=applyAIThemeLayout(doc,plan([{action:'update',index:0,y:112},{action:'update',index:2,y:20}]));
+  expect(next.spec.primitives.map(p=>p.y)).toEqual([112,172,20]);
+  for(const edit of [{width:120},{color:'#FF0000'}]) expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:0,...edit}]))).toThrow();
+  expect(()=>applyAIThemeLayout(doc,plan([{action:'remove',index:0}]))).toThrow();
+  expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:1,y:120}]))).toThrow();
+ });
 });

@@ -11,7 +11,7 @@ import (
 
 // Preserve bounded, redacted evidence for a failed connection check. Never log
 // raw replies, credentials or headers; the caller alone receives diagnostics.
-func writeAIThemeVerificationError(w http.ResponseWriter, key string, err error, status int, body []byte, requestID string) {
+func writeAIThemeVerificationError(w http.ResponseWriter, key, model string, err error, status int, body []byte, requestID string) {
 	var payload struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -30,7 +30,7 @@ func writeAIThemeVerificationError(w http.ResponseWriter, key string, err error,
 			code = "provider_quota_exhausted"
 		}
 	}
-	detail := map[string]any{"code": code, "stage": "connection", "model": openAIImageModel, "reason": safeAIThemeReason(payload.Error.Message, key)}
+	detail := map[string]any{"code": code, "stage": "connection", "model": model, "reason": safeAIThemeReason(payload.Error.Message, key)}
 	if err != nil && detail["reason"] == "" {
 		detail["reason"] = safeAIThemeReason(err.Error(), key)
 	}

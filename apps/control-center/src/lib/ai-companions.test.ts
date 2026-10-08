@@ -62,3 +62,37 @@ describe("one/two independent AI companions",()=>{
   expect(registerCompanionFrames(Array.from({length:8},()=>p))).toEqual(Array.from({length:8},()=>p));expect(()=>registerCompanionFrames(Array.from({length:8},()=>new Uint8ClampedArray(p.length)))).toThrow(/empty/);
  });
 });
+
+describe("flexible picture layouts",()=>{
+ const full=()=>{
+  const f=fixture(1);Object.assign(f.concept,{artHeight:240,hideUsage:true});Object.assign(f.concept.companions![0],{y:190});
+  return buildAIThemeCompanionCandidateFromRGBA(f.concept,new Uint8ClampedArray(240*240*4).fill(255),f.frames);
+ };
+ it('builds a full-screen picture without usage readouts',()=>{
+  const c=full();
+  expect(c.spec.primitives.map(p=>p.assetPath)).toEqual([ART,'/themes/u/ai-pet-1.cba']);
+  expect(c.spec.primitives[0]).toMatchObject({x:0,y:0,width:240,height:240});
+  expect(decodeSprite(c.assets[ART].data)).toMatchObject({width:240,height:240});
+  expect(validateThemeSpec(c.spec,c.assets).errors).toEqual([]);
+  expect(()=>buildThemePack(c.spec,c.packName,c.assets,'live')).not.toThrow();
+ });
+ it('draws the readouts directly on a full-screen picture and keeps companions inside the smaller one',()=>{
+  const f=fixture(1);Object.assign(f.concept,{artHeight:240});
+  const c=buildAIThemeCompanionCandidateFromRGBA(f.concept,new Uint8ClampedArray(240*240*4).fill(255),f.frames);
+  expect(c.spec.primitives.some(p=>p.type==='rect')).toBe(false);
+  expect(c.spec.primitives.some(p=>p.binding==='session')).toBe(true);
+  const small=fixture(1);Object.assign(small.concept.companions![0],{y:190});
+  expect(()=>small.candidate()).toThrow();
+ });
+ it('replaces the layout when the picture changes size and drops the readouts when a design no longer shows usage',()=>{
+  const current=fixture(1).candidate();
+  const document={assets:current.assets,spec:current.spec,packName:'Mine',usage:'live' as const};
+  const replaced=applyAIThemeCandidate(document,full(),'auto');
+  expect(replaced.packName).toBe('Mine');
+  expect(replaced.spec.primitives).toHaveLength(2);
+  const plain=fixture(1);Object.assign(plain.concept,{hideUsage:true});
+  const kept=applyAIThemeCandidate(document,plain.candidate(),'auto');
+  expect(kept.spec.primitives.some(p=>p.binding==='session'||p.text?.includes('{session}'))).toBe(false);
+  expect(kept.spec.primitives.some(p=>p.type==='rect')).toBe(true);
+ });
+});

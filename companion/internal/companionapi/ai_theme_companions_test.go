@@ -33,14 +33,14 @@ func companionPlanFixture(n int) (aiThemeStyle, []aiCompanionPlan) {
 
 func TestCompanionDisplaySizeIndependentOfFrameSize(t *testing.T) {
 	for _, size := range []int{64, 72, 80} {
-		if !validCompanionLayout("pet-1", 40, 128-size, size, 4) {
+		if !validCompanionLayout("pet-1", 40, 128-size, size, 4, 128) {
 			t.Fatalf("display size %d rejected", size)
 		}
 		if err := validatePreviousCompanions([]aiCompanion{{ID: "pet-1", X: 40, Y: 128 - size, Size: size, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestCompanionSheet()}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if validCompanionLayout("pet-1", 0, 0, 81, 4) || validCompanionLayout("pet-1", 0, 50, 100, 4) {
+	if validCompanionLayout("pet-1", 0, 0, 81, 4, 128) || validCompanionLayout("pet-1", 0, 50, 100, 4, 128) {
 		t.Fatal("accepted out-of-scene display")
 	}
 }

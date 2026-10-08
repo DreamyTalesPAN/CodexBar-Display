@@ -32,6 +32,10 @@ export type AIThemeStyle = {
   weeklyColor: string;
 };
 export type AIThemeConcept = {
+  // The picture fills the top 240x128 by default; 240 makes it the whole display.
+  artHeight?: number;
+  // A design that is not about usage carries no session and weekly readouts.
+  hideUsage?: boolean;
   companions?: AIThemeCompanion[];
   referenceImageBase64?: string;
   sceneAnimation?: {
@@ -54,6 +58,7 @@ export type AIThemeConcept = {
   style: AIThemeStyle;
 };
 export type AIThemeCandidate = {
+  hideUsage?: boolean;
   preserveArtwork?: boolean;
   retainedCompanions?: string[];
   assets: Record<string, ThemeStudioAsset>;
@@ -91,6 +96,7 @@ export function isAttachedSceneAnimation(path?: string): boolean {
 }
 const SCREENMASTER_WIDTH = 240;
 const SCREENMASTER_ART_HEIGHT = 128;
+const DISPLAY_HEIGHT = 240;
 const ANIMATION_FRAME_SIZE = 48;
 const ANIMATION_FRAME_COUNT = 4;
 const ANIMATION_CONTENT_SIZE = 44;
@@ -204,7 +210,7 @@ export async function buildAIThemeCandidate(
   );
   try {
     if (concept.companions) {
-      return buildAIThemeCompanionCandidateFromRGBA(concept, bitmapRGBA(bitmaps[0]!, 240, 128), concept.companions.map((p, i) => normalizeCompanionSheet(bitmaps[i + 1]!, Math.min(p.size, 64))));
+      return buildAIThemeCompanionCandidateFromRGBA(concept, bitmapRGBA(bitmaps[0]!, 240, artHeight(concept)), concept.companions.map((p, i) => normalizeCompanionSheet(bitmaps[i + 1]!, Math.min(p.size, 64))));
     }
     if (concept.sceneAnimation) {
       if (concept.animation)
@@ -260,7 +266,7 @@ export async function buildAIThemeCandidate(
     const rgba = bitmapRGBA(
       bitmaps[0]!,
       SCREENMASTER_WIDTH,
-      SCREENMASTER_ART_HEIGHT,
+      artHeight(concept),
     );
     return buildAIThemeCandidateFromRGBA(concept, rgba);
   } finally {
@@ -374,13 +380,18 @@ export function buildAIThemeSceneCandidateFromRGBA(
   );
 }
 
+function artHeight(concept: AIThemeConcept): number {
+  return concept.artHeight === DISPLAY_HEIGHT ? DISPLAY_HEIGHT : SCREENMASTER_ART_HEIGHT;
+}
+
 export function buildAIThemeCandidateFromRGBA(
   concept: AIThemeConcept,
   rgba: ArrayLike<number>,
 ): AIThemeCandidate {
+  const height = artHeight(concept);
   const asset: ThemeStudioAsset = {
     contentType: "text/plain",
-    data: encodeAIThemeCBI1(rgba, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT),
+    data: encodeAIThemeCBI1(rgba, SCREENMASTER_WIDTH, height),
     encoding: "text",
   };
   return buildCandidate(
@@ -392,7 +403,7 @@ export function buildAIThemeCandidateFromRGBA(
         x: 0,
         y: 0,
         width: 240,
-        height: 128,
+        height,
         assetPath: AI_THEME_SCREENMASTER_ASSET_PATH,
       },
     ],
@@ -470,8 +481,10 @@ function buildCandidate(
     bgColor: style.backgroundColor,
     primitives: [
       ...artPrimitives,
-      {
-        type: "rect",
+      // Over a full-screen picture the readouts sit directly on the artwork.
+      ...(concept.hideUsage ? [] : [
+      ...(artHeight(concept) === DISPLAY_HEIGHT ? [] : [{
+        type: "rect" as const,
         x: 0,
         y: 128,
         width: 240,
@@ -480,7 +493,7 @@ function buildCandidate(
         bgColor: style.panelColor,
         borderColor: style.panelColor,
         borderRadius: 0,
-      },
+      }]),
       {
         type: "text",
         x: 12,
@@ -563,11 +576,12 @@ function buildCandidate(
         fontSize: 1,
         color: style.textColor,
       },
+      ] satisfies ThemeStudioSpec["primitives"]),
     ],
   };
   const validation = validateThemeSpec(spec, assets);
   if (validation.errors.length > 0) throw new Error(validation.errors[0]);
-  return { assets, notes: style.notes, packName: style.packName, spec, preserveArtwork: style.preserveArtwork };
+  return { assets, notes: style.notes, packName: style.packName, spec, preserveArtwork: style.preserveArtwork, hideUsage: concept.hideUsage };
 }
 
 function validateCompanions(concept: AIThemeConcept) {
@@ -576,7 +590,7 @@ function validateCompanions(concept: AIThemeConcept) {
     throw new Error("A scene supports up to two separate companions.");
   const ids = new Set<string>();
   for (const p of pets) {
-    if (!p || !["pet-1", "pet-2"].includes(p.id) || ids.has(p.id) || ![p.x, p.y, p.size, p.fps].every(Number.isInteger) || p.size < 16 || p.size > 80 || p.x < 0 || p.y < 0 || p.x + p.size > 240 || p.y + p.size > 128 || ![0,1,2,4,8].includes(p.fps) || p.frameCount !== 8 || p.keyColor !== "#FF00FF" || !p.sheetBase64)
+    if (!p || !["pet-1", "pet-2"].includes(p.id) || ids.has(p.id) || ![p.x, p.y, p.size, p.fps].every(Number.isInteger) || p.size < 16 || p.size > 80 || p.x < 0 || p.y < 0 || p.x + p.size > 240 || p.y + p.size > artHeight(concept) || ![0,1,2,4,8].includes(p.fps) || p.frameCount !== 8 || p.keyColor !== "#FF00FF" || !p.sheetBase64)
       throw new Error("The companion layout or sprite sheet is invalid.");
     ids.add(p.id);
   }
@@ -852,10 +866,10 @@ export function encodeAIThemeCBI1(
 ): string {
   if (
     width !== SCREENMASTER_WIDTH ||
-    height !== SCREENMASTER_ART_HEIGHT ||
+    (height !== SCREENMASTER_ART_HEIGHT && height !== DISPLAY_HEIGHT) ||
     rgba.length !== width * height * 4
   ) {
-    throw new Error("Concept art must contain exactly 30,720 pixels.");
+    throw new Error("Concept art must be 240x128 or 240x240 pixels.");
   }
   const colors: string[] = [];
   const counts = new Map<string, number>();

@@ -84,6 +84,8 @@ type aiThemeConceptRequest struct {
 }
 
 type aiThemeConcept struct {
+	ArtHeight        int               `json:"artHeight,omitempty"`
+	HideUsage        bool              `json:"hideUsage,omitempty"`
 	Companions       []aiCompanion     `json:"companions,omitempty"`
 	SceneAnimation   *aiSceneAnimation `json:"sceneAnimation,omitempty"`
 	SceneMotion      *aiSceneMotion    `json:"sceneMotion,omitempty"`
@@ -301,33 +303,11 @@ func (s *aiThemeServer) handleAIThemeVerify(w http.ResponseWriter, r *http.Reque
 		writeAIThemeError(w, http.StatusBadRequest, "credential_missing")
 		return
 	}
-	req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://api.openai.com/v1/models/"+openAIImageModel, nil)
-	setOpenAIHeaders(req, key)
-	resp, err := s.aiTheme.client.Do(req)
-	if err != nil {
-		writeAIThemeVerificationError(w, key, err, 0, nil, "")
-		return
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, aiThemeJSONResponseLimit+1))
-	if err != nil {
-		writeAIThemeVerificationError(w, key, err, resp.StatusCode, nil, resp.Header.Get("X-Request-Id"))
-		return
-	}
-	if len(body) > aiThemeJSONResponseLimit {
-		writeAIThemeVerificationError(w, key, errors.New("provider_response_too_large"), resp.StatusCode, nil, resp.Header.Get("X-Request-Id"))
-		return
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		writeAIThemeVerificationError(w, key, nil, resp.StatusCode, body, resp.Header.Get("X-Request-Id"))
-		return
-	}
-	var model struct {
-		ID string `json:"id"`
-	}
-	if !aiThemeJSONContentType(resp.Header.Get("Content-Type")) || json.Unmarshal(body, &model) != nil || model.ID != openAIImageModel {
-		writeAIThemeVerificationError(w, key, errors.New("provider_malformed_response"), resp.StatusCode, nil, resp.Header.Get("X-Request-Id"))
-		return
+	// Create needs both models: the text model plans, the image model draws.
+	for _, name := range []string{openAIImageModel, openAIModel} {
+		if !s.verifyAIThemeModel(w, r, key, name) {
+			return
+		}
 	}
 	s.aiTheme.mu.Lock()
 	current, currentErr := s.aiTheme.store.Get("openai")
@@ -341,6 +321,39 @@ func (s *aiThemeServer) handleAIThemeVerify(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"verified": true})
+}
+
+// Reports a failure to the client and returns false when the key cannot use the model.
+func (s *aiThemeServer) verifyAIThemeModel(w http.ResponseWriter, r *http.Request, key, name string) bool {
+	req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://api.openai.com/v1/models/"+name, nil)
+	setOpenAIHeaders(req, key)
+	resp, err := s.aiTheme.client.Do(req)
+	if err != nil {
+		writeAIThemeVerificationError(w, key, name, err, 0, nil, "")
+		return false
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, aiThemeJSONResponseLimit+1))
+	if err != nil {
+		writeAIThemeVerificationError(w, key, name, err, resp.StatusCode, nil, resp.Header.Get("X-Request-Id"))
+		return false
+	}
+	if len(body) > aiThemeJSONResponseLimit {
+		writeAIThemeVerificationError(w, key, name, errors.New("provider_response_too_large"), resp.StatusCode, nil, resp.Header.Get("X-Request-Id"))
+		return false
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		writeAIThemeVerificationError(w, key, name, nil, resp.StatusCode, body, resp.Header.Get("X-Request-Id"))
+		return false
+	}
+	var model struct {
+		ID string `json:"id"`
+	}
+	if !aiThemeJSONContentType(resp.Header.Get("Content-Type")) || json.Unmarshal(body, &model) != nil || model.ID != name {
+		writeAIThemeVerificationError(w, key, name, errors.New("provider_malformed_response"), resp.StatusCode, nil, resp.Header.Get("X-Request-Id"))
+		return false
+	}
+	return true
 }
 
 func (s *aiThemeServer) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {

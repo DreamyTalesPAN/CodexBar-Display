@@ -1103,7 +1103,9 @@ function validatePrimitive(
           `${prefix}: sprite frames must stay within ${maxFrameWidth}x${maxFrameHeight}.`,
         );
       }
-      if (width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
+      // The pixel budget is the animation frame buffer; a still picture is
+      // drawn row by row and may fill the display, as pixel-battery does.
+      if (sprite?.kind !== "CBI1" && width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
         errors.push(
           `${prefix}: sprite is too large (${width * height * frames}/${MAX_SPRITE_TOTAL_PIXELS} pixels across frames).`,
         );

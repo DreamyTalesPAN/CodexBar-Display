@@ -2,7 +2,7 @@ import {cloneDocument,type ThemeStudioDocument} from '@/components/theme-studio/
 import {LIVE_READINGS,setReading,usageSectionIndices} from '@/components/theme-studio/design-controls';
 import {primitiveBounds,textPrimitiveNaturalWidth} from '@/components/theme-studio/editor-geometry';
 import type {ThemeStudioPrimitive} from './theme-studio';
-import {isCompanionSprite} from './ai-theme';
+import {AI_THEME_SCREENMASTER_ASSET_PATH as ART,isCompanionSprite} from './ai-theme';
 import {setAIAnimationSpeed} from './ai-theme-document';
 
 export type AIThemeLayoutEdit={
@@ -44,11 +44,18 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       const original=current.spec.primitives[edit.index];
       if(!original||seen.has(edit.index)) return fail();
       const companion=original.type==='sprite'&&isCompanionSprite(original.assetPath);
-      if(!companion&&(original.assetPath||!['text','rect','progress'].includes(original.type))) return fail();
+      const artwork=original.assetPath===ART;
+      if(!companion&&!artwork&&(original.assetPath||!['text','rect','progress'].includes(original.type))) return fail();
       seen.add(edit.index);p=next.spec.primitives[edit.index];
       if(edit.kind!=null&&edit.kind!==p.type) return fail();
-      if(edit.action==='remove'){removed.add(edit.index);continue;}
+      if(edit.action==='remove'){if(artwork) return fail();removed.add(edit.index);continue;}
       if(companion&&[edit.fontSize,edit.color,edit.text,edit.reading].some(v=>v!=null)) return fail();
+      if(artwork){
+        // The picture can only be moved; its companions travel with it.
+        if([edit.width,edit.height,edit.fontSize,edit.color,edit.text,edit.reading,edit.fps].some(v=>v!=null)) return fail();
+        const dx=(edit.x??p.x)-p.x,dy=(edit.y??p.y)-p.y;
+        for(const q of next.spec.primitives) if(isCompanionSprite(q.assetPath)){q.x+=dx;q.y+=dy;}
+      }
     }
     for(const key of ['x','y','width','height','fontSize'] as const){
       const value=edit[key];
@@ -60,7 +67,7 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       if(!isCompanionSprite(p.assetPath)||![0,1,2,4,8].includes(edit.fps)) return fail();
       setAIAnimationSpeed(next,p.assetPath!,edit.fps);
     }
-    if(isCompanionSprite(p.assetPath)&&(p.width!==p.height||(p.width||0)<16||(p.width||0)>80||p.y+(p.height||0)>128)) return fail();
+    if(isCompanionSprite(p.assetPath)&&(p.width!==p.height||(p.width||0)<16||(p.width||0)>80)) return fail();
     if(edit.color!=null){if(!/^#[0-9a-f]{6}$/i.test(edit.color)) return fail();p.color=edit.color;}
     if(edit.text!=null){
       if(p.type!=='text'||typeof edit.text!=='string'||edit.text.length>160) return fail();
@@ -86,5 +93,8 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
     if(p.x<0||p.y<0||p.x+bounds.width>240||p.y+bounds.height>240) return fail();
   }
   next.spec.primitives=next.spec.primitives.filter((_,i)=>!removed.has(i));
+  // On the device a companion only shows its surroundings while it lies on the picture.
+  const art=next.spec.primitives.find(p=>p.assetPath===ART)||{x:0,y:0,width:240,height:128};
+  if(next.spec.primitives.some(p=>isCompanionSprite(p.assetPath)&&(p.x<art.x||p.y<art.y||p.x+(p.width||0)>art.x+(art.width||240)||p.y+(p.height||0)>art.y+(art.height||128)))) return fail();
   return next;
 }

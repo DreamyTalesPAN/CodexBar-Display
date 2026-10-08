@@ -3,6 +3,7 @@ package companionapi
 import (
 	"encoding/json"
 	"net/http"
+	"path"
 	"strings"
 	"testing"
 )
@@ -56,9 +57,11 @@ func TestAIThemeVerificationRetainsProviderDiagnosis(t *testing.T) {
 }
 
 func TestAIThemeVerificationReadinessAndMalformedResponses(t *testing.T) {
-	for _, body := range []string{`{"id":"gpt-image-2"}`, `{}`, `<html>gateway</html>`} {
+	for _, body := range []string{`{"id":"MODEL"}`, `{}`, `<html>gateway</html>`} {
 		t.Run(body, func(t *testing.T) {
-			s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) { return aiResponse(200, body), nil }))
+			s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+				return aiResponse(200, strings.Replace(body, "MODEL", path.Base(r.URL.Path), 1)), nil
+			}))
 			aiCall(s, "PUT", "/v1/ai-theme/providers/openai/credential", `{"apiKey":"fixture-key-first"}`)
 			w := aiCall(s, "POST", "/v1/ai-theme/providers/openai/verify", "")
 			valid := strings.Contains(body, `"id"`)
@@ -91,7 +94,7 @@ func TestAIThemeVerificationDoesNotVerifyReplacementKey(t *testing.T) {
 	var s *aiThemeServer
 	s = aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
 		aiCall(s, "PUT", "/v1/ai-theme/providers/openai/credential", `{"apiKey":"fixture-replacement-key"}`)
-		return aiResponse(200, `{"id":"gpt-image-2"}`), nil
+		return aiResponse(200, `{"id":"`+path.Base(r.URL.Path)+`"}`), nil
 	}))
 	aiCall(s, "PUT", "/v1/ai-theme/providers/openai/credential", `{"apiKey":"fixture-original-key"}`)
 	w := aiCall(s, "POST", "/v1/ai-theme/providers/openai/verify", "")

@@ -15,7 +15,6 @@ import {
   normalizeSelectedIndices,
   normalizedSelectionBox,
   primitiveBounds,
-  primitiveMaxBottom,
   selectedPrimitiveIndices,
   type DragMoveOrigin,
   type PrimitiveMove,
@@ -144,7 +143,6 @@ export function EditableThemePreview({
           {
             height: bounds.height,
             index: moveIndex,
-            maxBottom: primitiveMaxBottom(movePrimitive),
             width: bounds.width,
             x: movePrimitive.x,
             y: movePrimitive.y,
@@ -219,7 +217,7 @@ export function EditableThemePreview({
         return;
       }
       const maxWidth = DISPLAY_SIZE - drag.originX;
-      const maxHeight = primitiveMaxBottom(primitive) - drag.originY;
+      const maxHeight = DISPLAY_SIZE - drag.originY;
       const freeSize = {
         height: clampInt(
           point.y - drag.originY - drag.edgeOffsetY,

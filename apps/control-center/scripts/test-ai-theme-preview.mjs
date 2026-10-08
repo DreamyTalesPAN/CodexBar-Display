@@ -89,7 +89,7 @@ try {
     if(await details.getAttribute("aria-expanded")!=="true") await details.click();
   };
   await input.waitFor();
-  assert.equal(await page.getByRole("textbox").count(),1,"Input is visible before connecting");
+  assert.equal(await page.getByRole("textbox").count(),2,"Name and input are visible before connecting");
   assert.equal(await page.getByRole("button",{name:"More options",exact:true}).count(),0);
   await page.getByRole("button",{name:"Design settings",exact:true}).click();
   const settings=page.getByRole("dialog",{name:"Settings",exact:true});
@@ -131,8 +131,8 @@ try {
   assert.equal(requests.length,1,"Connect continues the original create, no second AI click");
   assert.equal(await input.inputValue(),"");
   // The generation fixture can finish before the setup dialog's exit transition.
-  await page.getByRole("textbox").waitFor({state:"visible"});
-  assert.equal(await page.getByRole("textbox").count(),1);
+  await page.getByLabel("Your idea",{exact:true}).waitFor({state:"visible"});
+  assert.equal(await page.getByRole("textbox").count(),2);
   console.log("PASS connection diagnostics, retry without re-pasting, pending after reload, no generation before verification, one automatic continuation");
   const beforeSettings=requests.length;
   await page.getByRole("button",{name:"Design settings",exact:true}).click();
@@ -177,7 +177,7 @@ try {
   assert.equal(await page.getByLabel("Animation speed",{exact:true}).count(),0);
   await input.fill("The cat should rest more calmly");
   await create.click();
-  await page.getByRole("log",{name:"Conversation",exact:true}).getByText("A little character joins the scene.",{exact:true}).last().waitFor();
+  await page.getByRole("log",{name:"Conversation",exact:true}).getByText("A little character joins the scene.",{exact:true}).nth(1).waitFor();
   await create.waitFor();
   assert.equal(await character.getAttribute("x"),characterX);
   assert(requests.at(-1).previous.referenceImageBase64,"Director sees actual composed artwork");
@@ -207,7 +207,7 @@ try {
   assert(!saved.includes("fixture-good-key")&&!saved.includes("imageBase64"));
   await page.reload();
   await page.getByRole("button",{name:/^Select My note /}).waitFor();
-  assert.equal(await page.getByRole("textbox").count(),1);
+  assert.equal(await page.getByRole("textbox").count(),2);
   console.log("PASS AI-chosen scene representation, no area controls, real playback, labels/reset preserved and save/reload");
 
   const exportDesign=async()=>{
@@ -312,7 +312,7 @@ try {
   await page.getByLabel(/I agree to send/).check();
   await page.getByRole("button",{name:"Continue",exact:true}).click();
   await page.getByRole("log",{name:"Conversation",exact:true}).getByText("A quiet office.",{exact:true}).last().waitFor();
-  await page.getByRole("textbox").waitFor();
+  await page.getByLabel("Your idea",{exact:true}).waitFor();
   assert.equal(requests.length,beforeConsent+1,"Existing key + fresh consent continues the original request");
   configured=false;
   const count=requests.length;

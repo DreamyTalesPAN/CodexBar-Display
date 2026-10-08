@@ -20,7 +20,6 @@ import {
   X,
   Plus,
   Redo2,
-  Sparkles,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -51,7 +50,6 @@ import {
   isAspectLockedPrimitive,
   normalizeCompanionPrimitive,
   primitiveBounds,
-  primitiveMaxBottom,
   setPrimitiveField,
   textPrimitiveFontSizeFromVisualHeight,
   textPrimitiveNaturalWidth,
@@ -100,7 +98,7 @@ import {
   setAIAnimationSpeed,
   spritePNG,
 } from "@/lib/ai-theme-document";
-import { AI_THEME_SCREENMASTER_ASSET_PATH } from "@/lib/ai-theme";
+import { AI_THEME_SCREENMASTER_ASSET_PATH, isCompanionSprite } from "@/lib/ai-theme";
 import { isAttachedSceneAnimation } from "@/lib/ai-theme";
 import {applyAIThemeLayout,layoutContext} from "@/lib/ai-theme-layout";
 import type { ThemeStudioScreenProps } from "../theme-studio-screen";
@@ -192,6 +190,8 @@ export function AIThemeStudioScreen({
     document: ThemeStudioDocument;
     id?: string;
   }>();
+  // Leaving is only safe once the latest edits are stored as a draft.
+  const [leaving, setLeaving] = useState(false);
   const request = useRef<AbortController | null>(null);
   const documentVersion = useRef(0);
   const spriteInput = useRef<HTMLInputElement>(null);
@@ -371,7 +371,6 @@ export function AIThemeStudioScreen({
                 index: i,
                 x: p.x,
                 y: p.y,
-                maxBottom: primitiveMaxBottom(p),
                 width: primitiveBounds(p).width,
                 height: primitiveBounds(p).height,
               },
@@ -739,6 +738,15 @@ export function AIThemeStudioScreen({
         return;
       }
       if (layout.mode !== "scene" || layout.edits.length) throw new Error("The AI edit plan is invalid. Your design is unchanged.");
+      // A new scene is drawn beside an imported image, never from it.
+      if (selected.some((i) => {
+        const path = document.spec.primitives[i]?.assetPath;
+        return path && path !== AI_THEME_SCREENMASTER_ASSET_PATH && !isCompanionSprite(path) && !isAttachedSceneAnimation(path) && path !== AI_THEME_ANIMATION_ASSET_PATH;
+      })) {
+        say("assistant", "I can only redraw pictures I created. Your imported image stays as it is; you can move, resize or replace it yourself.");
+        setPrompt("");
+        return;
+      }
       const concept = await generateAIThemeConcept(
         {
           prompt,
@@ -932,8 +940,21 @@ export function AIThemeStudioScreen({
       }}
     >
         <header className="flex items-center gap-3">
-          {onBackToLibrary ? <Button variant="ghost" size="icon" aria-label="Back to library" title="Back to library" disabled={locked} onClick={onBackToLibrary}><ArrowLeft /></Button> : null}
+          {onBackToLibrary ? <Button variant="ghost" size="icon" aria-label="Back to library" title="Back to library" disabled={locked} onClick={() => { if (dirty && persistedDraft.current !== document) setLeaving(true); else onBackToLibrary(); }}><ArrowLeft /></Button> : null}
           <h2 className="sr-only">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h2>
+          <Input
+            aria-label="Design name"
+            title="Design name"
+            className="h-9 min-w-0 max-w-xs border-transparent bg-transparent px-2 text-base font-semibold shadow-none hover:border-input focus-visible:border-ring"
+            value={document.packName}
+            maxLength={48}
+            disabled={locked}
+            onChange={(e) =>
+              mutate((d) => {
+                d.packName = e.target.value;
+              })
+            }
+          />
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
@@ -961,7 +982,7 @@ export function AIThemeStudioScreen({
         </header>
         {visibleInstallStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost)}</p> : transferStatus ? <p role="status" className="pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
           <main className="flex min-h-0 flex-1 flex-col gap-6 pt-2 lg:flex-row">
-            <div className="my-auto min-w-0 flex-1 py-4">
+            <div className="my-auto max-h-full min-w-0 flex-1 py-4 lg:overflow-y-auto">
             <div className="mx-auto mb-4 flex max-w-[680px] items-center justify-end gap-2">
               <div className="flex gap-1">
                 <Button
@@ -1053,7 +1074,7 @@ export function AIThemeStudioScreen({
                       const height = clampInt(
                         size.height,
                         1,
-                        primitiveMaxBottom(p) - p.y,
+                        DISPLAY_SIZE - p.y,
                       );
                       if (p.type === "text") {
                         p.fontSize = clampInt(
@@ -1088,133 +1109,8 @@ export function AIThemeStudioScreen({
                 </Button>
               </div>
             ) : null}
-            </div>
-            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
-            <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
-              {messages.length ? messages.map((message, i) => (
-                <p
-                  key={i}
-                  className={message.role === "user"
-                    ? "ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]"
-                    : "mr-8 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"}
-                >
-                  {message.content}
-                </p>
-              )) : (
-                <p className="my-auto text-center text-sm text-muted-foreground">
-                  Describe a design, ask for a change, or ask what is possible.
-                </p>
-              )}
-              {busy ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="motion-reduce:animate-none" />Working…</p> : null}
-              <div ref={chatEnd} />
-            </div>
-            <section className="flex w-full flex-col gap-3" aria-label="AI creation">
-              <label
-                htmlFor="ai-scene-request"
-                className="sr-only"
-              >
-                Your idea
-              </label>
-              <div className="flex items-center gap-3">
-              <div
-                className="min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
-                onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
-                onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
-              >
-                {attachments.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Attached reference images">
-                    {attachments.map((image, i) => (
-                      <Badge key={i} variant="secondary" className="gap-2 py-1 pr-1">
-                        <span className="size-8 rounded-sm bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} role="img" aria-label={image.name} />
-                        <span className="max-w-40 truncate">{image.name}</span>
-                        <Button variant="ghost" size="icon" className="size-6" aria-label={`Remove attachment ${image.name}`} disabled={locked || attaching} onClick={() => setAttachments(attachments.filter((_, index) => index !== i))}>
-                          <X className="size-3" />
-                        </Button>
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-                {selected.length > 0 ? (
-                  <div id="ai-selection-context" className="flex flex-wrap gap-1 px-3 pt-3" aria-live="polite">
-                    {selected.map((i) => (
-                      <Badge key={i} variant="secondary" className="max-w-full gap-1 pr-0.5">
-                        <span className="truncate">{friendlyElementName(document.spec.primitives[i], document.assets)}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-5"
-                          aria-label={`Remove reference to ${friendlyElementName(document.spec.primitives[i], document.assets)}`}
-                          disabled={locked}
-                          onClick={() => setSelected(selected.filter((item) => item !== i))}
-                        >
-                          <X className="size-3" />
-                        </Button>
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-              <Textarea
-                id="ai-scene-request"
-                ref={promptInput}
-                rows={1}
-                value={prompt}
-                aria-describedby={[selected.length ? "ai-selection-context" : "", error ? "ai-theme-error" : ""].filter(Boolean).join(" ") || undefined}
-                maxLength={2000}
-                disabled={locked}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (event.repeat) return;
-                  if (event.metaKey || event.ctrlKey || event.shiftKey) {
-                    const input = event.currentTarget;
-                    const start = input.selectionStart;
-                    const end = input.selectionEnd;
-                    const next = prompt.slice(0, start) + "\n" + prompt.slice(end);
-                    if (next.length > 2000) return;
-                    setPrompt(next);
-                    requestAnimationFrame(() => input.setSelectionRange(start + 1, start + 1));
-                  } else if (!locked && enabled && !connecting && prompt.trim()) {
-                    void generate();
-                  }
-                }}
-                className="min-h-14 max-h-64 resize-none overflow-y-auto rounded-none border-0 px-4 py-4 focus-visible:ring-0 [field-sizing:fixed]"
-                placeholder={selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…"}
-              />
-              </div>
-              <Button
-                className="h-14 shrink-0 px-6"
-                aria-busy={busy}
-                disabled={locked || attaching || !enabled || connecting || !prompt.trim()}
-                onClick={() => void generate()}
-              >
-                {busy ? <Spinner className="motion-reduce:animate-none" /> : <Sparkles />}
-                {busy ? "Creating…" : "Create"}
-              </Button>
-              </div>
-              <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size={canCancel ? "default" : "icon"}
-                aria-label={canCancel ? "Cancel" : "Add manually"}
-                title={canCancel ? "Cancel" : "Add element"}
-                disabled={locked && !canCancel}
-                onClick={canCancel ? cancel : () => openPanel("add")}
-              >
-                {canCancel ? "Cancel" : <SquarePlus />}
-              </Button>
-                <Button
-                  variant="ghost" size="icon"
-                  aria-label="Attach reference images" title="Attach images"
-                  disabled={locked || attaching || attachments.length >= 3}
-                  onClick={() => attachmentInput.current?.click()}
-                >
-                  {attaching ? <Spinner /> : <Paperclip />}
-                </Button>
-              </div>
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
-              <Collapsible className="w-full">
+              <Collapsible className="mx-auto mt-4 w-full max-w-[460px]">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
                     Details
@@ -1434,6 +1330,133 @@ export function AIThemeStudioScreen({
                 </CollapsibleContent>
               </Collapsible>
             ) : null}
+            </div>
+            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
+            <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
+              {messages.length ? messages.map((message, i) => (
+                <p
+                  key={i}
+                  className={message.role === "user"
+                    ? "ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]"
+                    : "mr-8 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]"}
+                >
+                  {message.content}
+                </p>
+              )) : (
+                <p className="my-auto text-center text-sm text-muted-foreground">
+                  Describe a design, ask for a change, or ask what is possible.
+                </p>
+              )}
+              {busy ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="motion-reduce:animate-none" />Working…</p> : null}
+              <div ref={chatEnd} />
+            </div>
+            <section className="flex w-full flex-col gap-3" aria-label="AI creation">
+              <label
+                htmlFor="ai-scene-request"
+                className="sr-only"
+              >
+                Your idea
+              </label>
+              <div className="flex items-center gap-3">
+              <div
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
+                onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
+                onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
+              >
+                {attachments.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Attached reference images">
+                    {attachments.map((image, i) => (
+                      <Badge key={i} variant="secondary" className="gap-2 py-1 pr-1">
+                        <span className="size-8 rounded-sm bg-cover bg-center" style={{ backgroundImage: `url(data:image/png;base64,${image.data})` }} role="img" aria-label={image.name} />
+                        <span className="max-w-40 truncate">{image.name}</span>
+                        <Button variant="ghost" size="icon" className="size-6" aria-label={`Remove attachment ${image.name}`} disabled={locked || attaching} onClick={() => setAttachments(attachments.filter((_, index) => index !== i))}>
+                          <X className="size-3" />
+                        </Button>
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+                {selected.length > 0 ? (
+                  <div id="ai-selection-context" className="flex flex-wrap gap-1 px-3 pt-3" aria-live="polite">
+                    {selected.map((i) => (
+                      <Badge key={i} variant="secondary" className="max-w-full gap-1 pr-0.5">
+                        <span className="truncate">{friendlyElementName(document.spec.primitives[i], document.assets)}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-5"
+                          aria-label={`Remove reference to ${friendlyElementName(document.spec.primitives[i], document.assets)}`}
+                          disabled={locked}
+                          onClick={() => setSelected(selected.filter((item) => item !== i))}
+                        >
+                          <X className="size-3" />
+                        </Button>
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+              <Textarea
+                id="ai-scene-request"
+                ref={promptInput}
+                rows={1}
+                value={prompt}
+                aria-describedby={[selected.length ? "ai-selection-context" : "", error ? "ai-theme-error" : ""].filter(Boolean).join(" ") || undefined}
+                maxLength={2000}
+                disabled={locked}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (event.repeat) return;
+                  if (event.metaKey || event.ctrlKey || event.shiftKey) {
+                    const input = event.currentTarget;
+                    const start = input.selectionStart;
+                    const end = input.selectionEnd;
+                    const next = prompt.slice(0, start) + "\n" + prompt.slice(end);
+                    if (next.length > 2000) return;
+                    setPrompt(next);
+                    requestAnimationFrame(() => input.setSelectionRange(start + 1, start + 1));
+                  } else if (!locked && enabled && !connecting && prompt.trim()) {
+                    void generate();
+                  }
+                }}
+                className="min-h-14 max-h-64 resize-none overflow-y-auto rounded-none border-0 py-4 pl-4 pr-14 focus-visible:ring-0 [field-sizing:fixed]"
+                placeholder={selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…"}
+              />
+                <Button
+                  size="icon"
+                  className="absolute bottom-2 right-2 size-10 rounded-full"
+                  aria-label="Create"
+                  title="Create"
+                  aria-busy={busy}
+                  disabled={locked || attaching || !enabled || connecting || !prompt.trim()}
+                  onClick={() => void generate()}
+                >
+                  {busy ? <Spinner className="motion-reduce:animate-none" /> : <ArrowUp />}
+                </Button>
+              </div>
+              </div>
+              <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size={canCancel ? "default" : "icon"}
+                aria-label={canCancel ? "Cancel" : "Add manually"}
+                title={canCancel ? "Cancel" : "Add element"}
+                disabled={locked && !canCancel}
+                onClick={canCancel ? cancel : () => openPanel("add")}
+              >
+                {canCancel ? "Cancel" : <SquarePlus />}
+              </Button>
+                <Button
+                  variant="ghost" size="icon"
+                  aria-label="Attach reference images" title="Attach images"
+                  disabled={locked || attaching || attachments.length >= 3}
+                  onClick={() => attachmentInput.current?.click()}
+                >
+                  {attaching ? <Spinner /> : <Paperclip />}
+                </Button>
+              </div>
             </section>
             <div className="mt-3 w-full space-y-3">
               {status && !busy ? (
@@ -1717,28 +1740,6 @@ export function AIThemeStudioScreen({
               <Collapsible>
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="group w-full justify-between">
-                    Rename design
-                    <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="px-4 pb-3 pt-2">
-                <label className="mt-2 grid gap-2 text-sm">
-                  Name in your saved designs
-                  <Input
-                    value={document.packName}
-                    maxLength={48}
-                    onChange={(e) =>
-                      mutate((d) => {
-                        d.packName = e.target.value;
-                      })
-                    }
-                  />
-                </label>
-              </CollapsibleContent>
-              </Collapsible>
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" className="group w-full justify-between">
                     Import & export
                     <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" />
                   </Button>
@@ -1840,9 +1841,9 @@ export function AIThemeStudioScreen({
         }}
       />
       <Dialog
-        open={Boolean(pending)}
+        open={Boolean(pending) || leaving}
         onOpenChange={(open) => {
-          if (!open) setPending(undefined);
+          if (!open) { setPending(undefined); setLeaving(false); }
         }}
       >
         <DialogContent>
@@ -1857,7 +1858,7 @@ export function AIThemeStudioScreen({
             <Button
               variant="outline"
               className="h-12 w-full"
-              onClick={() => setPending(undefined)}
+              onClick={() => { setPending(undefined); setLeaving(false); }}
             >
               Keep editing
             </Button>
@@ -1865,7 +1866,8 @@ export function AIThemeStudioScreen({
               variant="destructive"
               className="h-12 w-full"
               onClick={() => {
-                if (pending) load(pending);
+                if (leaving) onBackToLibrary?.();
+                else if (pending) load(pending);
               }}
             >
               Discard and continue

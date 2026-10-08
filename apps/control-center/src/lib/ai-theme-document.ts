@@ -1,4 +1,5 @@
 import { referencedThemeAssetPaths } from "./theme-studio";
+import { usageSectionIndices } from "@/components/theme-studio/design-controls";
 import { decodeSprite } from "@/components/live-vibetv-preview";
 import {
   applySceneMotion,
@@ -47,6 +48,17 @@ export function applyAIThemeCandidate(
     // Only an attached scene loop dictates the artwork rectangle; independent
     // companion sprites leave manually placed artwork where the customer put it.
     const hasLoop = candidate.spec.primitives.some((p) => p.assetPath === LOOP);
+    const incomingArt = candidate.spec.primitives.find((p) => p.assetPath === ART);
+    // A picture of another size is another layout: the old readouts would sit
+    // on top of it, so the new design replaces the old one as a whole.
+    const drawnHeight = (path: Record<string, { data: string }>) => Number(path[ART]?.data.split("\n", 2)[1]?.split(" ")[1]);
+    if (artwork && incomingArt && !candidate.preserveArtwork && drawnHeight(candidate.assets) !== drawnHeight(current.assets))
+      return { assets: candidate.assets, spec: candidate.spec, packName: current.packName, usage: current.usage };
+    const keepsPlace = Boolean(artwork && incomingArt && !hasLoop);
+    if (candidate.hideUsage) {
+      const usage = new Set(usageSectionIndices(next.spec.primitives).flat());
+      next.spec.primitives = next.spec.primitives.filter((_, i) => !usage.has(i));
+    }
     next.spec.primitives = next.spec.primitives.filter(
       (p) => !managed(p.assetPath),
     );
@@ -63,6 +75,10 @@ export function applyAIThemeCandidate(
             width: artwork.width,
             height: artwork.height,
           };
+        // Companion positions arrive relative to the picture at its default
+        // place; follow the picture to where the customer put it.
+        if (isCompanionSprite(p.assetPath) && keepsPlace)
+          return { ...p, x: p.x + artwork!.x - incomingArt!.x, y: p.y + artwork!.y - incomingArt!.y };
         if (p.assetPath === ANIMATION && oldCharacter)
           return {
             ...p,
@@ -176,8 +192,11 @@ export function conceptFromDocument(
   );
   const textColor =
     document.spec.primitives.find((p) => p.type === "text")?.color || "#EEEEEE";
+  const placed = document.spec.primitives.find((p) => p.assetPath === ART)!;
   const companions: AIThemeCompanion[] = document.spec.primitives.filter(p=>isCompanionSprite(p.assetPath)).map(p=>({
-    id: p.assetPath!.includes("pet-1") ? "pet-1" : "pet-2", x:p.x,y:p.y,size:p.width || 48,fps:p.fps ?? 4,frameCount:8,keyColor:"#FF00FF",reuse:true,sheetBase64:spritePNG(document.assets[p.assetPath!].data,true),
+    id: p.assetPath!.includes("pet-1") ? "pet-1" : "pet-2",
+    // The helper places companions on the picture; one dragged off it is described at the nearest spot on it.
+    x:Math.max(0,Math.min(p.x-placed.x,240-(p.width||48))),y:Math.max(0,Math.min(p.y-placed.y,(placed.height||128)-(p.width||48))),size:p.width || 48,fps:p.fps ?? 4,frameCount:8,keyColor:"#FF00FF",reuse:true,sheetBase64:spritePNG(document.assets[p.assetPath!].data,true),
   }));
   return {
     ...(companions.length ? {companions} : {}),
@@ -226,8 +245,9 @@ export function conceptFromDocument(
 
 function sceneReferencePNG(document: ThemeStudioDocument): string {
   const canvas = window.document.createElement("canvas");
+  const placed = document.spec.primitives.find((p) => p.assetPath === ART);
   canvas.width = 240;
-  canvas.height = 128;
+  canvas.height = placed?.height || 128;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Image preparation is unavailable.");
   for (const p of document.spec.primitives) {
@@ -244,7 +264,7 @@ function sceneReferencePNG(document: ThemeStudioDocument): string {
       sy = (p.height || decoded.height) / decoded.height;
     for (const r of decoded.frames[0]) {
       ctx.fillStyle = r.color;
-      ctx.fillRect(p.x + r.x * sx, p.y + r.y * sy, r.width * sx, r.height * sy);
+      ctx.fillRect(p.x - (placed?.x || 0) + r.x * sx, p.y - (placed?.y || 0) + r.y * sy, r.width * sx, r.height * sy);
     }
   }
   return canvas.toDataURL("image/png").split(",")[1];
@@ -299,39 +319,39 @@ export function pruneUnusedThemeAssets(document: ThemeStudioDocument): void {
 
 // The device cannot blend an animated sprite with what lies beneath it: it
 // fills the sprite's transparent pixels with the theme background colour. For
-// the copy that goes to the device, paint the artwork behind each companion
-// into its frames. The editable document keeps the transparent sprite.
+// the copy that goes to the device, paint the picture and the coloured areas
+// drawn before each companion into its frames. The editable document keeps the
+// transparent sprite.
 export function flattenCompanionSprites(document: ThemeStudioDocument): ThemeStudioDocument {
-  const art = document.spec.primitives.find((p) => p.assetPath === ART);
-  const artwork = decodeSprite(document.assets[ART]?.data || "");
-  if (!art || !artwork || !document.spec.primitives.some((p) => isCompanionSprite(p.assetPath))) return document;
-  const artWidth = art.width || artwork.width, artHeight = art.height || artwork.height;
-  const backdrop = new Array<string | undefined>(artWidth * artHeight);
-  const paint = (target: Array<string | undefined>, width: number, height: number, scaleX: number, scaleY: number, rects: typeof artwork.frames[number]) => {
-    for (const r of rects) {
-      const x2 = Math.min(width, Math.ceil((r.x + r.width) * scaleX)), y2 = Math.min(height, Math.ceil((r.y + r.height) * scaleY));
-      for (let y = Math.floor(r.y * scaleY); y < y2; y++)
-        for (let x = Math.floor(r.x * scaleX); x < x2; x++) target[y * width + x] = r.color;
-    }
+  if (!document.spec.primitives.some((p) => isCompanionSprite(p.assetPath))) return document;
+  const SIZE = 240;
+  const backdrop = new Array<string | undefined>(SIZE * SIZE);
+  const fill = (target: Array<string | undefined>, width: number, height: number, x1: number, y1: number, x2: number, y2: number, color: string) => {
+    for (let y = Math.max(0, Math.floor(y1)); y < Math.min(height, Math.ceil(y2)); y++)
+      for (let x = Math.max(0, Math.floor(x1)); x < Math.min(width, Math.ceil(x2)); x++) target[y * width + x] = color;
   };
-  paint(backdrop, artWidth, artHeight, artWidth / artwork.width, artHeight / artwork.height, artwork.frames[0]);
   const next = cloneDocument(document);
   for (const p of next.spec.primitives) {
-    if (!isCompanionSprite(p.assetPath)) continue;
-    const sprite = decodeSprite(next.assets[p.assetPath!]?.data || "");
+    const sprite = p.type === "sprite" ? decodeSprite(next.assets[p.assetPath || ""]?.data || "") : null;
+    if (p.type === "rect" && p.color) fill(backdrop, SIZE, SIZE, p.x, p.y, p.x + (p.width || 0), p.y + (p.height || 0), p.color);
     if (!sprite) continue;
+    const scaleX = (p.width || sprite.width) / sprite.width, scaleY = (p.height || sprite.height) / sprite.height;
+    if (!isCompanionSprite(p.assetPath)) {
+      if (sprite.frames.length === 1)
+        for (const r of sprite.frames[0]) fill(backdrop, SIZE, SIZE, p.x + r.x * scaleX, p.y + r.y * scaleY, p.x + (r.x + r.width) * scaleX, p.y + (r.y + r.height) * scaleY, r.color);
+      continue;
+    }
     const { width, height } = sprite;
-    const shown = { width: p.width || width, height: p.height || height };
     const frames = sprite.frames.map((rects) => {
       const colors = new Array<string | undefined>(width * height);
       for (let y = 0; y < height; y++) {
-        const artY = p.y - art.y + Math.floor(((y + 0.5) * shown.height) / height);
+        const shownY = p.y + Math.floor((y + 0.5) * scaleY);
         for (let x = 0; x < width; x++) {
-          const artX = p.x - art.x + Math.floor(((x + 0.5) * shown.width) / width);
-          if (artX >= 0 && artY >= 0 && artX < artWidth && artY < artHeight) colors[y * width + x] = backdrop[artY * artWidth + artX];
+          const shownX = p.x + Math.floor((x + 0.5) * scaleX);
+          if (shownX >= 0 && shownY >= 0 && shownX < SIZE && shownY < SIZE) colors[y * width + x] = backdrop[shownY * SIZE + shownX];
         }
       }
-      paint(colors, width, height, 1, 1, rects);
+      for (const r of rects) fill(colors, width, height, r.x, r.y, r.x + r.width, r.y + r.height, r.color);
       const rgba = new Uint8ClampedArray(width * height * 4);
       colors.forEach((color, i) => {
         if (!color) return;
