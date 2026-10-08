@@ -8,6 +8,13 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { THEME_STUDIO_DRAFT_STORAGE_KEY } from "@/lib/theme-studio";
+import {
+  loadThemeStudioRecovery,
+  USER_THEMES_STORAGE_KEY,
+  writeThemeStudioRecovery,
+  writeUserThemes,
+} from "@/lib/theme-studio-storage";
 import { markWhatsNewSeen } from "@/lib/whats-new";
 import { expectNoAxeViolations } from "@/test/axe";
 import { expectKeepsFocus } from "@/test/focus";
@@ -285,6 +292,62 @@ it("reads the usage display in Settings and saves a change at once", async () =>
     'PATCH /api/local-companion/v1/preferences/vibetv.usage.displayMode {"value":null}',
   );
   expect(window.usageDisplay().textContent).toBe("Default");
+});
+
+// Issue #183, acceptance: "Global settings never modify theme drafts, theme
+// exports, or dirty state." Theme Studio keeps a theme with unsaved changes as
+// a recovery copy beside the saved themes; it exists only while there are
+// such changes.
+it("leaves the saved themes and a theme with unsaved changes as they are when a preference is saved", async () => {
+  const themeDocument = {
+    assets: {},
+    packName: "My Theme",
+    spec: {
+      bgColor: "#000000",
+      primitives: [{ color: "#FFFFFF", text: "Hi", type: "text" as const, x: 1, y: 2 }],
+      themeId: "my-theme",
+      themeRev: 1,
+      themeSpecVersion: 1 as const,
+    },
+  };
+  const savedAt = "2026-07-15T08:00:00.000Z";
+  expect(writeUserThemes([{ document: themeDocument, id: "my-theme", updatedAt: savedAt }]).ok).toBe(true);
+  expect(
+    writeThemeStudioRecovery({
+      baseUpdatedAt: savedAt,
+      document: { ...themeDocument, packName: "My Theme, changed" },
+      libraryId: "my-theme",
+      source: "custom",
+      updatedAt: "2026-07-15T08:30:00.000Z",
+    }).ok,
+  ).toBe(true);
+  const stored = () => [
+    localStorage.getItem(USER_THEMES_STORAGE_KEY),
+    localStorage.getItem(THEME_STUDIO_DRAFT_STORAGE_KEY),
+  ];
+  try {
+    const window = startWindow();
+    await window.wait(10);
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await window.wait(1);
+    const before = stored();
+    expect(before.every(Boolean)).toBe(true);
+
+    await window.choose("Remaining");
+    expect(window.companion.requests).toContain(
+      'PATCH /api/local-companion/v1/preferences/vibetv.usage.displayMode {"value":"remaining"}',
+    );
+    await window.choose("Default");
+
+    expect(stored()).toEqual(before);
+    expect(loadThemeStudioRecovery()).toMatchObject({
+      ok: true,
+      value: { document: { packName: "My Theme, changed" }, libraryId: "my-theme" },
+    });
+  } finally {
+    localStorage.removeItem(USER_THEMES_STORAGE_KEY);
+    localStorage.removeItem(THEME_STUDIO_DRAFT_STORAGE_KEY);
+  }
 });
 
 it("keeps the stored usage display and says so when the write is refused", async () => {

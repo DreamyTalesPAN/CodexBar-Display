@@ -5862,3 +5862,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Not yet seen by Paul; covered by the blanket approval only. No Control Center screen changes. The Terminal installer served at `app.vibetv.shop/install-control-center-companion.sh` (the macOS support fallback) stops on any system other than macOS with `This installer is for macOS only. On Windows, open https://app.vibetv.shop and choose Download for Windows.` instead of `this installer currently supports macOS only`. The lines around it ("VIBETV setup needs attention.", the retry hint and the support log path) are unchanged. The developer installer in the repository prints the same as two lines: `error: this installer is for macOS only` and `hint: on Windows, open https://app.vibetv.shop and choose Download for Windows`.
 - Scope: `scripts/install-control-center-companion-release.sh` and its identical hosted copy `apps/control-center/public/install-control-center-companion.sh`, `scripts/install-control-center-companion.sh`, a Windows section in `docs/customer-setup.md`, and this approval record. Checked with `bash -n` only; the scripts were not run on Windows or Linux.
 - What's new: none — an error message of a support script, not a screen
+
+## 2026-10-09 — Test only: saving a preference leaves Theme Studio's themes alone (#183)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. This adds no visible result.
+- Approved customer-visible result: Unchanged. A new test opens Settings with a saved theme and a theme with unsaved changes in the app's storage, saves the usage display twice, and checks that both are stored exactly as before.
+- Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. No product code, copy, control or state changes.
+- What's new: none — a test, nothing a customer sees
