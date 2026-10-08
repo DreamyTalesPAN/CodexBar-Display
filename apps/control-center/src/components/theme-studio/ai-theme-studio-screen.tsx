@@ -15,6 +15,7 @@ import {
   ImagePlus,
   Paperclip,
   Square,
+  SquarePlus,
   FolderOpen,
   X,
   Plus,
@@ -1009,7 +1010,7 @@ export function AIThemeStudioScreen() {
               </label>
               <div className="flex items-center gap-3">
               <div
-                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
+                className="min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
@@ -1071,17 +1072,9 @@ export function AIThemeStudioScreen() {
                     void generate();
                   }
                 }}
-                className="min-h-14 max-h-64 resize-none overflow-y-auto rounded-none border-0 py-4 pl-4 pr-14 focus-visible:ring-0 [field-sizing:fixed]"
+                className="min-h-14 max-h-64 resize-none overflow-y-auto rounded-none border-0 px-4 py-4 focus-visible:ring-0 [field-sizing:fixed]"
                 placeholder={selected.length ? "Describe what to change in this element…" : "Describe your design or what to change…"}
               />
-                <Button
-                  variant="ghost" size="icon" className="absolute bottom-2 right-2"
-                  aria-label="Attach reference images" title="Attach images"
-                  disabled={locked || attaching || attachments.length >= 3}
-                  onClick={() => attachmentInput.current?.click()}
-                >
-                  {attaching ? <Spinner /> : <Paperclip />}
-                </Button>
               </div>
               <Button
                 className="h-14 shrink-0 px-6"
@@ -1093,17 +1086,26 @@ export function AIThemeStudioScreen() {
                 {busy ? "Creating…" : "Create"}
               </Button>
               </div>
+              <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size={canCancel ? "default" : "icon"}
-                className="self-start"
                 aria-label={canCancel ? "Cancel" : "Add manually"}
-                title={canCancel ? "Cancel" : "Add manually"}
+                title={canCancel ? "Cancel" : "Add element"}
                 disabled={locked && !canCancel}
                 onClick={canCancel ? cancel : () => openPanel("add")}
               >
-                {canCancel ? "Cancel" : <Plus />}
+                {canCancel ? "Cancel" : <SquarePlus />}
               </Button>
+                <Button
+                  variant="ghost" size="icon"
+                  aria-label="Attach reference images" title="Attach images"
+                  disabled={locked || attaching || attachments.length >= 3}
+                  onClick={() => attachmentInput.current?.click()}
+                >
+                  {attaching ? <Spinner /> : <Paperclip />}
+                </Button>
+              </div>
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
               <Collapsible className="w-full">
                 <CollapsibleTrigger asChild>

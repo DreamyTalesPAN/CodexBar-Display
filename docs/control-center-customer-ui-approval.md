@@ -3988,3 +3988,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested keeping Create vertically centered when the prompt spans multiple lines.
 - Approved customer-visible result: Create stays vertically centered beside the prompt box at every prompt height.
+
+
+## 2026-10-08 — Prompt toolbar
+
+- User approval: Paul requested moving attachments beside the manual add action below the prompt and using a clearer element-add icon.
+- Approved customer-visible result: A square-with-plus icon adds elements; the paperclip attaches reference images in the same left-aligned toolbar beneath the prompt. The prompt uses its full width.
