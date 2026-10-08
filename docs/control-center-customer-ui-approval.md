@@ -6072,3 +6072,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new wording or control. Support › `Active theme` shows the name the customer gave a theme they saved in Theme Studio, when that theme is in the library of this app: `New Theme` instead of `My Theme 3`. While the screensaver is on screen it shows that name too, where it read `Custom theme`, when the file VibeTV holds is the saved theme's current one. Everything else is as before: a catalog theme, and an ID the catalog also lists, keeps the name made from its ID; a theme that was deleted from the library or changed since it was sent reads as before (`Custom theme` during standby).
 - Scope: `activeThemeLabel` in `apps/control-center/src/components/logs-screen.tsx`, one test in `logs-screen.test.tsx`, and this approval record (issue #558); checked with unit tests only. The list of sent files holds paths without names, so the name comes from the library.
 - What's new: none — a name on Support
+
+## 2026-10-09 — Customer flow test turns the screensaver on before Screensaver Studio sends
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; no wording, nothing for him to see.
+- Approved customer-visible result: Nothing changes for the customer. The automated customer flow that sends a screensaver from Screensaver Studio now starts with `Show screensaver` on, because Studio sends only then, as the entry about `Send to VibeTV` in Screensaver Studio above describes it.
+- Scope: the device state of one flow in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record.
+- What's new: none — a test only

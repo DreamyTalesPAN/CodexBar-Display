@@ -10806,6 +10806,13 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
         },
       },
     ],
+    // Screensaver Studio sends only while Show screensaver is on.
+    standbySettings: {
+      enabled: true,
+      timeoutMinutes: 10,
+      brightnessPercent: 20,
+      screensaverPath: "",
+    },
     onThemeInstallRequest: (request) => {
       themeInstallRequests.push(request);
     },
