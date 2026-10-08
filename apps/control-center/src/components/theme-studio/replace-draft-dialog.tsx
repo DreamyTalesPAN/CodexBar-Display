@@ -16,10 +16,13 @@ import {
 // in the editor, and in the library while an older draft waits to be resumed.
 export function ReplaceDraftDialog({
   children,
+  keepLabel = "Keep editing",
   onKeep,
   onReplace,
 }: {
   children: ReactNode;
+  /** In the library nothing is being edited: there it keeps the draft. */
+  keepLabel?: string;
   onKeep: () => void;
   onReplace: () => void;
 }) {
@@ -31,7 +34,7 @@ export function ReplaceDraftDialog({
           <AlertDialogDescription>{children}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel autoFocus>Keep editing</AlertDialogCancel>
+          <AlertDialogCancel autoFocus>{keepLabel}</AlertDialogCancel>
           <AlertDialogAction onClick={onReplace} variant="destructive">
             Replace
           </AlertDialogAction>

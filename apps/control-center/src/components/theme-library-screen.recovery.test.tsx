@@ -68,7 +68,9 @@ it("asks before a new theme takes the place of an older unsaved draft", async ()
   expect(
     screen.getByText("Draft keep me has changes that are not saved. What you open takes its place."),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  // Here nothing is being edited: the button keeps the draft and the list.
+  expect(screen.queryByRole("button", { name: "Keep editing" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Keep draft" }));
   expect(screen.queryByText("Editor open")).toBeNull();
   expect(stored.cleared).toBe(0);
   expect(screen.getByText("Continue your unsaved theme")).toBeTruthy();

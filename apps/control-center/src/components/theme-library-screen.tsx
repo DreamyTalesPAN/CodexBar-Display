@@ -776,6 +776,7 @@ export function ThemeLibraryScreen({
       ) : null}
       {replacingRecovery && recovery ? (
         <ReplaceDraftDialog
+          keepLabel="Keep draft"
           onKeep={() => setReplacingRecovery(null)}
           onReplace={() => {
             setReplacingRecovery(null);
