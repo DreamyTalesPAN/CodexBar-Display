@@ -631,7 +631,7 @@ func TestARetriedSetupStepDoesNotFloodTheTimeline(t *testing.T) {
 	for _, event := range server.Timeline().Snapshot(server.currentTime()).Events {
 		got = append(got, event.State)
 	}
-	if want := "started,failed,started,succeeded"; strings.Join(got, ",") != want {
+	if want := "started,failed,succeeded"; strings.Join(got, ",") != want {
 		t.Fatalf("timeline states = %v, want %s", got, want)
 	}
 }
@@ -687,5 +687,31 @@ func TestDiagnosticsTimelineNeverCarriesPrivateValues(t *testing.T) {
 				t.Fatalf("field %q of %+v is not an identifier", field, event)
 			}
 		}
+	}
+}
+
+// Found in the Mac app: a screensaver installed twice had "started" as its
+// last entry for good, because the setup log folds the second run into the
+// first. A run that really happened has its own start and its own end.
+func TestASecondRunOfAStepRecordsItsOwnStartAndEnd(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	for i := 0; i < 2; i++ {
+		server.recordSetupEvent(setupEvent{Stage: "screensaver_install", Status: "started", Message: "Installing Night Clock."})
+		server.recordSetupEvent(setupEvent{Stage: "screensaver_install", Status: "succeeded", Message: "Night Clock installed."})
+	}
+	if log := getSetupLog(t, server); len(log.Events) != 2 || log.Events[1].Count != 2 {
+		t.Fatalf("the setup log should still fold the second run: %+v", log.Events)
+	}
+
+	log := server.Timeline().Snapshot(server.currentTime())
+	var got []string
+	for _, event := range log.Events {
+		got = append(got, event.State)
+	}
+	if want := "started,succeeded,started,succeeded"; strings.Join(got, ",") != want {
+		t.Fatalf("timeline states = %v, want %s", got, want)
+	}
+	if len(log.Current) != 1 || log.Current[0].State != "succeeded" {
+		t.Fatalf("current = %+v, want the install as succeeded", log.Current)
 	}
 }

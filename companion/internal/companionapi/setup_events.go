@@ -144,9 +144,7 @@ func (l *setupEventLog) reset(now time.Time) {
 	l.record(now, setupEvent{Stage: "setup_reset", Status: "started", Message: "New setup session started."})
 }
 
-// record logs one setup step and reports whether it became a new entry; a
-// repeat folded into an earlier entry reports false.
-func (l *setupEventLog) record(now time.Time, event setupEvent) bool {
+func (l *setupEventLog) record(now time.Time, event setupEvent) {
 	event.Message = sanitizeErrorDetail(errors.New(event.Message))
 	event.At = now.UTC().Format(time.RFC3339)
 	l.mu.Lock()
@@ -158,7 +156,7 @@ func (l *setupEventLog) record(now time.Time, event setupEvent) bool {
 		if sameSetupEvent(*last, event) {
 			last.Count++
 			last.At = event.At
-			return false
+			return
 		}
 		// A repeated start/result pair (a retried search that found the same
 		// nothing) folds into the previous pair instead of growing the list.
@@ -167,11 +165,10 @@ func (l *setupEventLog) record(now time.Time, event setupEvent) bool {
 			l.session.Events[n-3].Count++
 			l.session.Events[n-2].Count++
 			l.session.Events[n-2].At = event.At
-			return false
+			return
 		}
 	}
 	l.appendLocked(event)
-	return true
 }
 
 func (l *setupEventLog) appendLocked(event setupEvent) {
@@ -222,12 +219,16 @@ func (l *setupEventLog) sessionID(now time.Time) string {
 }
 
 // recordSetupEvent is the one place a setup step is logged: in the setup log
-// the customer sees, and as a transition in the support timeline. A repeat the
-// setup log folds (a search retried with the same result) is no transition.
+// the customer sees, and as a transition in the support timeline. A step
+// started again after it failed is a retry: the timeline waits for its result,
+// so a search repeated with the same failure stays one entry, while a second
+// run of a step that had succeeded gets its own start and end.
 func (s *Server) recordSetupEvent(event setupEvent) {
-	if s.setupEvents.record(s.currentTime(), event) {
-		s.recordTimeline(timeline.Event{Component: event.Stage, State: event.Status, Reason: event.Code})
+	s.setupEvents.record(s.currentTime(), event)
+	if last, ok := s.timeline.Latest(event.Stage); ok && last.State == "failed" && event.Status == "started" {
+		return
 	}
+	s.recordTimeline(timeline.Event{Component: event.Stage, State: event.Status, Reason: event.Code})
 }
 
 // Timeline is the support timeline. The runtime hands it to its display

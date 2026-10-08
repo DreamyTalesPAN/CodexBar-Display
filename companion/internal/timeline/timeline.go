@@ -117,6 +117,18 @@ func (s *Store) Record(at time.Time, event Event) {
 	s.saveLocked()
 }
 
+// Latest returns the latest event of a component.
+func (s *Store) Latest(component string) (Event, bool) {
+	if s == nil {
+		return Event{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loadLocked()
+	event, ok := s.current[component]
+	return event, ok
+}
+
 // Snapshot returns the retained events, oldest first.
 func (s *Store) Snapshot(now time.Time) Log {
 	out := Log{Version: Version, Events: []Event{}}
