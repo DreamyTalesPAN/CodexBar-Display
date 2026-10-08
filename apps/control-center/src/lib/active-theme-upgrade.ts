@@ -1,4 +1,5 @@
 import type { DeviceInfo } from "@/components/control-center-types";
+import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { validateThemeSpec } from "@/lib/theme-studio";
 import type { UserThemeRecord } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
@@ -201,9 +202,11 @@ export function installedScreensaver(
       validateThemeSpec(document.spec, document.assets, "screensaver")
         .themeSpecPath === installedPath,
   )?.document;
+  // A file this app sent for a screensaver that was changed or deleted since
+  // is still the customer's, not the catalog screensaver it is named like.
   return own
     ? { themeId: own.spec.themeId, title: own.packName }
-    : resolveInstalledScreensaver(themes, installedPath);
+    : resolveInstalledScreensaver(themes, installedPath, sentOwnThemePaths());
 }
 
 // The screensaver slot drifts exactly like the live slot when the catalog ships a

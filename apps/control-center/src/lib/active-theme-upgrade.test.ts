@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DeviceInfo } from "@/components/control-center-types";
 import {
   buildThemePack,
@@ -9,6 +9,7 @@ import {
   importThemeSpec,
   validateThemeSpec,
 } from "@/lib/theme-studio";
+import { rememberSentOwnThemePath } from "@/lib/sent-own-theme-paths";
 import type { UserThemeRecord } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import {
@@ -331,6 +332,36 @@ describe("resolveScreensaverUpgrade", () => {
         ownPaths,
       ).theme,
     ).toBe(resetCountdown);
+  });
+
+  // Sent, then changed and saved again, or deleted: no saved screensaver has
+  // that file any more. The app sent it, so Settings and the Screensavers list
+  // do not name it after the catalog screensaver its file name starts like.
+  it("does not name a file the app sent for an own screensaver after a catalog one", () => {
+    const resetCountdown = {
+      ...screensaver,
+      id: "reset-countdown",
+      themeId: "reset-countdown",
+      themeSpecPath: "/themes/s/rcf-6-03e818f0.json",
+      title: "Reset Countdown",
+    } satisfies ThemeProduct;
+    const sent = "/themes/s/rcf-1-0a1b2c.json";
+    const stored = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => void stored.set(key, value),
+      },
+    });
+    try {
+      expect(installedScreensaver([resetCountdown], [], sent)?.title).toBe(
+        "Reset Countdown",
+      );
+      rememberSentOwnThemePath(sent);
+      expect(installedScreensaver([resetCountdown], [], sent)).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   // Token Fire 0.1.3 was shipped as tf-1-874fd8e2. Taking every revision-1
