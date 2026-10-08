@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { downloadSupportReport } from "./support-report";
+import { downloadSupportReport, supportReportFilename } from "./support-report";
 import { SupportReportActions } from "./support-report-actions";
 
 vi.mock("./support-report", async (importOriginal) => ({
@@ -70,12 +70,14 @@ describe("SupportReportActions", () => {
         );
       });
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    // The file is named after this computer's own time (#579), whatever its zone.
+    const reportFile = supportReportFilename("2026-10-07T06:58:00.000Z");
 
-    saveDialogEnded("vibetv-support-report-2026-10-07T06-58-00-000Z.json", false);
+    saveDialogEnded(reportFile, false);
     saveDialogEnded("vibetv-theme-new-theme.zip", true);
     expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
 
-    saveDialogEnded("vibetv-support-report-2026-10-07T06-58-00-000Z.json", true);
+    saveDialogEnded(reportFile, true);
     expect(screen.getByRole("button", { name: "Downloaded" })).toBeTruthy();
     // The customer chose the folder, so the Downloads folder is not named.
     expect(screen.queryByRole("status")).toBeNull();
