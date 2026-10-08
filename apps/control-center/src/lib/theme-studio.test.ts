@@ -38,12 +38,83 @@ describe("validateThemeSpec", () => {
     expect(result.themeSpecPath).toMatch(/^\/themes\/u\//);
   });
 
+  it("rejects provider maps that overflow the firmware string pool", () => {
+    const spec = validSpec();
+    const keyPrefix = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const path = `/themes/u/${"b".repeat(17)}.cbi`;
+    const providerAssets: Record<string, string> = {};
+    for (let i = 0; i < 16; i += 1) {
+      providerAssets[`${keyPrefix}${String(i).padStart(2, "0")}`] = path;
+    }
+    spec.primitives = [
+      {
+        height: 8,
+        providerAssets,
+        type: "sprite",
+        width: 8,
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    const result = validateThemeSpec(spec);
+    expect(result.errors.some((error) => error.includes("string pool"))).toBe(
+      true,
+    );
+  });
+
+  it("counts compiled strings as UTF-8 bytes", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        color: "#FFFFFF",
+        text: "é".repeat(600),
+        type: "text",
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    const result = validateThemeSpec(spec);
+    expect(result.errors).toContain(
+      "Compiled string pool is too large: 1201/1024 bytes.",
+    );
+  });
+
+  it("rejects colorStops and valign on the wrong primitive types", () => {
+    const colorStopsOnRect = validSpec();
+    colorStopsOnRect.primitives[0].colorStops = [{ color: "#EF4444", gte: 0 }];
+    expect(validateThemeSpec(colorStopsOnRect).errors).toContain(
+      "Element 1: colorStops is only supported on progress.",
+    );
+
+    const valignOnRect = validSpec();
+    valignOnRect.primitives[0].valign = "middle";
+    expect(validateThemeSpec(valignOnRect).errors).toContain(
+      "Element 1: vertical align is only supported on text.",
+    );
+  });
+
+  it.each(["rect", "text", "progress", "gif", "pixels"] as const)(
+    "rejects provider maps on %s before exporting an uninstallable pack",
+    (type) => {
+      const spec = validSpec();
+      spec.primitives[0].type = type;
+      spec.primitives[0].providerAssets = { codex: "/themes/u/logo.cbi" };
+      expect(validateThemeSpec(spec).errors).toContain(
+        "Element 1: providerAssets is only supported on sprites.",
+      );
+      expect(() => buildThemePack(spec, "Invalid provider map", {})).toThrow();
+    },
+  );
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [
       {
         assetPath: "/themes/u/main.cbi",
         height: 1,
+        providerAssets: { cursor: "/themes/u/cursor.cbi" },
         stateAssets: { coding: "/themes/u/coding.cbi" },
         type: "sprite",
         width: 1,
@@ -62,6 +133,7 @@ describe("validateThemeSpec", () => {
       "Test Screensaver",
       {
         "/themes/u/coding.cbi": asset,
+        "/themes/u/cursor.cbi": asset,
         "/themes/u/main.cbi": asset,
       },
       "screensaver",
@@ -79,9 +151,82 @@ describe("validateThemeSpec", () => {
     ]);
     expect(packedSpec.p[0].a).toMatch(/^\/themes\/s\/main-[0-9a-f]{8}\.cbi$/);
     expect(packedSpec.p[0]).not.toHaveProperty("sa");
+    expect(packedSpec.p[0]).not.toHaveProperty("pa");
     expect(spec.primitives[0].stateAssets).toEqual({
       coding: "/themes/u/coding.cbi",
     });
+    expect(spec.primitives[0].providerAssets).toEqual({
+      cursor: "/themes/u/cursor.cbi",
+    });
+  });
+
+  it("round-trips provider assets through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        assetPath: "/themes/u/fallback.cbi",
+        height: 24,
+        providerAssets: {
+          claude: "/themes/u/claude.cbi",
+          cursor: "/themes/u/cursor.cbi",
+        },
+        type: "sprite",
+        width: 24,
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    const compact = JSON.parse(deviceThemeSpecJson(spec));
+    expect(compact.p[0].pa).toEqual({
+      claude: "/themes/u/claude.cbi",
+      cursor: "/themes/u/cursor.cbi",
+    });
+    expect(compact.p[0].a).toBe("/themes/u/fallback.cbi");
+
+    const roundTrip = importThemeSpec(compact);
+    expect(roundTrip.primitives[0].providerAssets).toEqual({
+      claude: "/themes/u/claude.cbi",
+      cursor: "/themes/u/cursor.cbi",
+    });
+  });
+
+  it("round-trips progress colorStops through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        color: "#22C55E",
+        colorStops: [
+          { color: "#22C55E", gte: 75 },
+          { color: "#EAB308", gte: 50 },
+          { color: "#F59E0B", gte: 25 },
+          { color: "#EF4444", gte: 0 },
+        ],
+        height: 12,
+        progressStyle: "segments",
+        segments: 12,
+        type: "progress",
+        width: 120,
+        x: 10,
+        y: 20,
+      },
+    ];
+
+    const compact = JSON.parse(deviceThemeSpecJson(spec));
+    expect(compact.p[0].cs).toEqual([
+      { c: "#22C55E", gte: 75 },
+      { c: "#EAB308", gte: 50 },
+      { c: "#F59E0B", gte: 25 },
+      { c: "#EF4444", gte: 0 },
+    ]);
+
+    const roundTrip = importThemeSpec(compact);
+    expect(roundTrip.primitives[0].colorStops).toEqual([
+      { color: "#22C55E", gte: 75 },
+      { color: "#EAB308", gte: 50 },
+      { color: "#F59E0B", gte: 25 },
+      { color: "#EF4444", gte: 0 },
+    ]);
   });
 
   it("keeps screensaver assets with matching file names distinct", () => {
@@ -131,17 +276,17 @@ describe("validateThemeSpec", () => {
 
   it("enforces the central 2 KB screensaver budget without motion lint", () => {
     const spec = validSpec();
-    spec.primitives = [
-      {
-        color: "#FFFFFF",
-        fontSize: 1,
-        text: "x".repeat(2300),
-        type: "text",
-        width: 240,
-        x: 0,
-        y: 0,
-      },
-    ];
+    spec.primitives = Array.from({ length: 32 }, (_, index) => ({
+      bgColor: "#000000",
+      borderColor: "#111111",
+      borderRadius: 2,
+      color: "#FFFFFF",
+      height: 20,
+      type: "rect" as const,
+      width: 20,
+      x: index % 12,
+      y: Math.floor(index / 12),
+    }));
 
     const live = validateThemeSpec(spec);
     const screensaver = validateThemeSpec(spec, {}, "screensaver");
@@ -236,6 +381,31 @@ describe("validateThemeSpec", () => {
     expect(importThemeSpec(deviceSpec).primitives[0].fit).toBe("shrink");
   });
 
+  it("round-trips vertical text align through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        fit: "shrink",
+        fontSize: 2,
+        height: 32,
+        text: "{label}",
+        type: "text",
+        valign: "middle",
+        width: 156,
+        x: 68,
+        y: 20,
+      },
+    ];
+
+    const deviceSpec = JSON.parse(deviceThemeSpecJson(spec));
+    expect(deviceSpec.p[0].va).toBe("middle");
+    expect(deviceSpec.p[0].h).toBe(32);
+    expect(importThemeSpec(deviceSpec).primitives[0].valign).toBe("middle");
+    expect(importThemeSpec({ p: [{ t: "tx", va: "center", h: 32 }] }).primitives[0].valign).toBe(
+      "middle",
+    );
+  });
+
   it("rejects border radii outside the supported pixel range", () => {
     const spec = validSpec();
     spec.primitives[0].borderRadius = 121;
@@ -310,5 +480,85 @@ describe("buildThemePack capability declaration", () => {
 
     expect(pack.manifest.requiredCapabilities).toBeUndefined();
     expect(pack.manifest.minFirmware).toBe("1.0.24");
+  });
+
+  it("declares provider assets, color stops, and valign on 1.0.42", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        assetPath: "/themes/u/fb.cbi",
+        providerAssets: { codex: "/themes/u/xo.cbi" },
+        type: "sprite",
+        x: 0,
+        y: 0,
+        width: 32,
+        height: 32,
+      },
+      {
+        binding: "label",
+        color: "#FFFFFF",
+        fit: "shrink",
+        height: 32,
+        type: "text",
+        valign: "middle",
+        width: 120,
+        x: 40,
+        y: 0,
+      },
+      {
+        binding: "session",
+        color: "#22C55E",
+        colorStops: [
+          { color: "#22C55E", gte: 75 },
+          { color: "#EF4444", gte: 0 },
+        ],
+        height: 10,
+        type: "progress",
+        width: 40,
+        x: 0,
+        y: 40,
+      },
+    ];
+    const asset = {
+      contentType: "text/plain",
+      data: "CBI1\n1 1\n1\n#FFFFFF\na\n",
+      encoding: "text" as const,
+    };
+    const pack = buildThemePack(
+      spec,
+      "Pixel Battery",
+      {
+        "/themes/u/fb.cbi": asset,
+        "/themes/u/xo.cbi": asset,
+      },
+    );
+
+    expect(pack.manifest.requiredCapabilities).toEqual([
+      "provider-assets-v1",
+      "color-stops-v1",
+      "text-valign-v1",
+    ]);
+    expect(pack.manifest.minFirmware).toBe("1.0.42");
+  });
+});
+
+describe("feature container aliases match the device", () => {
+  it.each([
+    ["absent", undefined, undefined, 1, 1],
+    ["null", null, null, 1, 1],
+    ["empty", [], {}, 0, 0],
+  ])("preserves %s long-form containers", (_name, colorStops, providerAssets, stopCount, assetCount) => {
+    const imported = importThemeSpec({
+      v: 1, id: "alias-test", rev: 1,
+      p: [
+        { t: "p", w: 40, h: 10, c: "#FFFFFF", colorStops, cs: [{ gte: 0, c: "#FF0000" }] },
+        { t: "sp", w: 8, h: 8, a: "/themes/u/base.cbi", providerAssets, pa: { codex: "/themes/u/codex.cbi" } },
+      ],
+    });
+    expect(imported.primitives[0].colorStops?.length || 0).toBe(stopCount);
+    expect(Object.keys(imported.primitives[1].providerAssets || {})).toHaveLength(assetCount);
+    const exported = JSON.parse(deviceThemeSpecJson(imported));
+    expect(exported.p[0].cs?.length || 0).toBe(stopCount);
+    expect(Object.keys(exported.p[1].pa || {})).toHaveLength(assetCount);
   });
 });

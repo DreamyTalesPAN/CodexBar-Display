@@ -111,7 +111,12 @@ void ResetPortalState(State& state) {
   state = State{};
 }
 
-bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t channel) {
+bool AddScanResult(
+    State& state,
+    const String& ssid,
+    int32_t rssi,
+    int32_t channel,
+    bool encrypted) {
   if (!state.scanInProgress || ssid.length() == 0 || ssid.length() >= kMaxSsidBytes || channel < 1 || channel > 14) {
     return false;
   }
@@ -120,6 +125,7 @@ bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t chann
     if (ssid == state.networks[i].ssid) {
       if (rssi > state.networks[i].rssi) {
         state.networks[i].rssi = static_cast<int16_t>(rssi);
+        state.networks[i].encrypted = encrypted;
         sortNetworks(state);
       }
       return true;
@@ -130,6 +136,7 @@ bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t chann
     Network& network = state.networks[state.networkCount++];
     copySsid(network.ssid, ssid);
     network.rssi = static_cast<int16_t>(rssi);
+    network.encrypted = encrypted;
     sortNetworks(state);
     return true;
   }
@@ -137,6 +144,7 @@ bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t chann
   Network candidate;
   copySsid(candidate.ssid, ssid);
   candidate.rssi = static_cast<int16_t>(rssi);
+  candidate.encrypted = encrypted;
   if (compareNetworks(candidate, state.networks[state.networkCount - 1]) >= 0) {
     return false;
   }

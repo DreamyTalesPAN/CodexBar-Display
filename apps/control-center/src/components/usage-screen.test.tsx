@@ -42,6 +42,31 @@ function renderUsage(
 }
 
 describe("UsageScreen", () => {
+  it("does not present a partial provider sum as complete token history", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      providers: [...usage.providers, { id: "claude", label: "Claude", session: 0, weekly: 10, usageMode: "used" }],
+    });
+    expect(html).toContain("Token history is unavailable");
+    expect(html).not.toContain("Total tokens in the last 30 days");
+    expect(html).toContain("Weekly: 34% used");
+    expect(html).toContain("Weekly: 10% used");
+  });
+
+  it("shows unavailable rather than zero or a spinner after a scan without history", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      tokenUsageReady: true,
+      providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
+    });
+    expect(html).toContain("Token history is unavailable");
+    expect(html).toContain('aria-label="Refresh token usage"');
+    expect(html).toContain("Weekly: 34% used");
+    expect(html).not.toContain("Token history is loading");
+    expect(html).not.toContain("zero tokens");
+    expect(html).not.toContain("Total tokens in the last 30 days");
+  });
+
   it("shows a simple loading state while the first usage snapshot is pending", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

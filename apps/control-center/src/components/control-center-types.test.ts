@@ -5,7 +5,11 @@ import {
   deviceCompletedThemeSetup,
   deviceIsActive,
   deviceIsCustomerConnected,
+  deviceCanSwitchToCable,
+  deviceOffersCable,
+  legacyWiFiDeviceAnsweredCable,
   deviceIsReady,
+  deviceUsesCable,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   providerRecoveryStatusRows,
@@ -63,6 +67,24 @@ describe("device connection contract", () => {
     ).toBe(true);
   });
 
+  it("recognizes Cable from the transport contract or Cable target", () => {
+    expect(
+      deviceUsesCable({
+        connected: true,
+        capabilities: { transport: { active: "usb", mode: "cable" } },
+      }),
+    ).toBe(true);
+    expect(deviceUsesCable({ connected: true, target: "cable://vibetv" })).toBe(
+      true,
+    );
+    expect(
+      deviceUsesCable({
+        connected: true,
+        capabilities: { transport: { active: "wifi", mode: "wifi" } },
+      }),
+    ).toBe(false);
+  });
+
   it("never treats fast reachable-before-selected updates as customer connected", () => {
     const updates = [
       { connected: false, ready: false },
@@ -113,6 +135,129 @@ describe("device connection contract", () => {
         ready: false,
       }),
     ).toBe(false);
+  });
+
+  it("offers Cable recovery only for an active Cable-capable WiFi binding", () => {
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "wifi",
+            supported: ["usb", "wifi"],
+          },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "legacy-wifi-only",
+            supported: ["wifi"],
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({
+        active: false,
+        connected: false,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb"] },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({ active: true, connected: false }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: true,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb"] },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  // Issue #489: over WiFi, only cable-only firmware offers USB-C. Older
+  // firmware and legacy WiFi VibeTVs without USB data keep it greyed out.
+  it("offers USB-C over WiFi only on cable-only firmware", () => {
+    const wifi = (transport: {
+      mode?: string;
+      supported?: string[];
+      cableOnlyUpdates?: boolean;
+    }) => ({
+      active: true,
+      connected: true,
+      capabilities: { transport: { active: "wifi", ...transport } },
+    });
+    expect(
+      deviceOffersCable(
+        wifi({ mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true }),
+      ),
+    ).toBe(true);
+    expect(
+      deviceOffersCable(wifi({ mode: "wifi", supported: ["usb", "wifi"] })),
+    ).toBe(false);
+    expect(
+      deviceOffersCable(
+        wifi({ mode: "legacy-wifi-only", supported: ["wifi"], cableOnlyUpdates: false }),
+      ),
+    ).toBe(false);
+    expect(
+      deviceOffersCable({
+        active: true,
+        connected: true,
+        capabilities: {
+          transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      deviceOffersCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"] },
+        },
+      }),
+    ).toBe(true);
+    expect(deviceOffersCable({ active: true, connected: true })).toBe(true);
+  });
+
+  // Issue #498: the Companion reports that the legacy WiFi VibeTV answered
+  // over the cable; the app then connects it by Cable.
+  it("switches to the cable only when the Companion reports the cable answer", () => {
+    const wifi = {
+      deviceId: "5863327",
+      active: true,
+      connected: true,
+      capabilities: {
+        transport: { active: "wifi", mode: "wifi", supported: ["usb", "wifi"], cableOnlyUpdates: true },
+      },
+    };
+    expect(legacyWiFiDeviceAnsweredCable({ ...wifi, legacyCableAnswered: true })).toBe(true);
+    expect(legacyWiFiDeviceAnsweredCable({ ...wifi, legacyCableAnswered: false })).toBe(false);
+    expect(legacyWiFiDeviceAnsweredCable(wifi)).toBe(false);
+    expect(
+      legacyWiFiDeviceAnsweredCable({ ...wifi, legacyCableAnswered: true, connected: false }),
+    ).toBe(false);
+    expect(
+      legacyWiFiDeviceAnsweredCable({
+        ...wifi,
+        legacyCableAnswered: true,
+        capabilities: { transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] } },
+      }),
+    ).toBe(false);
+    expect(legacyWiFiDeviceAnsweredCable(null)).toBe(false);
   });
 
   it("shows theme setup only for an active, paired VibeTV whose theme is missing", () => {
@@ -512,6 +657,16 @@ describe("providerSetupNeedsEngineRecovery", () => {
     ).toBe(true);
   });
 
+  it("recovers an engine that is too old", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "engine_incompatible", version: "0.17.0", minimumVersion: "0.23.0" },
+        providers: [{ id: "codexbar", status: "engine_incompatible" }],
+      }),
+    ).toBe(true);
+  });
+
   it("asks for nothing while the usage service is ready or still checking", () => {
     expect(
       providerSetupNeedsEngineRecovery({
@@ -567,8 +722,25 @@ describe("automaticPoolForEnabledProviders", () => {
     expect(
       automaticPoolForEnabledProviders(
         { ...automatic, mode: "fixed", providerIds: ["codex"] },
-        ["claude"],
+        ["codex", "claude"],
       ),
     ).toBeNull();
+  });
+
+  it("switches Manual to Automatic when its provider is turned off", () => {
+    const manual = { ...automatic, mode: "fixed" as const, providerIds: ["codex"] };
+    expect(automaticPoolForEnabledProviders(manual, ["claude"], ["codex"])).toEqual({
+      mode: "automatic",
+      providerIds: ["claude"],
+    });
+    expect(automaticPoolForEnabledProviders(manual, [], ["codex"])).toBeNull();
+    expect(
+      automaticPoolForEnabledProviders({ ...manual, configured: false }, ["claude"], ["codex"]),
+    ).toBeNull();
+  });
+
+  it("leaves a Manual provider that is missing from the inventory alone", () => {
+    const manual = { ...automatic, mode: "fixed" as const, providerIds: ["retired"] };
+    expect(automaticPoolForEnabledProviders(manual, ["claude"], ["codex"])).toBeNull();
   });
 });

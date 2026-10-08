@@ -10,6 +10,10 @@ import (
 
 var ErrDeviceHelloUnavailable = errors.New("device hello unavailable")
 
+// ErrConnectionChangeNotAccepted marks a failure before the command was sent
+// or an explicit firmware rejection. Write errors and lost replies are uncertain.
+var ErrConnectionChangeNotAccepted = errors.New("connection change was not accepted")
+
 type TransportError struct {
 	code     errcode.Code
 	op       string

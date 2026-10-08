@@ -13,7 +13,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SetupAddressDialog } from "./setup-device-dialogs";
+import {
+  SetupAddressDialog,
+  SetupCableHelpDialog,
+  SetupDeviceNotFoundDialog,
+} from "./setup-device-dialogs";
 
 afterEach(() => {
   cleanup();
@@ -30,6 +34,56 @@ function typeAddress(value: string) {
 function connect() {
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
 }
+
+describe("Setup WiFi recovery", () => {
+  it("keeps cable instructions reachable after closing and supports manual entry", () => {
+    const onEnterAddressManually = vi.fn();
+    const onScanAgain = vi.fn();
+    render(
+      <SetupCableHelpDialog
+        onEnterAddressManually={onEnterAddressManually}
+        onScanAgain={onScanAgain}
+      />,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Connect the USB cable" });
+    // Issue #489: setup never runs over a VibeTV-Setup network or a phone.
+    expect(dialog.textContent).not.toContain("VibeTV-Setup");
+    expect(dialog.textContent).not.toContain("192.168.4.1");
+    expect(dialog.textContent).not.toContain("phone");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "How to connect VibeTV" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(onScanAgain).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP manually" }));
+    expect(onEnterAddressManually).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("routes the two not-found choices separately", () => {
+    const onUseCable = vi.fn();
+    const onUseWiFi = vi.fn();
+    const onScanAgain = vi.fn();
+    render(
+      <SetupDeviceNotFoundDialog
+        open
+        onOpenChange={vi.fn()}
+        onEnterAddressManually={vi.fn()}
+        onScanAgain={onScanAgain}
+        onUseCable={onUseCable}
+        onUseWiFi={onUseWiFi}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Use the cable/ }));
+    expect(onUseCable).toHaveBeenCalledTimes(1);
+    expect(onScanAgain).not.toHaveBeenCalled();
+    expect(screen.queryByText(/phone/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
+    expect(onUseWiFi).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("SetupAddressDialog", () => {
   it("shows why the address did not work and keeps it for correction", async () => {

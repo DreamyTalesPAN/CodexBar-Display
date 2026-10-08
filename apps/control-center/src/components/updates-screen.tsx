@@ -5,7 +5,7 @@ import {
   Monitor,
   RefreshCw,
   ShieldCheck,
-  X,
+  TriangleAlert,
 } from "lucide-react";
 import {
   Alert,
@@ -33,13 +33,15 @@ import {
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import { statusForHost } from "@/lib/customer-platform";
 import type { CompanionInfo } from "./control-center-types";
+import { SetupDialog } from "./setup/setup-dialog";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
 
@@ -90,6 +92,8 @@ export type UpdatesScreenProps = {
   updateStatus?: FirmwareUpdateStatus | null;
   supportReportBusy?: boolean;
   themeUpdateAvailable?: boolean;
+  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  windowsHost?: boolean;
 };
 
 export function UpdatesScreen({
@@ -108,6 +112,7 @@ export function UpdatesScreen({
   updateStatus,
   supportReportBusy = false,
   themeUpdateAvailable = false,
+  windowsHost = false,
 }: UpdatesScreenProps) {
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   // Installed firmware always comes from device truth (live hello or the
@@ -151,7 +156,9 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const visibleUpdateStatus = staleFirmwareFailure ? undefined : updateStatus;
+  const visibleUpdateStatus = staleFirmwareFailure
+    ? undefined
+    : statusForHost(updateStatus, windowsHost);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -240,12 +247,16 @@ export function UpdatesScreen({
       <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
-          description="Software running on this Mac."
+          description={
+            windowsHost
+              ? "Software running on this computer."
+              : "Software running on this Mac."
+          }
           installedLabel="Installed"
           installedValue={companionInstalled}
           latestLabel="Available"
           latestValue={companionAvailable}
-          title="Mac App"
+          title={windowsHost ? "App" : "Mac App"}
           updateAvailable={macAppUpdateAvailable || macAppMigrationReady}
         />
 
@@ -263,18 +274,27 @@ export function UpdatesScreen({
               <ShieldCheck aria-hidden />
               <AlertTitle>
                 {macAppMustUpdateFirst
-                  ? "Update Mac App first"
-                  : "Checking Mac App"}
+                  ? windowsHost
+                    ? "Update the app first"
+                    : "Update Mac App first"
+                  : windowsHost
+                    ? "Checking the app"
+                    : "Checking Mac App"}
               </AlertTitle>
               <AlertDescription>
                 {macAppMustUpdateFirst
-                  ? "Update the Mac App first. The VibeTV firmware update comes next."
-                  : "Waiting for the Mac App update check. The VibeTV update unlocks when it finishes."}
+                  ? windowsHost
+                    ? "Update the app first. The VibeTV firmware update comes next."
+                    : "Update the Mac App first. The VibeTV firmware update comes next."
+                  : windowsHost
+                    ? "Waiting for the app update check. The VibeTV update unlocks when it finishes."
+                    : "Waiting for the Mac App update check. The VibeTV update unlocks when it finishes."}
               </AlertDescription>
             </Alert>
           ) : null}
           {visibleUpdateStatus ? (
             <InlineUpdateProgress
+              key={visibleUpdateStatus.startedAt}
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
               onRetry={
@@ -442,27 +462,45 @@ function InlineUpdateProgress({
   onRetry?: () => void;
   status: FirmwareUpdateStatus;
 }) {
-  const failed = status.phase === "error";
+  const [errorDismissed, setErrorDismissed] = useState(false);
+  if (status.phase === "error") {
+    if (errorDismissed) return null;
+    const reportAction = {
+      label: "Create report",
+      busy: creatingReport,
+      disabled: !onCreateReport,
+      onSelect: () => onCreateReport?.(),
+    };
+    return (
+      <SetupDialog
+        description={status.error || "Update was not installed."}
+        icon={TriangleAlert}
+        onOpenChange={(open) => setErrorDismissed(!open)}
+        open
+        primaryAction={status.retryAllowed !== false ? {
+          label: "Try again", disabled: !onRetry, onSelect: () => onRetry?.(),
+        } : reportAction}
+        secondaryAction={status.retryAllowed !== false ? reportAction : undefined}
+        title="Update failed"
+      />
+    );
+  }
   const complete = status.phase === "complete";
   const attention = status.phase === "attention";
   const restarting =
     status.phase === "installing" &&
     (status.stage === "rebooting" || status.stage === "rediscovering");
   const progress = clampUpdateProgress(
-    failed || complete || attention ? 100 : status.progress,
+    complete || attention ? 100 : status.progress,
   );
-  const title = failed
-    ? "Update failed"
-    : attention
+  const title = attention
       ? "Firmware current — attention needed"
     : complete
       ? "Update complete"
       : restarting
         ? "VibeTV is restarting"
       : "Updating VibeTV";
-  const detail = failed
-    ? status.error || "Update was not installed."
-    : attention
+  const detail = attention
       ? status.message ||
         "The firmware is current, but the connection or picture still needs repair."
     : complete
@@ -477,21 +515,17 @@ function InlineUpdateProgress({
   return (
     <div className="flex flex-col gap-3" role="status" aria-live="polite">
       <Progress value={progress} />
-      <Alert variant={failed ? "destructive" : "default"}>
-        {failed ? (
-          <X aria-hidden />
-        ) : complete || attention ? (
+      <Alert>
+        {complete || attention ? (
           <ShieldCheck aria-hidden />
         ) : (
           <RefreshCw className="animate-spin" aria-hidden />
         )}
         <AlertTitle>{title}</AlertTitle>
         <AlertDescription>{detail}</AlertDescription>
-        {failed || attention ? (
+        {attention ? (
           <AlertAction className="flex gap-2">
-            {(failed && status.retryAllowed !== false) ||
-            (attention &&
-              status.outcome === "firmware_current_theme_attention") ? (
+            {status.outcome === "firmware_current_theme_attention" ? (
               <Button
                 disabled={!onRetry}
                 onClick={onRetry}

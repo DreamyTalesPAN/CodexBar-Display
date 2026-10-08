@@ -10,12 +10,18 @@ import {
 
 /** Which dialog a failed connect should open. */
 export type ConnectFailure =
-  | { kind: "connect"; description: string; title: string }
+  | { kind: "connect"; code?: string; description: string; title: string }
   | { kind: "firmware-blocked"; reason: FirmwareBlockedReason }
+  | { kind: "firmware-attention"; description: string }
   | { kind: "firmware-update" };
 
 /** What the device reported once it was connected. */
-export type ConnectedDevice = { board?: string; firmware?: string };
+export type ConnectedDevice = {
+  board?: string;
+  firmware?: string;
+  /** Needs the Cable rescue update before it can be connected at all. */
+  rescue?: boolean;
+};
 
 export type SetupConnectSteps = {
   /**
@@ -27,7 +33,7 @@ export type SetupConnectSteps = {
     device: ConnectedDevice,
   ) => Promise<{ from: string; to: string } | null>;
   connect: (candidate: DeviceCandidate) => Promise<ConnectedDevice>;
-  installFirmware: () => Promise<void>;
+  installFirmware: (device: ConnectedDevice) => Promise<void>;
 };
 
 const IDLE: ConnectState = { address: "", phase: "idle" };
@@ -94,6 +100,7 @@ export function useSetupConnect(
         fail(
           {
             kind: "connect",
+            code: api?.code,
             description:
               api?.nextAction ||
               "Keep VibeTV powered on, then search again.",
@@ -137,9 +144,16 @@ export function useSetupConnect(
       });
 
       try {
-        await steps.installFirmware();
+        await steps.installFirmware(connected);
       } catch (error) {
         const api = error as ApiError;
+        if (api?.code === "firmware_update_attention") {
+          fail(
+            { kind: "firmware-attention", description: api.message },
+            api.message,
+          );
+          return;
+        }
         const blocked = firmwareBlockedReason(api?.code);
         fail(
           blocked

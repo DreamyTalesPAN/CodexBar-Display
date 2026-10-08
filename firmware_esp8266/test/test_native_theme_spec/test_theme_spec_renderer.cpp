@@ -11,11 +11,13 @@
 namespace {
 
 using codexbar_display::themespec::FrameData;
+using codexbar_display::themespec::kResetSecsIdle;
 using codexbar_display::themespec::GifCommand;
 using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
 using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
+using codexbar_display::themespec::CompiledPrimitiveBounds;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
 using codexbar_display::themespec::CompiledThemeSpecReferencesAsset;
@@ -27,13 +29,16 @@ using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecRegionPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecStaticPrimitives;
 using codexbar_display::themespec::ReleaseCompiledThemeSpec;
+using codexbar_display::themespec::ParseColor;
 using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
 using codexbar_display::themespec::kThemeSpecFieldActivity;
 using codexbar_display::themespec::kThemeSpecFieldLabel;
 using codexbar_display::themespec::kThemeSpecFieldReset;
+using codexbar_display::themespec::kThemeSpecFieldProvider;
 using codexbar_display::themespec::kThemeSpecFieldSession;
+using codexbar_display::themespec::kThemeSpecFieldUsageMode;
 using codexbar_display::themespec::kThemeSpecFieldUsageWindows;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
@@ -72,6 +77,7 @@ struct RecordedCommand {
   int maxWidth = 0;
   bool fitShrink = false;
   int align = 0;
+  int valign = 0;
   int percent = 0;
   int style = 0;
   int segments = 0;
@@ -134,6 +140,8 @@ class RecordingSink final : public Sink {
     cmd.maxWidth = text.maxWidth;
     cmd.fitShrink = text.fitShrink;
     cmd.align = text.align;
+    cmd.valign = text.valign;
+    cmd.height = text.height;
     cmd.fg = text.fg;
     cmd.bg = text.bg;
     cmd.hasBg = text.hasBg;
@@ -210,6 +218,43 @@ FrameData testFrame() {
   frame.totalTokens = 9012;
   frame.hasTokenTotals = true;
   return frame;
+}
+
+const RecordedCommand* FirstSpriteCommand(const RecordingSink& sink) {
+  for (const RecordedCommand& cmd : sink.commands) {
+    if (cmd.type == CommandType::Sprite) {
+      return &cmd;
+    }
+  }
+  return nullptr;
+}
+
+const RecordedCommand* LastSpriteCommand(const RecordingSink& sink) {
+  for (auto it = sink.commands.rbegin(); it != sink.commands.rend(); ++it) {
+    if (it->type == CommandType::Sprite) {
+      return &(*it);
+    }
+  }
+  return nullptr;
+}
+
+size_t SpriteCommandCount(const RecordingSink& sink) {
+  size_t count = 0;
+  for (const RecordedCommand& cmd : sink.commands) {
+    if (cmd.type == CommandType::Sprite) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+const RecordedCommand* FirstProgressCommand(const RecordingSink& sink) {
+  for (const RecordedCommand& cmd : sink.commands) {
+    if (cmd.type == CommandType::Progress) {
+      return &cmd;
+    }
+  }
+  return nullptr;
 }
 
 bool renderSpec(const char* spec, const FrameData& frame, RecordingSink& sink) {
@@ -474,11 +519,12 @@ void testTokenAvailabilityFlipRepaintsTokenBindings() {
   codexbar_display::core::Frame next;
   next.hasThemeSpec = true;
   next.hasTokenTotals = true;
-  const String raw(R"JSON({"p":[{"t":"tx","b":"st"}]})JSON");
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","b":"st"}]})JSON"));
   TEST_ASSERT_TRUE(
-      codexbar_display::core::FrameTokenStatsVisualChanged(previous, next, raw));
+      codexbar_display::core::FrameTokenStatsVisualChanged(previous, next, use));
   TEST_ASSERT_FALSE(codexbar_display::core::FrameTokenStatsVisualChanged(
-      previous, previous, raw));
+      previous, previous, use));
 }
 
 void testUsageUnavailableKeepsThemeAndProgress() {
@@ -511,6 +557,164 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   char reset[32] = {0};
   codexbar_display::themespec::BoundValue("reset", frame, reset, sizeof(reset));
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
+}
+
+// A customer received a VibeTV showing "Resets in Reset unavailable" on the
+// Claude Creature theme: Session at 0% with no active Claude session, so
+// Anthropic sent no session deadline, and the theme's hard-coded "Resets in "
+// prefix stood in front of the unavailable text. The line has to collapse to a
+// single string, and an idle window says so plainly instead of reporting a
+// fault; a template that still substitutes real values keeps its prefix.
+void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
+  FrameData frame;
+  frame.label = "Claude";
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1Percent = 0;
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2Percent = 32;
+  frame.usageSlot2ResetSecs = 4 * 24 * 3600;
+  frame.usageSlot2Available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"},
+        {"t":"tx","x":0,"y":20,"v":"Resets in {usageSlot2Reset}"},
+        {"t":"tx","x":0,"y":40,"v":"{usageSlot1Label} {usageSlot1Reset}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  // The idle session line collapses instead of reading "Resets in Reset unavailable",
+  // and names the idle state rather than reporting a fault.
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
+  // A window that does have a deadline is untouched.
+  TEST_ASSERT_EQUAL_STRING("Resets in 4d 0h", sink.commands[2].text.c_str());
+  // A template carrying another real value keeps substituting in place.
+  TEST_ASSERT_EQUAL_STRING("Session No active session", sink.commands[3].text.c_str());
+}
+
+// The compact aliases bind the same countdown as the long names; a theme that
+// writes {us1r} or {pv1r} must collapse identically or the doubled sentence
+// survives on exactly the devices whose themes use the short form.
+void testIdleCountdownCollapsesForCompactResetAliases() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1Percent = 0;
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.providerSlots[0].label = "Claude";
+  frame.providerSlots[0].percent = 0;
+  frame.providerSlots[0].resetSecs = kResetSecsIdle;
+  frame.providerSlots[0].available = true;
+  frame.providerSlots[1].label = "Codex";
+  frame.providerSlots[1].percent = 40;
+  frame.providerSlots[1].resetSecs = 3 * 3600;
+  frame.providerSlots[1].available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-reset-short","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {us1r}"},
+        {"t":"tx","x":0,"y":20,"v":"Resets in {pv1r}"},
+        {"t":"tx","x":0,"y":40,"v":"Resets in {pv2r}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Resets in 3h 0m", sink.commands[3].text.c_str());
+}
+
+// The idle wording is only for a reading the device stands behind. A countdown
+// the device cannot justify keeps saying so: an idle window and a stale one
+// look identical in the numbers (percent 0, no deadline) and only the trust
+// flag tells them apart. Getting this backwards would report a fresh, healthy
+// account as broken, or dress up an untrustworthy screen as merely idle.
+void testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot() {
+  FrameData stale;
+  stale.usageSlot1Label = "Session";
+  stale.usageSlot1Percent = 0;
+  stale.usageSlot1ResetSecs = 0;
+  stale.usageSlot1Available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"idle-vs-stale","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"},
+        {"t":"tx","x":0,"y":20,"b":"us1r"}
+      ]})JSON";
+
+  RecordingSink staleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, stale, staleSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", staleSink.commands[1].text.c_str());
+  // A bare binding carries no prose to collapse and reports the same state.
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", staleSink.commands[2].text.c_str());
+
+  FrameData idle = stale;
+  idle.usageSlot1ResetSecs = kResetSecsIdle;
+  RecordingSink idleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, idle, idleSink));
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[2].text.c_str());
+}
+
+// One template binding two countdowns cannot claim everything is merely idle
+// while one of its values is untrustworthy, so a mixed line stays on the
+// unavailable wording.
+void testMixedIdleAndStaleCountdownsKeepTheUnavailableWording() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2ResetSecs = 0;
+  frame.usageSlot2Available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"mixed-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"{usageSlot1Reset} / {usageSlot2Reset}"}
+      ]})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+}
+
+// The root {reset} token owns no window of its own. It may only claim the idle
+// state when every window the frame carries is idle; otherwise a stale basis
+// would be dressed up as an idle account.
+void testRootResetTokenFollowsTheWindowsItSummarises() {
+  FrameData idle;
+  idle.resetSecs = 0;
+  idle.usageWindows[0].label = "Session";
+  idle.usageWindows[0].resetSecs = kResetSecsIdle;
+  idle.usageWindows[0].available = true;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"root-reset","rev":1,"p":[
+        {"t":"tx","x":0,"y":0,"v":"Reset in {reset}"}
+      ]})JSON";
+
+  RecordingSink idleSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, idle, idleSink));
+  TEST_ASSERT_EQUAL_STRING("No active session", idleSink.commands[1].text.c_str());
+
+  // No windows at all: nothing says the account is idle, so the wording stays.
+  FrameData bare;
+  bare.resetSecs = 0;
+  RecordingSink bareSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, bare, bareSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", bareSink.commands[1].text.c_str());
+
+  // Usage that could not be read at all is never idle.
+  FrameData unavailable = idle;
+  unavailable.usageUnavailable = true;
+  RecordingSink unavailableSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, unavailable, unavailableSink));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", unavailableSink.commands[1].text.c_str());
 }
 
 void testUsageWindowOwnershipHidesCompleteMissingLane() {
@@ -678,10 +882,47 @@ void testUsageWindowResetCountdownsTickIndependently() {
   TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(40, 1));
   TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(140, 3));
   TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(139, 2));
-  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
-      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON"), 0));
-  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
-      String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON"), 1));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON")).UsesUsageWindowReset(0));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON")).UsesUsageWindowReset(1));
+}
+
+// The periodic countdown redraw has to ask for every kind of reset a theme
+// binds, not just the root and the usage windows. Night Clock binds nothing
+// but {pv1l}/{pv1r}/{pv2l}/{pv2r}, so a screen whose only live values are
+// provider-slot countdowns would never be asked to repaint: an idle slot
+// reading "No active session" would keep that wording after the trust budget
+// expired, presenting a value the device can no longer stand behind.
+//
+void testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw() {
+  const auto countdownFieldsOf = [](const char* spec) {
+    return codexbar_display::core::ThemeSpecCountdownFields(
+        codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec)));
+  };
+
+  // The shipped Night Clock shape: provider slots only.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldProviderSlots,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"nc","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"pv1l"},)JSON"
+          R"JSON({"t":"tx","x":0,"y":20,"b":"pv1r"},{"t":"tx","x":0,"y":40,"b":"pv2r"}]})JSON"));
+  // The shipped Claude Creature shape: a usage-window countdown in prose.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldUsageWindowReset,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"cc","rev":1,"p":[)JSON"
+          R"JSON({"t":"tx","x":0,"y":0,"v":"Resets in {usageSlot1Reset}"}]})JSON"));
+  // The root token keeps its own field.
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::themespec::kThemeSpecFieldReset,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"rt","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"}]})JSON"));
+  // A theme with no countdown at all asks for no countdown repaint.
+  TEST_ASSERT_EQUAL_UINT32(
+      0,
+      countdownFieldsOf(
+          R"JSON({"v":1,"id":"cl","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"tm"}]})JSON"));
 }
 
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
@@ -763,6 +1004,36 @@ void testRawUsageWindowParserCapacityStillAcceptsNormalLabels() {
   TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kMaxUsageWindows - 1].available);
 }
 
+// #350: the parser keeps exactly the advertised number of windows, and the
+// renderer accepts the highest window index and refuses the next one.
+void testUsageWindowCapacityBoundaries() {
+  const size_t max = codexbar_display::core::kAdvertisedMaxUsageWindows;
+  for (size_t count : {static_cast<size_t>(0), static_cast<size_t>(1), max, max + 1}) {
+    std::string line = R"JSON({"v":2,"provider":"p","usageWindows":[)JSON";
+    for (size_t i = 0; i < count; ++i) {
+      line += i > 0 ? "," : "";
+      line += "{\"id\":\"w" + std::to_string(i) + "\",\"label\":\"W\",\"percent\":1,\"resetSecs\":1}";
+    }
+    line += "]}";
+    codexbar_display::core::Frame frame;
+    TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(line.c_str(), frame));
+    size_t available = 0;
+    for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
+      available += frame.usageWindows[i].available ? 1 : 0;
+    }
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(count < max ? count : max, available, line.c_str());
+  }
+
+  for (size_t index : {max - 1, max}) {
+    const std::string spec = "{\"p\":[{\"t\":\"p\",\"x\":0,\"y\":0,\"w\":10,\"h\":4,\"ui\":" +
+                             std::to_string(index) + "}]}";
+    JsonDocument doc;
+    CompiledThemeSpec scene;
+    TEST_ASSERT_EQUAL_MESSAGE(index < max, CompileThemeSpec(spec.c_str(), doc, scene), spec.c_str());
+    ReleaseCompiledThemeSpec(scene);
+  }
+}
+
 void testHighestAdvertisedUsageWindowBindingCompiles() {
   char binding[40];
   std::snprintf(
@@ -782,6 +1053,209 @@ void testHighestAdvertisedUsageWindowBindingCompiles() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testUsageCountdownRefreshDoesNotRepaintBatteryArea() {
+  for (const char* binding : {"usageSlot1Reset", "us1r", "usage.0.reset"}) {
+    for (bool isTemplate : {false, true}) {
+      std::string spec = R"JSON({"v":1,"id":"battery-refresh","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/bg.cbi"},{"t":"p","x":29,"y":92,"w":128,"h":26,"sl":1,"b":"us1p"},{"t":"p","x":29,"y":158,"w":128,"h":26,"sl":2,"b":"us2p"},{"t":"tx","x":16,"y":212,"w":208,"sl":1,)JSON";
+      spec += isTemplate ? "\"v\":\"Reset in {" : "\"b\":\"";
+      spec += binding;
+      spec += isTemplate ? "}\"}]}" : "\"}]}";
+      codexbar_display::core::Frame before;
+      before.usageWindows[0].available = true;
+      before.usageWindows[0].percent = 42;
+      before.usageWindows[0].resetSecs = 3600;
+      auto after = before;
+      after.usageWindows[0].resetSecs = 3540;
+      const uint32_t fields = codexbar_display::core::ThemeSpecLiveChangedFields(
+          before, after, codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec.c_str())));
+      RecordingSink sink;
+      auto frame = testFrame();
+      frame.usageSlot1Available = true;
+      frame.usageSlot2Available = true;
+      frame.usageWindows[0].available = true;
+      frame.usageWindows[0].percent = 42;
+      frame.usageWindows[0].resetSecs = 3540;
+      frame.usageWindows[1].available = true;
+      frame.usageWindows[1].percent = 50;
+      TEST_ASSERT_TRUE(renderChangedSpec(spec.c_str(), frame, fields, sink));
+      TEST_ASSERT_NULL(FirstProgressCommand(sink));
+      bool clipped = false;
+      for (const auto& cmd : sink.commands) {
+        if (cmd.type == CommandType::BeginClip) {
+          clipped = true;
+          TEST_ASSERT_EQUAL_INT(212, cmd.y);
+        }
+      }
+      TEST_ASSERT_TRUE(clipped);
+    }
+  }
+}
+
+void testCountdownRepaintsOnlyWhenItsMinuteChanges() {
+  // A frame every ~2 s with a few seconds less must not repaint "2h 48m".
+  const String spec("{\"v\":1,\"id\":\"countdown\",\"rev\":1,\"p\":[{\"t\":\"tx\",\"x\":0,\"y\":0,\"b\":\"r\"},{\"t\":\"tx\",\"x\":0,\"y\":20,\"b\":\"us1r\"}]}");
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(spec);
+  codexbar_display::core::Frame before;
+  before.resetSecs = 10110;  // 2h 48m 30s
+  before.usageWindows[0].available = true;
+  before.usageWindows[0].percent = 42;
+  before.usageWindows[0].resetSecs = 3630;
+  auto sameMinute = before;
+  sameMinute.resetSecs = 10088;
+  sameMinute.usageWindows[0].resetSecs = 3608;
+  TEST_ASSERT_FALSE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, sameMinute, use));
+  TEST_ASSERT_EQUAL_UINT32(0, codexbar_display::core::ThemeSpecLiveChangedFields(before, sameMinute, use));
+
+  auto nextMinute = before;
+  nextMinute.resetSecs = 10079;  // 2h 47m
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, nextMinute, use));
+  TEST_ASSERT_TRUE((codexbar_display::core::ThemeSpecLiveChangedFields(before, nextMinute, use) &
+                    codexbar_display::themespec::kThemeSpecFieldReset) != 0);
+
+  auto windowNextMinute = before;
+  windowNextMinute.usageWindows[0].resetSecs = 3599;
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(before, windowNextMinute, use));
+
+  // "Reset unavailable" (0) and the last minute (1..59 s) are different texts.
+  auto unavailable = before;
+  unavailable.resetSecs = 0;
+  auto lastMinute = before;
+  lastMinute.resetSecs = 30;
+  TEST_ASSERT_TRUE(codexbar_display::core::FrameThemeSpecDataVisualChanged(unavailable, lastMinute, use));
+}
+
+void testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3600}],"themeSpec":{"v":1,"id":"battery","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"sl":1,"b":"us1p"}]}})JSON", 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3540}]})JSON", 2000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+}
+
+// #253/#496: compact ThemeSpec keys that are not bindings must not count as
+// live data. Restores the spec like a stored theme, sends a baseline frame,
+// then reports how the device takes a frame that changes only `changed`.
+SerialConsumeEvent storedThemeFrameEvent(const char* spec, const char* changed) {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "live-use", 1, String(spec), 0, event));
+  std::string baseline = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":3600,"activity":"idle","sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, baseline.c_str(), 1000, event));
+  std::string next = baseline;
+  const std::string key = std::string("\"") + changed + "\":";
+  const size_t at = next.find(key);
+  TEST_ASSERT_TRUE(at != std::string::npos);
+  const size_t valueStart = at + key.size();
+  const size_t valueEnd = next.find_first_of(",}", valueStart);
+  next.replace(valueStart, valueEnd - valueStart, changed == std::string("label") ? "\"Codex Pro\""
+                                                 : changed == std::string("activity") ? "\"coding\""
+                                                                                       : "7");
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, next.c_str(), 2000, event));
+  return event;
+}
+
+void testCompactKeysThatAreNotBindingsDoNotRepaint() {
+  const struct { const char* spec; const char* changed; } cases[] = {
+      // "t":"r" is a rectangle, not the reset countdown.
+      {R"JSON({"v":1,"p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#112233"}]})JSON", "resetSecs"},
+      // "s" is the font size, not session usage.
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"STATIC","s":2}]})JSON", "session"},
+      // "w" is a width, not weekly usage.
+      {R"JSON({"v":1,"p":[{"t":"sp","x":0,"y":0,"w":72,"h":72,"a":"/themes/u/hero.cbi"}]})JSON", "weekly"},
+      {R"JSON({"v":1,"p":[{"t":"r","x":0,"y":0,"w":72,"h":72,"c":"#112233"}]})JSON", "weekly"},
+      // "r" is a pixel row, not the reset countdown.
+      {R"JSON({"v":1,"p":[{"t":"px","x":0,"y":0,"w":1,"h":1,"p":["#FFFFFF"],"r":["a"]}]})JSON", "resetSecs"},
+  };
+  for (const auto& entry : cases) {
+    const SerialConsumeEvent event = storedThemeFrameEvent(entry.spec, entry.changed);
+    TEST_ASSERT_FALSE_MESSAGE(event.visualChanged, entry.spec);
+    TEST_ASSERT_FALSE_MESSAGE(event.themeSpecPartialRender, entry.spec);
+  }
+}
+
+void testStaticWordsAndAssetPathsAreNotBindings() {
+  const char* spec = R"JSON({"v":1,"p":[
+    {"t":"tx","x":0,"y":0,"v":"session weekly reset label time date activity provider","s":1},
+    {"t":"sp","x":0,"y":20,"w":20,"h":20,"a":"/themes/u/session-weekly-reset-label-time-date.cbi"}
+  ]})JSON";
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec));
+  TEST_ASSERT_EQUAL_UINT32(0, use.fields);
+  TEST_ASSERT_EQUAL_UINT8(0, use.usageWindows);
+  for (const char* changed : {"session", "weekly", "resetSecs", "label", "activity", "provider"}) {
+    TEST_ASSERT_FALSE_MESSAGE(storedThemeFrameEvent(spec, changed).visualChanged, changed);
+  }
+}
+
+void testRealBindingsStillRepaintOnlyTheirPrimitives() {
+  const struct { const char* spec; const char* changed; uint32_t field; } cases[] = {
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"binding":"reset"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"in {reset}"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"in {r}"}]})JSON", "resetSecs", codexbar_display::themespec::kThemeSpecFieldReset},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"b":"s","s":2}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{weekly}%"}]})JSON", "weekly", codexbar_display::themespec::kThemeSpecFieldWeekly},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{l}"}]})JSON", "label", codexbar_display::themespec::kThemeSpecFieldLabel},
+      // A brace too long to be a key is literal text; the {s} inside it draws.
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{weekly usage so far this billing week: {s}%}"}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
+      // A progress bar without a binding draws session usage.
+      {R"JSON({"v":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8}]})JSON", "session", codexbar_display::themespec::kThemeSpecFieldSession},
+      {R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{act}"}]})JSON", "activity", codexbar_display::themespec::kThemeSpecFieldActivity},
+      {R"JSON({"v":1,"p":[{"t":"sp","x":0,"y":0,"w":10,"h":10,"a":"/themes/u/i.cbi","sa":{"idle":"/themes/u/i.cbi","coding":"/themes/u/c.cbi"}}]})JSON", "activity", codexbar_display::themespec::kThemeSpecFieldActivity},
+  };
+  for (const auto& entry : cases) {
+    const SerialConsumeEvent event = storedThemeFrameEvent(entry.spec, entry.changed);
+    TEST_ASSERT_TRUE_MESSAGE(event.visualChanged, entry.spec);
+    TEST_ASSERT_TRUE_MESSAGE(event.themeSpecPartialRender, entry.spec);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(entry.field, event.themeSpecChangedFields, entry.spec);
+  }
+}
+
+void testTokenFireRepaintsOnlyForTokenTotals() {
+  // The shipped Token Fire screensaver (#496): rectangles, font sizes and
+  // widths, but no usage, reset or label binding.
+  const char* spec = R"JSON({"v":1,"id":"token-fire","rev":5,"bg":"#050505","p":[{"t":"sp","x":0,"y":0,"w":240,"h":117,"a":"/themes/s/tf-bg.cbi"},{"t":"sp","x":96,"y":32,"w":48,"h":72,"bg":"#341505","a":"/themes/s/tf-fire.cba"},{"t":"tx","x":10,"y":116,"w":220,"v":"TOTAL TOKENS","s":2,"f":4,"ft":"shrink","al":"center","c":"#FFF2DE"},{"t":"r","x":12,"y":142,"w":216,"h":1,"c":"#51240F"},{"t":"tx","x":12,"y":151,"w":130,"v":"SESSION","s":2,"f":2,"ft":"shrink","c":"#D7B79A"},{"t":"tx","x":146,"y":151,"w":82,"b":"st","s":2,"f":2,"ft":"shrink","al":"right","c":"#FFD34A"},{"t":"tx","x":12,"y":181,"w":130,"v":"7 DAYS","s":2,"f":2,"ft":"shrink","c":"#D7B79A"},{"t":"tx","x":146,"y":181,"w":82,"b":"wt","s":2,"f":2,"ft":"shrink","al":"right","c":"#FFD34A"},{"t":"tx","x":12,"y":211,"w":130,"v":"ALL TIME","s":2,"f":2,"ft":"shrink","c":"#D7B79A"},{"t":"tx","x":146,"y":211,"w":82,"b":"tt","s":2,"f":2,"ft":"shrink","al":"right","c":"#FFD34A"}]})JSON";
+  const auto use = codexbar_display::core::ThemeSpecLiveUseForRaw(String(spec));
+  TEST_ASSERT_FALSE(use.Uses(codexbar_display::themespec::kThemeSpecFieldReset));
+  TEST_ASSERT_FALSE(use.Uses(codexbar_display::themespec::kThemeSpecFieldLabel));
+  for (const char* changed : {"resetSecs", "session", "weekly", "label", "activity"}) {
+    TEST_ASSERT_FALSE_MESSAGE(storedThemeFrameEvent(spec, changed).visualChanged, changed);
+  }
+  const SerialConsumeEvent event = storedThemeFrameEvent(spec, "sessionTokens");
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(codexbar_display::themespec::kThemeSpecFieldSessionTokens, event.themeSpecChangedFields);
+}
+
+void testUncompilableSpecCountsAsUsingEverything() {
+  // A zero font size fails to compile. Without a compiled answer every change
+  // must still reach the screen rather than be silently dropped.
+  codexbar_display::core::ThemeSpecLiveUse use;
+  TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecLiveUseForRaw(
+      String(R"JSON({"v":1,"p":[{"t":"tx","x":0,"y":0,"v":"{reset}","s":0}]})JSON"), use));
+  TEST_ASSERT_TRUE(use.Uses(codexbar_display::themespec::kThemeSpecFieldReset));
+  TEST_ASSERT_TRUE(use.UsesUsageWindow(0));
+  TEST_ASSERT_FALSE(codexbar_display::core::ThemeSpecLiveUseForRaw(String(""), use));
+  TEST_ASSERT_EQUAL_UINT32(0, use.fields);
+}
+
+void testUsageModeTextFollowsTheNormalizedFrame() {
+  const struct { const char* mode; const char* text; } cases[] = {
+      {R"JSON(,"usageMode":"used")JSON", "used"},
+      {R"JSON(,"usageMode":" Remaining ")JSON", "remaining"},
+      {R"JSON(,"usageMode":"left")JSON", "used"},
+      {"", "used"},
+  };
+  for (const auto& entry : cases) {
+    std::string line = R"JSON({"v":2,"provider":"codex","session":40,"weekly":60)JSON";
+    line += entry.mode;
+    line += "}";
+    codexbar_display::core::Frame frame;
+    TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(line.c_str(), frame));
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(entry.text, codexbar_display::core::UsageModeText(frame), line.c_str());
+  }
+}
+
 void testCompactUsageWindowBindingTriggersLiveRedraw() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -793,6 +1267,34 @@ void testCompactUsageWindowBindingTriggersLiveRedraw() {
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
+}
+
+void testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3600,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3600}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3600}],"themeSpec":{"v":1,"id":"clippy-like","rev":1,"p":[{"t":"p","x":27,"y":166,"w":146,"h":14,"sl":1,"b":"us1p"},{"t":"tx","x":181,"y":157,"sl":1,"v":"{usageSlot1Percent}%"},{"t":"tx","x":18,"y":142,"sl":1,"v":"{usageSlot1Label}"},{"t":"tx","x":18,"y":196,"pl":1,"v":"{providerSlot1Percent}%"}]}})JSON";
+  const char* countdownOnlyFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3597,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3597}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3597}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownOnlyFrame, 4000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
+}
+
+void testCountdownOnlyFramesRedrawThemesThatShowCountdowns() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3600,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3600}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3600}],"themeSpec":{"v":1,"id":"countdowns","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"},{"t":"tx","x":0,"y":20,"sl":1,"b":"us1r"},{"t":"tx","x":0,"y":40,"pl":1,"b":"pv1r"}]}})JSON";
+  const char* countdownFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3540,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3540}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3540}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownFrame, 61000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldReset) != 0);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowReset) != 0);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldProviderSlots) != 0);
 }
 
 void testConsumeFrameLineComparesCurrentBeforeAssignment() {
@@ -1386,6 +1888,55 @@ void testCompactTextWidthMapsToMaxWidthForAlignment() {
   TEST_ASSERT_EQUAL_INT(1, text.align);
 }
 
+void testAlignedTextYUsesVisualGlyphBox() {
+  TEST_ASSERT_EQUAL_INT(36, codexbar_display::themespec::TextValignBoxHeight(0, 2, 2));
+  TEST_ASSERT_EQUAL_INT(32, codexbar_display::themespec::TextValignBoxHeight(32, 2, 2));
+  TEST_ASSERT_EQUAL_INT(20, codexbar_display::themespec::AlignedTextY(20, 32, 32, 0));
+  TEST_ASSERT_EQUAL_INT(20, codexbar_display::themespec::AlignedTextY(20, 32, 32, 1));
+  TEST_ASSERT_EQUAL_INT(28, codexbar_display::themespec::AlignedTextY(20, 32, 16, 1));
+  TEST_ASSERT_EQUAL_INT(36, codexbar_display::themespec::AlignedTextY(20, 32, 16, 2));
+}
+
+void testCompactValignMapsToTextCommand() {
+  const char* spec = R"JSON({
+    "v": 1,
+    "id": "codex-test",
+    "rev": 1,
+    "p": [
+      {"t":"tx","x":68,"y":20,"w":156,"h":32,"b":"l","s":2,"f":2,"ft":"shrink","va":"middle","c":"#F8FAFC"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
+
+  const RecordedCommand& text = sink.commands[1];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
+  TEST_ASSERT_EQUAL_STRING("Codex", text.text.c_str());
+  TEST_ASSERT_EQUAL_INT(68, text.x);
+  TEST_ASSERT_EQUAL_INT(20, text.y);
+  TEST_ASSERT_EQUAL_INT(32, text.height);
+  TEST_ASSERT_EQUAL_INT(1, text.valign);
+  TEST_ASSERT_TRUE(text.fitShrink);
+}
+
+void testValignCenterAliasIsMiddle() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"text","x":68,"y":20,"width":156,"height":32,"binding":"label","valign":"center"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_INT(1, sink.commands[1].valign);
+  TEST_ASSERT_EQUAL_INT(32, sink.commands[1].height);
+}
+
 void testRendersMulticolorRlePixelsAsFillRects() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -1913,6 +2464,399 @@ void testChangedPrimitivePassHandlesTextWithoutMaxWidth() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands.back().type));
 }
 
+void testProviderAssetsSelectSpriteByProvider() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-logo",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"a":"/themes/u/fallback.cbi","pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}
+    ]
+  })JSON";
+
+  FrameData cursorFrame = testFrame();
+  cursorFrame.provider = "cursor";
+  RecordingSink cursorSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, cursorFrame, cursorSink));
+  const RecordedCommand* cursorSprite = FirstSpriteCommand(cursorSink);
+  TEST_ASSERT_NOT_NULL(cursorSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cursor.cbi", cursorSprite->assetPath.c_str());
+
+  FrameData claudeFrame = testFrame();
+  claudeFrame.provider = "claude";
+  RecordingSink claudeSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, claudeFrame, claudeSink));
+  const RecordedCommand* claudeSprite = FirstSpriteCommand(claudeSink);
+  TEST_ASSERT_NOT_NULL(claudeSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/claude.cbi", claudeSprite->assetPath.c_str());
+
+  FrameData unknownFrame = testFrame();
+  unknownFrame.provider = "codex";
+  RecordingSink fallbackSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, unknownFrame, fallbackSink));
+  const RecordedCommand* fallbackSprite = FirstSpriteCommand(fallbackSink);
+  TEST_ASSERT_NOT_NULL(fallbackSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/fallback.cbi", fallbackSprite->assetPath.c_str());
+}
+
+void testProviderAssetsBeatActivityStateAssets() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-over-activity",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"a":"/themes/u/fallback.cbi","sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/coding.cbi"},"pa":{"codex":"/themes/u/codex.cbi"}}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+  frame.provider = "codex";
+  frame.activity = "coding";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  const RecordedCommand* sprite = FirstSpriteCommand(sink);
+  TEST_ASSERT_NOT_NULL(sprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/codex.cbi", sprite->assetPath.c_str());
+}
+
+void testProviderAssetsProviderChangeUsesPartialRender() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-partial",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}
+    ]
+  })JSON";
+
+  FrameData cursorFrame = testFrame();
+  cursorFrame.provider = "cursor";
+  RecordingSink firstSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, cursorFrame, firstSink));
+
+  FrameData claudeFrame = testFrame();
+  claudeFrame.provider = "claude";
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, claudeFrame, kThemeSpecFieldProvider, firstSink));
+  const RecordedCommand* partialSprite = LastSpriteCommand(firstSink);
+  TEST_ASSERT_NOT_NULL(partialSprite);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/claude.cbi", partialSprite->assetPath.c_str());
+}
+
+void testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-only-map",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}
+    ]
+  })JSON";
+
+  FrameData unknownFrame = testFrame();
+  unknownFrame.provider = "codex";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, unknownFrame, sink));
+  TEST_ASSERT_EQUAL_UINT32(0, static_cast<unsigned>(SpriteCommandCount(sink)));
+}
+
+void testProviderAssetsCompileRejectsTooManyEntries() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-overflow",
+    "rev":1,
+    "p":[
+      {"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{
+        "p01":"/themes/u/a01.cbi","p02":"/themes/u/a02.cbi","p03":"/themes/u/a03.cbi","p04":"/themes/u/a04.cbi",
+        "p05":"/themes/u/a05.cbi","p06":"/themes/u/a06.cbi","p07":"/themes/u/a07.cbi","p08":"/themes/u/a08.cbi",
+        "p09":"/themes/u/a09.cbi","p10":"/themes/u/a10.cbi","p11":"/themes/u/a11.cbi","p12":"/themes/u/a12.cbi",
+        "p13":"/themes/u/a13.cbi","p14":"/themes/u/a14.cbi","p15":"/themes/u/a15.cbi","p16":"/themes/u/a16.cbi",
+        "p17":"/themes/u/a17.cbi"
+      }}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_FALSE(CompileThemeSpec(spec, doc, scene));
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testEmptyLongFeatureContainersOverrideCompactAliases() {
+  const char* spec = R"JSON({
+    "v":1,"id":"alias-test","rev":1,"p":[
+      {"t":"p","w":40,"h":10,"b":"s","c":"#FFFFFF",
+       "colorStops":[],"cs":[{"gte":0,"c":"#FF0000"}]},
+      {"t":"sp","w":8,"h":8,"a":"/themes/u/base.cbi",
+       "providerAssets":{},"pa":{"codex":"/themes/u/codex.cbi"}}
+    ]
+  })JSON";
+  FrameData frame = testFrame();
+  frame.provider = "codex";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  const RecordedCommand* progress = FirstProgressCommand(sink);
+  TEST_ASSERT_NOT_NULL(progress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#FFFFFF", 0), progress->color);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/base.cbi", sink.commands.back().assetPath.c_str());
+}
+
+void testStringBudgetCountsInstalledBindingSpelling() {
+  std::string raw = R"({"v":1,"id":"binding-budget","rev":1,"p":[{"t":"p","w":40,"h":10,"b":"us1p"},{"t":"tx","v":")";
+  raw += std::string(1018, 'a');
+  raw += R"("}]})";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(raw.c_str(), doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1024, scene.stringPoolUsed);
+  ReleaseCompiledThemeSpec(scene);
+  raw.replace(raw.find("us1p"), 4, "usageSlot1Percent");
+  TEST_ASSERT_FALSE(CompileThemeSpec(raw.c_str(), doc, scene));
+  ReleaseCompiledThemeSpec(scene);
+  raw = R"({"v":1,"id":"empty-binding","rev":1,"p":[{"t":"p","w":40,"h":10,"binding":"","b":"us1p"},{"t":"tx","v":")";
+  raw += std::string(1023, 'a');
+  raw += R"("}]})";
+  TEST_ASSERT_TRUE(CompileThemeSpec(raw.c_str(), doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1024, scene.stringPoolUsed);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testStringBudgetCountsInstalledAliasesAndSpellings() {
+  const struct { const char* primitive; size_t bytes; } cases[] = {
+      {R"({"t":"tx","text":"","v":"ignored","b":"l"})", 2},
+      {R"({"t":"tx","text":null,"v":"ignored","b":"l"})", 10},
+      {R"({"t":"tx","text":"kept","v":"ignored","b":"l"})", 7},
+      {R"({"t":"sp","assetPath":"","a":"/themes/u/y.cbi","sa":{"idle":"/themes/u/x.cbi"}})", 16},
+      {R"({"t":"sp","a":"/themes/u/x.cbi","stateAssets":{},"sa":{"idle":"/themes/u/y.cbi"}})", 16},
+      {R"({"t":"px","w":1,"h":1,"data":"","d":"FF","p":["#FFFFFF"],"r":["a"]})", 0},
+      {R"({"t":"sp","a":"/themes/u/x.cbi "})", 17},
+      {R"({"t":"sp","a":"/themes/u/x.cbi","sa":{"idle":"/themes/u/y.cbi "}})", 33},
+  };
+  for (const auto& entry : cases) {
+    for (size_t extra = 0; extra <= 1; ++extra) {
+      std::string raw = R"({"v":1,"id":"string-budget","rev":1,"p":[)";
+      raw += entry.primitive;
+      raw += R"(,{"t":"tx","v":")";
+      raw += std::string(1023 - entry.bytes + extra, 'a');
+      raw += R"("}]})";
+      JsonDocument doc;
+      CompiledThemeSpec scene;
+      TEST_ASSERT_EQUAL(extra == 0, CompileThemeSpec(raw.c_str(), doc, scene));
+      if (extra == 0) TEST_ASSERT_EQUAL_UINT32(1024, scene.stringPoolUsed);
+      ReleaseCompiledThemeSpec(scene);
+    }
+  }
+}
+
+void testFeatureValidationUsesEffectiveAliases() {
+  const struct { const char* primitive; uint8_t stops; uint16_t color; } cases[] = {
+      {R"({"t":"p","w":10,"h":10,"colorStops":[],"cs":[{"c":"#FFFFFF"}]})", 0, 0},
+      {R"({"t":"p","w":10,"h":10,"colorStops":[{"gte":0,"c":"#FFFFFF"}],"cs":[{"gte":null,"c":"bad"}]})", 1, 0xFFFF},
+      {R"({"t":"sp","a":"/themes/u/x.cbi","providerAssets":{},"pa":{"Claude":" /themes/u/y.cbi"}})", 0, 0},
+      {R"({"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"#00FF00","c":"bad"}]})", 1, 0x07E0},
+      {R"({"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":"","c":"#FFFFFF"}]})", 1, 0xFFFF},
+      {R"({"t":"p","w":10,"h":10,"cs":[{"gte":0,"color":null,"c":"#FFFFFF"}]})", 1, 0xFFFF},
+      {R"({"t":"tx","b":"l","valign":"top","va":"BOTTOM"})", 0, 0},
+  };
+  for (const auto& entry : cases) {
+    std::string raw = R"({"v":1,"id":"selected-alias","rev":1,"p":[)";
+    raw += entry.primitive;
+    raw += "]}";
+    JsonDocument doc;
+    CompiledThemeSpec scene;
+    TEST_ASSERT_TRUE(CompileThemeSpec(raw.c_str(), doc, scene));
+    TEST_ASSERT_EQUAL_UINT8(entry.stops, scene.primitives[0].colorStopCount);
+    if (entry.stops) TEST_ASSERT_EQUAL_HEX16(entry.color, scene.primitives[0].colorStops[0].color);
+    ReleaseCompiledThemeSpec(scene);
+  }
+}
+
+void testProgressColorStopsSelectFillByPercent() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-stops",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","ps":"segments","sg":10,"c":"#111111",
+       "cs":[
+         {"gte":75,"c":"#22C55E"},
+         {"gte":50,"c":"#EAB308"},
+         {"gte":25,"c":"#F59E0B"},
+         {"gte":0,"c":"#EF4444"}
+       ]}
+    ]
+  })JSON";
+
+  FrameData greenFrame = testFrame();
+  greenFrame.session = 80;
+  RecordingSink greenSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, greenFrame, greenSink));
+  const RecordedCommand* green = FirstProgressCommand(greenSink);
+  TEST_ASSERT_NOT_NULL(green);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), green->color);
+
+  FrameData yellowFrame = testFrame();
+  yellowFrame.session = 55;
+  RecordingSink yellowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, yellowFrame, yellowSink));
+  const RecordedCommand* yellow = FirstProgressCommand(yellowSink);
+  TEST_ASSERT_NOT_NULL(yellow);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EAB308", 0), yellow->color);
+
+  FrameData orangeFrame = testFrame();
+  orangeFrame.session = 30;
+  RecordingSink orangeSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, orangeFrame, orangeSink));
+  const RecordedCommand* orange = FirstProgressCommand(orangeSink);
+  TEST_ASSERT_NOT_NULL(orange);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#F59E0B", 0), orange->color);
+
+  FrameData redFrame = testFrame();
+  redFrame.session = 10;
+  RecordingSink redSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, redFrame, redSink));
+  const RecordedCommand* red = FirstProgressCommand(redSink);
+  TEST_ASSERT_NOT_NULL(red);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EF4444", 0), red->color);
+}
+
+void testProgressColorStopsFallbackToSolidColor() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-fallback",
+    "rev":1,
+    "p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","ps":"segments","sg":8,"c":"#00FF00"}]
+  })JSON";
+  FrameData frame = testFrame();
+  frame.session = 12;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  const RecordedCommand* progress = FirstProgressCommand(sink);
+  TEST_ASSERT_NOT_NULL(progress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#00FF00", 0), progress->color);
+}
+
+void testProgressColorStopsPreferLongColorAlias() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-alias",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111",
+       "cs":[{"gte":0,"color":"#22C55E","c":"#EF4444"}]}
+    ]
+  })JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  const RecordedCommand* progress = FirstProgressCommand(sink);
+  TEST_ASSERT_NOT_NULL(progress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), progress->color);
+}
+
+void testProgressColorStopsInvertWhenUsageModeIsUsed() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-stops-used",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111",
+       "cs":[
+         {"gte":75,"c":"#22C55E"},
+         {"gte":50,"c":"#EAB308"},
+         {"gte":25,"c":"#F59E0B"},
+         {"gte":0,"c":"#EF4444"}
+       ]}
+    ]
+  })JSON";
+
+  FrameData usedHigh = testFrame();
+  usedHigh.usageMode = "used";
+  usedHigh.session = 80;
+  RecordingSink usedHighSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, usedHigh, usedHighSink));
+  const RecordedCommand* usedHighProgress = FirstProgressCommand(usedHighSink);
+  TEST_ASSERT_NOT_NULL(usedHighProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EF4444", 0), usedHighProgress->color);
+
+  FrameData usedLow = testFrame();
+  usedLow.usageMode = "used";
+  usedLow.session = 20;
+  RecordingSink usedLowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, usedLow, usedLowSink));
+  const RecordedCommand* usedLowProgress = FirstProgressCommand(usedLowSink);
+  TEST_ASSERT_NOT_NULL(usedLowProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), usedLowProgress->color);
+
+  FrameData remainingHigh = testFrame();
+  remainingHigh.usageMode = "remaining";
+  remainingHigh.session = 80;
+  RecordingSink remainingHighSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, remainingHigh, remainingHighSink));
+  const RecordedCommand* remainingHighProgress = FirstProgressCommand(remainingHighSink);
+  TEST_ASSERT_NOT_NULL(remainingHighProgress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), remainingHighProgress->color);
+}
+
+void testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"valign-dirty",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":68,"y":20,"w":156,"h":16,"b":"l","s":2,"f":2,"va":"middle"}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1, static_cast<unsigned>(scene.primitiveCount));
+
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), true, bounds));
+  // font 2 size 2: visual 32, clip pad +4 = 36. middle of h=16 at y=20 → 12.
+  TEST_ASSERT_EQUAL_INT(12, bounds.y);
+  TEST_ASSERT_TRUE(bounds.height >= 36);
+  TEST_ASSERT_TRUE(bounds.y + bounds.height >= 12 + 36);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"valign-dirty-bottom",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":68,"y":20,"w":156,"h":16,"b":"l","s":2,"f":2,"va":"bottom"}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), true, bounds));
+  // bottom of h=16 at y=20 with 32px glyphs → y=4, clip 36.
+  TEST_ASSERT_EQUAL_INT(4, bounds.y);
+  TEST_ASSERT_TRUE(bounds.height >= 36);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testProgressColorStopsCompileRejectsTooManyEntries() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-overflow",
+    "rev":1,
+    "p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#FFFFFF","cs":[
+      {"gte":80,"c":"#111111"},{"gte":60,"c":"#222222"},{"gte":40,"c":"#333333"},
+      {"gte":20,"c":"#444444"},{"gte":0,"c":"#555555"}
+    ]}]
+  })JSON";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_FALSE(CompileThemeSpec(spec, doc, scene));
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testStateAssetsUseActivityWithIdleFallback() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -2086,6 +3030,76 @@ void testThemeSpecActivityChangeUsesPartialRenderEvent() {
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
 }
 
+void testThemeSpecProviderChangeUsesPartialRenderEvent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"cursor","label":"Cursor","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"themeSpec":{"v":1,"id":"logo-map","rev":1,"p":[{"t":"sp","x":1,"y":2,"w":8,"h":8,"pa":{"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_STRING("cursor", state.current.provider.c_str());
+
+  const char* claudeFrame = R"JSON({"v":2,"provider":"claude","label":"Claude","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, claudeFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & kThemeSpecFieldProvider) != 0);
+  TEST_ASSERT_EQUAL_STRING("claude", state.current.provider.c_str());
+}
+
+void testThemeSpecColorStopsUsageModeChangeUsesPartialRenderEvent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":20,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageMode":"remaining","themeSpec":{"v":1,"id":"stops-map","rev":1,"p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111","cs":[{"gte":75,"c":"#22C55E"},{"gte":0,"c":"#EF4444"}]}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+
+  const char* usedFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":20,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageMode":"used"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & kThemeSpecFieldUsageMode) != 0);
+}
+
+void testThemeSpecSpacedProviderAssetsKeyTriggersPartialRender() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"cursor","label":"Cursor","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"themeSpec":{"v":1,"id":"logo-map","rev":1,"p":[{"t":"sp","x":1,"y":2,"w":8,"h":8,"pa" : {"cursor":"/themes/u/cursor.cbi","claude":"/themes/u/claude.cbi"}}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+
+  const char* claudeFrame = R"JSON({"v":2,"provider":"claude","label":"Claude","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, claudeFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & kThemeSpecFieldProvider) != 0);
+}
+
+void testThemeSpecSpacedColorStopsKeyTriggersPartialRender() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":20,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageMode":"remaining","themeSpec":{"v":1,"id":"stops-map","rev":1,"p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#111111","cs" : [{"gte":75,"c":"#22C55E"},{"gte":0,"c":"#EF4444"}]}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+
+  const char* usedFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":20,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageMode":"used"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & kThemeSpecFieldUsageMode) != 0);
+}
+
 void testLegacyThemeFieldsAreIgnored() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2104,9 +3118,7 @@ void testLegacyThemeFieldsAreIgnored() {
 
 void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
   RuntimeState state;
-  state.cachedThemeId = "clippy";
-  state.cachedThemeRev = 1;
-  state.cachedThemeSpecRaw = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2}],"fb":"mini","bg":"#000000"})JSON";
+  codexbar_display::core::CacheThemeSpec(state, "clippy", 1, R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2}],"fb":"mini","bg":"#000000"})JSON");
   state.current.provider = "codex";
   state.current.label = "Codex";
   state.current.session = 10;
@@ -2202,6 +3214,90 @@ void testStoredThemeBootActivationRejectsInvalidRaw() {
   TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_FALSE(event.frameAccepted);
+}
+
+// Issue #66: what a stored theme file can turn into -- cut off by a power
+// loss, overwritten with the wrong shape, or grown past the device limits --
+// never becomes the frame, and the theme that was up stays up.
+void testCorruptStoredThemeSpecKeepsLastKnownGood() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String good =
+      R"JSON({"v":1,"id":"good","rev":3,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "good", 3, good, 1000, event));
+
+  String tooManyPrimitives = R"JSON({"v":1,"id":"big","rev":1,"p":[)JSON";
+  for (size_t i = 0; i <= codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives; ++i) {
+    tooManyPrimitives += i == 0 ? "" : ",";
+    tooManyPrimitives += R"JSON({"t":"tx","x":1,"y":2,"s":1,"v":"x"})JSON";
+  }
+  tooManyPrimitives += "]}";
+
+  const String corrupt[] = {
+      good.substring(0, good.length() / 2),
+      good.substring(0, good.length() - 2),
+      R"JSON({"v":1,"id":"bad","rev":1,"p":"tx"})JSON",
+      R"JSON({"v":1,"id":"bad","rev":1,"p":{"t":"tx"}})JSON",
+      R"JSON({"v":1,"id":"bad","rev":1,"p":[{"t":"rc","x":1,"y":2,"w":0,"h":4},{"t":"tx","x":1,"y":2,"s":0,"v":"x"}]})JSON",
+      R"JSON([{"t":"tx","x":1,"y":2,"s":1,"v":"p"}])JSON",
+      tooManyPrimitives,
+  };
+  for (const String& raw : corrupt) {
+    TEST_ASSERT_FALSE_MESSAGE(
+        RestoreStoredThemeSpecFrame(state, "bad", 1, raw, 2000, event), raw.c_str());
+    TEST_ASSERT_FALSE(event.frameAccepted);
+    TEST_ASSERT_EQUAL_STRING("good", state.current.themeSpecId.c_str());
+    TEST_ASSERT_EQUAL_INT(3, state.current.themeSpecRev);
+    TEST_ASSERT_EQUAL_STRING("good", state.cachedThemeId.c_str());
+    TEST_ASSERT_EQUAL_STRING(good.c_str(), ThemeSpecRawForFrame(state, state.current).c_str());
+  }
+
+  // Nothing was up before: the frame stays empty instead of naming a theme
+  // that cannot draw, so the device shows its own "Theme missing" screen.
+  RuntimeState fresh;
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(fresh, "bad", 1, corrupt[0], 2000, event));
+  TEST_ASSERT_FALSE(fresh.hasFrame);
+  TEST_ASSERT_FALSE(fresh.current.hasThemeSpec);
+}
+
+// The same rule for a spec a frame carries: one that can never compile used to
+// replace the cached theme and stay the frame's theme, so every render failed
+// until the next restart.
+void testFrameCarriedInvalidThemeSpecKeepsLastKnownGood() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String good =
+      R"JSON({"v":1,"id":"good","rev":3,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "good", 3, good, 1000, event));
+
+  const char* invalid[] = {
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"bad","rev":1,"p":[{"t":"unsupported"}]}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":12,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"bad","rev":1,"p":"tx"}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":13,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"good","rev":3,"p":[]}})JSON",
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":14,"weekly":20,"resetSecs":3600})JSON",
+  };
+  for (const char* line : invalid) {
+    TEST_ASSERT_TRUE_MESSAGE(ConsumeFrameLine(state, line, 2000, event), line);
+    TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+    TEST_ASSERT_EQUAL_STRING("good", state.current.themeSpecId.c_str());
+    TEST_ASSERT_EQUAL_INT(3, state.current.themeSpecRev);
+    TEST_ASSERT_EQUAL_STRING(good.c_str(), ThemeSpecRawForFrame(state, state.current).c_str());
+  }
+  // The usage values of those frames still arrive.
+  TEST_ASSERT_EQUAL_INT(14, state.current.session);
+
+  // A valid spec still replaces the theme.
+  const char* next = R"JSON({"v":2,"provider":"codex","label":"Codex","session":15,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"next","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"ok"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, next, 3000, event));
+  TEST_ASSERT_EQUAL_STRING("next", state.current.themeSpecId.c_str());
+  TEST_ASSERT_EQUAL_STRING("next", state.cachedThemeId.c_str());
+
+  // Nothing was up before: the frame names no theme, so the device shows its
+  // own "Theme missing" screen instead of failing to draw.
+  RuntimeState fresh;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(fresh, invalid[0], 4000, event));
+  TEST_ASSERT_FALSE(fresh.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("", fresh.cachedThemeSpecRaw.c_str());
 }
 
 void testThemeSpecErrorFrameUsesFullRender() {
@@ -2475,6 +3571,14 @@ void testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap() {
   TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanAnimate(
       ThemeSpecRuntimePolicy::kMinAnimationFreeHeapBytes,
       ThemeSpecRuntimePolicy::kMinAnimationMaxFreeBlockBytes - 1));
+}
+
+// Mini Classic in WiFi mode (#520): with the old 13 KB decoder held for good,
+// 6456 bytes stayed free with a largest block of 2632. Animating anyway made
+// the WiFi VibeTV restart with "Exception" every 3-20 minutes, so that heap
+// must stay refused; the decoder now lends its work buffers per frame instead.
+void testThemeSpecRuntimePolicyRefusesAnimationBelowWifiReserve() {
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanAnimate(6456, 2632));
 }
 
 void testCbaHeaderParserAcceptsWhitespaceAndExactIntegers() {
@@ -2792,6 +3896,114 @@ void testStaleResetRendersUnavailableWhateverTheThemeBinds() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
 }
 
+void testMalformedAndControlLinesNeverBecomeFrames() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_FALSE(ConsumeFrameLine(state, "{broken", 1000, event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_FALSE(
+      ConsumeFrameLine(
+          state,
+          R"JSON({"kind":"request","op":"hello"})JSON",
+          1001,
+          event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_TRUE(
+      ConsumeFrameLine(
+          state,
+          R"JSON({"v":2,"provider":"codex","session":12,"weekly":34})JSON",
+          1002,
+          event));
+  TEST_ASSERT_TRUE(state.hasFrame);
+  TEST_ASSERT_TRUE(event.frameAccepted);
+}
+
+// The customer's exact wire frame: Claude with an idle 5-hour session (no
+// deadline at all) beside a weekly window that does have one. The device must
+// read the session window as idle and the weekly one as a running countdown,
+// which is what separates "nothing started yet" from "cannot be trusted".
+void testIdleWindowIsDistinguishedFromAnUntrustworthyOne() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* idleSession =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","session":0,"weekly":32,)JSON"
+      R"JSON("resetSecs":345600,"resetTrustSecs":18000,"resetSource":"claude:secondary","resetTrust":"live",)JSON"
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":32,"resetSecs":345600}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleSession, 1000, event));
+
+  // The session window carries no deadline and is current: idle, not stale.
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 0, 1000)));
+  // Idle travels as the negative sentinel.
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  // The weekly window has a real deadline, so it is a countdown, not idle.
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 1, 1000)));
+  TEST_ASSERT_EQUAL_INT64(345600, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+
+  // Past the trust horizon nothing is idle any more: the basis is stale and
+  // the renderer must go back to reporting the countdown as unavailable.
+  const unsigned long stale = 1000 + 6 * kHourMs;
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 0, stale)));
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingSecsAreIdle(CurrentUsageWindowRemainingSecs(state, 1, stale)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, stale));
+  // ...and that counts as a new minute bucket, which is what asks the periodic
+  // redraw to repaint the line. It must not depend on another countdown
+  // moving at the same moment: the weekly one may have run out long before.
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(
+      CurrentUsageWindowRemainingSecs(state, 0, stale),
+      codexbar_display::core::RemainingMinuteBucket(CurrentUsageWindowRemainingSecs(state, 0, 1000))));
+  // A real countdown keeps its whole-minute buckets.
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(119, 1));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(59, 1));
+}
+
+// Review of #524: the host sends resetSecs 0 not only for a window without a
+// deadline but also for a deadline that ran out before the frame left and for
+// a provider that names none. "No active session" beside 93% used claimed a
+// state the device cannot know. Idle needs both: no deadline and nothing used.
+void testWindowWithUsageAndNoDeadlineIsNotIdle() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* prefix =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":345600,"resetTrustSecs":18000,)JSON"
+      R"JSON("resetSource":"claude:secondary","resetTrust":"live",)JSON";
+  const String used = String(prefix) +
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":93,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"extra","label":"Extra","percent":32,"resetSecs":345600}],)JSON"
+      R"JSON("providerSlots":[{"id":"codex","label":"Codex","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, used.c_str(), 1000, event));
+  // Usage without a deadline: unavailable, as before.
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  // Nothing used and no deadline: idle.
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  // A provider slot is only sent with a deadline, so 0 there is one that ran
+  // out, whatever its percent says.
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+
+  // In "remaining" mode the host sends what is left: nothing used reads 100,
+  // and 0 means everything is used.
+  const String remaining = String(prefix) +
+      R"JSON("usageMode":"remaining",)JSON"
+      R"JSON("usageWindows":[{"id":"primary","label":"Session","percent":100,"resetSecs":0},)JSON"
+      R"JSON({"id":"secondary","label":"Weekly","percent":0,"resetSecs":0},)JSON"
+      R"JSON({"id":"extra","label":"Extra","percent":68,"resetSecs":345600}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remaining.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle,
+      CurrentUsageWindowRemainingSecs(state, 0, 2000));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 1, 2000));
+}
+
 // The selected provider can lack a reset while another fresh provider has one.
 // providerResetSlots still ships that countdown, so trust must not hinge on the
 // legacy root projection being positive.
@@ -2823,15 +4035,136 @@ void testProviderSlotDeadlineAloneKeepsTrust() {
       codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, afterBudget));
 }
 
-// A frame with no deadline anywhere still has nothing to be trusted about.
-void testFrameWithoutAnyDeadlineStaysStale() {
+// Issue #532. What the theme prints for the root {reset} token, built the way
+// the device builds its frame data from the runtime state.
+const char* rootResetTextFor(const RuntimeState& state, unsigned long now) {
+  FrameData frame;
+  frame.resetSecs = CurrentRemainingSecs(state, now);
+  frame.usageUnavailable = state.current.usageUnavailable;
+  for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows; ++i) {
+    frame.usageWindows[i].resetSecs = CurrentUsageWindowRemainingSecs(state, i, now);
+    frame.usageWindows[i].available =
+        state.current.usageWindows[i].available && !state.current.usageUnavailable;
+  }
+  return frame.resetSecs > 0 ? "countdown" : codexbar_display::themespec::RootResetUnavailableText(frame);
+}
+
+const char* const kNoDeadlineWindows =
+    R"JSON("usageWindows":[{"id":"session","label":"Session","percent":0,"resetSecs":0},)JSON"
+    R"JSON({"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}]})JSON";
+
+// An account in which no window has a reset time (#532). The host says the
+// basis is current with resetTrust "live"; that statement stands without a
+// deadline, so the windows are idle and not unavailable.
+void testLiveFrameWithoutAnyDeadlineIsIdle() {
   RuntimeState state;
   SerialConsumeEvent event;
-  const char* empty =
-      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 1000, event));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+  const String idle =
+      String(R"JSON({"v":2,"provider":"claude","label":"Claude","resetAgeSecs":12,"resetTrustSecs":17988,)JSON"
+             R"JSON("resetSource":"claude","resetTrust":"live",)JSON") +
+      kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idle.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
                         static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 1000));
+  // Nothing to count down, so nothing is handed over a restart.
+  TEST_ASSERT_EQUAL_STRING("", EncodeResetTrustRecord(state.reset, 1000).c_str());
+
+  // Without further frames the basis is no longer current, but it stays inside
+  // its budget: still idle, exactly like an idle window beside a deadline.
+  const unsigned long silent = 1000 + 10UL * 60UL * 1000UL;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(state.reset, silent)));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, silent));
+
+  // The budget the host sent bounds it. Past it nothing is idle any more.
+  const unsigned long afterBudget = 1000 + 17988UL * 1000UL + 1000UL;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterBudget)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, afterBudget));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, afterBudget));
+
+  // "remaining" mode: nothing used reads 100.
+  const String remaining =
+      String(R"JSON({"v":2,"provider":"claude","usageMode":"remaining","resetTrustSecs":18000,)JSON"
+             R"JSON("resetSource":"claude","resetTrust":"live",)JSON"
+             R"JSON("usageWindows":[{"id":"session","label":"Session","percent":100,"resetSecs":0}]})JSON");
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remaining.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 2000));
+}
+
+// The idle rule itself is unchanged: a window with usage and no deadline, a
+// provider slot, and unavailable usage are never idle, live basis or not.
+void testLiveFrameWithoutAnyDeadlineKeepsTheIdleRuleStrict() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* prefix =
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live",)JSON";
+  const String used = String(prefix) +
+      R"JSON("usageWindows":[{"id":"session","label":"Session","percent":40,"resetSecs":0},)JSON"
+      R"JSON({"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}],)JSON"
+      R"JSON("providerSlots":[{"id":"codex","label":"Codex","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, used.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      codexbar_display::core::kRemainingSecsIdle, CurrentUsageWindowRemainingSecs(state, 1, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+  // One window is not idle, so the root line is not either.
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 1000));
+
+  const String unavailable = String(prefix) + R"JSON("usageUnavailable":true,)JSON" + kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, unavailable.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentUsageWindowRemainingSecs(state, 0, 2000));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 2000));
+
+  // A live frame with no windows at all has nothing to call idle.
+  const char* empty =
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 3000, event));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 3000));
+}
+
+// Only the host's "live" stands without a deadline. What a Companion before
+// #532 sends for the same account (stale, with or without a source), an
+// offline resend, a live frame without budget or source, and a frame that
+// predates the trust contract all stay unavailable.
+void testFrameWithoutAnyDeadlineStaysStaleUnlessTheHostSaysLive() {
+  const char* const heads[] = {
+      R"JSON({"v":2,"provider":"claude","resetTrust":"stale",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetAgeSecs":12,"resetSource":"claude","resetTrust":"stale",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"offline",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetSource":"claude","resetTrust":"live",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetTrust":"live",)JSON",
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,)JSON",
+  };
+  for (const char* head : heads) {
+    RuntimeState state;
+    SerialConsumeEvent event;
+    const String line = String(head) + kNoDeadlineWindows;
+    TEST_ASSERT_TRUE_MESSAGE(ConsumeFrameLine(state, line.c_str(), 1000, event), head);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(ResetTrust::kStale),
+                                  static_cast<int>(CurrentResetTrust(state.reset, 1000)), head);
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(0, CurrentUsageWindowRemainingSecs(state, 0, 1000), head);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("Reset unavailable", rootResetTextFor(state, 1000), head);
+  }
+
+  // A stale frame also takes back an idle basis that was live a moment ago.
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const String live =
+      String(R"JSON({"v":2,"provider":"claude","resetTrustSecs":18000,"resetSource":"claude","resetTrust":"live",)JSON") +
+      kNoDeadlineWindows;
+  const String stale = String(heads[1]) + kNoDeadlineWindows;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, live.c_str(), 1000, event));
+  TEST_ASSERT_EQUAL_STRING("No active session", rootResetTextFor(state, 1000));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, stale.c_str(), 2000, event));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 2000));
 }
 
 }  // namespace
@@ -2850,16 +4183,34 @@ int main() {
   RUN_TEST(testConsumeFrameLineTracksTokenTotalPresence);
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
+  RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
+  RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);
+  RUN_TEST(testMixedIdleAndStaleCountdownsKeepTheUnavailableWording);
+  RUN_TEST(testRootResetTokenFollowsTheWindowsItSummarises);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testTokenTotalsRenderCompactAndTruncated);
   RUN_TEST(testProviderSlotBindingsRenderLabelAndFormattedReset);
   RUN_TEST(testProviderSlotsParseTickAndTriggerLiveRedraw);
   RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
+  RUN_TEST(testProviderSlotCountdownsAreRecognisedForThePeriodicRedraw);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
+  RUN_TEST(testUsageCountdownRefreshDoesNotRepaintBatteryArea);
+  RUN_TEST(testCountdownRepaintsOnlyWhenItsMinuteChanges);
+  RUN_TEST(testHiddenUsageCountdownDoesNotDirtyBatteryOnlyTheme);
+  RUN_TEST(testCompactKeysThatAreNotBindingsDoNotRepaint);
+  RUN_TEST(testStaticWordsAndAssetPathsAreNotBindings);
+  RUN_TEST(testRealBindingsStillRepaintOnlyTheirPrimitives);
+  RUN_TEST(testTokenFireRepaintsOnlyForTokenTotals);
+  RUN_TEST(testUncompilableSpecCountsAsUsingEverything);
+  RUN_TEST(testUsageModeTextFollowsTheNormalizedFrame);
+  RUN_TEST(testUsageWindowCapacityBoundaries);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
+  RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
+  RUN_TEST(testCountdownOnlyFramesRedrawThemesThatShowCountdowns);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
   RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
   RUN_TEST(testUsageProgressRequiresStableProviderAndWindowIdentity);
@@ -2883,6 +4234,9 @@ int main() {
   RUN_TEST(testUpdateNoticeSurfaceChangeRestoresOldSurface);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
+  RUN_TEST(testAlignedTextYUsesVisualGlyphBox);
+  RUN_TEST(testCompactValignMapsToTextCommand);
+  RUN_TEST(testValignCenterAliasIsMiddle);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
   RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);
@@ -2901,6 +4255,22 @@ int main() {
   RUN_TEST(testCompiledThemeSpecFullPartialAndAnimatedPasses);
   RUN_TEST(testChangedPrimitivePassReportsNoAffectedPrimitiveForUnusedReset);
   RUN_TEST(testChangedPrimitivePassHandlesTextWithoutMaxWidth);
+  RUN_TEST(testProviderAssetsSelectSpriteByProvider);
+  RUN_TEST(testProviderAssetsBeatActivityStateAssets);
+  RUN_TEST(testProviderAssetsProviderChangeUsesPartialRender);
+  RUN_TEST(testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider);
+  RUN_TEST(testProviderAssetsCompileRejectsTooManyEntries);
+  RUN_TEST(testEmptyLongFeatureContainersOverrideCompactAliases);
+  RUN_TEST(testStringBudgetCountsInstalledBindingSpelling);
+  RUN_TEST(testStringBudgetCountsInstalledAliasesAndSpellings);
+  RUN_TEST(testFeatureValidationUsesEffectiveAliases);
+  RUN_TEST(testProgressColorStopsSelectFillByPercent);
+  RUN_TEST(testProgressColorStopsInvertWhenUsageModeIsUsed);
+  RUN_TEST(testProgressColorStopsFallbackToSolidColor);
+  RUN_TEST(testProgressColorStopsPreferLongColorAlias);
+  RUN_TEST(testProgressColorStopsCompileRejectsTooManyEntries);
+  RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
+  RUN_TEST(testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
@@ -2908,10 +4278,16 @@ int main() {
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
   RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
+  RUN_TEST(testThemeSpecProviderChangeUsesPartialRenderEvent);
+  RUN_TEST(testThemeSpecColorStopsUsageModeChangeUsesPartialRenderEvent);
+  RUN_TEST(testThemeSpecSpacedProviderAssetsKeyTriggersPartialRender);
+  RUN_TEST(testThemeSpecSpacedColorStopsKeyTriggersPartialRender);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testStoredThemeBootActivationRestoresFrameAndFullRenderIntent);
   RUN_TEST(testStoredThemeBootActivationRejectsInvalidRaw);
+  RUN_TEST(testCorruptStoredThemeSpecKeepsLastKnownGood);
+  RUN_TEST(testFrameCarriedInvalidThemeSpecKeepsLastKnownGood);
   RUN_TEST(testThemeSpecErrorFrameUsesFullRender);
   RUN_TEST(testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
@@ -2926,6 +4302,7 @@ int main() {
   RUN_TEST(testUnconfirmedThemeSpecNullKeepsCachedLayout);
   RUN_TEST(testConfirmedThemeSpecNullClearsCachedLayout);
   RUN_TEST(testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap);
+  RUN_TEST(testThemeSpecRuntimePolicyRefusesAnimationBelowWifiReserve);
   RUN_TEST(testCbaHeaderParserAcceptsWhitespaceAndExactIntegers);
   RUN_TEST(testCbaHeaderParserRejectsMalformedOrTrailingInput);
   RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
@@ -2937,7 +4314,9 @@ int main() {
   RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
   RUN_TEST(testAShortRootDeadlineDoesNotBlankLongerWindows);
   RUN_TEST(testProviderSlotDeadlineAloneKeepsTrust);
-  RUN_TEST(testFrameWithoutAnyDeadlineStaysStale);
+  RUN_TEST(testLiveFrameWithoutAnyDeadlineIsIdle);
+  RUN_TEST(testLiveFrameWithoutAnyDeadlineKeepsTheIdleRuleStrict);
+  RUN_TEST(testFrameWithoutAnyDeadlineStaysStaleUnlessTheHostSaysLive);
   RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
   RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
   RUN_TEST(testResetTrustRecoversFromStaleWithFreshDataWithoutRestart);
@@ -2946,5 +4325,8 @@ int main() {
   RUN_TEST(testResetTrustLegacyFrameKeepsUnboundedLocalCountdown);
   RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
+  RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
+  RUN_TEST(testIdleWindowIsDistinguishedFromAnUntrustworthyOne);
+  RUN_TEST(testWindowWithUsageAndNoDeadlineIsNotIdle);
   return UNITY_END();
 }

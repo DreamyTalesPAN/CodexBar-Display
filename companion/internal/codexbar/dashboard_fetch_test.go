@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -51,6 +52,45 @@ func TestFetchDashboardProvidersUsesSnapshotAsAuthority(t *testing.T) {
 	wantSendReset := int64(resetAt.Sub(now).Seconds())
 	if trusted.UsageWindows[0].ResetSec != wantSendReset {
 		t.Fatalf("countdown must age exactly once before send: got=%d want=%d", trusted.UsageWindows[0].ResetSec, wantSendReset)
+	}
+}
+
+func TestFetchDashboardProvidersFiltersWindowsInformationalSession(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[{"id":"codex","windows":[
+				{"kind":"session","label":"Session","usedPercent":0},
+				{"kind":"weekly","label":"Weekly","usedPercent":26}
+			]}]}`))
+		case dashboardUsagePath:
+			_, _ = w.Write([]byte(`[{"provider":"codex","usage":{
+				"primary":{"is_informational":true,"used_percent":0,"window_minutes":300},
+				"secondary":{"is_informational":false,"used_percent":26,"window_minutes":10080}
+			}}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("expected one provider, got %+v", providers)
+	}
+	got := providers[0]
+	if got.Frame.UsageUnavailable || got.Stale || len(got.Frame.UsageWindows) != 1 || len(got.Meta.Windows) != 1 {
+		t.Fatalf("expected only real Weekly quota: %+v", got)
+	}
+	if window := got.Frame.UsageWindows[0]; window.ID != "weekly" || window.Label != "Weekly" || window.Percent != 26 {
+		t.Fatalf("weekly quota lost: %+v", window)
 	}
 }
 
@@ -137,6 +177,33 @@ func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
 	}
 }
 
+func TestFetchDashboardProvidersDoesNotProbeDisabledMacProviders(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar defaults to Claude, not the configured provider set")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[]}`))
+		case dashboardUsagePath:
+			// CodexBar 0.46.0 treats an explicit provider=all as every
+			// supported provider, even when the customer disabled them all.
+			if r.URL.RawQuery != "" {
+				http.Error(w, "disabled providers were requested", http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+	if err != nil || len(providers) != 0 {
+		t.Fatalf("an empty enabled set must settle without probing disabled providers: providers=%+v err=%v", providers, err)
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -148,7 +215,15 @@ func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(snapshot))
 	})
-	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, r *http.Request) {
+		wantQuery := ""
+		if runtime.GOOS == "windows" {
+			wantQuery = "provider=all"
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.RawQuery != wantQuery {
+			http.Error(w, "usage requires bearer and platform provider selection", http.StatusUnauthorized)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 		  {

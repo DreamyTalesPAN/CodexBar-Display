@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -12,12 +11,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
+
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 )
 
 var knownBinaryPaths = []string{
@@ -41,7 +44,6 @@ var (
 var runUsageCommandFn = runUsageCommand
 var runCostCommandFn = runUsageCommand
 var runVersionCommandFn = runUsageCommand
-var readFileFn = os.ReadFile
 var executablePathFn = os.Executable
 
 const (
@@ -133,6 +135,7 @@ func FindBinary() (string, error) {
 		for _, p := range []string{
 			filepath.Join(base, "CodexBarCLI"),
 			filepath.Join(base, "codexbar"),
+			filepath.Join(base, "codexbar-cli.exe"),
 			filepath.Join(base, "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"),
 		} {
 			if isExecutable(p) {
@@ -156,6 +159,9 @@ func FindBinary() (string, error) {
 	}
 
 	if p, err := exec.LookPath("codexbar"); err == nil && p != "" {
+		return p, nil
+	}
+	if p, err := exec.LookPath("codexbar-cli.exe"); err == nil && p != "" {
 		return p, nil
 	}
 
@@ -192,10 +198,7 @@ func findAppManagedPayload(version string) (string, string, error) {
 		return "", "", errors.New("home directory for app-managed CodexBar is empty")
 	}
 	app := filepath.Join(
-		home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(home),
 		"CodexBar",
 		version,
 		"CodexBar.app",
@@ -263,7 +266,8 @@ func isExecutable(path string) bool {
 	if info.IsDir() {
 		return false
 	}
-	return info.Mode()&0o111 != 0
+	// Windows has no POSIX execute bits; the process launcher checks the format.
+	return runtime.GOOS == "windows" || info.Mode()&0o111 != 0
 }
 
 func firstSymlinkInPathUnder(root, path string) (string, error) {
@@ -323,7 +327,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	// before the customer saw a screen, then providers arriving and toggling
 	// themselves on under their hands. Which providers are on is CodexBar's
 	// own setting and the customer's choice, not something to seed from a probe.
-	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+	out, err := runUsageAllEnabled(ctx, timeout, bin, "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
 
 	if err != nil {
@@ -408,6 +412,9 @@ func UsageBarsShowUsed() bool {
 	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
 		return showUsed
 	}
+	if runtime.GOOS != "darwin" {
+		return true
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
@@ -426,8 +433,12 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 	cmdCtx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, bin, args...)
-	cmd.Env = commandEnvironment(configPathFromContext(parent))
+	cmd := childproc.Hide(exec.CommandContext(cmdCtx, bin, args...))
+	env, err := commandEnvironment(configPathFromContext(parent))
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil && cmdCtx.Err() != nil {
 		return out, cmdCtx.Err()
@@ -469,6 +480,9 @@ type ParsedFrame struct {
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
 	Stale              bool
+	// Terminal marks a provider error CodexBar states as permanent (see
+	// providerErrorIsTerminal): retained quota for that provider is void.
+	Terminal bool
 }
 
 type ProviderUsageMeta struct {
@@ -516,6 +530,9 @@ type ProviderCostUsage struct {
 	LatestTokens      int64
 	TopModel          string
 	Daily             []ProviderCostDay
+	// KnownZero marks a complete scan that found no usage at all. An
+	// all-zero result is otherwise indistinguishable from "nothing known".
+	KnownZero bool
 }
 
 type ProviderCostDay struct {
@@ -589,7 +606,22 @@ func (v looseVersion) Compare(other looseVersion) int {
 
 var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
 
+// installedVersion is the CLI's version. The app-managed copy is not run for
+// it: its path is keyed by the pinned version, and that version was checked
+// against the binary itself when the copy was installed. Running it again on
+// every probe and settings read hit the 2 s deadline on a fresh Mac, which
+// reported a broken engine and sent the app to reinstall it (#508).
 func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
+	if pinned := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); pinned != "" {
+		if managed, err := findAppManagedBinary(pinned); err == nil && managed == strings.TrimSpace(bin) {
+			return parseLooseVersion(pinned)
+		}
+	}
+	return reportedVersion(ctx, bin)
+}
+
+// reportedVersion runs the CLI and reads the version it reports.
+func reportedVersion(ctx context.Context, bin string) (looseVersion, error) {
 	bin = strings.TrimSpace(bin)
 	if bin == "" {
 		return looseVersion{}, errors.New("CodexBar binary path is empty")
@@ -601,31 +633,7 @@ func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
 		}
 	}
 
-	infoPath, ok := appInfoPlistPath(bin)
-	if !ok {
-		if resolved, err := filepath.EvalSymlinks(bin); err == nil {
-			infoPath, ok = appInfoPlistPath(resolved)
-		}
-	}
-	if !ok {
-		return looseVersion{}, fmt.Errorf("could not determine CodexBar version from %s", bin)
-	}
-	raw, err := readFileFn(infoPath)
-	if err != nil {
-		return looseVersion{}, fmt.Errorf("read CodexBar Info.plist: %w", err)
-	}
-	rawVersion, err := plistStringValue(raw, "CFBundleShortVersionString")
-	if err != nil || strings.TrimSpace(rawVersion) == "" {
-		rawVersion, err = plistStringValue(raw, "CFBundleVersion")
-	}
-	if err != nil {
-		return looseVersion{}, fmt.Errorf("read CodexBar version from Info.plist: %w", err)
-	}
-	version, err := parseLooseVersion(rawVersion)
-	if err != nil {
-		return looseVersion{}, fmt.Errorf("parse CodexBar version %q: %w", rawVersion, err)
-	}
-	return version, nil
+	return looseVersion{}, fmt.Errorf("could not determine CodexBar version from %s --version", bin)
 }
 
 func extractLooseVersion(raw string) (looseVersion, bool) {
@@ -662,57 +670,6 @@ func parseLooseVersion(raw string) (looseVersion, error) {
 		}
 	}
 	return looseVersion{major: major, minor: minor, patch: patch}, nil
-}
-
-func appInfoPlistPath(bin string) (string, bool) {
-	clean := filepath.Clean(strings.TrimSpace(bin))
-	marker := ".app" + string(os.PathSeparator) + "Contents"
-	idx := strings.Index(clean, marker)
-	if idx == -1 {
-		return "", false
-	}
-	appRoot := clean[:idx+len(".app")]
-	if appRoot == "" {
-		return "", false
-	}
-	return filepath.Join(appRoot, "Contents", "Info.plist"), true
-}
-
-func plistStringValue(raw []byte, key string) (string, error) {
-	decoder := xml.NewDecoder(bytes.NewReader(raw))
-	var lastKey string
-	for {
-		tok, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-
-		start, ok := tok.(xml.StartElement)
-		if !ok {
-			continue
-		}
-		switch start.Name.Local {
-		case "key":
-			var value string
-			if err := decoder.DecodeElement(&value, &start); err != nil {
-				return "", err
-			}
-			lastKey = strings.TrimSpace(value)
-		case "string":
-			var value string
-			if err := decoder.DecodeElement(&value, &start); err != nil {
-				return "", err
-			}
-			if lastKey == key {
-				return strings.TrimSpace(value), nil
-			}
-			lastKey = ""
-		}
-	}
-	return "", fmt.Errorf("key %q not found", key)
 }
 
 func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
@@ -785,6 +742,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 			Provider: provider,
 			Source:   source,
 			Stale:    true,
+			Terminal: providerErrorIsTerminal(providerHealthErrorText(payload["error"])),
 		}, nil
 	}
 
@@ -1251,9 +1209,6 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 }
 
 func parseUsageWindowMap(windowMap map[string]any, id string, label string) (UsageWindow, bool) {
-	if usageKnown, ok := anyToBool(windowMap["usageKnown"]); ok && !usageKnown {
-		return UsageWindow{}, false
-	}
 	used, known := knownUsagePercentAtPaths(windowMap, "usedPercent", "used_percent", "percent", "usagePercent")
 	if !known {
 		return UsageWindow{}, false
@@ -1281,7 +1236,7 @@ func resetSecondsFromWindowMap(windowMap map[string]any) (int64, bool) {
 		}
 		return int64(n), true
 	}
-	resetAt := firstStringAtPaths(windowMap, "resetsAt", "resetAt")
+	resetAt := firstStringAtPaths(windowMap, "resetsAt", "resetAt", "resets_at")
 	if resetAt == "" {
 		return 0, false
 	}
@@ -1490,6 +1445,16 @@ func providerPayloadHasError(payload map[string]any) bool {
 	default:
 		return true
 	}
+}
+
+// providerErrorIsTerminal reports CodexBar's own end-of-support statement for
+// a provider. CodexBar exports provider failures as {code, kind, message}
+// without a typed reason, so the one central classification decides: whatever
+// classifyProviderError calls unsupported (today both Gemini CLI OAuth
+// shutdown sentences) voids the retained quota. Every other error is transient
+// here and keeps the bounded last-good quota.
+func providerErrorIsTerminal(detail string) bool {
+	return classifyProviderError(detail) == ProviderUnsupported
 }
 
 const (
@@ -2445,8 +2410,8 @@ func withHome(home, value string) string {
 	switch {
 	case v == "~":
 		return home
-	case strings.HasPrefix(v, "~/"):
-		return filepath.Join(home, strings.TrimPrefix(v, "~/"))
+	case strings.HasPrefix(filepath.ToSlash(v), "~/"):
+		return filepath.Join(home, v[2:])
 	default:
 		return v
 	}
@@ -2849,14 +2814,31 @@ func firstRFC3339AtPaths(m map[string]any, paths ...string) time.Time {
 	return parsed.UTC()
 }
 
+func usageWindowUnavailable(m map[string]any) bool {
+	if usageKnown, exists := anyToBool(m["usageKnown"]); exists && !usageKnown {
+		return true
+	}
+	// CodexBar also uses rate-window objects for informational notices (for
+	// example an absent session). Their numeric value is not a quota.
+	for _, key := range []string{"isInformational", "is_informational"} {
+		if informational, _ := anyToBool(m[key]); informational {
+			return true
+		}
+	}
+	return false
+}
+
 func knownUsagePercentAtPaths(m map[string]any, paths ...string) (int, bool) {
+	if usageWindowUnavailable(m) {
+		return 0, false
+	}
 	for _, path := range paths {
 		value, ok := getPath(m, path)
 		if !ok {
 			continue
 		}
 		if window, ok := value.(map[string]any); ok {
-			if usageKnown, exists := anyToBool(window["usageKnown"]); exists && !usageKnown {
+			if usageWindowUnavailable(window) {
 				return 0, false
 			}
 			for _, key := range []string{"usedPercent", "used_percent", "percent", "usagePercent"} {

@@ -7,12 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -83,15 +89,16 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("expected dump and validation, got %v", calls)
 	}
-	if mode := fileMode(t, filepath.Dir(path)); mode.Perm() != 0o700 {
+	if mode := fileMode(t, filepath.Dir(path)); runtime.GOOS != "windows" && mode.Perm() != 0o700 {
 		t.Fatalf("expected config dir 0700, got %o", mode.Perm())
 	}
-	if mode := fileMode(t, path); mode.Perm() != 0o600 {
+	if mode := fileMode(t, path); runtime.GOOS != "windows" && mode.Perm() != 0o600 {
 		t.Fatalf("expected config file 0600, got %o", mode.Perm())
 	}
 }
 
 func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -120,6 +127,7 @@ func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T
 }
 
 func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	home := t.TempDir()
 	standard := filepath.Join(home, ".config", "codexbar", "config.json")
@@ -154,21 +162,12 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 }
 
 func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
+	skipMacCLIContract(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	t.Setenv("CODEXBAR_CONFIG", "")
-	script := filepath.Join(t.TempDir(), "print-config")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
-if [ "${1:-} ${2:-}" = "config dump" ]; then
-  printf '{"version":1,"providers":[{"id":"future-provider","enabled":true}]}'
-elif [ "${1:-} ${2:-}" = "config validate" ]; then
-  printf '[]'
-else
-  printf '%s' "$CODEXBAR_CONFIG"
-fi
-`), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	script := testBinary(t)
+	t.Setenv("CODEXBAR_TEST_PROCESS", "config")
 	t.Setenv("CODEXBAR_BIN", script)
 	out, err := runUsageCommand(context.Background(), 5*time.Second, script)
 	if err != nil {
@@ -209,7 +208,7 @@ func TestFindBinaryPrefersUserApplicationsAppOverPATH(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", "")
 	t.Setenv(appManagedCodexBarVersionEnvVar, "")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 	pathDir := t.TempDir()
 	t.Setenv("PATH", pathDir)
 	pathCLI := filepath.Join(pathDir, "codexbar")
@@ -236,11 +235,11 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 		systemAppBinaryPaths = originalSystemApps
 	}()
 	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
-	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testenv.Home(t, home)
 
-	privateCLI := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	privateCLI := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
 	foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
 	systemCLI := filepath.Join(t.TempDir(), "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
 	pathDir := t.TempDir()
@@ -271,6 +270,41 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 	}
 }
 
+// The app-managed copy's version is the pinned one its path is keyed by, so a
+// probe or settings read never waits on starting it (#508). Any other CLI is
+// still asked.
+func TestInstalledVersionDoesNotRunTheAppManagedCLI(t *testing.T) {
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
+	home := t.TempDir()
+	testenv.Home(t, home)
+	privateCLI := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	otherCLI := filepath.Join(t.TempDir(), "codexbar")
+	for _, path := range []string{privateCLI, otherCLI} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := runVersionCommandFn
+	t.Cleanup(func() { runVersionCommandFn = original })
+	var ran []string
+	runVersionCommandFn = func(_ context.Context, _ time.Duration, bin string, _ ...string) ([]byte, error) {
+		ran = append(ran, bin)
+		return nil, errors.New("slow first launch")
+	}
+
+	version, err := installedVersion(context.Background(), privateCLI)
+	want, _ := parseLooseVersion("0.63.0")
+	if err != nil || version.Compare(want) != 0 || len(ran) != 0 {
+		t.Fatalf("app-managed CLI: version=%s err=%v ran=%v, want 0.63.0 without running it", version, err, ran)
+	}
+	if _, err := installedVersion(context.Background(), otherCLI); err == nil || len(ran) != 1 || ran[0] != otherCLI {
+		t.Fatalf("other CLI: err=%v ran=%v, want it asked and failing", err, ran)
+	}
+}
+
 func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -279,7 +313,7 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "target app",
 			setup: func(t *testing.T, home string) {
-				targetApp := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app")
+				targetApp := runtimepaths.Path(home, "CodexBar", "0.63.0", "CodexBar.app")
 				realApp := filepath.Join(t.TempDir(), "CodexBar.app")
 				writeExecutable(t, filepath.Join(realApp, "Contents", "Helpers", "CodexBarCLI"))
 				if err := os.MkdirAll(filepath.Dir(targetApp), 0o700); err != nil {
@@ -293,9 +327,9 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "parent segment",
 			setup: func(t *testing.T, home string) {
-				targetParent := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar")
+				targetParent := runtimepaths.Path(home, "CodexBar")
 				realParent := filepath.Join(t.TempDir(), "CodexBar")
-				writeExecutable(t, filepath.Join(realParent, "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				writeExecutable(t, filepath.Join(realParent, "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
 				if err := os.MkdirAll(filepath.Dir(targetParent), 0o700); err != nil {
 					t.Fatal(err)
 				}
@@ -307,12 +341,13 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 		{
 			name: "ancestor segment",
 			setup: func(t *testing.T, home string) {
-				realLibrary := filepath.Join(t.TempDir(), "Library")
-				writeExecutable(t, filepath.Join(realLibrary, "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
-				if err := os.MkdirAll(home, 0o700); err != nil {
+				config := filepath.Dir(runtimepaths.Root(home))
+				realConfig := filepath.Join(t.TempDir(), "config")
+				writeExecutable(t, filepath.Join(realConfig, "codexbar-display", "CodexBar", "0.63.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(filepath.Dir(config), 0o700); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(realLibrary, filepath.Join(home, "Library")); err != nil {
+				if err := os.Symlink(realConfig, config); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -327,9 +362,9 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 			}()
 			executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
 			systemAppBinaryPaths = nil
-			t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+			t.Setenv(appManagedCodexBarVersionEnvVar, "0.63.0")
 			home := t.TempDir()
-			t.Setenv("HOME", home)
+			testenv.Home(t, home)
 			foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
 			writeExecutable(t, foreignCLI)
 			t.Setenv("CODEXBAR_BIN", foreignCLI)
@@ -352,7 +387,8 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
       {"provider":"claude","error":{"message":"No Claude session key found in browser cookies."}},
       {"provider":"cursor","error":{"message":"Keychain access denied."}},
       {"provider":"gemini","usage":{}},
-      {"provider":"copilot","error":{"message":"No available fetch strategy."}}
+      {"provider":"copilot","error":{"message":"No available fetch strategy."}},
+      {"provider":"kimi","error":"Kimi usage failed from all configured sources. OAuth: Reading credentials is off; CLI: not installed"}
     ]`)
 	got := providerReadinessFromOutput(raw, errors.New("exit status 1"), nil)
 	statuses := make(map[string]string)
@@ -365,12 +401,120 @@ func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	want := map[string]string{
 		"codex": ProviderReady, "claude": ProviderAuthRequired,
 		"cursor": ProviderPermissionRequired, "gemini": ProviderNoUsageAvailable,
-		"copilot": ProviderNotConfigured,
+		"copilot": ProviderNotConfigured, "kimi": ProviderAuthRequired,
 	}
 	for provider, status := range want {
 		if statuses[provider] != status {
 			t.Fatalf("%s: expected %s, got %s (%+v)", provider, status, statuses[provider], got)
 		}
+	}
+}
+
+// Anthropic answers 429 while a customer is connecting Claude during setup.
+// That is not a fault they can repair: the sign-in works and the usage service
+// is healthy, so it must not be classified as an auth or engine failure and
+// must not advise repairing anything.
+func TestProviderReadinessClassifiesRateLimitAsWaitAndRetry(t *testing.T) {
+	for _, detail := range []string{
+		"Claude CLI usage endpoint is rate limited right now. Please try again later.",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderError(detail); got != ProviderRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderRateLimited, got)
+		}
+	}
+
+	result := providerResult("claude", ProviderRateLimited)
+	advice := strings.ToLower(result.Detail + " " + result.NextAction)
+	for _, wrong := range []string{"repair", "sign in", "permission"} {
+		if strings.Contains(advice, wrong) {
+			t.Fatalf("rate-limit copy should not mention %q: %+v", wrong, result)
+		}
+	}
+	if !strings.Contains(advice, "wait") {
+		t.Fatalf("rate-limit copy should tell the customer to wait: %+v", result)
+	}
+}
+
+// A sign-in failure may name the data it wanted to read. Telling that customer
+// to wait hides the sign-in they must repair, so the bare noun must not be
+// mistaken for throttling.
+func TestProviderReadinessKeepsAuthFailuresThatMentionRateLimitData(t *testing.T) {
+	for _, detail := range []string{
+		"Codex connection failed: codex account authentication required to read rate limits",
+		"no cookies in session while reading rate limit data",
+	} {
+		if got := classifyProviderError(detail); got != ProviderAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderAuthRequired, got)
+		}
+	}
+}
+
+// "429" inside a request id, a process id or a duration is not an HTTP status.
+// Reading it as throttling hid the sign-in or the timeout behind "wait a few
+// minutes, nothing needs to be fixed".
+func TestProviderClassificationIgnores429InsideOtherNumbers(t *testing.T) {
+	for detail, want := range map[string]string{
+		"HTTP 401 authentication_error (request req_01429ab)": ProviderAuthRequired,
+		"session expired, helper pid 14290":                   ProviderAuthRequired,
+		"timed out after 14290ms":                             ProviderTimeout,
+	} {
+		if got := classifyProviderError(detail); got != want {
+			t.Fatalf("%q: expected %s, got %s", detail, want, got)
+		}
+		if got := classifyProviderHealth(detail); got == ProviderHealthRateLimited {
+			t.Fatalf("%q: the health scan read a number as throttling", detail)
+		}
+	}
+	// The status on its own still is throttling.
+	if got := classifyProviderError("usage endpoint answered HTTP 429."); got != ProviderRateLimited {
+		t.Fatalf("a standalone 429 must stay rate_limited, got %s", got)
+	}
+}
+
+// The cached health scan speaks for a row whenever no fresh exact readiness
+// does, so it has to reach the same verdict. It used to read the bundled
+// "OAuth ... rate limited" message as auth_required and offer a sign-in the
+// customer did not need (#448).
+func TestProviderHealthClassifiesThrottlingLikeReadiness(t *testing.T) {
+	for _, detail := range []string{
+		"OAuth error: Claude OAuth usage endpoint is rate limited",
+		"usage request failed: too many requests",
+		"unexpected status 429 from usage endpoint",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthRateLimited {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthRateLimited, got)
+		}
+	}
+	// A credential the provider could not use at all is still a sign-in
+	// failure, even when throttling is mentioned in the same summary.
+	for _, detail := range []string{
+		"Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: rate limited.",
+		"OAuth token expired",
+		"authentication required to read rate limits",
+	} {
+		if got := classifyProviderHealth(detail); got != ProviderHealthAuthRequired {
+			t.Fatalf("%q: expected %s, got %s", detail, ProviderHealthAuthRequired, got)
+		}
+	}
+}
+
+// A provider-scoped probe answers through CodexBar's own stand-in when the
+// usage call itself fails. Losing the rate limit there told the customer their
+// account exposes no usage instead of asking them to wait.
+func TestExactProviderReadinessKeepsRateLimitFromStandIn(t *testing.T) {
+	got := exactProviderReadinessFromOutput(
+		"claude",
+		nil,
+		errors.New("usage request failed: too many requests"),
+		nil,
+	)
+	if got.Status != ProviderRateLimited {
+		t.Fatalf("exact probe dropped the rate limit: %+v", got)
+	}
+	if got.ID != "claude" {
+		t.Fatalf("exact probe must answer for the requested provider: %+v", got)
 	}
 }
 
@@ -389,6 +533,7 @@ func TestProviderReadinessCopyHidesInternalUsageServiceName(t *testing.T) {
 		ProviderTimeout,
 		ProviderConfigError,
 		ProviderEngineError,
+		ProviderEngineIncompatible,
 		ProviderNotConfigured,
 	} {
 		got := providerResult("codexbar", status)
@@ -400,6 +545,7 @@ func TestProviderReadinessCopyHidesInternalUsageServiceName(t *testing.T) {
 }
 
 func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -413,13 +559,13 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.46.0"), nil
+		return []byte("CodexBar 0.63.0"), nil
 	}
 	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":0}}}]`), nil
 	}
 	got := ProbeProviderSetup(context.Background(), t.TempDir())
-	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.46" {
+	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.63" {
 		t.Fatalf("unexpected ready probe: %+v", got)
 	}
 	if len(got.Providers) != 1 || got.Providers[0].Status != ProviderReady {
@@ -470,11 +616,6 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	if got.Providers[0].Source != "cli" || got.Providers[0].CollectedAt != "2026-07-24T08:00:00Z" {
 		t.Fatalf("missing safe source/freshness diagnostics: %+v", got.Providers[0])
 	}
-	if got.ExactUsage == nil || got.ExactUsage.Provider != "antigravity" ||
-		got.ExactUsage.Frame.Session != 17 || got.ExactUsage.Frame.Weekly != 23 ||
-		got.ExactUsage.CollectedAt.Format(time.RFC3339) != "2026-07-24T08:00:00Z" {
-		t.Fatalf("exact usage was not retained for immediate companion refresh: %+v", got.ExactUsage)
-	}
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
@@ -491,7 +632,15 @@ func writeExecutable(t *testing.T, path string) {
 	}
 }
 
-func TestProbeProviderSetupForProviderDoesNotCacheUndatedExactUsage(t *testing.T) {
+// Windows probes each switched-on provider one by one with its own budget.
+// A shared deadline over the whole loop -- the probe's own or the one the
+// setup handlers put on the request context -- would hand the second
+// provider an almost spent context and mark it unavailable, so the
+// per-provider path must not run under any inherited deadline.
+func TestProbeProviderSetupGivesEachWindowsProviderProbeItsOwnBudget(t *testing.T) {
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -499,24 +648,47 @@ func TestProbeProviderSetupForProviderDoesNotCacheUndatedExactUsage(t *testing.T
 		runVersionCommandFn = originalVersion
 	}()
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeExecutable(t, bin)
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.44.0"), nil
+		return []byte("CodexBar 0.56.8"), nil
 	}
-	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+	var probeDeadlines []bool
+	var mu sync.Mutex
+	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
-			return []byte(`[{"provider":"future-provider","displayName":"Future Provider","enabled":true}]`), nil
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":true}
+			]`), nil
 		}
-		return []byte(`[{"provider":"future-provider","source":"oauth","usage":{"secondary":{"usedPercent":23}}}]`), nil
+		_, hasDeadline := ctx.Deadline()
+		mu.Lock()
+		probeDeadlines = append(probeDeadlines, hasDeadline)
+		mu.Unlock()
+		provider := args[3]
+		return []byte(`[{"provider":"` + provider + `","usage":{"primary":{"usedPercent":5}}}]`), nil
 	}
 
-	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "future-provider")
-	if got.Status != ProviderReady || got.ExactUsage != nil {
-		t.Fatalf("undated provider usage must be ready but not immediately cached: %+v", got)
+	parent, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	got := ProbeProviderSetup(parent, t.TempDir())
+	if got.Status != ProviderReady || len(got.Providers) != 2 {
+		t.Fatalf("unexpected readiness: %+v", got)
+	}
+	for _, provider := range got.Providers {
+		if provider.Status != ProviderReady {
+			t.Fatalf("every probed provider must be ready: %+v", got.Providers)
+		}
+	}
+	if len(probeDeadlines) != 2 {
+		t.Fatalf("expected one probe per enabled provider, got %d", len(probeDeadlines))
+	}
+	for i, hasDeadline := range probeDeadlines {
+		if hasDeadline {
+			t.Fatalf("probe %d ran under the shared aggregate deadline; each provider needs its own budget", i)
+		}
 	}
 }
 
@@ -585,12 +757,13 @@ func fileMode(t *testing.T, path string) os.FileMode {
 	return info.Mode()
 }
 
-// Verified against bundled CodexBar 0.46.0: `usage --json` lists only the
+// Verified against bundled CodexBar 0.63.0: `usage --json` lists only the
 // providers that are switched on and carries no enabled field, so switching
 // every provider off yields an empty list. That used to become the
 // not-configured stand-in, and the customer was told to download the CodexBar
 // they already have. CodexBar's own inventory is the authority on the switches.
 func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -604,7 +777,7 @@ func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.46.0"), nil
+		return []byte("CodexBar 0.63.0"), nil
 	}
 	inventoryCalls := 0
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
@@ -651,7 +824,7 @@ func TestProbeProviderSetupDisclosesSwitchedOffBesideSilentEnabledProvider(t *te
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.46.0"), nil
+		return []byte("CodexBar 0.63.0"), nil
 	}
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
@@ -692,7 +865,7 @@ func TestProbeProviderSetupDisclosesSwitchedOffBesideFailingProvider(t *testing.
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.46.0"), nil
+		return []byte("CodexBar 0.63.0"), nil
 	}
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
@@ -749,6 +922,7 @@ func TestProviderReadinessKeepsReportedMessageInternal(t *testing.T) {
 // A ready provider means there is nothing to disclose and no inventory call to
 // pay for.
 func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
+	skipMacCLIContract(t)
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -762,7 +936,7 @@ func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.46.0"), nil
+		return []byte("CodexBar 0.63.0"), nil
 	}
 	inventoryCalls := 0
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
@@ -779,5 +953,24 @@ func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
 	}
 	if inventoryCalls != 0 {
 		t.Fatalf("a ready answer must not pay for an inventory call, got %d", inventoryCalls)
+	}
+}
+
+func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	providerCopyGOOS = "darwin"
+	mac := providerResult("claude", ProviderPermissionRequired)
+	if mac.Detail != "macOS blocked access required by this provider." ||
+		mac.NextAction != "Allow the requested macOS permission, then check again." {
+		t.Fatalf("macOS copy changed: %+v", mac)
+	}
+
+	providerCopyGOOS = "windows"
+	windows := providerResult("claude", ProviderPermissionRequired)
+	if windows.Detail != "Windows blocked access required by this provider." ||
+		windows.NextAction != "Allow the requested access, then check again." {
+		t.Fatalf("Windows copy = %+v", windows)
 	}
 }

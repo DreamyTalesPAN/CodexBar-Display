@@ -16,6 +16,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
@@ -55,6 +56,306 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Error != string(runtimeErrorCodexbarParse) {
 		t.Fatalf("expected runtime error frame code %q, got %q", runtimeErrorCodexbarParse, frame.Error)
+	}
+}
+
+func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	testenv.Home(t, home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("wifi"); got != "usb" {
+		t.Fatalf("runtime config must own connection mode, got %q", got)
+	}
+}
+
+func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
+	home := t.TempDir()
+	testenv.Home(t, home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "legacy-vibetv",
+	}); err != nil {
+		t.Fatalf("save legacy runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("usb"); got != "wifi" {
+		t.Fatalf("legacy WiFi target must override the new Cable fallback, got %q", got)
+	}
+}
+
+func TestConfiguredConnectionModeKeepsPendingWiFiTransitionOnCableWorker(t *testing.T) {
+	home := t.TempDir()
+	testenv.Home(t, home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget:          "http://192.168.178.72",
+		DeviceToken:           "pair-token",
+		DeviceID:              "transitioning-vibetv",
+		CableAutoBindDisabled: true,
+	}); err != nil {
+		t.Fatalf("save transitional runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("wifi"); got != "usb" {
+		t.Fatalf("pending WiFi transition must stay on Cable worker, got %q", got)
+	}
+}
+
+func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
+	cfg := runtimeconfig.Config{}
+	port, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(requested, expectedDeviceID string) (string, error) {
+			if requested != "" || expectedDeviceID != "" {
+				t.Fatalf("fresh Cable resolution received requested=%q expectedDeviceID=%q", requested, expectedDeviceID)
+			}
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                      true,
+				DeviceID:                   "fresh-vibetv",
+				ConnectionMode:             "cable",
+				ActiveTransport:            "usb",
+				SupportedTransportChannels: []string{"usb", "wifi"},
+				MaxFrameBytes:              2048,
+				ProtocolVersion:            protocol.ProtocolVersionV2,
+				NegotiatedProtocolVersion:  protocol.ProtocolVersionV2,
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve fresh Cable device: %v", err)
+	}
+	if port != "/dev/cu.usbserial-vibetv" || cfg.ConnectionMode != "cable" || cfg.DeviceID != "fresh-vibetv" {
+		t.Fatalf("fresh Cable identity was not persisted: port=%q cfg=%+v", port, cfg)
+	}
+	if !cfg.ConnectionModeChoiceRequired {
+		t.Fatal("fresh Cable auto-binding must preserve the connection chooser")
+	}
+	if !cfg.CableAutoBindDisabled {
+		t.Fatal("fresh Cable auto-binding must block writes until the connection choice")
+	}
+	if cfg.ProviderSelectionSetupIsComplete() || cfg.ProviderDisplayPredatesSetup() {
+		t.Fatal("fresh Cable binding must not skip provider and display setup")
+	}
+	if len(cfg.DeviceTransports) != 2 || cfg.DeviceTransports[1] != "wifi" {
+		t.Fatalf("fresh Cable capabilities were not persisted: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestResolveCycleDeviceDoesNotRebindCableAfterSetupReset(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode:        "cable",
+		CableAutoBindDisabled: true,
+	}
+	saveCalls := 0
+	_, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			saveCalls++
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "previous-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve Cable device after reset: %v", err)
+	}
+	if saveCalls != 0 || cfg.DeviceID != "" {
+		t.Fatalf("reset Cable binding was restored: saveCalls=%d cfg=%+v", saveCalls, cfg)
+	}
+}
+
+func TestRunCycleDoesNotWriteCableAfterSetupReset(t *testing.T) {
+	prepareFastTestEnv(t)
+	cfg := runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+	}
+	sendCalls := 0
+	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		resolveUSBDevice: func(requested, expectedDeviceID string) (string, error) {
+			if requested != "" || expectedDeviceID != "" {
+				t.Fatalf("reset Cable resolution received requested=%q expectedDeviceID=%q", requested, expectedDeviceID)
+			}
+			return "/dev/cu.usbserial-replacement", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "replacement-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		sendLine: func(string, []byte) error {
+			sendCalls++
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run reset Cable cycle: %v", err)
+	}
+	if sendCalls != 0 {
+		t.Fatalf("reset Cable cycle sent %d usage frames before an explicit choice", sendCalls)
+	}
+}
+
+func TestRunCycleDoesNotWriteCableBeforeFreshConnectionChoice(t *testing.T) {
+	prepareFastTestEnv(t)
+	cfg := runtimeconfig.Config{}
+	sendCalls := 0
+	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-fresh", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "fresh-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		sendLine: func(string, []byte) error {
+			sendCalls++
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run fresh Cable cycle: %v", err)
+	}
+	if sendCalls != 0 {
+		t.Fatalf("fresh Cable cycle sent %d usage frames before an explicit choice", sendCalls)
+	}
+	if !cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("fresh Cable choice gate was not persisted: %+v", cfg)
+	}
+}
+
+func TestResolveCycleDeviceReconcilesWiFiRollbackToCable(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: false,
+		DeviceID:                     "returning-vibetv",
+		DeviceTarget:                 "http://192.168.178.72",
+		DeviceToken:                  "pair-token",
+	}
+	_, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                      true,
+				DeviceID:                   "returning-vibetv",
+				ConnectionMode:             "cable",
+				ActiveTransport:            "usb",
+				SupportedTransportChannels: []string{"usb", "wifi"},
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve rolled-back Cable device: %v", err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("WiFi rollback was not reconciled to an explicit Cable choice: %+v", cfg)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("WiFi rollback discarded the saved pairing: %+v", cfg)
+	}
+}
+
+func TestPendingWiFiTransitionStopsPreviousWiFiWorkerBeforeProbing(t *testing.T) {
+	probes := 0
+	_, _, _, err := resolveCycleDevice("http://192.168.178.72", nil, runtimeDeps{
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceID: "14799300", DeviceTarget: "http://192.168.178.72", CableAutoBindDisabled: true}, nil
+		},
+		resolvePort: func(string) (string, error) { probes++; return "", errors.New("old WiFi target probed") },
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) || probes != 0 {
+		t.Fatalf("pending transition must replace old WiFi worker before probes: err=%v probes=%d", err, probes)
+	}
+}
+
+func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
+	err := runCycleWithDeps(context.Background(), "", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ConnectionMode: "wifi"}, nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected current Cable cycle to stop for WiFi mode, got %v", err)
+	}
+}
+
+func TestConnectionModeChangeStopsCollectorCycleBeforeResolvingOldTransport(t *testing.T) {
+	err := runCycleFromCollector(context.Background(), "", nil, nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ConnectionMode: "wifi"}, nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			t.Fatal("must leave the old Cable worker before trying to resolve it")
+			return "", nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected collector cycle to switch to WiFi, got %v", err)
 	}
 }
 
@@ -2448,7 +2749,7 @@ func TestRunCycleWithDepsUsesMaxFrameBytesFromDeviceHello(t *testing.T) {
 
 func TestConfiguredThemeFallsBackToRuntimeConfig(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv(themeEnvVar, "")
 
 	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
@@ -2462,7 +2763,7 @@ func TestConfiguredThemeFallsBackToRuntimeConfig(t *testing.T) {
 
 func TestConfiguredThemeEnvOverridesRuntimeConfig(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv(themeEnvVar, "classic")
 
 	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
@@ -2476,7 +2777,7 @@ func TestConfiguredThemeEnvOverridesRuntimeConfig(t *testing.T) {
 
 func TestConfiguredThemeCLIOverridesEnvAndRuntimeConfig(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv(themeEnvVar, "classic")
 
 	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
@@ -2490,7 +2791,7 @@ func TestConfiguredThemeCLIOverridesEnvAndRuntimeConfig(t *testing.T) {
 
 func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 
 	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
 	if err := persistProviderSnapshots(map[string]providerSnapshot{
@@ -2575,7 +2876,7 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 
 func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 
 	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
 	collectedAt := now.Add(-providerSnapshotMaxAge()).Add(time.Second)
@@ -2610,7 +2911,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 	if !ok || len(inside.Providers) != 1 {
 		t.Fatalf("expected bounded persisted usage, got ok=%t usage=%+v", ok, inside)
 	}
-	if inside.Providers[0].Frame.UsageUnavailable || inside.Providers[0].Frame.Session != 68 ||
+	if inside.Providers[0].Frame.UsageUnavailable || inside.Providers[0].Frame.Weekly != 68 ||
 		len(inside.Providers[0].Frame.UsageSlots) != 1 || len(inside.Providers[0].Meta.Windows) != 1 {
 		t.Fatalf("bounded snapshot changed before expiry: %+v", inside.Providers[0])
 	}
@@ -2633,7 +2934,7 @@ func TestLoadPersistedUsageClearsExpiredProviderValues(t *testing.T) {
 
 func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 
 	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
 	if err := persistProviderSnapshots(map[string]providerSnapshot{
@@ -3408,6 +3709,30 @@ func TestRunDaemonLoopRetriesQuicklyAfterCycleError(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopReturnsConnectionModeChange(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	cycleCalls := 0
+	err := runDaemonLoop(context.Background(), Options{Interval: time.Second}, runtimeDeps{
+		now:  time.Now,
+		logf: func(string, ...any) {},
+		after: func(time.Duration) <-chan time.Time {
+			t.Fatal("connection mode change must exit before retry wait")
+			return nil
+		},
+	}, func(context.Context) error {
+		cycleCalls++
+		return ErrConnectionModeChanged
+	})
+
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected connection mode change, got %v", err)
+	}
+	if cycleCalls != 1 {
+		t.Fatalf("expected one cycle before exit, got %d", cycleCalls)
+	}
+}
+
 func TestRunWithDepsUsesConfiguredIntervalAfterSleepWakeGap(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -3544,6 +3869,52 @@ func TestDaemonSoakSimulation24hEquivalent(t *testing.T) {
 	}
 	if errorCount > 40 {
 		t.Fatalf("too many runtime errors in soak simulation: %d", errorCount)
+	}
+}
+
+// #500: a provider's own failure must leave a trace, once per change.
+func TestProviderCollectorLogsProviderFailureKindOnChange(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	var logs []string
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
+		order:           []string{"codex", "claude"},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	claudeFails := true
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		claude := testParsedFrame("claude", 28, 35, 7200)
+		if claudeFails {
+			claude.Frame.Error = "Claude usage request timed out after 24s"
+		}
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600), claude}, nil
+	}
+	collector.collectOnce(context.Background())
+	collector.collectOnce(context.Background())
+	claudeFails = false
+	collector.collectOnce(context.Background())
+	collector.collectOnce(context.Background())
+
+	var got []string
+	for _, line := range logs {
+		if strings.HasPrefix(line, "collector provider-error ") {
+			got = append(got, strings.TrimSpace(line))
+		}
+	}
+	want := []string{"collector provider-error claude=timeout", "collector provider-error claude=recovered"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("provider failure log = %q, want %q", got, want)
+	}
+	for _, line := range logs {
+		if strings.Contains(line, "24s") {
+			t.Fatalf("raw provider error text reached the log: %q", line)
+		}
 	}
 }
 
@@ -3731,7 +4102,7 @@ func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthyWit
 	}
 
 	frames := collector.providerFrames(now)
-	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Session != 21 {
+	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Weekly != 21 {
 		t.Fatalf("expected dashboard usage after readiness retry, got %#v", frames)
 	}
 }
@@ -4008,8 +4379,12 @@ func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *tes
 		len(frame.UsageSlots) != 2 ||
 		frame.UsageSlots[0].Label != "Weekly" ||
 		frame.UsageSlots[1].Label != "Codex Spark Weekly" ||
-		frame.Session != 24 ||
-		frame.Weekly != 0 ||
+		// Only a weekly window is present: the session lane stays unavailable
+		// instead of showing the weekly quota positionally.
+		frame.Session != 0 ||
+		!frame.SessionUnavailable ||
+		frame.Weekly != 24 ||
+		frame.WeeklyUnavailable ||
 		frame.ResetSec != 3600 {
 		t.Fatalf("expected Codex dashboard usage as v1 legacy slots in sent frame, got %+v", frame)
 	}
@@ -4095,6 +4470,46 @@ func TestProviderCollectorPrunesDisabledProviderFromAuthoritativeInventory(t *te
 	}
 }
 
+// A switched-off provider keeps its local token history and cost --provider
+// all still reports it; the token pass must not resurrect the snapshot the
+// authoritative inventory just removed.
+func TestProviderCollectorTokenHistoryDoesNotRecreateDisabledProvider(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 9, 16, 9, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: true},
+				{ID: "cursor", Enabled: false},
+			}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex":  {SessionTokens: 10, WeekTokens: 20, TotalTokens: 30, UpdatedAt: now},
+				"cursor": {SessionTokens: 5, WeekTokens: 6, TotalTokens: 7, UpdatedAt: now},
+			}, true
+		},
+	}
+	collector.collectOnce(context.Background())
+	collector.collectTokenStatsOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 || frames[0].Provider != "codex" {
+		t.Fatalf("token history recreated a disabled provider: %#v", frames)
+	}
+	if frames[0].Frame.TotalTokens != 30 {
+		t.Fatalf("enabled provider lost its token history: %#v", frames[0].Frame)
+	}
+}
+
 func TestProviderCollectorDoesNotPruneWhenInventoryRefreshFails(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4172,6 +4587,33 @@ func TestProviderCollectorUsesInventoryWithoutTreatingFetchFailureAsDisable(t *t
 	collector.collectOnce(context.Background())
 	if frames := collector.providerFrames(now); len(frames) != 0 {
 		t.Fatalf("authoritative inventory did not prune disabled last provider: %#v", frames)
+	}
+}
+
+func TestProviderCollectorCancellationPreservesSharedUsage(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 8, 7, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 23, 100, 7200)}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	collector.fetchProviders = func(ctx context.Context) ([]codexbar.ParsedFrame, error) {
+		cancel() // The old display worker is stopped during a transport switch.
+		return nil, ctx.Err()
+	}
+	collector.collectOnce(ctx)
+	usage, ok := LoadPersistedUsage(now)
+	if !ok || len(usage.Providers) != 1 || usage.Providers[0].Stale || usage.Providers[0].Retained {
+		t.Fatalf("worker cancellation corrupted the shared last successful reading: %#v", usage)
 	}
 }
 
@@ -4750,6 +5192,30 @@ func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorUnavailableTokenHistoryCompletesWithoutKnownZero(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	c := &providerCollector{
+		now: func() time.Time { return now }, logf: func(string, ...any) {},
+		snapshotMaxAge: time.Minute, persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{"codex": {
+			Provider: "codex", Collected: now,
+			Frame: protocol.Frame{Provider: "codex", Weekly: 20, TotalTokens: 99, TokenTotalsKnown: true},
+			Meta:  codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 99}},
+		}},
+		fetchTokenStatsReport: func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+			return map[string]codexbar.ProviderTokenStats{
+				"codex": {Unavailable: true}, "not-configured": {Unavailable: true},
+			}, codexbar.ProviderTokenStatsReport{OK: true}
+		},
+	}
+	c.collectTokenStatsOnce(context.Background())
+	got := c.providers["codex"]
+	if len(c.providers) != 1 || got.Frame.TokenTotalsKnown || got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(now) || got.Frame.Weekly != 20 {
+		t.Fatalf("unavailable history changed providers, quota or known-zero state: %+v", c.providers)
+	}
+}
+
 func TestProviderCollectorPartialTokenScanKeepsFailedProviderLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -5280,7 +5746,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			if dashboardCalls != 2 || fallbackCalls != 0 {
 				t.Fatalf("expected dashboard attempts without usage-json fallback, dashboard=%d fallback=%d", dashboardCalls, fallbackCalls)
 			}
-			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Session != 68 ||
+			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Weekly != 68 || !frames[0].Frame.SessionUnavailable ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" ||
 				!frames[0].Stale || frames[0].Frame.UsageUnavailable {
 				t.Fatalf("expected dashboard snapshot within last-good window unchanged, got %+v", frames)
@@ -5301,7 +5767,7 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			current = current.Add(time.Second)
 			collector.collectOnce(context.Background())
 			frames = collector.providerFrames(current)
-			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 21 ||
+			if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable || frames[0].Frame.Weekly != 21 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" {
 				t.Fatalf("expected fresh dashboard recovery, got %+v", frames)
 			}
@@ -5416,7 +5882,7 @@ func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t
 	if frames[0].Provider != "codex" || !frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 0 || len(frames[0].Meta.Windows) != 0 {
 		t.Fatalf("expected expired Codex usage to be cleared, got %+v", frames[0])
 	}
-	if frames[1].Provider != "claude" || frames[1].Frame.UsageUnavailable || frames[1].Frame.Session != 22 || len(frames[1].Meta.Windows) != 2 {
+	if frames[1].Provider != "claude" || frames[1].Frame.UsageUnavailable || frames[1].Frame.Weekly != 22 || !frames[1].Frame.SessionUnavailable || len(frames[1].Meta.Windows) != 2 {
 		t.Fatalf("expected Claude to remain fresh while Codex is unavailable, got %+v", frames[1])
 	}
 
@@ -5430,7 +5896,7 @@ func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t
 	collector.collectOnce(context.Background())
 	frames = collector.providerFrames(current)
 	if len(frames) != 2 || frames[0].Provider != "codex" || frames[0].Frame.UsageUnavailable ||
-		frames[0].Frame.Session != 31 || len(frames[0].Frame.UsageSlots) != 2 {
+		frames[0].Frame.Weekly != 31 || len(frames[0].Frame.UsageSlots) != 2 {
 		t.Fatalf("expected Codex dashboard recovery to replace unavailable state, got %+v", frames)
 	}
 }
@@ -5779,6 +6245,123 @@ func TestRunDaemonLoopRetriesAfterCycleTimeout(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopWaitsForWiFiBeforeProbingDevice(t *testing.T) {
+	for _, nextMode := range []string{"wifi", "cable"} {
+		t.Run(nextMode, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			cfg := runtimeconfig.Config{DeviceID: "switching-device", CableAutoBindDisabled: true}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			waits, cycles := 0, 0
+			deps := runtimeDeps{
+				transportName: "usb", homeDir: func() (string, error) { return t.TempDir(), nil },
+				loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+				now:        time.Now, logf: func(string, ...any) {},
+				after: func(time.Duration) <-chan time.Time {
+					waits++
+					if waits > 1 {
+						return nil
+					}
+					cfg.ConnectionMode = nextMode
+					cfg.CableAutoBindDisabled = false
+					resumed := make(chan time.Time, 1)
+					resumed <- time.Now()
+					return resumed
+				},
+			}
+			err := runDaemonLoop(ctx, Options{Interval: time.Second}, deps, func(context.Context) error {
+				cycles++
+				if cfg.WiFiTransitionPending() {
+					t.Error("old USB worker probed while WiFi was joining")
+				}
+				if connectionModeChanged(deps) {
+					return ErrConnectionModeChanged
+				}
+				cancel()
+				return nil
+			})
+			if nextMode == "wifi" && !errors.Is(err, ErrConnectionModeChanged) {
+				t.Fatalf("WiFi commit must replace USB worker: %v", err)
+			}
+			if nextMode == "cable" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("Cable cancellation must resume worker: %v", err)
+			}
+			if waits < 1 || cycles != 1 {
+				t.Fatalf("waits=%d cycles=%d; want a pause before the one resumed cycle", waits, cycles)
+			}
+		})
+	}
+}
+
+func TestRunDaemonLoopRecoversCableAfterUnconfirmedWiFi(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		startedMinutesAgo int
+		retry             bool
+		probes            []int
+	}{
+		{name: "legacy pending state", probes: []int{2}},
+		{name: "restart during persisted window", startedMinutesAgo: 1, probes: []int{1}},
+		{name: "restart after persisted window", startedMinutesAgo: 20, probes: []int{0}},
+		{name: "new credential attempt restarts quiet window", retry: true, probes: []int{3}},
+		{name: "absent device gets bounded probes", probes: []int{2, 4}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			home := t.TempDir()
+			cfg := runtimeconfig.Config{DeviceID: "switching-device", CableAutoBindDisabled: true}
+			now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+			started := now
+			if tc.startedMinutesAgo != 0 {
+				cfg.WiFiTransitionStartedAt = now.Add(-time.Duration(tc.startedMinutesAgo) * time.Minute).Unix()
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			cycles := 0
+			deps := runtimeDeps{
+				transportName: "usb", homeDir: func() (string, error) { return home, nil },
+				loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+				saveConfig: func(_ string, next runtimeconfig.Config) error { cfg = next; return nil },
+				now:        func() time.Time { return now }, logf: func(string, ...any) {},
+				after: func(time.Duration) <-chan time.Time {
+					if ctx.Err() != nil || cycles == len(tc.probes) {
+						return nil
+					}
+					now = now.Add(time.Minute)
+					if tc.retry && now.Sub(started) == time.Minute {
+						cfg.WiFiTransitionStartedAt = now.Unix()
+					}
+					if now.Sub(started) > 24*time.Minute {
+						cancel()
+					}
+					tick := make(chan time.Time, 1)
+					tick <- now
+					return tick
+				},
+			}
+			err := runDaemonLoop(ctx, Options{Interval: time.Minute}, deps, func(context.Context) error {
+				if cycles >= len(tc.probes) || now.Sub(started) != time.Duration(tc.probes[cycles])*time.Minute {
+					t.Errorf("unexpected USB probe at %s", now.Sub(started))
+					cancel()
+					return ctx.Err()
+				}
+				cycles++
+				if cycles == len(tc.probes) {
+					persistActiveCableIdentity(protocol.DeviceCapabilities{Known: true, DeviceID: cfg.DeviceID, ActiveTransport: "usb", ConnectionMode: "cable"}, deps)
+					cancel()
+				}
+				return nil
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+			if cycles != len(tc.probes) || cfg.WiFiTransitionPending() || cfg.ConnectionMode != "cable" {
+				t.Fatalf("Cable did not resume after firmware rollback: cycles=%d mode=%q pending=%v", cycles, cfg.ConnectionMode, cfg.WiFiTransitionPending())
+			}
+		})
+	}
+}
+
 func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -5900,7 +6483,7 @@ func TestApplyProviderDisplaySelectionUsesEveryCurrentlyEnabledAutomaticProvider
 		ProviderIDs: []string{"codex", "claude"},
 	})
 
-	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps)
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps, nil)
 	if len(got) != 2 || got[0].Frame.Provider != "claude" || got[1].Frame.Provider != "cursor" {
 		t.Fatalf("automatic selection=%+v want every currently enabled ready provider", got)
 	}
@@ -5918,7 +6501,7 @@ func TestApplyProviderDisplaySelectionKeepsFixedProviderWithoutFallback(t *testi
 		ProviderIDs: []string{"codex"},
 	})
 
-	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, deps)
+	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, deps, nil)
 	if len(got) != 1 || got[0].Frame.Provider != "codex" || !got[0].Frame.UsageUnavailable {
 		t.Fatalf("fixed selection silently fell back: %+v", got)
 	}
@@ -5930,6 +6513,368 @@ func providerDisplayTestDeps(display runtimeconfig.ProviderDisplayConfig) runtim
 		loadConfig: func(string) (runtimeconfig.Config, error) {
 			return runtimeconfig.Config{ProviderDisplay: &display}, nil
 		},
+	}
+}
+
+func TestApplyProviderDisplaySelectionFallsBackWhenFixedProviderIsNotCollected(t *testing.T) {
+	// Manual was pinned to Codex, then Codex was turned off in CodexBar: the
+	// collector no longer returns it at all. The device must keep showing the
+	// remaining provider instead of going blank.
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude", Session: 26},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps, disabledProviders("codex"))
+	if len(got) != 1 || got[0].Frame.Provider != "claude" {
+		t.Fatalf("fixed selection without its provider=%+v want fallback to claude", got)
+	}
+	if state.providerDisplayFallback != "fixed:codex" || !state.hasLastGood {
+		t.Fatalf("fallback=%q hasLastGood=%v want fallback kept with last-good frame", state.providerDisplayFallback, state.hasLastGood)
+	}
+
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
+	if !state.hasLastGood {
+		t.Fatalf("fallback frame was cleared as outside the provider display")
+	}
+
+	codex := testParsedFrame("codex", 10, 20, 3600)
+	got = applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude}, deps, disabledProviders())
+	if len(got) != 1 || got[0].Frame.Provider != "codex" {
+		t.Fatalf("pinned provider back=%+v want codex only", got)
+	}
+	if state.providerDisplayFallback != "" || state.hasLastGood {
+		t.Fatalf("fallback=%q hasLastGood=%v want fallback ended and claude frame cleared", state.providerDisplayFallback, state.hasLastGood)
+	}
+}
+
+func TestApplyProviderDisplaySelectionKeepsFixedProviderOmittedWhileEnabled(t *testing.T) {
+	// CodexBar can omit an enabled provider for a cycle while another one
+	// succeeds. Without inventory saying it is off, Manual keeps its provider.
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	for name, disabled := range map[string]providerOffFunc{
+		"no inventory":     nil,
+		"codex is enabled": disabledProviders(),
+	} {
+		state := &runtimeState{selector: codexbar.NewProviderSelector(), providerDisplayFallback: "fixed:codex"}
+		got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps, disabled)
+		if len(got) != 0 || state.providerDisplayFallback != "" {
+			t.Fatalf("%s: got=%+v fallback=%q want the pinned provider kept", name, got, state.providerDisplayFallback)
+		}
+	}
+}
+
+func disabledProviders(ids ...string) providerOffFunc {
+	return func(provider string) (bool, bool) {
+		for _, id := range ids {
+			if id == provider {
+				return true, true
+			}
+		}
+		return false, true
+	}
+}
+
+// olderInventoryDisabled is an inventory whose last successful read listed ids
+// as off, while the latest collection's own read failed.
+func olderInventoryDisabled(ids ...string) providerOffFunc {
+	current := disabledProviders(ids...)
+	return func(provider string) (bool, bool) {
+		off, _ := current(provider)
+		return off, false
+	}
+}
+
+func TestProviderDisabledByCurrentInventoryIgnoresAStaleInventory(t *testing.T) {
+	inventoryOK := true
+	codexEnabled := false
+	collector := &providerCollector{
+		now:            func() time.Time { return time.Date(2026, 9, 25, 8, 0, 0, 0, time.UTC) },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			if !inventoryOK {
+				return nil, errors.New("temporary inventory failure")
+			}
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: codexEnabled},
+				{ID: "claude", Enabled: true},
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+	if off, current := collector.providerOffByInventory("codex"); !off || !current {
+		t.Fatalf("off=%v current=%v want the current inventory with codex off trusted", off, current)
+	}
+
+	// Codex is switched on again outside the app, and this collection's
+	// inventory read fails: the older map must not keep calling it off.
+	codexEnabled = true
+	inventoryOK = false
+	collector.collectOnce(context.Background())
+	if _, current := collector.providerOffByInventory("codex"); current {
+		t.Fatalf("an older inventory was reported as current after a failed inventory read")
+	}
+
+	// A provider missing from the inventory, e.g. retired, is unknown, not off.
+	inventoryOK = true
+	collector.collectOnce(context.Background())
+	if off, _ := collector.providerOffByInventory("retired"); off {
+		t.Fatalf("a provider missing from the inventory was treated as switched off")
+	}
+}
+
+func TestProviderDisplayFallbackDoesNotCrossALaterManualChoice(t *testing.T) {
+	prepareFastTestEnv(t)
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude", Session: 26},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	codexDeps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, codexDeps, disabledProviders("codex"))
+	if state.providerDisplayFallback == "" {
+		t.Fatalf("fallback not entered for the disabled Codex selection")
+	}
+
+	// The customer now pins Manual to Cursor. Before any fetch succeeds, the
+	// Claude frame from the Codex fallback must not be offered as last-good.
+	cursorDeps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"cursor"},
+	})
+	cursorDeps.logf = func(string, ...any) {}
+	invalidateLastGoodOutsideProviderDisplay(state, cursorDeps)
+	if state.hasLastGood || state.providerDisplayFallback != "" {
+		t.Fatalf("hasLastGood=%v fallback=%q want the old fallback frame cleared for the new Manual choice", state.hasLastGood, state.providerDisplayFallback)
+	}
+}
+
+func TestProviderDisplayFallbackEndsWhenAutomaticIsSaved(t *testing.T) {
+	prepareFastTestEnv(t)
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude", Session: 26},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	manualCodex := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	manualCodex.logf = func(string, ...any) {}
+	applyProviderDisplaySelection(state, []codexbar.ParsedFrame{testParsedFrame("claude", 30, 40, 3600)}, manualCodex, disabledProviders("codex"))
+
+	invalidateLastGoodOutsideProviderDisplay(state, providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "automatic",
+		ProviderIDs: []string{"claude"},
+	}))
+	if state.providerDisplayFallback != "" {
+		t.Fatalf("fallback=%q survived the switch to Automatic", state.providerDisplayFallback)
+	}
+
+	// Codex is on again and the customer picks Manual Codex anew: before a
+	// fetch succeeds, the Claude frame must not stand in for it.
+	invalidateLastGoodOutsideProviderDisplay(state, manualCodex)
+	if state.hasLastGood {
+		t.Fatalf("the Claude frame from the earlier fallback crossed a new Manual Codex choice")
+	}
+}
+
+func TestRunCycleFromCollectorSendsRemainingProviderWhenFixedProviderIsDisabled(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
+	cfg := runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	}}
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: false},
+				{ID: "claude", Enabled: true},
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		homeDir:     func() (string, error) { return "/test-home", nil },
+		loadConfig:  func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("cycle with disabled Manual provider: %v", err)
+	}
+	if len(sentLine) == 0 {
+		t.Fatalf("no frame sent")
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error != "" || frame.Provider != "claude" || frame.Session != 26 {
+		t.Fatalf("sent frame=%+v want claude usage instead of a blank no-providers frame", frame)
+	}
+}
+
+// manualCodexFallbackFixture is Manual pinned to Codex, Codex switched off in
+// CodexBar, Claude with usage. fetchOK and inventoryOK switch the two CodexBar
+// reads on and off.
+func manualCodexFallbackFixture(now *time.Time, fetchOK, inventoryOK *bool, sent *[]byte) (*providerCollector, runtimeDeps) {
+	cfg := runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	}}
+	collector := &providerCollector{
+		now:            func() time.Time { return *now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			if !*fetchOK {
+				return nil, context.DeadlineExceeded
+			}
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 26, 30, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			if !*inventoryOK {
+				return nil, errors.New("temporary inventory failure")
+			}
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: false},
+				{ID: "claude", Enabled: true},
+			}, nil
+		},
+	}
+	deps := runtimeDeps{
+		now:         func() time.Time { return *now },
+		homeDir:     func() (string, error) { return "/test-home", nil },
+		loadConfig:  func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			*sent = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	}
+	return collector, deps
+}
+
+func TestProviderDisplayFallbackSurvivesAFailedCodexBarRead(t *testing.T) {
+	// A running fallback must not turn into a no-providers screen because one
+	// CodexBar read failed: the inventory read alone, or both reads (a
+	// timeout uses up the context the inventory read shares).
+	for name, fetchOK := range map[string]bool{"inventory read fails": true, "both reads fail": false} {
+		t.Run(name, func(t *testing.T) {
+			prepareFastTestEnv(t)
+			now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
+			fetch, inventory := true, true
+			var sent []byte
+			collector, deps := manualCodexFallbackFixture(&now, &fetch, &inventory, &sent)
+			state := &runtimeState{selector: codexbar.NewProviderSelector()}
+			collector.collectOnce(context.Background())
+			if err := runCycleFromCollector(context.Background(), "", state, collector, deps); err != nil {
+				t.Fatalf("first cycle: %v", err)
+			}
+			if frame := decodeFrameLine(t, sent); frame.Error != "" || frame.Provider != "claude" {
+				t.Fatalf("first frame=%+v want the claude fallback", frame)
+			}
+
+			now = now.Add(time.Minute)
+			fetch, inventory = fetchOK, false
+			collector.collectOnce(context.Background())
+			sent = nil
+			if err := runCycleFromCollector(context.Background(), "", state, collector, deps); err != nil {
+				t.Fatalf("cycle after the failed read: %v", err)
+			}
+			// Nothing sent keeps the claude frame on the device; whatever is
+			// sent must be that frame, not a no-providers screen.
+			if len(sent) > 0 {
+				if frame := decodeFrameLine(t, sent); frame.Error != "" || frame.Provider != "claude" {
+					t.Fatalf("frame after the failed read=%+v want the claude fallback kept", frame)
+				}
+			}
+			if !state.hasLastGood {
+				t.Fatalf("claude fallback frame dropped by a failed read")
+			}
+			if state.providerDisplayFallback != "fixed:codex" {
+				t.Fatalf("fallback=%q ended by a failed read", state.providerDisplayFallback)
+			}
+		})
+	}
+}
+
+func TestProviderDisplayFallbackDoesNotStartFromAnOlderInventory(t *testing.T) {
+	// Only a current read may start a fallback: the older map may say off for
+	// a provider that has been switched on again since.
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{claude}, deps, olderInventoryDisabled("codex"))
+	if len(got) != 0 || state.providerDisplayFallback != "" {
+		t.Fatalf("got=%+v fallback=%q want no fallback from an older inventory", got, state.providerDisplayFallback)
+	}
+}
+
+func TestOlderInventoryKeepsAFallbackForOneFailedReadOnly(t *testing.T) {
+	// The pinned provider may have been switched on again while the inventory
+	// cannot be read. One failed read keeps the running fallback; a second one
+	// leaves nothing that can still say the provider is off.
+	now := time.Date(2026, 9, 25, 7, 2, 0, 0, time.UTC)
+	fetch, inventory := true, true
+	var sent []byte
+	collector, _ := manualCodexFallbackFixture(&now, &fetch, &inventory, &sent)
+	collector.collectOnce(context.Background())
+	if off, current := collector.providerOffByInventory("codex"); !off || !current {
+		t.Fatalf("current read: off=%v current=%v", off, current)
+	}
+	inventory = false
+	collector.collectOnce(context.Background())
+	if off, current := collector.providerOffByInventory("codex"); !off || current {
+		t.Fatalf("one failed read: off=%v current=%v want the older map", off, current)
+	}
+	collector.collectOnce(context.Background())
+	if off, _ := collector.providerOffByInventory("codex"); off {
+		t.Fatalf("two failed reads still report codex off from an old map")
+	}
+	inventory = true
+	collector.collectOnce(context.Background())
+	if off, current := collector.providerOffByInventory("codex"); !off || !current {
+		t.Fatalf("read recovered: off=%v current=%v", off, current)
 	}
 }
 
@@ -5995,7 +6940,7 @@ func prepareFastTestEnv(t *testing.T) {
 	t.Helper()
 
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	testenv.Home(t, tmpHome)
 	t.Setenv("CODEXBAR_DISPLAY_CHROMIUM_COOKIE_DB_PATHS", tmpHome+"/missing-cookies.db")
 }
 
@@ -6058,6 +7003,65 @@ func TestRunCycleFromCollectorWaitsForFirstCollectionBeforeNoProviders(t *testin
 	}
 	if !found {
 		t.Fatalf("the waiting cycle must say why it waits, got %v", logged)
+	}
+}
+
+func TestRunCycleFromCollectorExpiresSnapshotWhileFirstCollectionWarms(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
+
+	now := time.Date(2026, 8, 31, 9, 15, 0, 0, time.UTC)
+	collectedAt := now.Add(-defaultProviderMaxAge - time.Second)
+	lastGood := testParsedFrame("codex", 8, 0, 3600).Frame
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    lastGood,
+		lastGoodAt:  collectedAt,
+		hasLastGood: true,
+	}
+	collector := &providerCollector{
+		now:                 func() time.Time { return now },
+		logf:                func(string, ...any) {},
+		order:               []string{"codex"},
+		snapshotMaxAge:      defaultProviderMaxAge,
+		warmupUntil:         now.Add(time.Minute),
+		firstCollectStarted: true,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Source:    "codexbar-dashboard",
+				Collected: collectedAt,
+				Frame:     lastGood,
+			},
+		},
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("warming restart must expire stale usage, got %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 {
+		t.Fatalf("warming restart kept expired usage visible: %+v", frame)
+	}
+}
+
+func TestCollectorWarmupOutlastsCodexBarCommandAndDashboardRecovery(t *testing.T) {
+	t.Setenv(collectorWarmupEnvVar, "")
+	t.Setenv("CODEXBAR_DISPLAY_TIMEOUT_SECS", "")
+
+	wantMinimum := codexbar.CommandTimeout() + 2*time.Minute
+	if got := collectorWarmupMaxAge(); got < wantMinimum {
+		t.Fatalf("collector warm-up=%s, want at least %s", got, wantMinimum)
 	}
 }
 
@@ -6324,5 +7328,195 @@ func TestFirstCollectionDoesNotSettleOnTransportError(t *testing.T) {
 	}
 	if !first.warming || !first.started || first.fetchErr == nil {
 		t.Fatalf("the failed attempt keeps warming with its error retained: %+v", first)
+	}
+}
+
+func TestRunWithDepsReusesRuntimeDashboardAcrossTransports(t *testing.T) {
+	prepareFastTestEnv(t)
+	shared := staticDashboardServe{info: testDashboardServeInfo(1001)}
+	for _, mode := range []string{"usb", "wifi"} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		observed := make(chan codexbar.DashboardServeInfo, 1)
+		err := runWithDeps(ctx, Options{
+			Transport: mode, Dashboard: shared,
+			PauseDeviceWrites: func() bool { return true },
+		}, runtimeDeps{
+			transportName: mode,
+			logf:          func(string, ...any) {},
+			startDashboard: func(context.Context, func(string, ...any)) codexbar.DashboardServe {
+				t.Error("transport worker started a second CodexBar serve")
+				return shared
+			},
+			fetchDashboard: func(_ context.Context, info codexbar.DashboardServeInfo, _ time.Time) ([]codexbar.ParsedFrame, error) {
+				observed <- info
+				cancel()
+				return nil, context.Canceled
+			},
+			fetchInventory:  func(context.Context) ([]codexbar.ProviderSetting, error) { return nil, context.Canceled },
+			fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) { return nil, false },
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("%s did not collect from the shared serve: %v", mode, err)
+		}
+		select {
+		case info := <-observed:
+			if info != shared.info {
+				t.Fatalf("%s changed the source: %#v", mode, info)
+			}
+		default:
+			t.Fatalf("%s did not use the runtime dashboard", mode)
+		}
+	}
+}
+
+func TestRunWithDepsStopsOwnedDashboardOnTransportChange(t *testing.T) {
+	prepareFastTestEnv(t)
+	var dashboardCtx context.Context
+	err := runWithDeps(context.Background(), Options{Transport: "usb"}, runtimeDeps{
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		startDashboard: func(ctx context.Context, _ func(string, ...any)) codexbar.DashboardServe {
+			dashboardCtx = ctx
+			return staticDashboardServe{info: testDashboardServeInfo(1001)}
+		},
+		loadConfig: func(string) (runtimeconfig.Config, error) { return runtimeconfig.Config{ConnectionMode: "wifi"}, nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			t.Fatal("old transport must stop before collection")
+			return nil, nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) || dashboardCtx == nil || !errors.Is(dashboardCtx.Err(), context.Canceled) {
+		t.Fatalf("owned serve survived worker exit: worker=%v dashboard=%v", err, dashboardCtx)
+	}
+}
+
+func TestProviderCollectorFirstSettledCollectionWakesOnce(t *testing.T) {
+	for _, noProviders := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noProviders=%t", noProviders), func(t *testing.T) {
+			prepareFastTestEnv(t)
+			now := time.Now()
+			wakes := 0
+			collector := &providerCollector{
+				now:               func() time.Time { return now },
+				logf:              func(string, ...any) {},
+				providers:         make(map[string]providerSnapshot),
+				snapshotMaxAge:    time.Hour,
+				afterFirstCollect: func() { wakes++ },
+				fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+					return nil, errors.New("dashboard serve unavailable")
+				},
+			}
+			collector.collectOnce(context.Background())
+			if wakes != 0 {
+				t.Fatal("transient startup failure woke the display")
+			}
+			collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+				if noProviders {
+					return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorNoProviders, Err: errors.New("no providers")}
+				}
+				return []codexbar.ParsedFrame{testParsedFrame("codex", 10, 20, 3600)}, nil
+			}
+			collector.collectOnce(context.Background())
+			if wakes != 1 {
+				t.Fatalf("first definitive answer must wake display once, got %d", wakes)
+			}
+			collector.collectOnce(context.Background())
+			if wakes != 1 {
+				t.Fatalf("later periodic collection changed render cadence: wakes=%d", wakes)
+			}
+		})
+	}
+}
+
+func TestFirstCollectionWakesDisplayWithoutWaitingForInterval(t *testing.T) {
+	for _, manualWake := range []bool{false, true} {
+		t.Run(fmt.Sprintf("manualWake=%t", manualWake), func(t *testing.T) {
+			prepareFastTestEnv(t)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			warming := make(chan struct{}, 1)
+			sent := make(chan []byte, 1)
+			var wake <-chan struct{}
+			if manualWake {
+				wake = make(chan struct{})
+			}
+			err := runWithDeps(ctx, Options{Interval: time.Hour, Wake: wake}, runtimeDeps{
+				resolvePort:    func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+				startDashboard: func(context.Context, func(string, ...any)) codexbar.DashboardServe { return nil },
+				fetchProvider: func(context.Context, string) (codexbar.ParsedFrame, error) {
+					return codexbar.ParsedFrame{}, errors.New("unexpected single-provider fetch")
+				},
+				fetchProviders: func(ctx context.Context) ([]codexbar.ParsedFrame, error) {
+					select {
+					case <-warming:
+						return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorNoProviders, Err: errors.New("no providers")}
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				},
+				fetchInventory:  func(context.Context) ([]codexbar.ProviderSetting, error) { return nil, nil },
+				fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) { return nil, false },
+				after:           func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+				logf: func(format string, args ...any) {
+					if strings.Contains(format, "reason=collector-warming") {
+						signalWake(warming)
+					}
+				},
+				sendLine: func(_ string, line []byte) error {
+					sent <- append([]byte(nil), line...)
+					cancel()
+					return nil
+				},
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("first collection did not wake the sleeping display: %v", err)
+			}
+			select {
+			case line := <-sent:
+				if frame := decodeFrameLine(t, line); frame.Error != string(runtimeErrorNoProviders) {
+					t.Fatalf("expected honest no-provider frame, got %+v", frame)
+				}
+			default:
+				t.Fatal("no frame after first collection settled")
+			}
+		})
+	}
+}
+
+func TestDisplaySelectionWakeDoesNotWaitForCollectionOrInterval(t *testing.T) {
+	prepareFastTestEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	renderWake := make(chan struct{}, 1)
+	cycles := 0
+	done := make(chan error, 1)
+	go func() {
+		done <- runDaemonLoop(ctx, Options{
+			Interval:               time.Hour,
+			DisableStartupFastPoll: true,
+			Wake:                   make(chan struct{}), // Collection has not completed.
+			RenderWake:             renderWake,
+		}, runtimeDeps{
+			now:   time.Now,
+			after: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+			logf:  func(string, ...any) {},
+		}, func(context.Context) error {
+			cycles++
+			if cycles == 1 {
+				renderWake <- struct{}{}
+			} else {
+				cancel()
+			}
+			return nil
+		})
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) || cycles != 2 {
+			t.Fatalf("expected immediate second render, cycles=%d error=%v", cycles, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("provider selection waited for collection or the periodic interval")
 	}
 }

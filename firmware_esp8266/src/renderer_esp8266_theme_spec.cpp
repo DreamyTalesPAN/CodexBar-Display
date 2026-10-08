@@ -39,8 +39,27 @@ uint32_t cbaFrameBufferCapacityPixels = 0;
 unsigned long cbaBufferAllocationFailures = 0;
 unsigned long cbaLastPushDurationUs = 0;
 const char* lastThemeSpecRenderError = "";
+const char* lastAnimatedSpriteError = "";
+// Asset that produced the current sprite error. Only theme-namespace paths
+// ever reach this field, so support diagnostics can name the failing file
+// without exposing unrelated customer data.
+String lastSpriteErrorAsset = "";
+// Severity of the current sprite diagnostic. A transient resource condition
+// may be replaced by a real decode failure for the same asset; the reverse
+// must not happen, or low memory would permanently mask a broken asset.
+bool lastSpriteErrorIsDecodeFailure = false;
+// Set when the current draw attempt failed only because the frame buffer
+// could not be allocated. That attempt never decoded anything, so its result
+// says nothing about the asset and must not be reported as a decode failure.
+bool cbaBufferAllocationFailedThisAttempt = false;
+// Set when the shared frame buffer belonged to another sprite during this
+// draw attempt. Nothing was decoded, so the attempt says nothing about the
+// asset and must not be reported as a failure.
+bool cbaBufferUnavailableThisAttempt = false;
+CbaContentionWatch cbaBufferContention;
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
+unsigned long themeSpecAnimationLowHeapSkips = 0;
 String lastSuccessfulThemeSpecId = "";
 int lastSuccessfulThemeSpecRev = 0;
 uint32_t lastSuccessfulThemeSpecRawHash = 0;
@@ -65,10 +84,18 @@ struct AnimatedSpriteCache {
   uint32_t nextRowOffset = 0;
   bool frameInProgress = false;
   bool frameReadyToPush = false;
+  // Counts frames completed without an intervening failure. Recovery needs a
+  // full pass over the frame table, because corruption can sit in a later
+  // frame while frame zero still decodes.
+  int consecutiveCleanFrames = 0;
   unsigned long frameStartedAtMs = 0;
   unsigned long nextFrameAtMs = 0;
   int frameBufferWidth = 0;
   int frameBufferHeight = 0;
+  // The size the completed frame is drawn at. It differs from the buffer
+  // size when the sprite is enlarged, which is scaled during the push.
+  int frameDrawnWidth = 0;
+  int frameDrawnHeight = 0;
 };
 
 AnimatedSpriteCache animatedSpriteCaches[kAnimatedSpriteCacheSlots];
@@ -78,6 +105,70 @@ int nextAnimatedSpriteCacheSlot = 0;
 void markThemeSpecRenderOk() {
   lastThemeSpecRenderOk = true;
   lastThemeSpecRenderError = "";
+}
+
+// Publishes a sprite error without counting it as a broken asset. Used for
+// transient resource conditions that recover on their own. The first error of
+// a render pass wins so the reported code stays stable while it persists.
+void setSpriteRenderError(const char* code, const char* assetPath) {
+  // The first error of a pass wins for the same asset, so the reported code
+  // stays stable while it persists. A failure from a different asset must
+  // still supersede a stale diagnostic: otherwise a replacement sprite that
+  // also fails is invisible, and the old error is later retired as gone.
+  const char* path = assetPath == nullptr ? "" : assetPath;
+  if (lastAnimatedSpriteError[0] != '\0' && lastSpriteErrorAsset == path) {
+    return;
+  }
+  // A transient condition never proves anything about a different asset, so
+  // it must not bury a decode failure that is still selected: with two
+  // animated sprites sharing one frame buffer, B running out of heap would
+  // otherwise hide A's corrupt data behind ordinary memory pressure.
+  // A transient condition never proves anything about a different asset, so
+  // it must not bury a decode failure that is still selected: with two
+  // animated sprites sharing one frame buffer, B running out of heap would
+  // otherwise hide A's corrupt data behind ordinary memory pressure.
+  if (lastSpriteErrorIsDecodeFailure && lastAnimatedSpriteError[0] != '\0') {
+    return;
+  }
+  lastAnimatedSpriteError = code == nullptr ? "sprite_render_failed" : code;
+  lastSpriteErrorAsset = path;
+  lastSpriteErrorIsDecodeFailure = false;
+}
+
+// A sprite that cannot be decoded is a real render failure, not a skippable
+// primitive: the theme would otherwise show a missing image area while health
+// still reported renderOk.
+void markSpriteRenderFailed(const char* code, const char* assetPath) {
+  // A decode failure outranks a transient condition for the same asset. Only
+  // an existing decode failure for that asset is kept, so the reported code
+  // stays stable without letting "low heap" hide a genuinely broken sprite.
+  if (lastAnimatedSpriteError[0] != '\0' &&
+      lastSpriteErrorAsset == (assetPath == nullptr ? "" : assetPath) &&
+      lastSpriteErrorIsDecodeFailure) {
+    return;
+  }
+  lastAnimatedSpriteError = code == nullptr ? "sprite_render_failed" : code;
+  lastSpriteErrorAsset = assetPath == nullptr ? "" : assetPath;
+  lastSpriteErrorIsDecodeFailure = true;
+  themeSpecRenderFailures += 1;
+}
+
+void clearSpriteRenderError() {
+  lastAnimatedSpriteError = "";
+  lastSpriteErrorAsset = "";
+  lastSpriteErrorIsDecodeFailure = false;
+}
+
+// Retires a diagnostic whose asset the compiled scene no longer references at
+// all. A still-referenced asset keeps its error until it actually decodes,
+// because a static-only pass cannot prove a CBA is healthy again.
+void retireSpriteRenderErrorIfAssetUnreferenced(const themespec::CompiledThemeSpec& scene) {
+  if (lastSpriteErrorAsset.length() == 0) {
+    return;
+  }
+  if (!themespec::CompiledThemeSpecReferencesAsset(scene, lastSpriteErrorAsset.c_str())) {
+    clearSpriteRenderError();
+  }
 }
 
 void markThemeSpecRenderFailed(const char* error) {
@@ -133,6 +224,8 @@ void releaseAnimatedSpriteBuffer(AnimatedSpriteCache& cache) {
   }
   cache.frameBufferWidth = 0;
   cache.frameBufferHeight = 0;
+  cache.frameDrawnWidth = 0;
+  cache.frameDrawnHeight = 0;
   cache.frameReadyToPush = false;
 }
 
@@ -141,6 +234,9 @@ void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {
   cache.frameInProgress = false;
   cache.nextRow = 0;
   cache.nextRowOffset = 0;
+  // An aborted frame breaks the clean run, so recovery must start over from a
+  // full pass rather than counting frames from before the failure.
+  cache.consecutiveCleanFrames = 0;
 }
 
 void cooperativeYield() {
@@ -219,6 +315,10 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   // released while the next theme is parsed and compiled; GifCore allocates it
   // lazily only after real playback has found a valid GIF header.
   resetAnimatedSpriteCaches();
+  // The previous theme's assets are no longer drawn, so its sprite diagnostic
+  // cannot describe the current render. A failing asset that the new theme
+  // still references is re-reported by the next render pass.
+  clearSpriteRenderError();
   GifCore().ReleaseMemory();
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
@@ -467,6 +567,7 @@ bool readSpritePalette(File& file, uint16_t* palette, int& paletteSize) {
 
 void drawStaticSpriteAsset(
     File& file,
+    const char* assetPath,
     int x,
     int y,
     int targetWidth,
@@ -478,17 +579,22 @@ void drawStaticSpriteAsset(
   int width = 0;
   int height = 0;
   if (!readSpriteLine(file, line) || !parseSpriteHeader(line, width, height)) {
+    markSpriteRenderFailed("cbi_header_invalid", assetPath);
     return;
   }
 
   uint16_t palette[26] = {0};
   int paletteSize = 0;
   if (!readSpritePalette(file, palette, paletteSize)) {
+    markSpriteRenderFailed("cbi_palette_invalid", assetPath);
     return;
   }
 
+  // Recovery requires proof from this pass alone: every declared row decoded.
+  bool decodedEveryRow = true;
   for (int row = 0; row < height; ++row) {
     if (!readSpriteLine(file, line)) {
+      markSpriteRenderFailed("cbi_truncated", assetPath);
       return;
     }
     const int drawHeight = targetHeight > 0 ? targetHeight : height;
@@ -496,6 +602,8 @@ void drawStaticSpriteAsset(
     // decoding the unchanged rows of a full-screen background entirely.
     if (clip.active &&
         !ThemeSpecRuntimePolicy::ScaledSpriteRowIntersectsClip(row, height, y, drawHeight, clip.y, clip.height)) {
+      // This row was read but never decoded, so it cannot support recovery.
+      decodedEveryRow = false;
       const int drawY1 = y + ((row * drawHeight) / height);
       if (drawY1 >= clip.y + clip.height) {
         break;
@@ -514,11 +622,18 @@ void drawStaticSpriteAsset(
                    hasClearColor,
                    clearColor,
                    clip)) {
+      markSpriteRenderFailed("cbi_row_invalid", assetPath);
       return;
     }
     if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
       cooperativeYield();
     }
+  }
+  // Only a pass that actually decoded every declared row proves this asset is
+  // healthy again. A clipped render skips rows outside the viewport, so it
+  // must not clear an error found in a row it never decoded.
+  if (decodedEveryRow && lastSpriteErrorAsset == assetPath) {
+    clearSpriteRenderError();
   }
 }
 
@@ -601,13 +716,32 @@ bool prepareAnimatedSpriteBuffer(
     int targetHeight,
     bool hasClearColor,
     uint16_t clearColor) {
-  const int bufferWidth = targetWidth > 0 ? targetWidth : cache.width;
-  const int bufferHeight = targetHeight > 0 ? targetHeight : cache.height;
-  const uint32_t bufferBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(
-      bufferWidth,
-      bufferHeight);
+  const int drawnWidth = targetWidth > 0 ? targetWidth : cache.width;
+  const int drawnHeight = targetHeight > 0 ? targetHeight : cache.height;
+  const int bufferWidth = ThemeSpecRuntimePolicy::CbaBufferExtent(drawnWidth, cache.width);
+  const int bufferHeight = ThemeSpecRuntimePolicy::CbaBufferExtent(drawnHeight, cache.height);
+  // The drawn size keeps the 80 px limit too: an enlarged frame is pushed one
+  // drawn row at a time from a row of at most that width.
+  const uint32_t bufferBytes =
+      ThemeSpecRuntimePolicy::CbaBufferBytes(drawnWidth, drawnHeight) == 0
+          ? 0
+          : ThemeSpecRuntimePolicy::CbaBufferBytes(bufferWidth, bufferHeight);
   if (!hasClearColor || bufferBytes == 0 ||
       (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache)) {
+    // Another sprite holds the shared frame buffer for its in-progress frame.
+    // That is deferred work, not a broken asset: this sprite simply draws on a
+    // later tick, so it must not be reported as a decode failure.
+    if (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache) {
+      cbaBufferUnavailableThisAttempt = true;
+      // Sprites that keep evicting each other never finish a frame; publish
+      // that, because health would otherwise report ok while the theme shows
+      // nothing. It stays a transient condition: the assets themselves are
+      // fine.
+      if (cbaBufferContention.Observe(
+              cbaFrameBufferOwner, cbaFrameBufferOwner->nextRow, cbaCompletedFrames)) {
+        setSpriteRenderError("cba_buffer_contention", cache.path.c_str());
+      }
+    }
     return false;
   }
 
@@ -635,6 +769,10 @@ bool prepareAnimatedSpriteBuffer(
     }
     if (replacement == nullptr) {
       cbaBufferAllocationFailures += 1;
+      // Low heap is a transient resource condition, not a broken asset. It
+      // keeps its own counter and must not inflate renderFailures.
+      setSpriteRenderError("low_heap_cba_buffer", cache.path.c_str());
+      cbaBufferAllocationFailedThisAttempt = true;
       return false;
     }
     delete[] cbaFrameBuffer;
@@ -647,7 +785,26 @@ bool prepareAnimatedSpriteBuffer(
   cbaFrameBufferOwner = &cache;
   cache.frameBufferWidth = bufferWidth;
   cache.frameBufferHeight = bufferHeight;
+  cache.frameDrawnWidth = drawnWidth;
+  cache.frameDrawnHeight = drawnHeight;
   return true;
+}
+
+// One drawn row of an enlarged frame, picked from the smaller buffer.
+const uint16_t* scaledCbaFrameRow(
+    const AnimatedSpriteCache& cache,
+    int drawnRow,
+    uint16_t* row) {
+  const uint16_t* source =
+      cbaFrameBuffer +
+      ThemeSpecRuntimePolicy::CbaScaledSourceIndex(
+          drawnRow, cache.frameDrawnHeight, cache.frameBufferHeight) *
+          cache.frameBufferWidth;
+  for (int x = 0; x < cache.frameDrawnWidth; ++x) {
+    row[x] = source[ThemeSpecRuntimePolicy::CbaScaledSourceIndex(
+        x, cache.frameDrawnWidth, cache.frameBufferWidth)];
+  }
+  return row;
 }
 
 void pushCompletedAnimatedSpriteFrame(
@@ -658,17 +815,23 @@ void pushCompletedAnimatedSpriteFrame(
       cbaFrameBufferOwner != &cache) {
     return;
   }
+  const bool enlarged = cache.frameDrawnWidth != cache.frameBufferWidth ||
+                        cache.frameDrawnHeight != cache.frameBufferHeight;
+  const int pushes = enlarged ? cache.frameDrawnHeight : 1;
+  uint16_t drawnRow[ThemeSpecRuntimePolicy::kMaxCbaBufferWidth];
   const unsigned long pushStartUs = micros();
   {
     DisplayTransaction transaction;
     const bool previousSwapBytes = Tft().getSwapBytes();
     Tft().setSwapBytes(true);
-    Tft().pushImage(
-        x,
-        y,
-        cache.frameBufferWidth,
-        cache.frameBufferHeight,
-        cbaFrameBuffer);
+    for (int push = 0; push < pushes; ++push) {
+      Tft().pushImage(
+          x,
+          enlarged ? y + push : y,
+          enlarged ? cache.frameDrawnWidth : cache.frameBufferWidth,
+          enlarged ? 1 : cache.frameBufferHeight,
+          enlarged ? scaledCbaFrameRow(cache, push, drawnRow) : cbaFrameBuffer);
+    }
     Tft().setSwapBytes(previousSwapBytes);
   }
   cbaLastPushDurationUs = micros() - pushStartUs;
@@ -683,6 +846,21 @@ void pushCompletedAnimatedSpriteFrame(
   }
   cache.frameReadyToPush = false;
   cbaCompletedFrames += 1;
+  if (cache.consecutiveCleanFrames < cache.frameCount) {
+    cache.consecutiveCleanFrames += 1;
+  }
+  // One good frame proves nothing: a failure in a later frame invalidates the
+  // cache and the retry restarts at frame zero, so clearing here would flip
+  // /health between ok and broken forever. Require a full clean pass -- except
+  // for a non-animating CBA, which never decodes a second frame and would
+  // otherwise keep renderOk: false even after it renders correctly.
+  if (cache.consecutiveCleanFrames >=
+          ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(
+              cache.frameCount,
+              cache.fps) &&
+      lastSpriteErrorAsset == cache.path) {
+    clearSpriteRenderError();
+  }
   cbaLastFrameDurationMs = millis() - cache.frameStartedAtMs;
   const unsigned long frameDelayMs = ThemeSpecRuntimePolicy::CbaFrameDelayMs(cache.fps);
   cache.nextFrameAtMs = frameDelayMs > 0 ? cache.frameStartedAtMs + frameDelayMs : 0;
@@ -805,6 +983,7 @@ void drawSpriteAsset(
   }
   File file = LittleFS.open(assetPath, "r");
   if (!file) {
+    markSpriteRenderFailed("sprite_asset_missing", assetPath);
     return;
   }
 
@@ -812,19 +991,39 @@ void drawSpriteAsset(
   if (readSpriteLine(file, line)) {
     if (line == "CBI1") {
       if (mode != SpriteRenderMode::AnimatedOnly) {
-        drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor, clip);
+        drawStaticSpriteAsset(
+            file, assetPath, x, y, targetWidth, targetHeight, hasClearColor, clearColor, clip);
       }
     } else if (line == "CBA1") {
       if (mode != SpriteRenderMode::StaticOnly && animatedCache != nullptr) {
-        (void)drawAnimatedSpriteAsset(
+        cbaBufferAllocationFailedThisAttempt = false;
+        cbaBufferUnavailableThisAttempt = false;
+        if (!drawAnimatedSpriteAsset(
             *animatedCache,
             file,
             targetWidth,
             targetHeight,
             hasClearColor,
-            clearColor);
+            clearColor)) {
+          // A failed buffer allocation never decoded the asset, so the
+          // transient low-heap diagnostic it already recorded stands. Calling
+          // markSpriteRenderFailed() here would report memory pressure as a
+          // corrupt asset and inflate renderFailures.
+          // A buffer still held by another sprite is deferred work for the
+          // same reason: this attempt never decoded anything either.
+          if (!cbaBufferAllocationFailedThisAttempt &&
+              !cbaBufferUnavailableThisAttempt) {
+            markSpriteRenderFailed("cba_render_failed", assetPath);
+          }
+        }
       }
+    } else {
+      // An asset that is neither CBI1 nor CBA1 cannot be drawn at all. Without
+      // this the theme would render a hole while health still reported ok.
+      markSpriteRenderFailed("sprite_header_unsupported", assetPath);
     }
+  } else {
+    markSpriteRenderFailed("sprite_unreadable", assetPath);
   }
 
   file.close();
@@ -837,8 +1036,16 @@ void drawSpriteAsset(
 }
 
 void resetAnimatedSpriteCaches() {
+  // Deliberately keeps lastAnimatedSpriteError/lastSpriteErrorAsset: dropping
+  // the animation caches frees memory, it does not repair a broken asset.
+  // Only a completed decode of the failing asset clears the diagnostic, so an
+  // unrelated upload cannot make /health report renderOk for a still-broken
+  // active sprite.
   cbaRenderJobInProgress = false;
   cbaFrameBufferOwner = nullptr;
+  // A new set of sprites starts its own count; an earlier theme's starvation
+  // says nothing about it.
+  cbaBufferContention = CbaContentionWatch{};
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {
     animatedSpriteCaches[i] = AnimatedSpriteCache{};
   }
@@ -935,7 +1142,19 @@ class ThemeSpecSink final : public themespec::Sink {
         text.x = cmd.x + max(0, cmd.maxWidth - width);
       }
       const int fontHeight = static_cast<int>(tft.fontHeight());
+      if (cmd.valign != 0) {
+        const int boxH = themespec::TextValignBoxHeight(cmd.height, cmd.font, cmd.size);
+        text.y = themespec::AlignedTextY(cmd.y, boxH, fontHeight, cmd.valign);
+        textClipY = text.y;
+      }
       textClipH = fontHeight > 1 ? fontHeight + 4 : 1;
+    } else if (cmd.valign != 0) {
+      TFT_eSPI& tft = Tft();
+      tft.setTextFont(cmd.font);
+      tft.setTextSize(text.size);
+      const int fontHeight = static_cast<int>(tft.fontHeight());
+      const int boxH = themespec::TextValignBoxHeight(cmd.height, cmd.font, cmd.size);
+      text.y = themespec::AlignedTextY(cmd.y, boxH, fontHeight, cmd.valign);
     }
     if (textClipW > 0) {
       if (!intersectWithActiveClip(textClipX, textClipY, textClipW, textClipH)) {
@@ -1052,13 +1271,6 @@ class ThemeSpecSink final : public themespec::Sink {
   uint16_t backgroundColor_ = 0x0000;
 };
 
-const char* usageModeText() {
-  if (CurrentFrame().hasUsageMode && CurrentFrame().usageMode == "remaining") {
-    return "remaining";
-  }
-  return "used";
-}
-
 const char* themeSpecUpdateNoticeText() {
   return "Open VibeTV Mac App";
 }
@@ -1100,7 +1312,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   }
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
-  frame.usageMode = usageModeText();
+  frame.usageMode = codexbar_display::core::UsageModeText(CurrentFrame());
   frame.activity = CurrentFrame().activity.c_str();
   // The device clock owns {time}/{date}; the Companion string is only a
   // fallback and is dropped once it is no longer current.
@@ -1129,13 +1341,13 @@ void MarkThemeSpecCountdownsRendered() {
     const int64_t slotRemain =
         codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, now);
     Context().lastRenderedUsageWindowSecs[i] = slotRemain;
-    Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
+    Context().lastRenderedUsageWindowMinuteBuckets[i] = codexbar_display::core::RemainingMinuteBucket(slotRemain);
   }
   for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
     const int64_t slotRemain =
         codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, now);
     Context().lastRenderedProviderSlotSecs[i] = slotRemain;
-    Context().lastRenderedProviderSlotMinuteBuckets[i] = slotRemain / 60;
+    Context().lastRenderedProviderSlotMinuteBuckets[i] = codexbar_display::core::RemainingMinuteBucket(slotRemain);
   }
 }
 
@@ -1167,6 +1379,10 @@ bool DrawThemeSpecUsage() {
   // A full redraw cancels any partial CBA job. The active state restarts at
   // frame zero and resumes a bounded row chunk per main-loop tick.
   resetAnimatedSpriteCaches();
+  // A full redraw re-selects every sprite, so an error naming an asset this
+  // scene no longer references can be retired. An asset the scene still uses
+  // keeps its error: this pass is static-only and cannot prove a CBA decodes.
+  retireSpriteRenderErrorIfAssetUnreferenced(cachedThemeSpecScene);
 
   const auto frameData = currentThemeSpecFrameData();
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
@@ -1197,6 +1413,7 @@ bool TickThemeSpecGifs() {
     return true;
   }
   if (!hasThemeSpecHeap(true)) {
+    ++themeSpecAnimationLowHeapSkips;
     nextThemeSpecAnimatedTickAtMs = now + kThemeSpecAnimatedTickMs;
     return true;
   }
@@ -1236,6 +1453,9 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   const auto frameData = currentThemeSpecFrameData(updateNoticeText);
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
   const char* partialError = nullptr;
+  const bool reselectsSprites =
+      (changedFields &
+       (themespec::kThemeSpecFieldActivity | themespec::kThemeSpecFieldProvider)) != 0;
   if (!themespec::RenderCompiledThemeSpecChangedPrimitives(
           cachedThemeSpecScene,
           frameData,
@@ -1245,11 +1465,16 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
           nullptr)) {
     return false;
   }
-  // State assets are selected by activity. Clearing the cache cancels the old
-  // resumable job and starts the new state's animation at frame zero.
-  if ((changedFields & themespec::kThemeSpecFieldActivity) != 0) {
+  // State assets are selected by activity; provider assets by provider. Clearing
+  // the cache cancels the old resumable CBA job so the new path can own the
+  // buffer instead of failing prepareAnimatedSpriteBuffer forever.
+  if (reselectsSprites) {
     resetAnimatedSpriteCaches();
   }
+  // A partial pass deliberately skips animated primitives and only draws the
+  // changed ones, so "this pass did not draw the asset" is not evidence the
+  // asset is gone. Retirement stays with the full redraw, which re-selects
+  // every sprite and can compare against the compiled scene.
   markThemeSpecPartialOk();
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
@@ -1338,11 +1563,15 @@ bool CurrentThemeSpecRenderedSuccessfully() {
 }
 
 bool ThemeSpecRenderOk() {
-  return lastThemeSpecRenderOk;
+  return lastThemeSpecRenderOk && lastAnimatedSpriteError[0] == '\0';
 }
 
 const char* ThemeSpecRenderError() {
-  return lastThemeSpecRenderError;
+  return lastAnimatedSpriteError[0] != '\0' ? lastAnimatedSpriteError : lastThemeSpecRenderError;
+}
+
+const char* ThemeSpecRenderErrorAsset() {
+  return lastSpriteErrorAsset.c_str();
 }
 
 unsigned long ThemeSpecRenderFailures() {
@@ -1357,6 +1586,7 @@ ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
   stats.cbaBufferAllocationFailures = cbaBufferAllocationFailures;
   stats.cbaLastPushDurationUs = cbaLastPushDurationUs;
   stats.partialSuccesses = themeSpecPartialSuccesses;
+  stats.animationLowHeapSkips = themeSpecAnimationLowHeapSkips;
   return stats;
 }
 
@@ -1415,6 +1645,10 @@ bool ThemeSpecRenderOk() {
 }
 
 const char* ThemeSpecRenderError() {
+  return "";
+}
+
+const char* ThemeSpecRenderErrorAsset() {
   return "";
 }
 

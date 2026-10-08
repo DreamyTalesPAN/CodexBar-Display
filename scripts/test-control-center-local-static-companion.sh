@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# macOS Bash 3.2 can report a parse error as success with an EXIT function trap.
+# Validate before registering cleanup, so an invalid test cannot pass the gate.
+bash -n "${BASH_SOURCE[0]}"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="${ROOT}/apps/control-center"
 TMP_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-local-static-companion.XXXXXX")"
@@ -67,7 +71,7 @@ expect_http_status() {
 }
 
 main() {
-  local companion_copy static_dir port base_url index_file asset_path
+  local companion_copy static_dir port base_url index_file asset_path catalog_file screensaver_asset
 
   (cd "$APP_DIR" && npm run build:local)
 
@@ -107,13 +111,21 @@ main() {
       printf 'error: frozen legacy theme catalog is unavailable\n' >&2
       exit 1
     }
-  curl -fsS "${base_url}/theme-packs/vibetv-theme-packs-v2.json" \
-    | grep -F '"vibetv-theme-reset-countdown-v1.0.0.zip"' >/dev/null \
+  catalog_file="${TMP_WORK_DIR}/theme-catalog.json"
+  curl -fsS "${base_url}/theme-packs/vibetv-theme-packs-v2.json" > "$catalog_file"
+  screensaver_asset="$(python3 -c '
+import json, re, sys
+catalog = json.load(open(sys.argv[1], encoding="utf-8"))
+asset = next(theme["downloadAsset"] for theme in catalog["themes"] if theme["id"] == "reset-countdown")
+if not re.fullmatch(r"vibetv-theme-reset-countdown-v[0-9]+\.[0-9]+\.[0-9]+\.zip", asset):
+    raise SystemExit("invalid screensaver catalog asset")
+print(asset)
+' "$catalog_file")" \
     || {
       printf 'error: bundled screensaver catalog entry is unavailable\n' >&2
       exit 1
     }
-  curl -fsS "${base_url}/theme-packs/vibetv-theme-reset-countdown-v1.0.0.zip" >/dev/null \
+  curl -fsS "${base_url}/theme-packs/${screensaver_asset}" >/dev/null \
     || {
       printf 'error: bundled screensaver ZIP is unavailable\n' >&2
       exit 1
@@ -122,6 +134,9 @@ main() {
     | grep -F '"specPath":"/themes/s/reset-1-39352d.json"' >/dev/null \
     || {
       printf 'error: bundled screensaver render pack is unavailable\n' >&2
+      exit 1
+    }
+  curl -fsS "${base_url}/theme-packs/vibetv-theme-packs-v2.json" \
     | grep -E '"vibetv-theme-mini-classic-v[0-9]+\.[0-9]+\.[0-9]+\.zip"' >/dev/null \
     || {
       printf 'error: current versioned theme catalog is unavailable\n' >&2

@@ -5,6 +5,9 @@ import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
 
 const providerPicker: ProviderPickerProps = {
+  usage: { providers: ["codex", "claude", "cursor"].map((id) => ({
+    id, label: id, session: 0, weekly: 0, resetSecs: 0, usageMode: "used",
+  })) },
   display: null,
   items: [],
   pendingCheckIds: new Set(),
@@ -59,26 +62,90 @@ function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
   picker: ProviderPickerProps = providerPicker,
+  brightness: number | null = 70,
+  connectionMode: "cable" | "wifi" = "cable",
+  windowsHost = false,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
       automaticPreviews={[]}
-      brightness={70}
+      brightness={brightness}
       busyAction={null}
+      connectionMode={connectionMode}
       device={device}
       standby={standby}
       onBrightnessChange={vi.fn()}
       onChooseScreensaver={vi.fn()}
+      onConnectionModeChange={vi.fn()}
+      onDismissError={vi.fn()}
       onResetSetup={vi.fn()}
       onSaveBrightness={vi.fn()}
       onSaveStandby={vi.fn()}
       onStandbyBrightnessChange={vi.fn()}
       providerPicker={picker}
+      windowsHost={windowsHost}
     />,
   );
 }
 
+// Issues #438/#460: the Windows app must not speak of "this Mac". The Mac
+// wording is pinned by the tests below and must not change at all.
+describe("SettingsScreen on Windows", () => {
+  it("says this computer where the Mac app says this Mac", () => {
+    const html = render(standbyDevice, savedStandby, providerPicker, 70, "cable", true);
+
+    expect(html).toContain("Requires a data cable connected to this computer.");
+    expect(html).toContain("Connect this computer to another VibeTV.");
+    expect(html).not.toContain("Mac");
+  });
+});
+
 describe("SettingsScreen standby controls", () => {
+  it("offers the factory reset only over the USB cable", () => {
+    const props = {
+      automaticPreviews: [],
+      brightness: 70,
+      busyAction: null,
+      device: standbyDevice,
+      standby: savedStandby,
+      onBrightnessChange: vi.fn(),
+      onChooseScreensaver: vi.fn(),
+      onConnectionModeChange: vi.fn(),
+      onDismissError: vi.fn(),
+      onEraseDevice: vi.fn(),
+      onResetSetup: vi.fn(),
+      onSaveBrightness: vi.fn(),
+      onSaveStandby: vi.fn(),
+      onStandbyBrightnessChange: vi.fn(),
+      providerPicker,
+    };
+    const cable = renderToStaticMarkup(
+      <SettingsScreen {...props} connectionMode="cable" />,
+    );
+    const wifi = renderToStaticMarkup(
+      <SettingsScreen {...props} connectionMode="wifi" />,
+    );
+
+    expect(cable).toContain("Reset to factory settings");
+    expect(wifi).not.toContain("Reset to factory settings");
+  });
+
+  it("labels unsupported brightness without a loading state", () => {
+    const html = render(
+      {
+        connected: true,
+        ready: true,
+        capabilities: { display: { brightness: { supported: false } } },
+      },
+      savedStandby,
+      providerPicker,
+      null,
+    );
+
+    expect(html).toContain("Not supported");
+    expect(html).not.toContain("Loading");
+  });
+
   it("hides the whole block on firmware without standby support", () => {
     const html = render({ connected: true, ready: true });
 
@@ -184,14 +251,15 @@ describe("SettingsScreen standby controls", () => {
     const html = render(standbyDevice);
     const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
 
-    expect(headings).toHaveLength(5);
+    expect(headings).toHaveLength(6);
     expect(html).toContain(">Display</h2>");
     expect(html).toContain(">Display mode</h2>");
     expect(html).toContain(">AI providers</h2>");
     expect(html).toContain(">Screensaver</h2>");
+    expect(html).toContain(">Connection</h2>");
     expect(html).toContain(">Setup</h2>");
     expect(html).toContain("Connect this Mac to another VibeTV.");
-    expect(html.match(/<section /g)).toHaveLength(5);
+    expect(html.match(/<section /g)).toHaveLength(6);
   });
 
   // The provider list is the longest thing on the page, so it closes it rather
@@ -203,6 +271,7 @@ describe("SettingsScreen standby controls", () => {
     );
 
     expect(order).toEqual([
+      "Connection",
       "Display",
       "Display mode",
       "Screensaver",
@@ -214,22 +283,50 @@ describe("SettingsScreen standby controls", () => {
   it("keeps enabled providers first in Settings without reordering either group", () => {
     const html = render(standbyDevice, savedStandby, {
       ...providerPicker,
+      onOpenSignIn: vi.fn(),
       items: [
-        provider("openai", "OpenAI", false),
+        provider("antigravity", "Antigravity", false),
         provider("claude", "Claude Code", true),
         provider("cursor", "Cursor", false),
         provider("codex", "Codex", true),
+        // Switched on without a sign-in the Companion can start: it is listed
+        // and sorts with the enabled group.
+        provider("openai", "OpenAI", true),
+        // Off: listed with the other switched-off providers.
+        provider("gemini", "Gemini", false),
       ],
     });
     const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
-    const positions = ["Claude Code", "Codex", "OpenAI", "Cursor"].map(
-      (label) => providerSection.indexOf(`>${label}</`),
-    );
+    const positions = [
+      "Claude Code",
+      "Codex",
+      "OpenAI",
+      "Antigravity",
+      "Cursor",
+      "Gemini",
+    ].map((label) => providerSection.indexOf(`>${label}</`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual(
       [...positions].sort((left, right) => left - right),
     );
+  });
+
+  // Without the companion's sign-in action (the Mac app) every provider
+  // CodexBar reports stays on the page as it does today.
+  it("keeps every provider in Settings on a companion without the sign-in action", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      items: [
+        provider("claude", "Claude Code", true),
+        provider("openai", "OpenAI", true),
+        provider("gemini", "Gemini", false),
+      ],
+    });
+    const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
+
+    expect(providerSection).toContain(">OpenAI</");
+    expect(providerSection).toContain(">Gemini</");
   });
 
   it("leaves the display mode cards usable when no write is in flight", () => {
@@ -251,16 +348,80 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toMatch(/<output[^>]*class="[^"]*absolute/);
     expect(html).not.toMatch(/<output[^>]*style="left:/);
   });
+
+  it("puts the design's connection cards first and marks the active mode", () => {
+    const html = render(standbyDevice);
+    expect(html.indexOf(">Connection</h2>")).toBeLessThan(html.indexOf(">Display</h2>"));
+    expect(html).toContain('aria-label="USB-C" aria-pressed="true"');
+    expect(html).toContain('aria-label="WiFi" aria-pressed="false"');
+    expect(html).toContain("Requires a data cable connected to this Mac.");
+    expect(html).toContain("VibeTV can sit anywhere on your desk.");
+  });
+
+  it("keeps Cable recovery available for an active offline WiFi binding", () => {
+    const html = render(
+      {
+        active: true,
+        connected: false,
+        paired: true,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "wifi",
+            supported: ["usb", "wifi"],
+          },
+        },
+      },
+      null,
+      providerPicker,
+      null,
+      "wifi",
+    );
+    const connectionModeTrigger = html.match(
+      /<button[^>]*aria-label="USB-C"[^>]*>/,
+    )?.[0];
+
+    expect(connectionModeTrigger).toBeDefined();
+    expect(connectionModeTrigger).not.toContain('disabled=""');
+  });
+
+  // Issue #489: a VibeTV on WiFi offers USB-C only on cable-only firmware.
+  it("greys out USB-C for older and legacy WiFi firmware", () => {
+    const usbCard = (cableOnlyUpdates?: boolean, supported = ["usb", "wifi"]) =>
+      render(
+        {
+          active: true,
+          connected: true,
+          paired: true,
+          capabilities: {
+            transport: { active: "wifi", mode: "wifi", supported, cableOnlyUpdates },
+          },
+        },
+        null,
+        providerPicker,
+        null,
+        "wifi",
+      ).match(/<button[^>]*aria-label="USB-C"[^>]*>/)?.[0];
+
+    expect(usbCard(true)).toBeDefined();
+    expect(usbCard(true)).not.toContain('disabled=""');
+    expect(usbCard(undefined)).toContain('disabled=""');
+    expect(usbCard(false, ["wifi"])).toContain('disabled=""');
+  });
+
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
         automaticPreviews={[]}
         brightness={50}
         busyAction="firmware-update"
+        connectionMode="cable"
         device={standbyDevice}
         standby={savedStandby}
         onBrightnessChange={vi.fn()}
         onChooseScreensaver={vi.fn()}
+        onConnectionModeChange={vi.fn()}
+        onDismissError={vi.fn()}
         onResetSetup={vi.fn()}
         onSaveBrightness={vi.fn()}
         onSaveStandby={vi.fn()}
@@ -270,5 +431,22 @@ describe("SettingsScreen standby controls", () => {
     );
 
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("says why Display mode switched to Automatic", () => {
+    const notice = "Codex is off, so VibeTV now switches automatically.";
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      display: { mode: "automatic", providerIds: ["claude"], configured: true, valid: true },
+      displayNotice: notice,
+      items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
+    });
+    const displaySection = html.slice(
+      html.indexOf(">Display mode</h2>"),
+      html.indexOf(">Screensaver</h2>"),
+    );
+
+    expect(displaySection).toContain(`role="status">${notice}</p>`);
+    expect(render(standbyDevice)).not.toContain("now switches automatically");
   });
 });

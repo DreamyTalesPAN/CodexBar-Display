@@ -6,12 +6,8 @@ important changes before they interrupt your work.
 
 <p align="center">
   <a href="https://vibetv.shop/products/vibe-tv">
-    <img src="docs/assets/vibetv-hardware-detail.png" alt="VibeTV hardware showing an AI usage screen" width="560">
+    <img src="docs/assets/vibetv-hero.jpg" alt="White VibeTV desk display showing Codex usage on a light background" width="640">
   </a>
-</p>
-
-<p align="center">
-  <img src="docs/assets/vibetv-four-themes.png" alt="VibeTV showing four included themes" width="560">
 </p>
 
 **Start here:** [Buy the hardware](https://vibetv.shop/products/vibe-tv) ·
@@ -22,16 +18,36 @@ important changes before they interrupt your work.
 
 ## Themes
 
-| Mini | Claude Creature | Clippy | Synthwave |
-| --- | --- | --- | --- |
-| <img src="docs/assets/vibetv-theme-mini.png" alt="VibeTV Mini theme" width="160"> | <img src="docs/assets/vibetv-theme-claude.png" alt="VibeTV Claude Creature theme" width="160"> | <img src="docs/assets/vibetv-theme-clippy.png" alt="VibeTV Clippy theme" width="160"> | <img src="docs/assets/vibetv-theme-synthwave.png" alt="VibeTV Synthwave theme" width="160"> |
+VibeTV comes with 6 pre-built themes, but you can also
+[build your own](docs/theme-dev-guide.md).
 
-See [docs/themes.md](docs/themes.md) for included themes and custom theme
-development.
+<table>
+  <tr><th>Mini Classic</th><th>Claude Creature</th><th>Clippy</th></tr>
+  <tr>
+    <td align="center"><img src="docs/assets/vibetv-theme-mini-classic.png" alt="Mini Classic screen preview with session and weekly usage" width="180"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-claude-creature.png" alt="Claude Creature screen preview with its orange character and usage values" width="180"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-clippy.png" alt="Clippy screen preview with retro window and usage bars" width="180"></td>
+  </tr>
+  <tr><th>Synthwave</th><th>Pixel Battery</th><th>Tiny Office</th></tr>
+  <tr>
+    <td align="center"><img src="docs/assets/vibetv-theme-synthwave.png" alt="Synthwave screen preview with neon skyline and usage bars" width="180"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-pixel-battery.png" alt="Pixel Battery screen preview with segmented usage batteries" width="180"></td>
+    <td align="center"><img src="docs/assets/vibetv-theme-tiny-office.png" alt="Tiny Office screen preview with a pixel-art developer desk" width="180"></td>
+  </tr>
+</table>
+
+## Screensavers
+
+| Night Clock | Reset Countdown | Token Fire |
+| --- | --- | --- |
+| <img src="docs/assets/vibetv-screensaver-night-clock.png" alt="Night Clock screensaver preview showing the time and next resets" width="180"> | <img src="docs/assets/vibetv-screensaver-reset-countdown.png" alt="Reset Countdown screensaver preview with a forest and reset timer" width="180"> | <img src="docs/assets/vibetv-screensaver-token-fire.png" alt="Token Fire screensaver preview with a fireplace and token totals" width="180"> |
+
+See [docs/themes.md](docs/themes.md) for included themes, screensavers, and custom
+theme development.
 
 ## Providers
 
-VibeTV can show provider usage surfaced by CodexBar. Common examples include:
+VibeTV can show provider usage surfaced by [CodexBar](https://github.com/steipete/CodexBar). Common examples include:
 
 - Codex
 - Claude / Claude Code
@@ -88,29 +104,30 @@ backend. Support reports are only created when you ask for them.
 ```text
 CodexBar on the Mac
   -> VibeTV Mac App on 127.0.0.1:47832
-  -> local Control Center in the browser
-  -> VibeTV on the local WiFi
+  -> Control Center in the Mac App
+  -> VibeTV over Cable or local WiFi
 ```
 
 1. CodexBar reads provider usage, quotas, tokens, and reset windows.
 2. The VibeTV Mac App (`codexbar-display`) reads that data locally.
-3. The local Control Center talks to the Mac App through the browser.
-4. The Mac App sends display frames to VibeTV over local WiFi.
+3. Control Center talks to the local background service inside the Mac App.
+4. The Mac App sends display frames to VibeTV over Cable or local WiFi.
 5. VibeTV renders the selected theme on the 240x240 screen.
 
-The normal customer path does not require USB flashing. USB-C powers the device.
+Normal setup does not require USB flashing. A working USB data connection also
+supports Cable operation on current firmware; power-only devices use WiFi.
 
 ## Setup
 
 1. Buy the hardware from [vibetv.shop](https://vibetv.shop/products/vibe-tv).
 2. Power VibeTV with USB-C.
-3. Join the `VibeTV-Setup` WiFi hotspot and connect VibeTV to your home WiFi.
-4. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac and download the
+3. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac and download the
    Mac App.
-5. Drag `VibeTV Control Center` into Applications and open it.
-6. The app takes you through setup: choose your VibeTV, choose the AI providers
-   to show, choose the display mode, choose a theme. It hands over to Control
-   Center by itself when VibeTV is live.
+4. Drag `VibeTV Control Center` into Applications and open it.
+5. Follow the app to connect over Cable or WiFi. If both are found, choose
+   the connection you want; if WiFi setup is needed, follow its instructions.
+6. Choose the AI providers, display mode, and theme. Setup opens Overview
+   automatically once VibeTV is live.
 
 The customer setup guide is [docs/customer-setup.md](docs/customer-setup.md).
 

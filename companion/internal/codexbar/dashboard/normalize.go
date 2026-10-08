@@ -53,6 +53,8 @@ type RateWindow struct {
 	ResetsAt               *time.Time `json:"resetsAt"`
 	ResetAt                *time.Time `json:"resetAt"`
 	IsSyntheticPlaceholder bool       `json:"isSyntheticPlaceholder"`
+	IsInformational        bool       `json:"isInformational"`
+	IsInformationalSnake   bool       `json:"is_informational"`
 	UsageKnown             *bool      `json:"usageKnown"`
 }
 
@@ -207,7 +209,7 @@ func addStructuralWindow(index map[string]usageWindowMetadata, dashboardKind str
 	}
 	index[dashboardKind] = usageWindowMetadata{
 		usageKnown:      knownUsage(window.UsageKnown),
-		synthetic:       window.IsSyntheticPlaceholder,
+		synthetic:       window.IsSyntheticPlaceholder || window.IsInformational || window.IsInformationalSnake,
 		windowMinutes:   window.WindowMinutes,
 		metadataReset:   window.resetAt(),
 		structuralAlias: true,
@@ -231,7 +233,7 @@ func addNamedWindow(index map[string]usageWindowMetadata, named NamedRateWindow)
 	}
 	index[id] = usageWindowMetadata{
 		usageKnown:    usageKnown,
-		synthetic:     named.Window.IsSyntheticPlaceholder,
+		synthetic:     named.Window.IsSyntheticPlaceholder || named.Window.IsInformational || named.Window.IsInformationalSnake,
 		windowMinutes: named.Window.WindowMinutes,
 		metadataReset: named.Window.resetAt(),
 	}

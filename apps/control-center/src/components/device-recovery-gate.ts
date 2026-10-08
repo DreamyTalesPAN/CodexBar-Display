@@ -1,7 +1,9 @@
-import type { DeviceInfo } from "./control-center-types";
+import {
+  deviceIsCustomerConnected,
+  type DeviceInfo,
+} from "./control-center-types";
 
 export const DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT = 3;
-export const DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT = 12;
 
 export type DeviceRecoveryPickerReason = "confirmed-loss";
 
@@ -42,6 +44,17 @@ export function resetDeviceRecoveryGate(): DeviceRecoveryGateState {
   return createDeviceRecoveryGateState();
 }
 
+// Closing the lost-VibeTV picker means "not now", not "stop looking". The
+// failure count starts over, so the VibeTV still being missing after the next
+// three checks searches again and can offer the found VibeTVs once more.
+// Keeping "confirmed-loss" here left the customer without any way back to the
+// moved VibeTV until the app was restarted.
+export function dismissDeviceRecoveryPicker(
+  state: DeviceRecoveryGateState,
+): DeviceRecoveryGateState {
+  return { ...state, failedNormalChecks: 0, pickerReason: null };
+}
+
 export function selectRecoveryDevice(
   state: DeviceRecoveryGateState,
   device: Pick<DeviceInfo, "deviceId"> | null | undefined,
@@ -57,18 +70,38 @@ export function selectRecoveryDevice(
 export function applyDeviceRecoveryStatus(
   state: DeviceRecoveryGateState,
   status: {
-    device?: Pick<DeviceInfo, "connected" | "deviceId" | "target"> | null;
+    device?: Pick<
+      DeviceInfo,
+      "active" | "connected" | "deviceId" | "paired" | "target"
+    > | null;
     countFailure?: boolean;
     operationInProgress?: boolean;
   },
 ): DeviceRecoveryGateResult {
   const deviceId = stableDeviceId(status.device);
-  const preferredDeviceId = state.preferredDeviceId || deviceId;
+  // The Companion owns which VibeTV is bound. Once it reports its own VibeTV
+  // as connected -- what the Overview calls connected -- that VibeTV is the
+  // selected one, even when this window still remembers another. Holding on
+  // to the remembered ID counted every such status as a miss: after the
+  // connection was changed outside this window, it declared the old VibeTV
+  // lost and showed "Not connected" over a working one until a reload.
+  // A VibeTV that merely answers at the address (not active) is still foreign.
+  const preferredDeviceId =
+    (deviceIsCustomerConnected(status.device) && deviceId) ||
+    state.preferredDeviceId ||
+    deviceId;
   const deviceMatchesPreferred =
     Boolean(deviceId) && (!preferredDeviceId || deviceId === preferredDeviceId);
   const selectedDeviceReachable =
     Boolean(status.device?.target) &&
     status.device?.connected !== false &&
+    deviceMatchesPreferred;
+
+  // An offline snapshot still carries the Companion's configured identity and
+  // pairing verdict. Accept it without calling it reachable or resetting loss.
+  const acceptConfiguredDevice =
+    Boolean(status.device?.target) &&
+    status.device?.active === true &&
     deviceMatchesPreferred;
 
   if (selectedDeviceReachable) {
@@ -97,24 +130,26 @@ export function applyDeviceRecoveryStatus(
     };
   }
 
-  if (status.countFailure === false) {
+  // A running firmware or theme job owns its own outcome. A USB firmware
+  // upload takes about five minutes with the VibeTV unreachable throughout,
+  // so counting those misses declared it lost mid-update and started a
+  // search the Companion refuses while the update runs.
+  if (status.countFailure === false || status.operationInProgress) {
     return {
-      acceptDevice: false,
+      acceptDevice: acceptConfiguredDevice,
       closePicker: false,
       openPicker: false,
-      state,
+      state: { ...state, preferredDeviceId },
     };
   }
 
   const failedNormalChecks = state.failedNormalChecks + 1;
-  const failureLimit = status.operationInProgress
-    ? DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT
-    : DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT;
   const openPicker =
-    failedNormalChecks >= failureLimit && state.pickerReason !== "confirmed-loss";
+    failedNormalChecks >= DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT &&
+    state.pickerReason !== "confirmed-loss";
 
   return {
-    acceptDevice: false,
+    acceptDevice: acceptConfiguredDevice,
     closePicker: false,
     openPicker,
     state: {

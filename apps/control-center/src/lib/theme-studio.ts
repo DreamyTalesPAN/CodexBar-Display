@@ -56,11 +56,14 @@ export type ThemeStudioPrimitive = {
   borderColor?: string;
   borderRadius?: number;
   align?: "left" | "center" | "right";
+  valign?: "top" | "middle" | "bottom";
   progressStyle?: "solid" | "segments";
   segments?: number;
   segmentGap?: number;
+  colorStops?: Array<{ gte: number; color: string }>;
   assetPath?: string;
   stateAssets?: Record<string, string>;
+  providerAssets?: Record<string, string>;
   frameCount?: number;
   fps?: number;
   sheetColumns?: number;
@@ -142,6 +145,8 @@ const FIXED_THEME_REV = 1;
 const MAX_STORED_THEME_SPEC_BYTES = 4096;
 const MAX_STORED_SCREENSAVER_SPEC_BYTES = 2048;
 const MAX_THEME_PRIMITIVES = 32;
+const MAX_PROVIDER_ASSETS = 16;
+const MAX_COMPILED_THEME_SPEC_STRING_BYTES = 1024;
 const MAX_GIF_BYTES = 24 * 1024;
 const MAX_GIF_WIDTH = 80;
 const MAX_GIF_HEIGHT = 80;
@@ -483,6 +488,12 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
         : primitive.align === "left"
           ? "left"
           : undefined,
+    valign:
+      primitive.valign === "middle" || primitive.valign === "bottom"
+        ? primitive.valign
+        : primitive.valign === "top"
+          ? "top"
+          : undefined,
     fit: primitive.fit === "shrink" ? "shrink" : undefined,
     progressStyle:
       primitive.progressStyle === "segments" ? "segments" : undefined,
@@ -526,6 +537,9 @@ function prepareThemePackContent(
       primitive.assetPath = screensaverAssetPath(primitive.assetPath);
     }
     delete primitive.stateAssets;
+    // Screensavers have no live provider updates; strip pa like sa so leftover
+    // /themes/u/ paths do not fail referenced-asset validation.
+    delete primitive.providerAssets;
   }
   return { assets: preparedAssets, spec: normalized };
 }
@@ -552,6 +566,51 @@ function screensaverAssetPath(path: string): string {
     0,
     Math.max(1, maxFileNameLength - pathSuffix.length - extension.length),
   )}${pathSuffix}${extension}`;
+}
+
+function compiledStringBytes(value?: string): number {
+  if (!value) {
+    return 0;
+  }
+  return new TextEncoder().encode(value).byteLength + 1;
+}
+
+function compactBindingValue(binding?: string): string | undefined {
+  if (!binding) {
+    return undefined;
+  }
+  return COMPACT_BINDINGS[binding] || binding;
+}
+
+// Mirrors firmware CountCompiledThemeSpecStorage: null-terminated compiled
+// strings, using the compact binding spellings Theme Studio actually emits.
+function compiledThemeSpecStringBytes(
+  primitives: ThemeStudioPrimitive[],
+): number {
+  let stringBytes = 0;
+  for (const primitive of primitives) {
+    if (primitive.type === "text") {
+      stringBytes += compiledStringBytes(compactBindingValue(primitive.binding));
+      stringBytes += compiledStringBytes(primitive.text);
+    } else if (primitive.type === "progress") {
+      stringBytes += compiledStringBytes(compactBindingValue(primitive.binding));
+    } else if (primitive.type === "gif" || primitive.type === "sprite") {
+      stringBytes += compiledStringBytes(primitive.assetPath);
+      stringBytes += compiledStringBytes(primitive.stateAssets?.idle);
+      stringBytes += compiledStringBytes(primitive.stateAssets?.coding);
+      if (primitive.type === "sprite") {
+        for (const [provider, assetPath] of Object.entries(
+          primitive.providerAssets || {},
+        )) {
+          stringBytes += compiledStringBytes(provider);
+          stringBytes += compiledStringBytes(assetPath);
+        }
+      }
+    } else if (primitive.type === "pixels") {
+      stringBytes += compiledStringBytes(primitive.data);
+    }
+  }
+  return stringBytes;
 }
 
 export function validateThemeSpec(
@@ -586,6 +645,24 @@ export function validateThemeSpec(
     validatePrimitive(primitive, index, errors, warnings, prepared.assets);
   });
 
+  const providerAssetCount = normalized.primitives.reduce(
+    (total, primitive) =>
+      total + Object.keys(primitive.providerAssets || {}).length,
+    0,
+  );
+  if (providerAssetCount > MAX_PROVIDER_ASSETS) {
+    errors.push(
+      `Too many provider assets: ${providerAssetCount}/${MAX_PROVIDER_ASSETS}.`,
+    );
+  }
+
+  const stringPoolBytes = compiledThemeSpecStringBytes(normalized.primitives);
+  if (stringPoolBytes > MAX_COMPILED_THEME_SPEC_STRING_BYTES) {
+    errors.push(
+      `Compiled string pool is too large: ${stringPoolBytes}/${MAX_COMPILED_THEME_SPEC_STRING_BYTES} bytes.`,
+    );
+  }
+
   const themeJson = deviceThemeSpecJson(normalized);
   const bytes = new TextEncoder().encode(themeJson).byteLength;
   const maxBytes = storedThemeSpecByteLimit(usage);
@@ -616,19 +693,30 @@ export function buildThemePack(
   const usesUsageWindows = themeStudioSpecUsesUsageWindows(normalized);
   const usesUsageSlots = themeStudioSpecUsesUsageSlots(normalized);
   const usesProviderSlots = themeStudioSpecUsesProviderSlots(normalized);
+  const usesProviderAssets = themeStudioSpecUsesProviderAssets(normalized);
+  const usesColorStops = themeStudioSpecUsesColorStops(normalized);
+  const usesTextValign = themeStudioSpecUsesTextValign(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
+  // valign has no compatible old-firmware look; pa/cs keep a/c fallbacks but
+  // still declare their capabilities so old devices are not given the spec.
   const requiredCapabilities = [
     ...(usesUsageWindows ? ["usage-windows-v1"] : []),
     ...(usesUsageSlots && !usesUsageWindows ? ["usage-slots-v1"] : []),
     ...(usesProviderSlots ? ["provider-slots-v1"] : []),
+    ...(usesProviderAssets ? ["provider-assets-v1"] : []),
+    ...(usesColorStops ? ["color-stops-v1"] : []),
+    ...(usesTextValign ? ["text-valign-v1"] : []),
   ];
-  const minFirmware = usesProviderSlots
-    ? "1.0.41"
-    : usesUsageWindows || usesUsageSlots
-      ? "1.0.40"
-      : "1.0.24";
+  const minFirmware =
+    usesProviderAssets || usesColorStops || usesTextValign
+      ? "1.0.42"
+      : usesProviderSlots
+        ? "1.0.41"
+        : usesUsageWindows || usesUsageSlots
+          ? "1.0.40"
+          : "1.0.24";
   const validation = validateThemeSpec(normalized, prepared.assets, usage);
   if (validation.errors.length > 0) {
     throw new Error(validation.errors[0]);
@@ -721,6 +809,31 @@ export function themeStudioSpecUsesUsageWindows(
       primitive.usageIndex !== undefined ||
       primitive.binding?.startsWith("usage.") ||
       primitive.text?.includes("{usage."),
+  );
+}
+
+export function themeStudioSpecUsesProviderAssets(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) => Object.keys(primitive.providerAssets || {}).length > 0,
+  );
+}
+
+export function themeStudioSpecUsesColorStops(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) => (primitive.colorStops || []).length > 0,
+  );
+}
+
+export function themeStudioSpecUsesTextValign(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.valign === "middle" || primitive.valign === "bottom",
   );
 }
 
@@ -824,6 +937,25 @@ function validatePrimitive(
     }
   }
 
+  if (
+    primitive.valign &&
+    primitive.type !== "text"
+  ) {
+    errors.push(`${prefix}: vertical align is only supported on text.`);
+  }
+  if (
+    (primitive.colorStops || []).length > 0 &&
+    primitive.type !== "progress"
+  ) {
+    errors.push(`${prefix}: colorStops is only supported on progress.`);
+  }
+  if (
+    Object.keys(primitive.providerAssets || {}).length > 0 &&
+    primitive.type !== "sprite"
+  ) {
+    errors.push(`${prefix}: providerAssets is only supported on sprites.`);
+  }
+
   if (primitive.type === "text") {
     if ((!primitive.text || primitive.text.trim() === "") && !primitive.binding) {
       errors.push(`${prefix}: text or binding is required.`);
@@ -865,6 +997,38 @@ function validatePrimitive(
         primitive.segments > 32)
     ) {
       errors.push(`${prefix}: segments must be between 1 and 32.`);
+    }
+    if (primitive.colorStops !== undefined) {
+      if (
+        !Array.isArray(primitive.colorStops) ||
+        primitive.colorStops.length > 4
+      ) {
+        errors.push(`${prefix}: colorStops supports at most 4 entries.`);
+      } else {
+        const seen = new Set<number>();
+        for (const [index, stop] of primitive.colorStops.entries()) {
+          if (
+            !Number.isInteger(stop.gte) ||
+            stop.gte < 0 ||
+            stop.gte > 100
+          ) {
+            errors.push(
+              `${prefix}: colorStops[${index}].gte must be between 0 and 100.`,
+            );
+          } else if (seen.has(stop.gte)) {
+            errors.push(
+              `${prefix}: colorStops[${index}].gte ${stop.gte} is duplicated.`,
+            );
+          } else {
+            seen.add(stop.gte);
+          }
+          if (!COLOR_RE.test(stop.color)) {
+            errors.push(
+              `${prefix}: colorStops[${index}].color must be #RRGGBB.`,
+            );
+          }
+        }
+      }
     }
   }
 
@@ -1023,6 +1187,7 @@ function validateThemeAssetPaths(
   const paths = [
     primitive.assetPath,
     ...Object.values(primitive.stateAssets || {}),
+    ...Object.values(primitive.providerAssets || {}),
   ].filter((path): path is string => Boolean(path));
   if (paths.length === 0) {
     errors.push(`${prefix}: asset path is required.`);
@@ -1038,6 +1203,17 @@ function validateThemeAssetPaths(
     }
     validateThemeAssetPath(assetPath, prefix, errors);
   }
+  for (const [provider, assetPath] of Object.entries(
+    primitive.providerAssets || {},
+  )) {
+    if (!STATE_NAME_RE.test(provider)) {
+      errors.push(`${prefix}: provider name ${provider} is not supported.`);
+    }
+    if (provider === "idle" || provider === "coding") {
+      errors.push(`${prefix}: use stateAssets for idle and coding.`);
+    }
+    validateThemeAssetPath(assetPath, prefix, errors);
+  }
   if (primitive.assetPath) {
     validateThemeAssetPath(primitive.assetPath, prefix, errors);
   }
@@ -1050,6 +1226,7 @@ function primitiveAssetPaths(primitive: ThemeStudioPrimitive): string[] {
   return [
     primitive.assetPath,
     ...Object.values(primitive.stateAssets || {}),
+    ...Object.values(primitive.providerAssets || {}),
   ].filter((path): path is string => Boolean(path));
 }
 
@@ -1129,6 +1306,9 @@ function buildDevicePrimitive(
   if (primitive.align && primitive.align !== "left") {
     compact.al = primitive.align;
   }
+  if (primitive.valign && primitive.valign !== "top") {
+    compact.va = primitive.valign;
+  }
   if (primitive.progressStyle === "segments") {
     compact.ps = "segments";
   }
@@ -1137,6 +1317,12 @@ function buildDevicePrimitive(
   }
   if (primitive.segmentGap !== undefined) {
     compact.gg = primitive.segmentGap;
+  }
+  if (primitive.colorStops !== undefined && primitive.colorStops.length > 0) {
+    compact.cs = primitive.colorStops.map((stop) => ({
+      gte: stop.gte,
+      c: stop.color,
+    }));
   }
   if (primitive.color !== undefined) {
     compact.c = primitive.color;
@@ -1155,6 +1341,9 @@ function buildDevicePrimitive(
   }
   if (primitive.stateAssets !== undefined) {
     compact.sa = primitive.stateAssets;
+  }
+  if (primitive.providerAssets !== undefined) {
+    compact.pa = primitive.providerAssets;
   }
   if (primitive.frameCount !== undefined) {
     compact.fc = primitive.frameCount;
@@ -1242,6 +1431,12 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   if (align === "left" || align === "center" || align === "right") {
     primitive.align = align;
   }
+  const valign = stringValue(value.valign) ?? stringValue(value.va);
+  if (valign === "middle" || valign === "center") {
+    primitive.valign = "middle";
+  } else if (valign === "bottom" || valign === "top") {
+    primitive.valign = valign;
+  }
   const progressStyle = stringValue(value.progressStyle) ?? stringValue(value.ps);
   if (progressStyle === "segments" || progressStyle === "segmented") {
     primitive.progressStyle = "segments";
@@ -1253,6 +1448,10 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const segmentGap = numberValue(value.segmentGap) ?? numberValue(value.gg);
   if (segmentGap !== undefined) {
     primitive.segmentGap = segmentGap;
+  }
+  const colorStops = colorStopsValue(value.colorStops) ?? colorStopsValue(value.cs);
+  if (colorStops) {
+    primitive.colorStops = colorStops;
   }
   const borderRadius = numberValue(value.borderRadius) ?? numberValue(value.br);
   if (borderRadius !== undefined) {
@@ -1286,6 +1485,11 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const stateAssets = stateAssetsValue(value.stateAssets) ?? stateAssetsValue(value.sa);
   if (stateAssets) {
     primitive.stateAssets = stateAssets;
+  }
+  const providerAssets =
+    providerAssetsValue(value.providerAssets) ?? providerAssetsValue(value.pa);
+  if (providerAssets) {
+    primitive.providerAssets = providerAssets;
   }
   const frameCount = numberValue(value.frameCount) ?? numberValue(value.fc);
   if (frameCount !== undefined) {
@@ -1688,4 +1892,40 @@ function stateAssetsValue(value: unknown): Record<string, string> | undefined {
     }
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function providerAssetsValue(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const result: Record<string, string> = {};
+  for (const [provider, assetPath] of Object.entries(value)) {
+    if (typeof assetPath === "string") {
+      result[provider.trim().toLowerCase()] = assetPath;
+    }
+  }
+  return result;
+}
+
+function colorStopsValue(
+  value: unknown,
+): Array<{ gte: number; color: string }> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const result: Array<{ gte: number; color: string }> = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const gte = numberValue(entry.gte);
+    const color = normalizeColor(
+      colorStringValue(entry.color) ?? colorStringValue(entry.c),
+    );
+    if (gte === undefined || !color) {
+      continue;
+    }
+    result.push({ gte, color });
+  }
+  return result.sort((a, b) => b.gte - a.gte);
 }

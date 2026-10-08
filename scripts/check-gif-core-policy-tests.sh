@@ -6,10 +6,16 @@ SRC="${ROOT_DIR}/firmware_esp8266/tests/gif_core_policy_test.cpp"
 OUT="${ROOT_DIR}/tmp/gif_core_policy_test"
 VALIDATOR_SRC="${ROOT_DIR}/firmware_esp8266/tests/gif_asset_validator_test.cpp"
 VALIDATOR_OUT="${ROOT_DIR}/tmp/gif_asset_validator_test"
+SPRITE_VALIDATOR_SRC="${ROOT_DIR}/firmware_esp8266/tests/sprite_asset_validator_test.cpp"
+SPRITE_VALIDATOR_OUT="${ROOT_DIR}/tmp/sprite_asset_validator_test"
 PROFILE_SRC="${ROOT_DIR}/firmware_esp8266/tests/animated_gif_profile_test.cpp"
 PROFILE_OUT="${ROOT_DIR}/tmp/animated_gif_profile_test"
 PARITY_SRC="${ROOT_DIR}/firmware_esp8266/tests/animated_gif_parity_test.cpp"
 PARITY_OUT="${ROOT_DIR}/tmp/animated_gif_parity_test"
+TRANSFER_SRC="${ROOT_DIR}/firmware_esp8266/tests/cable_transfer_core_test.cpp"
+TRANSFER_OUT="${ROOT_DIR}/tmp/cable_transfer_core_test"
+CBA_SCALE_SRC="${ROOT_DIR}/firmware_esp8266/tests/cba_scale_policy_test.cpp"
+CBA_SCALE_OUT="${ROOT_DIR}/tmp/cba_scale_policy_test"
 CXX_BIN="${CXX:-c++}"
 
 bundled_theme=""
@@ -31,11 +37,27 @@ mkdir -p "${ROOT_DIR}/tmp"
   "${ROOT_DIR}/firmware_esp8266/platformio.ini" \
   "${ROOT_DIR}/firmware_shared/theme_spec_renderer_core.h"
 
+"${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${TRANSFER_SRC}" -o "${TRANSFER_OUT}"
+"${TRANSFER_OUT}"
+
+"${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${CBA_SCALE_SRC}" -o "${CBA_SCALE_OUT}"
+"${CBA_SCALE_OUT}"
+
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic \
   "${VALIDATOR_SRC}" \
   "${ROOT_DIR}/firmware_esp8266/src/gif_asset_validator.cpp" \
   -o "${VALIDATOR_OUT}"
 "${VALIDATOR_OUT}" "${ROOT_DIR}/theme-packs/mini-classic/assets/mini.gif"
+
+# CBI/CBA sprites get the same semantic gate as GIFs, including every shipped
+# theme-pack sprite as a real-asset regression corpus.
+"${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic \
+  "${SPRITE_VALIDATOR_SRC}" \
+  "${ROOT_DIR}/firmware_esp8266/src/sprite_asset_validator.cpp" \
+  -o "${SPRITE_VALIDATOR_OUT}"
+"${SPRITE_VALIDATOR_OUT}" \
+  "${ROOT_DIR}"/theme-packs/*/assets/*.cbi \
+  "${ROOT_DIR}"/theme-packs/*/assets/*.cba
 
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic -D__MACH__ \
   -I"${ROOT_DIR}/firmware_esp8266/lib/AnimatedGIFVibeTV/src" \

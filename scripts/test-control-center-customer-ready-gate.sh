@@ -62,6 +62,15 @@ assert_gate_runs_customer_ui_copy_guard() {
 }
 
 assert_gate_runs_local_static_companion_test() {
+  bash -n "${ROOT}/scripts/test-control-center-local-static-companion.sh" \
+    || die "local static Companion test must be valid shell before it can prove readiness"
+  # A future parse error must fail even with macOS Bash's EXIT-trap behavior.
+  local invalid_script="${TMP_WORK_DIR}/invalid-static-test.sh"
+  sed 's/^main() {/main() { |/' \
+    "${ROOT}/scripts/test-control-center-local-static-companion.sh" > "$invalid_script"
+  if bash "$invalid_script" >"${TMP_WORK_DIR}/invalid-static-test.log" 2>&1; then
+    die "a malformed local static Companion test must not report success"
+  fi
   grep -F 'run_step "Local static Control Center Companion serve test"' "$GATE" >/dev/null \
     || die "customer-ready gate must run the local static Companion serve test"
   grep -F 'test-control-center-local-static-companion.sh' "$GATE" >/dev/null \

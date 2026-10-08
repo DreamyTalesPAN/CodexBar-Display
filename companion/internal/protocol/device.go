@@ -1,16 +1,28 @@
 package protocol
 
-import "strings"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+	"strings"
+)
 
 const (
-	FeatureTheme           = "theme"
-	FeatureThemeSpecV1     = "theme-spec-v1"
-	FeatureUsageSlotsV1    = "usage-slots-v1"
-	FeatureUsageWindowsV1  = "usage-windows-v1"
-	FeatureProviderSlotsV1 = "provider-slots-v1"
-	DefaultMaxFrameBytes  = 512
-	DefaultMinBrightness  = 10
-	DefaultMaxBrightness  = 100
+	FeatureTheme            = "theme"
+	FeatureThemeSpecV1      = "theme-spec-v1"
+	FeatureUsageSlotsV1     = "usage-slots-v1"
+	FeatureUsageWindowsV1   = "usage-windows-v1"
+	FeatureProviderSlotsV1  = "provider-slots-v1"
+	FeatureProviderAssetsV1 = "provider-assets-v1"
+	FeatureColorStopsV1     = "color-stops-v1"
+	FeatureTextValignV1     = "text-valign-v1"
+	DefaultMaxFrameBytes    = 512
+	DefaultMinBrightness    = 10
+	DefaultMaxBrightness    = 100
+	FeatureCableTransferV1  = "cable-transfer-v1"
+	FeatureCableTransferV2  = "cable-transfer-v2"
+	FeatureCableHealthV1    = "cable-health-v1"
 )
 
 type DisplayBrightnessCapabilities struct {
@@ -37,31 +49,41 @@ type StandbyCapabilities struct {
 }
 
 type ThemeCapabilities struct {
-	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
-	SupportsUsageSlotsV1    bool     `json:"supportsUsageSlotsV1,omitempty"`
-	SupportsUsageWindowsV1  bool     `json:"supportsUsageWindowsV1,omitempty"`
-	SupportsProviderSlotsV1 bool     `json:"supportsProviderSlotsV1,omitempty"`
-	MaxUsageWindows         int      `json:"maxUsageWindows,omitempty"`
-	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
-	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
-	MaxStoredThemeSpecBytes int      `json:"maxStoredThemeSpecBytes,omitempty"`
-	MaxThemePrimitives      int      `json:"maxThemePrimitives,omitempty"`
-	MaxThemeGifAssets       int      `json:"maxThemeGifAssets,omitempty"`
-	MaxThemeGifBytes        int      `json:"maxThemeGifBytes,omitempty"`
-	MaxThemeGifWidth        int      `json:"maxThemeGifWidth,omitempty"`
-	MaxThemeGifHeight       int      `json:"maxThemeGifHeight,omitempty"`
-	MaxThemeGifPixels       int      `json:"maxThemeGifPixels,omitempty"`
-	MaxThemeGifLzwBits      int      `json:"maxThemeGifLzwBits,omitempty"`
-	SupportedPrimitiveTypes []string `json:"supportedPrimitiveTypes,omitempty"`
-	BuiltinThemes           []string `json:"builtinThemes,omitempty"`
-	CachedThemeID           string   `json:"cachedThemeId,omitempty"`
-	CachedThemeRev          int      `json:"cachedThemeRev,omitempty"`
+	SupportsThemeSpecV1      bool     `json:"supportsThemeSpecV1,omitempty"`
+	SupportsUsageSlotsV1     bool     `json:"supportsUsageSlotsV1,omitempty"`
+	SupportsUsageWindowsV1   bool     `json:"supportsUsageWindowsV1,omitempty"`
+	SupportsProviderSlotsV1  bool     `json:"supportsProviderSlotsV1,omitempty"`
+	SupportsProviderAssetsV1 bool     `json:"supportsProviderAssetsV1,omitempty"`
+	SupportsColorStopsV1     bool     `json:"supportsColorStopsV1,omitempty"`
+	SupportsTextValignV1     bool     `json:"supportsTextValignV1,omitempty"`
+	MaxUsageWindows          int      `json:"maxUsageWindows,omitempty"`
+	SupportsStoredThemes     bool     `json:"supportsStoredThemes,omitempty"`
+	MaxThemeSpecBytes        int      `json:"maxThemeSpecBytes,omitempty"`
+	MaxStoredThemeSpecBytes  int      `json:"maxStoredThemeSpecBytes,omitempty"`
+	MaxThemePrimitives       int      `json:"maxThemePrimitives,omitempty"`
+	MaxThemeGifAssets        int      `json:"maxThemeGifAssets,omitempty"`
+	MaxThemeGifBytes         int      `json:"maxThemeGifBytes,omitempty"`
+	MaxThemeGifWidth         int      `json:"maxThemeGifWidth,omitempty"`
+	MaxThemeGifHeight        int      `json:"maxThemeGifHeight,omitempty"`
+	MaxThemeGifPixels        int      `json:"maxThemeGifPixels,omitempty"`
+	MaxThemeGifLzwBits       int      `json:"maxThemeGifLzwBits,omitempty"`
+	SupportedPrimitiveTypes  []string `json:"supportedPrimitiveTypes,omitempty"`
+	BuiltinThemes            []string `json:"builtinThemes,omitempty"`
+	CachedThemeID            string   `json:"cachedThemeId,omitempty"`
+	CachedThemeRev           int      `json:"cachedThemeRev,omitempty"`
 }
 
 type TransportCapabilities struct {
-	Active    string   `json:"active,omitempty"`
-	Supported []string `json:"supported,omitempty"`
-	Mode      string   `json:"mode,omitempty"`
+	Active            string   `json:"active,omitempty"`
+	Supported         []string `json:"supported,omitempty"`
+	Mode              string   `json:"mode,omitempty"`
+	TransitionPending bool     `json:"transitionPending,omitempty"`
+	TransitionFrom    string   `json:"transitionFrom,omitempty"`
+	TransitionTo      string   `json:"transitionTo,omitempty"`
+	// CableOnlyUpdates is true on firmware that takes setup, pairing and
+	// updates only over the USB cable, false on a legacy WiFi VibeTV and
+	// missing on older firmware (issue #489).
+	CableOnlyUpdates *bool `json:"cableOnlyUpdates,omitempty"`
 }
 
 type AuthCapabilities struct {
@@ -93,6 +115,84 @@ type DeviceHello struct {
 	Capabilities              CapabilityBlock `json:"capabilities,omitempty"`
 }
 
+// DeviceSettings is the shared settings payload returned by both the WiFi
+// HTTP API and the Cable control protocol.
+type DeviceSettings struct {
+	Display DeviceDisplaySettings  `json:"display"`
+	Standby *DeviceStandbySettings `json:"standby,omitempty"`
+}
+
+type DeviceDisplaySettings struct {
+	BrightnessPercent int `json:"brightnessPercent"`
+}
+
+type DeviceStandbySettings struct {
+	Enabled           bool    `json:"enabled"`
+	TimeoutMinutes    int     `json:"timeoutMinutes"`
+	BrightnessPercent int     `json:"brightnessPercent"`
+	ScreensaverPath   *string `json:"screensaverPath"`
+}
+
+// DeviceSettingsPatch keeps omitted fields distinct from explicit zero/empty
+// values so Cable and WiFi apply exactly the same partial-update semantics.
+type DeviceSettingsPatch struct {
+	BrightnessPercent *int                   `json:"brightnessPercent,omitempty"`
+	Standby           *DeviceStandbySettings `json:"standby,omitempty"`
+}
+
+type WiFiNetwork struct {
+	SSID      string `json:"ssid"`
+	RSSI      int    `json:"rssi"`
+	Encrypted bool   `json:"encrypted"`
+}
+
+// HelloWithoutCapabilitiesError is a WiFi hello whose capabilities block is
+// missing (issue #526). Firmware 1.0.45 at low heap ends its answer with
+// `"capabilities":}`, which is not JSON. Everything before that is intact, so
+// Hello names the VibeTV: device ID, board, firmware, features. Transport
+// mode, limits and theme capabilities are not known. It is an error so that
+// every reader of a hello treats it as a failed hello unless it asks for the
+// identity with HelloIdentity.
+type HelloWithoutCapabilitiesError struct {
+	Hello DeviceHello
+}
+
+func (e *HelloWithoutCapabilitiesError) Error() string {
+	return "VibeTV /hello arrived without capabilities"
+}
+
+// HelloIdentity returns the identity of a hello that failed only because its
+// capabilities block was missing.
+func HelloIdentity(err error) (DeviceHello, bool) {
+	var incomplete *HelloWithoutCapabilitiesError
+	if !errors.As(err, &incomplete) {
+		return DeviceHello{}, false
+	}
+	return incomplete.Hello, true
+}
+
+const helloWithoutCapabilitiesSuffix = `,"capabilities":}`
+
+// DecodeWiFiHello is the one decoder for the body of GET /hello.
+func DecodeWiFiHello(r io.Reader) (DeviceHello, error) {
+	body, err := io.ReadAll(io.LimitReader(r, 64*1024))
+	if err != nil {
+		return DeviceHello{}, err
+	}
+	var hello DeviceHello
+	err = json.Unmarshal(body, &hello)
+	if err == nil {
+		return hello.Normalize(), nil
+	}
+	if head, cut := bytes.CutSuffix(bytes.TrimSpace(body), []byte(helloWithoutCapabilitiesSuffix)); cut {
+		var identity DeviceHello
+		if json.Unmarshal(append(bytes.Clone(head), '}'), &identity) == nil && strings.TrimSpace(identity.DeviceID) != "" {
+			return DeviceHello{}, &HelloWithoutCapabilitiesError{Hello: identity.Normalize()}
+		}
+	}
+	return DeviceHello{}, err
+}
+
 func (h DeviceHello) Normalize() DeviceHello {
 	h.Kind = strings.TrimSpace(strings.ToLower(h.Kind))
 	h.Board = strings.TrimSpace(strings.ToLower(h.Board))
@@ -121,6 +221,8 @@ func (h DeviceHello) Normalize() DeviceHello {
 	}
 	h.Capabilities.Transport.Active = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Active))
 	h.Capabilities.Transport.Mode = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Mode))
+	h.Capabilities.Transport.TransitionFrom = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionFrom))
+	h.Capabilities.Transport.TransitionTo = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionTo))
 	for i := range h.Capabilities.Transport.Supported {
 		h.Capabilities.Transport.Supported[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Supported[i]))
 	}
@@ -145,6 +247,8 @@ func (h DeviceHello) HasFeature(feature string) bool {
 
 type DeviceCapabilities struct {
 	Known                      bool
+	DeviceID                   string
+	ConnectionMode             string
 	ProtocolVersion            int
 	SupportedProtocolVersions  []int
 	PreferredProtocolVersion   int
@@ -157,6 +261,9 @@ type DeviceCapabilities struct {
 	SupportsUsageSlotsV1       bool
 	SupportsUsageWindowsV1     bool
 	SupportsProviderSlotsV1    bool
+	SupportsProviderAssetsV1   bool
+	SupportsColorStopsV1       bool
+	SupportsTextValignV1       bool
 	MaxUsageWindows            int
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
@@ -203,12 +310,17 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	supportsUsageWindowsV1 := h.HasFeature(FeatureUsageWindowsV1) || h.Capabilities.Theme.SupportsUsageWindowsV1
 	supportsUsageSlotsV1 := h.HasFeature(FeatureUsageSlotsV1) || h.Capabilities.Theme.SupportsUsageSlotsV1 || supportsUsageWindowsV1
 	supportsProviderSlotsV1 := h.HasFeature(FeatureProviderSlotsV1) || h.Capabilities.Theme.SupportsProviderSlotsV1
+	supportsProviderAssetsV1 := h.HasFeature(FeatureProviderAssetsV1) || h.Capabilities.Theme.SupportsProviderAssetsV1
+	supportsColorStopsV1 := h.HasFeature(FeatureColorStopsV1) || h.Capabilities.Theme.SupportsColorStopsV1
+	supportsTextValignV1 := h.HasFeature(FeatureTextValignV1) || h.Capabilities.Theme.SupportsTextValignV1
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
 	}
 
 	caps := DeviceCapabilities{
+		DeviceID:                   h.DeviceID,
+		ConnectionMode:             h.Capabilities.Transport.Mode,
 		ProtocolVersion:            h.ProtocolVersion,
 		SupportedProtocolVersions:  supportedProtocols,
 		PreferredProtocolVersion:   h.PreferredProtocolVersion,
@@ -221,6 +333,9 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsUsageSlotsV1:       supportsUsageSlotsV1,
 		SupportsUsageWindowsV1:     supportsUsageWindowsV1,
 		SupportsProviderSlotsV1:    supportsProviderSlotsV1,
+		SupportsProviderAssetsV1:   supportsProviderAssetsV1,
+		SupportsColorStopsV1:       supportsColorStopsV1,
+		SupportsTextValignV1:       supportsTextValignV1,
 		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,

@@ -6,22 +6,210 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"runtime"
 	"strings"
+	"sync"
+	"time"
 )
 
 const minProviderSettingsVersion = "0.27.0"
 
 var runProviderCommandFn = runUsageCommand
 
+// providerProbePerProvider is true where the CLI is Win-CodexBar 0.56.8: no usage call
+// for every switched-on provider (Win-CodexBar 0.56.8, see runUsageAllEnabled).
+// A variable so the Windows path is testable on the Mac.
+var providerProbePerProvider = runtime.GOOS == "windows"
+
+// perProviderProbeTimeout caps one provider probe. 18 s timed out real
+// customers: the Windows Claude probe alone may take 24 s plus a trust
+// rerun, and a Mac Claude check through Claude Code reported "The provider
+// check timed out." while the provider was working.
+const perProviderProbeTimeout = 40 * time.Second
+
+// ProviderCheckBudget is the longest a caller waits for one provider check:
+// the 5 s inventory read plus one probe. Request and refresh contexts that
+// wrap a check must be at least this long.
+const ProviderCheckBudget = perProviderProbeTimeout + 5*time.Second
+
+// maxParallelProviderProbes matches Win-CodexBar's own refresh
+// (MAX_CONCURRENT_PROVIDER_FETCHES = 8), which also asks the switched-on
+// providers side by side.
+const maxParallelProviderProbes = 8
+
+// withoutDeadline drops the caller's deadline but keeps its values and its
+// explicit cancellation: a client that disconnects or a Companion that shuts
+// down still ends the sequential Windows probes, while the caller's expired
+// deadline is not forwarded -- the shared time budget is replaced by the
+// per-provider one.
+func withoutDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stop := context.AfterFunc(ctx, func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			cancel()
+		}
+	})
+	return detached, func() {
+		stop()
+		cancel()
+	}
+}
+
+// providerInventoryArgs is the CLI command for the provider inventory.
+// Win-CodexBar 0.56.8 has no JSON inventory (#415), so Windows reads the
+// text form that parseProviderSettings also understands.
+func providerInventoryArgs() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"config", "providers"}
+	}
+	return []string{"config", "providers", "--json"}
+}
+
+// runUsageAllEnabled asks for usage of every switched-on provider. The Mac
+// CLI does that with a plain "usage --json". Win-CodexBar 0.56.8 defaults to
+// Claude only and its "--provider all" walks all 69 providers, which does not
+// finish inside the probe timeout (#415). Windows therefore reads the
+// inventory and asks each switched-on provider on its own, side by side, then
+// joins the answers into the same JSON array the Mac CLI returns.
+func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, extra ...string) ([]byte, error) {
+	if !providerProbePerProvider {
+		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
+	}
+	raw, err := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
+	if err != nil {
+		return nil, fmt.Errorf("read provider inventory: %w", err)
+	}
+	inventory, err := parseProviderSettings(raw)
+	if err != nil {
+		return nil, fmt.Errorf("read provider inventory: %w", err)
+	}
+	// One hanging provider CLI must not hold every provider after it for
+	// the collector's 300 s default; each probe gets the same short cap as
+	// the health join.
+	if timeout > perProviderProbeTimeout {
+		timeout = perProviderProbeTimeout
+	}
+	return probeEnabledProviders(ctx, timeout, inventory, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+		args := append([]string{"usage", "--json", "--provider", setting.ID}, extra...)
+		return runUsageCommandFn(ctx, timeout, bin, args...)
+	})
+}
+
+// probeEnabledProviders runs probe for every switched-on provider, up to
+// maxParallelProviderProbes at a time, and joins the answers in inventory
+// order. One after another, each capped provider added its full cap to the
+// check: two slow providers already outlasted the Control Center's request.
+// Side by side, a full check takes as long as its slowest provider.
+//
+// The whole join shares one budget of timeout, so it always fits
+// ProviderCheckBudget: a provider that waits for a free slot gets only the
+// time left, and one that cannot start before the budget ends is reported
+// unavailable instead of opening a second round.
+//
+// A switched-on provider whose probe produced no JSON is reported
+// unavailable, not dropped from the answer. Once the caller gave up, no
+// further probe starts.
+func probeEnabledProviders(ctx context.Context, timeout time.Duration, settings []ProviderSetting, probe func(ProviderSetting, time.Duration) ([]byte, error)) ([]byte, error) {
+	type answer struct {
+		items []json.RawMessage
+		err   error
+	}
+	deadline := time.Now().Add(timeout)
+	answers := make([]answer, len(settings))
+	slots := make(chan struct{}, maxParallelProviderProbes)
+	var wg sync.WaitGroup
+	for i := range settings {
+		if !settings[i].Enabled {
+			continue
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-slots }()
+			if ctx.Err() != nil {
+				return
+			}
+			var out []byte
+			var runErr error
+			if left := time.Until(deadline); left > 0 {
+				out, runErr = probe(settings[i], left)
+			} else {
+				runErr = context.DeadlineExceeded
+			}
+			answers[i].err = runErr
+			var root any
+			if json.Unmarshal(bytes.TrimSpace(out), &root) != nil {
+				if encoded, encodeErr := json.Marshal(silentProbePayload(settings[i], runErr)); encodeErr == nil {
+					answers[i].items = []json.RawMessage{encoded}
+				}
+				return
+			}
+			for _, item := range extractProviderList(root) {
+				if encoded, encodeErr := json.Marshal(item); encodeErr == nil {
+					answers[i].items = append(answers[i].items, encoded)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	joined := make([]json.RawMessage, 0, len(settings))
+	var lastErr error
+	for _, answer := range answers {
+		if answer.err != nil {
+			lastErr = answer.err
+		}
+		joined = append(joined, answer.items...)
+	}
+	if len(joined) == 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+	}
+	return json.Marshal(joined)
+}
+
+// silentProbePayload is the error item the Mac CLI would have returned for a
+// provider whose Windows probe ended without JSON.
+func silentProbePayload(setting ProviderSetting, runErr error) map[string]any {
+	reason := "provider probe returned no result"
+	if runErr != nil {
+		reason = "provider probe failed: " + runErr.Error()
+	}
+	return map[string]any{
+		"provider": setting.ID,
+		"label":    setting.Label,
+		"error":    map[string]any{"kind": "probe", "message": reason},
+	}
+}
+
 type ProviderHealthState string
 
 const (
-	ProviderHealthHealthy       ProviderHealthState = "healthy"
-	ProviderHealthAuthRequired  ProviderHealthState = "auth_required"
+	ProviderHealthHealthy      ProviderHealthState = "healthy"
+	ProviderHealthAuthRequired ProviderHealthState = "auth_required"
+	// ProviderHealthRateLimited: the sign-in works and the provider's own
+	// usage endpoint refused this check for being too frequent. Waiting fixes
+	// it, so the row must not offer a sign-in the customer does not need.
+	ProviderHealthRateLimited ProviderHealthState = "rate_limited"
+	// ProviderHealthBrowserSignIn: signed in to the tool, but the usage
+	// endpoint only answers a browser session. See ProviderBrowserSignInRequired.
+	ProviderHealthBrowserSignIn ProviderHealthState = "browser_sign_in_required"
 	ProviderHealthSetupRequired ProviderHealthState = "setup_required"
-	ProviderHealthNoUsage       ProviderHealthState = "no_usage_available"
-	ProviderHealthUnavailable   ProviderHealthState = "unavailable"
-	ProviderHealthChecking      ProviderHealthState = "checking"
+	// ProviderHealthUnsupported mirrors ProviderUnsupported: the account lost
+	// access to the provider, so no sign-in or repair on this row resolves it.
+	ProviderHealthUnsupported ProviderHealthState = "unsupported"
+	ProviderHealthNoUsage     ProviderHealthState = "no_usage_available"
+	ProviderHealthUnavailable ProviderHealthState = "unavailable"
+	ProviderHealthChecking    ProviderHealthState = "checking"
 )
 
 type ProviderServiceState string
@@ -48,6 +236,9 @@ type ProviderSetting struct {
 	// companionapi.reportedProviderMessage is the one place that redacts it
 	// before it reaches a screen.
 	Reported string
+	// SignInURL is the browser page CodexBar named for a
+	// ProviderHealthBrowserSignIn provider; empty otherwise.
+	SignInURL string
 }
 
 type ProviderSettingsErrorKind string
@@ -88,7 +279,7 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 	}
 
 	timeout := commandTimeout()
-	healthRaw, healthErr := runProviderCommandFn(ctx, timeout, bin, "usage", "--json", "--status", "--web-timeout", "8")
+	healthRaw, healthErr := runProviderHealthProbe(ctx, timeout, bin, settings)
 	health := parseProviderHealth(healthRaw)
 	for i := range settings {
 		if !settings[i].Enabled {
@@ -98,11 +289,47 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 			settings[i].Health = current.health
 			settings[i].Service = current.service
 			settings[i].Reported = current.reported
+			settings[i].SignInURL = current.signInURL
 		} else if healthErr != nil {
 			settings[i].Health = ProviderHealthUnavailable
 		}
 	}
 	return settings, nil
+}
+
+// runProviderHealthProbe reads best-effort health for the switched-on
+// providers. The Mac CLI answers a plain "usage --json --status" for all of
+// them. Win-CodexBar 0.56.8 answers that call for Claude only and leaves the
+// other switched-on providers out entirely, so they would stay "checking"
+// forever and block the provider step (#437). Windows therefore probes each
+// switched-on provider on its own, exactly like runUsageAllEnabled, and joins
+// the answers into the array the Mac CLI returns.
+func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin string, settings []ProviderSetting) ([]byte, error) {
+	statusArgs := []string{"--status", "--web-timeout", "8"}
+	if !providerProbePerProvider {
+		return runProviderCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, statusArgs...)...)
+	}
+	// Each probe gets its own short budget (#437): under the caller's shared
+	// deadline (25 s in the background health refresh) a slow first provider
+	// would leave the next one an almost spent context and report it
+	// unavailable although it is healthy. The inherited deadline is dropped
+	// (values and cancellation are kept) and replaced by a fixed cap per
+	// provider, so a hanging CLI cannot keep the rows "checking" for the
+	// 300 s collector timeout.
+	probeCtx, stop := withoutDeadline(ctx)
+	defer stop()
+	if timeout > perProviderProbeTimeout {
+		timeout = perProviderProbeTimeout
+	}
+	// A probe that timed out or exited without JSON must not leave its
+	// provider "checking" behind a healthy neighbour: probeEnabledProviders
+	// reports it unavailable with the reason. Whether a probe may still start
+	// follows the caller's own context, as before; the probe itself runs
+	// under the detached one.
+	return probeEnabledProviders(ctx, timeout, settings, func(setting ProviderSetting, timeout time.Duration) ([]byte, error) {
+		args := append([]string{"usage", "--json", "--provider", setting.ID}, statusArgs...)
+		return runProviderCommandFn(probeCtx, timeout, bin, args...)
+	})
 }
 
 // FetchProviderInventory returns CodexBar's authoritative dynamic provider
@@ -121,11 +348,11 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	if err := checkProviderSettingsVersion(ctx, bin); err != nil {
-		return nil, "", providerSettingsError(ProviderSettingsErrorVersion, err)
+		return nil, "", err
 	}
 
 	timeout := commandTimeout()
-	raw, err := runProviderCommandFn(ctx, timeout, bin, "config", "providers", "--json")
+	raw, err := runProviderCommandFn(ctx, timeout, bin, providerInventoryArgs()...)
 	if err != nil {
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
@@ -158,24 +385,47 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	if enabled {
 		action = "enable"
 	}
-	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, "config", action, "--provider", providerID)
+	// Consent first: if the settings file cannot take the flag, Claude
+	// stays switched off and the UI matches CodexBar without a rollback.
+	if enabled && providerID == "claude" && providerProbePerProvider {
+		if err := grantClaudeCredentialsFn(); err != nil {
+			return providerSettingsError(ProviderSettingsErrorUnavailable, err)
+		}
+	}
+	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, providerToggleArgs(action, providerID)...)
 	if err != nil {
 		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	return nil
 }
 
+// providerToggleArgs is the CLI command that switches one provider on or off.
+// The Mac CLI takes the provider as "--provider <id>"; Win-CodexBar 0.56.8
+// takes it as a positional argument and rejects the flag (#437). The ID has
+// been validated against the live inventory, so it can never be mistaken for
+// an option.
+func providerToggleArgs(action, providerID string) []string {
+	if providerProbePerProvider {
+		return []string{"config", action, providerID}
+	}
+	return []string{"config", action, "--provider", providerID}
+}
+
+// Only a version that was read and is too old asks for a newer Mac App. A
+// `--version` that did not answer in time -- CodexBar starting cold next to a
+// cost refresh, right after the background service restarted -- is the
+// settings being unavailable for a moment, not the app being outdated.
 func checkProviderSettingsVersion(ctx context.Context, bin string) error {
 	version, err := installedVersion(ctx, bin)
 	if err != nil {
-		return err
+		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	minimum, err := parseLooseVersion(minProviderSettingsVersion)
 	if err != nil {
-		return err
+		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
 	if version.Compare(minimum) < 0 {
-		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minProviderSettingsVersion)
+		return providerSettingsError(ProviderSettingsErrorVersion, fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minProviderSettingsVersion))
 	}
 	return nil
 }
@@ -192,7 +442,8 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 		DefaultEnabled bool   `json:"defaultEnabled"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &inventory); err != nil {
-		return nil, fmt.Errorf("parse provider inventory: %w", err)
+		// Win-CodexBar (0.56.8) has no JSON inventory yet; see #415.
+		return parseProviderSettingsText(raw)
 	}
 	settings := make([]ProviderSetting, 0, len(inventory))
 	seen := make(map[string]struct{}, len(inventory))
@@ -228,6 +479,42 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 	return settings, nil
 }
 
+// providerInventoryTextLine matches the text inventory format shared by the
+// Mac and Windows CLIs: "codex: enabled default (Codex)".
+var providerInventoryTextLine = regexp.MustCompile(`^([a-z0-9._-]+):\s+(enabled|disabled)(\s+default)?\s+\((.*)\)\s*$`)
+
+func parseProviderSettingsText(raw []byte) ([]ProviderSetting, error) {
+	settings := make([]ProviderSetting, 0, 8)
+	seen := make(map[string]struct{}, 8)
+	for _, line := range strings.Split(string(raw), "\n") {
+		match := providerInventoryTextLine.FindStringSubmatch(strings.TrimSpace(line))
+		if match == nil {
+			continue
+		}
+		id := match[1]
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		label := strings.TrimSpace(match[4])
+		if label == "" {
+			label = humanLabel(id)
+		}
+		settings = append(settings, ProviderSetting{
+			ID:             id,
+			Label:          label,
+			Enabled:        match[2] == "enabled",
+			DefaultEnabled: match[3] != "",
+			Health:         ProviderHealthChecking,
+			Service:        ProviderServiceUnknown,
+		})
+	}
+	if len(settings) == 0 {
+		return nil, errors.New("parse provider inventory: neither JSON nor text inventory")
+	}
+	return settings, nil
+}
+
 func validProviderID(id string) bool {
 	if id == "" || len(id) > 80 {
 		return false
@@ -244,9 +531,10 @@ func validProviderID(id string) bool {
 }
 
 type providerHealth struct {
-	health   ProviderHealthState
-	service  ProviderServiceState
-	reported string
+	health    ProviderHealthState
+	service   ProviderServiceState
+	reported  string
+	signInURL string
 }
 
 func parseProviderHealth(raw []byte) map[string]providerHealth {
@@ -266,16 +554,22 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 		}
 		state := ProviderHealthHealthy
 		reported := ""
+		signInURL := ""
 		if providerPayloadHasError(payload) {
 			reported = providerHealthErrorText(payload["error"])
 			state = classifyProviderHealth(reported)
+			if page := browserSignInPage(id, reported); page != "" {
+				state = ProviderHealthBrowserSignIn
+				signInURL = page
+			}
 		} else if !providerPayloadHasUsage(payload) {
 			state = ProviderHealthNoUsage
 		}
 		result[id] = providerHealth{
-			health:   state,
-			service:  classifyProviderService(firstStringAtPaths(payload, "status.indicator")),
-			reported: reported,
+			health:    state,
+			service:   classifyProviderService(firstStringAtPaths(payload, "status.indicator")),
+			reported:  reported,
+			signInURL: signInURL,
 		}
 	}
 	return result
@@ -293,7 +587,21 @@ func providerHealthErrorText(value any) string {
 }
 
 func classifyProviderHealth(raw string) ProviderHealthState {
+	// Share the terminal diagnosis with the setup path, ahead of the auth
+	// markers below: the shutdown message contains "oauth" and "sign in".
+	if classifyProviderError(raw) == ProviderUnsupported {
+		return ProviderHealthUnsupported
+	}
 	message := strings.ToLower(raw)
+	// Before the auth markers, and for the same reason classifyProviderError
+	// puts it first: the provider names the endpoint that refused ("usage
+	// endpoint is rate limited") while the sign-in it used is still valid.
+	// Reading that as auth_required sent the customer to re-authenticate
+	// something that already works, whenever the cached health scan spoke for
+	// the row instead of a fresh exact readiness.
+	if isThrottlingDetail(message) && !namesUnusableCredential(message) {
+		return ProviderHealthRateLimited
+	}
 	for _, marker := range []string{"auth", "unauthorized", "oauth", "expired", "sign in", "signin", "login", "cookie", "token"} {
 		if strings.Contains(message, marker) {
 			return ProviderHealthAuthRequired

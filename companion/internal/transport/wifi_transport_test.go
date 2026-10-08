@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
@@ -109,20 +112,24 @@ func TestWiFiTransportSendLineAllowsSlowESP8266Render(t *testing.T) {
 }
 
 func TestWiFiTransportSendLineAcceptsEOFWhenESPClosesAfterReadingFrame(t *testing.T) {
-	var gotBody string
+	// Capacity 2 lets a retried request be recorded instead of blocking the handler.
+	bodies := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("read frame: %v", err)
+			t.Errorf("read frame: %v", err)
+			return
 		}
-		gotBody = string(body)
+		bodies <- string(body)
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("test server does not support hijacking")
+			t.Error("test server does not support hijacking")
+			return
 		}
 		conn, _, err := hijacker.Hijack()
 		if err != nil {
-			t.Fatalf("hijack connection: %v", err)
+			t.Errorf("hijack connection: %v", err)
+			return
 		}
 		_ = conn.Close()
 	}))
@@ -133,8 +140,11 @@ func TestWiFiTransportSendLineAcceptsEOFWhenESPClosesAfterReadingFrame(t *testin
 	if err := transport.SendLine(server.URL, line); err != nil {
 		t.Fatalf("response-side EOF after a complete frame must not trigger a retry: %v", err)
 	}
-	if gotBody != string(line) {
+	if gotBody := <-bodies; gotBody != string(line) {
 		t.Fatalf("device did not receive the complete frame: %q", gotBody)
+	}
+	if len(bodies) != 0 {
+		t.Fatalf("frame was sent %d extra time(s) after EOF", len(bodies))
 	}
 }
 
@@ -344,6 +354,23 @@ func TestWiFiTransportPairDeviceDoesNotRetryAuthorizationFailures(t *testing.T) 
 	}
 }
 
+// Issue #489: current firmware has no WiFi pairing endpoint. Theme installs and
+// other WiFi retries must stop at once and point to the cable.
+func TestWiFiTransportPairDeviceAsksForCableWhenWiFiPairingIsGone(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	_, err := transport.PairDevice(server.URL)
+	if err == nil || !strings.Contains(err.Error(), "USB cable") || attempts.Load() != 1 {
+		t.Fatalf("err=%v attempts=%d want one attempt with cable guidance", err, attempts.Load())
+	}
+}
+
 func TestWiFiTransportResolveTargetAddsHTTPDefault(t *testing.T) {
 	transport := NewWiFiTransportWithClient(nil)
 	target, err := transport.ResolvePort("192.168.178.123")
@@ -370,7 +397,7 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	var gotPath string
 	var gotFilename string
 	var gotBody string
-	var gotToken string
+	var gotToken, gotHash string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/assets" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -382,6 +409,7 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 		}
 		gotToken = r.Header.Get(deviceAuthHeader)
 		gotPath = r.URL.Query().Get("path")
+		gotHash = r.URL.Query().Get("hash")
 		reader, err := r.MultipartReader()
 		if err != nil {
 			t.Fatalf("MultipartReader returned error: %v", err)
@@ -410,6 +438,10 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	}
 	if gotPath != "/themes/u/cm.cbi" || gotFilename != "cm.cbi" || gotBody != "CBI1\n" {
 		t.Fatalf("unexpected upload path=%q filename=%q body=%q", gotPath, gotFilename, gotBody)
+	}
+	// MD5 of "CBI1\n": VibeTV refuses the file unless its bytes match (#60).
+	if gotHash != "c97acf5b8f1b8e61fa88247b813e97c2" {
+		t.Fatalf("upload hash = %q", gotHash)
 	}
 	if gotToken != "env-token-456" {
 		t.Fatalf("unexpected auth token %q", gotToken)
@@ -661,5 +693,37 @@ func TestAssetUploadPaceStaysInsideFirmwareReadWait(t *testing.T) {
 	}
 	if assetUploadBytesPerSec < 8192 {
 		t.Fatalf("asset pace %d B/s would stretch a 24 KB GIF past a few seconds", assetUploadBytesPerSec)
+	}
+}
+
+// Issue #526: frames, theme installs and discovery need what the missing
+// capabilities block carries, so for them this answer is a hello that failed.
+func TestWiFiHelloWithoutCapabilitiesIsNotACompleteHello(t *testing.T) {
+	body, err := os.ReadFile("../protocol/testdata/wifi-hello-1.0.45-without-capabilities.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	caps, err := NewWiFiTransportWithClient(server.Client()).DeviceCapabilities(server.URL)
+	if err == nil || caps.Known {
+		t.Fatalf("capabilities must stay unknown: %+v %v", caps, err)
+	}
+	if _, ok := protocol.HelloIdentity(err); !ok {
+		t.Fatalf("the error must name the hello without capabilities, got %v", err)
+	}
+
+	result, err := DiscoverWiFiDevice(context.Background(), WiFiDiscoveryOptions{
+		Candidates:       []string{server.URL},
+		Client:           server.Client(),
+		Timeout:          time.Second,
+		ExpectedDeviceID: "16198106",
+	})
+	if err == nil {
+		t.Fatalf("discovery must not save a VibeTV whose transport is unknown: %+v", result)
 	}
 }

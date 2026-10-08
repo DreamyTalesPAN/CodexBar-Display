@@ -42,8 +42,19 @@ var (
 
 var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#111111"},{"t":"tx","x":28,"y":58,"v":"INSTALLING","s":2,"c":"#B6FF00"},{"t":"tx","x":36,"y":94,"v":"NEW THEME","s":2,"c":"#FFFFFF"},{"t":"p","x":34,"y":150,"w":172,"h":18,"b":"s","c":"#B6FF00","bg":"#303030"}]}`)
 
+// ErrFirmwareUpdateCableOnly marks a VibeTV that takes firmware updates only
+// over the USB cable (#489), so a WiFi retry cannot succeed.
+var ErrFirmwareUpdateCableOnly = errors.New("VibeTV installs updates only over the USB cable")
+
 type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
 type PairTokenStore func(target, token string) error
+
+type CableInstallOptions struct {
+	Capabilities protocol.DeviceCapabilities
+	Prepare      func(context.Context, string) error
+	SendLine     func([]byte) error
+	Upload       func(context.Context, string, []byte, string) error
+}
 
 type Options struct {
 	// Slot is themepack.UsageLive or themepack.UsageScreensaver. Empty means
@@ -67,6 +78,7 @@ type Options struct {
 	UploadSettleDelay   time.Duration
 	Now                 func() time.Time
 	FetchLiveFrame      func(context.Context) (protocol.Frame, error)
+	Cable               *CableInstallOptions
 }
 
 type Result struct {
@@ -176,6 +188,9 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		themeName = pack.Manifest.ID
 	}
 	fmt.Fprintf(out, "Preparing theme: %s\n", themeName)
+	if opts.Cable != nil {
+		return installCablePack(ctx, pack, slot, themeName, opts.Cable, out)
+	}
 	if opts.Verbose {
 		themeSource := resolvedPack
 		if opts.PackBytes == nil {
@@ -218,11 +233,15 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			manifestURL = DefaultFirmwareManifestURL
 		}
 		if err := opts.FirmwareUpdater(ctx, resolvedTarget, manifestURL); err != nil {
+			hint := "keep VibeTV powered and on the same WiFi, then retry theme install"
+			if errors.Is(err, ErrFirmwareUpdateCableOnly) {
+				hint = "connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then retry theme install"
+			}
 			return Result{}, &InstallError{
 				Op:   "theme-pack/check-firmware",
 				Code: errcode.UpgradeFlashFirmware,
 				Err:  err,
-				Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+				Hint: hint,
 			}
 		}
 		fmt.Fprintln(out, "Rechecking device after firmware update...")
@@ -246,51 +265,46 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		}
 	}
 
-	// The install screen and its restore belong to the live slot. A screensaver
-	// install must leave the running theme on screen untouched.
-	if live {
-		previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
-		if previousThemePathErr != nil && opts.Verbose {
-			fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
+	if !live {
+		if err := clearScreensaverBeforeUpload(wifi, &resolvedTarget, opts.PairTokenStore, out); err != nil {
+			return Result{}, &InstallError{Op: "theme-pack/screensaver-slot", Code: errcode.UpgradeFlashFirmware, Err: err}
 		}
-		installScreenShown := false
-		defer func() {
-			if retErr == nil || !installScreenShown {
-				return
-			}
-			restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
-		}()
-		if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
-			if authRequired(err) {
-				pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
-				if pairErr != nil {
-					return Result{}, &InstallError{
-						Op:   "theme-pack/pair",
-						Code: errcode.UpgradeFlashFirmware,
-						Err:  pairErr,
-						Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-					}
+	}
+	// Both slots temporarily show the same installation screen.
+	previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
+	if previousThemePathErr != nil && opts.Verbose {
+		fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
+	}
+	installScreenShown := false
+	defer func() {
+		if (retErr == nil && live) || !installScreenShown {
+			return
+		}
+		restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+	}()
+	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
+		if authRequired(err) {
+			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
+			if pairErr != nil {
+				return Result{}, &InstallError{
+					Op:   "theme-pack/pair",
+					Code: errcode.UpgradeFlashFirmware,
+					Err:  pairErr,
+					Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
 				}
-				resolvedTarget = pairedTarget
-				err = sendInstallingThemeFrame(wifi, resolvedTarget, caps)
 			}
-			if err != nil {
-				fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
-			} else {
-				installScreenShown = true
-				fmt.Fprintln(out, "Install screen: showing on VibeTV")
-			}
+			resolvedTarget = pairedTarget
+			err = sendInstallingThemeFrame(wifi, resolvedTarget, caps)
+		}
+		if err != nil {
+			fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
 		} else {
 			installScreenShown = true
 			fmt.Fprintln(out, "Install screen: showing on VibeTV")
 		}
-	} else if err := clearScreensaverBeforeUpload(wifi, &resolvedTarget, opts.PairTokenStore, out); err != nil {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/screensaver-slot",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "keep VibeTV powered and on the same WiFi, then retry the screensaver install",
-		}
+	} else {
+		installScreenShown = true
+		fmt.Fprintln(out, "Install screen: showing on VibeTV")
 	}
 
 	retryNoted := false
@@ -369,6 +383,10 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	} else {
 		// Selecting the screensaver only records a reference on the device, so
 		// there is nothing rendered to verify and nothing to retry against.
+		if installScreenShown {
+			restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+			installScreenShown = false
+		}
 		fmt.Fprintln(out, "Selecting screensaver...")
 		if err := activateScreensaverWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, opts.PairTokenStore); err != nil {
 			return Result{}, &InstallError{
@@ -404,6 +422,64 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	}, nil
 }
 
+func installCablePack(
+	ctx context.Context,
+	pack *themepack.Pack,
+	slot,
+	themeName string,
+	cable *CableInstallOptions,
+	out io.Writer,
+) (Result, error) {
+	if cable == nil || cable.Prepare == nil || cable.Upload == nil || cable.SendLine == nil {
+		return Result{}, errors.New("cable theme transfer is unavailable")
+	}
+	if err := pack.ValidateAgainstCapabilities(cable.Capabilities); err != nil {
+		return Result{}, themePackCapabilitiesError(err)
+	}
+	if slot == themepack.UsageScreensaver && cable.Capabilities.Known && !cable.Capabilities.SupportsStandby {
+		return Result{}, &InstallError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  errors.New("VibeTV does not advertise a screensaver slot"),
+		}
+	}
+
+	// Reclaim interrupted installs before uploading anything, including after a
+	// disconnect or restart that prevented cleanup at the original failure.
+	if err := cable.Prepare(ctx, slot); err != nil {
+		return Result{}, &InstallError{Op: "theme-pack/prepare", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	if err := sendInstallingThemeFrameLine(cable.SendLine, cable.Capabilities); err != nil {
+		return Result{}, &InstallError{Op: "theme-pack/install-screen", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	fmt.Fprintln(out, "Uploading theme files by Cable...")
+	for _, asset := range pack.Assets {
+		if err := cable.Upload(ctx, asset.Entry.Path, asset.Data, ""); err != nil {
+			return Result{}, &InstallError{Op: "theme-pack/upload", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+	}
+	activation := "theme"
+	if slot == themepack.UsageScreensaver {
+		activation = "screensaver"
+	}
+	// The Cable firmware owns the safe post-activation slot sweep because it
+	// alone can enumerate LittleFS while this serial transfer holds the device.
+	if err := cable.Upload(ctx, pack.ThemeSpecFile.Entry.Path, pack.ThemeSpecRaw, activation); err != nil {
+		return Result{}, &InstallError{Op: "theme-pack/activate", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	fmt.Fprintln(out, "Theme transferred and activated by Cable.")
+	return Result{
+		ThemeID:           pack.ThemeSpec.ThemeID,
+		PackID:            pack.Manifest.ID,
+		Name:              themeName,
+		Slot:              slot,
+		Target:            "cable://vibetv",
+		ActivePath:        pack.ThemeSpecFile.Entry.Path,
+		ThemeRevision:     pack.ThemeSpec.ThemeRev,
+		CapabilitiesKnown: cable.Capabilities.Known,
+	}, nil
+}
+
 func themePackCapabilitiesError(err error) *InstallError {
 	return &InstallError{
 		Op:   "theme-pack/capabilities",
@@ -423,15 +499,24 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	missingSlots := isMissingUsageCapabilityError(err, protocol.FeatureUsageSlotsV1)
 	missingWindows := isMissingUsageCapabilityError(err, protocol.FeatureUsageWindowsV1)
 	missingProviderSlots := isMissingUsageCapabilityError(err, protocol.FeatureProviderSlotsV1)
+	missingProviderAssets := isMissingUsageCapabilityError(err, protocol.FeatureProviderAssetsV1)
+	missingColorStops := isMissingUsageCapabilityError(err, protocol.FeatureColorStopsV1)
+	missingTextValign := isMissingUsageCapabilityError(err, protocol.FeatureTextValignV1)
 	if (!missingSlots || caps.SupportsUsageSlotsV1) &&
 		(!missingWindows || caps.SupportsUsageWindowsV1) &&
-		(!missingProviderSlots || caps.SupportsProviderSlotsV1) {
+		(!missingProviderSlots || caps.SupportsProviderSlotsV1) &&
+		(!missingProviderAssets || caps.SupportsProviderAssetsV1) &&
+		(!missingColorStops || caps.SupportsColorStopsV1) &&
+		(!missingTextValign || caps.SupportsTextValignV1) {
 		return false
 	}
 	updatedCaps := caps
 	updatedCaps.SupportsUsageSlotsV1 = true
 	updatedCaps.SupportsUsageWindowsV1 = true
 	updatedCaps.SupportsProviderSlotsV1 = true
+	updatedCaps.SupportsProviderAssetsV1 = true
+	updatedCaps.SupportsColorStopsV1 = true
+	updatedCaps.SupportsTextValignV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 
@@ -490,6 +575,10 @@ func themeInstallCapabilities(
 }
 
 func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities) error {
+	return sendInstallingThemeFrameLine(func(line []byte) error { return wifi.SendLine(target, line) }, caps)
+}
+
+func sendInstallingThemeFrameLine(send func([]byte) error, caps protocol.DeviceCapabilities) error {
 	if !caps.SupportsThemeSpecV1 {
 		return errors.New("device does not support theme-spec-v1")
 	}
@@ -513,7 +602,7 @@ func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, 
 	if len(bytes.TrimSpace(line)) > maxFrameBytes {
 		return fmt.Errorf("install screen frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
 	}
-	if err := wifi.SendLine(target, line); err != nil {
+	if err := send(line); err != nil {
 		return fmt.Errorf("send install screen frame: %w", err)
 	}
 	return nil
@@ -1063,16 +1152,29 @@ func verifyThemeInstallHealth(wifi transportlayer.WiFiTransport, target, activeP
 	return lastErr
 }
 
+// ErrThemeNotRendered: the installed theme is the active one and the VibeTV
+// reports that it cannot draw it. A failed health read, a theme that is not
+// active or another active path are not this error.
+var ErrThemeNotRendered = errors.New("theme render not healthy")
+
 func validateThemeHealthSnapshot(health transportlayer.DeviceHealthSnapshot, activePath string, expectedGIFs map[string]struct{}) error {
-	if !health.Display.ThemeSpec.Active ||
-		!health.Display.ThemeSpec.RenderOk ||
-		(strings.TrimSpace(activePath) != "" && health.Display.ThemeSpec.Path != activePath) {
+	wrongTheme := !health.Display.ThemeSpec.Active ||
+		(strings.TrimSpace(activePath) != "" && health.Display.ThemeSpec.Path != activePath)
+	if wrongTheme || !health.Display.ThemeSpec.RenderOk {
+		cause := ErrThemeNotRendered
+		if wrongTheme {
+			// The installed theme is not the one that is up, so its render
+			// health says nothing about it yet.
+			cause = errors.New(ErrThemeNotRendered.Error())
+		}
 		return fmt.Errorf(
-			"theme render not healthy: active=%t path=%q renderOk=%t renderError=%q activeTheme=%q",
+			"%w: active=%t path=%q renderOk=%t renderError=%q renderErrorAsset=%q activeTheme=%q",
+			cause,
 			health.Display.ThemeSpec.Active,
 			health.Display.ThemeSpec.Path,
 			health.Display.ThemeSpec.RenderOk,
 			health.Display.ThemeSpec.RenderError,
+			health.Display.ThemeSpec.RenderErrorAsset,
 			health.Display.ActiveTheme,
 		)
 	}
@@ -1108,6 +1210,11 @@ func requiredGIFAssets(spec themespec.Spec) []string {
 			seen[primitive.AssetPath] = struct{}{}
 		}
 		for _, assetPath := range primitive.StateAssets {
+			if strings.TrimSpace(assetPath) != "" {
+				seen[assetPath] = struct{}{}
+			}
+		}
+		for _, assetPath := range primitive.ProviderAssets {
 			if strings.TrimSpace(assetPath) != "" {
 				seen[assetPath] = struct{}{}
 			}

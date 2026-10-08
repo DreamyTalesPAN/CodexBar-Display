@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { ColorField, NumberField, SelectField, TextField } from "./editor-fields";
@@ -160,6 +160,16 @@ export function PrimitiveInspector({
               ]}
             />
           </div>
+          <SelectField
+            label="Vertical align"
+            value={primitive.valign || "top"}
+            onChange={(value) => onChange("valign", value)}
+            options={[
+              ["top", "Top"],
+              ["middle", "Middle"],
+              ["bottom", "Bottom"],
+            ]}
+          />
           {primitive.fit === "shrink" &&
           primitive.width !== undefined &&
           textPrimitiveNaturalWidth(primitive) > primitive.width ? (
@@ -246,10 +256,13 @@ export function PrimitiveInspector({
               />
             </div>
           ) : null}
-          <ColorField
-            label="Bar color"
-            value={primitive.color || "#C7FF68"}
-            onChange={(value) => onChange("color", value)}
+          <ProgressColorStopsEditor
+            color={primitive.color || "#C7FF68"}
+            stops={primitive.colorStops || []}
+            onColorChange={(value) => onChange("color", value)}
+            onStopsChange={(value) =>
+              onChange("colorStops", value.length > 0 ? value : "")
+            }
           />
           <ColorField
             label="Track color"
@@ -325,4 +338,159 @@ export function PrimitiveInspector({
       </Button>
     </div>
   );
+}
+
+const DEFAULT_REMAINING_COLOR_STOPS: Array<{ gte: number; color: string }> = [
+  { gte: 75, color: "#22C55E" },
+  { gte: 50, color: "#FACC15" },
+  { gte: 25, color: "#F97316" },
+  { gte: 0, color: "#EF4444" },
+];
+
+function ProgressColorStopsEditor({
+  color,
+  onColorChange,
+  onStopsChange,
+  stops,
+}: {
+  color: string;
+  onColorChange: (value: string) => void;
+  onStopsChange: (value: Array<{ gte: number; color: string }>) => void;
+  stops: Array<{ gte: number; color: string }>;
+}) {
+  const hasStops = stops.length > 0;
+  // Keep editing order stable; the renderer sorts thresholds when selecting a color.
+
+  const handleStopChange = (
+    index: number,
+    field: "gte" | "color",
+    value: number | string,
+  ) => {
+    const next = stops.map((stop, stopIndex) =>
+      stopIndex === index
+        ? { ...stop, [field]: value }
+        : stop,
+    );
+    onStopsChange(next);
+  };
+
+  const handleRemoveStop = (index: number) => {
+    onStopsChange(stops.filter((_, stopIndex) => stopIndex !== index));
+  };
+
+  const handleAddStop = () => {
+    if (stops.length >= 4) {
+      return;
+    }
+    onStopsChange([
+      ...stops,
+      { color, gte: nextUnusedGte(stops) },
+    ]);
+  };
+
+  return (
+    <>
+      <div className="grid gap-2 rounded-[var(--radius-control)] border bg-muted px-3 py-2">
+        <span className="text-xs font-black uppercase tracking-normal text-muted-foreground">
+          Fill color
+        </span>
+        {hasStops ? (
+          <p className="text-xs text-muted-foreground">
+            Visible fill comes from remaining-% thresholds below. Bar color is
+            only the fallback if no threshold matches.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Solid bar color is the visible fill. Add remaining-% thresholds to
+            change color as quota drops.
+          </p>
+        )}
+        {hasStops
+          ? stops.map((stop, index) => (
+              <div
+                className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] items-end gap-2"
+                key={index}
+              >
+                <NumberField
+                  label={index === 0 ? "At remaining ≥" : "≥"}
+                  max={100}
+                  value={stop.gte}
+                  onChange={(value) => handleStopChange(index, "gte", value)}
+                />
+                <ColorField
+                  label={index === 0 ? "Threshold color" : "Color"}
+                  value={stop.color}
+                  onChange={(value) => handleStopChange(index, "color", value)}
+                />
+                <Button
+                  aria-label={`Remove remaining threshold ${stop.gte}`}
+                  className="mb-0.5"
+                  onClick={() => handleRemoveStop(index)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Trash2 size={14} aria-hidden />
+                </Button>
+              </div>
+            ))
+          : null}
+        <div className="flex flex-wrap gap-2">
+          {hasStops ? (
+            <>
+              {stops.length < 4 ? (
+                <Button
+                  onClick={handleAddStop}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Plus size={14} aria-hidden />
+                  Add threshold
+                </Button>
+              ) : null}
+              <Button
+                onClick={() => onStopsChange([])}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Use solid bar color
+              </Button>
+            </>
+          ) : (
+            <Button
+              onClick={() => onStopsChange(DEFAULT_REMAINING_COLOR_STOPS)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <Plus size={14} aria-hidden />
+              Add remaining-% colors
+            </Button>
+          )}
+        </div>
+      </div>
+      <ColorField
+        label={hasStops ? "Fallback color (no matching threshold)" : "Bar color"}
+        value={color}
+        onChange={onColorChange}
+      />
+    </>
+  );
+}
+
+function nextUnusedGte(stops: Array<{ gte: number }>): number {
+  const used = new Set(stops.map((stop) => stop.gte));
+  for (const candidate of [75, 50, 25, 0]) {
+    if (!used.has(candidate)) {
+      return candidate;
+    }
+  }
+  for (let gte = 100; gte >= 0; gte -= 5) {
+    if (!used.has(gte)) {
+      return gte;
+    }
+  }
+  return 0;
 }

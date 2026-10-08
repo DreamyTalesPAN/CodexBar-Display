@@ -5,6 +5,146 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-09-01 — Configured WiFi device continues automatically
+
+- User approval: The user explicitly instructed Codex to fix every sensible
+  Codex Bug Detector finding that matches the approved setup design and flow,
+  push it, and repeat the review loop until clean.
+- Approved customer-visible result: After WiFi credentials are sent through
+  Cable, the waiting step automatically connects the same `deviceId` when it
+  appears on WiFi, even if another VibeTV is also visible. The phone path has no
+  known identity and therefore still connects one result directly or shows the
+  existing list for multiple results. No new control or visual treatment.
+- Approved files: `setup-wizard.tsx`, its identity regression test, and this
+  approval record.
+
+## 2026-09-01 — Direct setup retry remains automatic
+
+- User approval: The user explicitly instructed Codex to fix every sensible
+  Codex Bug Detector finding that matches the approved setup design and flow,
+  push it, and repeat the review loop until clean.
+- Approved customer-visible result: If the automatic connection to the only
+  discovered VibeTV fails, `Search again` may return that same VibeTV and the
+  app automatically retries it instead of showing an idle automatic-connection
+  screen. Connection-mode requests also keep waiting for the Companion's
+  supported transition window. No control, layout, or visual treatment changes.
+- Approved files: `setup-wizard.tsx`, its regression test,
+  `control-center-app.tsx`, the customer-flow timeout contract, and this
+  approval record.
+
+## 2026-09-01 — Cable and WiFi setup follows reachable devices
+
+- User approval: The user explicitly supplied the six-case Cable/WiFi discovery
+  matrix for PR #407, required the connection choice only when both methods are
+  factually available, required multiple Cable devices to use the existing
+  device-list semantics, and required the labels `Cable` and `WiFi` without a
+  `Recommended` badge.
+- Approved customer-visible result: One reachable device connects directly;
+  multiple devices of the same transport show a device list; the Cable/WiFi
+  chooser appears only when both methods are currently available. With no
+  device, setup offers Cable and the existing phone-based WiFi path. WiFi
+  credentials are entered in the app only while a Cable device is connected,
+  and visible WiFi networks can be scanned, selected, rescanned, or entered
+  manually. Device rows show the VibeTV name, firmware, and previous-connection
+  hint without a serial-port path.
+- Approved files: Existing setup components and tests, the setup connection
+  decision helper, Companion discovery/setup endpoints and tests, firmware WiFi
+  scan support and tests, the serial protocol, and this approval record.
+
+## 2026-08-31 — Unsupported Cable controls never stay on Loading
+
+- User approval: The user instructed Codex to keep reviewing PR #407, fix every
+  sensible Codex review finding, push the fixes, and repeat the review loop
+  without asking again. Codex reported the exact current finding before the
+  fix: a Cable device without brightness or standby controls must not leave
+  Settings in a permanent loading state.
+- Approved customer-visible result: On a Cable VibeTV that explicitly reports
+  no brightness support, the existing Brightness row reads `Not supported`
+  instead of `Loading` and remains disabled. Supported VibeTVs keep the existing
+  percentage, slider, save action, layout, and connection-mode controls.
+- Approved files: `settings-screen.tsx`, its component regression test, and this
+  approval record.
+
+## 2026-08-28 — Native Cable restart completes after Helper startup
+
+- User approval: The user granted all remaining implementation and hardware-test
+  approvals for this chat and instructed Codex to continue without asking again.
+  During the authorized saved-Cable restart rehearsal, Codex reported before
+  implementation that the native app stayed on the old WiFi setup fallback after
+  its Helper and Cable device were already ready.
+- Approved customer-visible result: When the native app restarts with Cable
+  already selected, its bounded incomplete-setup poll continues while the Helper
+  finishes starting, including while the WebView is temporarily backgrounded.
+  The existing Cable connecting state advances to the connected Control Center;
+  it neither starts WiFi discovery nor remains on stale WiFi setup copy.
+- Approved files: `control-center-app.tsx`, the matching native saved-Cable
+  regression in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-28 — Saved Cable mode never falls into WiFi recovery
+
+- User approval: The user granted all remaining implementation and hardware-test
+  approvals for this chat and instructed Codex to continue without asking again.
+  During the authorized real-hardware restart, the app incorrectly replaced the
+  saved Cable connection with `Searching your WiFi`; Codex reported the exact
+  visible defect before correcting it.
+- Approved customer-visible result: A saved Cable connection stays on the
+  existing Cable connecting state while the Helper or first live frame is still
+  starting. Neither normal startup nor confirmed-loss recovery starts WiFi
+  discovery, shows `Looking for your VibeTV`, or tells the customer to configure
+  WiFi. Explicitly selecting WiFi in Settings remains available and unchanged.
+- Approved files: `control-center-app.tsx`, the matching saved-Cable regression
+  in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-28 — Cable first-frame wait never starts WiFi search
+
+- User approval: The user explicitly granted all approvals, including corrected
+  hardware retests, for the remaining work in this chat and instructed Codex to
+  continue without asking again. In
+  the authorized cold-start hardware rehearsal, Codex identified and stated the
+  exact visible correction before implementing it: after `Use Cable`, the
+  existing first-preview wait must not be replaced by a WiFi search screen.
+- Approved customer-visible result: Throughout the complete first-frame wait
+  after `Use Cable`, an active VibeTV remains on the existing `Connecting to VibeTV`
+  state with `Waiting for live preview…`. The app does not show `Looking for
+  your VibeTV`, claim that it is searching WiFi, or start a WiFi discovery while
+  that Cable device is already bound. Overview still opens only after the first
+  real preview frame.
+- Approved files: `control-center-app.tsx`, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-28 — Connection mode belongs in Settings
+
+- User approval: The user explicitly required the Cable connection banner and
+  its `Change connection` button to be removed from Overview, required the
+  Cable/WiFi switch to live in Settings, required it to reuse the existing
+  Settings elements and structure without inventing a new UI, and instructed
+  Codex to implement that exact result.
+- Approved customer-visible result: Overview contains no separate Cable banner
+  or connection-change button. Settings contains one flat `Connection` section
+  in the existing two-column Settings layout, with the existing labeled Select
+  pattern showing `Cable` or `WiFi`. Cable keeps Usage, Settings, Appearance,
+  Updates, and Support available. During first Cable setup, the existing
+  full-screen `Connecting to VibeTV` state remains until the first real preview
+  frame; only then does the connected Control Center appear.
+- Approved files: `control-center-app.tsx`, `overview-screen.tsx`,
+  `settings-screen.tsx`, their component tests, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-27 — Neutral Cable and WiFi choice cards
+
+- User approval: The user reviewed the rendered connection chooser, required
+  both options to use the same neutral card treatment, required only Cable to
+  carry a `Recommended` badge, rejected a full primary-color Cable card, and
+  then explicitly approved the resulting design with "jo so gebe ich es frei".
+- Approved customer-visible result: When both connection methods are supported,
+  Cable and WiFi appear as equal neutral cards side by side with large icons;
+  Cable alone carries the `Recommended` badge. When the connected VibeTV
+  advertises only Cable support, the same approved Cable card is shown alone and
+  the unavailable WiFi action stays hidden, including immediately after
+  `Run setup again`.
+- Approved files: `control-center-app.tsx`, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-25 — First AI provider check finishes before theme selection
 
 - User approval: During the clean-Mac PR #406 rehearsal, the user observed that
@@ -3276,6 +3416,23 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
 
+## 2026-09-03 — Cable/WiFi setup keeps the current wizard fixes
+
+- User approval: After reviewing PR 407 against the current PR 331 head, the
+  product owner explicitly instructed us to integrate the reviewed changes on
+  PR 407 while leaving PR 331 untouched (2026-09-03).
+- Approved customer-visible result: **The Cable/WiFi decision stays inside the
+  current setup wizard: one matching Cable or WiFi VibeTV connects
+  automatically, multiple matching VibeTVs require a choice, and Cable-based
+  WiFi setup remains available. Provider, display, theme, and final-preview
+  handovers retain the current wizard behavior. Settings presents Connection
+  as one flat section alongside the other settings.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `settings-screen.tsx`, `setup/setup-device-screen.tsx`,
+  `setup/setup-wizard.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
 ## 2026-09-03 — Completed setup survives a restart; a pinned provider must be ready
 
 - User approval: The product owner reviewed the PR #331 bug-detector findings
@@ -3956,6 +4113,1227 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
 
+## 2026-09-07 — Continue the Claude Design Cable/WiFi setup
+
+- User approval: The user supplied their Claude Design setup as the reference
+  for PR #407, required access through MCP, and then explicitly asked to
+  continue with that design: "lass mal hier weitermachen, review kommt dann
+  ganz am ende". The reference read through MCP is `Setup Wizard Redesign.dc.html`
+  in project `36eb7a1c-bd59-42f0-b120-3f1eb3905e4b`.
+- Approved customer-visible result: The existing discovery matrix still decides
+  whether to connect directly, list devices, or offer Cable/WiFi. The connection
+  chooser uses the reference's two selectable cards, actual discovery counts,
+  and one `Connect` button. Device rows label Cable/WiFi and keep the device
+  name readable on narrow screens. WiFi credentials use the full-width network
+  picker; after submission the same form stays visible and disabled while the
+  app waits, with a sent status only after confirmed submission. The existing
+  rescan recovery remains available. The no-device dialog offers Cable or the
+  phone setup; phone instructions use a dismissible, reopenable dialog with
+  manual IP entry and rescan. Back is available before a connection operation.
+- Approved files: `setup-device-screen.tsx`, `setup-device-card.tsx`,
+  `setup-device-dialogs.tsx`, `setup-wizard.tsx`, their tests,
+  `setup-preview-gallery.tsx`, `test-customer-flows.mjs`, and this record.
+
+## 2026-09-08 — Settings connection cards and hardware rehearsal fixes
+
+- User approval: Implement the Settings design accessed through Claude Design
+  MCP, test Cable and WiFi on the connected VibeTV, fix empty-password submission
+  and native paste, and finish the requested fresh-start rehearsal. The user
+  subsequently requested the tested changes be pushed to PR #407.
+- Approved customer-visible result: Settings shows the reference's USB-C and
+  WiFi cards with the currently confirmed mode selected. Switching uses a
+  confirmation dialog and opens WiFi setup when credentials are needed; a
+  completed switch returns to Settings. Theme, providers and brightness survive
+  transport changes. Secured and manually entered networks require a nonempty
+  password. Native Edit shortcuts support paste, and submitted WiFi details can
+  be edited while waiting. Setup and Settings previews use the usage-window
+  labels returned by CodexBar and refresh when the app becomes visible.
+- Device identity remains known when the initial status is disconnected. Setup
+  requires an explicit selection before replacing it with another discovered
+  device. Firmware verification uses the selected device's verified handshake.
+  Cable discovery runs before network probing and remains available when WiFi
+  is off or denied; a detected Cable device needs only one WiFi sweep. The setup
+  picker uses the recovery gate's bound identity without treating a disconnected
+  snapshot as a connected session. Transport worker replacement keeps the shared
+  CodexBar service and does not
+  overwrite valid usage with the canceled worker's error.
+- Observed validation: The same local production build of the tested source
+  (`1b0a176-final-0eb5ce1a45-dirty`, app and firmware `99.0.1027`) completed fresh
+  WiFi and separate fresh Cable setup on VibeTV `5804508`, including Mini Classic
+  installation and the visible native Overview. Settings WiFi -> USB-C -> WiFi
+  reused saved credentials and retained the theme and 20% brightness. Brightness
+  20 -> 21 -> 20 was confirmed from device settings. Both runs ended with a healthy
+  stream and successful firmware render status. The final Cable run followed
+  another complete Mac cleanup and full device erase/verified firmware restore.
+  The source passed 543 UI unit tests. These are local hardware results, not a
+  signed Sparkle upgrade rehearsal or a completed review of the pushed SHA.
+- Approved files: `settings-screen.tsx`, `settings-connection.test.tsx`,
+  `control-center-app.tsx`, `device-recovery-gate.ts`, `usage-surface-polling.ts`,
+  `setup-connection.ts`, `setup-wizard.tsx`, `setup-device-screen.tsx`,
+  `setup-display-mode-screen.tsx`, `setup-display-previews.ts`,
+  `setup-preview-gallery.tsx`, their tests, the native Edit menu, the Companion
+  device/provider/collector/USB fixes and their regression tests, and this record.
+
+## 2026-09-08 — Keep theme verification on its entered step
+
+- User approval: Finish the requested setup fixes and push PR #407, including
+  the final CI/review corrections.
+- Approved customer-visible result: A failed quiet device read after installing
+  a theme leaves setup waiting for display confirmation. It does not declare
+  the entire Mac App unavailable or restart the welcome screen. The existing
+  status poll still reports a real connection loss, and explicit device checks
+  retain their error handling.
+- Validation: The full customer-flow regression covers the failed readback;
+  subsequent status responses are delayed so recovery cannot rely on a fast
+  poll. This scenario is also included in the focused theme-missing suite.
+- Approved files: `control-center-app.tsx`, `test-customer-flows.mjs`, and this
+  record.
+
+## 2026-09-08 — Resume setup with saved WiFi details
+
+- User approval: Finish the setup fixes and push PR #407, including final
+  review corrections.
+- Approved customer-visible result: Choosing WiFi after a Cable connection
+  failure resumes discovery when the device reuses its saved network. Setup
+  reconnects the same device without asking for the password again.
+- Validation: Regression reproduces Cable-only discovery, a failed Cable
+  connection, the saved-network response, and reconnection to the rediscovered
+  WiFi identity. It fails before the delayed rescan is added.
+- Approved files: `setup-wizard.tsx`, `setup-wizard.test.tsx`, and this record.
+
+## 2026-09-08 — Return to Settings after confirmed WiFi
+
+- User approval: Finish the setup and Settings fixes, including PR #407 review
+  corrections, and push the result.
+- Approved customer-visible result: A later status confirmation of the same
+  connected WiFi device closes the Settings connection flow even when the
+  earlier discovery found nothing. An offline saved binding does not finish it.
+- Implementation: Both status polling paths share the connection-state update
+  and use the existing confirmation predicate, which now requires connectivity.
+- Validation: Browser regression starts in Cable Settings, returns no search
+  results, observes offline WiFi, and then returns to the selected WiFi Settings
+  card after a connected status without another device-selection write.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`,
+  `test-customer-flows.mjs`, and this record.
+
+## 2026-09-08 — Bound WiFi transition recovery
+
+- User approval: Finish the authorized setup rehearsal and PR #407 review fixes, then push the result; no repeated approval requests in this chat.
+- Approved customer-visible result: Pending WiFi setup keeps searching after an empty or temporarily failed scan. After 60 seconds it returns to editable WiFi details with a short explanation and the existing Back control, instead of waiting indefinitely. Only the same device can complete an identified transition.
+- Validation: Regressions cover failed scans, unrelated devices, status rerenders, eventual same-device connection, deadline recovery and cancellation of automatic searches.
+- Approved files: `setup-wizard.tsx`, `setup-wizard.test.tsx`, and this record.
+
+## 2026-09-08 — Correct saved-network regression fixture
+
+- User approval: Complete PR #407 corrections and push.
+- Approved customer-visible result: The approved saved-network and bounded WiFi recovery behavior is unchanged; the test candidate contains only its actual supported fields.
+- Validation: TypeScript checking and the setup regression suite.
+
+## 2026-09-08 — Pixel Battery takeover and editable remaining-color thresholds
+
+- User approval: In the owner's submitted review of PR #419 on 2026-09-07,
+  Paul explicitly requested a single segmented Pixel Battery theme, removal
+  of the separate solid-bar catalog entry without adding a variant switch,
+  and editable color thresholds with a clear distinction from the fallback
+  bar color. On 2026-09-08, after the remaining focus-loss and import-alias
+  defects were explained, he instructed us to take over and implement the
+  fixes: "ok dann leg los".
+- Approved customer-visible result: The catalog offers one segmented Pixel
+  Battery with provider logos and quota-based colors. Its existing Theme
+  Studio progress inspector exposes up to four remaining-percentage
+  thresholds and their colors, explains when the fallback color applies,
+  and can return to a solid fill. A threshold stays in the same editable row
+  and keeps keyboard focus while its number changes. Imported themes use
+  the same long-form feature-container precedence as the VibeTV, including
+  explicitly empty containers. The takeover preserves the theme's existing
+  layout and vertically centered provider label.
+- Evidence boundary: This records the owner's explicit requested results;
+  it is not a claim of hardware acceptance or approval to merge or release.
+
+### Follow-up — validate imported provider maps before export
+
+- User approval: Carries forward Paul's 2026-09-08 instruction to take over
+  PR #419 and fix its remaining defects ("ok dann leg los"). This is a
+  validation correction within that work; no separate design approval or
+  hardware acceptance is claimed.
+- Approved customer-visible result: Imported provider-logo maps attached to
+  non-sprite elements are rejected in Theme Studio using its existing
+  "providerAssets is only supported on sprites" validation message, before
+  export produces a pack that installation would reject. The existing message
+  and validation flow are reused; the correction extends the same check from
+  GIFs to every unsupported element type. Valid themes and the inspector's
+  controls keep their existing behavior.
+
+### Follow-up — keep incomplete theme update checks unresolved
+
+- User approval: Carries forward Paul's 2026-09-08 takeover and defect-fix
+  instruction ("ok dann leg los"). No separate design approval or hardware
+  acceptance is claimed.
+- Approved customer-visible result: When the catalog cannot identify the active
+  theme's requirements, missing provider-logo, threshold-color, or text-alignment
+  firmware support keeps the existing catalog-attention state visible. The app
+  does not report the theme update as complete before those requirements can be
+  checked. Existing wording and controls are reused.
+
+### Browser regression coverage for capability readback
+
+- User approval: The same 2026-09-08 takeover and defect-fix authorization
+  covers the accompanying browser regression tests.
+- Approved customer-visible result: The existing catalog-attention message
+  persists for each missing firmware capability; a complete capability
+  readback can show "Update complete". Browser fixtures now distinguish those
+  outcomes explicitly, without weakening the visible assertions.
+
+### 2026-09-08 — Pixel Battery bench refinements and immediate provider selection
+
+- User approval: Paul requested larger reset text and consistently large,
+  vertically centered percentages, reported battery-area redraw flicker and
+  delayed manual provider switching, then approved the installed result
+  ("ok passt so") and instructed us to push and fix relevant CI/review findings.
+- Approved customer-visible result: Pixel Battery revision 16 keeps percentage digits at size 2,
+  centers both rows against their batteries, places a smaller percent glyph
+  alongside, and enlarges the reset line. Countdown-only changes invalidate
+  reset text without repainting battery progress. Manual provider selection
+  wakes the existing display loop immediately using collector-owned snapshots;
+  explicit usage refresh still collects before waking the display.
+- Bench evidence: VibeTV 14799300 on firmware 99.1.835 rendered revision 16 with
+  zero reported render failures. The native Mac overview displayed the updated
+  layout. App 99.1.836 sent Codex and Claude frames after 0.225 s and 0.413 s
+  respectively in the API-to-device measurement; the user accepted this state.
+  The final settings-button walkthrough was not completed because provider
+  status checks temporarily hid its choices; no completed UI-click proof is
+  claimed for that final measurement.
+- Scope: The user explicitly requested local, unsigned candidate work and
+  deferred signing. Full signed cold/warm update rehearsals remain a separate
+  acceptance gate and are not claimed here. This records local validation and
+  approval to push the PR branch, not approval to merge, release, or sign.
+
+## 2026-09-08 — Integrate current main into PR #407
+
+- User approval: Complete the authorized setup/Settings corrections and push PR #407.
+- Result: Preserve the approved Cable/WiFi flow together with the #419 ThemeSpec capabilities and immediate provider selection now on main.
+- Validation: Keep both countdown regression suites and await the hidden-network control after the asynchronous WiFi scan. This changes test synchronization, not the approved flow.
+
+## 2026-09-08 — Require committed WiFi before closing Settings setup
+
+- User approval: Finish the authorized PR #407 corrections and push.
+- Approved customer-visible result: Retained Cable health during a mode transition does not close WiFi setup or stop discovery. Only a connected same-device snapshot with committed WiFi mode can finish it.
+- Validation: Unit and browser regressions include the server grace-period snapshot with connected=true but no committed mode.
+
+## 2026-09-08 — Keep status polling through Settings WiFi recovery
+
+- User approval: Complete the authorized PR #407 setup/Settings fixes and push.
+- Approved customer-visible result: An offline WiFi snapshot during an explicit Settings switch does not stop status polling. A later connected same-device WiFi status returns the user to Settings.
+- Validation: The browser regression reproduces retained Cable health, offline WiFi and connected WiFi; it failed before the polling condition was corrected.
+
+## 2026-09-08 — Await the failed Cable dialog in recovery tests
+
+- User approval: Complete the authorized PR #407 CI/review corrections and push.
+- Approved customer-visible result: The approved saved-WiFi recovery flow is unchanged. Its tests await the actual asynchronous failure dialog before closing it and choosing WiFi.
+- Validation: Full UI unit suite; assertions still require reconnection to the same saved device. Tiny Office geometry tests use the existing zero default for optional y coordinates so standalone TypeScript validation also passes.
+
+## 2026-09-08 — Show failed WiFi submissions in the existing form
+
+- User approval: Paul authorized completing the setup/Settings fixes without further questions and pushing PR #407.
+- Approved customer-visible result: If sending WiFi details fails, the existing form error line shows the failure and recovery instruction. Entered details remain available and Connect to WiFi can be retried; successful submission clears the error and shows the existing waiting state.
+- Validation: Wizard regressions reject the submission, verify visible message/instruction and retained inputs, then successfully retry. No new control or screen.
+
+## 2026-09-09 — Reuse the existing device installation screen
+
+- User request: Cable theme installs and screensaver installs must show the existing WiFi installation screen with its progress bar; remove the separate plain-text status screen.
+- Result: Both transports and both slots send the unchanged `installingThemeSpec`. Firmware renders that same spec and holds it between files; activation, failed uploads, or the bounded idle timeout restore the selected theme. WiFi screensaver installs restore the live theme before selecting the screensaver preview.
+- Validation: Theme installer and Companion API suites pass. Cable tests compare the exact screen payload, including its progress primitive, before uploads in both slots; WiFi screensaver tests require installation and restoration before selection. Frame-render policy tests and firmware size budgets pass (484816 bytes).
+- Local rehearsal: Mac App and firmware 9999.0.99 on device 5804508, USB /dev/cu.usbserial-11240. Device rendering telemetry confirms the existing install ThemeSpec and restoration after idle timeout for both slots. Native Mac UI completes Mini Classic, Tiny Office, and Token Fire installs. Final state: Tiny Office, brightness 75%, screensaver disabled. This run does not claim a physical-screen photograph or a WiFi hardware rehearsal.
+- Candidate: Local arm64 DMG, no Developer ID signing or notarization. These are local changes on top of PR head 02a306c, not a release.
+
+## 2026-09-09 — Brand neon for the VibeTV device title
+
+- User request: Globally use the brandbook neon yellow for the VIBETV wordmark on the device instead of blue.
+- Source: `vibetv-shopify-app/docs/vibetv-brandbook.md`, primary brand color `#CCFF00`.
+- Result: The shared status renderer uses that color (RGB565 `0xCFE0`) for the title, covering boot, Cable/WiFi status, reset, update, error and missing-theme screens.
+- Scope: Firmware-only color change; the existing install screen and Mac App are unchanged.
+- Validation: Build and existing firmware size budgets pass; firmware 9999.0.100 flashed with verified hash on device 5804508. Boot health records the Cable setup screen.
+
+## 2026-09-09 — Use saved pairing for startup
+
+- User approved the central startup fix after comparing the wizard with Claude Design. Returning customers open Overview while their saved VibeTV reconnects; missing/rejected pairing and first setup remain in the wizard.
+- Accept the Companion's configured offline device snapshot without marking it reachable or resetting recovery failure counts. Keep foreign-device rejection intact.
+- Consolidate the two session entry flags into one. Wait for a successful saved-setup read and the display selection before deciding; the final live preview still owns completion of a fresh setup. Preserve the selected Cable candidate during connection and firmware checking.
+- Validation: 108 focused unit tests; ten browser scenarios covering offline/connected startup, late status/display reads, rejected pairing, first setup, discovery, firmware update/failure, and a running-device outage. TypeScript passes.
+- Native local candidate 9999.0.101 (02a306c-dirty), VibeTV 5804508 via Cable: Overview was visible while disconnected/not ready, then stayed open when Connected/Live arrived. Run setup again completed provider selection and display mode back to Overview with the existing tiny-office theme. No new firmware flash; device remains 9999.0.100. This is local unsigned validation, not a signed cold/warm release rehearsal. Pairing rejection and a genuinely fresh Mac were covered by fixtures, not reproduced physically in this round.
+
+
+## 2026-09-09 — Remove the undesigned empty setup picker
+
+- User approval: Paul reported an empty `Choose your VibeTV` screen before providers and explicitly requested the fix, then accepted the tested result with "ok passt jetzt. push erstmal den aktuellen stand." in task `01a07b46-26d4-7830-bc84-20a5c6d7eb85`.
+- Approved customer-visible result: Claude Design's single-Cable route remains Welcome, connecting log with firmware check, providers, display mode, theme, live preview; errors use existing dialogs. Empty discovery keeps Welcome behind the recovery dialog instead of showing an empty device picker. The browser regression follows this approved state without changing the UI.
+- A fresh successful Cable health response now proves connection independently of the first usage frame. Readiness still requires the existing rendered-frame gate; stale hello data cannot keep a disconnected device online after the bounded loss grace.
+- Reuse the currently connected setup device when returning from providers and reset the existing connect sequence on Back. Remove the usage-wait override of discovery state. An unknown saved mode no longer silently means WiFi.
+- Render the existing Welcome screen when there is no connection or selection to show. Preserve the completed connecting log until the next setup snapshot can advance. Remove the misleading automatic-connection fallback sentence; no new screen or timer.
+- Candidate 9999.0.102 failed the native rehearsal: the user saw an empty picker and the completed log briefly returned to the chooser. It is superseded by 9999.0.103.
+- Validation: Companion API suite passes, including fresh health without a frame followed by real connection loss; 127 focused component tests, TypeScript and twelve focused browser scenarios pass. Five new assertions failed before the transition correction. The Cable browser regression observes heading mutations throughout first connection and Back, rejecting even a transient empty picker.
+- Native candidate 9999.0.103 (02a306c-dirty), built locally without Developer ID signing/notarization and installed from its matching DMG. Both native executable and helper match the mounted DMG byte for byte. Mac VibeTV/CodexBar state was cleaned, including `.codexbar` and CLI cookies/cache. Device 5804508 (MAC d8:bf:c0:58:91:dc, USB /dev/cu.usbserial-11240) was fully erased and reflashed with unchanged firmware 9999.0.100; prelaunch readback confirmed unpaired and theme-missing.
+- Native visible proof: Welcome -> Connecting to VibeTV with firmware log -> providers. Back repeated the connect log, held its completed state, and returned to providers without the observed chooser flash. Provider selection, Automatic display mode, Tiny Office installation, live preview and Overview completed through the native UI. Final device readback: paired=true, connected=true, ready=true, healthy Cable stream, active theme `/themes/u/to-7-d7799cec.json`, hash `6b398ec9`, renderOk=true. This is Cable cold-start proof, not a physical-screen photograph, WiFi rehearsal or signed update rehearsal.
+- DMG: `VibeTV-Control-Center-PR407-cold-fix-9999.0.103.dmg`, SHA-256 `5585e751b8e3497d784fe94c969818bcd30f09d73df2616ddebd5d86d0ebfc05`. Evidence is retained locally under `/tmp/CODEX-pr407-cold-20260909/cold-fix-103-*`.
+- After a final Mac/device purge for an independent customer test, Paul confirmed "ok passt jetzt" and explicitly approved pushing this tested state to PR #407. Review remains deferred until the end of the requested work.
+
+## 2026-09-10 — Align remaining setup recovery regression
+
+- User approval: Paul requested green CI for PR #407 before the next independent cold/warm candidate test. The visible result remains the accepted 2026-09-09 result recorded above.
+- Approved customer-visible result: Losing the device before first setup completes returns to the existing Welcome screen while no device can be selected. The theme chooser and Control Center navigation remain hidden. Only the stale browser assertion changes; product behavior is unchanged.
+
+## 2026-09-10 — Wait for actual provider usage
+
+- User approval: Paul requested a spinner on each enabled provider until actual CodexBar usage is available and approved implementation with "ok dann bau das so um". He clarified that one provider with real usage is sufficient, including 0%; other enabled providers need not be ready.
+- Approved customer-visible result: Continue stays disabled until at least one enabled, healthy provider has a displayable reading in the same usage snapshot used by Display Mode. A provider with healthy status but missing usage keeps its spinner. Existing errors and their actions remain visible, and the provider switch remains usable except during its own save. A 0% reading is valid without a reset time or token history. The existing read-only poll updates the usage and provider list together.
+- Validation: Unit and browser regressions cover health arriving before usage, a delayed real zero, other providers needing authentication, the available switch and the resulting Display Mode preview. Native candidate testing remains a separate customer check.
+
+## 2026-09-10 — Provider recovery regression fixture
+
+- User approval: The approved provider-usage gate above remains unchanged: one enabled provider with actual usage, including 0%, is sufficient.
+- Approved customer-visible result: Repairing the usage service only unlocks Continue after the recovered provider supplies displayable usage. The browser fixture now delivers that reading after successful recovery instead of returning an empty usage list forever. Both recovery and delayed-zero browser scenarios pass; no product code changes in this follow-up.
+
+## 2026-09-10 — App-first setup with WiFi available
+
+- User approval: Paul approved "Download Mac App from app.vibetv.shop" on first power with WiFi setup available in the background, then the Cable/WiFi selector when the Mac App discovers the device: "ok dann bau das so".
+- Approved customer-visible result: A single newly discovered Cable device offers both connection choices. WiFi can be provisioned over that cable without an existing WiFi discovery; the chooser says "Set up over Cable". Saved choices survive later starts. Fresh firmware shows only the Mac App address; it does not infer a connected Mac from power. After updating, older devices retain their settings and may switch in both directions.
+- Legacy boundary: firmware 1.0.41/1.0.42 accepts serial display frames but lacks the new serial identity, pairing, and firmware-transfer protocol. Its existing first-update route remains WiFi. A separate first-update bootloader path is not implemented or claimed by this change.
+
+## 2026-09-10 — Preserve WiFi-only production hardware
+
+- User approval: Paul clarified that devices with identical old firmware exist both with and without working Cable data; WiFi-only devices must remain connected over WiFi.
+- Approved customer-visible result: Settings asks for a data cable before switching. The app verifies the selected device over USB before turning WiFi off; without that identity, the existing WiFi connection and saved settings remain untouched. Firmware version or advertised USB protocol support alone never establishes physical Cable availability.
+
+
+## 2026-09-10 — Mac App owns the first WiFi instructions
+
+- User approval: Paul corrected the first-power screen: the entry on new firmware is always "Download Mac App"; when the Mac App finds no VibeTV over USB, it must guide WiFi setup.
+- Approved customer-visible result: Fresh VibeTV shows "VIBE TV", "Download Mac App", and "app.vibetv.shop". Its setup access point starts in the background. After discovery finds neither USB nor an already configured WiFi device, the Mac App directly opens "Connect to WiFi" with phone setup instructions. Search errors retain their recovery message. Existing USB discoveries retain the Cable/WiFi selector, and existing WiFi devices remain connectable.
+
+
+## 2026-09-10 — Count open setup networks as WiFi discoveries
+
+- User approval: Paul explicitly requested that both an existing VibeTV on the local network and an open VibeTV-Setup network count as "1 VibeTV found", without "Setup required" or "Set up over Cable".
+- Approved customer-visible result: The existing startup search also scans for open VibeTV-Setup networks through the native Mac App. Both kinds of WiFi discovery share the same found-count label. Cable/WiFi selection appears when both paths were found. An open setup network without USB leads to the WiFi instructions. No internet check is involved. macOS Location Services permission is requested solely for the network scan; denied scans remain errors, not zero discoveries.
+
+## 2026-09-10 — Settings errors use the setup popup
+
+- User approval: During the PR #407 physical matrix continuation, Paul approved showing the failed USB action, but explicitly rejected an inline banner: "ja, aber nicht so wie jetzt, sondern in nem pop up. error states sind ab jetzt immer pop ups. schau dir den setup wizard an, die siehste wie ich meine".
+- Approved customer-visible result: Settings action and provider failures use the same `SetupStepFailedDialog` as the setup wizard. A single popup shows the existing error and recovery text; OK dismisses it. The saved connection and underlying controls remain available for retry. No new banner or parallel error-dialog component.
+- Validation: 36 focused component tests cover dialog dismissal, preserved WiFi selection, USB retry, provider failures and one-dialog priority. The browser regression proves that healthy status polling cannot dismiss a failed USB action; the full customer smoke suite passed before the poll correction, and focused WiFi/status cases passed after it. Customer-copy and TypeScript checks pass. Native preview verification follows separately.
+
+- User approval: The same 2026-09-10 popup instruction covers the shared setup-style error result verified in local build 117.
+- Approved customer-visible result: Reserve space beside long dialog titles for the existing close button, so the error text does not touch it. No new control or copy.
+- Native evidence: App 117 with device 14799300 / firmware 115, WiFi active. An exclusive USB-port test caused the real Settings action to fail; its popup remained visible across multiple healthy status polls and live Codex data returned behind it. The original WiFi choice and 20% brightness remained selected.
+- Dialog dismissal: the shared error component now unmounts when dismissed instead of clearing its text during an exit animation. App 118 verifies the complete popup visually, title spacing, and removal of the dialog after OK. Intermittent window captures alone are not treated as evidence of a WebKit rendering defect.
+
+## 2026-09-10 — Keep Cable available after a denied optional WiFi scan
+
+- User approval: Paul explicitly requested fixing discovered matrix issues along the way and "error states sind ab jetzt immer pop ups ... schau dir den setup wizard an". This correction applies that instruction to the existing native-scan failure.
+- Approved customer-visible result: A native setup-SSID scan failure retains the Cable devices already found by the Companion. The existing search error popup explains the denied scan; after dismissal, setup continues with the same discovered Cable identity. No new copy or control.
+- Validation: the setup-entry browser regression covers a denied native scan, visible popup before any selection, dismissal, and exactly one selection of the expected Cable device. Existing WiFi-only denial still shows an error, and discovered LAN devices do not require a native SSID scan.
+
+## 2026-09-10 — Reliable setup-style error display on the Mac
+
+- User approval: Paul requested "error states sind ab jetzt immer pop ups" using the setup wizard as the reference. This follow-up fixes that requested popup being invisible during the real Mac test.
+- Approved customer-visible result: The shared setup dialog appears immediately, without its enter/exit keyframe animation. Layout, blur, message, recovery text and controls remain the existing setup design. App 118 sometimes showed only the scrim; app 119 visibly passed two consecutive missing-USB failures, dismissal by OK and by Close, while the same WiFi device kept streaming with unchanged settings and boot ID.
+- Test maintenance: failed Settings actions are acknowledged before the browser test navigates away. The retained timeout control is disabled when screensaver is off, matching the existing screen contract, rather than incorrectly expected to disappear.
+
+## 2026-09-10 — Firmware update errors use the shared popup
+
+- User approval: Paul instructed "error states sind ab jetzt immer pop ups" with the setup wizard as the reference, and requested fixing failures while completing the hardware matrix.
+- Approved customer-visible result: Updates uses the same setup dialog for failed firmware jobs, preserving the existing error text, retry policy and report action. A failed update no longer shows an inline red banner or a completed progress bar. Dismissal survives repeated status polls for the same job; a new failed attempt opens its own popup.
+- Evidence: App 119 installed from the local DMG rejected an intentionally wrong SHA-256 during artifact validation, before upload. Firmware 115, boot ID, saved settings and animation remained unchanged. The original inline error text overlapped its buttons, prompting this popup correction.
+- Native validation: local DMG 120, device 14799300 / firmware 115, repeated invalid-hash rejection before upload. The shared Update failed popup rendered correctly and closed; unchanged boot ID/settings and increasing animation frames verified. Eleven DOM tests, focused firmware browser cases, TypeScript, lint and customer-copy checks pass.
+
+
+## 2026-09-10 — Enforce animation-free popup dismissal
+
+- User approval: Paul requested "error states sind ab jetzt immer pop ups" using the setup wizard as the reference, and fixing matrix issues along the way.
+- Approved customer-visible result: The shared popup remains immediately visible and closes immediately. An inline animation override enforces the already-approved absence of enter/exit keyframes despite inherited stylesheet ordering; layout, text and controls stay the same.
+- Validation: A browser regression checks computed animation names for both open and closed states against the actual production stylesheet.
+
+
+## 2026-09-10 — Provider-result errors use the shared popup
+
+- User approval: Paul explicitly directed "error states sind ab jetzt immer pop ups. schau dir den setup wizard an" and requested fixing issues found while completing the matrix. This applies that standing presentation instruction to the real OpenAI provider failure observed in setup; the provider-owned message is unchanged.
+- Approved customer-visible result: Provider-result failures appear in the existing setup-style popup, titled with the existing provider name and containing the exact CodexBar guidance. OK/Close dismiss it; Copy provider message remains available there. The row retains its on/off switch and retry, and an error icon reopens its message. Only one provider popup appears at a time. Polling does not reopen acknowledged messages; explicit retry can show the result again. The shared provider list gives Setup and Settings the same behavior.
+- Validation: Focused tests cover dismissal through polling, exact message preservation, retry of the same error, provider disable, queued failures and the existing one-ready-provider/zero-usage gates. Native quick-DMG123 confirms the real OpenAI failure popup in both Setup and Settings, OK/Close dismissal, retry of the same error, disabling OpenAI and continuing through Manual Codex to Overview Live on device14799300/fw115. No signing.
+
+## 2026-09-10 — Keep WiFi setup failures and recovery visible
+
+- User approval: The explicit instruction “error states sind ab jetzt immer pop ups” applies to these existing setup error states.
+- Approved customer-visible result: WiFi selection, scan, credential and timeout errors use one existing setup-style popup, titled “WiFi setup failed”. OK/Close dismisses it without clearing the entered network or password. A failed selection or expired Cable-free wait restores the discovery recovery actions. Existing API error and recovery text is preserved; no inline WiFi banner remains.
+- Validation: Both review findings are reproduced in component tests. The suite verifies rejection from the mode chooser and not-found recovery, repeat attempts, one visible dialog, timeout search termination and recovery after dismissal. The complete 630-test unit suite, TypeScript, focused lint and customer-copy guard pass. All 19 setup-entry browser flows pass, including rejected connection selection and credential submission for single- and multi-device setup; the popup screenshot was visually inspected. The Mac is currently locked, so native candidate proof remains pending.
+
+## 2026-09-11 — Select the device before its connection method
+
+- User approval: The user explicitly instructed Codex in this task to continue
+  every matrix case and fix discovered issues along the way, without further
+  implementation approval questions.
+- Approved customer-visible result: When Cable and WiFi identify different
+  VibeTVs, setup uses the existing device list. Selecting the WiFi device connects
+  that identity; selecting the Cable device offers only its available paths.
+  Two paths to the same device retain the existing connection-method chooser.
+  Mixed results use the neutral count `2 VibeTVs found.` instead of claiming
+  that the Cable device was found on WiFi. The existing list component is reused.
+- Approved files: `setup-connection.ts`, `setup-device-screen.tsx`, matching setup unit/browser tests,
+  and this approval record.
+
+## 2026-09-11 — Preserve the approved device list with multiple Cables
+
+- User approval: The standing instruction to fix discovered core-flow issues and the preceding device-before-transport approval apply to this correction of the same selection result.
+- Approved customer-visible result: The existing mixed-device list retains a distinct WiFi VibeTV even when two Cable devices are present. Its existing count reflects all three identities; selecting the WiFi device connects only that device. No new control, layout or wording.
+- Validation: The previous two-device identity test now covers one and two Cable devices; the browser regression uses two Cables plus one WiFi device and rejects any Cable mode write.
+
+## 2026-09-11 — Theme recovery uses the approved error popup
+
+- User approval: Paul explicitly instructed “error states sind ab jetzt immer pop ups” using the setup wizard as the reference, and requested fixing issues discovered in the core cases.
+- Approved customer-visible result: Theme-install failures use the shared setup error popup with the existing failure text and Try again. Closing the popup preserves a retry action in the theme row; polling does not reopen the dismissed failure. A theme that was written but failed rendering can be retried on the connected paired device. Recovery guidance points to reinstalling the theme instead of a nonexistent Reload image control.
+- Validation: Regression tests cover missing render proof, a reported-active but unready Cable theme, popup dismissal, polling, one retry and a later failure. Browser tests check popup, dismissal, retry and unchanged successful progress.
+
+
+## 2026-09-12 — Remove nearby setup-network discovery and location permission
+
+- User approval: Paul rejected the location permission and explicitly requested removing open VibeTV-Setup network discovery: “dann bau das so um ... ausschließlich code wegnehmen”. USB users finish setup by Cable and can switch to WiFi later in Settings; existing retry and manual-IP dialogs are sufficient.
+- Approved customer-visible result: The Mac App discovers USB devices and devices already reachable on the local network. A USB-only device connects directly; only two discovered paths to the same device show the existing Cable/WiFi chooser. Nearby setup access points are no longer counted and no location permission or scan-error popup is requested. Existing phone instructions, retry, manual IP and Settings WiFi setup remain. No new UI element. This supersedes the September 10 approval for native setup-SSID scanning.
+- Regression correction: Discovery of an existing LAN path exposed premature connection while the WiFi mode request was still pending. The existing waiting screen now distinguishes the pending selection internally and begins discovery/connection only after the request succeeds; rejected choices remain retryable. No new UI.
+
+
+## 2026-09-12 — Require a valid preview before leaving setup
+
+- User approval: Paul reported the candidate opening Overview without a preview after exchanging VibeTVs and explicitly required: “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt”.
+- Approved customer-visible result: Saved pairing, provider and display choices cannot bypass the wizard on launch. The existing final preview step releases the Control Center only with a rendered theme/frame and a currently connected, ready VibeTV. Losing readiness or changing devices cancels the pending handover. After a successful handover, transient outages preserve the open Control Center. Existing choices are reused; no new UI element.
+- Supersedes the earlier saved-setup shortcut that admitted a configured offline device directly to Overview.
+
+
+## 2026-09-12 — Apply the preview requirement to Settings WiFi setup
+
+- User approval: Paul's current requirement “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” applies to every entry into the existing wizard, including the WiFi switch from Settings.
+- Approved customer-visible result: Opening that WiFi wizard clears the previous handover. A confirmed WiFi status alone cannot return to Settings; the existing live preview must render while the selected VibeTV is connected and ready. Browser fixtures for previously admitted sessions establish a valid preview before simulating later outages, and Theme Studio fixtures provide matching active render packs.
+
+
+## 2026-09-12 — Preserve progress while waiting for the required preview
+
+- User approval: Paul's current instruction “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” requires retaining setup during first-frame waits, including after WiFi verification, and when reopening an unfinished installation.
+- Approved customer-visible result: A verified Cable or WiFi connection advances to the existing preview wait without repeating connection or firmware writes. Running firmware and theme jobs restored on launch show their existing progress log inside the wizard; they cannot bypass preview admission or start a second install. Browser regressions replace the superseded saved-setup shortcut with the required no-preview boundary.
+
+## 2026-09-12 — Validate the accepted preview gate in Theme Studio
+
+- User approval: Paul confirmed the candidate with “top, passt” and explicitly requested pushing this state, fixing valid review/CI findings and repeating the review loop. His requirement “ich darf niemals den wizard verlassen, wenn es keine gültige preview gibt” remains the approved visible result.
+- Approved customer-visible result: The accepted preview gate is unchanged. The Screensaver browser fixture now supplies the tracked active Clippy render pack with a matching device path before navigating out of setup. The UI principles now document the already approved preview requirement for every launch and Settings WiFi setup instead of the superseded saved-setup shortcut.
+- Validation: The complete Theme Studio safety browser suite passed. This correction changes only test data and documentation; no app, firmware, layout or copy changes.
+
+## 2026-09-12 — Recover missing previews and bind Cable frames to identity
+
+- User approval: Paul accepted the candidate, required that the wizard never finish without a valid preview, and explicitly instructed Codex to fix legitimate Bug Detector findings and repeat the push/review loop without further confirmation. Both current findings affect that exact setup requirement.
+- Approved customer-visible result: Selecting another Cable VibeTV waits for a frame acknowledged by that device; the previous device's cached picture cannot admit setup. The existing Back control on the final preview returns to the existing theme selection, allowing replacement of a custom theme whose local preview was lost after purging the Mac. Installation errors retain the normal retry flow; successful installation still requires a valid preview before admission. No automatic theme or firmware write is added.
+- Validation: New regressions cover foreign/missing/matching Cable frame identities in status, the frame endpoint and preview admission. The browser flow starts with an irretrievable custom theme, returns to the catalog, installs a theme once and enters Control Center only after its preview renders. The existing parent-owned theme-choice state handles recovery.
+
+## 2026-09-09 — Windows token-history unavailable state
+
+- User approval: Marcus requested iterative VM QA and direct fixes: "Ja gut, dann kannst du ja jetzt selber iterativ testen, also QA machen und dann auch direkt fixen. Ja, leg mal los."
+- Approved customer-visible result: Fix the reported indefinitely loading token history. A completed scan without complete local history shows "Token history is unavailable" with the existing Refresh action, while available quota windows remain visible. Do not replace missing history with zero consumption. This records the implementation scope; final visual acceptance is still pending.
+
+### 2026-09-09 — Final Windows token-history visual acceptance
+
+- User approval: Marcus answered "ja" when asked whether the linked final Usage screenshot (`outputs/qa-9e4f4ab/usage-2.png` in the Windows QA workspace) was acceptable. The screenshot was captured from installed build `9e4f4ab6a85147aa119a1875b6d4eee1c20e2c0d` in the Windows VM.
+- Approved customer-visible result: The Usage screen displays "Token history is unavailable" and "Complete local token history is not available for every selected provider. Available usage limits are shown below." with the existing Refresh button. Available provider quota cards remain visible; incomplete token history is not represented as a complete zero or combined total. This supersedes the pending visual acceptance above.
+- Approved files: `apps/control-center/src/components/usage-screen.tsx` and `apps/control-center/src/components/usage-screen.test.tsx` at the reviewed build.
+- Scope: Approval of this visible result only; it does not approve unrelated Session-limit semantics, provider defaults, a push, merge, release, or hardware changes.
+
+## 2026-09-09 — Windows first-run provider selection is opt-in
+
+- User approval: Marcus answered "leg los" to the proposal that fresh Windows installations start with all providers off and the customer enables their provider, while existing settings remain unchanged.
+- Approved customer-visible result: No provider is preselected when Windows has no CodexBar settings yet. Customers enable their providers using the existing controls. Previously saved selections are preserved; unavailable credentials do not silently change a selection.
+- Scope: Windows configuration bootstrap and its regression coverage, using the existing UI. No provider-specific detection, authentication changes, macOS default changes, push, merge, release, or hardware changes are approved by this entry.
+
+## 2026-09-17 — Windows Claude browser sign-in row
+
+- User approval: Marcus answered "Ja trag das so ein" to the described provider row for the case where Claude on Windows needs a signed-in claude.ai browser session (Claude Code is signed in, but Anthropic refuses the OAuth usage endpoint and no browser cookies are readable). He asked to test it himself on the Windows laptop before the review round.
+- Approved customer-visible result: On the setup provider step (and the same row in Settings), a provider whose usage service reports a browser sign-in shows the guidance "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again." with an "Open Claude sign-in in your browser" action next to the existing "Check again" action and the on/off switch. Opening the page starts automatic re-checks every 15 seconds for at most three minutes, until the row leaves the browser-sign-in state. No other row state, copy, or control changes.
+- Scope: Files `apps/control-center/src/components/setup/setup-provider-row.tsx`, `setup-provider-row.test.tsx`, `setup-providers-screen.tsx`, `setup-wizard.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, and `control-center-types.ts` on PR #447. The sign-in page and the diagnosis come from the bundled usage service (VibeTV Win-CodexBar fork); the app keeps no provider table. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-17 — Sign-in button for a signed-out provider, and the four offered providers
+
+- User approval: Marcus tested the fresh-customer journey on the Windows laptop with Codex and Claude signed out, saw the usage service's developer text ("Provider not installed: Codex auth.json not found. Run codex login…", "Claude usage failed from all configured sources…") and asked for a customer-facing sentence with a button that starts the sign-in ("noch geiler wäre, wenn irgendwie ein Button da wäre … Sign In … da klick ich drauf und dann am liebsten öffnet sich dann schon irgendwie ein Login-Screen"), and to offer only Codex, Claude, Antigravity and Cursor for the start ("ich will für den start auch erstmal nur codex claude antigravity und cursor anbieten"). He answered "leg los" to the described implementation.
+- Approved customer-visible result: On the setup provider step and in Settings, a provider whose tool is not signed in (`auth_required`, `setup_required`) shows "<Provider> is not signed in on this computer" with a "Sign in to <Provider>" button, the existing copy action (which still copies the usage service's own message) and "Check again". Pressing the button starts the provider's own sign-in through the Companion: `codex login` or `claude auth login` in a visible terminal window (the tool opens the browser itself), the Cursor or Antigravity app when installed, or the official install page when nothing is installed. Afterwards the row re-checks itself every 15 seconds for at most three minutes, as it already did after the browser sign-in page. The provider list in setup and Settings shows only Codex, Claude, Cursor and Antigravity; other providers keep their saved values in the usage service but are not listed.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx`, `setup-providers-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs`, and the Companion's `/v1/providers/sign-in` (`companion/internal/companionapi/provider_sign_in_launch.go`, `provider_setup.go`, `childproc`). This approves the visible result and the push to the PR branch after Marcus's own laptop test only, not merge, release, or signing.
+
+## 2026-09-17 — The Mac app stays exactly as it is today
+
+- User approval: After testing the sign-in flow on the Windows laptop, Marcus asked what a Mac test would mean and then instructed that this release must not change the Mac app at all, including its available providers: "alles in diesem Release darf eigentlich die komplette Mac-App nicht ändern, auch nicht die verfügbaren Provider. Also die Mac-App muss genauso wie sie heute ist weiter funktionieren." He then chose to keep the whole feature Windows-only: "Nein, lass das alles strikt unter Windows."
+- Approved customer-visible result: The shortened provider list (Codex, Claude, Cursor, Antigravity) and the "Sign in to <Provider>" button are shown only by the Windows shell. On macOS the setup provider step and Settings keep every provider the usage service reports and keep exactly the rows, copy and actions they show today; a signed-out provider there still shows the usage service's own message with the existing copy and "Check again" actions and no sign-in button. The Companion decides this from the platform it runs on and reports it as `companion.features.providerSignInEnabled`; the app never infers it from the user agent.
+- Scope: `companion/internal/companionapi/server.go`, `provider_sign_in_launch.go` and their tests, `apps/control-center/src/components/control-center-app.tsx`, `control-center-types.ts`, `settings-screen.tsx`, `settings-screen.test.tsx` and `apps/control-center/scripts/test-customer-flows.mjs` on PR #447. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — A provider the customer switched on keeps its row on Windows
+
+- User approval: After the review of PR #447 reported that the shortened Windows list can hide a provider the customer had already switched on, Marcus was shown the customer consequence (the hidden provider keeps its switch on, the Automatic display is then refused as incomplete, and the customer cannot reach the next step or switch that provider off) and answered "ja mach wie du es empfiehlst".
+- Approved customer-visible result: On Windows, the provider list in setup and Settings shows Codex, Claude, Cursor and Antigravity, plus any other provider that is currently switched on, so every switched-on provider always has a row with its on/off switch. Once the customer switches such a provider off it leaves the list. Nothing else changes: no new copy, control, row state or ordering, and switched-off providers outside the four stay unlisted as approved on 2026-09-17.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` and the tests `setup-providers-screen.test.tsx` and `settings-screen.test.tsx` on PR #447. This follows the setup-flow rule that every provider row keeps its on/off switch, because a provider that cannot be switched off cannot be kept off the display. macOS is untouched: it does not shorten the list at all. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — No sign-in button where no sign-in can be started
+
+- User approval: Marcus approved working through the review findings on his own judgement ("ja mach wie du es empfiehlst"). The review then showed that the entry above had created a button that can only fail, and this is the narrow correction of that same approved result.
+- Approved customer-visible result: A provider that is listed only because the customer had switched it on shows its switch, its own message and "Check again", but no "Sign in to <Provider>" button, because VibeTV has no sign-in it could start for it. The four offered providers keep the button exactly as approved on 2026-09-17, and any provider whose usage service names a browser sign-in page keeps its button too.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx` and `setup-providers-screen.test.tsx` on PR #447. macOS is untouched: it shows no sign-in button at all. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — The Mac keeps the provider's own message on a signed-out row
+
+- User approval: This restores the standing instruction Marcus gave on 2026-09-17, that this release must not change the Mac app at all ("alles in diesem Release darf eigentlich die komplette Mac-App nicht ändern"), after the review found that a signed-out row on macOS had started showing the new Windows sentence.
+- Approved customer-visible result: Our shorter sentence "<Provider> is not signed in on this computer" appears only on a row that also carries the "Sign in to <Provider>" button. Every row without that button, which is every row on macOS, keeps the usage service's own message with the existing copy and "Check again" actions exactly as it shows today.
+- Scope: `apps/control-center/src/components/setup/setup-provider-row.tsx` and `setup-provider-row.test.tsx` on PR #447. Verified by the full control-center customer flow run, which still shows the Windows sentence and button on the rows that have the sign-in action. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-14 — Firmware update completion and first-theme onboarding (#445)
+
+- User approval: Marcus tested the installed candidate from PR #445 at
+  `e3d628bd4cae7c6349c499d43047356891a05def`, confirmed "ok hat geklappt",
+  repeated the fresh setup, and then explicitly requested "ne nur den
+  getstetet firmware fix mergen". His approval is limited to the tested
+  firmware-update behavior; the separate provider-readiness checking problem
+  observed during the repeated test remains open and is not covered here.
+- Approved customer-visible result: Firmware updates stop waiting when their
+  actual result is known. Successful updates continue first-time setup even
+  when the device has no theme yet. A result requiring attention ends the
+  busy state and shows the existing support/report recovery instead of
+  waiting until a misleading timeout or starting a second firmware upload.
+  Existing theme-loss and render failures remain actionable. No provider
+  selection behavior, theme design, or unrelated UI is changed.
+- Evidence: The signed candidate 9999.0.99 (run 34848902448) replaced the old
+  Mac App through its customer update flow. Device 16201042 updated from
+  1.0.41 to the candidate and reported firmware, health, stream, and render
+  verification complete; its stored Clippy theme was restored automatically.
+  Marcus then tested first-theme onboarding using the same PR App after
+  firmware 1.0.41, empty theme assets, WLAN reset, and clean Mac state were
+  established. The app reached provider selection on firmware 1.0.42;
+  the separately observed provider-check refusal is not claimed fixed.
+- Approved files: The firmware polling and setup changes in
+  `control-center-app.tsx`, `setup-connect.ts`, `setup-firmware-dialogs.tsx`,
+  `setup-wizard.tsx`, their regression tests, and `test-customer-flows.mjs`.
+- Scope: Approval to merge this firmware fix only. No production release,
+  new firmware flash, provider fix, or additional feature is authorized.
+
+## 2026-09-14 — Repair the blocking test checks for #445
+
+- User approval: Marcus explicitly requested "Und ja behebe vorher die
+  Probleme" after the repeated CI failure and broken local static test were
+  reported. This authorizes repairing those checks, not the provider issue.
+- Approved customer-visible result: No new customer-visible change. The
+  firmware onboarding behavior tested and approved above remains unchanged.
+  The browser fixture now returns the Companion's actual device-not-found
+  API response instead of simulating loss of the Companion connection.
+  The same assertions still require setup to stay incomplete until device
+  confirmation and prohibit a second theme installation.
+- Scope: Test fixtures, focused test coverage, shell syntax failure detection,
+  and checking the currently catalogued screensaver archive. No additional
+  product, provider, firmware, installation, or release change is included.
+
+## 2026-09-15 — Merge the firmware onboarding fix from main into PR #407
+
+- User approval: Paul explicitly requested “merge main in pr 407, dann wieder bug detector + ci fixen until green”. This authorizes integrating main and fixing resulting review/CI regressions on the PR branch.
+- Approved customer-visible result: Preserve the required matching live preview before leaving the wizard while retaining main's completed firmware-update and attention handling. Fresh devices without an installed theme can continue setup after a verified firmware update; loss of an existing theme remains visible. Cable reads its baseline over USB and WiFi over HTTP, then both apply the same existing theme-verification rule. Attention never starts another automatic firmware upload.
+- Validation: Both sides' wizard/browser regressions are retained. The main firmware-onboarding table now runs for Cable and WiFi, with Cable requests forbidden from contacting the saved WiFi target. No device write, new candidate installation, main-branch merge or release is authorized by this integration.
+
+## 2026-09-18 — app.vibetv.shop offers the download for the system the customer is on
+
+- User approval: Marcus was shown the exact screen sketch for the hosted download page — "Welcome to / VIBETV CONTROL CENTER / Get the app, then it takes you through the rest.", one large "Download for Windows" button for the recognised system, the numbered install steps below it, and a quiet text link "Using a Mac? Download for macOS" — and answered "Okay, das klingt sehr gut".
+- Approved customer-visible result: The hosted setup page at app.vibetv.shop recognises the customer's system and offers one primary download for it. On macOS nothing changes at all: the same "Get the Mac App, then it takes you through the rest." subtitle, the same single "Download" button for the verified DMG, the same three DMG install steps, and the same "The signed download is not ready yet. Please try again later." state when no DMG is published. On Windows the page shows a single "Download for Windows" button for the verified installer, the steps "Open the downloaded installer.", "Confirm the installation and wait for it to finish.", "Open VibeTV Control Center from the Start menu.", an honest note that Windows may warn about an unknown publisher because the installer is not signed yet, and a quiet text link "Using a Mac? Download for macOS". When no Windows installer is published, the Windows button shows the existing disabled "not ready yet" state instead of a dead link. When the browser reports no usable system, the page offers macOS and, only if it is actually published, Windows.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, `apps/control-center/src/lib/customer-platform.ts`, `apps/control-center/src/lib/companion-release.ts`, `apps/control-center/src/app/api/companion/latest/route.ts`, `apps/control-center/src/components/control-center-app.tsx` and their tests. The Windows installer goes through the same GitHub asset verification as the DMG and stays behind its own feature flag `CONTROL_CENTER_ENABLE_WINDOWS_APP_SETUP_DOWNLOAD`. The Mac path, its copy and its behaviour are unchanged and covered by regression tests. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+### 2026-09-18 — Customer flow coverage for the same download page
+
+- User approval: This adds no new visible result. It is the test coverage for the screen Marcus approved above with "Okay, das klingt sehr gut", after CI showed that the existing hosted-download flow checks only passed by accident of the runner's own operating system.
+- Approved customer-visible result: Unchanged from the entry above. The customer flow run now states the customer's system explicitly instead of inheriting it from the machine running the test, so the Mac checks really check the Mac screen, and a new check covers the Windows screen: the disabled "Download for Windows" button while no installer is published, the Windows install steps instead of the DMG steps, and the quiet "Using a Mac? Download for macOS" link pointing at the verified DMG.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. No product code, copy, control or state changes with this entry. Verified by a full local `npm run test:customer-flows` run. This approves the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-18 — The Windows download no longer announces an unknown publisher
+
+- User approval: After the Windows download was switched live on app.vibetv.shop, the rendered Windows screen still carried the note "Windows may warn that the publisher is unknown, because this installer is not signed yet. Choose More info, then Run anyway." The installer in v1.0.58 is signed — the shipped `VibeTV-Control-Center-Setup.exe` carries an Authenticode certificate table naming `O=DreamyTales GmbH, CN=DreamyTales GmbH` (issuer `Microsoft ID Verified CS AOC CA 03`, Azure Trusted Signing) — so the note is no longer true. Paul was shown the live screen and the signature evidence and answered "ja, nimm den Absatz raus und mach den PR".
+- Approved customer-visible result: On the Windows download screen the paragraph about an unknown publisher is gone. Everything else on that screen is unchanged: the same "Get the app, then it takes you through the rest." subtitle, the same single "Download for Windows" button for the verified installer, the same three install steps, and the same quiet "Using a Mac? Download for macOS" link. The macOS screen, the unknown-system screen, and the disabled "not ready yet" state are untouched.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx` and its test, plus this approval record. No copy, control, state, flag, or release behaviour changes beyond removing the paragraph. The removed regression test asserted the false claim and is deleted rather than inverted. This approves the visible result and the push to the PR branch only, not merge, release, or signing.
+
+## 2026-09-19 — Fix the recurring Claude sign-in dialog in PR #407
+
+- User approval: After the remaining Claude-dialog UI failure was reported, Marcus explicitly requested "Ok kannst du den Fehler noch Fixen?". This entry records that narrow bug-fix request.
+- Approved customer-visible result: Starting provider sign-in does not immediately reopen the same error message the customer already acknowledged. New or changed errors still appear, and an explicit Check again can show the result again. Existing labels, layout, sign-in requests, and background checks are unchanged.
+- Scope: Remove the dismissal reset from the shared provider list's sign-in handler and add regression coverage. PR-branch fix only; no merge, release, installation, or device operation.
+
+### 2026-09-19 — Preserve the approved Windows copy when integrating main
+
+- User approval: The Windows-copy removal is covered by Paul's explicit approval recorded above for PR #462; the Claude-dialog correction is covered by Marcus's bug-fix request above. This integration introduces no further visible result.
+- Approved customer-visible result: Retain both approved outcomes: the Windows download omits the obsolete unsigned-publisher warning, and starting sign-in leaves an acknowledged provider error dismissed. The shared approval-log conflict is resolved without dropping either record.
+- Scope: Integrate main commit `e5529c23` into PR #407 and retain its existing copy/test deletion unchanged. No merge into main, release, installation, or device operation.
+
+### 2026-09-19 — Provider dialog regression coverage
+
+- User approval: Covered by the Claude-dialog bug-fix request above; this is test-only follow-up, with no additional visible change.
+- Approved customer-visible result: Unchanged. Provider errors show their original message and copy action in the existing dismissible dialog; sign-in and retry remain on the provider row after dismissal.
+- Scope: Update the stale provider-readiness browser assertions that still expected inline error text, and include those cases in the focused provider-settings suite. No production behavior changes.
+
+## 2026-09-19 — Recover when only the other connection mode is found
+
+- User approval: Marcus answered "Ja" to the explicit proposal to show the existing reconnection dialog instead of searching indefinitely, with "Use the cable", WiFi setup, and retry, and no automatic connection-mode switch.
+- Approved customer-visible result: When a completed device search finds only a device on the other transport, the saved connection mode shows the existing device-not-found recovery dialog. The customer can explicitly choose the available cable connection, configure WiFi, or search again. Existing dialog copy and layout are unchanged; no connection is made automatically.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.tsx`, its regression tests, and this approval record. This approves the recovery behavior and fix preparation only, not a main-branch merge, release workflow, or publication.
+
+### 2026-09-19 — Complete the same explicit recovery for discovered WiFi
+
+- User approval: Covered by Marcus's "Ja" to the existing recovery dialog and no automatic transport switch above. This closes the reverse-direction recovery gap identified in review, without adding controls or changing copy.
+- Approved customer-visible result: After the customer chooses WiFi recovery, an already discovered WiFi device follows the existing device-selection path instead of trying to provision an absent cable device. Multiple devices still require selection; no device connects before the recovery action.
+- Scope: The same setup-wizard handler and regression tests only. No merge, release workflow, or publication.
+
+### 2026-09-19 — Preserve recovery after a selected cable device disappears
+
+- User approval: Same explicitly approved recovery behavior above; review regression coverage only extends the sequence leading into it.
+- Approved customer-visible result: A stale selection of a disconnected cable device does not hide WiFi devices found by the next scan. Explicit WiFi recovery returns to the existing device picker, and another identity still requires its own Connect action.
+- Scope: Clear the stale candidate filter in the existing WiFi recovery branch and test the failed-cable-to-WiFi sequence. No new controls, copy, merge, or release.
+
+## 2026-09-17 — Idle reset text and rate-limited provider check (#448)
+
+- User approval: Marcus forwarded customer Bernd's report that his new VibeTV
+  shows `Resets in Reset unavailable` on the Claude theme at 0 % session usage,
+  and that the Claude provider check failed repeatedly during setup with
+  cookie, timeout, and too-many-requests errors. After both visible results
+  were presented for review, Marcus approved them with "ja".
+- Approved customer-visible result: A usage slot whose countdown is unknown no
+  longer produces a doubled sentence. A line whose only substituted value is
+  that countdown collapses to `Reset unavailable` instead of
+  `Resets in Reset unavailable`. Slots with a real deadline keep rendering the
+  full sentence, for example `Resets in 4d 0h`, and lines that also carry a
+  label or percentage keep substituting in place. During setup, a provider that
+  answers with a rate limit now reports "Claude is limiting usage checks right
+  now." with "Wait a few minutes, then check again. Nothing needs to be fixed."
+  instead of the previous "The usage service could not read this provider." and
+  "Repair the usage service." No theme design, provider selection flow, or
+  unrelated UI is changed.
+- Evidence: The new native ThemeSpec renderer test reproduces the customer
+  string exactly; with the fix disabled it fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'`. 147/147
+  native renderer tests, 541/541 Control Center tests, the companion codexbar,
+  companionapi, and protocol packages, customer-copy, customer-docs,
+  frame-render-policy, and theme-pack checks pass. The ESP8266 cross build is
+  left to CI because the xtensa toolchain cannot run on this Mac, and no
+  hardware test with an idle Claude session is claimed.
+- Approved files: The renderer rule in `theme_spec_renderer_core.h`, its mirror
+  in `live-vibetv-preview.tsx`, the rate-limit status in
+  `setup-provider-row.tsx` and `control-center-types.ts`, the companion
+  provider-setup and preferences mapping, their regression tests, and this
+  approval record.
+- Scope: Approval covers this fix and pushing the PR branch. No release, no
+  firmware flash for the customer, and no Fable credit display is included.
+
+## 2026-09-17 — Codex review follow-up for #448
+
+- User approval: Marcus approved the two visible results above with "ja" and
+  asked for the fix to be carried through. The automated Codex review on PR
+  #449 then found that the same approved results were not actually reached on
+  every path; repairing those paths is part of delivering what he approved and
+  changes no promise made to him.
+- Approved customer-visible result: Unchanged from the entry above, now also
+  reached where it previously was not. A theme written with the compact tokens
+  `{us1r}` or `{pv1r}` collapses to `Reset unavailable` like the long token
+  names, so devices on those themes stop showing the doubled sentence. A
+  provider-scoped check that answers with a rate limit keeps telling the
+  customer to wait instead of claiming the account exposes no usage. A sign-in
+  failure that merely names rate-limit data still asks the customer to sign in
+  rather than to wait.
+- Evidence: The new native test fails with
+  `Expected 'Reset unavailable' Was 'Resets in Reset unavailable'` when the
+  compact-alias rule is removed and passes with it; 148/148 native renderer
+  tests pass. The companion codexbar and companionapi packages pass uncached
+  with the two new regression tests. No hardware test is claimed.
+- Approved files: The compact-alias rule in `theme_spec_renderer_core.h`, the
+  throttling matcher and stand-in translation in `provider_setup.go`, their
+  regression tests, and this approval record.
+- Scope: Corrections to the already approved fix only. No new customer-visible
+  behavior, no release, and no firmware flash is included.
+
+## 2026-09-21 — Idle countdown reads as idle, not as a fault (#448)
+
+- User approval: Marcus asked for issue #448 to be worked to a solution and
+  fully tested ("bitte arbeite an einer lösung für dieses issue. und teste es
+  komplett durch"). The issue's own acceptance criteria require that a session
+  at 0 % with no deadline "must not look like an error"; the previously
+  approved collapse removed the doubled sentence but still showed the error
+  wording, so this completes what was approved rather than changing it.
+- Approved customer-visible result: A usage window that is current and measured
+  but has no reset time at all now reads `No active session` instead of
+  `Reset unavailable`. On the Claude theme with an idle session the bottom
+  line therefore reads `No active session` where it previously read
+  `Resets in Reset unavailable` and then `Reset unavailable`. A line that
+  also carries a label renders `Session No active session`. Nothing else
+  changes: a countdown the device cannot stand behind (stale basis, offline
+  beyond the trust horizon, usage unreadable) keeps `Reset unavailable`, a
+  countdown that merely ran out keeps `Reset unavailable` until the next frame
+  carries the new deadline, and one line binding both an idle and an
+  untrustworthy countdown keeps `Reset unavailable`. Windows with a real
+  deadline still render `Resets in 4d 0h`. No theme design, layout, provider
+  flow, or setup copy is changed, and both strings are 17 characters so no
+  shipped lane changes its fitted font size.
+- Evidence: 152/152 native ThemeSpec renderer tests, including a new test that
+  feeds the customer's exact wire frame (Claude, session 0 % with no
+  `resetSecs`, weekly with one) and asserts the session window is read as idle
+  while the weekly one keeps counting down, and asserts that past the trust
+  horizon nothing is idle any more. 543/543 Control Center tests, including new
+  tests separating an idle window from a countdown that ran out and from a
+  mixed line. No hardware test with an idle Claude account is claimed.
+- Approved files: The idle window state in `theme_spec_renderer_core.h` and
+  `codexbar_display_core.h`, its frame wiring in
+  `renderer_esp8266_theme_spec.cpp`, its mirror in `live-vibetv-preview.tsx`,
+  the renderer and theme-pack tests, the protocol and theme-guide notes, and
+  this approval record.
+- Scope: This wording fix only. No release, no firmware flash for a customer,
+  and no change to the stale/offline trust path.
+
+## 2026-09-21 — A discontinued Gemini account stops offering a sign-in
+
+- User approval: Marcus selected issue #425 as one of the three P1 issues to implement in this batch and instructed Codex to work autonomously until each fix was ready. Codex reported the exact visible consequence before the change: Google discontinued the Gemini consumer tier, the stored credential is still valid, and the row therefore offered "Sign in to Gemini" above guidance explaining that signing in cannot help, so every attempt ended on the same refusal.
+- Approved customer-visible result: When the usage service reports that the provider no longer supports this account, the provider row shows the provider's own end-of-support message and keeps only its on/off switch. The sign-in button and the Check again action are gone, because neither can resolve the state, and turning the provider off is how the customer moves on. Antigravity remains offered beside it. Every other provider state is unchanged: a signed-out Gemini still shows its sign-in, an unrelated error still shows its message with Check again, and no label, layout, or visual treatment changes elsewhere.
+- Scope: `setup-provider-row.tsx`, `setup-providers-screen.tsx`, the shared readiness types, their regression tests, the customer-flow fixtures pinned to the new CodexBar version, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+- Superseded on 2026-09-22: This change was withdrawn from `main` by the pre-#466 rollback recorded below. It stays on `codex/integration-p1-batch` for hardware verification.
+
+## 2026-09-21 — A full usage value keeps its percent sign at desk distance
+
+- User approval: Marcus selected issue #258 as one of the three P1 issues in this batch and, when the missing hardware rehearsal was raised as the remaining blocker, chose to run the real-device verification rather than defer it.
+- Approved customer-visible result: Both changed themes give every percentage an explicit symmetric lane wide enough for a rendered "100%", so no valid value loses its percent sign, and the reading text is larger. Mini Classic percentages render at font 2 size 3 in a 108px lane; Claude Creature keeps size 3 in a 108px lane with a larger reset line. Every other value, label, and layout is unchanged.
+- Verification: Performed against the connected VibeTV `16199591` (board `esp8266-smalltv-st7789`, firmware 1.0.43, 240x240 panel), reached over the cable transport at `cable://vibetv` because this bench device is not on WiFi. The device reported Claude at 100% at that moment, which is exactly the reported failure value, so the rehearsal frame is the customer's real state rather than a constructed one. Both themes were rendered at 240x240 through the production preview renderer and compared against the pre-fix definitions from `4785e4f3^`. Measured lanes: Mini Classic slot 1 had no lane and slot 2 had 90px, both now 108px with `fit: shrink`; Claude Creature slot 1 had no lane and slot 2 had 75px, both now 108px. A rendered "100%" no longer exceeds any lane it lives in.
+- Known limitation: The repository rehearsal scripts drive the device over HTTP and cannot run against a cable-connected VibeTV, so the scripted cold- and warm-start flows were not executed. The legibility and clipping question they exist to answer was verified directly instead, on this device's real state and panel geometry. A scripted rehearsal remains outstanding for the release gate.
+- Scope: `theme-packs/mini-classic/theme.json`, `theme-packs/claude-creature/theme.json`, their generated render packs and tests, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+- Superseded on 2026-09-22: This layout was withdrawn from the published catalog by the superseding theme versions recorded below. It stays on `codex/integration-p1-batch` for hardware verification.
+
+## 2026-09-22 — Return main to its pre-#466 customer-visible state
+
+- User approval: Marcus stated that merging PR #466 before the three P1 fixes were verified on real VibeTV hardware was a mistake, asked for the merge to be undone, and chose the full revert when shown that it also withdraws the two published theme versions.
+- Approved customer-visible result: The Control Center shows exactly what it showed before #466 was merged. Marcus chose to withdraw the two published themes by publishing a superseding version rather than deleting the ones already offered to customers. The catalog therefore lists Claude Creature 1.3.1 and Mini Classic 1.2.1, whose rendered layout is byte-identical to the pre-merge 1.2.1 and 1.1.4 revisions: the earlier text positions, sizes, and colors return, and the #258 legibility layout is withdrawn. Every other screen, control, and copy string returns to its pre-merge state. A customer who already installed 1.3.0 or 1.2.0 keeps that theme on the device and is offered the superseding version by the ordinary catalog update.
+- Scope: Revert squash commit `bb7dfa45` in full, then republish the two affected theme packs at a higher version and ThemeSpec revision so no published asset is deleted. Outside `theme-packs/`, `dist/theme-packs/`, and this approval record, the resulting tree is identical to `db281000`, so the only files that differ from the pre-merge state are the theme sources, their generated artifacts, and this file. No release, installation, or device operation. The withdrawn firmware and Control Center work stays on `codex/integration-p1-batch` for hardware verification.
+
+### 2026-09-22 — Withdraw the two published themes by superseding them
+
+- User approval: Shown that reverting #466 would delete Claude Creature 1.3.0 and Mini Classic 1.2.0, which the merge had already published to the live catalog, Marcus chose the option that republishes them at a higher version instead of deleting assets customers may already have installed.
+- Approved customer-visible result: The theme catalog offers Claude Creature 1.3.1 and Mini Classic 1.2.1. Their rendered layout is byte-identical to the pre-merge revisions, so the #258 legibility layout is withdrawn and the earlier text positions, sizes, and colors are what customers see again. The previously published 1.3.0 and 1.2.0 downloads stay available, so a device that already installed one keeps working and updates through the ordinary catalog path. No control, copy, or screen changes beyond the theme rendering itself.
+- Scope: `theme-packs/claude-creature`, `theme-packs/mini-classic`, and the regenerated `dist/theme-packs` artifacts. No release, installation, or device operation.
+
+## 2026-09-23 — Setup hardening batch: one provider skips Display Mode, a late WiFi answer keeps Cable, Windows stops saying Mac
+
+- User approval: On 2026-09-23 Marcus delegated issues #453, #204, #440, #423 and #438 plus part 2 of #460 as one setup-hardening branch, with the explicit instructions to skip the Manual/Automatic step when exactly one provider toggle is on (#423), to let the customer's latest Cable/WiFi choice win over a late WiFi answer (#440), and to make the "Mac"/"Mac App" wording platform-neutral in the Windows app while leaving the macOS texts unchanged (#460 part 2, #438).
+- Approved customer-visible result: In setup, a customer with exactly one provider switched on goes from Choose AI providers straight to the next step; that provider is saved as the one VibeTV shows, and Back from the theme step returns to the provider list. With two or more providers switched on, Display Mode appears exactly as before, and with none Continue stays closed as before. A customer who picks WiFi and then Cable stays on Cable even when the WiFi answer arrives later. In the Windows app only, "Mac App" reads "App" ("App offline", "Waiting for app", "Update the app first", "Checking the app"), and "this Mac" reads "this computer" on the Overview, Settings, Updates, the setup provider log and the AI usage dialog ("Finish AI setup on this computer"), matching the "on this computer" wording approved on 2026-09-17. The Windows app knows its platform from the runtime, never from the user agent. Every macOS text is unchanged and pinned by tests.
+- Scope: `setup-wizard.tsx`, `overview-screen.tsx`, `settings-screen.tsx`, `updates-screen.tsx`, `setup-usage-dialog.tsx`, `setup-providers-screen.tsx`, `control-center-app.tsx`, `control-center-types.ts`, the runtime's new `companion.runtime.os` field, their tests and customer flows, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-23 — Setup hardening batch follow-up: the Windows app does not say Mac before its runtime answers
+
+- User approval: Covered by Marcus's 2026-09-23 delegation of #438 and #460 part 2 (platform-neutral wording in the Windows app), which includes answering the Codex review of this pull request. The review of 16a4fbc6 found that a cold Windows start showed "reading provider usage on this Mac" until the first runtime status arrived, and kept Mac wording indefinitely when the runtime never answered. No new text is introduced.
+- Approved customer-visible result: The Windows app shows the approved Windows wording ("this computer", "App") from the first frame, including the setup welcome log and the offline states before the runtime has ever answered. The runtime's reported platform still wins once it arrives and is kept afterwards; until then the platform the WebView reports stands in. This corrects the previous entry's "never from the user agent": the shells still replace the user agent, and the stand-in is the WebView's platform, not the user agent. Every macOS text is unchanged.
+- Scope: `control-center-app.tsx`, the Windows customer flow `testWindowsAppDoesNotSpeakOfAMac`, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-23 — Setup hardening batch follow-up: the remaining Mac wording in the Windows app
+
+- User approval: On 2026-09-23 Marcus asked Codex to fix the remaining Mac texts in the Windows app, limited to the Control Center interface with the runtime (Companion) left unchanged, and to start right away.
+- Approved customer-visible result: In the Windows app only, the remaining "Mac App" wording reads "App"/"app" and "this Mac"/"your Mac" reads "this computer"/"your computer", using the wording approved earlier today. This covers the Usage empty state, the Support screen and its activity log, the Appearance install hint ("Install the app first") and Theme Studio messages, the firmware-blocked dialogs in setup ("Your app is out of date"), the cable option in "We couldn't find your VibeTV", the copied AI help prompt, and error and activity messages shown in the interface; "open it again from Applications" reads "from the Start menu". Messages the runtime sends are reworded only where the interface shows them, so the runtime itself is unchanged. Every macOS text is unchanged and pinned by tests.
+- Scope: a shared `copyForHost` helper in `customer-platform.ts`, `control-center-app.tsx`, `usage-screen.tsx`, `logs-screen.tsx`, `theme-library-screen.tsx`, `theme-studio-screen.tsx`, `setup-firmware-dialogs.tsx`, `setup-device-dialogs.tsx`, `setup-usage-dialog.tsx`, `setup-wizard.tsx`, `setup-ai-prompt.ts`, their tests, the Windows customer flow, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-23 — Setup hardening batch follow-up: the Windows Help menu and AI prompt do not say Mac
+
+- User approval: Covered by Marcus's 2026-09-23 request to fix the remaining Mac texts in the Windows app, interface only with the runtime unchanged, which includes answering the Codex review of this pull request. The review of b04e4e78 found that the copied AI help prompt still carried the runtime's Mac wording in its errors and events, and that the setup Help menu still said "The Mac App did not answer" after a partial support report. No new text is introduced.
+- Approved customer-visible result: In the Windows app only, the whole copied AI help prompt, including the errors, events and setup log it carries, and the setup Help menu's "Report saved with gaps" note use the approved Windows wording ("app", "this computer", "from the Start menu"). Every macOS text is unchanged.
+- Scope: `setup-ai-prompt.ts`, `setup-help-menu.tsx`, `setup-wizard-screen.tsx` and the setup step screens that pass the platform to it, `setup-wizard.tsx`, `control-center-app.tsx`, their tests, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-23 — Setup hardening batch follow-up: the Windows setup install logs do not say Mac
+
+- User approval: Covered by Marcus's 2026-09-23 request to fix the remaining Mac texts in the Windows app, interface only with the runtime unchanged, which includes answering the Codex review of this pull request. The review of aa8b90a3 found that a theme install that failed because the background service disappeared still showed "Mac App did not answer" in the visible setup log. No new text is introduced.
+- Approved customer-visible result: In the Windows app only, the theme and firmware install logs shown during setup use the approved Windows wording ("app", "this computer", "from the Start menu"). Every macOS text is unchanged.
+- Scope: `control-center-app.tsx` and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-28 — USB rescue update: setup updates a VibeTV on pre-Cable firmware over USB-C by itself
+
+- User approval: On 2026-09-28 Paul asked to build the USB rescue update from #478 directly into this pull request and to test it on the connected VibeTV and this Mac. Shown a confirmation dialog for it, he chose no dialog: setup updates the VibeTV right away and shows the existing firmware update view, like every other setup firmware update.
+- Approved customer-visible result: In setup, when the connected VibeTV runs firmware from before USB-C support (it answers over the cable without a device identity), the device search no longer ends in "Connect to WiFi" or "We couldn't search for your VibeTV". The app starts the firmware update over the cable by itself and shows the existing update log ("Preparing VibeTV update.", "Checking VibeTV.", "Updating VibeTV.", "Restarting VibeTV."), then searches again and connects the VibeTV by Cable as usual. No new text is introduced. The update runs once per app launch: if it fails, the existing "We couldn't search for your VibeTV" dialog shows the update error with "Search again", and the next search shows the existing "Your VibeTV needs a firmware update before it can use USB-C." with "Connect VibeTV to WiFi, install the update, then reconnect the cable." instead of flashing again. A VibeTV whose USB-C carries power only, or a charge-only cable, shows no serial port, so nothing changes for it.
+- Scope: `control-center-app.tsx`, the customer flows `testPreUsbCVibeTVIsUpdatedOverTheCable` and `testFailedCableRescueRunsOnceAndPointsToWiFi`, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — Setup hardening batch follow-up: Continue waits for a provider switch that is still saving
+
+- User approval: On 2026-09-29 Paul asked to fix the Codex review findings on this pull request where sensible. The review of aa8b90a3 found that switching one of two providers off and pressing Continue at once skipped Display Mode on a write that could still be refused, leaving VibeTV pinned to one provider after the switch rolled back. No new text is introduced.
+- Approved customer-visible result: On Choose AI providers, Continue is closed while a provider switch is still saving, exactly as it already is while the completion is on its way, and opens again as soon as the write answered. Every text and every other screen is unchanged.
+- Scope: `setup-providers-screen.tsx`, its test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — Setup hardening batch follow-up: firmware and theme job failures use Windows wording
+
+- User approval: Covered by Marcus's 2026-09-23 request to fix the remaining Mac texts in the Windows app, interface only with the runtime unchanged, which includes answering the Codex review of this pull request. The review of 1710cb9a found that a firmware update on Updates and a theme install on Appearance that lose the background service still showed the runtime's "Mac App" and "from Applications" recovery. No new text is introduced.
+- Approved customer-visible result: In the Windows app only, the firmware update status on Updates and the theme install status on Appearance, including their failure dialogs and log lines, use the approved Windows wording ("app", "this computer", "from the Start menu"). Every macOS text is unchanged.
+- Scope: a shared `statusForHost` helper in `customer-platform.ts`, `updates-screen.tsx`, `theme-library-screen.tsx`, the helper's test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — USB rescue update shows its progress
+
+- User approval: On 2026-09-29 Paul reported waiting a long time on "Updating VibeTV." during the USB rescue update, asked for intermediate progress, and chose variant 08a ("Setup Status Lines" in the Claude Design project "Screen-Redesign mit VibeTV") after seeing the three variants.
+- Approved customer-visible result: While the USB rescue update writes the firmware, the update log line "Updating VibeTV." counts up in place in steps of ten percent ("Updating VibeTV: 10%." … "Updating VibeTV: 100%."), and the update progress bar follows it. The line replaces itself instead of adding lines, so the earlier steps stay in the log. If the write has to start again after a transfer error, the count starts again from the beginning. On a failure the line keeps its last value. No other text changes.
+- Scope: the runtime's update progress wording (`companion/internal/companionapi/server.go`), the rescue flasher's progress callback, their tests, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — The rescued VibeTV connects without a second search
+
+- User approval: On 2026-09-29 Paul tested the USB rescue update and asked that setup not jump back to "looking for your VibeTV" after the update, but go straight on to Choose AI providers, because the VibeTV is already connected by USB-C.
+- Approved customer-visible result: After the USB rescue update finishes, setup no longer starts a new device search. It connects the VibeTV the update just verified over the cable, the same way as a single VibeTV found on the cable ("Connecting to VibeTV"), and then shows Choose AI providers. If the update does not report the VibeTV's identity, setup searches again as before. Every other screen and text is unchanged.
+- Scope: `control-center-app.tsx`, the customer flow test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — The USB rescue update runs as the setup's normal firmware update
+
+- User approval: On 2026-09-29 Paul compared the USB rescue update with the setup's normal firmware update and asked for one way: the same loading states as the normal update, and a faster rescue.
+- Approved customer-visible result: A VibeTV on firmware from before USB-C support is no longer updated on the Welcome screen. Setup treats it as the one VibeTV on the cable and shows the normal "Connecting to VibeTV" sequence: "connecting to cable://vibetv", "connected", "checking firmware version", "firmware update available · 1.0.39 → <current>", then "updating firmware · N% — keep VibeTV powered on", where N counts up in steps of ten as the firmware is really written, and "update complete". Setup then connects that VibeTV by Cable and shows Choose AI providers. A failed rescue opens the normal "Firmware update did not finish" dialog with "Try update again" and "Create support report"; it never flashes again on its own. The rescue writes at a higher cable speed and takes about half as long as before. This replaces the Welcome-screen log and the "Updating VibeTV: N%." line of the earlier rescue entries; every other screen and text is unchanged.
+- Scope: `control-center-app.tsx`, `control-center-types.ts`, `setup-connect.ts`, `setup-connect-log.ts`, `setup-wizard.tsx`, their tests, the customer flow test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — Retrying after a successful USB rescue repeats only the Cable step
+
+- User approval: On 2026-09-28 Paul asked to fix every valid finding of the automated Codex review on this pull request. The review found that "Try update again" after a successful rescue started a second rescue that cannot find the already updated VibeTV.
+- Approved customer-visible result: No screen, dialog, button, or text changes. When the USB rescue wrote and verified the firmware but connecting by Cable failed, the existing "Firmware update did not finish" dialog's "Try update again" now repeats only the Cable connection for the VibeTV the rescue verified, instead of failing every retry; it never writes the firmware a second time. Every other screen and text is unchanged.
+- Scope: `control-center-app.tsx`, the customer flow test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-29 — Setup connection failures use the Windows wording
+
+- User approval: On 2026-09-28 Paul asked to fix every valid finding of the automated Codex review on this pull request, and approved on this branch that the Windows app never speaks of a Mac. The review found that the setup's connection-failure dialog still showed the Companion's own "Mac App" and "this Mac" wording on Windows.
+- Approved customer-visible result: On Windows, the setup dialog for a failed connection and the firmware "attention needed" dialog word "Mac App" as "app" and "this Mac" as "this computer", like every other Windows text. On macOS nothing changes. No other screen or text changes.
+- Scope: `setup-wizard.tsx`, its test, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-22 — Republish the legibility layout above the withdrawn versions
+
+- User approval: Marcus asked for PR #470 to be brought back to review readiness after the #466 revert, keeping the approved #258 legibility layout and resolving the theme conflicts against `main` without touching any published asset.
+- Approved customer-visible result: Once this branch is merged, the theme catalog offers Claude Creature 1.3.2 and Mini Classic 1.2.2 at ThemeSpec revision 9. Their rendered layout is byte-identical to the approved 1.3.0 / 1.2.0 legibility revisions: every percentage keeps its symmetric 108px lane with `fit: shrink`, so a rendered "100%" keeps its percent sign, and the reading text stays at the larger size. The superseding 1.3.1 / 1.2.1 versions from the revert and every earlier published download remain available. No other screen, control, or copy string changes.
+- Scope: `theme-packs/claude-creature`, `theme-packs/mini-classic`, the regenerated `dist/theme-packs` artifacts, the revision assertion in `theme-legibility.test.ts`, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation. The real-VibeTV hardware test for the batch is recorded on the pull request.
+
+## 2026-09-29 — Windows lists every provider CodexBar reports
+
+- User approval: Marcus decided that Windows should again offer every provider the bundled Win-CodexBar supports, with the provider's own tool installed and signed in as the customer's prerequisite: "wir würden gerne wieder alle Anbieter anbieten, die auch WinCodex Bar hat. Und da muss halt dann ... die Voraussetzung dann sein, dass jeweils die jeweilige Software ... installiert ist auf dem Rechner." He accepted the proposal to keep the sign-in button only where the Companion can start a sign-in and to raise the provider check time limit.
+- Approved customer-visible result: On Windows, setup and Settings list every provider CodexBar reports, exactly as the Mac app already does; the list is no longer shortened to Codex, Claude, Cursor and Antigravity. Those four keep the "Sign in to <Provider>" button approved on 2026-09-17; every other row shows its switch, the provider's own message with the existing copy action, and "Check again". A single provider check may now take up to 40 seconds before the row reports "The provider check timed out.", on Windows and on the Mac, instead of 18 seconds. No copy, layout or control changes otherwise; the Mac rows are unchanged apart from the longer check.
+- Scope: `setup-providers-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs`, and the Companion's provider check timeouts (`companion/internal/codexbar/providers.go`, `provider_setup.go`, `companion/internal/companionapi/provider_setup.go`, `preferences.go`). The prerequisite notice with a link to the setup guide is not part of this entry; its wording awaits Marcus's approval. This approves the draft pull request only, not merge, release, or a device operation.
+
+## 2026-09-29 — Windows provider prerequisite notice
+
+- User approval: Marcus approved the proposed wording for the prerequisite notice: "Ja, also Hinweistext passt für mich so."
+- Approved customer-visible result: On Windows, when a provider without the "Sign in to <Provider>" button needs a sign-in or setup (`auth_required` or `setup_required`), its message dialog reads "VibeTV reads <Provider> usage from <Provider>'s own app on this computer. Make sure it is installed and signed in, then click Check again." Below it the dialog shows the provider's own message and an "Open setup guide" link that opens https://vibetv.shop/pages/setup in the default browser. OK and "Copy provider message for <Provider>" stay as they are. Codex, Claude, Cursor and Antigravity, every other state, and the Mac app are unchanged.
+- Scope: `setup-providers-screen.tsx`, `setup-wizard.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, their tests, and the Companion's fixed `POST /v1/providers/setup-guide` (`companion/internal/companionapi/provider_setup.go`, `server.go`). This approves the draft pull request only, not merge, release, or a device operation.
+
+## 2026-09-30 — USB firmware update without false alarms, with progress
+
+- User approval: Paul tested the customer state with a USB VibeTV, saw "We couldn't search for your VibeTV — VibeTV update is still running", "Finish AI setup on this Mac" and a background-service dialog while the firmware update ran, and asked: "fix das und mach PR. außerdem wieso dauert firmware update so lange? und ich brauche da nen status indicator". He then asked to speed up the upload in the same pull request: "mach das in den gleichen pr".
+- Approved customer-visible result: While a firmware or theme job is installing, missed status polls no longer count toward declaring the VibeTV lost, so no device search starts and "We couldn't search for your VibeTV" no longer appears mid-update. On the setup device step, "Finish AI setup on this Mac" is held back while the connect-and-firmware sequence runs and appears as before once it settles. A Cable firmware update now shows the existing percentage line "updating firmware · N% — keep VibeTV powered on" and fills the existing Updates progress bar, as the Cable rescue already did. "Provider settings need a newer Mac App" appears only for a CodexBar version that was read and is too old; an unanswered version check shows the existing "Settings are not available right now." No new copy, control, layout or visual treatment.
+- Scope: `device-recovery-gate.ts`, `setup-wizard.tsx`, `control-center-app.tsx`, `control-center-types.ts` (support-report field `operationFailureLimit` removed), their tests, and the Companion/firmware changes of this pull request. This approves the pull request only, not merge, release, or a device operation.
+
+## 2026-09-30 — Recovery grace only for a job the Companion still reports
+
+- User approval: Paul enabled Auto-fix for this pull request, which covers addressing its automated review findings. The Codex review found that after a Companion restart the UI could keep a stale "installing" firmware status and then never count a missed device poll again.
+- Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while the same `/v1/status` answer reports an installing firmware or theme job. When the Companion no longer reports one, missed polls count again and device recovery can open as before. No copy, control, layout or visual change.
+- Scope: `control-center-app.tsx`. This approves the pull request only, not merge, release, or a device operation.
+
+## 2026-10-01 — Setup never waits for a newer app release
+
+- User approval: Marcus reproduced a Windows customer stuck in setup on "Your app is out of date" after a new release published, and approved the proposed permanent fix: every app installs only the firmware of its own release, so the block disappears entirely ("dann machst du bitte einen PR für den dauerhaften Vorschlag").
+- Approved customer-visible result: During setup, the firmware step no longer shows "Your Mac App is out of date" / "Your app is out of date" or "Could not check the Mac App". The app updates VibeTV to the firmware of its own release and setup continues. The remaining firmware dialogs ("Could not check VibeTV's firmware", "The Mac App is restarting") are unchanged. The Updates screen is unchanged and still offers the app update before the firmware update. No new copy, control, layout or visual treatment, on macOS and Windows.
+- Scope: `setup-firmware-dialogs.tsx`, `setup-wizard.tsx`, `setup-preview-gallery.tsx`, `control-center-app.tsx`, `control-center-runtime.ts`, their tests, and the Companion change of this pull request (`companion/cmd/codexbar-display/main.go`, `companion/internal/companionapi/server.go`). This approves the pull request only, not merge, release, or a device operation.
+
+## 2026-09-30 — Recovery grace also for this window's own operation
+
+- User approval: Paul enabled Auto-fix for this pull request, which covers fixing its failing CI. The customer flow "Firmware update must refresh the active slot theme exactly once" failed because the previous entry's change took the grace only from the status answer.
+- Approved customer-visible result: Unchanged from the 2026-09-30 entry "USB firmware update without false alarms, with progress": missed polls are not counted while this window runs its own firmware update or theme install, or while the same `/v1/status` answer reports an installing job. A job only remembered from an earlier status answer no longer suspends counting. No copy, control, layout or visual change.
+- Scope: `control-center-app.tsx`. This approves the pull request only, not merge, release, or a device operation.
+
+## 2026-09-25 — Turning off the Manual provider keeps VibeTV showing usage
+
+- User approval: Marcus reported that after pinning Manual to Codex and switching Codex off in Settings, the Manual preview read "No usage yet", no provider was checked, and VibeTV showed nothing although Claude had usage. Codex proposed keeping the pinned provider while it is on, switching the selection to Automatic when it is turned off, and saying so with a short hint. Marcus answered "ok".
+- Approved customer-visible result: While the Manual provider stays on, nothing changes. When the customer turns it off in Settings, Display mode switches to Automatic over the providers that are still on, and the Display mode section shows "<Provider> is off, so VibeTV now switches automatically." until the display choice changes again. VibeTV itself keeps showing the remaining providers instead of going blank, also when the provider is turned off outside this app. No other control, copy, or layout changes.
+- Scope: `control-center-types.ts`, `control-center-app.tsx`, `provider-picker.tsx`, `settings-screen.tsx`, the daemon provider-display fallback in `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the visible result and the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-25 — Review follow-up: the hint stays through unrelated provider toggles
+
+- User approval: Covered by Marcus's "ok" to the entry above, which asked for a short hint when the switch happens. The review of PR #477 found that toggling another provider cleared the hint although the display mode did not change, and the live preview test showed the same.
+- Approved customer-visible result: The hint explains the automatic switch while this app window stays open. It disappears once a new display mode is saved or when the provider it names is switched on again, because it would then be wrong. Turning another provider on or off only adjusts the Automatic pool and leaves it visible, and a failed save leaves it in place. After the app is reopened, Automatic is simply the saved mode and no hint is shown.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.
+
+## 2026-09-25 — Review follow-up: only a provider switched off triggers the switch
+
+- User approval: Covered by Marcus's "ok" to the first entry of this date, which approved switching when the Manual provider is turned off. The review of PR #477 found that a Manual provider missing from the provider list entirely was treated as turned off too.
+- Approved customer-visible result: Only a Manual provider that the provider list shows as switched off triggers the switch to Automatic and the hint. A Manual provider that no longer appears in the list at all stays selected exactly as before this pull request.
+- Scope: `control-center-types.ts`, `control-center-app.tsx`, the matching daemon inventory check, their tests, and this approval record. Pull-request branch only.
+
+## 2026-09-25 — Review follow-up: an old hint does not come back
+
+- User approval: Covered by Marcus's "ok" to the first entry of this date. The review of PR #477 found that a hint hidden because its provider was switched on again reappeared when that provider was switched off later, although the display mode had not changed.
+- Approved customer-visible result: Switching the named provider on again ends the hint for good. Switching it off later while Automatic is already active shows no hint, because nothing switched.
+- Scope: `control-center-app.tsx` and this approval record. Pull-request branch only.
+
+## 2026-10-01 — Review follow-up: the automatic switch survives one failed CodexBar read
+
+- User approval: On 2026-10-01 Paul asked to review this pull request together with #474, test it on this Mac with the connected VibeTV, and fix every issue found directly. The review found that while the switch was active, a single failed CodexBar read replaced the remaining provider's usage on VibeTV with the no-providers screen.
+- Approved customer-visible result: No screen, dialog, button, or text changes. Once VibeTV has switched to the providers that are still on, it keeps showing them through one failed CodexBar read. A second failed read in a row ends the switch, because the Manual provider may have been switched on again meanwhile. After a restart of the background service the strict behaviour decided on 2026-09-25 stays: until CodexBar confirms the Manual provider is off, nothing else is shown in its place.
+- Scope: `companion/internal/daemon/collector.go`, `companion/internal/daemon/daemon.go`, their tests, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-24 — Setup log, Run diagnostics and usage engine identity (#313 #337 #335 #334)
+
+- User approval: Marcus assigned package A "Setup- und Support-Diagnose" (#313 live setup logs in support reports, #337 Run diagnostics action, #335 incompatible version instead of engine_error, #334 runtime path, version and source, #475 doctor status) for one bundled pull request and set the binding product rule: customers never see the name CodexBar in the app; the UI calls it neutrally "Usage engine" with version, path and source, and the name may appear only in the support report/diagnostics export.
+- Approved customer-visible result: The Support screen gains a "Diagnostics" card with a "Run diagnostics" button. It runs the same snapshot the support report downloads and shows a "Usage engine" block (version, required version, source in plain words, path with the home folder shortened to ~) and every check with icon plus text (Pass / Needs attention / Failed), its detail and one next action; a partial result says "Some checks could not run." An engine that is too old reads "Usage engine X is too old. Version Y or newer is required." with the existing Repair action. A "Setup log" card shows the Mac App's ordered setup events live (time, step, status, message, next action, ×N for repeats, "Older entries were removed." when truncated, "No setup activity recorded yet." when empty, "Jump to latest" when scrolled up). The setup Help menu gains "Show setup log" / "Hide setup log", revealing the same log while Create support report stays available. Settings gains a "Run diagnostics" button under AI providers that opens Support and runs diagnostics. A provider row for a too-old engine shows its own update text instead of "Check timed out", and the usage dialog gains the cause "Update the usage engine". Any server text naming CodexBar is shown as "usage engine". No other screen, control or copy changes.
+- Scope: `diagnostics-panel.tsx`, `setup-event-log.tsx`, `customer-support-text.ts`, `logs-screen.tsx`, `settings-screen.tsx`, `control-center-app.tsx`, `control-center-types.ts`, `support-report.ts`, `setup/setup-help-menu.tsx`, `setup/setup-provider-row.tsx`, `setup/setup-usage-dialog.tsx`, their tests, and this approval record. This approves the visible result on the pull-request branch only, not merge, release, installation, or a device operation.
+
+### 2026-09-24 — Setup log names provider choices, checks and display mode
+
+- User approval: Testing the local preview, Marcus found the setup log too coarse (it showed only VibeTV search, connection and "AI providers Done ×2") and approved ("ok") logging the provider steps and replacing the repeat sign with words.
+- Approved customer-visible result: The setup log also shows each provider switched on or off ("AI provider choice": "<Provider> turned on." / "<Provider> turned off."), the result of the check that follows switching one on ("AI provider check": "<Provider> is ready." or "<Provider>: <problem>" with its next action) and every display mode save ("Display mode": "Automatic: VibeTV switches between your providers." or "Always show <Provider>.", or the refusal with its next action). A repeated entry reads "N times" in muted text instead of "×N"; its accessible name stays "Repeated N times". No other screen, control or copy changes.
+- Scope: `setup-event-log.tsx`, its test, the Mac App's setup event recording, and this approval record. This approves the visible result on the pull-request branch only, not merge, release, installation, or a device operation.
+
+### 2026-10-05 — Hardware review follow-up: the setup log survives a restart, Windows says App, no made-up engine location
+
+- User approval: On 2026-10-05 Paul had this pull request rehearsed on the bench Mac and the Windows laptop (cold and warm start), was shown the findings and asked to fix everything that belongs to this pull request and to make it ready to merge.
+- Approved customer-visible result: The setup log keeps its entries when the Mac App's background service restarts in the middle of a setup, and marks the restart with one entry ("Mac App": "The Mac App's background service started again."); a new setup or a log older than a day starts empty as before. A VibeTV found on the cable that setup then updates by itself is logged as "VibeTV search — Done: Found a VibeTV on the cable that needs a firmware update." instead of "Failed" with the advice to use WiFi. In the Windows app the Diagnostics checks and the setup log use the approved Windows wording ("App", "this computer"). The "Usage engine" block no longer shows a "Location": with the engine's name replaced, the path shown did not exist on disk; the real path stays in the support report. The Gemini migration message that reached `main` meanwhile reads "Enable Antigravity, sign in to Antigravity or run `agy`, then refresh." rather than naming the engine ("Enable CodexBar's Antigravity provider"), which this pull request's rule forbids. No other screen, control or copy changes.
+- Scope: `diagnostics-panel.tsx`, `setup-event-log.tsx`, `customer-support-text.ts`, `logs-screen.tsx`, `setup/setup-help-menu.tsx`, `setup/setup-provider-row.test.tsx`, their tests, the Mac App's setup event recording, and this approval record. This approves the visible result on the pull-request branch only, not merge, release, installation, or a device operation.
+
+### 2026-10-05 — Hardware review follow-up: the restart entry's label on Windows
+
+- User approval: Covered by Paul's 2026-10-05 request to fix what the hardware rehearsal of this pull request found and make it ready to merge. The Windows run showed the new restart entry under the step label "Mac App".
+- Approved customer-visible result: In the Windows app the setup log's step labels use the approved Windows wording too, so the restart entry reads "App — Done: The app's background service started again." The Mac wording is unchanged. No other screen, control or copy changes.
+- Scope: `setup-event-log.tsx`, its test, and this approval record. This approves the visible result on the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-09-30 — Setup and pairing only over the USB cable
+
+- User approval: Marcus decided in issue #489 (decision of 2026-09-30) that setup and pairing run only over the USB cable and that the Mac App guides setup over the cable ("Mac-App führt durch die Einrichtung per Kabel"). On 2026-09-30 he added that WiFi changes and other critical changes happen only over USB ("Änderungen des Wi-Fis oder Änderungen der kritischen Sachen nur per USB") and left the details to Codex.
+- Approved customer-visible result: The phone path is gone. The help link on the device step reads "How to connect VibeTV" and opens "Connect the USB cable" with three steps: plug VibeTV into this computer with the USB cable, wait until the screen lights up and scan again, choose WiFi after VibeTV is connected. "Scan again" and "Enter IP manually" stay. The not-found dialog says "Setup runs over the USB cable. Connect it, then scan again."; its second option reads "Already on WiFi — For a VibeTV that is already set up on your WiFi." The Overview reconnect notice reads "If VibeTV shows “Connect USB cable”, plug it into this computer with the cable and choose the new WiFi. Your pairing and settings stay saved." A VibeTV without a USB connection shows "VIBE TV / Connect USB cable / app.vibetv.shop" and no longer opens a VibeTV-Setup network. No other screen, control or layout changes.
+- Scope: `setup-device-dialogs.tsx`, `setup-wizard.tsx`, `setup-device-screen.tsx`, `setup-preview-gallery.tsx`, `overview-screen.tsx`, their tests, `apps/control-center/scripts/test-customer-flows.mjs`, and the firmware/Companion changes of this pull request. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-09-30 — A VibeTV that pairs only over the cable leads to the cable
+
+- User approval: Same decision as the entry "Setup and pairing only over the USB cable" (issue #489, "Mac-App führt durch die Einrichtung per Kabel"; "Änderungen des Wi-Fis … nur per USB"). The automated Codex review on this pull request found that the stated recovery action was not reachable.
+- Approved customer-visible result: When pressing Connect on a WiFi VibeTV answers "VibeTV pairs only over the USB cable." with "Connect VibeTV to this Mac with the USB cable, then press Connect.", the connection-failure dialog's main button reads "Use the cable" instead of "Search again" and switches setup to the cable search. "Enter IP manually" stays. Every other connection failure is unchanged.
+- Scope: `setup-connect.ts`, `setup-device-dialogs.tsx`, `setup-wizard.tsx` and its test. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-09-30 — Updates and erasing only over the USB cable
+
+- User approval: Marcus approved the simple package for issue #489 on 2026-09-30: "Ja, das gefällt mir viel besser. Damit kannst du direkt loslegen." The package keeps everything critical on the USB cable: firmware updates only over the cable, a factory reset over the cable, and a pairing token from the hardware random generator. Sold devices are out of scope.
+- Approved customer-visible result: In Settings, the Setup section shows a second button "Erase VibeTV" below "Run setup again", only while VibeTV is connected by USB-C. It opens the dialog "Erase VibeTV?" — "VibeTV forgets its WiFi details, pairing, settings and themes, then setup starts again. Use this before you give VibeTV away." — with "Keep VibeTV" and "Erase VibeTV". While it runs, the button reads "Erasing"; afterwards setup starts again as with "Run setup again". When an update is started on a VibeTV that is connected by WiFi and only accepts updates over the cable, the update fails with "VibeTV installs updates only over the USB cable." and "Connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then update again." The VibeTV status page no longer links to an update page; its update notice reads "Update with the Mac app over the USB cable." No other screen, control or layout changes.
+- Scope: `settings-screen.tsx`, `control-center-app.tsx`, the settings test, and the firmware/Companion changes of this pull request. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-01 — Factory reset wording and a neutral restart screen
+
+- User approval: After his own new-customer test on 2026-10-01 Marcus asked to replace the word "Erase" with the usual wording "wie das üblich ist auch beim Mac-System … auf Werkszustand zurücksetzen … als Englisch", and reported that VibeTV briefly showed "WiFi connected! / Now go to: / app.vibetv.shop" after joining WiFi and a similar screen when switching back to USB-C, which made him wonder whether VibeTV had gone back to setup.
+- Approved customer-visible result: In Settings the button reads "Reset to factory settings" (while running: "Resetting"). Its dialog reads "Reset VibeTV to factory settings?" with the unchanged text and the buttons "Cancel" and "Reset". The activity entries read "VibeTV reset to factory settings" and "VibeTV was not reset". On the VibeTV display, the screen after joining WiFi reads "VIBE TV / Waiting for app / IP: …", and a VibeTV starting in cable mode reads "VIBE TV / Waiting for app"; neither shows a setup instruction or the app address. Fresh devices keep "Connect USB cable / app.vibetv.shop". No other screen, control or layout changes.
+- Scope: `settings-screen.tsx`, `control-center-app.tsx`, the settings test, and the firmware display texts of this pull request. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-05 — Early VibeTVs without USB data keep WiFi updates, USB-C stays greyed out
+
+- User approval: On 2026-10-05 Marcus said that early VibeTVs have no USB connection and work only over WiFi, and asked that they keep receiving new firmware while "für die die kabel option einfach immer ausgegraut ist". He added that USB-C is greyed out as well while a VibeTV still runs the old firmware ("bei der alten Firmware … ist dann zuerst USB-C ebenfalls rausgegraut"), and accepted that these early VibeTVs are not EN 18031 compliant ("das würde ich einfach mal hinnehmen").
+- Approved customer-visible result: In Settings, the USB-C card is greyed out while VibeTV is connected over WiFi, unless its firmware takes setup and updates only over the cable. That covers older firmware such as 1.0.39, and VibeTVs that came from older firmware and have not answered over the USB cable yet. When such a VibeTV is plugged into this computer with a data cable while the app is open, the app asks it once over the cable; from then on it follows the cable-only rules and USB-C becomes available. A VibeTV that never answers over the cable keeps installing updates from the app over WiFi and, without a WiFi network, opens VibeTV-Setup with "VIBE TV / Download Mac App / app.vibetv.shop" as before. A VibeTV in cable mode and an offline WiFi binding keep USB-C as before. No copy, layout or other control changes.
+- Scope: `control-center-types.ts`, `settings-screen.tsx`, their tests, the Companion status check, the firmware legacy WiFi mode, and this approval record. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-05 — Customer-flow tests model current firmware
+
+- User approval: Same decision as the entry "Early VibeTVs without USB data keep WiFi updates, USB-C stays greyed out" (2026-10-05, "für die die kabel option einfach immer ausgegraut ist").
+- Approved customer-visible result: Unchanged from that entry. The WiFi VibeTVs in the customer-flow tests now report current firmware (`cableOnlyUpdates:true`), so their USB-C card stays available as approved. On a legacy WiFi VibeTV the device status page reads "Update with the VibeTV App on your Mac." instead of linking to a separate update page that said the same. No other screen, control or layout changes.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and the legacy device status page text. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-05 — The usage service is repaired on its own at most every ten minutes
+
+- User approval: On 2026-10-05 Claude listed the customer-visible issues of
+  the overnight batch (#507, #358, #483, #508) as needing UI approval, and the
+  user answered in chat "du hast erstmal alle freigaben" (all approvals granted
+  for now; they review the batch the next morning).
+- Approved customer-visible result: When the usage service fails, the
+  automatic repair still runs once for that incident. If the service recovers
+  and fails again within ten minutes, the app no longer tears the background
+  service down a second time on its own; the existing "Finish AI setup on this
+  Mac" dialog shows instead, and its "Try automatic repair again" button still
+  repairs at any time. After ten quiet minutes the automatic repair is armed again. No new
+  control, copy, or layout (#508).
+- Approved files: `control-center-app.tsx`, its customer-flow regression test,
+  and this approval record.
+
+## 2026-10-05 — A pre-USB-C Cable VibeTV stays in the list next to another WiFi VibeTV
+
+- User approval: On 2026-10-05 Claude listed #483 among the customer-visible
+  issues of the overnight batch, and the user answered in chat "du hast
+  erstmal alle freigaben" (all approvals granted for now).
+- Approved customer-visible result: When a VibeTV with firmware from before
+  USB-C is on the Cable and a different VibeTV answers on WiFi, setup's
+  existing "Choose your VibeTV" list shows both, and choosing the Cable one
+  runs the existing Cable rescue update. A WiFi VibeTV with the same board and
+  firmware as the Cable one may be the same device, so only the WiFi entry is
+  shown then, as before. No new control, copy, or layout; the Control Center
+  files are unchanged.
+- Approved files: Companion device search (`server.go`), its tests, and this
+  approval record.
+
+## 2026-10-05 — Theme readback test waits for the theme step (test only)
+
+- User approval: On 2026-10-05 the user granted all approvals for the
+  overnight batch in chat ("du hast erstmal alle freigaben").
+- Approved customer-visible result: None. The customer-flow test for a failed
+  post-install device read now waits up to ten seconds for "Choose your
+  theme" instead of sampling the screen one second in, and reports headings,
+  dialogs, screen text and recent requests when it fails (#430). Setup must
+  still not complete before a successful readback.
+- Approved files: `apps/control-center/scripts/test-customer-flows.mjs` and
+  this approval record.
+
+## 2026-10-05 — A Cable VibeTV that setup updates keeps connecting on its own
+
+- User approval: On 2026-10-05 the user gave explicit approval in chat for the customer-visible UI changes of this batch ("du hast erstmal alle freigaben") after issue #507 was listed as needing UI approval.
+- Approved customer-visible result: A VibeTV on firmware from before USB-C support that is the only one on the Cable, and that setup updates over the Cable and then connects by itself, stays on "Connecting to VibeTV" after "update complete" until the next setup step appears. The "Choose your VibeTV" title, the device card still showing the firmware from before the update, and its Connect button no longer appear there. Like every Cable connect once its Cable step is done, the screen keeps the disabled "Use WiFi instead" link. Back from the AI provider step reconnects that VibeTV by Cable on its own, like any Cable VibeTV, instead of showing the list, and never updates it a second time. No new copy, control, layout, or visual treatment.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. This approves the pull-request branch only, not merge, release, or a device operation.
+
+## 2026-10-05 — Lost VibeTV can be chosen again over the current tab
+
+- User approval: The user explicitly approved customer-visible UI changes for
+  this batch in chat on 2026-10-05 ("du hast erstmal alle freigaben") after
+  issue #358 was listed as needing UI approval.
+- Approved customer-visible result: When the saved VibeTV is lost after the
+  customer entered the Control Center and the automatic recovery search finds
+  VibeTVs it does not reconnect on its own (the saved one is not among them, or
+  reconnecting it failed), a dialog opens over the current tab with the
+  navigation still visible. It reuses the setup dialog and the setup device
+  cards: title `Choose your VibeTV` and `Your VibeTV is not reachable. Choose it
+  to connect again.`, or the failed attempt's own message and next step; the
+  previously connected VibeTV (otherwise the first) is preselected; one
+  `Connect` action and the close button. Connect reconnects the chosen VibeTV
+  at its new address and the dialog closes; closing it leaves the current tab,
+  with Overview reporting the VibeTV as not reachable. The saved VibeTV found
+  at a new address still reconnects without a dialog. Settings does not show
+  the same failure in a second dialog, and the usage-service dialog waits while
+  this one is open.
+- Approved files: `control-center-app.tsx`, `setup/setup-device-dialogs.tsx`,
+  the customer-flow regression test, and this approval record.
+
+## 2026-10-05 — Theme Studio offers CodexBar's reserve pace for usage windows 1 and 2
+
+- User approval: On 2026-10-05 the user granted every customer-visible change
+  of the batch in chat: "du hast erstmal alle freigaben" (all approvals granted
+  for now). #412 is part of that batch.
+- Approved customer-visible result: Theme Studio's existing "Binding" list and
+  variable tokens gain six entries, "Usage window 1 pace %", "Usage window 1
+  pace", "Usage window 1 lasts" and the same three for window 2. The editor,
+  catalog and live previews render them like the VibeTV does: CodexBar's signed
+  pace (`-25%`, `+14%`), `reserve` / `on pace` / `deficit`, and `lasts until
+  reset` / `runs out`, empty when CodexBar sent no pace or the window's
+  countdown is gone. The catalog preview's neutral example windows carry an
+  example pace. A theme that needs `usage-pace-v1` shows the existing "Firmware
+  update needed" state on a VibeTV without it, and Theme Studio exports declare
+  that capability. No other new control, copy, or layout.
+- Approved files: `control-center-types.ts`, `theme-library-screen.tsx`,
+  `live-vibetv-preview.tsx`, `theme-studio/primitive-inspector.tsx`,
+  `theme-studio/editor-geometry.ts`, `lib/theme-studio.ts`,
+  `lib/theme-studio-capabilities.ts`, `lib/active-theme-upgrade.ts`, their
+  tests, and this approval record.
+
+## 2026-10-05 — Review follow-up: lost-VibeTV picker, repair pause, Pace Meter
+
+- User approval: Covered by the user's "du hast erstmal alle freigaben" on
+  2026-10-05 for this batch. An independent review of the batch found these
+  gaps in the results approved above.
+- Approved customer-visible result: The lost-VibeTV picker (#358) lists only
+  VibeTVs it can reconnect over WiFi; a VibeTV found only on the Cable no
+  longer appears there, because choosing it could not connect. The picker
+  also waits while Updates shows "Update failed" or Appearance shows a failed
+  theme install, so it never opens on top of them. The automatic usage-service
+  repair (#508) pauses for ten minutes after it last ran, measured from that
+  repair; "Try automatic repair again" still works at any time. The new theme
+  "Pace Meter" (#412) appears in Appearance and in setup's theme step like
+  every live theme. On firmware without `usage-pace-v1` its Install is blocked
+  with the existing "Firmware update needed" state, like other themes that
+  need newer firmware. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, the customer-flow tests, the
+  Pace Meter theme pack, and this approval record.
+
+## 2026-10-06 — Pace Meter redrawn as two lanes
+
+- User approval: On 2026-10-06, while this pull request was rehearsed on the
+  bench Mac, Paul saw Pace Meter on the VibeTV, asked for other designs, was
+  shown four and chose in chat: "Bau Pace Meter als Entwurf B (zwei Spuren)".
+- Approved customer-visible result: Pace Meter (#412) shows the provider name
+  small at the top and one lane per usage window: the window's label, its
+  signed pace large on the right (`-11%`, `+8%`), a full-width bar of the
+  window's usage coloured by remaining quota like other themes, and below it
+  `lasts until reset` or `runs out`. The words `reserve` / `on pace` /
+  `deficit` and the separate usage percent are gone from this theme. A marker
+  for the expected usage and a colour that follows the pace state need new
+  firmware bindings and are not part of this change. No app screen, control or
+  copy changes.
+- Approved files: the Pace Meter theme pack, its generated render pack and
+  catalog entry, its test, and this approval record.
+
+## 2026-10-06 — Pace Meter gets the design's state colour and expected line
+
+- User approval: The two-lane build above lacked the state colour and the
+  expected marker of the design Paul chose ("Entwurf B"). On 2026-10-06 he
+  sent a photo of the VibeTV with "das sieht nicht so aus wie dein entwurf.
+  mach erstmal alles auf diesem mac was geht."
+- Approved customer-visible result: In each Pace Meter lane the signed pace is
+  drawn larger and, together with the bar, is green in reserve, yellow on pace
+  and coral in deficit; without a pace the bar is grey. A thin white line
+  below the bar reaches to where CodexBar expects the window to be by now and
+  is empty without a pace. This replaces the quota colouring and the "not part
+  of this change" note of the entry above. The catalog and live previews draw
+  the same. No app screen, control or copy changes.
+- Approved files: the Pace Meter theme pack, its generated render pack and
+  catalog entry, its test, the firmware and preview rules for pace colours and
+  the expected fill (`theme_spec_renderer_core.h`, `live-vibetv-preview.tsx`,
+  `lib/theme-studio.ts`, `themespec.go`), and this approval record.
+
+## 2026-10-06 — Pace bindings and Pace Meter taken out of this batch again
+
+- User approval: On 2026-10-06 the Windows rehearsal of this pull request showed
+  Pace Meter almost empty and a wrong weekly value, because the Windows usage
+  engine loses Claude's weekly window and reset times whenever it falls back to
+  its CLI source (marcus7989/Win-CodexBar#3). Paul decided in chat: "dann bau
+  das pace meter zeug wieder aus aus dem pr und kommentier im issue, dass man
+  das erst machen kann, wenn dieser upstream pr gemerged usw ist."
+- Approved customer-visible result: Everything the three entries above added
+  for #412 is gone from this pull request: the Pace Meter theme no longer
+  appears in Appearance or in setup's theme step, and Theme Studio's "Binding"
+  list and variable tokens no longer offer the six pace entries. Themes,
+  previews and the VibeTV behave as on `main` in this respect. #412 stays open
+  until the Windows engine delivers the reset times a pace needs.
+- Approved files: the files named in the three entries above, restored to
+  their state without #412, and this approval record.
+## 2026-10-06 — Lost-VibeTV picker searches again after it is closed
+
+- User approval: On 2026-10-06 Marcus was asked whether, after closing the
+  lost-VibeTV dialog, the app should keep looking and show the dialog again if
+  the VibeTV is still missing after three more checks, and answered "ja".
+  The Codex review of PR #509 found that closing the picker ended the search
+  until the app was restarted.
+- Approved customer-visible result: Closing the lost-VibeTV picker (#358) with
+  × or Escape no longer ends the search. If the saved VibeTV is still missing
+  after the next three checks, the app searches once more: the saved VibeTV at
+  a new address reconnects on its own, other VibeTVs found are offered in the
+  same picker again. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, `device-recovery-gate.ts`, its
+  test, and this approval record.
+
+## 2026-10-05 — A legacy WiFi VibeTV that answers the cable switches to USB-C
+
+- User approval: On 2026-10-05 Marcus approved the fix for issue #498 ("ja mach das"): a VibeTV that setup found and updated over WiFi stays in WiFi mode, where an animated theme can run out of memory. Setup switches it to the cable when the same VibeTV answers over the USB cable; a VibeTV without USB data stays on WiFi.
+- Approved customer-visible result: While the app runs and the VibeTV it uses over WiFi leaves legacy WiFi mode because it answered over the USB cable, the app switches it to USB-C once, the same switch as choosing USB-C in Settings. Settings then shows USB-C selected. If the switch fails, VibeTV keeps working over WiFi without an error dialog and Settings still offers USB-C. A WiFi VibeTV that never answers the cable, and one whose customer chose WiFi on current firmware, stay on WiFi. No copy, layout or other control changes.
+- Scope: `control-center-app.tsx`, `control-center-types.ts` and its test. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — Merge of main into the legacy WiFi cable switch (#504)
+
+- User approval: Same decision as the entry "A legacy WiFi VibeTV that answers the cable switches to USB-C" (2026-10-05, Marcus: "ja mach das"). No new decision was needed.
+- Approved customer-visible result: Unchanged from that entry. `main` now contains #490 as one squashed commit, so this branch was merged with `main`; the result is `main` plus the unchanged change of that entry. No screen, copy, control or layout changes.
+- Scope: The merge commit only. This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — The cable switch for a legacy WiFi VibeTV no longer depends on the open window
+
+- User approval: Same decision as the entry "A legacy WiFi VibeTV that answers the cable switches to USB-C" (2026-10-05, Marcus: "ja mach das"). On 2026-10-06 Paul asked for the switch to be made more robust after one hardware run stayed on WiFi ("noch nicht mergen … die Umschaltung robuster haben, falls das nötig ist", relayed by his release coordination session, which also relayed his choice of this variant).
+- Approved customer-visible result: Unchanged from that entry: the app switches such a VibeTV to USB-C once, the same switch as choosing USB-C in Settings; a failed switch leaves WiFi working without an error dialog; a VibeTV that never answers the cable and one whose customer chose WiFi on current firmware stay on WiFi. New is only when it works: the switch also happens when the app window did not itself see legacy WiFi mode, for example because another reader of the status or the app's own device search reached the VibeTV first, or because the window was opened later. No copy, layout or other control changes.
+- Scope: `control-center-app.tsx`, `control-center-types.ts` and its test, plus the Companion (`server.go`, `runtimeconfig.go`). This approves the pull request only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — A WiFi VibeTV that takes updates only over the cable is updated over the cable (#522)
+
+- User approval: On 2026-10-06 Paul named issue #522 a blocker for the 1.0.62 release (recorded in the issue). In chat on 2026-10-06 he asked for #520, #521 and #522 to be fixed in one pull request ("bearbeite diese 3 issues, mach PR fertig"); the behaviour chosen for it: when such a VibeTV answers on the USB cable the update runs over the cable, otherwise it is refused before the upload with a message that says what to do. On 2026-10-06 Paul approved the shortened sentence below in chat: asked "Gibst du den neuen Satz frei?" with the new and the old wording side by side, he chose "Freigeben". Hardware run on 2026-10-06 (Mac, VibeTV 16198106): update started while the app was on WiFi, the app switched to USB-C within 11 s and the update finished with "Update complete."
+- Approved customer-visible result: When an update is started for a VibeTV that is connected by WiFi and accepts updates only over the cable, and this VibeTV answers on the USB cable, the app connects it by USB-C (the same switch as choosing USB-C in Settings) and installs the update over the cable; Settings then shows USB-C selected. When it does not answer on the cable, the update stops before "Uploading firmware" with "VibeTV installs updates only over the USB cable." and "Connect VibeTV to this Mac with the USB cable, then update again." (before: the same message after the upload had failed, with "switch to USB-C in Settings" as an extra step; the Windows app shows "this computer" instead of "this Mac", as for every Companion message). A VibeTV still in legacy WiFi mode keeps updating over WiFi. No layout or control changes. The customer-flow contract test now expects the long request timeout on the update start as well.
+- Scope: The Companion (`server.go` and its test) and the request timeout of the update start in `control-center-app.tsx`. This approves the pull request only, not merge, release, installation, or a device operation.
+## 2026-10-01 — A stale provider no longer opens its message by itself
+
+- User approval: On 2026-10-01 Paul reported that starting the app opened a "Codex — Live usage is unavailable; the last successful reading is still saved." dialog on Choose AI providers. That state appears for every enabled provider while CodexBar starts after the runtime restarted, and it recovers by itself.
+- Approved customer-visible result: A provider row in the "stale" state (last reading still shown, live usage briefly unavailable) keeps its warning icon, but its message no longer opens as a dialog by itself on Choose AI providers or in Settings → AI providers. Clicking the warning icon still shows it. Every other provider message (sign-in, unsupported, outage, permission, no usage) opens exactly as before.
+- Scope: `setup-providers-screen.tsx` (the provider list shared by setup and Settings), its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — "We couldn't find your VibeTV": the two choices look like cards
+
+- User approval: On 2026-10-06 Paul asked for this after clicking the wrong choice in the dialog: "da sehen die beiden optionen gar nicht klickbar aus … ändere das, dass die klickbarer aussehen, wie die karten in den settings, mit nem anderen hintergrund oder so".
+- Approved customer-visible result: In the dialog "We couldn't find your VibeTV" the two choices "Use the cable" and "Already on WiFi" are drawn like the connection cards in Settings: an outline, the card background, more padding, a hover tint and a pointer cursor, with a larger gap between them. Icons, titles, descriptions, the order, the two buttons below and what each choice does are unchanged.
+- Scope: `SetupDeviceNotFoundDialog` in `apps/control-center/src/components/setup/setup-device-dialogs.tsx`. This approves the pull request only, not merge, release, installation, or a device operation.
+## 2026-10-01 — The Gemini message names Antigravity without CodexBar
+
+- User approval: On 2026-10-01 Paul asked that the Gemini message "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh." no longer name CodexBar, so that it only says to enable Antigravity.
+- Approved customer-visible result: Wherever the app shows or copies CodexBar's Gemini migration message (the provider message dialog in setup and Settings and its Copy button), "CodexBar's Antigravity provider" reads "Antigravity": "… Enable Antigravity, sign in to Antigravity or run `agy`, then refresh." The rest of the sentence is unchanged.
+- Scope: `companion/internal/companionapi/provider_reported.go` (the one place the reported provider message leaves the Companion), its test, the matching Control Center test fixture, and this approval record. The Companion's classification of the message still reads CodexBar's original sentence. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+
+## 2026-10-06 — A theme VibeTV cannot show is named as a theme problem (#498)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06.
+- Approved customer-visible result: Approved by Paul on 2026-10-07. (1) When a theme install ends because VibeTV cannot draw the installed theme, the dialog reads "VibeTV can't show this theme." with "Choose another theme." (before: "Theme install failed: theme-pack/render-health: theme render not healthy: … renderError="low_heap_cba_buffer" …" with "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"). The "Try again" button stays. The same two sentences appear for this entry in the setup log on the Support page. (2) Overview, Display tile, while a connected VibeTV reports that it cannot draw its active theme and an AI provider is ready: "Theme not shown" with "VibeTV can't show this theme. Choose another theme." (before: "Waiting for first image" with "Waiting for a fresh image from VibeTV."). (3) Support page, card "Connected VibeTV": the badge reads "Connected" and the description "The VibeTV currently controlled by this Mac." whenever the VibeTV is connected and paired, as the Overview already says (before: "Not connected" and "No VibeTV is currently connected." until the display was live, so also while only the theme failed or usage was still pending). No layout or control changes.
+- Scope: The Companion (`server.go` and its test: connection state `display_render_failed`, the theme install error for a failed render check), `overview-screen.tsx`, `logs-screen.tsx`, `control-center-types.ts`, their tests, and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+## 2026-09-22 — The idle reset text verified on real hardware (#448)
+
+- User approval: Marcus asked for the #448 fix to be tested on the real device
+  ("mach den test auf echter hardware"). Issue #448 makes that verification an
+  acceptance criterion, so this records the hardware evidence the earlier
+  entries could not claim. No customer-visible behaviour is changed by this
+  entry.
+- Approved customer-visible result: Unchanged from the entries above. The
+  hardware run confirms them: on VibeTV `16199591`
+  (`esp8266-smalltv-st7789`) running the candidate firmware built from this
+  branch, the published Claude Creature theme shows `No active session` for an
+  idle Claude session, `Resets in 2h 0m` when a deadline exists, and
+  `Reset unavailable` when the basis cannot be trusted. Night Clock, which
+  binds only provider slots, behaves the same way.
+- Evidence: `CODEX Test VibeTV Merge` run `35729768498` built firmware
+  `9999.0.116` from this branch head; every job passed. Its `firmware.bin`
+  matched the manifest SHA-256
+  `8f2a0920b3de55bab6469f746e05885a8ff9444e0b0b1fd6d2ab64b873cdd855` and was
+  installed over the device's cable transport, which then reported that exact
+  firmware, a healthy display stream, and the published Claude Creature spec
+  `/themes/u/claude--6-546f9e.json` active with `renderOk`. The device
+  accepted the customer's exact idle wire frame from the issue. Rendering that
+  same stored spec and frame through this branch's renderer prints
+  `No active session`, while the pre-fix renderer on `main` prints
+  `Resets in Reset unavailable` for identical inputs.
+- Approved files: This approval record only.
+- Scope: Recording hardware evidence. No code, theme, release, or customer
+  device operation is part of this entry.
+
+## 2026-10-06 — Idle reset text carried onto the current branch, with the stale cases kept honest (#448)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06.
+- Approved customer-visible result: No new text. The results recorded for #448 on 2026-09-17, 2026-09-21 and 2026-09-22 are unchanged: an idle Claude session reads `No active session` instead of `Resets in Reset unavailable`, and a rate-limited provider check reads "Claude is limiting usage checks right now." with "Wait a few minutes, then check again. Nothing needs to be fixed." Three cases now show the already approved wording where the earlier branch showed the wrong one. The Control Center preview shows `Reset unavailable`, as the VibeTV does, when the frame is marked stale, when its five-hour trust budget has run out, or when it carries no reset time at all; it showed `No active session` there before. On the VibeTV, `No active session` changes back to `Reset unavailable` when the trust budget runs out even if no other countdown changes at that moment; it could stay on the screen before. In setup, a rate-limit answer that ends in "credentials were preserved" shows the wait message instead of asking the customer to sign in again.
+- Scope: the merge of `codex/issue-448-idle-reset-text` into this branch, `live-vibetv-preview.tsx`, `codexbar_display_core.h`, `renderer_esp8266.cpp`, `renderer_esp8266_theme_spec.cpp`, `companion/internal/codexbar/provider_setup.go`, their tests, and this approval record. Not verified on hardware in this batch. This covers the branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-06 — "No active session" only for a window with nothing used (#448, review of #524)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06.
+- Approved customer-visible result: Approved by Paul on 2026-10-07. No new text. On the VibeTV and in the Control Center preview, a usage window reads `No active session` only when it has no reset time and nothing used (0 % in "used" mode, 100 % in "remaining" mode). A window that shows usage but has no reset time reads `Reset unavailable` again, as it did before #448 (before this change: `No active session` beside, for example, 93 %, whenever the reset time had run out before the frame was sent or the provider reports none). A provider-slot countdown (`{pv1r}`, `{pv2r}`) with no reset time always reads `Reset unavailable`. The idle Claude session of #448 (0 %, no reset time, weekly window with a reset time) still reads `No active session`.
+- Scope: `firmware_shared/codexbar_display_core.h`, `firmware_shared/theme_spec_renderer_core.h`, `apps/control-center/src/components/live-vibetv-preview.tsx`, their tests, `docs/theme-dev-guide.md`, `protocol/PROTOCOL.md`, and this approval record. Not verified on hardware in this batch. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+
+## 2026-10-06 — Review fixes for #524: no new text, narrower conditions (#448, #498)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06.
+- Approved customer-visible result: Approved by Paul on 2026-10-07. No new text and no layout change; four already drafted results appear in fewer cases. (1) Overview, Display tile: "Theme not shown" with "VibeTV can't show this theme. Choose another theme." no longer appears while the VibeTV is recovering by itself — an animation that is drawing into its frame buffer again after one tight moment, or a full redraw that found no memory and retries. Those show "Waiting for first image" as before #498. A theme whose animation never gets a frame buffer (the #498 case) and a broken theme file still show "Theme not shown". (2) Theme install dialog: "VibeTV can't show this theme." with "Choose another theme." appears only when the installed theme is active and reports that it cannot be drawn. When the health check could not be read, the theme is not active yet, or another theme is still up, the dialog keeps the earlier "Theme install failed: …" text with the retry advice. (3) Providers: a row whose check was rate-limited shows the working or the saved-reading state when a usage reading exists, and no longer blocks Continue in setup; without any reading it still shows the rate-limit message. (4) Providers: an error that only contains the digits 429 inside another number (a request id, a duration) shows its sign-in or time-out message instead of the rate-limit message. The setup provider row for a rate-limited provider looks the same as before; only a redundant code branch was removed.
+- Scope: `companion/internal/companionapi/server.go`, `companion/internal/companionapi/preferences.go`, `companion/internal/themeinstall/themeinstall.go`, `companion/internal/codexbar/provider_setup.go`, `apps/control-center/src/components/setup/setup-provider-row.tsx`, `firmware_shared/codexbar_display_core.h` (unused helper removed), their tests, `protocol/PROTOCOL.md`, and this approval record. Not verified on hardware in this batch. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+
+## 2026-10-06 — Review follow-up: another theme can be installed while the active one cannot be shown (#498)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06. The Codex review of PR #524 found that the Overview tells the customer to choose another theme while the theme library still refused every install with "Connect VibeTV first." because the display is not ready.
+- Approved customer-visible result: No new screen, dialog, button, or text. While VibeTV reports that it cannot draw its active theme (`display_render_failed`), the Install buttons in Appearance stay usable for a connected, paired VibeTV instead of showing "Connect VibeTV first." A full redraw that found no memory on older firmware (`low_heap_full_render`) is treated like `low_heap` and does not show "Theme not shown".
+- Scope: `theme-library-screen.tsx`, its test, the render rule in `companion/internal/companionapi/server.go`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-07 — Review follow-up: the preview keeps retained usage unavailable (#448)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06. The Codex review of PR #524 found that the Control Center preview could read "No active session" for a 0 % window kept from a failed collection, while VibeTV shows "Reset unavailable" for it.
+- Approved customer-visible result: No new screen, dialog, button, or text. When usage is marked unavailable, the preview shows "Reset unavailable" for a window without a reset time, the same as VibeTV.
+- Scope: `live-vibetv-preview.tsx`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-07 — Review follow-up: the preview needs a named reset source; a retried render is not a theme problem (#448, #498)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted during the unattended night batch of 2026-10-06. Two further findings of the Codex review of PR #524.
+- Approved customer-visible result: No new screen, dialog, button, or text. The preview shows "No active session" only when the frame also names where its reset time came from, as VibeTV requires. A theme whose scene found no memory and is being retried (`parse_fail`) does not show "Theme not shown".
+- Scope: `live-vibetv-preview.tsx`, its test, the render rule in `companion/internal/companionapi/server.go`, its test, and this approval record. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-07 — "No active session" for an account with no reset time anywhere (#532)
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted on 2026-10-07 for PR #524.
+- Approved customer-visible result: Approved by Paul on 2026-10-07. No new text. An account in which no usage window has a reset time and nothing is used (for example a new Claude account at 0 % session and 0 % weekly) reads `No active session` on the VibeTV and in the Control Center preview code, where it read `Reset unavailable` before. This needs the new Mac App and the new firmware together; with only one of them updated the screen stays at `Reset unavailable`. It applies only to a current usage reading: after a failed provider check, when usage is unavailable, or once the five-hour trust budget has run out, the text is `Reset unavailable` as before. A window that shows usage but has no reset time still reads `Reset unavailable`. The running preview receives the frame's trust fields from the Companion (commit 8751a977) and shows the same text as the VibeTV.
+- Scope: `companion/internal/protocol/protocol.go`, `firmware_shared/codexbar_display_core.h`, `apps/control-center/src/components/live-vibetv-preview.tsx`, their tests, `protocol/fixtures/v2/reset_trust_golden.json`, `docs/theme-dev-guide.md`, `protocol/PROTOCOL.md`, and this approval record. Not verified on hardware. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+
+## 2026-10-07 — The window follows the VibeTV the Companion reports as connected
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted on 2026-10-07 for PR #524.
+- Approved customer-visible result: Approved by Paul on 2026-10-07. No new screen, dialog, button, or text. When the connection is changed to another VibeTV outside the open window (observed on 2026-10-07: from a WiFi VibeTV to one on the cable), the window shows that VibeTV as connected as soon as the Companion reports it connected, active and paired. Before, the window kept waiting for the earlier VibeTV: the Overview read "Not connected" with "VibeTV: Not connected" and "Display: Waiting for first image", and the dialog "No VibeTV device was found." with the earlier VibeTV marked "Previously connected" stayed open until the window was reloaded. That dialog now closes by itself in this case and its list is emptied. Unchanged: a VibeTV that is really lost still opens the dialog after three missed checks, the dialog only ever reconnects the saved VibeTV by itself, any other VibeTV needs the customer's Connect, and closing the dialog still searches again after three more missed checks.
+- Scope: `apps/control-center/src/components/device-recovery-gate.ts`, its test, the new `control-center-app.lost-device.test.tsx`, and this approval record. Not verified on hardware. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+
+## 2026-10-07 — #532 entry corrected: the running preview shows the same text as VibeTV
+
+- User approval: Confirmed by Paul on 2026-10-07 (see the entry "Paul confirms the drafted entries" of that date); drafted on 2026-10-07 for PR #524.
+- Approved customer-visible result: Approved by Paul on 2026-10-07. No new text. The #532 entry above first named a gap in the running preview; that gap was closed in commit 8751a977 and the entry's last sentence was corrected. The Control Center preview receives the frame's reset trust from the Companion and reads `No active session` for an account with no reset time anywhere, as the VibeTV does. Paul read `No active session` on the VibeTV itself on 2026-10-07.
+- Scope: this approval record only; the code is the sent-frame log line in `companion/internal/daemon/daemon.go` and its reader in `companion/internal/companionapi/server.go`. This approves the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-07 — Paul confirms the drafted entries of PR #524
+
+- User approval: On 2026-10-07 Paul asked to be shown everything he has to approve, was given the list of all entries of 2026-10-06 and 2026-10-07 that were marked "not yet confirmed by Paul", asked about two of them (the Overview Display tile "Theme not shown" with "VibeTV can't show this theme. Choose another theme.", and the increased-contrast styles), and answered "ok passt beides, trag meine freigabe ein".
+- Approved customer-visible result: The results of those entries as written, without changes to their wording: the theme-install dialog "VibeTV can't show this theme." with "Choose another theme."; the Display tile "Theme not shown" for a theme the VibeTV reports twice that it cannot draw, with "Waiting for first image" unchanged for every other case; "Connected" on the Support page in that state; "No active session" for an idle window and for an account with no reset time anywhere, "Reset unavailable" otherwise; the rate-limit message for a "credentials were preserved" answer; Install staying usable while a theme is not shown; the lost-VibeTV dialog closing once the Companion reports a connected VibeTV; and, in PR #525, the support timeline in the downloaded report, the screen-reader names and focus behaviour, and the styles that apply only with the system setting "Increase contrast".
+- Scope: the entries above that now read "Confirmed by Paul on 2026-10-07" and this approval record. This approves the customer-visible results on the pull-request branch only, not merge, release, installation, or a device operation.
 
 ## 2026-10-08 — Theme Studio desktop refinement
 
@@ -3994,3 +5372,4 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested moving attachments beside the manual add action below the prompt and using a clearer element-add icon.
 - Approved customer-visible result: A square-with-plus icon adds elements; the paperclip attaches reference images in the same left-aligned toolbar beneath the prompt. The prompt uses its full width.
+

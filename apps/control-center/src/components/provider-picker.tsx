@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  UsageSnapshot,
   PreferenceDescriptor,
   ProviderDisplaySelection,
 } from "./control-center-types";
@@ -15,14 +16,21 @@ import type {
  * finish what that checkbox left half-done.
  */
 export type ProviderPickerProps = {
+  usage: UsageSnapshot | null;
   display: ProviderDisplaySelection | null;
   displayError?: ApiError | null;
+  /** Why the display mode changed without the customer choosing it. */
+  displayNotice?: string | null;
   displayPendingProviderId?: string | null;
   items: PreferenceDescriptor[] | null;
   preferencesError?: ApiError | null;
   pendingCheckIds: Set<string>;
   pendingPreferenceIds: Set<string>;
   onCheck: (item: PreferenceDescriptor) => void | Promise<void>;
+  /** Opens the provider's browser sign-in page through the companion. */
+  onOpenSignIn?: (item: PreferenceDescriptor) => void | Promise<void>;
+  /** Opens the customer setup guide in the default browser (Windows). */
+  onOpenSetupGuide?: () => void | Promise<void>;
   onDisplayChange: (
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
     providerId: string,

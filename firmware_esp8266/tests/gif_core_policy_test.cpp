@@ -8,15 +8,14 @@
 #include "../src/asset_path_policy.h"
 #include "../src/connected_setup_policy.h"
 #include "../src/theme_spec_runtime_policy.h"
-#include "../src/wifi_security_policy.h"
 
 namespace {
 
 using codexbar_display::esp8266::GifCorePolicy;
 using codexbar_display::esp8266::GifFailureGuardState;
+using codexbar_display::esp8266::CbaContentionWatch;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
 using codexbar_display::esp8266::AssetPathPolicy;
-using codexbar_display::esp8266::WifiSecurityPolicy;
 using codexbar_display::esp8266::ConnectedSetupPolicy;
 
 std::string readFile(const char* path);
@@ -38,6 +37,20 @@ std::size_t countOccurrences(const std::string& value, const char* needle) {
     offset += target.size();
   }
   return count;
+}
+
+// Body of the top-level function defined as `signature`, or "" if it is
+// missing. Forward declarations are skipped.
+std::string functionBody(const std::string& source, const char* signature) {
+  const std::size_t start = source.find(std::string(signature) + " {");
+  if (start == std::string::npos) {
+    return "";
+  }
+  const std::size_t end = source.find("\n}\n", start);
+  if (end == std::string::npos) {
+    return "";
+  }
+  return source.substr(start, end - start);
 }
 
 bool testBackoffThresholdAndExpiry() {
@@ -165,43 +178,85 @@ bool testAssetWritesStayInsideThemeNamespace() {
   return true;
 }
 
-bool testWifiCredentialWritesAllowSetupOrCurrentToken() {
-  if (!expect(
-          WifiSecurityPolicy::AllowsCredentialWrite(true, false, false),
-          "the setup access point must allow WiFi changes")) {
-    return false;
-  }
-  if (!expect(
-          WifiSecurityPolicy::AllowsCredentialWrite(false, true, true),
-          "a paired device with its current token must allow WiFi changes")) {
-    return false;
-  }
-  return expect(
-      !WifiSecurityPolicy::AllowsCredentialWrite(false, false, false) &&
-          !WifiSecurityPolicy::AllowsCredentialWrite(false, true, false),
-      "station-mode writes without the current pairing token must remain denied");
-}
-
-bool testFirmwareUploadAlwaysRequiresCurrentPairingToken() {
-  return expect(
-      WifiSecurityPolicy::AllowsFirmwareUpload(true, true) &&
-          !WifiSecurityPolicy::AllowsFirmwareUpload(true, false) &&
-          !WifiSecurityPolicy::AllowsFirmwareUpload(false, true) &&
-          !WifiSecurityPolicy::AllowsFirmwareUpload(false, false),
-      "firmware upload must never be open without the current pairing token");
-}
-
-bool testPairingHandlerReplacesTokenWithoutAuthGate(const char* mainPath) {
+// Issue #489 / #404: the USB cable is the authorization. Only a legacy WiFi
+// VibeTV -- early hardware that may have no USB data connection -- still
+// pairs, takes WiFi details, switches connection mode and opens VibeTV-Setup
+// over WiFi. Every other VibeTV answers those routes like unknown paths and
+// never opens a network.
+bool testWifiPairsAndTakesCredentialsOnlyOnLegacyWifi(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t handler = mainSource.find("void handlePairingAPI()");
-  const std::size_t handlerEnd = mainSource.find("void handleAssetsList()", handler);
-  const std::size_t tokenGeneration = mainSource.find("generateAuthToken()", handler);
-  const std::size_t tokenSave = mainSource.find("saveDeviceAuthToken(token)", handler);
+  const std::string auth = functionBody(mainSource, "bool requestHasValidAuth()");
+  const std::string reject = functionBody(mainSource, "bool rejectUnlessLegacyWifi()");
+  const std::string setup = functionBody(mainSource, "void enterWifiSetup()");
+  const std::string maintain = functionBody(mainSource, "void maintainWifiConnection()");
+  const std::string scan = functionBody(mainSource, "bool scanSetupNetworks(bool automatic)");
+  const std::string recovery = functionBody(mainSource, "void maintainWifiSetupRecovery()");
+  const std::string accessPoint = functionBody(mainSource, "void startSetupAccessPoint()");
+  const char* gatedHandlers[] = {
+      "void handleCaptivePortalProbe()",
+      "void handleSaveWifi()",
+      "void handleSetupWifiScan()",
+      "void handleResetWifi()",
+      "void handlePairingAPI()",
+      "void handleOtaResult()",
+      "void handleConnectionModeSwitch()",
+  };
+  for (const char* signature : gatedHandlers) {
+    const std::string handler = functionBody(mainSource, signature);
+    const std::size_t gate = handler.find("if (rejectUnlessLegacyWifi())");
+    if (!expect(
+            gate != std::string::npos && gate < handler.find(';'),
+            "every WiFi pairing, setup and update route must first reject a non-legacy VibeTV")) {
+      std::fprintf(stderr, "  route: %s\n", signature);
+      return false;
+    }
+  }
+  const std::size_t legacySetup = setup.find("if (legacyWifiActive())");
+  const std::size_t legacyRecovery = maintain.find("if (setupMode && legacyWifiActive())");
   return expect(
-      handler != std::string::npos && handlerEnd != std::string::npos &&
-          tokenGeneration < handlerEnd && tokenSave < handlerEnd &&
-          mainSource.substr(handler, handlerEnd - handler).find("requestHasCurrentDeviceToken") == std::string::npos,
-      "pairing must replace the token without requiring the previous token");
+      auth.find("deviceAuthConfigured() && requestAuthToken() == deviceAuthToken") !=
+              std::string::npos &&
+          reject.find("if (legacyWifiActive())") != std::string::npos &&
+          reject.find("404") != std::string::npos &&
+          legacySetup != std::string::npos &&
+          legacySetup < setup.find("startSetupAccessPoint();") &&
+          countOccurrences(mainSource, "startSetupAccessPoint();") == 1 &&
+          legacyRecovery != std::string::npos &&
+          legacyRecovery < maintain.find("maintainWifiSetupRecovery();") &&
+          countOccurrences(mainSource, "maintainWifiSetupRecovery();") == 1 &&
+          countOccurrences(mainSource, "WiFi.softAP(") ==
+              countOccurrences(accessPoint, "WiFi.softAP(") +
+                  countOccurrences(recovery, "WiFi.softAP(") &&
+          scan.find("const bool keepSetupAccessPoint = setupMode && legacyWifiActive();") !=
+              std::string::npos &&
+          scan.find("setupMode ? WIFI_AP_STA") == std::string::npos &&
+          scan.find("if (setupMode) {") == std::string::npos,
+      "only a legacy WiFi VibeTV may pair or take WiFi details over WiFi or open VibeTV-Setup; unpaired devices accept no WiFi write");
+}
+
+bool testCablePairingRequiresExactPhysicalIdentity(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t handler = mainSource.find("bool handleSerialControlLine(const String& line)");
+  const std::size_t handlerEnd = mainSource.find("void handleSerialInput()", handler);
+  if (!expect(
+          handler != std::string::npos && handlerEnd != std::string::npos,
+          "serial control handler must remain discoverable")) {
+    return false;
+  }
+  const std::string body = mainSource.substr(handler, handlerEnd - handler);
+  const std::size_t pair = body.find("strcmp(op, \"pair\") == 0");
+  const std::size_t identity = body.find("strcmp(expectedDeviceID, deviceID.c_str())", pair);
+  const std::size_t existing = body.find("deviceAuthConfigured()", identity);
+  const std::size_t generate = body.find("generateAuthToken()", existing);
+  const std::size_t save = body.find("saveDeviceAuthToken(token)", generate);
+  const std::size_t reply = body.find("emitSerialPairing(token)", save);
+  return expect(
+      pair != std::string::npos && identity != std::string::npos &&
+          existing != std::string::npos && generate != std::string::npos &&
+          save != std::string::npos && reply != std::string::npos &&
+          pair < identity && identity < existing && existing < generate &&
+          generate < save && save < reply,
+      "Cable pairing must verify identity, reuse an existing token, and persist a new token before returning it");
 }
 
 bool testConnectedPageNeverRendersPairingSecret(const char* mainPath) {
@@ -223,16 +278,26 @@ bool testWifiHelloReportsPairingStateWithoutSecrets(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t handler = mainSource.find("void handleHello()");
   const std::size_t handlerEnd = mainSource.find("bool isSafeAssetPath", handler);
+  const std::size_t transportCapabilities =
+      mainSource.find("const char* transportCapabilitiesJSON");
+  const std::size_t transportCapabilitiesEnd =
+      mainSource.find("codexbar_display::app::TransportConfig makeTransportConfig", transportCapabilities);
   const std::size_t authStatus = mainSource.find("void appendAuthStatusJSON(String& out)");
   const std::size_t authStatusEnd = mainSource.find("void appendBrightnessJSON", authStatus);
-  if (handler == std::string::npos || handlerEnd == std::string::npos) {
+  if (handler == std::string::npos || handlerEnd == std::string::npos ||
+      transportCapabilities == std::string::npos ||
+      transportCapabilitiesEnd == std::string::npos) {
     return false;
   }
   const std::string helloHandler = mainSource.substr(handler, handlerEnd - handler);
+  const std::string capabilitiesBody = mainSource.substr(
+      transportCapabilities, transportCapabilitiesEnd - transportCapabilities);
   const std::string authStatusBody = mainSource.substr(authStatus, authStatusEnd - authStatus);
   return expect(
-      helloHandler.find("appendAuthStatusJSON(out)") != std::string::npos &&
-          helloHandler.find("deviceAuthToken") == std::string::npos &&
+      helloHandler.find("BuildDeviceHelloJSON") != std::string::npos &&
+          helloHandler.find("makeTransportConfig(\"wifi\")") != std::string::npos &&
+          capabilitiesBody.find("appendAuthStatusJSON(json)") != std::string::npos &&
+          capabilitiesBody.find("deviceAuthToken") == std::string::npos &&
           authStatusBody.find("\\\"paired\\\"") != std::string::npos &&
           authStatusBody.find("\\\"tokenHeader\\\"") != std::string::npos &&
           authStatusBody.find("pairingWindow") == std::string::npos,
@@ -253,51 +318,6 @@ bool testLegacyRecoveryStorageStaysReservedWithoutRuntime(const char* mainPath) 
       "legacy EEPROM bytes must stay reserved while physical pairing recovery is removed");
 }
 
-bool testEverySetupAccessPointUsesWritableSetupPage(const char* mainPath) {
-  const std::string mainSource = readFile(mainPath);
-  const std::size_t rootHandler = mainSource.find("void handleRoot()");
-  const std::size_t rootEnd = mainSource.find("void redirectToSetupRoot()", rootHandler);
-  const std::size_t captiveHandler = mainSource.find("void handleCaptivePortalProbe()");
-  const std::size_t captiveEnd = mainSource.find("void handleSaveWifi()", captiveHandler);
-  if (rootHandler == std::string::npos || rootEnd == std::string::npos ||
-      captiveHandler == std::string::npos || captiveEnd == std::string::npos) {
-    return false;
-  }
-  const std::string root = mainSource.substr(rootHandler, rootEnd - rootHandler);
-  const std::string captive = mainSource.substr(captiveHandler, captiveEnd - captiveHandler);
-  return expect(
-      root.find("SendSetupPage(") != std::string::npos &&
-          captive.find("SendSetupPage(") != std::string::npos &&
-          mainSource.find("SendRecoveryPage(") == std::string::npos &&
-          mainSource.find("physicalSetupAuthorized") == std::string::npos &&
-          mainSource.find("startSetupAccessPoint(false)") == std::string::npos,
-      "fresh setup and WiFi-failure setup must use the same writable setup page");
-}
-
-bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
-  const std::string mainSource = readFile(mainPath);
-  const std::size_t start = mainSource.find("void startSetupAccessPoint()");
-  const std::size_t end = mainSource.find("void maintainWifiConnection()", start);
-  if (start == std::string::npos || end == std::string::npos) {
-    return false;
-  }
-  const std::string body = mainSource.substr(start, end - start);
-  const std::size_t resetPortal = body.find("ResetPortalState(setupWifiState)");
-  const std::size_t stopReconnect = body.find("WiFi.setAutoReconnect(false)");
-  const std::size_t disconnect = body.find("WiFi.disconnect(false)");
-  const std::size_t apSta = body.find("WiFi.mode(WIFI_AP_STA)");
-  const std::size_t accessPoint = body.find("WiFi.softAP(kSetupApSsid)");
-  const std::size_t dns = body.find("dnsServer.start(");
-  const std::size_t http = body.find("startHttpServer()");
-  const std::size_t joinInstructions = body.find("renderer.DrawSetupInstructions(");
-  return expect(
-      resetPortal < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
-          apSta < accessPoint && accessPoint < dns && dns < http &&
-          http < joinInstructions && body.find("WiFi.mode(WIFI_AP)") == std::string::npos &&
-          body.find("scanSetupNetworks(") == std::string::npos,
-      "setup display may invite joining only after the old STA attempt is stopped and AP_STA, DNS, and HTTP are ready");
-}
-
 bool testNetworkWorkPrecedesWifiRecovery(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t loopStart = mainSource.find("void loop()");
@@ -306,144 +326,128 @@ bool testNetworkWorkPrecedesWifiRecovery(const char* mainPath) {
   }
   const std::string loop = mainSource.substr(loopStart);
   const std::size_t http = loop.find("webServer.handleClient();");
-  const std::size_t rawOta = loop.find("handleRawOtaClient();");
   const std::size_t recovery = loop.find("maintainWifiConnection();");
   return expect(
-      http != std::string::npos && rawOta != std::string::npos && recovery != std::string::npos &&
-          http < recovery && rawOta < recovery && countOccurrences(loop, "webServer.handleClient();") == 1 &&
-          countOccurrences(loop, "handleRawOtaClient();") == 1,
-      "setup HTTP and raw OTA work must run once before WiFi recovery decides busy state");
+      http != std::string::npos && recovery != std::string::npos &&
+          http < recovery && countOccurrences(loop, "webServer.handleClient();") == 1 &&
+          loop.find("handleRawOtaClient();") == std::string::npos,
+      "setup HTTP work must run once before WiFi recovery and duplicate raw OTA must stay removed");
 }
 
-bool testWifiRecoveryFirmwareWiring(const char* mainPath) {
+bool testCableTransferOwnsSerialParserUntilCompletion(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t recoveryStart = mainSource.find("void maintainWifiSetupRecovery()");
-  const std::size_t recoveryEnd = mainSource.find("void resetWifiReconnectState()", recoveryStart);
-  const std::size_t finishStart = mainSource.find("void finishWifiSetupRecovery()");
-  const std::size_t finishEnd = mainSource.find("void maintainWifiSetupRecovery()", finishStart);
+  const std::size_t start = mainSource.find("void handleSerialInput()");
+  const std::size_t end = mainSource.find("bool isSafeAssetPath", start);
   if (!expect(
-          recoveryStart != std::string::npos && recoveryEnd != std::string::npos &&
-              finishStart != std::string::npos && finishEnd != std::string::npos,
-          "WiFi setup recovery functions must remain discoverable")) {
+          start != std::string::npos && end != std::string::npos,
+          "serial input handler must remain discoverable")) {
     return false;
   }
-
-  const std::string recovery = mainSource.substr(recoveryStart, recoveryEnd - recoveryStart);
-  const std::string finish = mainSource.substr(finishStart, finishEnd - finishStart);
-  const std::size_t timeout = recovery.find("case codexbar_display::esp8266::wifi_recovery::Action::Timeout:");
-  const std::size_t timeoutDisconnect = recovery.find("WiFi.disconnect(false);", timeout);
-  const std::size_t timeoutApSta = recovery.find("WiFi.mode(WIFI_AP_STA);", timeoutDisconnect);
-  const std::size_t timeoutAp = recovery.find("WiFi.softAP(kSetupApSsid);", timeoutApSta);
-  const std::size_t connected = recovery.find("case codexbar_display::esp8266::wifi_recovery::Action::Connected:");
-  if (!expect(
-          timeout != std::string::npos && connected != std::string::npos && timeout < connected,
-          "setup recovery must keep distinct timeout and connected branches")) {
-    return false;
-  }
-  const std::string timeoutBlock = recovery.substr(timeout, connected - timeout);
-  const std::size_t dnsStop = finish.find("dnsServer.stop();");
-  const std::size_t apDisconnect = finish.find("WiFi.softAPdisconnect(true);");
-  const std::size_t sta = finish.find("WiFi.mode(WIFI_STA);");
-  const std::size_t leaveSetup = finish.find("setupMode = false;");
-  const std::size_t reset = finish.find("resetWifiReconnectState();");
-  const std::size_t server = finish.find("startHttpServer();");
-  const std::size_t connectedScreen = finish.find("drawWaitingForCompanionStatus();");
+  const std::string body = mainSource.substr(start, end - start);
+  const std::size_t control = body.find("handleSerialControlLine(line)");
+  const std::size_t active = body.find("cableTransfer.flow.active");
+  const std::size_t frame = body.find("ConsumeFrameLine(");
   return expect(
-      countOccurrences(recovery, "WiFi.begin(") == 1 && timeout != std::string::npos &&
-          timeoutDisconnect != std::string::npos && timeoutApSta != std::string::npos &&
-          timeoutAp != std::string::npos && timeout < timeoutDisconnect && timeoutDisconnect < timeoutApSta &&
-          timeoutApSta < timeoutAp && timeoutBlock.find("finishWifiSetupRecovery()") == std::string::npos &&
-          recovery.find("finishWifiSetupRecovery();", connected) != std::string::npos &&
-          recovery.find("inputs.busy = wifiSetupRecoveryBusy();") != std::string::npos && dnsStop < apDisconnect &&
-          apDisconnect < sta && sta < leaveSetup && leaveSetup < reset && reset < server &&
-          server < connectedScreen,
-      "setup recovery must begin once, keep timeout in AP_STA, and leave DNS/AP/setup mode only after connection");
+      control != std::string::npos && active != std::string::npos &&
+          frame != std::string::npos && control < active && active < frame,
+      "transfer control must be consumed before normal frames and an active transfer must block the frame parser");
+}
+
+bool testWifiSetupKeepsRetryingSavedNetwork(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t start = mainSource.find("void maintainWifiConnection()");
+  const std::size_t end = mainSource.find("#ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH", start);
+  if (start == std::string::npos || end == std::string::npos) {
+    return false;
+  }
+  const std::string body = mainSource.substr(start, end - start);
+  const std::size_t setupBranch = body.find("if (setupMode) {");
+  const std::size_t connected = body.find("WiFi.status() == WL_CONNECTED", setupBranch);
+  const std::size_t leaveSetup = body.find("setupMode = false;", connected);
+  const std::size_t server = body.find("startHttpServer();", leaveSetup);
+  const std::size_t retry = body.find("WiFi.begin(savedWifiCredentials.ssid", server);
+  const std::size_t fallback = body.find("enterWifiSetup();", retry);
+  return expect(
+      setupBranch != std::string::npos && connected != std::string::npos &&
+          leaveSetup != std::string::npos && server != std::string::npos &&
+          retry != std::string::npos && fallback != std::string::npos &&
+          body.find("setupWifiState.scanInProgress") != std::string::npos,
+      "WiFi without a network must keep retrying the saved network and resume once connected");
+}
+
+// A WiFi upload that names its MD5 is checked against it before anything is
+// validated or promoted, through the same check the Cable path uses (#60).
+bool testUploadContentHashPolicy(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t assetStart = mainSource.find("void handleAssetUpload()");
+  const std::size_t assetEnd = mainSource.find("void handleAssetUploadResult()", assetStart);
+  const std::size_t finishStart = mainSource.find("bool finishCableTransfer(");
+  const std::size_t chunkStart = mainSource.find("bool writeCableTransferChunk(");
+  if (!expect(
+          assetStart != std::string::npos && assetEnd != std::string::npos && finishStart != std::string::npos &&
+              chunkStart != std::string::npos,
+          "upload handlers must remain discoverable")) {
+    return false;
+  }
+  const std::string asset = mainSource.substr(assetStart, assetEnd - assetStart);
+  const std::string chunk = mainSource.substr(chunkStart, finishStart - chunkStart);
+  const std::string finish = mainSource.substr(finishStart, 600);
+  const std::size_t start = asset.find("if (upload.status == UPLOAD_FILE_START)");
+  const std::size_t decode = asset.find("decodeTransferHash(expectedHash.c_str(), transferExpectedHash)", start);
+  const std::size_t begin = asset.find("transferHash.begin();", decode);
+  const std::size_t write = asset.find("assetUploadFile.write(upload.buf, upload.currentSize)", begin);
+  const std::size_t add = asset.find("transferHash.add(upload.buf,", write);
+  const std::size_t end = asset.find("} else if (upload.status == UPLOAD_FILE_END) {", add);
+  const std::size_t check = asset.find(
+      "if (assetUploadError.length() == 0 && assetUploadHashExpected && !transferHashMatches()) {", end);
+  const std::size_t promote = asset.find("validateCompletedAssetUpload() &&\n        promoteCompletedAssetUpload()", end);
+  return expect(
+      start != std::string::npos && decode != std::string::npos && begin != std::string::npos &&
+          write != std::string::npos && add != std::string::npos && end != std::string::npos &&
+          check != std::string::npos && promote != std::string::npos && check < promote &&
+          countOccurrences(asset, "setAssetUploadError(\"asset hash mismatch\")") == 2 &&
+          chunk.find("transferHash.add(decoded,") != std::string::npos &&
+          finish.find("CanFinish(\n          cableTransfer.flow, transferHashMatches())") != std::string::npos,
+      "WiFi uploads must hash what they write and refuse a mismatch before validating or promoting, "
+      "through the same MD5 check as Cable transfers");
 }
 
 bool testUploadMutualExclusionPolicy(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t rawStart = mainSource.find("void handleRawOtaClient()");
-  const std::size_t rawAccept = mainSource.find("WiFiClient client = rawOtaServer.accept();", rawStart);
+  const std::size_t cableStart = mainSource.find("bool startCableTransfer(");
+  const std::size_t cableEnd = mainSource.find("bool writeCableTransferChunk(", cableStart);
   const std::size_t assetStart = mainSource.find("void handleAssetUpload()");
   const std::size_t assetEnd = mainSource.find("void handleAssetUploadResult()", assetStart);
-  const std::size_t otaStart = mainSource.find("void handleOtaUpload(int command, const char* target)");
-  const std::size_t otaEnd = mainSource.find("void scheduleReboot(", otaStart);
   if (!expect(
-          rawStart != std::string::npos && rawAccept != std::string::npos && assetStart != std::string::npos &&
-              assetEnd != std::string::npos && otaStart != std::string::npos && otaEnd != std::string::npos,
+          cableStart != std::string::npos && cableEnd != std::string::npos && assetStart != std::string::npos &&
+              assetEnd != std::string::npos,
           "all upload handlers must remain discoverable")) {
     return false;
   }
 
-  const std::string rawGuard = mainSource.substr(rawStart, rawAccept - rawStart);
+  const std::string cableHandler = mainSource.substr(cableStart, cableEnd - cableStart);
+  const std::size_t serialBusyStart = mainSource.find("bool serialRequestBusy()");
+  const std::size_t serialBusyEnd = mainSource.find("bool handleSerialControlLine", serialBusyStart);
+  const std::string serialBusy =
+      serialBusyStart == std::string::npos || serialBusyEnd == std::string::npos
+          ? std::string()
+          : mainSource.substr(serialBusyStart, serialBusyEnd - serialBusyStart);
   const std::string assetHandler = mainSource.substr(assetStart, assetEnd - assetStart);
-  const std::string otaHandler = mainSource.substr(otaStart, otaEnd - otaStart);
   const std::size_t assetStartEvent = assetHandler.find("if (upload.status == UPLOAD_FILE_START)");
   const std::size_t assetBusy =
       assetHandler.find("if (otaUploadInProgress || assetUploadInProgress || rebootPending)", assetStartEvent);
   const std::size_t assetSafeMode = assetHandler.find("enterAssetUploadSafeMode()", assetStartEvent);
-  const std::size_t otaStartEvent = otaHandler.find("if (upload.status == UPLOAD_FILE_START)");
-  const std::size_t otaBusy =
-      otaHandler.find("if (assetUploadInProgress || otaUploadInProgress || rebootPending)", otaStartEvent);
-  const std::size_t otaSafeMode = otaHandler.find("enterOtaSafeMode(", otaStartEvent);
   return expect(
-      rawGuard.find("assetUploadInProgress") != std::string::npos &&
-          rawGuard.find("otaUploadInProgress") != std::string::npos &&
-          rawGuard.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
-          assetBusy != std::string::npos && assetSafeMode != std::string::npos && assetBusy < assetSafeMode &&
-          otaStartEvent != std::string::npos && otaBusy != std::string::npos && otaSafeMode != std::string::npos &&
-          otaBusy < otaSafeMode,
-      "raw OTA and HTTP asset/filesystem/firmware uploads must exclude each other before safe mode");
+      cableHandler.find("serialRequestBusy()") != std::string::npos &&
+          serialBusy.find("cableTransfer.flow.active") != std::string::npos &&
+          serialBusy.find("assetUploadInProgress") != std::string::npos &&
+          serialBusy.find("otaUploadInProgress") != std::string::npos &&
+          serialBusy.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
+          assetBusy != std::string::npos && assetSafeMode != std::string::npos && assetBusy < assetSafeMode,
+      "Cable transfers and HTTP asset uploads must exclude each other before safe mode");
 }
 
-bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
-  const std::string mainSource = readFile(mainPath);
-  const std::size_t rootStart = mainSource.find("void handleRoot()");
-  const std::size_t rootEnd = mainSource.find("void redirectToSetupRoot()", rootStart);
-  const std::size_t probeStart = mainSource.find("void handleCaptivePortalProbe()");
-  const std::size_t probeEnd = mainSource.find("void handleSaveWifi()", probeStart);
-  const std::size_t scanStart = mainSource.find("void handleSetupWifiScan()");
-  const std::size_t scanEnd = mainSource.find("void handleResetWifi()", scanStart);
-  if (rootStart == std::string::npos || rootEnd == std::string::npos ||
-      probeStart == std::string::npos || probeEnd == std::string::npos ||
-      scanStart == std::string::npos || scanEnd == std::string::npos) {
-    return false;
-  }
-  const std::string root = mainSource.substr(rootStart, rootEnd - rootStart);
-  const std::string probe = mainSource.substr(probeStart, probeEnd - probeStart);
-  const std::string scan = mainSource.substr(scanStart, scanEnd - scanStart);
-  return expect(
-      root.find("SendSetupPage(") != std::string::npos &&
-          probe.find("SendSetupPage(") != std::string::npos &&
-          root.find("scanSetupNetworks(") == std::string::npos &&
-          probe.find("scanSetupNetworks(") == std::string::npos &&
-          scan.find("webServer.arg(\"automatic\")") != std::string::npos &&
-          scan.find("scanSetupNetworks(automatic)") != std::string::npos,
-      "captive probes must render before the browser starts the guarded automatic scan");
-}
-
-bool testAutomaticScanReschedulesInterruptedWifiRecovery(const char* mainPath) {
-  const std::string mainSource = readFile(mainPath);
-  const std::size_t scanStart = mainSource.find("bool scanSetupNetworks(bool automatic)");
-  const std::size_t scanEnd = mainSource.find("String connectedPageHTML()", scanStart);
-  if (scanStart == std::string::npos || scanEnd == std::string::npos) {
-    return false;
-  }
-  const std::string scan = mainSource.substr(scanStart, scanEnd - scanStart);
-  const std::size_t interruption = scan.find("wifiSetupRecoveryState.attemptInProgress");
-  const std::size_t disconnect = scan.find("WiFi.disconnect(false)");
-  const std::size_t finish = scan.find("FinishScan(setupWifiState, networks)");
-  const std::size_t reschedule = scan.find("RescheduleAfterInterruption(");
-  const std::size_t rescheduledState = scan.find("wifiSetupRecoveryState", reschedule);
-  return expect(
-      interruption != std::string::npos && disconnect != std::string::npos &&
-          finish != std::string::npos && reschedule != std::string::npos &&
-          rescheduledState != std::string::npos && interruption < disconnect &&
-          finish < reschedule && reschedule < rescheduledState,
-      "an automatic scan that interrupts WiFi recovery must reschedule it immediately");
-}
-
-bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
+bool testAutomaticWifiFallbackPreservesSavedCredentials(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t setupStart = mainSource.find("void setup()");
   const std::size_t setupEnd = mainSource.find("void loop()", setupStart);
@@ -455,76 +459,99 @@ bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
   }
   const std::string setup = mainSource.substr(setupStart, setupEnd - setupStart);
   const std::string maintain = mainSource.substr(maintainStart, maintainEnd - maintainStart);
+  // Only a unit fresh from the manufacturer firmware clears the SDK copy, and
+  // only of the network it was flashed on (issue #489).
+  const std::size_t freshGuard = setup.find("ShouldForgetFlashingWifi(");
+  const std::size_t freshClear = setup.find("clearSdkWifiCredentials();");
+  const std::size_t freshEnd = setup.find("} else if", freshGuard);
   return expect(
-      setup.find("startSetupAccessPoint()") != std::string::npos &&
-          maintain.find("startSetupAccessPoint()") != std::string::npos &&
-          setup.find("SetConnectionError(") == std::string::npos &&
-          maintain.find("SetConnectionError(") == std::string::npos &&
+      setup.find("enterWifiSetup()") != std::string::npos &&
+          maintain.find("enterWifiSetup()") != std::string::npos &&
+          setup.find("clearWifiCredentials();") == std::string::npos &&
+          freshGuard != std::string::npos && freshClear != std::string::npos &&
+          freshEnd != std::string::npos && freshGuard < freshClear && freshClear < freshEnd &&
+          setup.find("clearSdkWifiCredentials();", freshClear + 1) == std::string::npos &&
+          maintain.find("clearWifiCredentials();") == std::string::npos &&
+          maintain.find("clearSdkWifiCredentials();") == std::string::npos &&
+          setup.find("connectionTransitionStartedAtMs = millis();") != std::string::npos &&
           maintain.find("WiFi.SSID()") == std::string::npos,
-      "automatic setup fallback must not show or prefill the failed SSID");
+      "failed WiFi association must preserve saved credentials for retry or Cable rollback");
 }
 
-bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* mainPath) {
+// Firmware arrives over the paired USB cable. Only a legacy WiFi VibeTV, which
+// may have no USB data connection, still takes a paired WiFi update.
+bool testWifiFirmwareUpdatesOnlyOnLegacyWifi(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t handler = mainSource.find("void handleSaveWifi()");
-  const std::size_t handlerEnd = mainSource.find("void handleSetupWifiScan()", handler);
-  const std::size_t save = mainSource.find("saveWifiCredentials(", handler);
-  const std::size_t saveFailure = mainSource.find("if (!saveWifiCredentials(", handler);
-  const std::size_t clearSdk = mainSource.find("clearSdkWifiCredentials();", handler);
-  const std::size_t successResponse = mainSource.find(
-      "webServer.send(200, \"text/html; charset=utf-8\"",
-      handler);
-  const std::size_t legacyImportGate = mainSource.find(
-      "if (!wifiConnected && !hasSavedWifi)");
-  if (handler == std::string::npos || handlerEnd == std::string::npos) {
-    return false;
-  }
-  const std::string body = mainSource.substr(handler, handlerEnd - handler);
-  return expect(
-      save != std::string::npos && saveFailure != std::string::npos &&
-          successResponse != std::string::npos && clearSdk > successResponse &&
-          clearSdk < handlerEnd && legacyImportGate != std::string::npos &&
-          body.find("saveDeviceAuthToken") == std::string::npos &&
-          body.find("LittleFS") == std::string::npos &&
-          body.find("saveDeviceSettings") == std::string::npos &&
-          body.find("clearWifiCredentials") == std::string::npos,
-      "WiFi save must preserve pairing, assets and settings and clear stale SDK credentials only after success");
-}
-
-bool testRegisteredOtaEndpointsMatchAuthenticatedPolicy(const char* mainPath) {
-  const std::string mainSource = readFile(mainPath);
-  const std::size_t pageStart = mainSource.find("String updatePageHTML()");
-  const std::size_t pageEnd = mainSource.find("void handleUpdatePage()", pageStart);
-  const std::size_t multipart = mainSource.find("void handleOtaUpload(");
-  const std::size_t multipartEnd = mainSource.find("void scheduleReboot(", multipart);
-  const std::size_t multipartAuth = mainSource.find("requestHasValidOtaAuth()", multipart);
-  const std::size_t multipartBegin = mainSource.find("Update.begin(", multipart);
-  const std::size_t raw = mainSource.find("void handleRawOtaClient()");
-  const std::size_t rawEnd = mainSource.find("void handleFrame()", raw);
-  const std::size_t rawAuth = mainSource.find("WifiSecurityPolicy::AllowsFirmwareUpload", raw);
-  const std::size_t rawBegin = mainSource.find("Update.begin(", raw);
+  const std::size_t cable = mainSource.find("bool startCableTransfer(");
+  const std::size_t cableEnd = mainSource.find("bool writeCableTransferChunk(", cable);
+  const std::size_t cableAuth = mainSource.find("deviceAuthConfigured()", cable);
+  const std::size_t cableBegin = mainSource.find("Update.begin(", cable);
   const std::size_t server = mainSource.find("void startHttpServer()");
-  if (pageStart == std::string::npos || pageEnd == std::string::npos ||
-      multipart == std::string::npos || multipartEnd == std::string::npos ||
-      raw == std::string::npos || rawEnd == std::string::npos || server == std::string::npos) {
+  if (cable == std::string::npos || cableEnd == std::string::npos || server == std::string::npos) {
     return false;
   }
-  const std::string page = mainSource.substr(pageStart, pageEnd - pageStart);
-  const std::string registrations = mainSource.substr(server);
+  const std::string upload =
+      functionBody(mainSource, "void handleOtaUpload()");
+  const std::size_t legacyGate = upload.find("if (!legacyWifiActive()) {");
+  const std::size_t uploadAuth = upload.find("if (!requestHasValidOtaAuth()) {");
+  const std::size_t uploadBegin = upload.find("Update.begin(");
   return expect(
-      multipartAuth > multipart && multipartAuth < multipartBegin && multipartBegin < multipartEnd &&
-          rawAuth > raw && rawAuth < rawBegin && rawBegin < rawEnd &&
-          registrations.find("webServer.on(\"/update\", HTTP_GET, handleUpdatePage)") != std::string::npos &&
-          registrations.find("\"/update/firmware\"") != std::string::npos &&
-          registrations.find("handleOtaUpload(U_FLASH, \"firmware\")") != std::string::npos &&
-          registrations.find("\"/update/filesystem\"") != std::string::npos &&
-          registrations.find("handleOtaUpload(U_FS, \"filesystem\")") != std::string::npos &&
-          registrations.find("raw_ota_server_started port=8081 path=/update/firmware.raw") != std::string::npos &&
-          page.find("deviceAuthToken") == std::string::npos &&
-          page.find("tokenQuery") == std::string::npos &&
-          page.find("Manual upload") == std::string::npos &&
-          page.find("action='/update/firmware") == std::string::npos,
-      "no bootable state may be Wi-Fi OTA unrecoverable");
+      cableAuth > cable && cableAuth < cableBegin && cableBegin < cableEnd &&
+          legacyGate != std::string::npos && uploadAuth != std::string::npos &&
+          uploadBegin != std::string::npos &&
+          legacyGate < upload.find("webServer.upload();") && uploadAuth < uploadBegin &&
+          countOccurrences(mainSource, "Update.begin(") == 2 &&
+          countOccurrences(upload, "Update.begin(") == 1 &&
+          mainSource.find("raw_ota_server_started") == std::string::npos &&
+          mainSource.find("handleRawOtaClient") == std::string::npos,
+      "firmware may only be written over the paired USB cable, or by a paired legacy WiFi VibeTV");
+}
+
+bool testPairingTokenUsesHardwareRandom(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t start = mainSource.find("String generateAuthToken()");
+  const std::size_t end = mainSource.find("bool loadDeviceAuthToken()", start);
+  if (start == std::string::npos || end == std::string::npos) {
+    return false;
+  }
+  const std::string body = mainSource.substr(start, end - start);
+  return expect(
+      body.find("uint8_t bytes[16];") != std::string::npos &&
+          body.find("ESP.random(bytes, sizeof(bytes));") != std::string::npos &&
+          body.find("randomSeed") == std::string::npos &&
+          body.find("random(0x") == std::string::npos,
+      "pairing token must be 128 bits from the hardware random number generator");
+}
+
+bool testFactoryResetIsCableOnlyAndErasesCustomerData(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t resetStart = mainSource.find("void factoryResetAndRestart()");
+  const std::size_t resetEnd = mainSource.find("bool handleSerialControlLine(", resetStart);
+  const std::size_t handler = mainSource.find("bool handleSerialControlLine(const String& line)");
+  const std::size_t handlerEnd = mainSource.find("void handleSerialInput()", handler);
+  if (resetStart == std::string::npos || resetEnd == std::string::npos ||
+      handler == std::string::npos || handlerEnd == std::string::npos) {
+    return false;
+  }
+  const std::string reset = mainSource.substr(resetStart, resetEnd - resetStart);
+  const std::string body = mainSource.substr(handler, handlerEnd - handler);
+  const std::size_t op = body.find("strcmp(op, \"factory-reset\") == 0");
+  const std::size_t identity = body.find("strcmp(expectedDeviceID, deviceID.c_str())", op);
+  const std::size_t busy = body.find("serialRequestBusy()", identity);
+  const std::size_t run = body.find("factoryResetAndRestart();", busy);
+  const std::size_t eeprom = reset.find("EEPROM.write(i, 0);");
+  const std::size_t commit = reset.find("EEPROM.commit()", eeprom);
+  const std::size_t sdk = reset.find("ESP.eraseConfig()", commit);
+  const std::size_t format = reset.find("LittleFS.format()", sdk);
+  const std::size_t restart = reset.find("ESP.restart();", format);
+  return expect(
+      op != std::string::npos && identity != std::string::npos && busy != std::string::npos &&
+          run != std::string::npos && op < identity && identity < busy && busy < run &&
+          reset.find("i < kEepromBytes") != std::string::npos &&
+          eeprom != std::string::npos && commit != std::string::npos && sdk != std::string::npos &&
+          format != std::string::npos && restart != std::string::npos &&
+          mainSource.find("factoryResetAndRestart();") == mainSource.rfind("factoryResetAndRestart();"),
+      "factory reset must be a cable-only request that erases WiFi, token, settings and themes");
 }
 
 bool testEveryBootableEsp8266ProfileUsesAuthenticatedRuntime(const char* platformioPath) {
@@ -535,21 +562,6 @@ bool testEveryBootableEsp8266ProfileUsesAuthenticatedRuntime(const char* platfor
           config.find("CODEXBAR_DISPLAY_BRIDGE_MINIMAL") == std::string::npos &&
           config.find("CODEXBAR_DISPLAY_BRIDGE_SDK_MINIMAL") == std::string::npos,
       "no bootable state may be Wi-Fi OTA unrecoverable");
-}
-
-bool testWifiHandlersAuthorizeBeforeStorageMutation(const char* mainPath) {
-  const std::string mainSource = readFile(mainPath);
-  const std::size_t saveHandler = mainSource.find("void handleSaveWifi()");
-  const std::size_t saveAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", saveHandler);
-  const std::size_t saveMutation = mainSource.find("saveWifiCredentials(", saveHandler);
-  const std::size_t resetHandler = mainSource.find("void handleResetWifi()");
-  const std::size_t resetAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", resetHandler);
-  const std::size_t resetMutation = mainSource.find("clearWifiCredentials()", resetHandler);
-  return expect(
-      saveAuthorization != std::string::npos && saveMutation != std::string::npos &&
-          saveAuthorization < saveMutation && resetAuthorization != std::string::npos &&
-          resetMutation != std::string::npos && resetAuthorization < resetMutation,
-      "WiFi handlers must authorize before changing credentials");
 }
 
 bool testAnimatedAssetScanYieldsEveryFourRows() {
@@ -636,6 +648,16 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
           "CBA frame delay must follow the asset fps")) {
     return false;
   }
+  // A non-animating CBA never decodes a second frame, so demanding the full
+  // frame table would keep /health broken forever after it recovers.
+  if (!expect(
+          ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(4, 8) == 4 &&
+              ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(4, 0) == 1 &&
+              ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(1, 8) == 1 &&
+              ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(0, 0) == 1,
+          "only an animating CBA may require a full frame table to recover")) {
+    return false;
+  }
   if (!expect(
           ThemeSpecRuntimePolicy::CbaBufferBytes(74, 74) == 10952 &&
               ThemeSpecRuntimePolicy::CbaBufferBytes(77, 77) == 11858 &&
@@ -646,10 +668,18 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
   }
   const uint32_t clippyBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(74, 74);
   if (!expect(
-          ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(24000, 12000, clippyBytes) &&
-              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(23000, 12000, clippyBytes) &&
+          ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(19144, 12000, clippyBytes) &&
+              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(19143, 12000, clippyBytes) &&
               !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(30000, 10000, clippyBytes),
           "CBA allocation must preserve heap reserve and require one contiguous block")) {
+    return false;
+  }
+  const uint32_t claudeBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(77, 77);
+  if (!expect(
+          ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(20432, 16424, claudeBytes) &&
+              ThemeSpecRuntimePolicy::CanAnimate(20432 - claudeBytes, 16424 - claudeBytes) &&
+              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(20049, 16424, claudeBytes),
+          "measured WiFi heap must fit Claude while retaining the animation minimum")) {
     return false;
   }
   return expect(
@@ -701,8 +731,8 @@ bool testRendererUsesResumableCbaAnimation(
   }
   if (!expect(
           renderer.find("kThemeSpecAnimatedResumeTickMs") != std::string::npos &&
-              renderer.find("changedFields & themespec::kThemeSpecFieldActivity") != std::string::npos,
-          "unfinished CBA work must resume quickly and activity switches must restart it")) {
+              renderer.find("(themespec::kThemeSpecFieldActivity | themespec::kThemeSpecFieldProvider)") != std::string::npos,
+          "unfinished CBA work must resume quickly and activity/provider switches must restart it")) {
     return false;
   }
 
@@ -855,8 +885,8 @@ bool testFirmwareLoadsOnlyExplicitActiveTheme(const char* mainPath) {
     return false;
   }
 
-  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache()");
-  const std::size_t loadEnd = mainSource.find("#endif", loadStart);
+  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache() {");
+  const std::size_t loadEnd = mainSource.find("\n}", loadStart);
   if (!expect(
           loadStart != std::string::npos && loadEnd != std::string::npos,
           "active ThemeSpec cache loader must remain discoverable")) {
@@ -894,9 +924,8 @@ bool testFirmwareUsesIPDiscoveryInsteadOfMdns(const char* mainPath) {
       mainSource.find("ESP8266mDNS") == std::string::npos &&
           mainSource.find("vibetv.local") == std::string::npos &&
           mainSource.find("MDNS.") == std::string::npos &&
-          mainSource.find("WiFi.localIP().toString()") != std::string::npos &&
-          mainSource.find("192.168.4.1") != std::string::npos,
-      "firmware must expose setup and station endpoints by IP without mDNS");
+          mainSource.find("WiFi.localIP().toString()") != std::string::npos,
+      "firmware must expose station endpoints by IP without mDNS");
 }
 
 bool testConnectedSetupAddressPolicy() {
@@ -929,9 +958,415 @@ bool testConnectedSetupRendererShowsSafeIpFallback(const char* rendererPath) {
       "connected setup renderer must display a validated IP line and an unavailable state");
 }
 
+// Content hashes prove transported bytes, not renderability. Every uploaded
+// sprite must pass the same semantic gate as a GIF before it is promoted.
+bool testUploadedSpriteAssetsAreValidatedBeforePromotion(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t start = mainSource.find("bool validateCompletedAssetUpload()");
+  const std::size_t end = mainSource.find("bool promoteCompletedAssetUpload()", start);
+  if (!expect(
+          start != std::string::npos && end != std::string::npos,
+          "the completed-upload validation gate must remain discoverable")) {
+    return false;
+  }
+  const std::string gate = mainSource.substr(start, end - start);
+  if (!expect(
+          gate.find("assetPathLooksSprite") != std::string::npos &&
+              gate.find("ValidateSpriteAssetFile") != std::string::npos &&
+              gate.find("SpriteValidationErrorText") != std::string::npos,
+          "CBI/CBA uploads must be semantically validated before promotion")) {
+    return false;
+  }
+  // The sprite branch has to run before the GIF-only early return, otherwise
+  // malformed sprites would pass through unchecked again.
+  if (!expect(
+          gate.find("assetPathLooksSprite") < gate.find("if (!assetPathLooksGif"),
+          "the sprite gate must precede the GIF-only early return")) {
+    return false;
+  }
+  // Animation scheduling keys off the destination suffix, so a well-formed
+  // payload stored under the wrong extension renders nothing while the device
+  // still reports healthy. The header and the suffix have to agree.
+  if (!expect(
+          gate.find("spriteInfo.animated != assetPathLooksAnimatedSprite(") != std::string::npos,
+          "an uploaded sprite header must match its destination extension")) {
+    return false;
+  }
+  // AssetPathLooksAnimated() compares ".cba" case-sensitively, so an uppercase
+  // .CBA is never scheduled for animation. Matching case-insensitively here
+  // would promote a payload that then renders nothing.
+  const std::size_t animatedHelper =
+      mainSource.find("bool assetPathLooksAnimatedSprite(const String& path) {");
+  if (!expect(animatedHelper != std::string::npos, "the animated-suffix helper must remain discoverable")) {
+    return false;
+  }
+  const std::string animatedBody = mainSource.substr(animatedHelper, 400);
+  if (!expect(
+          animatedBody.find("toLowerCase()") == std::string::npos &&
+              animatedBody.find("path.endsWith(\".cba\")") != std::string::npos,
+          "only the canonical lowercase .cba may be treated as animated")) {
+    return false;
+  }
+  if (!expect(
+          mainSource.find("committed = validateCompletedAssetUpload() && promoteCompletedAssetUpload()") !=
+                  std::string::npos &&
+              mainSource.find("validateCompletedAssetUpload() &&\n        promoteCompletedAssetUpload()") !=
+                  std::string::npos,
+          "both the Cable and HTTP upload paths must validate before promoting")) {
+    return false;
+  }
+  return expect(
+      mainSource.find("bool assetPathLooksSprite(const String& path)") != std::string::npos &&
+          mainSource.find("\".cbi\"") != std::string::npos &&
+          mainSource.find("\".cba\"") != std::string::npos,
+      "sprite detection must cover both CBI and CBA extensions");
+}
+
+// A sprite that cannot be decoded must surface as an unhealthy render state
+// with a stable code, not be silently skipped.
+bool testSpriteDecodeFailuresReachRenderHealth(const char* themeSpecRendererPath) {
+  const std::string renderer = readFile(themeSpecRendererPath);
+  const std::size_t drawStart = renderer.find("void drawStaticSpriteAsset(");
+  const std::size_t drawEnd = renderer.find("AnimatedSpriteCache* animatedSpriteCacheForPath(", drawStart);
+  if (!expect(
+          drawStart != std::string::npos && drawEnd != std::string::npos,
+          "the static sprite draw path must remain discoverable")) {
+    return false;
+  }
+  const std::string staticDraw = renderer.substr(drawStart, drawEnd - drawStart);
+  if (!expect(
+          countOccurrences(staticDraw, "markSpriteRenderFailed(") == 4 &&
+              staticDraw.find("cbi_header_invalid") != std::string::npos &&
+              staticDraw.find("cbi_palette_invalid") != std::string::npos &&
+              staticDraw.find("cbi_truncated") != std::string::npos &&
+              staticDraw.find("cbi_row_invalid") != std::string::npos,
+          "every static sprite decode failure must set a stable diagnostic code")) {
+    return false;
+  }
+  const std::size_t dispatchStart = renderer.find("void drawSpriteAsset(");
+  const std::size_t dispatchEnd = renderer.find("void resetAnimatedSpriteCaches(", dispatchStart);
+  if (!expect(
+          dispatchStart != std::string::npos && dispatchEnd != std::string::npos,
+          "the sprite dispatch path must remain discoverable")) {
+    return false;
+  }
+  const std::string dispatch = renderer.substr(dispatchStart, dispatchEnd - dispatchStart);
+  if (!expect(
+          dispatch.find("sprite_asset_missing") != std::string::npos &&
+              dispatch.find("sprite_header_unsupported") != std::string::npos &&
+              dispatch.find("sprite_unreadable") != std::string::npos &&
+              dispatch.find("cba_render_failed") != std::string::npos,
+          "unreadable, missing, and unsupported sprites must set a diagnostic code")) {
+    return false;
+  }
+  // Low heap is transient and keeps its own counter, so it must not inflate
+  // renderFailures the way a broken asset does.
+  if (!expect(
+          renderer.find("setSpriteRenderError(\"low_heap_cba_buffer\"") != std::string::npos &&
+              renderer.find("markSpriteRenderFailed(\"low_heap_cba_buffer\"") == std::string::npos,
+          "transient low-heap sprite errors must not count as asset render failures")) {
+    return false;
+  }
+  if (!expect(
+          renderer.find("themeSpecRenderFailures += 1") != std::string::npos &&
+              renderer.find("const char* ThemeSpecRenderErrorAsset()") != std::string::npos,
+          "render health must expose the failing sprite asset for support")) {
+    return false;
+  }
+  return expect(
+      renderer.find("lastSpriteErrorAsset == assetPath") != std::string::npos &&
+          renderer.find("lastSpriteErrorAsset == cache.path") != std::string::npos,
+      "a sprite that decodes again must clear its own render error");
+}
+
+// Recovery must require proof that the failing asset decoded again. Dropping
+// caches or skipping rows below a clip proves nothing, so neither may restore
+// renderOk while the active sprite is still broken.
+bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRendererPath) {
+  const std::string renderer = readFile(themeSpecRendererPath);
+  const std::size_t resetStart = renderer.find("void resetAnimatedSpriteCaches() {");
+  if (!expect(resetStart != std::string::npos, "the sprite cache reset must remain discoverable")) {
+    return false;
+  }
+  const std::size_t resetEnd = renderer.find("\n}", resetStart);
+  if (!expect(resetEnd != std::string::npos, "the sprite cache reset must be delimited")) {
+    return false;
+  }
+  const std::string reset = renderer.substr(resetStart, resetEnd - resetStart);
+  // resetAnimatedSpriteCaches() runs on every asset upload and on activity or
+  // provider partial renders. Clearing the diagnostic there hides a broken
+  // active sprite behind an unrelated upload.
+  if (!expect(
+          reset.find("clearSpriteRenderError()") == std::string::npos,
+          "dropping animation caches must not clear the sprite render error")) {
+    return false;
+  }
+  const std::size_t drawStart = renderer.find("void drawStaticSpriteAsset(");
+  const std::size_t drawEnd = renderer.find("AnimatedSpriteCache* animatedSpriteCacheForPath(", drawStart);
+  if (!expect(
+          drawStart != std::string::npos && drawEnd != std::string::npos,
+          "the static sprite draw path must remain discoverable")) {
+    return false;
+  }
+  const std::string staticDraw = renderer.substr(drawStart, drawEnd - drawStart);
+  // A clipped render deliberately stops before the last row. Falling through
+  // to the success block would clear an error found in a row it never read.
+  if (!expect(
+          staticDraw.find("bool decodedEveryRow = true;") != std::string::npos &&
+              staticDraw.find("decodedEveryRow = false;") != std::string::npos &&
+              staticDraw.find("if (decodedEveryRow && lastSpriteErrorAsset == assetPath) {") != std::string::npos,
+          "only a pass that decoded every row may clear a static sprite error")) {
+    return false;
+  }
+  // A new theme no longer draws the old theme's assets, so its stale
+  // diagnostic must not outlive the theme switch.
+  if (!expect(
+      renderer.find("ensureThemeSpecSceneCached") != std::string::npos &&
+          renderer.find("clearSpriteRenderError();\n  GifCore().ReleaseMemory();") != std::string::npos,
+      "switching themes must clear the previous theme's sprite diagnostic")) {
+    return false;
+  }
+  // Corruption can sit in a later CBA frame while frame zero still decodes,
+  // and a failure restarts the animation at frame zero. Clearing after one
+  // frame would flip /health between ok and broken forever.
+  if (!expect(
+          renderer.find("int consecutiveCleanFrames = 0;") != std::string::npos &&
+              renderer.find("ThemeSpecRuntimePolicy::CleanFramesRequiredForRecovery(") != std::string::npos,
+          "a CBA must decode every frame before its render error is cleared")) {
+    return false;
+  }
+  const std::size_t cancelStart = renderer.find("void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {");
+  if (!expect(cancelStart != std::string::npos, "the animated frame cancel path must remain discoverable")) {
+    return false;
+  }
+  // A transient "low heap" condition must never outrank a real decode failure
+  // for the same asset, or /health blames memory for a broken sprite forever.
+  const std::size_t markStart = renderer.find("void markSpriteRenderFailed(const char* code, const char* assetPath) {");
+  if (!expect(markStart != std::string::npos, "the sprite failure path must remain discoverable")) {
+    return false;
+  }
+  const std::size_t markEnd = renderer.find("\n}", markStart);
+  if (!expect(markEnd != std::string::npos, "the sprite failure path must be delimited")) {
+    return false;
+  }
+  const std::string mark = renderer.substr(markStart, markEnd - markStart);
+  if (!expect(
+          mark.find("lastSpriteErrorIsDecodeFailure) {") != std::string::npos &&
+              mark.find("lastSpriteErrorIsDecodeFailure = true;") != std::string::npos,
+          "a decode failure must supersede a transient error for the same asset")) {
+    return false;
+  }
+  // A buffer allocation that failed never decoded the asset, so reporting a
+  // decode failure would blame the asset for ordinary memory pressure and
+  // inflate renderFailures.
+  if (!expect(
+          renderer.find("cbaBufferAllocationFailedThisAttempt = true;") != std::string::npos &&
+              renderer.find("if (!cbaBufferAllocationFailedThisAttempt &&") != std::string::npos,
+          "a failed CBA buffer allocation must not be reported as a decode failure")) {
+    return false;
+  }
+  // Two tall CBAs share one frame buffer, so the second sprite finding it
+  // occupied is deferred work rather than a corrupt asset.
+  if (!expect(
+          renderer.find("cbaBufferUnavailableThisAttempt = true;") != std::string::npos &&
+              renderer.find("!cbaBufferUnavailableThisAttempt) {") != std::string::npos,
+          "shared-buffer contention must not be reported as a decode failure")) {
+    return false;
+  }
+  // Suppressing contention entirely would hide a theme whose sprites evict
+  // each other forever, so persistent contention has to surface. Whether it
+  // persisted is CbaContentionWatch's call (testCbaContentionWatch), fed with
+  // the owner's row and the completed-frame count.
+  if (!expect(
+          renderer.find("cbaBufferContention.Observe(\n              cbaFrameBufferOwner, cbaFrameBufferOwner->nextRow, cbaCompletedFrames)") !=
+                  std::string::npos &&
+              renderer.find("setSpriteRenderError(\"cba_buffer_contention\"") != std::string::npos,
+          "persistent shared-buffer contention must be reported as a transient error")) {
+    return false;
+  }
+  // Taking the buffer is no progress: evicted sprites hand it over mid-frame
+  // forever, and resetting the watch there hid that starvation (#472). Only
+  // dropping every sprite cache starts a new count.
+  const std::size_t prepareStart = renderer.find("bool prepareAnimatedSpriteBuffer(");
+  const std::size_t prepareEnd = renderer.find("\n}\n", prepareStart);
+  const std::size_t clearCachesStart = renderer.find("void resetAnimatedSpriteCaches() {");
+  const std::size_t clearCachesEnd = renderer.find("\n}\n", clearCachesStart);
+  if (!expect(prepareStart != std::string::npos && clearCachesStart != std::string::npos,
+              "CBA buffer and cache reset paths must remain discoverable") ||
+      !expect(renderer.substr(prepareStart, prepareEnd - prepareStart).find("cbaBufferContention = ") ==
+                  std::string::npos,
+              "acquiring the CBA buffer must not reset the contention watch") ||
+      !expect(renderer.substr(clearCachesStart, clearCachesEnd - clearCachesStart).find("cbaBufferContention = CbaContentionWatch{};") !=
+                  std::string::npos,
+              "dropping the sprite caches must start a new contention count") ||
+      !expect(countOccurrences(renderer, "cbaBufferContention") == 3,
+              "only CbaContentionWatch may decide when contention progressed")) {
+    return false;
+  }
+  const std::size_t transientStart = renderer.find("void setSpriteRenderError(const char* code, const char* assetPath) {");
+  if (!expect(transientStart != std::string::npos, "the transient sprite error path must remain discoverable")) {
+    return false;
+  }
+  const std::size_t transientEnd = renderer.find("\n}", transientStart);
+  if (!expect(transientEnd != std::string::npos, "the transient sprite error path must be delimited")) {
+    return false;
+  }
+  if (!expect(
+          renderer.substr(transientStart, transientEnd - transientStart)
+                  .find("lastSpriteErrorIsDecodeFailure = false;") != std::string::npos,
+          "a transient sprite error must record itself as non-fatal")) {
+    return false;
+  }
+  // Two animated sprites share one frame buffer, so B running out of heap
+  // must not bury A's corrupt data behind ordinary memory pressure.
+  if (!expect(
+          renderer.substr(transientStart, transientEnd - transientStart)
+                  .find("if (lastSpriteErrorIsDecodeFailure && lastAnimatedSpriteError[0] != '\\0') {") !=
+              std::string::npos,
+          "a transient error must not overwrite another asset's decode failure")) {
+    return false;
+  }
+  const std::size_t cancelEnd = renderer.find("\n}", cancelStart);
+  if (!expect(cancelEnd != std::string::npos, "the animated frame cancel path must be delimited")) {
+    return false;
+  }
+  const std::string cancel = renderer.substr(cancelStart, cancelEnd - cancelStart);
+  if (!expect(
+          cancel.find("cache.consecutiveCleanFrames = 0;") != std::string::npos,
+          "an aborted CBA frame must restart the clean-pass requirement")) {
+    return false;
+  }
+  // The diagnostic names one asset path, so an error about a sprite the theme
+  // no longer draws must not pin renderOk: false forever. Retirement requires
+  // evidence that the asset is gone -- the scene no longer references it, or
+  // the pass that re-selected sprites never drew it -- because a static-only
+  // pass cannot prove a CBA decodes again.
+  if (!expect(
+          renderer.find("void retireSpriteRenderErrorIfAssetUnreferenced(") != std::string::npos &&
+              renderer.find("themespec::CompiledThemeSpecReferencesAsset(scene, lastSpriteErrorAsset.c_str())") != std::string::npos &&
+              renderer.find("retireSpriteRenderErrorIfAssetUnreferenced(cachedThemeSpecScene);") != std::string::npos,
+          "a full redraw may retire an error only for an unreferenced asset")) {
+    return false;
+  }
+  // A partial pass skips animated primitives and only draws the changed ones,
+  // so it can never prove an asset is gone and must not retire anything.
+  const std::size_t partialStart = renderer.find("bool RenderThemeSpecPartial(");
+  const std::size_t partialEnd = renderer.find("bool RenderThemeSpecRegion(", partialStart);
+  if (!expect(
+          partialStart != std::string::npos && partialEnd != std::string::npos,
+          "the partial render path must remain discoverable")) {
+    return false;
+  }
+  const std::string partial = renderer.substr(partialStart, partialEnd - partialStart);
+  if (!expect(
+          partial.find("clearSpriteRenderError()") == std::string::npos &&
+              partial.find("retireSpriteRenderErrorIfAssetUnreferenced") == std::string::npos,
+          "a partial render must not retire a sprite diagnostic")) {
+    return false;
+  }
+  // A replacement sprite that also fails must supersede the stale diagnostic,
+  // or its failure stays invisible and the old error is retired as gone.
+  return expect(
+      renderer.find("lastAnimatedSpriteError[0] != '\\0' && lastSpriteErrorAsset == path") != std::string::npos,
+      "a failure from a different asset must supersede a stale diagnostic");
+}
+
 }  // namespace
 
+// Replays the renderer's sharing of one CBA frame buffer between sprites held
+// in two round-robin cache slots, as animatedSpriteCacheForPath() and
+// prepareAnimatedSpriteBuffer() do, and reports whether contention was ever
+// published.
+bool cbaContentionPublished(int spriteCount, int spriteHeight, int ticks) {
+  constexpr int kSlots = 2;
+  struct Slot {
+    int sprite = -1;
+    int nextRow = 0;
+  } slots[kSlots];
+  int nextSlot = 0;
+  const Slot* owner = nullptr;
+  unsigned long completedFrames = 0;
+  CbaContentionWatch watch;
+  bool published = false;
+  for (int tick = 0; tick < ticks; ++tick) {
+    for (int sprite = 0; sprite < spriteCount; ++sprite) {
+      Slot* slot = nullptr;
+      for (Slot& candidate : slots) {
+        if (candidate.sprite == sprite) {
+          slot = &candidate;
+        }
+      }
+      if (slot == nullptr) {
+        for (Slot& candidate : slots) {
+          if (slot == nullptr && candidate.sprite < 0) {
+            slot = &candidate;
+          }
+        }
+      }
+      if (slot == nullptr) {
+        slot = &slots[nextSlot];
+        nextSlot = (nextSlot + 1) % kSlots;
+      }
+      if (slot->sprite != sprite) {
+        // Eviction drops the old sprite's frame and its claim on the buffer.
+        if (owner == slot) {
+          owner = nullptr;
+        }
+        *slot = Slot{};
+        slot->sprite = sprite;
+      }
+      if (owner != nullptr && owner != slot) {
+        published = watch.Observe(owner, owner->nextRow, completedFrames) || published;
+        continue;
+      }
+      owner = slot;
+      slot->nextRow += ThemeSpecRuntimePolicy::CbaRowsForTick(slot->nextRow, spriteHeight);
+      if (slot->nextRow >= spriteHeight) {
+        ++completedFrames;
+        slot->nextRow = 0;
+        owner = nullptr;
+      }
+    }
+  }
+  return published;
+}
+
+bool testCbaContentionWatch() {
+  // Three sprites taller than one chunk keep evicting each other from two
+  // slots, so no frame ever completes (#472).
+  if (!expect(cbaContentionPublished(3, 24, 60),
+              "three tall CBAs that never finish a frame must publish contention")) {
+    return false;
+  }
+  // A 480-row sprite needs 60 resume ticks per frame while another waits;
+  // that is ordinary animation, not starvation.
+  if (!expect(!cbaContentionPublished(2, 480, 600),
+              "a tall owner that keeps decoding rows must not publish contention")) {
+    return false;
+  }
+  // Short sprites finish within one chunk, so the buffer is free again.
+  if (!expect(!cbaContentionPublished(3, 8, 600),
+              "sprites that complete frames must not publish contention")) {
+    return false;
+  }
+  // A stuck owner is starvation even without evictions.
+  CbaContentionWatch watch;
+  int stuckRow = 8;
+  bool published = false;
+  for (unsigned int i = 0; i <= CbaContentionWatch::kStreakLimit; ++i) {
+    published = watch.Observe(&stuckRow, stuckRow, 0);
+  }
+  if (!expect(published, "an owner that stops decoding must publish contention")) {
+    return false;
+  }
+  return expect(!watch.Observe(&stuckRow, stuckRow, 1),
+                "a completed frame must clear the contention streak");
+}
+
 int main(int argc, char** argv) {
+  if (!testCbaContentionWatch()) {
+    return 1;
+  }
   if (!testBackoffThresholdAndExpiry()) {
     return 1;
   }
@@ -942,12 +1377,6 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testAssetWritesStayInsideThemeNamespace()) {
-    return 1;
-  }
-  if (!testWifiCredentialWritesAllowSetupOrCurrentToken()) {
-    return 1;
-  }
-  if (!testFirmwareUploadAlwaysRequiresCurrentPairingToken()) {
     return 1;
   }
   if (!testAnimatedAssetScanYieldsEveryFourRows()) {
@@ -977,10 +1406,10 @@ int main(int argc, char** argv) {
   if (!testAssetHandlersUseThemeNamespacePolicy(argv[3])) {
     return 1;
   }
-  if (!testWifiHandlersAuthorizeBeforeStorageMutation(argv[3])) {
+  if (!testWifiPairsAndTakesCredentialsOnlyOnLegacyWifi(argv[3])) {
     return 1;
   }
-  if (!testPairingHandlerReplacesTokenWithoutAuthGate(argv[3])) {
+  if (!testCablePairingRequiresExactPhysicalIdentity(argv[3])) {
     return 1;
   }
   if (!testConnectedPageNeverRendersPairingSecret(argv[3])) {
@@ -992,34 +1421,31 @@ int main(int argc, char** argv) {
   if (!testLegacyRecoveryStorageStaysReservedWithoutRuntime(argv[3])) {
     return 1;
   }
-  if (!testEverySetupAccessPointUsesWritableSetupPage(argv[3])) {
-    return 1;
-  }
-  if (!testSetupPortalIsReadyBeforeJoinInstructions(argv[3])) {
-    return 1;
-  }
   if (!testNetworkWorkPrecedesWifiRecovery(argv[3])) {
     return 1;
   }
-  if (!testWifiRecoveryFirmwareWiring(argv[3])) {
+  if (!testCableTransferOwnsSerialParserUntilCompletion(argv[3])) {
+    return 1;
+  }
+  if (!testWifiSetupKeepsRetryingSavedNetwork(argv[3])) {
     return 1;
   }
   if (!testUploadMutualExclusionPolicy(argv[3])) {
     return 1;
   }
-  if (!testCaptiveFirstResponseNeverBlocksOnWifiScan(argv[3])) {
+  if (!testUploadContentHashPolicy(argv[3])) {
     return 1;
   }
-  if (!testAutomaticScanReschedulesInterruptedWifiRecovery(argv[3])) {
+  if (!testAutomaticWifiFallbackPreservesSavedCredentials(argv[3])) {
     return 1;
   }
-  if (!testAutomaticWifiFallbackNeverCarriesTheFailedSsid(argv[3])) {
+  if (!testWifiFirmwareUpdatesOnlyOnLegacyWifi(argv[3])) {
     return 1;
   }
-  if (!testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(argv[3])) {
+  if (!testPairingTokenUsesHardwareRandom(argv[3])) {
     return 1;
   }
-  if (!testRegisteredOtaEndpointsMatchAuthenticatedPolicy(argv[3])) {
+  if (!testFactoryResetIsCableOnlyAndErasesCustomerData(argv[3])) {
     return 1;
   }
   if (!testEveryBootableEsp8266ProfileUsesAuthenticatedRuntime(argv[5])) {
@@ -1032,6 +1458,15 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testConnectedSetupRendererShowsSafeIpFallback(argv[4])) {
+    return 1;
+  }
+  if (!testUploadedSpriteAssetsAreValidatedBeforePromotion(argv[3])) {
+    return 1;
+  }
+  if (!testSpriteDecodeFailuresReachRenderHealth(argv[1])) {
+    return 1;
+  }
+  if (!testSpriteRenderErrorsOnlyClearOnProvenDecode(argv[1])) {
     return 1;
   }
 

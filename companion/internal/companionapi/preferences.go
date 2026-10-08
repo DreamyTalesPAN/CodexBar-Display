@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,9 @@ type preferenceHealth struct {
 	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
 	CheckedAt     string `json:"checkedAt,omitempty"`
 	NextAction    string `json:"nextAction,omitempty"`
+	// SignInURL is the browser page that satisfies a browser_sign_in_required
+	// state; the shell opens it in the default browser.
+	SignInURL string `json:"signInUrl,omitempty"`
 	// What the usage service itself said, with its home path redacted. Empty
 	// only when it said nothing, so the screen falls back to generic Detail.
 	Reported string `json:"reported,omitempty"`
@@ -191,7 +195,6 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	delete(a.server.providerReadiness, providerID)
 	a.server.providerReadinessMu.Unlock()
 	a.server.cacheProviderInventory(settings)
-	a.server.invalidateUsageCache()
 	var descriptor preferenceDescriptor
 	for _, item := range a.server.providerDescriptors(settings) {
 		if item.ID == settingID {
@@ -203,6 +206,12 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	if descriptor.ID == "" {
 		return preferenceDescriptor{}, errPreferenceNotFound
 	}
+	// Logged before the check starts, so the switch always precedes its result.
+	choice := descriptor.Label + " turned off."
+	if enabled {
+		choice = descriptor.Label + " turned on."
+	}
+	a.server.recordSetupEvent(setupEvent{Stage: "provider_choice", Status: "succeeded", Message: choice})
 	if !enabled {
 		if a.server.wakeDisplayStream != nil {
 			a.server.wakeDisplayStream()
@@ -213,15 +222,19 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	// Activation must not keep the customer-facing PATCH open while CodexBar
 	// performs browser/OAuth work. The exact provider probe still starts
 	// immediately and remains scoped to source=auto inside CodexBar.
-	go a.server.verifyEnabledProvider(providerID, providerRevision)
+	go a.server.verifyEnabledProvider(providerID, descriptor.Label, providerRevision)
 	return descriptor, nil
 }
 
-func (s *Server) verifyEnabledProvider(providerID string, providerRevision uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+func (s *Server) verifyEnabledProvider(providerID, label string, providerRevision uint64) {
+	ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
 	defer cancel()
 	setup := s.currentExactProviderSetup(ctx, providerID)
 	s.recordExactProviderSetup(providerID, providerRevision, setup)
+	// A check the customer already overtook by switching again is not news.
+	if s.currentProviderRevision(providerID) == providerRevision {
+		s.recordProviderSetupEvents(setup, label)
+	}
 }
 
 func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
@@ -230,8 +243,12 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 		return codexbar.ProviderHealthHealthy
 	case codexbar.ProviderAuthRequired:
 		return codexbar.ProviderHealthAuthRequired
+	case codexbar.ProviderBrowserSignInRequired:
+		return codexbar.ProviderHealthBrowserSignIn
 	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
 		return codexbar.ProviderHealthSetupRequired
+	case codexbar.ProviderUnsupported:
+		return codexbar.ProviderHealthUnsupported
 	case codexbar.ProviderNoUsageAvailable:
 		return codexbar.ProviderHealthNoUsage
 	default:
@@ -325,6 +342,9 @@ func (s *Server) handlePreference(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
+			if descriptor.ProviderID != "" {
+				s.recordSetupEvent(setupEvent{Stage: "provider_choice", Status: "failed", Message: descriptor.Label + " could not be changed.", Code: "preference_write_failed", NextAction: "Try again in a moment."})
+			}
 			writeError(w, http.StatusBadGateway, "preference_write_failed", "This setting could not be updated.", "Try again in a moment.")
 			return
 		}
@@ -457,6 +477,7 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 				settings[i].Health = cached.Health
 				settings[i].Service = cached.Service
 				settings[i].Reported = cached.Reported
+				settings[i].SignInURL = cached.SignInURL
 			}
 		}
 	}
@@ -464,16 +485,16 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	s.providerPreferences.at = now
 	s.cacheProviderInventory(settings)
 	if inventoryOnly && s.startProviderHealthRefreshLocked() {
-		// The inventory copied the previous health only to avoid an empty row.
-		// Once its replacement is running, expose that wait instead of letting
-		// the copied result look current and stop the browser poll.
+		// A background refresh is not a new health result. Keep the previous
+		// answer until it finishes; the provider screen keeps polling meanwhile.
 		for i := range s.providerPreferences.cached {
-			if !s.providerPreferences.cached[i].Enabled {
+			if !s.providerPreferences.cached[i].Enabled || s.providerPreferences.cached[i].Health != "" {
 				continue
 			}
 			s.providerPreferences.cached[i].Health = codexbar.ProviderHealthChecking
 			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
 			s.providerPreferences.cached[i].Reported = ""
+			s.providerPreferences.cached[i].SignInURL = ""
 		}
 		settings = append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
 	}
@@ -489,14 +510,23 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
 		defer cancel()
 		settings, err := s.providerPreferences.load(ctx)
 
 		s.providerPreferences.mu.Lock()
 		defer s.providerPreferences.mu.Unlock()
 		s.providerPreferences.healthRefresh = false
-		if err != nil || revision != s.providerPreferences.revision {
+		if revision != s.providerPreferences.revision {
+			return
+		}
+		if err != nil {
+			for i := range s.providerPreferences.cached {
+				setting := &s.providerPreferences.cached[i]
+				if setting.Enabled && (setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
+					setting.Health = codexbar.ProviderHealthUnavailable
+				}
+			}
 			return
 		}
 		healthByID := make(map[string]codexbar.ProviderSetting, len(settings))
@@ -511,6 +541,7 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 			s.providerPreferences.cached[i].Health = current.Health
 			s.providerPreferences.cached[i].Service = current.Service
 			s.providerPreferences.cached[i].Reported = current.Reported
+			s.providerPreferences.cached[i].SignInURL = current.SignInURL
 		}
 		s.providerPreferences.at = s.currentTime().UTC()
 	}()
@@ -643,22 +674,38 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		reported := reportedProviderMessage(setting.Reported)
 		checkedAt := ""
 		nextAction := ""
+		signInURL := ""
+		// A running check only speaks for the provider when nothing else does.
+		// A fresh exact readiness is other evidence, exactly like a fresh usage
+		// reading, so resolve it before deciding to hold the row at "checking".
+		readiness, hasReadiness := s.providerReadinessFor(setting.ID)
+		readinessApplies := hasReadiness &&
+			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now)
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
 			reported = ""
-		} else if _, retained := retainedSuccess[setting.ID]; retained {
+		} else if _, retained := retainedSuccess[setting.ID]; retained &&
+			!providerIsDiscontinued(setting, readiness, readinessApplies) {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 			if reported != "" {
 				reported = message + " " + reported
 			}
-		} else if setting.Health == codexbar.ProviderHealthChecking {
+		} else if _, fresh := freshSuccess[setting.ID]; setting.Health == codexbar.ProviderHealthChecking &&
+			!fresh && !readinessApplies {
+			// A check is running and nothing else speaks for the provider. A
+			// fresh collector reading or a fresh exact readiness does: the
+			// provider was just confirmed, so the row falls through to that
+			// evidence below instead of closing Continue for the length of the
+			// check. The Windows CLI takes twenty seconds per health pass, and
+			// the setup step polls while a row is checking, so on that machine
+			// every enabled provider was "checking" two thirds of the time and
+			// the completion gate refused a working Codex in the same rhythm.
 			state = string(codexbar.ProviderHealthChecking)
 			message = providerHealthMessage(codexbar.ProviderHealthChecking)
 			reported = ""
-		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
-			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
+		} else if readinessApplies {
 			state = providerReadinessHealthState(readiness.Status)
 			message = strings.TrimSpace(readiness.Detail)
 			if message == "" {
@@ -667,6 +714,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			reported = reportedProviderMessage(readiness.Reported)
 			checkedAt = readiness.CheckedAt.UTC().Format(time.RFC3339)
 			nextAction = providerReadinessNextAction(readiness.Status)
+			signInURL = readiness.SignInURL
 		} else if _, ready := freshSuccess[setting.ID]; ready && providerCanUseUsageEvidence(setting) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
@@ -676,9 +724,23 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				setting.Health == codexbar.ProviderHealthUnavailable) {
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
-		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {
+		} else if (setting.Health == codexbar.ProviderHealthUnavailable ||
+			setting.Health == codexbar.ProviderHealthRateLimited) && lastSuccess[setting.ID] != "" {
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
+		}
+		if state != string(codexbar.ProviderHealthBrowserSignIn) {
+			signInURL = ""
+		} else {
+			if signInURL == "" {
+				signInURL = setting.SignInURL
+			}
+			// The background scan carries no exact-check next action; the
+			// close-the-browser step is the one that makes the re-check work
+			// on Windows, so it must reach the row from this path too.
+			if nextAction == "" {
+				nextAction = providerReadinessNextAction(codexbar.ProviderBrowserSignInRequired)
+			}
 		}
 		items = append(items, preferenceDescriptor{
 			ID:             providerPreferenceID(setting.ID),
@@ -701,6 +763,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				LastSuccessAt: lastSuccess[setting.ID],
 				CheckedAt:     checkedAt,
 				NextAction:    nextAction,
+				SignInURL:     signInURL,
 			},
 		})
 	}
@@ -708,6 +771,29 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 }
 
 func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
+	return providerReadinessAppliesToSettingImpl(readiness, setting, freshSuccess, now)
+}
+
+// A discontinued provider is not a freshness problem: no later reading can
+// arrive, so the retained snapshot never becomes live again. Reporting it as
+// stale would let the setup step keep offering the old percentage for the
+// whole retention window, so this state outranks a retained reading.
+//
+// The background provider scan reports it through setting.Health, and the
+// exact readiness record through its own status. After a Companion restart
+// only the background state exists, so both have to count.
+func providerIsDiscontinued(
+	setting codexbar.ProviderSetting,
+	readiness providerReadinessRecord,
+	readinessApplies bool,
+) bool {
+	if setting.Health == codexbar.ProviderHealthUnsupported {
+		return true
+	}
+	return readinessApplies && readiness.Status == codexbar.ProviderUnsupported
+}
+
+func providerReadinessAppliesToSettingImpl(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
 	age := now.Sub(readiness.CheckedAt)
 	if readiness.CheckedAt.IsZero() || age < 0 || age > providerReadinessFreshness {
 		return false
@@ -719,8 +805,8 @@ func providerReadinessAppliesToSetting(readiness providerReadinessRecord, settin
 		return true
 	}
 	switch setting.Health {
-	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired,
-		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable:
+	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthBrowserSignIn, codexbar.ProviderHealthSetupRequired,
+		codexbar.ProviderHealthNoUsage, codexbar.ProviderHealthUnavailable, codexbar.ProviderHealthUnsupported, codexbar.ProviderHealthRateLimited:
 		return false
 	default:
 		return true
@@ -741,16 +827,24 @@ func providerReadinessHealthState(status string) string {
 		return "healthy"
 	case codexbar.ProviderAuthRequired:
 		return "auth_required"
+	case codexbar.ProviderBrowserSignInRequired:
+		return "browser_sign_in_required"
 	case codexbar.ProviderPermissionRequired:
 		return "permission_required"
+	case codexbar.ProviderUnsupported:
+		return "unsupported"
 	case codexbar.ProviderNoUsageAvailable:
 		return "no_usage_available"
 	case codexbar.ProviderTimeout:
 		return "timeout"
+	case codexbar.ProviderRateLimited:
+		return "rate_limited"
 	case codexbar.ProviderConfigError:
 		return "config_error"
 	case codexbar.ProviderEngineError:
 		return "engine_error"
+	case codexbar.ProviderEngineIncompatible:
+		return "engine_incompatible"
 	case codexbar.ProviderNotConfigured:
 		return "setup_required"
 	default:
@@ -758,22 +852,37 @@ func providerReadinessHealthState(status string) string {
 	}
 }
 
+// providerCopyGOOS names the system in permission copy: Windows has no macOS
+// access to allow (#479). A variable so tests cover both hosts.
+var providerCopyGOOS = runtime.GOOS
+
 func providerReadinessMessage(status string) string {
 	switch status {
 	case codexbar.ProviderReady:
 		return "Usage data is available."
 	case codexbar.ProviderAuthRequired:
 		return "This provider needs an active sign-in."
+	case codexbar.ProviderBrowserSignInRequired:
+		return "This provider needs a signed-in session in your browser."
 	case codexbar.ProviderPermissionRequired:
+		if providerCopyGOOS == "windows" {
+			return "Windows blocked access required by this provider."
+		}
 		return "macOS blocked access required by this provider."
+	case codexbar.ProviderUnsupported:
+		return "This provider no longer supports this account."
 	case codexbar.ProviderNoUsageAvailable:
 		return "This account does not expose usage data."
 	case codexbar.ProviderTimeout:
 		return "The provider check timed out."
+	case codexbar.ProviderRateLimited:
+		return "This provider is limiting usage checks right now."
 	case codexbar.ProviderConfigError:
 		return "Provider settings could not be read or saved."
 	case codexbar.ProviderEngineError:
 		return "The usage service needs attention."
+	case codexbar.ProviderEngineIncompatible:
+		return "The usage engine is too old."
 	default:
 		return "Finish setup for this provider."
 	}
@@ -785,14 +894,25 @@ func providerReadinessNextAction(status string) string {
 		return ""
 	case codexbar.ProviderAuthRequired:
 		return "Open provider setup, sign in again, then check this provider."
+	case codexbar.ProviderBrowserSignInRequired:
+		return "Sign in to this provider in your browser, close the browser, then check this provider."
 	case codexbar.ProviderPermissionRequired:
+		if providerCopyGOOS == "windows" {
+			return "Allow the required access, then check this provider."
+		}
 		return "Allow the required macOS access, then check this provider."
+	case codexbar.ProviderUnsupported:
+		return "Read the provider message, then switch this provider off and use another one."
 	case codexbar.ProviderNoUsageAvailable:
 		return "Use this provider once or connect an account with usage, then check again."
 	case codexbar.ProviderTimeout:
 		return "Wait a moment, then check this provider again."
+	case codexbar.ProviderRateLimited:
+		return "Wait a few minutes, then check this provider again."
 	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
 		return "Repair the usage service, then check this provider again."
+	case codexbar.ProviderEngineIncompatible:
+		return "Repair the usage engine, then check again."
 	default:
 		return "Finish setup for this provider, then check again."
 	}
@@ -803,7 +923,9 @@ func providerCanUseUsageEvidence(setting codexbar.ProviderSetting) bool {
 		(setting.Health == "" ||
 			setting.Health == codexbar.ProviderHealthHealthy ||
 			setting.Health == codexbar.ProviderHealthChecking ||
-			setting.Health == codexbar.ProviderHealthUnavailable)
+			setting.Health == codexbar.ProviderHealthUnavailable ||
+			// A refused check says nothing against a reading that did arrive.
+			setting.Health == codexbar.ProviderHealthRateLimited)
 }
 
 func providerPreferenceID(providerID string) string {
@@ -816,10 +938,16 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 		return "Provider is working."
 	case codexbar.ProviderHealthAuthRequired:
 		return "Sign in again for this provider."
+	case codexbar.ProviderHealthBrowserSignIn:
+		return "Sign in to this provider in your browser, close the browser, then check again."
 	case codexbar.ProviderHealthSetupRequired:
 		return "Finish setup for this provider."
+	case codexbar.ProviderHealthUnsupported:
+		return "This provider no longer supports this account."
 	case codexbar.ProviderHealthNoUsage:
 		return "This account does not expose usage data."
+	case codexbar.ProviderHealthRateLimited:
+		return "This provider is limiting usage checks right now."
 	case codexbar.ProviderHealthUnavailable:
 		return "Provider is not responding right now."
 	default:

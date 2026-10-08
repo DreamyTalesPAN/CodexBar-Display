@@ -310,7 +310,7 @@ main() {
     'manual rehearsal must discover candidates waiting for Production approval'
   assert_contains "$RC_WORKFLOW" 'ref: ${{ github.sha }}' \
     'release candidate must build the exact main SHA that dispatched it'
-  assert_contains "$RC_WORKFLOW" 'pip install platformio intelhex' \
+  assert_contains "$RC_WORKFLOW" 'pip install platformio==6.2.0 intelhex==2.3.0' \
     'release candidate must install the ESP32 bootloader dependency on macOS'
   assert_contains "$RC_WORKFLOW" 'candidate-manifest.json' \
     'release candidate must emit an immutable candidate manifest'
@@ -420,8 +420,10 @@ main() {
     'the runtime must own the paired device before the API firmware update starts'
   assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
     'public guest states must prove already_current through the runtime API as well'
-  assert_contains "$GUEST_TEST" 'if expected_uploads and not any(event.get("path") == "/update/firmware.raw"' \
-    'the Raw OTA assertion must be conditional: a candidate whose firmware matches the baseline uploads nothing, and demanding a Raw OTA regardless fails every release that ships no new firmware'
+  assert_contains "$GUEST_TEST" 'if expected_uploads and not any(event.get("path") in ota_upload_paths' \
+    'the OTA upload assertion must be conditional: a candidate whose firmware matches the baseline uploads nothing, and demanding an upload regardless fails every release that ships no new firmware'
+  assert_contains "$GUEST_TEST" 'ota_upload_paths = ("/update/firmware.raw", "/update/firmware")' \
+    'the OTA upload assertion must accept both documented upload paths: the upload path belongs to the untrusted candidate, so pinning one fails every candidate that legitimately ships the other'
   assert_contains "$GUEST_TEST" 'expected_uploads = int(sys.argv[2])' \
     'guest test must read the expected upload count once and reuse it for both state assertions'
   assert_contains "$GUEST_TEST" 'listenerOwner' \
@@ -442,6 +444,7 @@ main() {
     'one-shot candidate daemon must not keep a companion API server alive'
 
   assert_safe_app_extractor
+  bash "$ROOT/scripts/test-vibetv-runtime-listener-wait.sh"
   printf 'PASS: hosted VibeTV merge and release-candidate gate contracts\n'
 }
 

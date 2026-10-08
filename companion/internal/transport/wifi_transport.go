@@ -3,6 +3,8 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,12 +63,15 @@ type DeviceHealthSnapshot struct {
 	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
-			Active         bool   `json:"active"`
-			Path           string `json:"path"`
-			Hash           string `json:"hash"`
-			RenderOk       bool   `json:"renderOk"`
-			RenderError    string `json:"renderError"`
-			RenderFailures int    `json:"renderFailures"`
+			Active      bool   `json:"active"`
+			Path        string `json:"path"`
+			Hash        string `json:"hash"`
+			RenderOk    bool   `json:"renderOk"`
+			RenderError string `json:"renderError"`
+			// Theme asset that produced the current sprite render error, so
+			// support can name the failing file instead of guessing.
+			RenderErrorAsset string `json:"renderErrorAsset"`
+			RenderFailures   int    `json:"renderFailures"`
 		} `json:"themeSpec"`
 		GIF struct {
 			ActivePath       string `json:"activePath"`
@@ -184,8 +189,10 @@ func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabil
 		return protocol.DeviceCapabilities{}, fmt.Errorf("get device hello: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var hello protocol.DeviceHello
-	if err := json.NewDecoder(resp.Body).Decode(&hello); err != nil {
+	// A hello without capabilities (issue #526) is an error here: frames and
+	// theme installs need the limits it does not carry.
+	hello, err := protocol.DecodeWiFiHello(resp.Body)
+	if err != nil {
 		return protocol.DeviceCapabilities{}, fmt.Errorf("decode device hello: %w", err)
 	}
 	return protocol.CapabilitiesFromHello(hello), nil
@@ -324,6 +331,10 @@ func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base, currentToken st
 		return "", fmt.Errorf("post device pair: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// Current firmware pairs only over the USB cable (#489).
+		return "", fmt.Errorf("post device pair: status=404: VibeTV pairs only over the USB cable: connect it to this Mac and press Connect in the Mac App")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("post device pair: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -349,6 +360,7 @@ func pairDeviceAuthorizationRejected(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "status=401") ||
 		strings.Contains(message, "status=403") ||
+		strings.Contains(message, "status=404") ||
 		strings.Contains(message, "status=429")
 }
 
@@ -418,7 +430,10 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		return fmt.Errorf("close asset multipart form: %w", err)
 	}
 
-	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath)
+	// VibeTV commits the file only when its bytes match this MD5, as over the
+	// cable (#60). Older firmware ignores the parameter.
+	digest := md5.Sum(data)
+	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath) + "&hash=" + hex.EncodeToString(digest[:])
 	contentType := writer.FormDataContentType()
 	bodyBytes := body.Bytes()
 	uploadClient := t.assetUploadClient(len(bodyBytes))

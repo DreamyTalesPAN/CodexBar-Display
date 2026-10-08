@@ -129,6 +129,10 @@ bool ThemeSpecFullRenderRetryPending();
 bool CurrentThemeSpecRenderedSuccessfully();
 bool ThemeSpecRenderOk();
 const char* ThemeSpecRenderError();
+// Theme-namespace path of the asset that produced the current sprite render
+// error, or an empty string. Lets support name the failing file without
+// exposing unrelated stored data.
+const char* ThemeSpecRenderErrorAsset();
 unsigned long ThemeSpecRenderFailures();
 struct ThemeSpecRuntimeStats {
   unsigned long cbaCompletedFrames = 0;
@@ -137,6 +141,7 @@ struct ThemeSpecRuntimeStats {
   unsigned long cbaBufferAllocationFailures = 0;
   unsigned long cbaLastPushDurationUs = 0;
   unsigned long partialSuccesses = 0;
+  unsigned long animationLowHeapSkips = 0;
 };
 ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot();
 

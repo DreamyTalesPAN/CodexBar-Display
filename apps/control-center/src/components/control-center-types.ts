@@ -18,6 +18,8 @@ export type ApiError = {
   code: string;
   message: string;
   nextAction: string;
+  /** The VibeTV the error is about, when setup can still act on it. */
+  device?: DeviceCandidate;
 };
 
 export type CompanionStatus = "unknown" | "online" | "missing";
@@ -40,22 +42,30 @@ export type CompanionInfo = {
     executable?: string;
     pid?: number;
     listenerOwner?: string;
+    /** The platform the runtime runs on, e.g. "darwin" or "windows". */
+    os?: string;
   };
   update?: CompanionReleaseInfo;
   features?: {
     themeInstallEnabled?: boolean;
     macAppSelfUpdateEnabled?: boolean;
+    /** Windows-only: the shortened provider list and the sign-in button. */
+    providerSignInEnabled?: boolean;
   };
 };
 
 export type ProviderReadinessStatus =
   | "ready"
   | "auth_required"
+  | "browser_sign_in_required"
   | "permission_required"
+  | "unsupported"
   | "no_usage_available"
   | "timeout"
+  | "rate_limited"
   | "config_error"
   | "engine_error"
+  | "engine_incompatible"
   | "not_configured"
   | string;
 
@@ -76,11 +86,7 @@ export type ProviderSetupInfo = {
   detail?: string;
   errorCode?: string;
   nextAction?: string;
-  engine?: {
-    status?: "ready" | "not_configured" | "config_error" | string;
-    version?: string;
-    path?: string;
-    source?: "bundled" | "system" | "override" | string;
+  engine?: UsageEngineInfo & {
     configPath?: string;
     configWritable?: boolean;
     detail?: string;
@@ -88,6 +94,41 @@ export type ProviderSetupInfo = {
     nextAction?: string;
   };
   providers?: ProviderReadinessInfo[];
+};
+
+/** The usage engine the running Mac App selected; path is the full path. */
+export type UsageEngineInfo = {
+  status?:
+    | "ready"
+    | "not_configured"
+    | "config_error"
+    | "engine_error"
+    | "engine_incompatible"
+    | string;
+  version?: string;
+  minimumVersion?: string;
+  path?: string;
+  source?: "bundled" | "app_managed" | "override" | "system" | "path" | string;
+};
+
+export type SetupEvent = {
+  seq: number;
+  at: string;
+  stage: string;
+  status: "started" | "succeeded" | "skipped" | "retry" | "failed" | string;
+  message: string;
+  code?: string;
+  nextAction?: string;
+  count?: number;
+};
+
+/** One setup session, oldest event first, as GET /v1/setup/events returns it. */
+export type SetupLog = {
+  sessionId: string;
+  startedAt: string;
+  events: SetupEvent[];
+  truncated: boolean;
+  dropped: number;
 };
 
 export type ProviderSelectionSetup = {
@@ -129,6 +170,9 @@ export type SupportDiagnostics = {
   };
   companion?: CompanionInfo;
   providerSetup?: ProviderSetupInfo;
+  /** Carries the engine's product name; never render name. */
+  usageEngine?: UsageEngineInfo & { name?: string };
+  setupLog?: SetupLog | { unavailable: true };
   device?: DeviceInfo;
   checks?: Array<{
     name: string;
@@ -176,7 +220,6 @@ export type SupportReportClientState = {
     failedNormalChecks: number;
     pickerReason?: string | null;
     normalFailureLimit: number;
-    operationFailureLimit: number;
   };
   providerSetup?: ProviderSetupInfo | null;
   lastError?: ApiError | null;
@@ -191,12 +234,24 @@ export type DeviceState = "unknown" | "online" | "offline" | "paired";
 
 export type DeviceCandidate = {
   target: string;
+  transport?: "cable" | "wifi";
   deviceId?: string;
   board?: string;
   firmware?: string;
   networkMode?: "station" | "setup" | string;
   known?: boolean;
   active?: boolean;
+  /**
+   * Firmware from before USB-C support: it answers over the cable without an
+   * identity, and only the Cable rescue update can bring it to current.
+   */
+  rescue?: boolean;
+};
+
+export type WiFiNetwork = {
+  ssid: string;
+  rssi: number;
+  encrypted: boolean;
 };
 
 export type DeviceSearchState =
@@ -214,13 +269,15 @@ export type DeviceInfo = {
   known?: boolean;
   active?: boolean;
   connected: boolean;
+  legacyCableAnswered?: boolean;
   paired?: boolean;
   ready?: boolean;
   connectionState?:
     | "ready"
     | "reconnecting"
     | "setup_required"
-    | "provider_setup_required";
+    | "provider_setup_required"
+    | "display_render_failed";
   lastSeenAt?: string;
   board?: string;
   firmware?: string;
@@ -282,6 +339,9 @@ export type DeviceInfo = {
       supportsUsageSlotsV1?: boolean;
       supportsUsageWindowsV1?: boolean;
       supportsProviderSlotsV1?: boolean;
+      supportsProviderAssetsV1?: boolean;
+      supportsColorStopsV1?: boolean;
+      supportsTextValignV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
@@ -298,6 +358,11 @@ export type DeviceInfo = {
     };
     transport?: {
       active?: string;
+      mode?: string;
+      supported?: string[];
+      // True on firmware that takes setup, pairing and updates only over the
+      // USB cable, false on a legacy WiFi VibeTV, missing on older firmware.
+      cableOnlyUpdates?: boolean;
     };
   };
 };
@@ -458,10 +523,13 @@ export type UsageRefreshInfo = {
 export type PreferenceHealthState =
   | "healthy"
   | "auth_required"
+  | "browser_sign_in_required"
   | "setup_required"
+  | "unsupported"
   | "stale"
   | "service_outage"
   | "unavailable"
+  | "engine_incompatible"
   | "checking"
   | "disabled"
   | string;
@@ -510,6 +578,11 @@ export type PreferenceDescriptor = {
     lastSuccessAt?: string;
     checkedAt?: string;
     nextAction?: string;
+    /**
+     * The browser page that satisfies "browser_sign_in_required". The
+     * companion opens it; the UI only shows that it exists.
+     */
+    signInUrl?: string;
   };
 };
 
@@ -550,6 +623,62 @@ export function deviceIsWaitingForUsage(
 
 export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
+}
+
+export function deviceUsesCable(device: DeviceInfo | null | undefined) {
+  const transport = device?.capabilities?.transport;
+  return Boolean(
+    (transport?.active === "usb" && transport.mode === "cable") ||
+      device?.target?.toLowerCase().startsWith("cable:"),
+  );
+}
+
+export function deviceCanSwitchToCable(
+  device: DeviceInfo | null | undefined,
+) {
+  const supported = device?.capabilities?.transport?.supported;
+  return Boolean(
+    device?.active === true &&
+      device.connected === false &&
+      !deviceUsesCable(device) &&
+      supported?.includes("usb"),
+  );
+}
+
+// Whether Settings may offer USB-C (issue #489). A VibeTV answering over WiFi
+// offers it only on firmware that keeps setup and updates on the cable. Older
+// firmware and a legacy WiFi VibeTV, which may have no USB data connection,
+// keep it greyed out. A Cable or offline binding keeps it, because the switch
+// itself goes over the cable.
+export function deviceOffersCable(device: DeviceInfo | null | undefined) {
+  const transport = device?.capabilities?.transport;
+  if (!transport?.supported) {
+    return true;
+  }
+  if (!transport.supported.includes("usb")) {
+    return false;
+  }
+  if (device?.connected !== true || deviceUsesCable(device)) {
+    return true;
+  }
+  return transport.cableOnlyUpdates === true;
+}
+
+// Issue #498: a VibeTV set up over WiFi on firmware from before USB-C support
+// stays in legacy WiFi mode after its update. Plugged into this computer, the
+// Companion asks it over the cable and it leaves legacy mode, which proves its
+// cable carries data. The Companion remembers that VibeTV and reports the
+// moment, because legacy mode ends with the first request over the cable and
+// this window may never have seen it. A VibeTV without USB data never leaves
+// legacy mode and stays on WiFi.
+export function legacyWiFiDeviceAnsweredCable(
+  device: DeviceInfo | null | undefined,
+) {
+  return (
+    device?.legacyCableAnswered === true &&
+    device.connected === true &&
+    !deviceUsesCable(device)
+  );
 }
 
 // A reachable VibeTV whose display stream is running for this exact device but
@@ -756,26 +885,36 @@ export function deviceCompletedThemeSetup(
  *
  * Maintains an existing selection; never creates one. Writing a pool before the
  * customer has made the choice marks the display configured and makes setup
- * skip the very step that asks for it. Only for Automatic: a fixed selection
- * names one provider on purpose, and widening it would undo the customer's
- * choice; a fixed selection whose provider was just switched off is left alone
- * too -- the companion refuses it, and refusing is what hands the customer
- * back to the display step where they can pick another one. An empty pool is a
- * selection the companion refuses, and switching off the last provider is a
- * real state -- it is what the provider step is for -- so the stored pool is
- * left as it is rather than written as one that cannot be stored.
+ * skip the very step that asks for it. A fixed selection names one provider on
+ * purpose, and widening it would undo the customer's choice -- until that
+ * provider is switched off. Kept as it is, the selection pins VibeTV to a
+ * provider that no longer reports anything, and the device went blank while
+ * other providers had usage. It then becomes Automatic over the providers that
+ * are still on. Only a provider listed as off counts: one missing from the
+ * inventory is unknown, and that Manual choice is left for the customer to
+ * resolve. An empty pool is a selection the companion refuses, and
+ * switching off the last provider is a real state -- it is what the provider
+ * step is for -- so the stored pool is left as it is rather than written as
+ * one that cannot be stored.
  */
 export function automaticPoolForEnabledProviders(
   display: ProviderDisplaySelection | null,
   enabledProviderIds: readonly string[],
+  disabledProviderIds: readonly string[] = [],
 ): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
-  if (display?.configured !== true || display.mode !== "automatic") {
+  if (display?.configured !== true) {
     return null;
   }
-  const currentPool = display.providerIds || [];
   const providerIds = [...new Set(enabledProviderIds)];
   if (providerIds.length === 0) {
     return null;
+  }
+  const currentPool = display.providerIds || [];
+  if (display.mode !== "automatic") {
+    return currentPool.length > 0 &&
+      currentPool.every((id) => disabledProviderIds.includes(id))
+      ? { mode: "automatic", providerIds }
+      : null;
   }
   if (
     providerIds.length === currentPool.length &&

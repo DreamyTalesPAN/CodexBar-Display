@@ -10,6 +10,7 @@ import {
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
+  deviceUsesCable,
 } from "./control-center-types";
 import {
   companionRequestUrl,
@@ -53,6 +54,7 @@ type ThemePackState = {
 };
 
 export type DisplayFrameSnapshot = {
+  deviceId?: string;
   ok?: boolean;
   savedAt?: string;
   frame?: DisplayFrame;
@@ -76,6 +78,9 @@ type DisplayFrame = {
   sessionUnavailable?: boolean;
   weeklyUnavailable?: boolean;
   resetSecs?: number;
+  resetTrust?: string;
+  resetTrustSecs?: number;
+  resetSource?: string;
   usageMode?: string;
   usageWindows?: UsageWindowFrame[];
   usageSlots?: UsageSlotFrame[];
@@ -135,6 +140,8 @@ export type ThemePrimitive = {
   br?: number;
   align?: string;
   al?: string;
+  valign?: string;
+  va?: string;
   maxWidth?: number;
   mw?: number;
   progressStyle?: string;
@@ -143,10 +150,14 @@ export type ThemePrimitive = {
   sg?: number;
   segmentGap?: number;
   gg?: number;
+  colorStops?: Array<{ gte?: number; color?: string; c?: string }>;
+  cs?: Array<{ gte?: number; color?: string; c?: string }>;
   assetPath?: string;
   a?: string;
   stateAssets?: Record<string, string>;
   sa?: Record<string, string>;
+  providerAssets?: Record<string, string>;
+  pa?: Record<string, string>;
   data?: string;
   d?: string;
   r?: string[];
@@ -167,20 +178,24 @@ type FrameData = {
     percent: number;
     resetSecs: number;
     available: boolean;
+    idle: boolean;
   }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
   usageSlot1ResetSecs: number;
   usageSlot1Available: boolean;
+  usageSlot1Idle: boolean;
   usageSlot2Label: string;
   usageSlot2Percent: number;
   usageSlot2ResetSecs: number;
   usageSlot2Available: boolean;
+  usageSlot2Idle: boolean;
   providerSlots: Array<{
     label: string;
     percent: number;
     resetSecs: number;
     available: boolean;
+    idle: boolean;
   }>;
   activity: string;
   sessionTokens: number;
@@ -205,20 +220,22 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "used",
   usageWindows: [
-    { label: "Session", percent: 64, resetSecs: 3600, available: true },
-    { label: "Weekly", percent: 28, resetSecs: 7200, available: true },
+    { label: "Session", percent: 64, resetSecs: 3600, available: true, idle: false },
+    { label: "Weekly", percent: 28, resetSecs: 7200, available: true, idle: false },
   ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
   usageSlot1ResetSecs: 3600,
   usageSlot1Available: true,
+  usageSlot1Idle: false,
   usageSlot2Label: "Weekly",
   usageSlot2Percent: 28,
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
+  usageSlot2Idle: false,
   providerSlots: [
-    { label: "Claude", percent: 64, resetSecs: 3600, available: true },
-    { label: "Codex", percent: 28, resetSecs: 12000, available: true },
+    { label: "Claude", percent: 64, resetSecs: 3600, available: true, idle: false },
+    { label: "Codex", percent: 28, resetSecs: 12000, available: true, idle: false },
   ],
   activity: "preview",
   sessionTokens: 1_400_000,
@@ -256,10 +273,7 @@ type SpriteRect = {
   color: string;
 };
 
-export function useLatestDisplayFrame(
-  connected: boolean,
-  onFrame?: (frame: DisplayFrameSnapshot) => void,
-) {
+export function useLatestDisplayFrame(connected: boolean) {
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
@@ -289,7 +303,6 @@ export function useLatestDisplayFrame(
           return;
         }
         setDisplayFrame(nextFrame);
-        onFrame?.(nextFrame);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -304,7 +317,7 @@ export function useLatestDisplayFrame(
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [connected, onFrame]);
+  }, [connected]);
 
   return displayFrame;
 }
@@ -458,14 +471,28 @@ export function LiveVibeTVPreview({
     };
   }, [themeId, themeSpecHash, themeSpecPath, packRetryNonce]);
 
-  const previewReady = Boolean(deviceConnected && pack?.spec && frame);
+  const previewReady = Boolean(
+    deviceIsCustomerConnected(device) &&
+      deviceReady &&
+      !updateOwnedDisconnect &&
+      pack?.spec &&
+      frame,
+  );
   useEffect(() => {
     if (!previewReady || !onPreviewReady) {
       return;
     }
     const timer = window.setTimeout(onPreviewReady, PREVIEW_HANDOVER_MS);
     return () => window.clearTimeout(timer);
-  }, [onPreviewReady, previewReady]);
+  }, [
+    onPreviewReady,
+    previewReady,
+    device?.deviceId,
+    device?.target,
+    themeId,
+    themeSpecHash,
+    themeSpecPath,
+  ]);
 
   return (
     <figure className="w-full max-w-[520px]">
@@ -538,6 +565,8 @@ export function livePreviewDisplayFrame(
   if (
     (!deviceIsCustomerConnected(device) &&
       (!deviceIsActive(device) || device?.paired === false)) ||
+    (deviceUsesCable(device) &&
+      (!device?.deviceId || displayFrame?.deviceId?.toLowerCase() !== device.deviceId.toLowerCase())) ||
     !hasRenderableUsage(displayFrame)
   ) {
     return null;
@@ -707,9 +736,12 @@ function ThemePrimitiveNode({
         font={font}
         fontSize={fontSize}
         fontWeight={themeFontWeight(font)}
+        height={height}
+        maxSize={maxSize}
         maxWidth={maxWidth}
         size={size}
         text={text}
+        valign={primitive.valign || primitive.va}
         x={x}
         y={y}
       />
@@ -820,9 +852,12 @@ function ThemeTextPrimitive({
   font,
   fontSize,
   fontWeight,
+  height,
+  maxSize,
   maxWidth,
   size,
   text,
+  valign,
   x,
   y,
 }: {
@@ -831,9 +866,12 @@ function ThemeTextPrimitive({
   font: number;
   fontSize: number;
   fontWeight: number;
+  height: number;
+  maxSize: number;
   maxWidth: number;
   size: number;
   text: string;
+  valign?: string;
   x: number;
   y: number;
 }) {
@@ -853,6 +891,8 @@ function ThemeTextPrimitive({
       measurement.key === measurementKey ? measurement.width : undefined,
     );
   const layout = themeTextLayout(x, maxWidth, align, textWidth);
+  const boxHeight = themeTextValignBoxHeight(height, font, maxSize);
+  const textY = themeTextAlignedY(y, boxHeight, fontSize, valign);
 
   useEffect(() => {
     const node = textRef.current;
@@ -881,7 +921,7 @@ function ThemeTextPrimitive({
     fontSize,
     fontWeight,
     letterSpacing: "0",
-    y: y + fontSize * 0.8,
+    y: textY + fontSize * 0.8,
   };
   const textNode = firmwareMetrics ? (
     <text
@@ -925,7 +965,7 @@ function ThemeTextPrimitive({
             height={Math.ceil(fontSize) + 4}
             width={layout.clipWidth}
             x={x}
-            y={y}
+            y={textY}
           />
         </clipPath>
       </defs>
@@ -951,7 +991,11 @@ function ThemeProgress({
     "#7BEF7B",
   );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
-  const fillColor = colorFor(primitive.color || primitive.c, "#FFFFFF");
+  const fillColor = resolveProgressFillColor(
+    primitive,
+    percent,
+    frame.usageMode,
+  );
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
@@ -1229,6 +1273,40 @@ export function buildFrameData(
   ).filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()));
   const slot1 = slots[0];
   const slot2 = slots[1];
+  const providerSlots = (displayFrame.providerSlots || []).filter((slot) =>
+    Boolean(slot.id?.trim() && slot.label?.trim()),
+  );
+  // Mirrors ApplyFrameResetTrust and CurrentResetTrust in
+  // codexbar_display_core.h: the device stands behind a frame only while it is
+  // not marked stale and its trust budget has not run out. A "live" frame is
+  // the host's statement that the basis is current and stands without a
+  // deadline (an account in which no window has a reset time, #532); every
+  // other frame needs at least one deadline. Without that basis a window with
+  // no deadline is unavailable, not idle.
+  const trustEnforced =
+    displayFrame.resetTrust === "live" || displayFrame.resetTrust === "offline";
+  const basisTrusted =
+    displayFrame.resetTrust !== "stale" &&
+    // Retained windows of a failed collection stay unavailable, as on the device.
+    displayFrame.usageUnavailable !== true &&
+    (displayFrame.resetTrust === "live" ||
+      [displayFrame, ...slots, ...providerSlots].some(
+        (carrier) => (carrier.resetSecs ?? 0) > 0,
+      )) &&
+    (!trustEnforced ||
+      (Boolean(displayFrame.resetSource) &&
+        (displayFrame.resetTrustSecs ?? 0) - elapsedSeconds > 0));
+  // Mirrors CurrentUsageWindowRemainingSecs: idle is a window the host sent
+  // with no deadline and nothing used. No deadline alone is not enough -- the
+  // host also sends 0 for a deadline that ran out before the frame left and
+  // for a provider that names none. In "remaining" mode the host sends what is
+  // left, so nothing used reads 100. A provider slot is only sent with a
+  // deadline and is never idle.
+  const nothingUsedPercent = sourceUsageMode === "remaining" ? 100 : 0;
+  const windowIsIdle = (slot: UsageWindowFrame | UsageSlotFrame | undefined) =>
+    basisTrusted &&
+    (slot?.resetSecs ?? 0) <= 0 &&
+    clampPercent(slot?.percent) === nothingUsedPercent;
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -1243,23 +1321,25 @@ export function buildFrameData(
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
+      idle: windowIsIdle(slot),
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
     usageSlot1ResetSecs: remainingResetSeconds(slot1?.resetSecs),
     usageSlot1Available: Boolean(slot1),
+    usageSlot1Idle: Boolean(slot1) && windowIsIdle(slot1),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
     usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
-    providerSlots: (displayFrame.providerSlots || [])
-      .filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()))
-      .map((slot) => ({
-        label: slot.label || "",
-        percent: clampPercent(slot.percent),
-        resetSecs: remainingResetSeconds(slot.resetSecs),
-        available: true,
-      })),
+    usageSlot2Idle: Boolean(slot2) && windowIsIdle(slot2),
+    providerSlots: providerSlots.map((slot) => ({
+      label: slot.label || "",
+      percent: clampPercent(slot.percent),
+      resetSecs: remainingResetSeconds(slot.resetSecs),
+      available: true,
+      idle: false,
+    })),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     hasTokenTotals:
@@ -1408,6 +1488,20 @@ export function themeRenderPackMatchesActiveRevision(
 // device never shows.
 const RESET_UNAVAILABLE = "Reset unavailable";
 
+// Mirrors kResetIdleText in theme_spec_renderer_core.h. A window that is
+// current and measured but has no deadline is idle, not broken: the customer
+// simply has not started a session yet, so nothing is scheduled to reset.
+const RESET_IDLE = "No active session";
+
+// Mirrors RootResetIsIdle in theme_spec_renderer_core.h. The root {reset}
+// token owns no window, so it is idle only when every window the frame does
+// carry is idle; a stale basis leaves no idle window behind and keeps the
+// unavailable wording.
+function rootResetIsIdle(frame: FrameData): boolean {
+  const windows = frame.usageWindows.filter((window) => window.available);
+  return windows.length > 0 && windows.every((window) => window.idle);
+}
+
 export function renderTextPrimitive(
   primitive: ThemePrimitive,
   frame: FrameData,
@@ -1417,17 +1511,107 @@ export function renderTextPrimitive(
     return boundValue(binding, frame);
   }
   const raw = primitive.text || primitive.v || "";
-  // RenderTextTemplate replaces the whole template for an expired root
-  // countdown instead of substituting in place, so the surrounding literal
-  // text disappears. Only the root tokens do this — {usage.N.reset}, {us1r}
-  // and {pv1r} substitute inline, and the device really does render
-  // "Reset in Reset unavailable" for those.
+  // RenderTextTemplate replaces the whole template for an expired countdown
+  // instead of substituting in place, so the surrounding literal text
+  // disappears. This covers the root tokens and, since the idle-session fix,
+  // any template whose only substitution is an unavailable slot countdown:
+  // shipped themes hard-code "Resets in {usageSlot1Reset}", and substituting
+  // in place produced "Resets in Reset unavailable" on a customer's screen.
   if (frame.resetSecs <= 0 && /\{reset\}|\{resetCountdown\}|\{r\}/.test(raw)) {
-    return RESET_UNAVAILABLE;
+    return rootResetIsIdle(frame) ? RESET_IDLE : RESET_UNAVAILABLE;
+  }
+  const countdownOnly = templateCountdownOnlyText(raw, frame);
+  if (countdownOnly) {
+    return countdownOnly;
   }
   return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
+}
+
+// Mirrors TemplateCountdownOnlyText in theme_spec_renderer_core.h.
+// A template that also substitutes a label or a percentage still carries
+// information, so it keeps its in-place substitution; an unavailable window
+// renders empty rather than as the unavailable text, so it is left alone too.
+function templateCountdownOnlyText(
+  raw: string,
+  frame: FrameData,
+): string | null {
+  const tokens = raw.match(/\{([a-zA-Z0-9_.-]+)\}/g);
+  if (!tokens || tokens.length === 0) {
+    return null;
+  }
+  let sawUnavailableCountdown = false;
+  let allIdle = true;
+  for (const token of tokens) {
+    const key = token.slice(1, -1);
+    const slot = slotCountdownFor(key, frame);
+    if (!slot) {
+      return null;
+    }
+    if (!slot.available || slot.resetSecs > 0) {
+      return null;
+    }
+    sawUnavailableCountdown = true;
+    allIdle = allIdle && slot.idle;
+  }
+  if (!sawUnavailableCountdown) {
+    return null;
+  }
+  return allIdle ? RESET_IDLE : RESET_UNAVAILABLE;
+}
+
+function slotCountdownFor(
+  key: string,
+  frame: FrameData,
+): { available: boolean; resetSecs: number; idle: boolean } | undefined {
+  const usageMatch = /^usage\.(\d+)\.reset$/.exec(key);
+  if (usageMatch) {
+    const window = frame.usageWindows[Number(usageMatch[1])];
+    return window
+      ? {
+          available: window.available,
+          resetSecs: window.resetSecs,
+          idle: window.idle,
+        }
+      : undefined;
+  }
+  switch (key) {
+    case "usageSlot1Reset":
+    case "us1r":
+      return {
+        available: frame.usageSlot1Available,
+        resetSecs: frame.usageSlot1ResetSecs,
+        idle: frame.usageSlot1Idle,
+      };
+    case "usageSlot2Reset":
+    case "us2r":
+      return {
+        available: frame.usageSlot2Available,
+        resetSecs: frame.usageSlot2ResetSecs,
+        idle: frame.usageSlot2Idle,
+      };
+    case "providerSlot1Reset":
+    case "pv1r":
+      return frame.providerSlots[0]
+        ? {
+            available: frame.providerSlots[0].available,
+            resetSecs: frame.providerSlots[0].resetSecs,
+            idle: frame.providerSlots[0].idle,
+          }
+        : undefined;
+    case "providerSlot2Reset":
+    case "pv2r":
+      return frame.providerSlots[1]
+        ? {
+            available: frame.providerSlots[1].available,
+            resetSecs: frame.providerSlots[1].resetSecs,
+            idle: frame.providerSlots[1].idle,
+          }
+        : undefined;
+    default:
+      return undefined;
+  }
 }
 
 // Mirrors the firmware's FormatTokenCount digit for digit (truncated
@@ -1485,7 +1669,7 @@ export function boundValue(key: string, frame: FrameData): string {
       return window.label;
     }
     if (field === "reset") {
-      return formatReset(window.resetSecs);
+      return formatReset(window.resetSecs, window.idle);
     }
     return String(window.percent);
   }
@@ -1508,7 +1692,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "reset":
     case "resetCountdown":
     case "r":
-      return formatReset(frame.resetSecs);
+      return formatReset(frame.resetSecs, rootResetIsIdle(frame));
     case "usageSlot1Label":
     case "us1l":
       return frame.usageSlot1Available ? frame.usageSlot1Label : "";
@@ -1518,7 +1702,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot1Reset":
     case "us1r":
       return frame.usageSlot1Available
-        ? formatReset(frame.usageSlot1ResetSecs)
+        ? formatReset(frame.usageSlot1ResetSecs, frame.usageSlot1Idle)
         : "";
     case "usageSlot1Available":
     case "us1a":
@@ -1532,7 +1716,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot2Reset":
     case "us2r":
       return frame.usageSlot2Available
-        ? formatReset(frame.usageSlot2ResetSecs)
+        ? formatReset(frame.usageSlot2ResetSecs, frame.usageSlot2Idle)
         : "";
     case "usageSlot2Available":
     case "us2a":
@@ -1548,7 +1732,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot1Reset":
     case "pv1r":
       return frame.providerSlots[0]?.available
-        ? formatReset(frame.providerSlots[0].resetSecs)
+        ? formatReset(frame.providerSlots[0].resetSecs, frame.providerSlots[0].idle)
         : "";
     case "providerSlot1Available":
     case "pv1a":
@@ -1564,7 +1748,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot2Reset":
     case "pv2r":
       return frame.providerSlots[1]?.available
-        ? formatReset(frame.providerSlots[1].resetSecs)
+        ? formatReset(frame.providerSlots[1].resetSecs, frame.providerSlots[1].idle)
         : "";
     case "providerSlot2Available":
     case "pv2a":
@@ -1617,11 +1801,39 @@ export function progressPercent(
   return frame.sessionUnavailable ? 0 : frame.session;
 }
 
+function resolveProgressFillColor(
+  primitive: ThemePrimitive,
+  percent: number,
+  usageMode?: string,
+): string {
+  const stops = [...(primitive.colorStops || primitive.cs || [])]
+    .map((stop) => ({
+      gte: typeof stop.gte === "number" ? stop.gte : -1,
+      color: stop.color || stop.c || "",
+    }))
+    .filter((stop) => stop.gte >= 0 && stop.gte <= 100 && stop.color)
+    .sort((a, b) => b.gte - a.gte);
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const remainingStyle =
+    usageMode === "used" ? 100 - clamped : clamped;
+  for (const stop of stops) {
+    if (remainingStyle >= stop.gte) {
+      return colorFor(stop.color, "#FFFFFF");
+    }
+  }
+  return colorFor(primitive.color || primitive.c, "#FFFFFF");
+}
+
 function usageLaneText(value: number, unavailable: boolean): string {
   return unavailable ? "??" : String(value);
 }
 
 function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
+  const providerAssets = primitive.providerAssets || primitive.pa || {};
+  const provider = (frame.provider || "").trim().toLowerCase();
+  if (provider && providerAssets[provider]) {
+    return providerAssets[provider];
+  }
   const stateAssets = primitive.stateAssets || primitive.sa || {};
   if (frame.activity === "coding" && stateAssets.coding) {
     return stateAssets.coding;
@@ -1894,6 +2106,35 @@ function alignedTextX(
   return x;
 }
 
+export function themeTextValignBoxHeight(
+  explicitHeight: number,
+  font: number,
+  maxSize: number,
+): number {
+  if (explicitHeight > 0) {
+    return explicitHeight;
+  }
+  return themeFontSize(font, maxSize) + 4;
+}
+
+export function themeTextAlignedY(
+  boxY: number,
+  boxHeight: number,
+  glyphHeight: number,
+  valign: string | undefined,
+): number {
+  if (boxHeight <= 0) {
+    return boxY;
+  }
+  if (valign === "middle" || valign === "center") {
+    return boxY + Math.trunc((boxHeight - glyphHeight) / 2);
+  }
+  if (valign === "bottom") {
+    return boxY + boxHeight - glyphHeight;
+  }
+  return boxY;
+}
+
 export function themeTextLayout(
   x: number,
   maxWidth: number,
@@ -2073,9 +2314,9 @@ function clampPercent(value?: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function formatReset(seconds?: number): string {
+function formatReset(seconds?: number, idle = false): string {
   if (!seconds || seconds <= 0) {
-    return RESET_UNAVAILABLE;
+    return idle ? RESET_IDLE : RESET_UNAVAILABLE;
   }
   const totalMinutes = Math.floor(seconds / 60);
   const days = Math.floor(totalMinutes / (24 * 60));

@@ -436,8 +436,8 @@ main() {
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.46.0.zip"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.46.0.manifest.json"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.63.0.zip"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.63.0.manifest.json"
   assert_file "${app}/Contents/Resources/CodexBar/CodexBar-LICENSE.txt"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
@@ -516,9 +516,7 @@ expected_arguments = [
     "codexbar-display",
     "daemon",
     "--transport",
-    "wifi",
-    "--interval",
-    "30s",
+    "usb",
     "--api-addr",
     "127.0.0.1:47832",
     "--api-dev-origin",
@@ -535,7 +533,7 @@ if environment.get("CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL") != agent.get("L
     raise SystemExit(
         "DMG runtime must expose its LaunchAgent label to the Companion API"
     )
-if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.46.0":
+if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.63.0":
     raise SystemExit(
         "DMG runtime must force the Companion to use VibeTV's pinned CodexBar"
     )
@@ -572,14 +570,13 @@ preview_runtime_end = source.index(
     preview_runtime_start,
 )
 preview_runtime_source = source[preview_runtime_start:preview_runtime_end]
-if '"--interval",\n                "30s"' not in preview_runtime_source:
-    raise SystemExit("local preview runtime must use the stable 30s interval")
-if '"--interval",\n                "5s"' in preview_runtime_source:
-    raise SystemExit("local preview runtime must not restore the overloaded 5s interval")
+if '"--transport",\n                "usb"' not in preview_runtime_source:
+    raise SystemExit("local preview runtime must default to the fresh-device Cable transport")
+if '"--interval"' in preview_runtime_source:
+    raise SystemExit("local preview runtime must use the transport-owned default interval")
 
 required_source = [
     "import ServiceManagement",
-    "import CryptoKit",
     "import Sparkle",
     "SPUStandardUpdaterController(",
     "SPUUpdaterDelegate",
@@ -743,23 +740,22 @@ required_source = [
     "button.intrinsicContentSize.width + 32",
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
-    'codexBarPinnedVersion = "0.46.0"',
-    'codexBarPinnedTeamIdentifier = "Y5PE65HELJ"',
-    'CodexBar-macos-universal-0.46.0.zip',
+    'codexBarPinnedVersion = "0.63.0"',
+
+    'CodexBar-macos-universal-0.63.0.zip',
     'bootstrapCodexBar()',
-    'arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]',
-    'arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]',
-    'arguments: ["-x", "-k", archiveURL.path, stagingURL.path]',
-    'codexBarDisallowedSigningXattrs = [',
-    'removexattr(url.path, $0, XATTR_NOFOLLOW)',
-    'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)',
-    'privateCodexBarTargetIsSafe(',
+
+
+
+
+
+
+
     'appManagedCodexBarAppURL(',
     'applicationSupportURL: applicationSupportURL()',
-    'replaceItemAt(',
-    'withItemAt: stagedAppURL',
+
+
     '"VIBETV_CODEXBAR_PINNED_VERSION": codexBarPinnedVersion',
-    '[.posixPermissions: 0o700]',
     '"VibeTV couldn’t start"',
     "runtimePortConflictDetail()",
     "parseLsofListenerProcesses(",
@@ -938,27 +934,14 @@ prepare_payload_start = source.find("private func prepareBundledCodexBarCLI()")
 prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_payload_start)
 prepare_payload = source[prepare_payload_start:prepare_payload_end]
 if (
-    'appManagedCodexBarAppURL(' not in prepare_payload
-    or 'let appSupportURL = applicationSupportURL()' not in prepare_payload
-    or 'guard privateCodexBarTargetIsSafe(' not in prepare_payload
-    or 'if let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' in prepare_payload
+    '"prepare-codexbar", "--archive"' not in prepare_payload
+    or 'arguments.append("--reuse-running")' not in prepare_payload
     or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
-    or 'let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
-    or 'return cliURL' not in prepare_payload
-    or 'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)' not in prepare_payload
-    or 'validatedPinnedCodexBarCLI(at: stagedAppURL)' not in prepare_payload
-    or 'return validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
-    or 'replaceItemAt(' not in prepare_payload
-    or prepare_payload.find('normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)')
-        > prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
-    or prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
-        > prepare_payload.find('replaceItemAt(')
-    or prepare_payload.find('replaceItemAt(')
-        > prepare_payload.find('return validatedPinnedCodexBarCLI(at: targetAppURL)')
+    or 'return runPinnedCodexBar(arguments)' not in prepare_payload
+    or 'runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
 ):
-    raise SystemExit(
-        "native CodexBar payload may reuse only its running verified app; otherwise it must stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
-    )
+    raise SystemExit("native shell must delegate pinned staging/validation and preserve the running-app exception")
+
 repair_start = source.find("private func beginCodexBarRepair(hasJavaScriptOwner: Bool)")
 repair_end = source.find("@objc private func openSupportLog()", repair_start)
 repair_method = source[repair_start:repair_end]
@@ -1291,9 +1274,9 @@ PY
     || die "Sparkle distribution version must stay pinned"
   grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
     || die "Sparkle distribution checksum must stay pinned"
-  grep -qF 'VERSION="0.46.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'VERSION="0.63.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution version must stay pinned"
-  grep -qF 'SHA256="8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'SHA256="e53c76f7184fd061472a277550a9fecddfdc7ffd1f9749b490afbc95b72000d7"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
   grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/validate-macos-dmg.yml" \
     || die "the signed DMG workflow must verify the bundled CodexBar payload"

@@ -53,21 +53,24 @@ What it does:
   - detects macOS architecture
   - downloads the matching codexbar-display release binary from GitHub Releases
   - verifies the SHA-256 checksum from the release checksum file
-  - runs `codexbar-display setup --yes --skip-flash [setup args...]`
+  - runs `codexbar-display setup --yes --skip-flash` with the saved transport or explicit setup arguments
   - makes `codexbar-display` available in Terminal
-  - optionally runs `codexbar-display upgrade` to flash release firmware when --flash-firmware is passed
+  - optionally runs `codexbar-display upgrade` when --flash-firmware and an explicit --port are passed
   - warms up CodexBar on fresh installs so providers are usable
   - leaves VibeTV in theme-missing state until a theme is installed in the Mac App
   - optionally installs an explicit theme when --theme-pack is passed
   - enables the local Control Center Mac App service inside the background Mac App
-  - uses WiFi for normal customer setup; USB-C only powers VibeTV
+  - preserves the configured connection mode; new installs default to WiFi
   - runs a health check after setup
+
+For --flash-firmware, pass the exact USB port after -- (find it with `ls /dev/cu.usb*`).
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://192.168.178.159 --theme mini
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://192.168.178.159
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --version 1.0.0
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --flash-firmware -- --port /dev/cu.usbserial-1234
 EOF
 }
 
@@ -148,7 +151,7 @@ verify_checksum() {
 
 build_firmware_upgrade_args() {
   local args=("$@")
-  local i arg next
+  local i arg next firmware_port=""
 
   FIRMWARE_UPGRADE_ARGS=(--repo "$REPO")
 
@@ -160,21 +163,24 @@ build_firmware_upgrade_args() {
         next=$((i + 1))
         if [[ "$next" -lt "${#args[@]}" ]]; then
           FIRMWARE_UPGRADE_ARGS+=("$arg" "${args[$next]}")
+          if [[ "$arg" == "--port" ]]; then firmware_port="${args[$next]}"; fi
           i=$((i + 2))
           continue
         fi
         ;;
       --port=*|--firmware-env=*)
         FIRMWARE_UPGRADE_ARGS+=("$arg")
+        if [[ "$arg" == --port=* ]]; then firmware_port="${arg#*=}"; fi
         ;;
     esac
     i=$((i + 1))
   done
+  [[ -n "$firmware_port" ]] || die "--flash-firmware requires --port /dev/cu.usbserial-...; list ports with: ls /dev/cu.usb*"
 }
 
 setup_transport_from_args() {
   local args=("$@")
-  local i arg next
+  local i arg next configured_mode
 
   i=0
   while [[ "$i" -lt "${#args[@]}" ]]; do
@@ -195,7 +201,11 @@ setup_transport_from_args() {
     i=$((i + 1))
   done
 
-  printf '%s\n' "wifi"
+  configured_mode="$(plutil -extract connectionMode raw -o - "${INSTALL_ROOT}/config.json" 2>/dev/null || true)"
+  case "$configured_mode" in
+    cable) printf '%s\n' "usb" ;;
+    *) printf '%s\n' "wifi" ;;
+  esac
 }
 
 install_requested_theme_pack() {
@@ -553,6 +563,14 @@ main() {
     esac
   done
 
+  if [[ "$FLASH_FIRMWARE" == "1" ]]; then
+    build_firmware_upgrade_args "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
+  fi
+
+  if [[ "$(plutil -extract cableAutoBindDisabled raw -o - "${INSTALL_ROOT}/config.json" 2>/dev/null || true)" == "true" ]]; then
+    die "Finish or cancel the pending VibeTV connection change in the Mac App before reinstalling."
+  fi
+
   if [[ -z "$RELEASE_VERSION" ]]; then
     local_tag="$(fetch_latest_release_tag)"
     RELEASE_VERSION="$(normalize_version "$local_tag")"
@@ -583,11 +601,11 @@ main() {
   log "vibetv: verifying checksum..."
   verify_checksum
 
-  log "vibetv: starting setup..."
-  log "vibetv: normal setup uses WiFi; USB-C only powers VibeTV and no USB serial port is expected."
-  log "vibetv: setup discovers the device IP automatically and verifies its device ID."
+  local setup_transport
+  setup_transport="$(setup_transport_from_args "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}")"
+  log "vibetv: starting setup with transport ${setup_transport}..."
   prepare_control_center_service
-  "$DOWNLOAD_BIN" setup --yes --skip-flash "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
+  "$DOWNLOAD_BIN" setup --yes --skip-flash --transport "$setup_transport" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
 
   if [[ ! -x "$INSTALL_PATH" ]]; then
     die "setup finished but expected installed binary is missing: ${INSTALL_PATH}"
@@ -602,11 +620,10 @@ main() {
 
   if [[ "$FLASH_FIRMWARE" == "1" ]]; then
     log "vibetv: upgrading firmware from release..."
-    build_firmware_upgrade_args "${SETUP_ARGS[@]}"
     "$INSTALL_PATH" upgrade "${FIRMWARE_UPGRADE_ARGS[@]}"
   fi
 
-  install_requested_theme_pack "$(setup_transport_from_args "${SETUP_ARGS[@]}")"
+  install_requested_theme_pack "$setup_transport"
 
   log "vibetv: installed binary at ${INSTALL_PATH}"
   log "vibetv: running health check..."

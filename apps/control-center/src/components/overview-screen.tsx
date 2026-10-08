@@ -45,6 +45,8 @@ type OverviewScreenProps = {
     stage?: string;
   } | null;
   usage?: UsageSnapshot | null;
+  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  windowsHost?: boolean;
 };
 
 export function OverviewScreen({
@@ -54,11 +56,15 @@ export function OverviewScreen({
   displayFrame = null,
   firmwareUpdateStatus = null,
   usage,
+  windowsHost = false,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
   const connected = deviceIsCustomerConnected(device);
   const displayReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
+  // Issue #498: the Companion names a theme the VibeTV cannot draw.
+  const themeNotShown =
+    connected && device?.connectionState === "display_render_failed";
   const reconnecting =
     deviceIsActive(device) &&
     !deviceIsReady(device) &&
@@ -67,7 +73,12 @@ export function OverviewScreen({
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
-  const hero = buildHeroCopy(companionStatus, connected, updateOwnedDisconnect);
+  const hero = buildHeroCopy(
+    companionStatus,
+    connected,
+    updateOwnedDisconnect,
+    windowsHost,
+  );
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
@@ -102,8 +113,12 @@ export function OverviewScreen({
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
             <StatusItem
               icon={<AppWindow aria-hidden />}
-              label="Mac App"
-              value={labelForCompanion(companionStatus, companionVersion)}
+              label={windowsHost ? "App" : "Mac App"}
+              value={labelForCompanion(
+                companionStatus,
+                companionVersion,
+                windowsHost,
+              )}
             />
             <StatusItem
               icon={<ArrowUpFromLine aria-hidden />}
@@ -122,6 +137,8 @@ export function OverviewScreen({
                   ? undefined
                   : updateOwnedDisconnect
                     ? "No action is required. Keep VibeTV connected to power and wait."
+                  : themeNotShown
+                    ? "VibeTV can't show this theme. Choose another theme."
                   : waitingForUsage
                     ? "This can take up to 60 seconds."
                     : "Waiting for a fresh image from VibeTV."
@@ -133,6 +150,8 @@ export function OverviewScreen({
                   ? "Live"
                   : updateOwnedDisconnect
                     ? "Update running"
+                  : themeNotShown
+                    ? "Theme not shown"
                   : waitingForUsage
                     ? "Waiting for usage"
                     : "Waiting for first image"
@@ -159,7 +178,7 @@ function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
       <AlertTitle>Reconnecting to VibeTV</AlertTitle>
       <AlertDescription>
         {wifiSetupLikely
-          ? "If VibeTV shows VibeTV-Setup, connect your phone to it and choose the new WiFi. Your pairing and settings stay saved."
+          ? "If VibeTV shows “Connect USB cable”, plug it into this computer with the cable and choose the new WiFi. Your pairing and settings stay saved."
           : "VibeTV is online, but its display is still reconnecting."}
       </AlertDescription>
     </Alert>
@@ -193,6 +212,7 @@ function buildHeroCopy(
   companionStatus: CompanionStatus,
   connected: boolean,
   updateOwnedDisconnect = false,
+  windowsHost = false,
 ) {
   if (connected) {
     return {
@@ -210,7 +230,11 @@ function buildHeroCopy(
   }
   return {
     badge:
-      companionStatus === "missing" ? "Mac App offline" : "Not connected",
+      companionStatus === "missing"
+        ? windowsHost
+          ? "App offline"
+          : "Mac App offline"
+        : "Not connected",
     badgeVariant: "outline" as const,
     icon: <CircleHelp data-icon="inline-start" aria-hidden />,
   };
@@ -219,6 +243,7 @@ function buildHeroCopy(
 function labelForCompanion(
   status: CompanionStatus,
   companionVersion?: string,
+  windowsHost = false,
 ): string {
   if (status === "online") {
     return companionVersion ? `Online ${companionVersion}` : "Online";
@@ -226,5 +251,5 @@ function labelForCompanion(
   if (status === "missing") {
     return "Not reachable";
   }
-  return "Waiting for Mac App";
+  return windowsHost ? "Waiting for app" : "Waiting for Mac App";
 }

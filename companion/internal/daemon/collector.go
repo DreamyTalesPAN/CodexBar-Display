@@ -33,6 +33,9 @@ type providerSnapshot struct {
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
+	// Terminal survives a restart: a reload must not turn a known terminal
+	// error back into stale data that keeps an old last-good frame alive.
+	Terminal bool `json:"terminal,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -60,18 +63,30 @@ type providerCollector struct {
 	persistInterval       time.Duration
 	wake                  <-chan struct{}
 	afterWakeCollect      func()
+	afterFirstCollect     func()
 
 	warmupUntil time.Time
 
-	mu                      sync.RWMutex
-	providers               map[string]providerSnapshot
-	lastPersistedRaw        string
-	lastPersistedAt         time.Time
-	inventoryKnown          bool
-	inventoryEnabled        map[string]struct{}
-	firstCollectStarted     bool
-	firstCollectDone        bool
-	lastFetchErr            error
+	mu               sync.RWMutex
+	providers        map[string]providerSnapshot
+	lastPersistedRaw string
+	lastPersistedAt  time.Time
+	inventoryKnown   bool
+	inventoryEnabled map[string]struct{}
+	// inventoryDisabled holds providers the inventory lists as switched off.
+	// A provider missing from the inventory is unknown, not off.
+	inventoryDisabled map[string]struct{}
+	// inventoryMissedReads counts the collections in a row whose own
+	// inventory read failed. 0 means the map is current. After one miss the
+	// older map may still keep a running fallback; after more it is unknown,
+	// because the provider may have been switched on again meanwhile.
+	inventoryMissedReads int
+	firstCollectStarted  bool
+	firstCollectDone     bool
+	lastFetchErr         error
+	// providerErrors holds each provider's last logged failure kind, so a
+	// failing provider is logged when its failure changes, not every cycle.
+	providerErrors          map[string]string
 	tokenStatsMu            sync.Mutex
 	tokenStatsRunning       bool
 	tokenStatsCancel        context.CancelFunc
@@ -296,6 +311,16 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	// returns without one, so nothing is written to a device that is not there.
 
 	now := c.now()
+	if !c.firstCollectState(now).settled && c.afterFirstCollect != nil {
+		defer func() {
+			// Publish the first definitive answer immediately, including an
+			// honest no-provider result. The display may be sleeping after
+			// warm-up and must not wait a full transport interval to see it.
+			if parent.Err() == nil && c.firstCollectState(c.now()).settled {
+				c.afterFirstCollect()
+			}
+		}()
+	}
 	c.beginFirstCollect(now)
 	ctx := parent
 	cancel := func() {}
@@ -315,10 +340,16 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			inventoryAuthoritative = true
 		}
 	}
+	// Stopping a display worker is not a provider failure. Its canceled read
+	// must not overwrite the shared snapshot used by the replacement worker.
+	if parent.Err() != nil {
+		return
+	}
 	collectedAt := c.now().UTC()
 	if err != nil {
 		updated := false
 		c.mu.Lock()
+		c.noteInventoryReadLocked(inventoryAuthoritative)
 		if inventoryAuthoritative {
 			updated = c.applyProviderInventoryLocked(inventory)
 		}
@@ -356,6 +387,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	c.mu.Lock()
 	c.firstCollectDone = true
 	c.lastFetchErr = nil
+	c.noteInventoryReadLocked(inventoryAuthoritative)
 	if inventoryAuthoritative {
 		updated = c.applyProviderInventoryLocked(inventory)
 		_, authoritativeEnabled = enabledProviderInventory(inventory)
@@ -373,17 +405,30 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		c.providers[key] = snapshot
 		updated = true
 	}
+	var providerErrorLog []string
 	for _, parsed := range allProviders {
 		frame := parsed.Frame.Normalize()
-		if strings.TrimSpace(frame.Error) != "" {
-			continue
-		}
-
 		key := normalizeProviderKey(parsed.Provider)
 		if key == "" {
 			key = normalizeProviderKey(parsed.Frame.Provider)
 		}
-		if key == "" {
+		// A provider's own failure used to vanish here without a trace, so
+		// support could not tell a timeout from a lost sign-in (#500).
+		kind := ""
+		if detail := strings.TrimSpace(frame.Error); detail != "" {
+			kind = codexbar.ProviderErrorKind(key, detail)
+		}
+		if key != "" && kind != c.providerErrors[key] {
+			if c.providerErrors == nil {
+				c.providerErrors = make(map[string]string)
+			}
+			c.providerErrors[key] = kind
+			if kind == "" {
+				kind = "recovered"
+			}
+			providerErrorLog = append(providerErrorLog, key+"="+kind)
+		}
+		if strings.TrimSpace(frame.Error) != "" || key == "" {
 			continue
 		}
 		if inventoryAuthoritative {
@@ -397,13 +442,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists {
-				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
+				if !parsed.Terminal && !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					lastGood.Retained = true
 					c.providers[key] = lastGood
 					updated = true
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
+				if parsed.Terminal {
+					lastGood = snapshotWithUsageCleared(lastGood)
+				}
+				lastGood.Terminal = parsed.Terminal
 				c.providers[key] = lastGood
 			} else {
 				c.providers[key] = providerSnapshot{
@@ -411,6 +460,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Frame:     frame,
 					Source:    strings.TrimSpace(parsed.Source),
 					Collected: parsedCollectedAt,
+					Terminal:  parsed.Terminal,
 				}
 			}
 			updated = true
@@ -439,6 +489,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 
 	if updated {
 		c.persistIfNeeded(collectedAt)
+	}
+	for _, change := range providerErrorLog {
+		c.logf("collector provider-error %s\n", change)
 	}
 	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
 }
@@ -474,6 +527,12 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 	enabledOrder, enabled := enabledProviderInventory(settings)
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
+	c.inventoryDisabled = make(map[string]struct{}, len(settings))
+	for _, setting := range settings {
+		if key := normalizeProviderKey(setting.ID); key != "" && !setting.Enabled {
+			c.inventoryDisabled[key] = struct{}{}
+		}
+	}
 	updated := !equalProviderOrder(c.order, enabledOrder)
 	c.order = enabledOrder
 	for key := range c.providers {
@@ -556,6 +615,34 @@ func (c *providerCollector) providerEnabledByInventory(provider string) (bool, b
 	}
 	_, enabled := c.inventoryEnabled[key]
 	return enabled, true
+}
+
+func (c *providerCollector) noteInventoryReadLocked(ok bool) {
+	if ok {
+		c.inventoryMissedReads = 0
+		return
+	}
+	if c.fetchInventory != nil {
+		c.inventoryMissedReads++
+	}
+}
+
+// providerOffByInventory reports whether the inventory lists the provider as
+// switched off, and whether that read belongs to the latest collection. Only
+// a current read may start a fallback; the map from the read before may keep a
+// running one through a single failed read, and older maps say nothing.
+func (c *providerCollector) providerOffByInventory(provider string) (off, current bool) {
+	if c == nil {
+		return false, false
+	}
+	key := normalizeProviderKey(provider)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.inventoryKnown || key == "" || c.inventoryMissedReads > 1 {
+		return false, false
+	}
+	_, off = c.inventoryDisabled[key]
+	return off, c.inventoryMissedReads == 0
 }
 
 func equalProviderOrder(left, right []string) bool {
@@ -682,6 +769,21 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		seen[key] = struct{}{}
 
 		snapshot, exists := c.providers[key]
+		if !exists && stats.Unavailable {
+			// Cost's "all" can report unsupported providers that are not
+			// configured. A missing history must not create a usage provider.
+			continue
+		}
+		if !exists && c.inventoryKnown {
+			if _, enabled := c.inventoryEnabled[key]; !enabled {
+				// A provider the customer switched off keeps its local token
+				// history, and cost --provider all still reports it. The
+				// authoritative inventory just removed its snapshot; recreating
+				// one here would show the disabled provider again through the
+				// API and on the device. History only enriches enabled providers.
+				continue
+			}
+		}
 		if !exists {
 			snapshot = providerSnapshot{
 				Provider: key,
@@ -703,7 +805,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		frame.SessionTokens = stats.SessionTokens
 		frame.WeekTokens = stats.WeekTokens
 		frame.TotalTokens = stats.TotalTokens
-		frame.TokenTotalsKnown = true
+		frame.TokenTotalsKnown = !stats.Unavailable
 		meta := snapshot.Meta
 		meta.Cost = stats.Cost
 
@@ -741,6 +843,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			TokenStatsCollected: now,
 			TokenHistorySettled: providerSettled,
 			ActivityObservedAt:  activityObservedAt,
+			Terminal:            snapshot.Terminal,
 		}
 		updated++
 	}
@@ -920,7 +1023,10 @@ func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, m
 	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
 		clearSnapshotTokenStats(&snapshot)
 	}
+	return snapshotWithUsageCleared(snapshot)
+}
 
+func snapshotWithUsageCleared(snapshot providerSnapshot) providerSnapshot {
 	frame := snapshot.Frame.Normalize()
 	frame.UsageUnavailable = true
 	frame.SessionUnavailable = true
@@ -974,6 +1080,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
 			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Terminal:           snapshot.Terminal,
 		})
 	}
 	return frames

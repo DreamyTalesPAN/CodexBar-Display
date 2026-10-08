@@ -26,6 +26,29 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Start using any AI provider.");
   });
 
+  it("names a theme VibeTV cannot draw instead of waiting for an image (#498)", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: true,
+          deviceId: "14799300",
+          paired: true,
+          ready: false,
+          connectionState: "display_render_failed",
+        }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV is connected");
+    expect(html).toContain("Theme not shown");
+    expect(html).toContain(
+      "VibeTV can&#x27;t show this theme. Choose another theme.",
+    );
+    expect(html).not.toContain("Waiting for first image");
+  });
+
   it("keeps a genuinely disconnected selected VibeTV not connected", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
@@ -150,5 +173,39 @@ describe("OverviewScreen", () => {
     expect(html).toContain("This can take up to 60 seconds.");
     expect(html).not.toContain("Reconnect VibeTV to continue");
     expect(html).not.toContain("Reconnecting to VibeTV");
+  });
+
+  it("does not add a connection-mode banner to the overview", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{ active: true, connected: true, paired: true, ready: true }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV is connected");
+    expect(html).not.toContain("Connected by Cable");
+    expect(html).not.toContain("Change connection");
+  });
+
+  // Issues #438/#460: the Windows app must not call itself a Mac App. The
+  // Mac wording is asserted too, because it must not change at all.
+  it.each([
+    [false, "Mac App", "Mac App offline", "Waiting for Mac App"],
+    [true, "App", "App offline", "Waiting for app"],
+  ])("names the app for the platform (windows=%s)", (windowsHost, label, offline, waiting) => {
+    const device = { active: true, connected: false, paired: true, ready: false };
+    const missing = renderToStaticMarkup(
+      <OverviewScreen companionStatus="missing" device={device} windowsHost={windowsHost} />,
+    );
+    const unknown = renderToStaticMarkup(
+      <OverviewScreen companionStatus="unknown" device={device} windowsHost={windowsHost} />,
+    );
+
+    expect(missing).toContain(`>${label}<`);
+    expect(missing).toContain(offline);
+    expect(unknown).toContain(waiting);
+    expect(missing.includes("Mac")).toBe(!windowsHost);
+    expect(unknown.includes("Mac")).toBe(!windowsHost);
   });
 });

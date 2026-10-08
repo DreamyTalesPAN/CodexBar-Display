@@ -29,6 +29,7 @@ enum class ConnectionError : uint8_t {
 struct Network {
   char ssid[kMaxSsidBytes] = {0};
   int16_t rssi = -100;
+  bool encrypted = true;
 };
 
 struct State {
@@ -43,7 +44,12 @@ struct State {
 bool BeginScan(State& state);
 bool BeginAutomaticScan(State& state);
 void ResetPortalState(State& state);
-bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t channel);
+bool AddScanResult(
+    State& state,
+    const String& ssid,
+    int32_t rssi,
+    int32_t channel,
+    bool encrypted = true);
 void FinishScan(State& state, int rawNetworkCount);
 const char* SignalLabel(int32_t rssi);
 

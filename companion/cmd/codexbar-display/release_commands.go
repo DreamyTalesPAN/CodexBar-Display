@@ -19,9 +19,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -29,7 +31,9 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/service"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -53,11 +57,19 @@ const (
 )
 
 var (
-	errFirmwareUploadRestartRequired                   = errors.New("VibeTV must restart before another firmware upload")
-	errFirmwareUploadMayHaveWritten                    = errors.New("firmware upload may have written data")
-	upgradeStopLaunchAgentFn                           = stopLaunchAgentBestEffort
-	upgradeRestartLaunchAgentFn                        = restartLaunchAgent
-	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
+	errFirmwareUploadRestartRequired = errors.New("VibeTV must restart before another firmware upload")
+	errFirmwareUploadMayHaveWritten  = errors.New("firmware upload may have written data")
+	// Current firmware installs updates only over the USB cable (#489).
+	errFirmwareUpdateCableOnly   = themeinstall.ErrFirmwareUpdateCableOnly
+	upgradeStopLaunchAgentFn     = stopLaunchAgentBestEffort
+	upgradeRestartLaunchAgentFn  = restartLaunchAgent
+	rollbackRestartLaunchAgentFn = restartLaunchAgent
+	rollbackStopTaskFn           = func(home string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		label := runtimepaths.DisplayStreamLaunchAgentLabel()
+		return service.New(label, home, false).Stop(ctx, true)
+	}
 	resolveSerialPortFn                                = usb.ResolvePort
 	readDeviceHelloFn                                  = usb.ReadDeviceHello
 	closeDefaultSenderFn                               = usb.CloseDefaultSender
@@ -70,6 +82,13 @@ var (
 	discoverWiFiDeviceFn                               = transportlayer.DiscoverWiFiDevice
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
+	resolveCableFirmwarePortFn                         = usb.ResolveVibeTVControlPort
+	readCableFirmwareHelloFn                           = usb.ReadDeviceHello
+	transferCableFirmwareFn                            = usb.TransferFirmware
+	findLegacyCableVibeTVFn                            = usb.FindLegacyCableVibeTV
+	flashCableRescueFn                                 = usb.FlashESP8266AppImage
+	cableFirmwareVerifyTimeout                         = 120 * time.Second
+	cableFirmwareVerifyPollInterval                    = time.Second
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
 	firmwareRawOTAPort                                 = "8081"
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
@@ -94,6 +113,10 @@ var (
 // CLI updater and marks the child with this environment variable so the
 // writer-quiesce gate does not refuse its own parent.
 const firmwareUpdateParentPausedEnvVar = "VIBETV_UPDATE_PARENT_PAUSED"
+
+// cableRescueTarget flashes a VibeTV whose firmware predates the Cable
+// identity contract through its ROM loader. Only the rescue job passes it.
+const cableRescueTarget = "cable-rescue://vibetv"
 
 // otherRuntimeWriterAlive reports whether a local VibeTV runtime answers on
 // its Companion API port. A reachable /v1/runtime-health means a runtime is
@@ -278,7 +301,7 @@ func runVersion(args []string) error {
 
 func runUpgrade(args []string) (retErr error) {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "required explicit serial recovery port")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash")
 	targetFirmwareVersion := fs.String("target-firmware-version", "", "target firmware semver/release version (default: latest firmware manifest)")
 	repo := fs.String("repo", defaultReleaseRepo, "GitHub repository for release firmware assets")
@@ -305,14 +328,6 @@ func runUpgrade(args []string) (retErr error) {
 	}
 	selectedEnv = resolvedEnv
 
-	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
-	if err != nil {
-		return &commandError{
-			Op:   "resolve-port",
-			Code: errcode.UpgradeResolvePort,
-			Err:  err,
-		}
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return &commandError{
@@ -323,6 +338,14 @@ func runUpgrade(args []string) (retErr error) {
 	}
 	cleanupUpgradeLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
 	defer cleanupUpgradeLaunchAgent()
+
+	// Auto-discovery needs exclusive ownership, then the busy check and
+	// firmware uploader need that handle released again.
+	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
+	closeDefaultSenderFn()
+	if err != nil {
+		return &commandError{Op: "resolve-port", Code: errcode.UpgradeResolvePort, Err: err}
+	}
 
 	if err := ensureSerialPortNotBusyFn(resolvedPort); err != nil {
 		return &commandError{
@@ -550,14 +573,8 @@ func runInstallUpdate(args []string) (retErr error) {
 	if err != nil {
 		return &commandError{Op: "resolve-home", Code: errcode.UpgradeStateWrite, Err: err}
 	}
-	base, err := normalizeHTTPBaseURL(*target)
-	if err != nil {
-		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
-	}
-	// Quiesce gate: concurrent device traffic during an OTA upload is fatal
-	// (see otherRuntimeWriterAlive). Runs before the first device request. The
-	// API job pauses the stream itself and marks the child via
-	// VIBETV_UPDATE_PARENT_PAUSED=1.
+	// Concurrent device traffic during any firmware transfer is fatal. This
+	// gate must run before the first WiFi or Cable device request.
 	if !*stoppedAllWriters && os.Getenv(firmwareUpdateParentPausedEnvVar) != "1" && otherRuntimeWriterAlive() {
 		return &commandError{
 			Op:   "quiesce-device-writers",
@@ -566,14 +583,60 @@ func runInstallUpdate(args []string) (retErr error) {
 			Hint: "quit the VibeTV Mac App (or stop the companion daemon), then retry; pass --i-stopped-all-writers only after every device writer is stopped",
 		}
 	}
-
-	hello, err := fetchDeviceHelloHTTP(ctx, base)
-	if err != nil {
-		return &commandError{
-			Op:   "device-hello",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "open http://<device-ip>/health or pass --target http://<device-ip>",
+	normalizedTarget := strings.TrimRight(strings.TrimSpace(*target), "/")
+	rescueMode := strings.EqualFold(normalizedTarget, cableRescueTarget)
+	cableMode := rescueMode || strings.EqualFold(normalizedTarget, "cable://vibetv")
+	base := "cable://vibetv"
+	var cablePort string
+	var deviceToken string
+	var hello protocol.DeviceHello
+	if rescueMode {
+		// Firmware from before the Cable identity contract has neither a
+		// deviceId nor Cable transfer. The ROM loader rewrites it anyway.
+		var device usb.CableDevice
+		device, err = findLegacyCableVibeTVFn()
+		if err != nil {
+			// The parent released the port a moment ago; a reset from that
+			// handover can swallow the boot hello. One fresh probe decides.
+			device, err = findLegacyCableVibeTVFn()
+		}
+		if err != nil {
+			return &commandError{Op: "cable-rescue-device", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+		cablePort, hello = device.Port, device.Hello
+	} else if cableMode {
+		cfg, loadErr := runtimeconfig.Load(home)
+		if loadErr != nil {
+			return &commandError{Op: "load-cable-config", Code: errcode.UpgradeFlashFirmware, Err: loadErr}
+		}
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" ||
+			strings.TrimSpace(cfg.DeviceID) == "" || strings.TrimSpace(cfg.DeviceToken) == "" {
+			return &commandError{Op: "cable-preflight", Code: errcode.UpgradeFlashFirmware, Err: errors.New("paired Cable VibeTV is required")}
+		}
+		cablePort, err = resolveCableFirmwarePortFn("", cfg.DeviceID)
+		if err == nil {
+			hello, err = readCableFirmwareHelloFn(cablePort)
+		}
+		if err == nil && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
+			err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(cfg.DeviceID), strings.TrimSpace(hello.DeviceID))
+		}
+		if err != nil {
+			return &commandError{Op: "cable-device-hello", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+		deviceToken = strings.TrimSpace(cfg.DeviceToken)
+	} else {
+		base, err = normalizeHTTPBaseURL(*target)
+		if err != nil {
+			return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+		hello, err = fetchDeviceHelloHTTP(ctx, base)
+		if err != nil {
+			return &commandError{
+				Op:   "device-hello",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "open http://<device-ip>/health or pass --target http://<device-ip>",
+			}
 		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
@@ -650,13 +713,15 @@ func runInstallUpdate(args []string) (retErr error) {
 		HelloVerified:     true,
 	})
 
-	deviceToken, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID)
-	if err != nil {
-		return &commandError{
-			Op:   "device-auth-preflight",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "keep VibeTV powered and on the same WiFi, then retry",
+	if !cableMode {
+		deviceToken, err = ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID)
+		if err != nil {
+			return &commandError{
+				Op:   "device-auth-preflight",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "keep VibeTV powered and on the same WiFi, then retry",
+			}
 		}
 	}
 
@@ -667,25 +732,88 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 
 	fmt.Println("Uploading firmware...")
-	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken, caps.Firmware)
-	uploadInterrupted := firmwareUploadConnectionInterrupted(uploadErr)
-	uploadErr = recoverInterruptedFirmwareUpload(
-		ctx,
-		base,
-		targetVersion,
-		deviceID,
-		uploadErr,
-	)
+	var uploadErr error
+	uploadInterrupted := false
+	if rescueMode {
+		var image []byte
+		image, uploadErr = os.ReadFile(imagePath)
+		if uploadErr == nil {
+			uploadErr = flashCableRescueFn(ctx, cablePort, image, func(percent int) {
+				fmt.Printf("Writing firmware: %d%%\n", percent)
+			})
+		}
+	} else if cableMode {
+		// The release's gzip image is about 30% smaller, and the ESP8266
+		// updater stores it as is and unpacks it on the next boot, so it goes
+		// over the Cable unchanged. Only when this run downloaded and checked
+		// the .gz: the version folder can still hold one from an earlier
+		// manifest. The unpacked image stays for the rescue path and WiFi.
+		cableImagePath := imagePath
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(artifact.Asset)), ".gz") {
+			cableImagePath += ".gz"
+		}
+		var image []byte
+		image, uploadErr = os.ReadFile(cableImagePath)
+		if uploadErr == nil {
+			// The same line the rescue path prints, which the Companion already
+			// turns into the percentage the setup log and Updates screen show.
+			lastPercent := -1
+			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image, usb.TransferOptions{
+				Fast: hello.HasFeature(protocol.FeatureCableTransferV2),
+				Progress: func(sent, total int) {
+					if percent := sent * 100 / total; percent != lastPercent {
+						lastPercent = percent
+						fmt.Printf("Writing firmware: %d%%\n", percent)
+					}
+				},
+			})
+		}
+		uploadInterrupted = errors.Is(uploadErr, usb.ErrCableTransferInterrupted)
+	} else {
+		uploadErr = uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken, caps.Firmware)
+		uploadInterrupted = firmwareUploadConnectionInterrupted(uploadErr)
+		uploadErr = recoverInterruptedFirmwareUpload(
+			ctx,
+			base,
+			targetVersion,
+			deviceID,
+			uploadErr,
+		)
+	}
 	if uploadErr != nil {
-		if uploadInterrupted {
+		if uploadInterrupted && !cableMode {
 			restoreStoredThemeAfterAbortedUpload(ctx, base, deviceToken)
 		}
 		hint := "keep VibeTV powered and on the same WiFi, then retry"
+		if cableMode {
+			hint = "reconnect VibeTV with a data-capable Cable, wait for it to start, then retry once"
+			if uploadInterrupted {
+				emitFirmwareUpdateEvent(firmwareUpdateEvent{
+					Stage:       "uploading",
+					Phase:       "attention",
+					Outcome:     "interrupted",
+					RetryPolicy: "reconnect_cable",
+					Firmware:    targetVersion,
+					Target:      base,
+					DeviceID:    deviceID,
+				})
+			}
+		}
 		if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
 			hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
 			emitFirmwareUpdateEvent(firmwareUpdateEvent{
 				Stage:       "uploading",
 				RetryPolicy: "power_cycle",
+				Firmware:    targetVersion,
+				Target:      base,
+				DeviceID:    deviceID,
+			})
+		}
+		if errors.Is(uploadErr, errFirmwareUpdateCableOnly) {
+			hint = "connect VibeTV to this Mac with the USB cable, switch to USB-C in Settings, then update again"
+			emitFirmwareUpdateEvent(firmwareUpdateEvent{
+				Stage:       "uploading",
+				RetryPolicy: "cable_required",
 				Firmware:    targetVersion,
 				Target:      base,
 				DeviceID:    deviceID,
@@ -710,16 +838,50 @@ func runInstallUpdate(args []string) (retErr error) {
 	})
 	fmt.Println("Restarting VibeTV...")
 
-	verifiedBase, err := waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
-	if err != nil {
+	verifiedBase := base
+	var verifiedHello protocol.DeviceHello
+	var helloErr error
+	if cableMode {
+		// A rescued VibeTV has no identity to resolve by yet. Its own port is
+		// the only proof, or another connected VibeTV could answer for it.
+		rescuedPort := ""
+		if rescueMode {
+			rescuedPort = cablePort
+		}
+		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, rescuedPort, cableFirmwareVerifyTimeout)
+	} else {
+		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
+		if err == nil {
+			verifiedHello, helloErr = fetchDeviceHelloHTTP(ctx, verifiedBase)
+		} else {
+			helloErr = err
+		}
+	}
+	if helloErr != nil {
+		if cableMode {
+			emitFirmwareUpdateEvent(firmwareUpdateEvent{
+				Stage:             "rebooting",
+				Phase:             "attention",
+				RetryPolicy:       "power_cycle",
+				Firmware:          targetVersion,
+				Target:            base,
+				DeviceID:          deviceID,
+				ArtifactValidated: true,
+				UploadAccepted:    true,
+				HelloVerified:     true,
+			})
+		}
 		return &commandError{
 			Op:   "post-update-verify",
 			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "wait one minute, then open http://<device-ip>/health",
+			Err:  helloErr,
+			Hint: "wait one minute, then reconnect VibeTV",
 		}
 	}
-	verifiedHello, helloErr := fetchDeviceHelloHTTP(ctx, verifiedBase)
+	if rescueMode {
+		// The rescued firmware is the first to report the device identity.
+		deviceID = strings.TrimSpace(verifiedHello.DeviceID)
+	}
 	if helloErr != nil || !strings.EqualFold(strings.TrimSpace(verifiedHello.DeviceID), deviceID) {
 		return &commandError{
 			Op:   "post-update-device-identity",
@@ -739,7 +901,7 @@ func runInstallUpdate(args []string) (retErr error) {
 		UploadAccepted:    true,
 		HelloVerified:     true,
 	})
-	if verifiedBase != base {
+	if !cableMode && verifiedBase != base {
 		base = verifiedBase
 		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID); err != nil {
 			fmt.Printf("warning: firmware updated, but saving the rediscovered VibeTV address failed: %v\n", err)
@@ -747,6 +909,48 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 	fmt.Printf("Done: firmware %s installed\n", targetVersion)
 	return nil
+}
+
+func waitForCableFirmwareVersion(
+	ctx context.Context,
+	targetVersion,
+	deviceID,
+	port string,
+	timeout time.Duration,
+) (protocol.DeviceHello, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return protocol.DeviceHello{}, err
+		}
+		resolved, err := port, error(nil)
+		if resolved == "" {
+			resolved, err = resolveCableFirmwarePortFn("", deviceID)
+		}
+		if err == nil {
+			var hello protocol.DeviceHello
+			hello, err = readCableFirmwareHelloFn(resolved)
+			if err == nil {
+				if strings.TrimSpace(hello.DeviceID) == "" {
+					err = errors.New("cable VibeTV has not reported its identity yet")
+				} else if strings.TrimSpace(deviceID) != "" && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
+					err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(deviceID), strings.TrimSpace(hello.DeviceID))
+				} else if normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(targetVersion) {
+					return hello, nil
+				} else {
+					err = fmt.Errorf("cable VibeTV still reports firmware %s", strings.TrimSpace(hello.Firmware))
+				}
+			}
+		}
+		lastErr = err
+		select {
+		case <-ctx.Done():
+			return protocol.DeviceHello{}, ctx.Err()
+		case <-time.After(cableFirmwareVerifyPollInterval):
+		}
+	}
+	return protocol.DeviceHello{}, fmt.Errorf("cable VibeTV did not report firmware %s: %v", targetVersion, lastErr)
 }
 
 func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base, expectedDeviceID string) (string, error) {
@@ -911,6 +1115,10 @@ func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) 
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// Current firmware pairs only over the USB cable (#489).
+		return "", errors.New("VibeTV pairs only over the USB cable: connect it to this Mac, press Connect in the Mac App, then run the update again")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("POST /api/pair returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
@@ -938,12 +1146,9 @@ func firmwareOTAAuthError(err error) bool {
 	if errors.As(err, &httpErr) {
 		return httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "401") ||
-		strings.Contains(msg, "403") ||
-		strings.Contains(msg, "unauthorized") ||
-		strings.Contains(msg, "forbidden") ||
-		strings.Contains(msg, "pairing token required")
+	// The preflight wraps actual HTTP responses in firmwareDeviceHTTPError.
+	// Transport error text includes addresses (e.g. port 40165), not statuses.
+	return false
 }
 
 type releaseHTTPDoer interface {
@@ -1060,10 +1265,7 @@ func downloadReleaseFirmware(ctx context.Context, home, repo, releaseTag, versio
 	}
 
 	releaseDir := filepath.Join(
-		home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(home),
 		"releases",
 		"firmware",
 		sanitizePathToken(releaseTag),
@@ -1234,10 +1436,7 @@ func downloadManifestFirmwareArtifact(ctx context.Context, home string, manifest
 
 	version := normalizeReleaseVersion(artifact.FirmwareVersion)
 	releaseDir := filepath.Join(
-		home,
-		"Library",
-		"Application Support",
-		"codexbar-display",
+		runtimepaths.Root(home),
 		"updates",
 		"firmware",
 		sanitizePathToken(version),
@@ -1535,20 +1734,30 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 			Body:       strings.TrimSpace(string(body)),
 		}
 	}
-	var hello protocol.DeviceHello
-	if err := json.NewDecoder(resp.Body).Decode(&hello); err != nil {
-		return protocol.DeviceHello{}, err
+	hello, err := protocol.DecodeWiFiHello(resp.Body)
+	if identity, ok := protocol.HelloIdentity(err); ok {
+		// Issue #526: the update reads only device ID, board and firmware
+		// from a WiFi hello, and those are intact when the VibeTV had no heap
+		// for its capabilities. This update is what gives it that heap back.
+		return identity, nil
 	}
-	return hello.Normalize(), nil
+	return hello, err
 }
 
 func uploadFirmwareOTA(ctx context.Context, base, imagePath, token, currentFirmware string) error {
+	if !usesLegacyRawFirmwareUpload(currentFirmware) {
+		return uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+	}
 	if err := uploadFirmwareOTARaw(ctx, base, imagePath, token, currentFirmware); err == nil {
 		return nil
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
 	}
 	return uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+}
+
+func usesLegacyRawFirmwareUpload(currentFirmware string) bool {
+	return normalizeReleaseVersion(currentFirmware) == "1.0.36"
 }
 
 func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token string) error {
@@ -1595,6 +1804,10 @@ func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token stri
 		err := fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			return err
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			// Nothing was written: the device has no WiFi update route.
+			return fmt.Errorf("%w: %v", errFirmwareUpdateCableOnly, err)
 		}
 		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
@@ -2130,9 +2343,9 @@ func flashReleaseFirmwareImage(ctx context.Context, port string, artifact releas
 	return nil
 }
 
-func runRollback(args []string) error {
+func runRollback(args []string) (resultErr error) {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port for firmware rollback (auto-detect when empty)")
+	port := fs.String("port", "", "required explicit serial port for firmware rollback")
 	image := fs.String("image", "", "firmware image path (default from last-known-good state)")
 	manifest := fs.String("manifest", "", "manifest path (default from last-known-good state)")
 	scriptPath := fs.String("script-path", "", "path to esp8266-restore.sh (auto-detect when empty)")
@@ -2147,6 +2360,13 @@ func runRollback(args []string) error {
 	if *skipCompanion && *skipFirmware {
 		return errors.New("rollback requested with --skip-companion and --skip-firmware; nothing to do")
 	}
+	if !*skipFirmware {
+		resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
+		if err != nil {
+			return &commandError{Op: "resolve-port", Code: errcode.RollbackFirmwareRestore, Err: err}
+		}
+		*port = resolvedPort
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -2157,6 +2377,7 @@ func runRollback(args []string) error {
 	if err != nil {
 		return &commandError{Op: "load-release-state", Code: errcode.RollbackStateLoad, Err: err}
 	}
+	recoverTask := false
 
 	if !*skipCompanion {
 		source := strings.TrimSpace(state.LastKnownGood.CompanionBinary)
@@ -2183,7 +2404,21 @@ func runRollback(args []string) error {
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
-		target := filepath.Join(targetDir, "codexbar-display")
+		target := filepath.Join(targetDir, setup.CompanionBinaryName(runtime.GOOS))
+		if runtime.GOOS == "windows" {
+			// Stop can partially succeed before failing, so arm recovery first.
+			recoverTask = true
+			defer func() {
+				if resultErr != nil && recoverTask {
+					if err := rollbackRestartLaunchAgentFn(home); err != nil {
+						resultErr = errors.Join(resultErr, &commandError{Op: "restart-background-service", Code: errcode.RollbackLaunchAgent, Err: err})
+					}
+				}
+			}()
+			if err := rollbackStopTaskFn(home); err != nil {
+				return &commandError{Op: "stop-background-service", Code: errcode.RollbackLaunchAgent, Err: err}
+			}
+		}
 		if err := copyRegularFileAtomic(source, target, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
@@ -2229,6 +2464,7 @@ func runRollback(args []string) error {
 	}
 
 	if !*skipCompanion || !*skipFirmware {
+		recoverTask = false // The explicit restart below owns success/failure now.
 		if err := rollbackRestartLaunchAgentFn(home); err != nil {
 			return &commandError{Op: "restart-launchagent", Code: errcode.RollbackLaunchAgent, Err: err}
 		}
@@ -2312,17 +2548,8 @@ func ensureSerialPortNotBusy(port string) error {
 }
 
 func stopLaunchAgentBestEffort() {
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
 	label := runtimepaths.DisplayStreamLaunchAgentLabel()
-	service := domain + "/" + label
-	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
-		// Bundled Control Center runtimes are registered through SMAppService (or
-		// the preview app) and must remain registered. Suspend the writer process
-		// while its child updater owns the VibeTV connection.
-		_, _ = exec.Command("launchctl", "kill", "SIGSTOP", service).CombinedOutput()
-		return
-	}
-	bootoutLaunchAgentBestEffort(domain, service, "")
+	_ = service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Stop(context.Background(), false)
 }
 
 func beginUpgradeLaunchAgentRecovery(home string, retErr *error) func() {
@@ -2341,7 +2568,10 @@ func wrapUpgradeLaunchAgentRecoveryError(existingErr error, home string) error {
 		return existingErr
 	}
 
-	const restartHint = "restart launch agent manually with `launchctl bootout/bootstrap/kickstart`"
+	restartHint := "restart background service with `codexbar-display service start`"
+	if runtime.GOOS != "windows" {
+		restartHint = "restart launch agent manually with `launchctl bootout/bootstrap/kickstart`"
+	}
 	hintWithDetails := fmt.Sprintf("%s (restart failure: %v)", restartHint, restartErr)
 	if existingErr == nil {
 		return &commandError{
@@ -2380,7 +2610,7 @@ func appendRecoveryHint(existing, extra string) string {
 }
 
 func releaseStatePath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", releaseStateFileName)
+	return runtimepaths.Path(home, releaseStateFileName)
 }
 
 func loadReleaseState(home string) (releaseState, error) {
@@ -2436,8 +2666,8 @@ func saveReleaseState(home string, state releaseState) error {
 }
 
 func snapshotInstalledCompanionBinary(home string) (string, string, error) {
-	supportDir := filepath.Join(home, "Library", "Application Support", "codexbar-display")
-	installed := filepath.Join(supportDir, "bin", "codexbar-display")
+	supportDir := runtimepaths.Root(home)
+	installed := filepath.Join(supportDir, "bin", setup.CompanionBinaryName(runtime.GOOS))
 	if !fileExists(installed) {
 		return "", "", nil
 	}
@@ -2449,7 +2679,7 @@ func snapshotInstalledCompanionBinary(home string) (string, string, error) {
 		return "", "", err
 	}
 
-	snapshotPath := filepath.Join(snapshotDir, "codexbar-display")
+	snapshotPath := filepath.Join(snapshotDir, setup.CompanionBinaryName(runtime.GOOS))
 	if err := copyRegularFileAtomic(installed, snapshotPath, 0o755); err != nil {
 		return "", "", err
 	}
@@ -2486,7 +2716,7 @@ func detectBinaryVersion(binPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binPath, "version", "--short")
+	cmd := childproc.Hide(exec.CommandContext(ctx, binPath, "version", "--short"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "unknown"
@@ -2537,82 +2767,33 @@ func copyRegularFileAtomic(sourcePath, targetPath string, mode os.FileMode) erro
 
 func restartLaunchAgent(home string) error {
 	label := runtimepaths.DisplayStreamLaunchAgentLabel()
-	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
-		domain := fmt.Sprintf("gui/%d", os.Getuid())
-		service := domain + "/" + label
-		resumeOut, resumeErr := exec.Command("launchctl", "kill", "SIGCONT", service).CombinedOutput()
-		if resumeErr == nil {
+	managed := label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	if runtime.GOOS == "windows" {
+		if _, err := os.Stat(service.TaskConfigPath(home, label)); errors.Is(err, os.ErrNotExist) {
 			return nil
+		} else if err != nil {
+			return err
 		}
-		kickOut, kickErr := exec.Command("launchctl", "kickstart", "-k", service).CombinedOutput()
-		if kickErr != nil {
-			return fmt.Errorf("resume runtime: %w (%s); kickstart: %v (%s)", resumeErr, strings.TrimSpace(string(resumeOut)), kickErr, strings.TrimSpace(string(kickOut)))
-		}
+	}
+	if runtime.GOOS != "windows" && !managed && !fileExists(service.PlistPath(home, label)) {
 		return nil
 	}
-
-	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
-	if !fileExists(plist) {
-		return nil
-	}
-
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/" + strings.TrimSuffix(launchAgentLabel, ".plist")
-	bootoutLaunchAgentBestEffort(domain, service, plist)
-	_, _ = exec.Command("launchctl", "enable", service).CombinedOutput()
-
-	if err := bootstrapLaunchAgentWithRetry(domain, service, plist, 3, 300*time.Millisecond); err != nil {
+	manager := service.New(label, home, managed)
+	ctx := context.Background()
+	if err := manager.Install(ctx); err != nil {
 		return err
 	}
-
-	kickOut, kickErr := exec.Command("launchctl", "kickstart", "-k", service).CombinedOutput()
-	if kickErr != nil {
-		return fmt.Errorf("kickstart launchagent: %w (%s)", kickErr, strings.TrimSpace(string(kickOut)))
-	}
-	return nil
-}
-
-func bootstrapLaunchAgentWithRetry(domain, service, plist string, attempts int, delay time.Duration) error {
-	if attempts <= 0 {
-		attempts = 1
-	}
-
-	var lastOut []byte
-	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		out, err := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
-		if err == nil {
-			return nil
-		}
-		lastOut = out
-		lastErr = err
-
-		if launchAgentLoaded(service) {
-			return nil
-		}
-
-		if attempt < attempts {
-			bootoutLaunchAgentBestEffort(domain, service, plist)
-			time.Sleep(delay)
-		}
-	}
-
-	return fmt.Errorf("bootstrap launchagent: %w (%s)", lastErr, strings.TrimSpace(string(lastOut)))
-}
-
-func launchAgentLoaded(service string) bool {
-	return exec.Command("launchctl", "print", service).Run() == nil
-}
-
-func bootoutLaunchAgentBestEffort(domain, service, plist string) {
-	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
-	if strings.TrimSpace(plist) != "" {
-		_, _ = exec.Command("launchctl", "bootout", domain, plist).CombinedOutput()
-	}
+	return manager.Start(ctx)
 }
 
 func startLaunchAgent(home string) error {
-	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
+	if runtime.GOOS == "windows" {
+		if _, err := service.ReadTaskConfig(home, runtimepaths.DisplayStreamLaunchAgentLabel()); err != nil {
+			return fmt.Errorf("read installed task configuration (rerun setup): %w", err)
+		}
+		return restartLaunchAgent(home)
+	}
+	plist := service.PlistPath(home, strings.TrimSuffix(launchAgentLabel, ".plist"))
 	if !fileExists(plist) {
 		return fmt.Errorf("launchagent plist not found: %s", plist)
 	}
@@ -2620,84 +2801,21 @@ func startLaunchAgent(home string) error {
 }
 
 func stopLaunchAgent(disable bool) error {
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/" + strings.TrimSuffix(launchAgentLabel, ".plist")
-
-	bootoutOut, bootoutErr := exec.Command("launchctl", "bootout", service).CombinedOutput()
-	if bootoutErr != nil {
-		trimmed := strings.TrimSpace(string(bootoutOut))
-		if trimmed != "" &&
-			!strings.Contains(strings.ToLower(trimmed), "could not find service") &&
-			!strings.Contains(strings.ToLower(trimmed), "service is disabled") {
-			return fmt.Errorf("bootout launchagent: %w (%s)", bootoutErr, trimmed)
-		}
-	}
-	if disable {
-		disableOut, disableErr := exec.Command("launchctl", "disable", service).CombinedOutput()
-		if disableErr != nil {
-			trimmed := strings.TrimSpace(string(disableOut))
-			if trimmed != "" && !strings.Contains(strings.ToLower(trimmed), "already disabled") {
-				return fmt.Errorf("disable launchagent: %w (%s)", disableErr, trimmed)
-			}
-		}
-	}
-	return nil
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	return service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Stop(context.Background(), disable)
 }
 
-type launchAgentStatus struct {
-	Enabled bool
-	State   string
-	PID     string
-}
+type launchAgentStatus = service.Status
 
-func queryLaunchAgentStatus() (launchAgentStatus, error) {
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	serviceName := strings.TrimSuffix(launchAgentLabel, ".plist")
-	service := domain + "/" + serviceName
-
-	status := launchAgentStatus{
-		Enabled: true,
-		State:   "not-loaded",
-	}
-
-	disabledOut, disabledErr := exec.Command("launchctl", "print-disabled", domain).CombinedOutput()
-	if disabledErr == nil {
-		if strings.Contains(string(disabledOut), fmt.Sprintf("\"%s\" => disabled", serviceName)) {
-			status.Enabled = false
-		}
-	}
-
-	printOut, printErr := exec.Command("launchctl", "print", service).CombinedOutput()
-	trimmed := strings.TrimSpace(string(printOut))
-	if printErr != nil {
+func queryLaunchAgentStatus(label string) (launchAgentStatus, error) {
+	status, err := service.New(label, "", label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel).Status(context.Background())
+	if err != nil {
+		trimmed := strings.TrimSpace(status.Raw)
 		lower := strings.ToLower(trimmed)
-		if strings.Contains(lower, "could not find service") || strings.Contains(lower, "not found") || trimmed == "" {
+		if runtime.GOOS != "windows" && !errors.Is(err, service.ErrUnsupported) && (strings.Contains(lower, "could not find service") || strings.Contains(lower, "not found") || trimmed == "") {
 			return status, nil
 		}
-		return launchAgentStatus{}, fmt.Errorf("inspect launchagent: %w (%s)", printErr, trimmed)
+		return status, fmt.Errorf("inspect background service: %w (%s)", err, trimmed)
 	}
-
-	state, pid := parseLaunchctlServiceStatus(trimmed)
-	if state != "" {
-		status.State = state
-	}
-	status.PID = pid
 	return status, nil
-}
-
-func parseLaunchctlServiceStatus(output string) (state, pid string) {
-	lines := strings.Split(output, "\n")
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "state =") {
-			state = strings.TrimSpace(strings.TrimPrefix(line, "state ="))
-		}
-		if strings.HasPrefix(line, "pid =") {
-			candidate := strings.TrimSpace(strings.TrimPrefix(line, "pid ="))
-			if _, err := strconv.Atoi(candidate); err == nil {
-				pid = candidate
-			}
-		}
-	}
-	return state, pid
 }

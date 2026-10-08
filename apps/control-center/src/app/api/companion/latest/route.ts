@@ -14,6 +14,22 @@ const MAC_APP_DMG_DOWNLOAD_FLAG =
   "CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD";
 const PREVIEW_MAC_APP_VERSION = "CONTROL_CENTER_PREVIEW_MAC_APP_VERSION";
 const PREVIEW_MAC_APP_DMG_URL = "CONTROL_CENTER_PREVIEW_MAC_APP_DMG_URL";
+/**
+ * OPEN: the release workflow does not publish a Windows installer yet, so the
+ * exact published file name is still undecided. This default is what the page
+ * looks for; `CONTROL_CENTER_WINDOWS_APP_SETUP_ASSET_NAME` overrides it without
+ * a deploy once the release workflow settles on a name. Until an asset with
+ * that exact name is uploaded, the page reports `missing_asset`, which is the
+ * existing "not ready yet" state.
+ */
+const DEFAULT_WINDOWS_APP_SETUP_ASSET_NAME =
+  "VibeTV-Control-Center-Setup.exe";
+const WINDOWS_APP_SETUP_ASSET_NAME_VAR =
+  "CONTROL_CENTER_WINDOWS_APP_SETUP_ASSET_NAME";
+const WINDOWS_APP_SETUP_DOWNLOAD_FLAG =
+  "CONTROL_CENTER_ENABLE_WINDOWS_APP_SETUP_DOWNLOAD";
+const PREVIEW_WINDOWS_APP_SETUP_URL =
+  "CONTROL_CENTER_PREVIEW_WINDOWS_APP_SETUP_URL";
 const RELEASE_CACHE_TTL_MS = 60_000;
 
 type GitHubRelease = {
@@ -59,6 +75,7 @@ export async function GET(request: Request) {
       updateAvailable: false,
       message: `Installed Mac App version "${installedVersion}" is not a valid version.`,
       dmgDownloadStatus: "check_failed",
+      windowsSetupDownloadStatus: "check_failed",
     } satisfies CompanionReleaseInfo);
   }
   const previewRelease = previewMacAppRelease(
@@ -79,6 +96,10 @@ export async function GET(request: Request) {
     const dmgAsset = dmgDownloadEnabled
       ? verifiedDmgAsset(release, releaseTag)
       : null;
+    const windowsDownloadEnabled = windowsAppSetupDownloadEnabled();
+    const windowsAsset = windowsDownloadEnabled
+      ? verifiedWindowsSetupAsset(release, releaseTag)
+      : null;
     if (!latestVersion || !latestParsed) {
       return publicJson({
         checkedAt,
@@ -88,6 +109,7 @@ export async function GET(request: Request) {
         updateAvailable: false,
         message: "Mac App check failed.",
         dmgDownloadStatus: "check_failed",
+        windowsSetupDownloadStatus: "check_failed",
       } satisfies CompanionReleaseInfo);
     }
 
@@ -111,6 +133,13 @@ export async function GET(request: Request) {
           ? "available"
           : "missing_asset",
       dmgDownloadUrl: dmgAsset?.browser_download_url?.trim() || undefined,
+      windowsSetupDownloadStatus: !windowsDownloadEnabled
+        ? "disabled"
+        : windowsAsset
+          ? "available"
+          : "missing_asset",
+      windowsSetupDownloadUrl:
+        windowsAsset?.browser_download_url?.trim() || undefined,
     } satisfies CompanionReleaseInfo);
   } catch {
     return publicJson({
@@ -120,6 +149,7 @@ export async function GET(request: Request) {
       updateAvailable: false,
       message: "Mac App check failed.",
       dmgDownloadStatus: "check_failed",
+      windowsSetupDownloadStatus: "check_failed",
     } satisfies CompanionReleaseInfo);
   }
 }
@@ -142,6 +172,10 @@ function previewMacAppRelease(
   if (!latestVersion || !latestParsed || !dmgDownloadUrl) {
     return null;
   }
+  const windowsSetupDownloadUrl = verifiedPreviewBlobUrl(
+    process.env[PREVIEW_WINDOWS_APP_SETUP_URL] || "",
+    ".exe",
+  );
 
   const updateAvailable = Boolean(
     installedParsed && compareSemVer(latestParsed, installedParsed) > 0,
@@ -158,6 +192,10 @@ function previewMacAppRelease(
       : "Mac App is up to date.",
     dmgDownloadStatus: "available",
     dmgDownloadUrl,
+    windowsSetupDownloadStatus: windowsSetupDownloadUrl
+      ? "available"
+      : "missing_asset",
+    windowsSetupDownloadUrl: windowsSetupDownloadUrl || undefined,
   };
 }
 
@@ -167,6 +205,10 @@ function exactSemver(raw: string): string {
 }
 
 function verifiedPreviewDmgUrl(raw: string): string {
+  return verifiedPreviewBlobUrl(raw, ".dmg");
+}
+
+function verifiedPreviewBlobUrl(raw: string, extension: string): string {
   try {
     const url = new URL(raw.trim());
     if (
@@ -177,7 +219,7 @@ function verifiedPreviewDmgUrl(raw: string): string {
       url.port !== "" ||
       url.search !== "" ||
       url.hash !== "" ||
-      !url.pathname.toLowerCase().endsWith(".dmg")
+      !url.pathname.toLowerCase().endsWith(extension)
     ) {
       return "";
     }
@@ -200,6 +242,17 @@ function macAppDmgDownloadEnabled(): boolean {
   return process.env[MAC_APP_DMG_DOWNLOAD_FLAG]?.trim() === "1";
 }
 
+function windowsAppSetupDownloadEnabled(): boolean {
+  return process.env[WINDOWS_APP_SETUP_DOWNLOAD_FLAG]?.trim() === "1";
+}
+
+function windowsAppSetupAssetName(): string {
+  return (
+    process.env[WINDOWS_APP_SETUP_ASSET_NAME_VAR]?.trim() ||
+    DEFAULT_WINDOWS_APP_SETUP_ASSET_NAME
+  );
+}
+
 function verifiedDmgAsset(
   release: GitHubRelease,
   releaseTag: string,
@@ -214,12 +267,40 @@ function verifiedDmgAsset(
   );
 }
 
+function verifiedWindowsSetupAsset(
+  release: GitHubRelease,
+  releaseTag: string,
+): GitHubReleaseAsset | null {
+  const assetName = windowsAppSetupAssetName();
+  if (!releaseTag || !assetName) {
+    return null;
+  }
+  return (
+    release.assets?.find((asset) =>
+      isVerifiedReleaseAsset(asset, releaseTag, assetName),
+    ) || null
+  );
+}
+
 function isVerifiedDmgAsset(
   asset: GitHubReleaseAsset,
   releaseTag: string,
 ): boolean {
+  return isVerifiedReleaseAsset(asset, releaseTag, MAC_APP_DMG_ASSET_NAME);
+}
+
+/**
+ * The one check both platforms go through: the asset has to be finished,
+ * non-empty, and reachable at exactly its own release-download path on
+ * github.com, with nothing appended that could redirect the customer.
+ */
+function isVerifiedReleaseAsset(
+  asset: GitHubReleaseAsset,
+  releaseTag: string,
+  assetName: string,
+): boolean {
   if (
-    asset.name?.trim() !== MAC_APP_DMG_ASSET_NAME ||
+    asset.name?.trim() !== assetName ||
     asset.state?.trim() !== "uploaded" ||
     !Number.isFinite(asset.size) ||
     Number(asset.size) <= 0
@@ -244,7 +325,7 @@ function isVerifiedDmgAsset(
       path[2] === "releases" &&
       path[3] === "download" &&
       decodeURIComponent(path[4]) === releaseTag &&
-      decodeURIComponent(path[5]) === MAC_APP_DMG_ASSET_NAME
+      decodeURIComponent(path[5]) === assetName
     );
   } catch {
     return false;

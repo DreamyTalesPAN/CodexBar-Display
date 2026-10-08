@@ -3,13 +3,110 @@
 The payload protocol is line-delimited JSON. Each frame must be a single JSON object followed by `\n`.
 
 Supported transports:
-- USB CDC serial at `115200` baud for development/support.
-- HTTP over device WiFi for the VibeTV runtime path.
+- CH340 USB-UART serial at `115200` baud in Cable mode.
+- HTTP over device WiFi in WiFi mode.
+
+Cable and WiFi are exclusive. Cable mode never starts the radio or HTTP
+server. WiFi mode ignores serial application data.
 
 Status:
 - v1 usage/error/theme frames remain supported.
 - v2 handshake negotiation and ThemeSpec v1 payload support are available on supported firmware.
 - Negotiation prefers v2 and falls back to v1.
+
+## Cable control requests
+
+Cable control uses the same newline-delimited JSON stream as frames. Every
+request that can read or change customer state carries the expected `deviceId`;
+the firmware rejects a different identity. Control replies are never passed to
+the frame parser.
+
+- `{"kind":"request","op":"hello"}` returns the normal Device Hello.
+- `{"kind":"request","op":"status"}` returns the current Cable mode and
+  transition state.
+- `{"kind":"request","op":"pair","deviceId":"14799300"}` is the physical
+  Cable pairing action. It is sent only after the customer explicitly selects
+  Cable in Control Center. The device verifies its exact identity, rejects the
+  request while a transfer, upload, or reboot is active, creates a token only
+  when none exists, and otherwise returns the existing token in a dedicated
+  `{"kind":"pairing","status":"paired",...}` reply. Automatic discovery,
+  status checks, and app startup never pair or rotate a token.
+- `{"kind":"request","op":"settings","deviceId":"14799300"}` returns a
+  `kind:"settings"` reply containing the persisted display and standby values.
+- The same `settings` request may include a partial `settings` object. The
+  firmware applies it through the same validation, persistence and readback
+  owner as `POST /api/settings`, then returns the complete stored values.
+- `{"kind":"request","op":"configure-wifi","deviceId":"14799300","ssid":"Home WiFi","password":"..."}`
+  stores the credentials through the existing credential owner and begins the
+  bounded Cable-to-WiFi transition. The secret is never echoed or logged. A
+  `kind:"connection-mode",status:"switching"` reply only acknowledges that the
+  transition started; the Mac must still rediscover and confirm the same
+  `deviceId` over WiFi.
+- `{"kind":"request","op":"scan-wifi","deviceId":"14799300"}` returns
+  `kind:"wifi-networks"` with the visible 2.4 GHz networks, RSSI, and whether
+  each network is encrypted. An empty list is a valid completed scan.
+- `set-connection-mode` and `confirm-connection-mode` start and confirm the
+  bounded mode transactions defined in the hardware contract.
+- `{"kind":"request","op":"factory-reset","deviceId":"14799300"}` erases the
+  WiFi credentials (VibeTV copy and ESP8266 SDK copy), the pairing token,
+  settings and themes, replies `{"kind":"factory-reset","status":"done"|"failed","deviceId":"..."}`
+  and restarts. It is rejected with `factory-reset-rejected` for a different
+  identity or while a transfer, upload or reboot is active. It has no HTTP
+  equivalent.
+
+### Cable bulk transfer v1
+
+Assets, stored ThemeSpecs, screensavers and firmware use one stop-and-wait
+transfer on the same newline-delimited control stream. Only one transfer and
+one 128-byte candidate chunk may be in flight. The final chunk may be shorter.
+The exact production chunk size remains gated on the direct-Mac and dock-path
+hardware measurements required by #302.
+
+1. `transfer-start` carries the expected `deviceId`, pairing `token`, sink
+   (`asset` or `firmware`), byte count, whole-payload MD5 hash and, for assets,
+   the destination path plus optional `activate` value (`theme` or
+   `screensaver`). The device answers `status:"ready",next:0` only after the
+   inactive sink is open.
+2. Each `transfer-chunk` carries its zero-based `seq`, lowercase hex payload
+   and the first eight hex characters of that chunk's MD5. The device validates
+   the checksum before writing, then answers `status:"chunk",next:N` only after
+   the sink write returns. A duplicate of the last acknowledged sequence and
+   checksum is acknowledged without a second write.
+3. `transfer-finish` succeeds only when the byte count and complete MD5 match.
+   Assets are atomically promoted before optional activation; firmware calls
+   `Update.end()` only after the match. `transfer-abort`, a write error or the
+   15-second inactivity bound discards the temporary asset or ends the inactive
+   firmware update without changing the bootable image.
+
+### Cable bulk transfer v2
+
+A device that advertises `cable-transfer-v2` also accepts, on the same
+messages:
+
+- `transfer-chunk` with `b64` (standard base64, up to 1024 decoded bytes)
+  instead of `data`. The chunk checksum is unchanged.
+- `baud` on a firmware `transfer-start` (only 230400). The device sends
+  `ready` at 115200 and then switches; the Mac switches after reading it.
+  Abort, a rejected transfer or the inactivity bound switches the device back
+  to 115200, and a completed firmware transfer restarts it at 115200. A
+  rejection is still sent at the faster rate, before the device switches back.
+
+460800 lost bytes on a real VibeTV, so the device accepts only 230400. The device
+rejects malformed base64 and hex (a lost or foreign character, misplaced
+padding, more than one chunk) before the checksum.
+
+For v1 and v2 alike, the Mac waits two seconds per chunk. A chunk without a
+clean answer is sent again after a bare newline that ends any partial line; the
+device acknowledges the repeat as a duplicate. Three attempts stay inside the
+15-second inactivity bound.
+
+The Mac sends a firmware release's gzip image unchanged; the ESP8266 updater
+stores it and unpacks it on the next boot.
+
+Transfer JSON is consumed before the normal frame parser. Firmware never logs
+the pairing token or payload bytes, and transfer replies are JSON objects with
+`kind:"transfer"`; ordinary debug lines remain non-JSON and are ignored by the
+Mac transfer reader.
 
 ## Host -> Device Frame
 
@@ -86,7 +183,7 @@ Trust states:
 
 | State | Meaning | Rendering |
 |---|---|---|
-| `live` | Deadline from current usage data. | `4h 12m` |
+| `live` | Current usage data: its deadline, or the statement that no window has one. | `4h 12m`, or `No active session` for a window with nothing used |
 | `offline` | Usage source is not reachable, deadline still inside its trust budget. | `4h 12m` plus a discreet offline hint |
 | `stale` | Expired, unknown, unattributable, or beyond the trust budget. | `—` |
 
@@ -107,6 +204,16 @@ Rules:
   only downgrade it, never upgrade it.
 - The host never sends a deadline it does not trust: a `stale` frame carries
   `resetSecs:0` and `resetTrustSecs:0`.
+- A frame in which no window has a reset time is `live` when, and only when,
+  it comes from a current collection with a known collection time and usage is
+  not unavailable. It then carries the usual `resetTrustSecs` (horizon minus
+  `resetAgeSecs`) and the provider key as `resetSource` (`claude`, with no
+  `:window` part, because no window owns a deadline). It says that nothing is
+  scheduled to reset, not that a countdown exists. The same frame is `stale`
+  when it is a resend of the last good frame after a failed collection, when
+  the collection time is unknown, when usage is unavailable, and when it had
+  reset times that all ran out before the send. A frame without a deadline is
+  never `offline`.
 - A deadline is never inherited across a `resetSource` change. On any change the
   device drops the previous deadline instead of continuing it.
 - A frame that carries no reset fields at all (for example a ThemeSpec-only apply
@@ -127,6 +234,38 @@ reads the countdown through `CurrentRemainingSecs`, which returns `0` for a
 stale basis, and the ThemeSpec renderer turns `0` into `Reset unavailable`. A
 theme cannot bind its way around this.
 
+- A usage window the host sends without any deadline and with nothing used is
+  idle, not stale: it is measured and current and simply has nothing scheduled
+  to reset. The renderer says `No active session` for it (`CurrentUsageWindowRemainingSecs`
+  returns the idle value).
+  "Nothing used" is `percent` 0, or 100 when the frame says
+  `usageMode:"remaining"`. A window with usage and no deadline is not idle:
+  the host also sends `0` for a deadline that ran out before the frame left
+  and for a provider that names none, and the device cannot tell those apart.
+  Provider slots are never idle, because the host only sends one with a
+  deadline. None of this applies while trust is `stale` or usage is
+  unavailable, so the wording above stays exactly as strict as before.
+  Inside the device that state travels as a negative remaining value
+  (`kRemainingSecsIdle`, mirrored as `kResetSecsIdle` in the renderer),
+  because the ESP8266 image has no flash left for a separate per-window flag.
+  Carrying it in the same value that every countdown is compared against is
+  also what makes the wording revert on its own: when the trust budget
+  expires the helpers stop returning the sentinel, the tracked value changes,
+  and the periodic redraw repaints the line. This is device-internal only:
+  the wire format is unchanged and still sends `0` for a window with no
+  deadline.
+- Only a `live` frame is trusted without a deadline (`ApplyFrameResetTrust`).
+  An `offline` frame and a frame without `resetTrust` need at least one reset
+  time to form a basis, as before. So an account in which no window has a
+  reset time reads `No active session` for as long as the budget of its last
+  `live` frame lasts, and `Reset unavailable` as soon as a `stale` frame
+  arrives or the budget runs out. `/health` then reports `reset.trust` `live`
+  (or `offline` after 150 seconds without a frame) with `deadlineSecs` 0, and
+  nothing is written to `/rt`.
+- Mixed versions: firmware before this rule requires a deadline for every
+  basis, so it treats the new `live` frame without one as `stale` and shows
+  `Reset unavailable`, as it does today. A Companion before this rule sends
+  that account as `stale`, which this firmware shows as `Reset unavailable`.
 - The device does not parse `resetAgeSecs`. The age is exactly
   `kResetTrustHorizonSecs - resetTrustSecs`, so it derives it from the budget.
 - A `live` frame whose derived basis age exceeds 150 seconds is shown as
@@ -165,13 +304,16 @@ Example:
 Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`, `sprite`, `pixels`) and validated by companion before send.
-- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/ft/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives.
+- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/ft/al/va/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives. `va` is optional vertical text align (`middle`/`center`/`bottom`).
 - A primitive may declare usage-lane ownership with `slot: 1|2` (compact `sl`). The renderer skips the entire primitive when that slot is absent, including static decoration and progress tracks. Themes that use slot bindings or ownership require the advertised `usage-slots-v1` capability.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
 - Text primitives scale with `fontSize`. When `fit` is `shrink` (compact `ft`), the renderer treats that size as the maximum and chooses the largest supported integer size that fits `maxWidth`/`width`.
+- Text primitive `align` (compact `al`) is horizontal: `center` / `right`; omit is left. `valign` (compact `va`) is vertical and separate: `middle` / `center` (same meaning), `bottom`; omit or `top` is top. After shrink chooses a size, firmware offsets `y` using the visual glyph height (`tft.fontHeight()`), not the `fontHeight + 4` clip pad. The vertical box is explicit `h` / `height` when set; otherwise it is `ApproxTextHeight` of the pre-shrink `fontSize` so shrink still sits in the original lane. `y` is the top of that box. Clip height stays `fontHeight + 4` and moves with the glyphs. Hosts must reject `va` on non-text primitives.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
 - `gif` and `sprite` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
 - Animated state assets use `stateAssets` (compact key `sa`) with `idle` and `coding` states. The renderer selects `coding` for coding activity and otherwise falls back to `idle`, then `assetPath`.
+- Sprite primitives may also declare `providerAssets` (compact key `pa`) as a map from the lowercase wire `provider` key to an asset path. The renderer checks `pa[provider]` first, then `stateAssets`, then `assetPath`. Unknown providers fall back to `assetPath`; omit `assetPath` to hide the sprite when no `pa` entry matches.
+- Progress primitives may declare `colorStops` (compact key `cs`) as up to four `{ "gte": N, "c": "#RRGGBB" }` entries. The renderer picks the first stop whose `gte` is `<=` the bound percent after sorting stops descending by `gte`. Missing `cs` keeps the solid `color`/`c` fill. Old firmware ignores `cs`.
 - `sprite` primitives reference uploaded `CBI1` static sprites or `CBA1` animated sprites under `/themes/...`. `CBA1` stores `width height frameCount fps`, one shared palette of up to 26 colors, then RLE rows for each frame. The browser should convert source sprite sheets into this format before upload. Animated sprites may set `bgColor`/`bg` as the local clear color used between frames.
 - `pixels` primitives support the existing transparent 1-bit row-major bitmap in hex `data`; set bits are drawn with `color`.
 - `pixels` primitives may also use multicolor RLE with palette `p` and rows `r`, for example `{"type":"pixels","width":16,"height":1,"p":["#FF0000"],"r":["5.4a7."]}`. `.` is transparent, `a` maps to `p[0]`, `b` maps to `p[1]`, and an optional decimal run length before the token repeats it. Every expanded row must equal `width`, and row count must equal `height`.
@@ -190,12 +332,13 @@ Design constraints:
 
 When the ESP8266 is connected to WiFi, it serves:
 
-- `GET /hello`: returns the same Device Hello JSON shape as USB Serial. For WiFi, `capabilities.transport.active` is `wifi` and `supported` includes both `usb` and `wifi`.
+- `GET /hello`: returns the same Device Hello JSON shape as Cable Serial. For WiFi, `capabilities.transport.active` is `wifi`. `supported` contains both `usb` and `wifi` only on cutover-capable devices; a legacy WiFi VibeTV (`mode:"legacy-wifi-only"`) contains only `wifi`. `capabilities.transport.cableOnlyUpdates` is `true` on firmware that takes setup, pairing and updates only over the USB cable, `false` on a legacy WiFi VibeTV, and missing on older firmware. The Mac App offers USB-C for a VibeTV on WiFi only when it is `true`.
 - `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts. The `settings.standby` object reports the persisted standby configuration: `enabled`, `timeoutMinutes`, `brightnessPercent`, and `screensaverPath` (the selected slot reference, or `null` when nothing is selected). All of it survives a reboot. The top-level `standby` object reports live state instead of configuration: `active` (the screensaver is on screen right now) and `idleSecs` (seconds since the last frame that moved the usage numbers). Live state never appears in `/hello`, which is a boot snapshot.
+- Sprite render diagnostics: a CBI/CBA asset that cannot be decoded sets `display.themeSpec.renderOk` to `false` with a stable `renderError` code and names the failing theme asset in `renderErrorAsset`. Codes are `cbi_header_invalid`, `cbi_palette_invalid`, `cbi_truncated`, `cbi_row_invalid`, `cba_render_failed`, `sprite_asset_missing`, `sprite_header_unsupported`, `sprite_unreadable`, and the transient `low_heap_cba_buffer` and `cba_buffer_contention`. The two transient codes leave `renderFailures` unchanged, because neither one decoded the asset: `low_heap_cba_buffer` means the frame buffer could not be allocated and has its own `cbaBufferAllocationFailures` counter, while `cba_buffer_contention` means a theme has more animated sprites contending for the single shared frame buffer than can make progress, so none of them completes a frame. Uploads reject a malformed sprite before it is promoted, so a stored sprite that fails to render indicates damage after the write rather than a bad upload.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
-- `POST /reset-wifi`: with the current pairing token, clears saved WiFi credentials and restarts the device into setup mode.
-- `POST /api/pair`: creates or rotates the local LAN pairing token. Starting with firmware `1.0.39`, an explicit local-WiFi Connect may always replace the previous token; the most recently connected Mac wins. Firmware `1.0.38` retains its legacy 30-minute recovery window. Include `api=1` for a JSON response (`{"ok":true,"token":"..."}`).
+- WiFi credentials, WiFi reset and pairing have no HTTP endpoint (issue #489). They are set only over the USB cable with the Cable Serial `configure-wifi` and `pair` commands. Legacy firmware and a legacy WiFi VibeTV on current firmware still serve `POST /api/pair`, `POST /reset-wifi` and `POST /save`; every other VibeTV answers them with `404`.
+- Any Cable Serial `request` ends legacy WiFi mode for good, because it proves a USB data connection. While a legacy WiFi VibeTV is the configured device, the Companion asks newly connected serial ports once with `hello`.
 - `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Standby fields: `sb` enables standby (`0`/`1`), `st` sets the inactivity timeout in minutes, `sbr` sets the brightness that applies only while the screensaver shows, and `ss` selects the screensaver slot by stored ThemeSpec path (empty clears it). Every field is optional and at least one must be present; out-of-range numbers are clamped rather than rejected, while an unusable `ss` path returns `400`. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect.
 - `GET /assets`: returns mounted filesystem status and stored `/themes/` asset paths/sizes. Internal firmware control files are never listed.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
@@ -213,13 +356,16 @@ Standby behavior:
 - `POST /theme/active` during standby ends standby and keeps the newly chosen live theme.
 
 Pairing/auth:
-- Firmware `1.0.39` accepts every local-WiFi `/api/pair` request and immediately replaces the previous token. It has no physical pairing gesture or pairing window.
-- Firmware `1.0.38` remains compatible with its legacy first-pair and three-power-cycle 30-minute recovery window.
-- Protected write APIs require `X-VibeTV-Token: <token>` or the documented query fallback used by native tooling and raw OTA.
-- Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, `POST /screensaver/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
+- The USB cable is the authorization. Pairing runs only over Cable Serial `pair`, which returns the existing token or creates one. Nothing on the local WiFi can create, rotate or read a token.
+- Without a token (never paired over the cable), every protected WiFi write is rejected.
+- Legacy firmware up to the version before this change, and a legacy WiFi VibeTV on current firmware, still accept local-WiFi `/api/pair`; the Companion keeps using it there. Every other VibeTV answers `404`, and the Companion reports `cable_pairing_required`.
+- Protected WiFi write APIs require `X-VibeTV-Token: <token>`. The legacy RAW
+  compatibility sender is not a current WiFi API fallback; see
+  `docs/firmware-ota-contract.md`.
+- Protected write APIs include `POST /frame`, `POST /api/settings`, `POST /assets`, `DELETE /assets`, `POST /theme/active` and `POST /screensaver/active`. Current firmware has no WiFi firmware/filesystem upload path (`/update*` answers `404`); firmware is written only through the Cable transfer, which requires the current token and matching `deviceId`. Legacy firmware still serves token-protected `/update/firmware` and `/update/filesystem`.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
 - The unauthenticated device page never renders the pairing token. Firmware `1.0.39` WiFi `/hello` reports `capabilities.auth.paired` and `tokenHeader`; legacy firmware may additionally report pairing-window fields. No firmware reports the token value.
-- Fresh setup and automatic WiFi fallback use the same open, writable setup portal. Saving WiFi preserves device authentication, themes, and settings.
+- There is no setup access point or captive portal. A device that cannot reach its saved WiFi shows `Connect USB cable` and keeps retrying the saved network; new WiFi details arrive over the cable. Saving WiFi preserves device authentication, themes, and settings.
 
 Installable customer themes use VibeTV Theme Packs: a directory or `.zip` with `manifest.json`, one ThemeSpec JSON file, and optional asset files. See `docs/theme-packs.md`.
 
@@ -233,7 +379,7 @@ Example:
 
 ```bash
 curl http://192.168.178.123/hello
-TOKEN="$(curl -fsS -X POST -d api=1 http://192.168.178.123/api/pair | jq -r .token)"
+# TOKEN comes from Cable Serial `pair` over the USB cable.
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -F asset=@theme.json 'http://192.168.178.123/assets?path=/themes/u/cozy-1-a1b2c3.json'
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -H 'Content-Type: text/plain' --data '{"path":"/themes/u/cozy-1-a1b2c3.json"}' \
   http://192.168.178.123/theme/active
@@ -241,9 +387,28 @@ printf '{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"rese
   | curl -X POST -H "X-VibeTV-Token: $TOKEN" --data-binary @- http://192.168.178.123/frame
 ```
 
+## Cable Control Messages
+
+Control messages and frames share newline-delimited JSON framing but use
+different discriminators. A control request never enters the frame parser and
+never changes the display.
+
+```json
+{"kind":"request","op":"hello"}
+{"kind":"request","op":"status"}
+```
+
+`hello` returns the Device Hello below. `status` returns stable `deviceId`,
+board, firmware, `connectionMode`, active transport, and whether a real frame
+has been accepted. Unknown requests receive a structured `kind:error` line.
+Malformed JSON, partial lines, debug chatter, control messages, and objects
+without `v:1|2` are rejected without replacing the last rendered frame.
+
 ## Device Hello (Firmware -> Host)
 
-On boot or after serial reconnect, firmware emits a capability line over USB. `GET /hello` returns the equivalent JSON over WiFi:
+In Cable mode firmware emits a capability line on boot and answers an explicit
+hello request without resetting. `GET /hello` returns the equivalent JSON over
+WiFi:
 
 ```json
 {
@@ -253,7 +418,9 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "preferredProtocolVersion": 2,
   "board": "esp8266-smalltv-st7789",
   "firmware": "1.0.0",
-  "features": ["theme", "theme-spec-v1"],
+  "deviceId": "14799300",
+  "networkMode": "off",
+  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {
@@ -272,6 +439,10 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
     "theme": {
       "supportsThemeSpecV1": true,
       "supportsUsageSlotsV1": true,
+      "supportsProviderSlotsV1": true,
+      "supportsProviderAssetsV1": true,
+      "supportsColorStopsV1": true,
+      "supportsTextValignV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -288,7 +459,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
       "paired": false,
       "tokenHeader": "X-VibeTV-Token"
     },
-    "transport": {"active": "wifi", "supported": ["usb", "wifi"]}
+    "transport": {"active": "usb", "supported": ["usb", "wifi"], "mode": "cable"}
   }
 }
 ```
@@ -306,6 +477,9 @@ Fields:
   - `standby.screensaverSlot` reports whether `POST /screensaver/active` exists.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
   - `theme.supportsUsageSlotsV1` gates dynamic slot bindings and primitive lane ownership.
+  - `theme.supportsProviderAssetsV1` gates `providerAssets` / `pa` sprite maps. Older firmware ignores `pa` and draws `assetPath` / `a`; that fallback is compatible only when `a` is a valid sprite. Hosts still require the capability (or `minFirmware` 1.0.42) before installing a pack that uses `pa`.
+  - `theme.supportsColorStopsV1` gates `colorStops` / `cs`. Older firmware uses solid `c`. Stops are authored against remaining-style percent; when the frame `usageMode` is `used`, firmware matches `100 - percent` so warning colors stay correct.
+  - `theme.supportsTextValignV1` gates `valign` / `va`. Older firmware treats `y` as the glyph top, so shrink+middle is not a compatible fallback. Hosts must not install a spec that emits `va` onto firmware without this capability.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.
@@ -313,6 +487,9 @@ Fields:
   - `auth.paired` tells hosts whether write APIs currently require a pairing token.
   - `auth.tokenHeader` names the HTTP header hosts should use for write auth.
   - `transport.maxFrameBytes` or top-level `maxFrameBytes` is the live frame payload limit. Hosts should use the stricter known value when both are present.
+  - `transport.active` is the wire channel (`usb` or `wifi`).
+  - `transport.mode` is the persisted customer mode (`cable`, `wifi`, or
+    `legacy-wifi-only`). A legacy device never advertises `usb` in `supported`.
 
 Firmware may emit plain readiness lines (`codexbar_display_ready*`) instead of JSON hello.
 Companion treats missing hello as unknown capabilities.
@@ -337,7 +514,8 @@ Result:
 - `theme` is optional.
 - Token stats are optional and additive; existing percentage/quota rendering remains valid when they are absent.
 - If device capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
-- If hello is missing (unknown capabilities), host may send `theme` on MVP USB path and rely on device-side ignore/fallback behavior.
+- Cable resolution requires a requestable hello with stable `deviceId`; the
+  host never sends a frame to an unknown or foreign serial device.
 - WiFi Companion usage: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.

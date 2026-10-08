@@ -37,6 +37,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { copyForHost } from "@/lib/customer-platform";
 import type {
   ApiError,
   CompanionStatus,
@@ -52,6 +53,8 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
+  /** The app runs on Windows, where "Mac App" reads "app". */
+  windowsHost?: boolean;
 };
 
 export function UsageScreen({
@@ -60,6 +63,7 @@ export function UsageScreen({
   usage,
   usageError,
   onRefresh,
+  windowsHost = false,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -71,6 +75,8 @@ export function UsageScreen({
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   // The Mac App owns this decision; the browser does not re-derive freshness.
   const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
+  const tokenHistoryUnavailable =
+    tokenUsageReady && hasProviders && providers.some((provider) => provider.cost == null);
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   const usageLoading =
@@ -120,7 +126,36 @@ export function UsageScreen({
         ) : null}
 
         {usageLoading ? (
-          <UsageEmptyState companionStatus={companionStatus} loading />
+          <UsageEmptyState
+            companionStatus={companionStatus}
+            loading
+            windowsHost={windowsHost}
+          />
+        ) : tokenHistoryUnavailable ? (
+          <Alert className="mb-6 bg-muted">
+            <Info />
+            <AlertTitle>Token history is unavailable</AlertTitle>
+            <AlertDescription className="grid justify-items-start gap-3">
+              <span>
+                Complete local token history is not available for every selected provider.
+                Available usage limits are shown below.
+              </span>
+              {onRefresh ? (
+                <Button
+                  aria-label="Refresh token usage"
+                  aria-busy={refreshing}
+                  disabled={refreshing}
+                  onClick={onRefresh}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+                  {refreshing ? "Refreshing" : "Refresh"}
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
         ) : tokenUsageReady && hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
@@ -152,6 +187,7 @@ export function UsageScreen({
           <UsageEmptyState
             companionStatus={companionStatus}
             loading={false}
+            windowsHost={windowsHost}
           />
         ) : null}
       </section>
@@ -592,16 +628,18 @@ function UsageWindowBar({
 function UsageEmptyState({
   companionStatus,
   loading,
+  windowsHost,
 }: {
   companionStatus: CompanionStatus;
   loading: boolean;
+  windowsHost: boolean;
 }) {
   const message =
     companionStatus === "online"
       ? loading
         ? "Loading usage"
         : "No provider usage is available yet."
-      : "Mac App needs setup.";
+      : copyForHost("Mac App needs setup.", windowsHost);
   const action =
     companionStatus === "online"
       ? loading

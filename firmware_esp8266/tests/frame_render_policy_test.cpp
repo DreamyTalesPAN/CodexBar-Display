@@ -116,12 +116,12 @@ bool testThemeActivationRejectsInvalidSpecsBeforePersisting(const std::string& s
       "stored theme activation must validate, persist, and then commit runtime state");
 }
 
-bool testSetupAccessPointClearsPendingThemeRender(const std::string& source) {
-  const std::size_t setupStart = source.find("void startSetupAccessPoint()");
+bool testWifiSetupClearsPendingThemeRender(const std::string& source) {
+  const std::size_t setupStart = source.find("void enterWifiSetup()");
   const std::size_t setupEnd = source.find("\nvoid maintainWifiConnection()", setupStart);
   if (!expect(
           setupStart != std::string::npos && setupEnd != std::string::npos,
-          "setup access point body must remain discoverable")) {
+          "WiFi setup body must remain discoverable")) {
     return false;
   }
 
@@ -137,11 +137,123 @@ bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
   const std::size_t loopStart = source.find("void loop()");
   const std::size_t pending = source.find("if (pendingHttpRender)", loopStart);
   const std::size_t render = source.find("renderAcceptedFrame(event)", pending);
-  const std::size_t usb = source.find("ConsumeSerial(runtimeCtx, millis(), event)", render);
+  const std::size_t usb = source.find("handleSerialInput();", render);
   return expect(
       loopStart != std::string::npos && pending != std::string::npos && render != std::string::npos &&
           usb != std::string::npos && pending < render && render < usb,
       "the pending HTTP event must render before USB can replace the current frame");
+}
+
+bool testSetupSizesSerialRxBufferForFrameContract(const std::string& source) {
+  const std::size_t setupStart = source.find("void setup()");
+  const std::size_t buffer = source.find("Serial.setRxBufferSize(kMaxFrameBytes + 1);", setupStart);
+  const std::size_t begin = source.find("Serial.begin(kSerialBaudRate);", setupStart);
+  return expect(
+      setupStart != std::string::npos && buffer != std::string::npos &&
+          begin != std::string::npos && buffer < begin,
+      "Cable UART must allocate the full frame buffer before Serial.begin");
+}
+
+bool testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(const std::string& source) {
+  const std::size_t finishStart = source.find("bool finishCableTransfer(");
+  const std::size_t finishEnd = source.find("\nbool handleCableTransferRequest(", finishStart);
+  if (!expect(
+          finishStart != std::string::npos && finishEnd != std::string::npos,
+          "Cable transfer finish handler must remain discoverable")) {
+    return false;
+  }
+
+  const std::string finish = source.substr(finishStart, finishEnd - finishStart);
+  const std::size_t ack = finish.find("emitCableTransferReply(\"complete\")");
+  const std::size_t flush = finish.find("Serial.flush()", ack);
+  const std::size_t persist = finish.find("persistResetTrustForRestart()", flush);
+  const std::size_t restart = finish.find("ESP.restart()", persist);
+  return expect(
+      ack != std::string::npos && flush != std::string::npos &&
+          persist != std::string::npos && restart != std::string::npos &&
+          ack < flush && flush < persist && persist < restart &&
+          finish.find("scheduleReboot(\"firmware_cable\")") == std::string::npos,
+      "Cable firmware transfer must flush its completion ACK before restarting immediately");
+}
+
+// A transfer running at a faster Cable rate must send its rejection before
+// resetCableTransfer() drops back to 115200, or the Mac, still listening at
+// the faster rate, reads noise and reports an interrupted Cable instead.
+bool testCableTransferRejectsBeforeRestoringBaudRate(const std::string& source) {
+  const std::size_t start = source.find("bool startCableTransfer(");
+  const std::size_t end = source.find("\nvoid maintainCableTransfer()", start);
+  if (!expect(
+          start != std::string::npos && end != std::string::npos,
+          "Cable transfer handlers must remain discoverable")) {
+    return false;
+  }
+  const std::string handlers = source.substr(start, end - start);
+  const std::string resetFirst =
+      "resetCableTransfer(true);\n";
+  std::size_t rejects = 0;
+  for (std::size_t at = handlers.find(resetFirst); at != std::string::npos;
+       at = handlers.find(resetFirst, at + 1)) {
+    const std::size_t next = handlers.find_first_not_of(" \t\n", at + resetFirst.size());
+    if (handlers.compare(next, 36, "emitSerialError(\"transfer-rejected\")") == 0) {
+      ++rejects;
+    }
+  }
+  return expect(
+      rejects == 0,
+      "a Cable transfer must emit transfer-rejected before resetCableTransfer restores 115200");
+}
+
+bool testCableThemeTransferKeepsCleanupOutsideUploads(const std::string& source) {
+  const std::size_t cleanupStart = source.find("bool findObsoleteThemeSlotAsset(");
+  const std::size_t cleanupEnd = source.find("\nvoid handleThemeActive()", cleanupStart);
+  const std::size_t finishStart = source.find("bool finishCableTransfer(");
+  const std::size_t finishEnd = source.find("\nbool handleCableTransferRequest(", finishStart);
+  if (!expect(
+          cleanupStart != std::string::npos && cleanupEnd != std::string::npos &&
+              finishStart != std::string::npos && finishEnd != std::string::npos,
+          "Cable cleanup and transfer finish handlers must remain discoverable")) {
+    return false;
+  }
+
+  const std::string cleanup = source.substr(cleanupStart, cleanupEnd - cleanupStart);
+  const std::string finish = source.substr(finishStart, finishEnd - finishStart);
+  const std::size_t activateTheme = finish.find("activateStoredThemePath(");
+  const std::size_t activateScreensaver = finish.find("persistDeviceSettings(next)");
+  const std::size_t sweep = finish.find("cleanupCableThemeSlot(");
+  const std::size_t complete = finish.find("emitCableTransferReply(\"complete\")");
+  return expect(
+      activateTheme != std::string::npos && activateScreensaver != std::string::npos &&
+          sweep != std::string::npos && complete != std::string::npos &&
+          activateTheme < sweep && activateScreensaver < sweep && sweep < complete &&
+          cleanup.find("path.startsWith(slotPrefix) && path != activeSpecPath") != std::string::npos &&
+          cleanup.find("CompileThemeSpec(raw.c_str(), doc, scene)") != std::string::npos &&
+          cleanup.find("CompiledThemeSpecReferencesAsset(") != std::string::npos &&
+          cleanup.find("standbyState.active || screensaverPreviewState.showing") != std::string::npos &&
+          cleanup.find("bool deferUntilHidden = true") != std::string::npos &&
+          cleanup.find("if (deferUntilHidden)") != std::string::npos &&
+          cleanup.find("renderStoredThemeSpecForStandby(livePath)") != std::string::npos &&
+          cleanup.find("screensaver_preview::Cancel(screensaverPreviewState)") != std::string::npos &&
+          cleanup.find("return false;") != std::string::npos &&
+          source.find("if (!cleanupCableThemeSlot(destination, targetActivation, false))") != std::string::npos &&
+          cleanup.find("LittleFS.remove(obsoletePath)") != std::string::npos,
+      "Cable cleanup must preserve slot assets and defer only after activation, never during preparation");
+}
+
+bool testDeferredCableScreensaverCleanupRunsAfterRenderRelease(const std::string& source) {
+  const std::size_t loopStart = source.find("void loop()");
+  const std::size_t standby = source.find("maintainStandby();", loopStart);
+  const std::size_t preview = source.find("maintainScreensaverPreview();", standby);
+  const std::size_t pending = source.find("if (cableScreensaverCleanupPending", preview);
+  const std::size_t activeGuard = source.find("!standbyState.active", pending);
+  const std::size_t previewGuard = source.find("!screensaverPreviewState.showing", activeGuard);
+  const std::size_t cleanup = source.find("cleanupCableThemeSlot(", previewGuard);
+  return expect(
+      loopStart != std::string::npos && standby != std::string::npos &&
+          preview != std::string::npos && pending != std::string::npos &&
+          activeGuard != std::string::npos && previewGuard != std::string::npos &&
+          cleanup != std::string::npos && standby < preview && preview < pending &&
+          pending < activeGuard && activeGuard < previewGuard && previewGuard < cleanup,
+      "deferred Cable screensaver cleanup must wait for standby and preview to release rendering");
 }
 
 bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
@@ -216,7 +328,7 @@ bool testAssetDeleteProtectsStandbyLiveTheme(const std::string& source) {
 
 bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
   const std::size_t standbyStart = source.find("void maintainStandby()");
-  const std::size_t standbyEnd = source.find("\nString updatePageHTML()", standbyStart);
+  const std::size_t standbyEnd = source.find("\nvoid resetOtaUpdaterAfterFailure()", standbyStart);
   if (!expect(
           standbyStart != std::string::npos && standbyEnd != std::string::npos,
           "standby state machine must remain discoverable")) {
@@ -237,7 +349,7 @@ bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
 
 bool testUsageWakeRestoresLiveThemeBeforeDroppingPath(const std::string& source) {
   const std::size_t standbyStart = source.find("void maintainStandby()");
-  const std::size_t standbyEnd = source.find("\nString updatePageHTML()", standbyStart);
+  const std::size_t standbyEnd = source.find("\nvoid resetOtaUpdaterAfterFailure()", standbyStart);
   if (!expect(
           standbyStart != std::string::npos && standbyEnd != std::string::npos,
           "standby state machine must remain discoverable")) {
@@ -387,6 +499,40 @@ bool testLiveThemeSlotUsesItsOwnedPathPolicy(const std::string& source) {
       "the live slot must reject screensaver-owned ThemeSpec paths when reading and persisting");
 }
 
+bool testUpdateNoticeStaysOffTheScreensaver(const std::string& source) {
+  const std::size_t start = source.find("void maintainFirmwareUpdateNotice()");
+  const std::size_t gateEnd = source.find("clearFirmwareUpdateNotice();", start);
+  if (!expect(start != std::string::npos && gateEnd != std::string::npos,
+              "firmware update notice maintenance must remain discoverable")) {
+    return false;
+  }
+  const std::string gate = source.substr(start, gateEnd - start);
+  if (!expect(gate.find("screensaverOwnsDisplay()") != std::string::npos,
+              "the firmware update notice must stay off while the screensaver is up")) {
+    return false;
+  }
+  const std::size_t ownsStart = source.find("bool screensaverOwnsDisplay()");
+  const std::size_t ownsEnd = source.find("\n}\n", ownsStart);
+  if (!expect(ownsStart != std::string::npos && ownsEnd != std::string::npos,
+              "screensaver display ownership must remain discoverable")) {
+    return false;
+  }
+  const std::string owns = source.substr(ownsStart, ownsEnd - ownsStart);
+  if (!expect(owns.find("standbyState.active") != std::string::npos &&
+                  owns.find("screensaverPreviewState.showing") != std::string::npos,
+              "standby and the screensaver preview must both keep the update notice off")) {
+    return false;
+  }
+  // The full render that enters standby draws the notice unconditionally after
+  // the theme; the draw gate itself must refuse while a screensaver is up.
+  const std::size_t showStart = source.find("bool shouldShowFirmwareUpdateNotice()");
+  const std::size_t showEnd = source.find("\n}\n", showStart);
+  return expect(
+      showStart != std::string::npos && showEnd != std::string::npos &&
+          source.substr(showStart, showEnd - showStart).find("!screensaverOwnsDisplay()") != std::string::npos,
+      "the update notice must not be drawn over the first screensaver frame");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -401,8 +547,13 @@ int main(int argc, char** argv) {
       !testThemeActivationUsesDeferredRenderTransport(source) ||
       !testThemeActivationDoesNotCloseFilesystemBeforeResponse(source) ||
       !testThemeActivationRejectsInvalidSpecsBeforePersisting(source) ||
-      !testSetupAccessPointClearsPendingThemeRender(source) ||
+      !testWifiSetupClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
+      !testSetupSizesSerialRxBufferForFrameContract(source) ||
+      !testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(source) ||
+      !testCableTransferRejectsBeforeRestoringBaudRate(source) ||
+      !testCableThemeTransferKeepsCleanupOutsideUploads(source) ||
+      !testDeferredCableScreensaverCleanupRunsAfterRenderRelease(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
       !testSharedSerialHelloAdvertisesStandby(source) ||
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||
@@ -411,7 +562,8 @@ int main(int argc, char** argv) {
       !testScreensaverPreviewLeavesBlockerScreensAlone(source) ||
       !testPreviewYieldsToWhoeverTakesTheDisplay(source) ||
       !testScreensaverSelectionValidatesBeforePersisting(source) ||
-      !testLiveThemeSlotUsesItsOwnedPathPolicy(source)) {
+      !testLiveThemeSlotUsesItsOwnedPathPolicy(source) ||
+      !testUpdateNoticeStaysOffTheScreensaver(source)) {
     return 1;
   }
 

@@ -3,14 +3,23 @@ package companionapi
 import (
 	"context"
 	"net/http"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/openurl"
 )
 
 const providerSetupCacheTTL = 30 * time.Second
+
+// providerCheckTimeout bounds a request or refresh that waits for provider
+// checks. It must outlast one full provider check, or the handler reports
+// a timeout while CodexBar is still answering.
+const providerCheckTimeout = codexbar.ProviderCheckBudget + 5*time.Second
 
 type providerSetupResponse struct {
 	OK            bool                   `json:"ok"`
@@ -26,6 +35,7 @@ type providerReadinessRecord struct {
 	Status    string
 	Detail    string
 	Reported  string
+	SignInURL string
 	CheckedAt time.Time
 }
 
@@ -48,6 +58,7 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 		probe = codexbar.ProbeProviderSetup
 	}
 	setup := probe(ctx, s.home)
+	s.logProviderCheckCauses(setup)
 	s.providerSetupCache = setup
 	s.providerSetupCachedAt = now
 	s.providerSetupMu.Unlock()
@@ -76,7 +87,7 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 	if s.providerSetupRefresh.CompareAndSwap(false, true) {
 		go func() {
 			defer s.providerSetupRefresh.Store(false)
-			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
 			defer cancel()
 			_ = s.currentProviderSetup(ctx, false)
 		}()
@@ -167,6 +178,9 @@ func freshTokenUsageReadiness(usage daemon.PersistedUsage, now time.Time) []code
 	return out
 }
 
+// Token history older than this no longer proves the provider is readable.
+const tokenUsageReadinessMaxAge = 15 * time.Minute
+
 func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now time.Time) (codexbar.ProviderReadiness, bool) {
 	if snapshot.TokenStatsCollectedAt.IsZero() {
 		return codexbar.ProviderReadiness{}, false
@@ -175,7 +189,7 @@ func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now
 		now = time.Now().UTC()
 	}
 	tokenAt := snapshot.TokenStatsCollectedAt.UTC()
-	if tokenAt.After(now.UTC().Add(5*time.Minute)) || now.Sub(tokenAt) > exactUsageCacheMaxAge {
+	if tokenAt.After(now.UTC().Add(5*time.Minute)) || now.Sub(tokenAt) > tokenUsageReadinessMaxAge {
 		return codexbar.ProviderReadiness{}, false
 	}
 	if strings.TrimSpace(snapshot.Frame.Normalize().Error) != "" {
@@ -210,7 +224,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		setup.CheckedAt = now.UTC().Format(time.RFC3339Nano)
 	}
 	protectedByID := make(map[string]struct{}, len(setup.Providers))
-	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	engineFailed := engineUnusable(setup.Engine.Status)
 	blocksReady := engineFailed
 	if engineFailed {
 		protectedByID["codexbar"] = struct{}{}
@@ -268,8 +282,13 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 
 func providerSetupFailureMustWin(status string) bool {
 	return status == codexbar.ProviderAuthRequired ||
+		status == codexbar.ProviderBrowserSignInRequired ||
 		status == codexbar.ProviderNotConfigured ||
 		status == codexbar.ProviderPermissionRequired ||
+		// A provider the account lost access to must keep its own row: a
+		// cached reading from before the shutdown would otherwise restore a
+		// "ready" Gemini and hide the migration guidance again.
+		status == codexbar.ProviderUnsupported ||
 		status == codexbar.ProviderConfigError
 }
 
@@ -305,7 +324,7 @@ func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready
 	if len(providers) == 0 {
 		return original
 	}
-	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	engineFailed := engineUnusable(setup.Engine.Status)
 	if !engineFailed {
 		setup.Status = codexbar.ProviderReady
 		setup.Engine.Status = codexbar.ProviderReady
@@ -352,6 +371,7 @@ func (s *Server) currentExactProviderSetup(ctx context.Context, providerID strin
 		probe = codexbar.ProbeProviderSetupForProvider
 	}
 	setup := probe(ctx, s.home, providerID)
+	s.logProviderCheckCauses(setup)
 
 	s.exactProviderProbeMu.Lock()
 	flight.setup = setup
@@ -359,6 +379,21 @@ func (s *Server) currentExactProviderSetup(ctx context.Context, providerID strin
 	delete(s.exactProviderProbes, providerID)
 	s.exactProviderProbeMu.Unlock()
 	return setup
+}
+
+// logProviderCheckCauses writes why a check ended as a settings error (or
+// lost its inventory read) to the runtime log, redacted like every reported
+// provider message. The row and the setup log only carry the generic sentence,
+// so without this line the cause of #527 could not be read back afterwards.
+func (s *Server) logProviderCheckCauses(setup codexbar.ProviderSetup) {
+	if s.logf == nil {
+		return
+	}
+	for _, provider := range setup.Providers {
+		if provider.Cause != "" {
+			s.logf("VibeTV provider check: %s is %s (%s)", provider.ID, provider.Status, reportedProviderMessage(provider.Cause))
+		}
+	}
 }
 
 func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.ProviderSetup {
@@ -377,21 +412,119 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
 	defer cancel()
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
 	var setup codexbar.ProviderSetup
+	label := ""
 	if providerID == "" {
 		setup = s.currentProviderSetup(ctx, true)
 	} else {
 		providerRevision := s.currentProviderRevision(providerID)
 		setup = s.currentExactProviderSetup(ctx, providerID)
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
+		// A too-old engine puts its own row first; name the provider asked for.
+		for _, provider := range setup.Providers {
+			if strings.EqualFold(provider.ID, providerID) {
+				label = provider.Label
+				break
+			}
+		}
 	}
+	s.recordProviderSetupEvents(setup, label)
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+}
+
+// openProviderSignInFn opens a URL in the customer's default browser. Tests
+// replace it; production goes through the OS handler without a shell. The
+// handler returns as soon as the browser took the URL, so Run is fine here
+// and reaps the child (Start alone would leak a handle per click).
+var openProviderSignInFn = func(url string) error {
+	name, args := openurl.Command(url)
+	return exec.Command(name, args...).Run()
+}
+
+// providerSetupGuideURL is the customer setup guide. It explains that every
+// provider reads its usage from the provider's own app on this computer.
+const providerSetupGuideURL = "https://vibetv.shop/pages/setup"
+
+// handleProviderSetupGuide opens the setup guide in the customer's default
+// browser. The page is fixed; the request carries nothing. The Control Center
+// cannot open it itself: the Windows window would navigate away from the app.
+func (s *Server) handleProviderSetupGuide(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if err := openProviderSignInFn(providerSetupGuideURL); err != nil {
+		writeError(w, http.StatusInternalServerError, "provider_setup_guide_failed", "The browser could not be opened.", "Open "+providerSetupGuideURL+" in your browser.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "url": providerSetupGuideURL})
+}
+
+// handleProviderSignIn starts the sign-in for one provider. When CodexBar
+// named a browser page for the provider's current browser_sign_in_required
+// state, only that page opens. Otherwise the provider's own tool signs in:
+// its CLI login in a visible terminal, its app, or -- when neither is
+// installed -- its official install page. The request carries a provider id,
+// never a URL or a path.
+func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	if url := s.providerSignInURL(providerID); url != "" {
+		if err := openProviderSignInFn(url); err != nil {
+			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": providerSignInActionBrowser, "url": url})
+		return
+	}
+	home, _ := os.UserHomeDir()
+	plan, ok := planProviderSignIn(providerID, runtime.GOOS, home, exec.LookPath, fileExists)
+	if !ok {
+		writeError(w, http.StatusNotFound, "provider_sign_in_unavailable", "This provider has no sign-in VibeTV can start.", "Sign in to the provider's app, then check again.")
+		return
+	}
+	if err := launchProviderSignInFn(plan); err != nil {
+		nextAction := "Sign in to the provider's app, then check again."
+		if plan.URL != "" {
+			nextAction = "Open " + plan.URL + " in your browser, then check again."
+		}
+		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The sign-in could not be started.", nextAction)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": plan.Action, "url": plan.URL})
+}
+
+// providerSignInURL is the page CodexBar named in this provider's latest
+// browser-sign-in diagnosis: the exact check first, then the background
+// health scan. Empty when neither currently says the provider needs one.
+//
+// The exact record is only trusted while the row is still showing it. Rows
+// drop a record older than providerReadinessFreshness, so without the same
+// limit a stale browser page kept opening for a provider that had since moved
+// on to a signed-out tool, and the customer's row action did something other
+// than what the row said.
+func (s *Server) providerSignInURL(providerID string) string {
+	record, ok := s.providerReadinessFor(providerID)
+	if age := s.currentTime().Sub(record.CheckedAt); ok && !record.CheckedAt.IsZero() &&
+		age >= 0 && age <= providerReadinessFreshness &&
+		record.Status == codexbar.ProviderBrowserSignInRequired && record.SignInURL != "" {
+		return record.SignInURL
+	}
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	for _, setting := range s.providerPreferences.cached {
+		if strings.EqualFold(setting.ID, providerID) && setting.Health == codexbar.ProviderHealthBrowserSignIn {
+			return setting.SignInURL
+		}
+	}
+	return ""
 }
 
 func (s *Server) currentProviderRevision(providerID string) uint64 {
@@ -422,6 +555,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 		Status:    exactReadiness.Status,
 		Detail:    exactReadiness.Detail,
 		Reported:  exactReadiness.Reported,
+		SignInURL: exactReadiness.SignInURL,
 		CheckedAt: checkedAt,
 	}
 
@@ -445,6 +579,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 			s.providerPreferences.cached[i].Health = providerHealthFromReadiness(exactReadiness.Status)
 			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
 			s.providerPreferences.cached[i].Reported = record.Reported
+			s.providerPreferences.cached[i].SignInURL = record.SignInURL
 			s.providerPreferences.at = s.currentTime().UTC()
 		}
 		break
@@ -461,10 +596,9 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 	if !enabled {
 		return
 	}
+	// A ready check only wakes the collector. Its own reading never stands in
+	// for the collector's: what setup shows is what VibeTV can send (#480).
 	if exactReadiness.Status == codexbar.ProviderReady {
-		if setup.ExactUsage != nil {
-			s.cacheExactProviderUsage(*setup.ExactUsage)
-		}
 		if s.wakeDisplayStream != nil {
 			s.wakeDisplayStream()
 		}

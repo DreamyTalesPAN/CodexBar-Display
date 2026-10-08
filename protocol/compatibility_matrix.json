@@ -16,6 +16,11 @@
       "companionMin": "1.0.53",
       "updateOrder": "companion-first",
       "notes": "Firmware 1.0.40 advertises usage-slots-v1, renders two provider-neutral lanes, hides absent lanes, and ticks per-slot resets. Slot-based theme packs are blocked on older firmware."
+    },
+    "themeSpecProgressColorStops": {
+      "firmwareMin": "1.0.42",
+      "updateOrder": "companion-first",
+      "notes": "Firmware 1.0.42 advertises provider-assets-v1, color-stops-v1, and text-valign-v1. Packs that emit pa, cs, or va are blocked on older firmware. colorStops stay remaining-oriented when usageMode is used."
     }
   },
   "rules": [

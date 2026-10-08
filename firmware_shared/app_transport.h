@@ -13,12 +13,27 @@ constexpr int kDefaultMaxFrameBytes = 512;
 struct TransportConfig {
   const char* boardId = "unknown";
   const char* firmwareVersion = "dev";
+  const char* deviceId = "";
+  const char* networkMode = "";
   const char* featuresJSON = "[]";
   const char* supportedProtocolVersionsJSON = "[2,1]";
   int preferredProtocolVersion = 2;
   int maxFrameBytes = kDefaultMaxFrameBytes;
   const char* capabilitiesJSON = "{}";
 };
+
+inline bool ReadSerialLine(RuntimeContext& ctx, String& outLine) {
+  outLine = "";
+  while (Serial.available() > 0) {
+    const char c = static_cast<char>(Serial.read());
+    const char* completed = nullptr;
+    if (core::ConsumeLineByte(ctx.lineReader, c, completed)) {
+      outLine = completed;
+      return true;
+    }
+  }
+  return false;
+}
 
 inline bool ConsumeSerial(
     RuntimeContext& ctx,
@@ -52,6 +67,8 @@ inline String BuildDeviceHelloJSON(const TransportConfig& config) {
   const int preferredProtocol = config.preferredProtocolVersion > 0 ? config.preferredProtocolVersion : 1;
   const int maxFrameBytes = config.maxFrameBytes > 0 ? config.maxFrameBytes : kDefaultMaxFrameBytes;
   const char* capabilities = config.capabilitiesJSON == nullptr ? "{}" : config.capabilitiesJSON;
+  const char* deviceId = config.deviceId == nullptr ? "" : config.deviceId;
+  const char* networkMode = config.networkMode == nullptr ? "" : config.networkMode;
 
   String out;
   out.reserve(384);
@@ -65,6 +82,14 @@ inline String BuildDeviceHelloJSON(const TransportConfig& config) {
   out += boardId;
   out += "\",\"firmware\":\"";
   out += firmware;
+  if (deviceId[0] != '\0') {
+    out += "\",\"deviceId\":\"";
+    out += deviceId;
+  }
+  if (networkMode[0] != '\0') {
+    out += "\",\"networkMode\":\"";
+    out += networkMode;
+  }
   out += "\",\"features\":";
   out += features;
   out += ",\"maxFrameBytes\":";

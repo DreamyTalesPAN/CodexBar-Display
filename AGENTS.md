@@ -28,6 +28,7 @@ Before building anything, check once per chat whether the remote branch is ahead
 - Missing, unavailable, stale, or synthetic data must stay visibly unavailable. Never invent windows, percentages, reset times, or readiness.
 - Diagnose usage bugs end to end before editing: bundled CodexBar output -> collector -> persisted snapshot -> Companion API -> Control Center -> VibeTV frame.
 - Fix usage bugs in this order: remove the conflicting local rule, remove a duplicate data path, reuse the existing central owner, and only then add code.
+- Windows exception (bundled Win-CodexBar 0.60.3, VibeTV fork release pinned in `scripts/fetch-win-codexbar.ps1`, issue #415): the CLI has no all-enabled `usage --json` and no credential-consent command, so the per-provider usage/health join in `companion/internal/codexbar/providers.go` and the Claude credential flag in `companion/internal/codexbar/claude_credentials.go` are a time-boxed adapter fork. Remove them as soon as upstream CodexBar ships an all-enabled usage command or a consent command; do not extend them with new provider semantics. The fork pin itself is temporary: return to nesszer/Win-CodexBar once the Claude probe patches land upstream.
 
 ## Customer Rehearsal (Cold And Warm Start)
 
@@ -40,6 +41,7 @@ UI, and only the rendered screen shows that.
 - `scripts/vibetv-rehearse-cold-start.sh` -- wipes every VibeTV and CodexBar trace from this Mac, then installs the Mac App and firmware from the candidate under test. No update path: the "unboxed today, already on the new build" state.
 - `scripts/vibetv-rehearse-warm-start.sh` -- restores today's public customer state (current public Mac App + released firmware), then publishes the candidate so both updates appear in the Updates tab. You drive the visible customer flow yourself: Mac App through Sparkle first, then firmware.
 - Shared logic lives in `scripts/lib/vibetv-rehearsal.sh`. Both take `--main`, `--pr <number>`, `--run-id`, `--device-target`, `--companion-override`, `--keep-codexbar`, `--restore`, `--yes`; warm start also takes `--skip-firmware-baseline`.
+- A VibeTV on the USB cable has no address: pass `--device-target cable://vibetv`. Firmware then goes over the cable with this Mac's pairing, so cold start flashes before the purge.
 
 `--main` is what a release is validated with: the current `main` tip is the
 candidate, tested against the published customer state. It resolves the release

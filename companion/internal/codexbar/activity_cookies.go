@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/childproc"
 )
 
 func latestKimiCookieActivityAt(home string) (time.Time, bool) {
@@ -150,7 +152,7 @@ func chromiumCookieActivityQuery(spec chromiumCookieActivityQuerySpec) string {
 }
 
 func chromiumCookieDBActivityAt(path, query, sqliteBin string) (time.Time, bool) {
-	cmd := exec.Command(sqliteBin, "-readonly", path, query)
+	cmd := childproc.Hide(exec.Command(sqliteBin, "-readonly", path, query))
 	out, err := cmd.Output()
 	if err != nil {
 		return time.Time{}, false

@@ -1,11 +1,20 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
-import type { ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CircleArrowRight, Wifi } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { ItemSeparator } from "@/components/ui/item";
+import { Item, ItemSeparator } from "@/components/ui/item";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
+import { selectedItemClass } from "./setup/setup-selectable-card";
 import {
   Select,
   SelectContent,
@@ -26,8 +35,11 @@ import {
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
+  deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  deviceOffersCable,
+  type ApiError,
   type DeviceInfo,
   type StandbySettings,
 } from "./control-center-types";
@@ -44,14 +56,24 @@ export type SettingsScreenProps = {
   device: DeviceInfo | null;
   brightness: number | null;
   busyAction: string | null;
+  actionError?: ApiError | null;
+  onDismissError: () => void;
+  connectionMode: "cable" | "wifi";
   standby: StandbySettings | null;
   onBrightnessChange: (value: number) => void;
   onChooseScreensaver: () => void;
+  onConnectionModeChange: (mode: "cable" | "wifi") => void;
   onResetSetup: () => void;
+  /** Erases the VibeTV over the USB cable, then starts setup again. */
+  onEraseDevice?: () => void;
+  /** Opens Support and runs diagnostics there. */
+  onRunDiagnostics?: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
   onSaveStandby: (value: StandbySettings) => void;
   onStandbyBrightnessChange: (value: number) => void;
+  /** The app runs on Windows; the Mac wording stays exactly as it is. */
+  windowsHost?: boolean;
 };
 
 export function SettingsScreen({
@@ -59,15 +81,25 @@ export function SettingsScreen({
   device,
   brightness,
   busyAction,
+  actionError,
+  onDismissError,
+  connectionMode,
   standby,
   onBrightnessChange,
   onChooseScreensaver,
+  onConnectionModeChange,
   onResetSetup,
+  onEraseDevice,
+  onRunDiagnostics,
   onSaveBrightness,
   providerPicker,
   onSaveStandby,
   onStandbyBrightnessChange,
+  windowsHost = false,
 }: SettingsScreenProps) {
+  const thisHost = windowsHost ? "this computer" : "this Mac";
+  const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
+  const [eraseRequested, setEraseRequested] = useState(false);
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
   const minBrightness =
@@ -78,7 +110,9 @@ export function SettingsScreen({
   const localActionBusy =
     busyAction === "brightness" ||
     busyAction === "standby" ||
+    busyAction === "connection-mode" ||
     busyAction === "reset-setup" ||
+    busyAction === "erase-device" ||
     busyAction === "firmware-update";
   // Firmware that does not advertise standby has no screensaver at all, so the
   // whole block stays hidden instead of showing controls that cannot work.
@@ -92,13 +126,24 @@ export function SettingsScreen({
     !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
+  const supportedTransports = device?.capabilities?.transport?.supported;
+  const cableSupported =
+    connectionMode === "cable" || deviceOffersCable(device);
+  const wifiSupported =
+    !supportedTransports || supportedTransports.includes("wifi");
+  const connectionModeDisabled =
+    (!deviceIsCustomerConnected(device) && !deviceCanSwitchToCable(device)) ||
+    localActionBusy;
 
+  // Every provider CodexBar reports is listed, on Windows as on the Mac.
   const providers = (providerPicker.items || []).filter(isProviderItem);
   // Manual pins the device to exactly one provider, so it may only offer ones
   // that can actually produce a reading. Offering every switched-on provider,
   // as the design board's wording does, lets a customer pin VibeTV to a
   // provider that shows nothing.
-  const displayable = providers.filter(setupProviderCanDisplay);
+  const displayable = providers.filter((provider) =>
+    setupProviderCanDisplay(provider, providerPicker.usage),
+  );
   const enabledProviderIds = providers
     .filter((item) => item.value)
     .map((item) => item.providerId);
@@ -117,6 +162,77 @@ export function SettingsScreen({
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
+      <SetupStepFailedDialog
+        error={actionError ?? providerError ?? null}
+        onOpenChange={(open) => !open && onDismissError()}
+      />
+      <SettingsSection title="Connection">
+        <div
+          aria-label="Connection mode"
+          aria-busy={busyAction === "connection-mode"}
+          className="grid grid-cols-2 gap-4"
+          role="group"
+        >
+          {([
+            { mode: "cable", label: "USB-C", description: `Requires a data cable connected to ${thisHost}.`, Icon: CircleArrowRight, supported: cableSupported },
+            { mode: "wifi", label: "WiFi", description: "No cable needed — VibeTV can sit anywhere on your desk.", Icon: Wifi, supported: wifiSupported },
+          ] as const).map(({ mode, label, description, Icon, supported }) => (
+            <Item
+              asChild
+              className={`${selectedItemClass(connectionMode === mode)} max-w-[224px] flex-col items-start gap-2 bg-card p-4 last:justify-self-end disabled:cursor-not-allowed disabled:opacity-50`}
+              key={mode}
+              variant="outline"
+            >
+              <button
+                aria-label={label}
+                aria-pressed={connectionMode === mode}
+                disabled={connectionModeDisabled || !supported}
+                onClick={() => {
+                  if (mode !== connectionMode) setRequestedMode(mode);
+                }}
+                type="button"
+              >
+                <Icon aria-hidden className="size-[18px]" />
+                <span className="text-sm font-semibold">{label}</span>
+                <span className="text-xs leading-normal text-muted-foreground">{description}</span>
+              </button>
+            </Item>
+          ))}
+        </div>
+        {requestedMode !== null ? <Dialog
+          open
+          onOpenChange={(open) => { if (!open) setRequestedMode(null); }}
+        >
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>{requestedMode === "cable" ? "Switch to USB-C?" : "Switch to WiFi?"}</DialogTitle>
+              <DialogDescription>
+                {requestedMode === "cable"
+                  ? `Connect VibeTV to ${thisHost} with a data cable. WiFi stays on until the app confirms the cable connection. Your saved network, themes, providers and brightness stay saved.`
+                  : "VibeTV connects to your saved WiFi network. If network details are needed, WiFi setup opens. Themes, providers and brightness stay saved."}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button onClick={() => setRequestedMode(null)} type="button" variant="outline">
+                {requestedMode === "cable" ? "Keep WiFi" : "Keep USB-C"}
+              </Button>
+              <Button
+                disabled={connectionModeDisabled}
+                onClick={() => {
+                  if (requestedMode && requestedMode !== connectionMode) onConnectionModeChange(requestedMode);
+                  setRequestedMode(null);
+                }}
+                type="button"
+              >
+                {requestedMode === "cable" ? "Switch to USB-C" : "Switch to WiFi"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog> : null}
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
       <SettingsSection title="Display">
         <BrightnessControl
           disabled={
@@ -132,13 +248,24 @@ export function SettingsScreen({
           onSave={onSaveBrightness}
           onValueChange={onBrightnessChange}
           value={currentBrightness}
-          valueLabel={brightness == null ? "Loading" : `${brightness}%`}
+          valueLabel={
+            !brightnessSupport
+              ? "Not supported"
+              : brightness == null
+                ? "Loading"
+                : `${brightness}%`
+          }
         />
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
 
       <SettingsSection title="Display mode">
+        {providerPicker.displayNotice ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            {providerPicker.displayNotice}
+          </p>
+        ) : null}
         <DisplayModeChoice
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}
@@ -262,7 +389,7 @@ export function SettingsScreen({
       <ItemSeparator className="my-0" />
 
       <SettingsSection
-        description="Connect this Mac to another VibeTV."
+        description={`Connect ${thisHost} to another VibeTV.`}
         title="Setup"
       >
         <div>
@@ -280,31 +407,90 @@ export function SettingsScreen({
             </span>
           </Button>
         </div>
+        {onEraseDevice && connectionMode === "cable" ? (
+          <div>
+            <Button
+              disabled={localActionBusy || !deviceIsCustomerConnected(device)}
+              onClick={() => setEraseRequested(true)}
+              type="button"
+              variant="outline"
+            >
+              {busyAction === "erase-device" ? (
+                <Spinner data-icon="inline-start" />
+              ) : null}
+              <span>
+                {busyAction === "erase-device"
+                  ? "Resetting"
+                  : "Reset to factory settings"}
+              </span>
+            </Button>
+          </div>
+        ) : null}
+        {eraseRequested ? (
+          <Dialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setEraseRequested(false);
+            }}
+          >
+            <DialogContent showCloseButton={false}>
+              <DialogHeader>
+                <DialogTitle>Reset VibeTV to factory settings?</DialogTitle>
+                <DialogDescription>
+                  VibeTV forgets its WiFi details, pairing, settings and themes, then setup starts again. Use this before you give VibeTV away.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button onClick={() => setEraseRequested(false)} type="button" variant="outline">
+                  Cancel
+                </Button>
+                <Button
+                  disabled={localActionBusy}
+                  onClick={() => {
+                    setEraseRequested(false);
+                    onEraseDevice?.();
+                  }}
+                  type="button"
+                  variant="destructive"
+                >
+                  Reset
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
 
       <SettingsSection title="AI providers">
-        {/*
-          The only place a failed provider or display write is reported once the
-          customer is past the wizard.
-        */}
-        {providerError ? (
-          <Alert className="mb-4" variant="destructive">
-            <AlertTriangle />
-            <AlertTitle>{providerError.message}</AlertTitle>
-            <AlertDescription>{providerError.nextAction}</AlertDescription>
-          </Alert>
-        ) : null}
         <ProviderList
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
+          onOpenSignIn={
+            providerPicker.onOpenSignIn
+              ? (provider) => void providerPicker.onOpenSignIn?.(provider)
+              : undefined
+          }
+          onOpenSetupGuide={
+            providerPicker.onOpenSetupGuide
+              ? () => void providerPicker.onOpenSetupGuide?.()
+              : undefined
+          }
           onToggle={(provider, enabled) =>
             void providerPicker.onPreferenceChange(provider, enabled)
           }
+          usage={providerPicker.usage}
           pendingCheckIds={providerPicker.pendingCheckIds}
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}
         />
+        {onRunDiagnostics ? (
+          <div>
+            <Button onClick={onRunDiagnostics} size="sm" type="button" variant="outline">
+              <span>Run diagnostics</span>
+            </Button>
+          </div>
+        ) : null}
       </SettingsSection>
     </div>
   );

@@ -58,6 +58,11 @@ var (
 	reportedOpaque = regexp.MustCompile(`[A-Za-z0-9_-]{24,}`)
 	reportedDigit  = regexp.MustCompile(`[0-9]`)
 	reportedLetter = regexp.MustCompile(`[A-Za-z]`)
+	// CodexBar runs inside VibeTV and the customer never sees it, so its
+	// Gemini migration remedy names the provider by itself: "Enable
+	// Antigravity", not "Enable CodexBar's Antigravity provider". The Windows
+	// app bundles Win-CodexBar, so its name is covered too.
+	reportedCodexBarAntigravity = regexp.MustCompile(`(?i)\b(?:Win-)?CodexBar's Antigravity provider\b`)
 )
 
 const reportedRedacted = "[redacted]"
@@ -69,6 +74,7 @@ func reportedProviderMessage(raw string) string {
 	if message == "" {
 		return ""
 	}
+	message = reportedCodexBarAntigravity.ReplaceAllString(message, "Antigravity")
 	// Order matters: a redacted span must never be rescanned as a secret, and
 	// the pair rule must claim `Authorization: Bearer x` before the bare rule.
 	message = reportedHomePath.ReplaceAllString(message, "~")

@@ -18,6 +18,7 @@ struct RendererHealthSnapshot {
   bool themeSpecActive = false;
   bool themeSpecRenderOk = true;
   String themeSpecRenderError;
+  String themeSpecRenderErrorAsset;
   unsigned long themeSpecRenderFailures = 0;
   unsigned long cbaCompletedFrames = 0;
   unsigned long cbaLastFrameDurationMs = 0;
@@ -28,6 +29,8 @@ struct RendererHealthSnapshot {
   bool gifFilePresent = false;
   bool gifDecoderAllocated = false;
   bool gifDecoderOpen = false;
+  unsigned long gifFramesPlayed = 0;
+  unsigned long animationLowHeapSkips = 0;
   String gifLastErrorStage;
 };
 
@@ -45,10 +48,9 @@ class RendererESP8266 : public app::Renderer {
 
   void DrawSplash(app::RuntimeContext& ctx) override;
   void TickSplash(app::RuntimeContext& ctx) override;
-  void DrawStatus(app::RuntimeContext& ctx, const String& title, const String& line1, const String& line2);
-  void DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address);
-  void DrawConnectedSetupInstructions(app::RuntimeContext& ctx, const String& host, const String& fallbackIp);
-  void DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text);
+  void DrawStatus(app::RuntimeContext& ctx, const char* title, const char* line1, const char* line2);
+  void DrawConnectedSetupInstructions(app::RuntimeContext& ctx, const String& fallbackIp);
+  void DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const char* text);
   // Which notice surface the active theme offers: label swap, overlay bar, or
   // none (no ThemeSpec rendered / no safe bar area free of animations).
   updatenotice::Surface FirmwareUpdateNoticeSurface(app::RuntimeContext& ctx);

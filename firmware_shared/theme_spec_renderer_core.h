@@ -29,6 +29,8 @@ constexpr uint32_t kThemeSpecFieldUsageWindows = 1UL << 12;
 constexpr uint32_t kThemeSpecFieldUsageSlot1 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldProviderSlots = 1UL << 13;
+// A ticking reset must not invalidate slot-owned labels, sprites, or progress bars.
+constexpr uint32_t kThemeSpecFieldUsageWindowReset = 1UL << 14;
 constexpr size_t kMaxThemeSpecProviderSlots = 2;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
@@ -45,6 +47,28 @@ inline void RenderYield() {
 #elif defined(ARDUINO)
   yield();
 #endif
+}
+
+// An idle window is measured, current and simply has no deadline because
+// nothing has been used yet. It is not an error: the renderer says "No active
+// session" for it instead of the stale/offline "Reset unavailable".
+//
+// The state rides in resetSecs as a negative sentinel rather than in a
+// separate flag. The ESP8266 image sits at its flash ceiling, and a flag on
+// every window plus its legacy-slot copies cost more than this build can
+// spend. Every reader already branches on "resetSecs <= 0" before formatting a
+// duration, so the sentinel lands on paths that are checked anyway. A basis
+// the device cannot stand behind never carries it, so the trust path keeps its
+// own wording.
+//
+// This is the same value the countdown helpers in codexbar_display_core.h
+// return (kRemainingSecsIdle); the frame carries it straight through. It is
+// restated here because this header is the lower of the two and cannot
+// include that one.
+constexpr int64_t kResetSecsIdle = -1;
+
+inline bool ResetSecsAreIdle(int64_t resetSecs) {
+  return resetSecs < 0;
 }
 
 struct UsageWindowData {
@@ -110,6 +134,8 @@ struct TextCommand {
   bool hasBg = false;
   bool fitShrink = false;
   int align = 0;
+  int valign = 0;
+  int height = 0;
   bool wrap = false;
 };
 
@@ -159,6 +185,18 @@ struct PixelsCommand {
 
 constexpr size_t kMaxCompiledThemeSpecPrimitives = 32;
 constexpr size_t kMaxCompiledThemeSpecStringBytes = 1024;
+constexpr size_t kMaxCompiledProviderAssets = 16;
+constexpr size_t kMaxCompiledColorStops = 4;
+
+struct CompiledProviderAsset {
+  const char* key = nullptr;
+  const char* path = nullptr;
+};
+
+struct CompiledColorStop {
+  int16_t gte = 0;
+  uint16_t color = 0xFFFF;
+};
 
 enum class PrimitiveKind : uint8_t {
   Unknown = 0,
@@ -183,6 +221,7 @@ struct CompiledPrimitive {
   int size = 1;
   int maxWidth = 0;
   int align = 0;
+  int valign = 0;
   int style = 0;
   int segments = 0;
   int segmentGap = 1;
@@ -192,11 +231,15 @@ struct CompiledPrimitive {
   uint16_t border = 0x7BEF;
   bool hasBg = false;
   bool fitShrink = false;
+  uint8_t colorStopCount = 0;
+  CompiledColorStop colorStops[kMaxCompiledColorStops];
   const char* text = "";
   const char* binding = nullptr;
   const char* assetPath = "";
   const char* idleAssetPath = nullptr;
   const char* codingAssetPath = nullptr;
+  uint8_t providerAssetStart = 0;
+  uint8_t providerAssetCount = 0;
   const char* data = "";
   JsonArrayConst palette;
   JsonArrayConst rows;
@@ -213,6 +256,9 @@ struct CompiledThemeSpec {
   char* stringPool = nullptr;
   size_t stringPoolCapacity = 0;
   size_t stringPoolUsed = 0;
+  CompiledProviderAsset* providerAssets = nullptr;
+  size_t providerAssetCapacity = 0;
+  size_t providerAssetCount = 0;
 };
 
 inline bool CompiledThemeSpecHasGifAssets(const CompiledThemeSpec& scene) {
@@ -239,6 +285,12 @@ inline bool CompiledThemeSpecReferencesAsset(
          std::strcmp(primitive.codingAssetPath, assetPath) == 0)) {
       return true;
     }
+    for (uint8_t j = 0; j < primitive.providerAssetCount; ++j) {
+      const CompiledProviderAsset& entry = scene.providerAssets[primitive.providerAssetStart + j];
+      if (entry.path != nullptr && std::strcmp(entry.path, assetPath) == 0) {
+        return true;
+      }
+    }
   }
   return false;
 }
@@ -246,6 +298,7 @@ inline bool CompiledThemeSpecReferencesAsset(
 struct CompiledThemeSpecStoragePlan {
   size_t primitiveCapacity = 0;
   size_t stringPoolCapacity = 0;
+  size_t providerAssetCapacity = 0;
 };
 
 class Sink {
@@ -673,6 +726,42 @@ inline void FormatTokenCount(int64_t value, char* out, size_t outSize) {
   }
 }
 
+// A countdown the device cannot stand behind reads "Reset unavailable": the
+// basis went stale or offline and the number would be a guess. A window that
+// is measured and current but simply has no deadline is a different state --
+// nothing has been used, so nothing is scheduled to reset. Saying "Reset
+// unavailable" there reported a fault for a perfectly healthy account.
+constexpr const char* kResetUnavailableText = "Reset unavailable";
+constexpr const char* kResetIdleText = "No active session";
+
+inline const char* ResetTextFor(bool idle) {
+  return idle ? kResetIdleText : kResetUnavailableText;
+}
+
+// The root {reset} token carries no window of its own. It is idle only when
+// every window the frame does carry is idle, so a genuinely stale basis (which
+// leaves no idle window behind) keeps the unavailable wording.
+inline bool RootResetIsIdle(const FrameData& frame) {
+  if (frame.usageUnavailable) {
+    return false;
+  }
+  bool sawWindow = false;
+  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
+    if (!frame.usageWindows[i].available) {
+      continue;
+    }
+    if (!ResetSecsAreIdle(frame.usageWindows[i].resetSecs)) {
+      return false;
+    }
+    sawWindow = true;
+  }
+  return sawWindow;
+}
+
+inline const char* RootResetUnavailableText(const FrameData& frame) {
+  return ResetTextFor(RootResetIsIdle(frame));
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -706,7 +795,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   }
   if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0 || std::strcmp(key, "r") == 0) {
     if (frame.usageUnavailable || frame.resetSecs <= 0) {
-      std::snprintf(out, outSize, "Reset unavailable");
+      std::snprintf(out, outSize, "%s", RootResetUnavailableText(frame));
     } else {
       FormatDuration(frame.resetSecs, out, outSize);
     }
@@ -729,7 +818,8 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(slot.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (slot.resetSecs <= 0) {
-        std::snprintf(out, outSize, "Reset unavailable");
+        // A provider slot is only sent with a deadline, so it is never idle.
+        std::snprintf(out, outSize, "%s", kResetUnavailableText);
       } else {
         FormatDuration(slot.resetSecs, out, outSize);
       }
@@ -755,7 +845,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "%s", SafeText(window.label));
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (window.resetSecs <= 0) {
-        std::snprintf(out, outSize, "Reset unavailable");
+        std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
       } else {
         FormatDuration(window.resetSecs, out, outSize);
       }
@@ -817,6 +907,89 @@ inline void AppendText(char* out, size_t outSize, size_t& outLen, const char* te
   }
 }
 
+// The replacement for a template whose only substitution is a countdown with
+// no deadline, or nullptr when the template must substitute in place.
+//
+// Shipped themes hard-code the prose around the countdown ("Resets in {us1r}",
+// "Reset in {usageSlot1Reset}"). Substituting the unavailable text in place
+// rendered "Resets in Reset unavailable" on a customer's screen: a doubled,
+// self-contradicting line that reads like a defect. The whole template
+// collapses to the unavailable text instead, exactly as the root {reset} token
+// has always behaved, so the surrounding prose cannot contradict it.
+//
+// Only the countdown tokens are probed. A template that also substitutes a
+// label or a percentage still carries information worth rendering, so it keeps
+// its in-place substitution.
+//
+// An idle window collapses to the idle wording instead. Mixed idle and stale
+// countdowns in one template keep the unavailable wording: the line cannot
+// claim everything is merely idle while one of its values is untrustworthy.
+inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& frame) {
+  raw = SafeText(raw);
+  bool sawUnavailableCountdown = false;
+  bool allIdle = true;
+  for (size_t i = 0; raw[i] != '\0';) {
+    if (raw[i] != '{') {
+      ++i;
+      continue;
+    }
+    const char* close = std::strchr(raw + i + 1, '}');
+    if (close == nullptr) {
+      break;
+    }
+    char key[32] = {0};
+    const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
+    if (keyLen == 0 || keyLen >= sizeof(key)) {
+      return nullptr;
+    }
+    std::memcpy(key, raw + i + 1, keyLen);
+
+    const int providerSlotIndex = ProviderSlotBindingIndex(key);
+    const int usageSlotIndex = UsageWindowBindingIndex(key);
+    // The compact aliases carry no "Reset" substring, so UsageWindowField
+    // reads them as "percent". BoundValue matches them by name; this probe
+    // has to do the same or {us1r} keeps rendering the doubled sentence on
+    // the device while the Control Center preview already collapses it.
+    // With a slot index found, a four-character key ending in "r" is one of
+    // us1r, us2r, pv1r, pv2r.
+    const bool isShortReset = keyLen == 4 && key[3] == 'r';
+    const bool isCountdown =
+        ((providerSlotIndex >= 0 || usageSlotIndex >= 0) &&
+         (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0));
+    if (!isCountdown) {
+      // Any other substitution carries its own information.
+      return nullptr;
+    }
+
+    int64_t resetSecs = 0;
+    bool available = false;
+    if (providerSlotIndex >= 0) {
+      const UsageWindowData& slot = frame.providerSlots[providerSlotIndex];
+      resetSecs = slot.resetSecs;
+      available = slot.available;
+    } else {
+      const UsageWindowData window = BoundUsageWindowFor(frame, key, usageSlotIndex);
+      resetSecs = window.resetSecs;
+      available = window.available;
+    }
+    // An unavailable window renders empty, not as the unavailable text, and
+    // collapsing the line would hide prose the theme wants standing.
+    if (!available) {
+      return nullptr;
+    }
+    if (resetSecs > 0) {
+      return nullptr;
+    }
+    sawUnavailableCountdown = true;
+    allIdle = allIdle && ResetSecsAreIdle(resetSecs);
+    i += keyLen + 2;
+  }
+  if (!sawUnavailableCountdown) {
+    return nullptr;
+  }
+  return ResetTextFor(allIdle);
+}
+
 inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -828,7 +1001,12 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
       (std::strstr(raw, "{reset}") != nullptr ||
        std::strstr(raw, "{resetCountdown}") != nullptr ||
        std::strstr(raw, "{r}") != nullptr)) {
-    std::snprintf(out, outSize, "Reset unavailable");
+    std::snprintf(out, outSize, "%s", RootResetUnavailableText(frame));
+    return;
+  }
+
+  if (const char* countdownOnly = TemplateCountdownOnlyText(raw, frame)) {
+    std::snprintf(out, outSize, "%s", countdownOnly);
     return;
   }
 
@@ -863,7 +1041,9 @@ inline bool StringEqualsAny(const char* value, const char* a, const char* b, con
          (c != nullptr && std::strcmp(value, c) == 0);
 }
 
-inline bool TemplateUsesField(const char* raw, const char* a, const char* b, const char* c = nullptr) {
+// Calls fn(key) for every "{key}" placeholder in a text template.
+template <typename Fn>
+inline void ForEachTemplateKey(const char* raw, Fn fn) {
   raw = SafeText(raw);
   for (size_t i = 0; raw[i] != '\0'; ++i) {
     if (raw[i] != '{') {
@@ -871,88 +1051,19 @@ inline bool TemplateUsesField(const char* raw, const char* a, const char* b, con
     }
     const char* close = std::strchr(raw + i + 1, '}');
     if (close == nullptr) {
-      return false;
+      return;
     }
     char key[32] = {0};
     const size_t keyLen = static_cast<size_t>(close - (raw + i + 1));
+    // Like RenderTextTemplate: a brace too long to be a key is literal text,
+    // so placeholders inside it still draw and must still count.
     if (keyLen > 0 && keyLen < sizeof(key)) {
       std::memcpy(key, raw + i + 1, keyLen);
-      if (StringEqualsAny(key, a, b, c)) {
-        return true;
-      }
+      fn(static_cast<const char*>(key));
+      i += keyLen + 1;
     }
-    i += keyLen + 1;
   }
-  return false;
 }
-
-inline bool BindingUsesField(const char* binding, uint32_t fields) {
-  if ((fields & kThemeSpecFieldProvider) != 0 && StringEqualsAny(binding, "provider", "pr")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldLabel) != 0 && StringEqualsAny(binding, "label", "providerLabel", "l")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldSession) != 0 && StringEqualsAny(binding, "session", "sessionPercent", "s")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldWeekly) != 0 && StringEqualsAny(binding, "weekly", "weeklyPercent", "w")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldReset) != 0 && StringEqualsAny(binding, "reset", "resetCountdown", "r")) {
-    return true;
-  }
-  if (ProviderSlotBindingIndex(binding) >= 0) {
-    return (fields & kThemeSpecFieldProviderSlots) != 0;
-  }
-  const int slotIndex = UsageWindowBindingIndex(binding);
-  if (slotIndex >= 0) {
-    return (fields & kThemeSpecFieldUsageWindows) != 0;
-  }
-  if ((fields & kThemeSpecFieldUsageMode) != 0 && StringEqualsAny(binding, "usageMode", "u")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldActivity) != 0 && StringEqualsAny(binding, "activity", "act")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldTime) != 0 && StringEqualsAny(binding, "time", "tm")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldDate) != 0 && StringEqualsAny(binding, "date", "dt")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldSessionTokens) != 0 && StringEqualsAny(binding, "sessionTokens", "st")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldWeekTokens) != 0 && StringEqualsAny(binding, "weekTokens", "wt")) {
-    return true;
-  }
-  if ((fields & kThemeSpecFieldTotalTokens) != 0 && StringEqualsAny(binding, "totalTokens", "tt")) {
-    return true;
-  }
-  return false;
-}
-
-inline bool TextTemplateUsesField(const char* raw, uint32_t fields) {
-  return ((fields & kThemeSpecFieldUsageWindows) != 0 && std::strstr(SafeText(raw), "{usage.") != nullptr) ||
-         ((fields & kThemeSpecFieldUsageWindows) != 0 && (TemplateUsesField(raw, "usageSlot1Label", "us1l") || TemplateUsesField(raw, "usageSlot1Percent", "us1p") || TemplateUsesField(raw, "usageSlot1Reset", "us1r") || TemplateUsesField(raw, "usageSlot1Available", "us1a"))) ||
-         ((fields & kThemeSpecFieldUsageWindows) != 0 && (TemplateUsesField(raw, "usageSlot2Label", "us2l") || TemplateUsesField(raw, "usageSlot2Percent", "us2p") || TemplateUsesField(raw, "usageSlot2Reset", "us2r") || TemplateUsesField(raw, "usageSlot2Available", "us2a"))) ||
-         ((fields & kThemeSpecFieldProviderSlots) != 0 && (TemplateUsesField(raw, "providerSlot1Label", "pv1l") || TemplateUsesField(raw, "providerSlot1Percent", "pv1p") || TemplateUsesField(raw, "providerSlot1Reset", "pv1r") || TemplateUsesField(raw, "providerSlot1Available", "pv1a"))) ||
-         ((fields & kThemeSpecFieldProviderSlots) != 0 && (TemplateUsesField(raw, "providerSlot2Label", "pv2l") || TemplateUsesField(raw, "providerSlot2Percent", "pv2p") || TemplateUsesField(raw, "providerSlot2Reset", "pv2r") || TemplateUsesField(raw, "providerSlot2Available", "pv2a"))) ||
-         ((fields & kThemeSpecFieldProvider) != 0 && TemplateUsesField(raw, "provider", "pr")) ||
-         ((fields & kThemeSpecFieldLabel) != 0 && TemplateUsesField(raw, "label", "providerLabel", "l")) ||
-         ((fields & kThemeSpecFieldSession) != 0 && TemplateUsesField(raw, "session", "sessionPercent", "s")) ||
-         ((fields & kThemeSpecFieldWeekly) != 0 && TemplateUsesField(raw, "weekly", "weeklyPercent", "w")) ||
-         ((fields & kThemeSpecFieldReset) != 0 && TemplateUsesField(raw, "reset", "resetCountdown", "r")) ||
-         ((fields & kThemeSpecFieldUsageMode) != 0 && TemplateUsesField(raw, "usageMode", "u")) ||
-         ((fields & kThemeSpecFieldActivity) != 0 && TemplateUsesField(raw, "activity", "act")) ||
-         ((fields & kThemeSpecFieldTime) != 0 && TemplateUsesField(raw, "time", "tm")) ||
-         ((fields & kThemeSpecFieldDate) != 0 && TemplateUsesField(raw, "date", "dt")) ||
-         ((fields & kThemeSpecFieldSessionTokens) != 0 && TemplateUsesField(raw, "sessionTokens", "st")) ||
-         ((fields & kThemeSpecFieldWeekTokens) != 0 && TemplateUsesField(raw, "weekTokens", "wt")) ||
-         ((fields & kThemeSpecFieldTotalTokens) != 0 && TemplateUsesField(raw, "totalTokens", "tt"));
-}
-
 
 inline uint32_t BindingFieldMask(const char* binding) {
   if (StringEqualsAny(binding, "provider", "pr")) {
@@ -974,7 +1085,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProviderSlots;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
-    return kThemeSpecFieldUsageWindows;
+    const bool reset = std::strcmp(UsageWindowField(binding), "reset") == 0 ||
+                       StringEqualsAny(binding, "us1r", "us2r");
+    return kThemeSpecFieldUsageWindows | (reset ? kThemeSpecFieldUsageWindowReset : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u")) {
     return kThemeSpecFieldUsageMode;
@@ -1000,55 +1113,10 @@ inline uint32_t BindingFieldMask(const char* binding) {
   return 0;
 }
 
+// A placeholder draws exactly what the same key would draw as a binding.
 inline uint32_t TextTemplateFieldMask(const char* raw) {
   uint32_t fields = 0;
-  if (TemplateUsesField(raw, "provider", "pr")) {
-    fields |= kThemeSpecFieldProvider;
-  }
-  if (TemplateUsesField(raw, "label", "providerLabel", "l")) {
-    fields |= kThemeSpecFieldLabel;
-  }
-  if (TemplateUsesField(raw, "session", "sessionPercent", "s")) {
-    fields |= kThemeSpecFieldSession;
-  }
-  if (TemplateUsesField(raw, "weekly", "weeklyPercent", "w")) {
-    fields |= kThemeSpecFieldWeekly;
-  }
-  if (TemplateUsesField(raw, "reset", "resetCountdown", "r")) {
-    fields |= kThemeSpecFieldReset;
-  }
-  if (std::strstr(SafeText(raw), "{usage.") != nullptr ||
-      TemplateUsesField(raw, "usageSlot1Label", "us1l") ||
-      TemplateUsesField(raw, "usageSlot1Percent", "us1p") ||
-      TemplateUsesField(raw, "usageSlot1Reset", "us1r") ||
-      TemplateUsesField(raw, "usageSlot1Available", "us1a") ||
-      TemplateUsesField(raw, "usageSlot2Label", "us2l") ||
-      TemplateUsesField(raw, "usageSlot2Percent", "us2p") ||
-      TemplateUsesField(raw, "usageSlot2Reset", "us2r") ||
-      TemplateUsesField(raw, "usageSlot2Available", "us2a")) {
-    fields |= kThemeSpecFieldUsageWindows;
-  }
-  if (TemplateUsesField(raw, "usageMode", "u")) {
-    fields |= kThemeSpecFieldUsageMode;
-  }
-  if (TemplateUsesField(raw, "activity", "act")) {
-    fields |= kThemeSpecFieldActivity;
-  }
-  if (TemplateUsesField(raw, "time", "tm")) {
-    fields |= kThemeSpecFieldTime;
-  }
-  if (TemplateUsesField(raw, "date", "dt")) {
-    fields |= kThemeSpecFieldDate;
-  }
-  if (TemplateUsesField(raw, "sessionTokens", "st")) {
-    fields |= kThemeSpecFieldSessionTokens;
-  }
-  if (TemplateUsesField(raw, "weekTokens", "wt")) {
-    fields |= kThemeSpecFieldWeekTokens;
-  }
-  if (TemplateUsesField(raw, "totalTokens", "tt")) {
-    fields |= kThemeSpecFieldTotalTokens;
-  }
+  ForEachTemplateKey(raw, [&fields](const char* key) { fields |= BindingFieldMask(key); });
   return fields;
 }
 
@@ -1074,30 +1142,43 @@ inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
   if (scene.ownsMemory) {
     delete[] scene.primitives;
     delete[] scene.stringPool;
+    delete[] scene.providerAssets;
   }
   scene = CompiledThemeSpec{};
 }
 
+// `outOfMemory` separates a spec that does not fit the heap right now from one
+// that can never compile, wherever a caller has to tell the two apart.
 inline bool AllocateCompiledThemeSpecStorage(
     CompiledThemeSpec& scene,
-    const CompiledThemeSpecStoragePlan& plan) {
+    const CompiledThemeSpecStoragePlan& plan,
+    bool* outOfMemory = nullptr) {
   ReleaseCompiledThemeSpec(scene);
   if (plan.primitiveCapacity == 0 || plan.primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
-      plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes) {
-    return false;
-  }
-
-  scene.primitives = new (std::nothrow) CompiledPrimitive[plan.primitiveCapacity];
-  scene.stringPool = plan.stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[plan.stringPoolCapacity];
-  if (scene.primitives == nullptr ||
-      (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr)) {
-    ReleaseCompiledThemeSpec(scene);
+      plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes ||
+      plan.providerAssetCapacity > kMaxCompiledProviderAssets) {
     return false;
   }
 
   scene.ownsMemory = true;
+  scene.primitives = new (std::nothrow) CompiledPrimitive[plan.primitiveCapacity];
+  scene.stringPool = plan.stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[plan.stringPoolCapacity];
+  scene.providerAssets = plan.providerAssetCapacity == 0
+                             ? nullptr
+                             : new (std::nothrow) CompiledProviderAsset[plan.providerAssetCapacity];
+  if (scene.primitives == nullptr ||
+      (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr) ||
+      (plan.providerAssetCapacity > 0 && scene.providerAssets == nullptr)) {
+    ReleaseCompiledThemeSpec(scene);
+    if (outOfMemory != nullptr) {
+      *outOfMemory = true;
+    }
+    return false;
+  }
+
   scene.primitiveCapacity = plan.primitiveCapacity;
   scene.stringPoolCapacity = plan.stringPoolCapacity;
+  scene.providerAssetCapacity = plan.providerAssetCapacity;
   return true;
 }
 
@@ -1115,6 +1196,25 @@ inline void AddCompiledStringStorage(const char* value, size_t& stringBytes) {
     return;
   }
   stringBytes += std::strlen(value) + 1;
+}
+
+inline void AddProviderAssetsStorage(
+    JsonObjectConst providerAssets,
+    size_t& stringBytes,
+    size_t& entryCount) {
+  if (providerAssets.isNull()) {
+    return;
+  }
+  for (JsonPairConst pair : providerAssets) {
+    const char* key = pair.key().c_str();
+    const char* path = JsonStringOrNull(pair.value());
+    if (key == nullptr || key[0] == '\0' || path == nullptr || path[0] == '\0') {
+      continue;
+    }
+    AddCompiledStringStorage(key, stringBytes);
+    AddCompiledStringStorage(path, stringBytes);
+    ++entryCount;
+  }
 }
 
 inline bool CountCompiledThemeSpecStorage(
@@ -1140,15 +1240,35 @@ inline bool CountCompiledThemeSpecStorage(
       JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
       AddCompiledStringStorage(JsonStringOrNull(stateAssets["idle"]), plan.stringPoolCapacity);
       AddCompiledStringStorage(JsonStringOrNull(stateAssets["coding"]), plan.stringPoolCapacity);
+      if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
+        AddProviderAssetsStorage(
+            JsonObjectFor(primitive, "providerAssets", "pa"),
+            plan.stringPoolCapacity,
+            plan.providerAssetCapacity);
+      }
     } else if (PrimitiveTypeIs(primitive, "pixels", "px")) {
       AddCompiledStringStorage(JsonStringFor(primitive, "data", "d"), plan.stringPoolCapacity);
     }
   }
 
-  return plan.stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes;
+  return plan.stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes &&
+         plan.providerAssetCapacity <= kMaxCompiledProviderAssets;
 }
 
-inline const char* CompiledStateAssetPathFor(const CompiledPrimitive& primitive, const FrameData& frame) {
+inline const char* CompiledStateAssetPathFor(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive,
+    const FrameData& frame) {
+  const char* provider = frame.provider == nullptr ? "" : frame.provider;
+  if (provider[0] != '\0' && primitive.providerAssetCount > 0) {
+    for (uint8_t i = 0; i < primitive.providerAssetCount; ++i) {
+      const CompiledProviderAsset& entry = scene.providerAssets[primitive.providerAssetStart + i];
+      if (entry.key != nullptr && std::strcmp(entry.key, provider) == 0 &&
+          entry.path != nullptr && entry.path[0] != '\0') {
+        return entry.path;
+      }
+    }
+  }
   const char* activity = frame.activity == nullptr ? "" : frame.activity;
   if (std::strcmp(activity, "coding") == 0 &&
       primitive.codingAssetPath != nullptr &&
@@ -1159,6 +1279,27 @@ inline const char* CompiledStateAssetPathFor(const CompiledPrimitive& primitive,
     return primitive.idleAssetPath;
   }
   return primitive.assetPath;
+}
+
+inline bool CompiledPrimitiveHasAssetReference(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive) {
+  if (primitive.assetPath != nullptr && primitive.assetPath[0] != '\0') {
+    return true;
+  }
+  if (primitive.idleAssetPath != nullptr && primitive.idleAssetPath[0] != '\0') {
+    return true;
+  }
+  if (primitive.codingAssetPath != nullptr && primitive.codingAssetPath[0] != '\0') {
+    return true;
+  }
+  for (uint8_t i = 0; i < primitive.providerAssetCount; ++i) {
+    const char* path = scene.providerAssets[primitive.providerAssetStart + i].path;
+    if (path != nullptr && path[0] != '\0') {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline const char* CopyCompiledString(CompiledThemeSpec& scene, const char* value) {
@@ -1198,6 +1339,41 @@ inline bool CompileStateAssets(CompiledThemeSpec& scene, JsonObjectConst stateAs
   }
   return true;
 }
+
+inline bool CompileProviderAssets(
+    CompiledThemeSpec& scene,
+    JsonObjectConst providerAssets,
+    CompiledPrimitive& out) {
+  if (providerAssets.isNull()) {
+    return true;
+  }
+  out.providerAssetStart = static_cast<uint8_t>(scene.providerAssetCount);
+  uint8_t count = 0;
+  for (JsonPairConst pair : providerAssets) {
+    const char* key = pair.key().c_str();
+    const char* path = JsonStringOrNull(pair.value());
+    if (key == nullptr || key[0] == '\0' || path == nullptr || path[0] == '\0') {
+      continue;
+    }
+    if (scene.providerAssetCount >= scene.providerAssetCapacity) {
+      return false;
+    }
+    const char* copiedKey = CopyCompiledString(scene, key);
+    const char* copiedPath = CopyCompiledString(scene, path);
+    if (copiedKey == nullptr || copiedPath == nullptr) {
+      return false;
+    }
+    scene.providerAssets[scene.providerAssetCount++] = {copiedKey, copiedPath};
+    ++count;
+  }
+  out.providerAssetCount = count;
+  if (count > 0) {
+    out.liveFields |= kThemeSpecFieldProvider;
+  }
+  return true;
+}
+
+inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimitive& out);
 
 inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive, CompiledPrimitive& out, bool& hasAnimatedAssets) {
   out = CompiledPrimitive{};
@@ -1247,11 +1423,19 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     }
     const char* fit = JsonStringFor(primitive, "fit", "ft");
     out.fitShrink = fit != nullptr && std::strcmp(fit, "shrink") == 0;
+    out.height = JsonIntFor(primitive, "height", "h", 0);
     const char* align = JsonStringFor(primitive, "align", "al");
     if (align != nullptr && std::strcmp(align, "center") == 0) {
       out.align = 1;
     } else if (align != nullptr && std::strcmp(align, "right") == 0) {
       out.align = 2;
+    }
+    const char* valign = JsonStringFor(primitive, "valign", "va");
+    if (valign != nullptr &&
+        (std::strcmp(valign, "middle") == 0 || std::strcmp(valign, "center") == 0)) {
+      out.valign = 1;
+    } else if (valign != nullptr && std::strcmp(valign, "bottom") == 0) {
+      out.valign = 2;
     }
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
@@ -1276,11 +1460,14 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
-    const uint32_t slotField = BindingFieldMask(out.binding) & kThemeSpecFieldUsageWindows;
-    if (slotField != 0) {
-      out.liveFields |= slotField;
+    if (!CompileProgressColorStops(primitive, out)) {
+      return false;
+    }
+    const uint32_t bindingFields = BindingFieldMask(out.binding);
+    if ((bindingFields & kThemeSpecFieldUsageWindows) != 0) {
+      out.liveFields |= bindingFields;
     } else {
-      out.liveFields |= BindingUsesField(out.binding, kThemeSpecFieldWeekly) ? kThemeSpecFieldWeekly : kThemeSpecFieldSession;
+      out.liveFields |= (bindingFields & kThemeSpecFieldWeekly) != 0 ? kThemeSpecFieldWeekly : kThemeSpecFieldSession;
     }
     return out.width > 0 && out.height > 0;
   }
@@ -1307,8 +1494,9 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
         out.width * out.height > kMaxThemeSpecGifPixels) {
       return false;
     }
-    const char* initialPath = CompiledStateAssetPathFor(out, FrameData{});
+    const char* initialPath = CompiledStateAssetPathFor(scene, out, FrameData{});
     return initialPath != nullptr &&
+           initialPath[0] != '\0' &&
            AssetPathLooksGif(initialPath) &&
            (out.idleAssetPath == nullptr || AssetPathLooksGif(out.idleAssetPath)) &&
            (out.codingAssetPath == nullptr || AssetPathLooksGif(out.codingAssetPath));
@@ -1326,15 +1514,25 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     if (!CompileStateAssets(scene, stateAssets, out)) {
       return false;
     }
+    if (!CompileProviderAssets(scene, JsonObjectFor(primitive, "providerAssets", "pa"), out)) {
+      return false;
+    }
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
     out.liveFields |= (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
+    for (uint8_t i = 0; i < out.providerAssetCount; ++i) {
+      const char* path = scene.providerAssets[out.providerAssetStart + i].path;
+      if (AssetPathLooksAnimated(path)) {
+        hasAnimatedAssets = true;
+        break;
+      }
+    }
     hasAnimatedAssets = hasAnimatedAssets ||
                         AssetPathLooksAnimated(out.assetPath) ||
                         AssetPathLooksAnimated(out.idleAssetPath) ||
                         AssetPathLooksAnimated(out.codingAssetPath);
-    return CompiledStateAssetPathFor(out, FrameData{}) != nullptr;
+    return CompiledPrimitiveHasAssetReference(scene, out);
   }
 
   if (PrimitiveTypeIs(primitive, "pixels", "px")) {
@@ -1354,7 +1552,8 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
   return false;
 }
 
-inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scene) {
+inline bool CompileThemeSpecObject(
+    JsonObjectConst spec, CompiledThemeSpec& scene, bool* outOfMemory = nullptr) {
   ReleaseCompiledThemeSpec(scene);
   JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
   if (primitives.isNull() || primitives.size() == 0 || primitives.size() > kMaxCompiledThemeSpecPrimitives) {
@@ -1362,7 +1561,7 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   }
   CompiledThemeSpecStoragePlan storagePlan;
   if (!CountCompiledThemeSpecStorage(spec, storagePlan) ||
-      !AllocateCompiledThemeSpecStorage(scene, storagePlan)) {
+      !AllocateCompiledThemeSpecStorage(scene, storagePlan, outOfMemory)) {
     return false;
   }
 
@@ -1391,16 +1590,23 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   return true;
 }
 
-inline bool CompileThemeSpec(const char* themeSpecRaw, JsonDocument& doc, CompiledThemeSpec& scene) {
+inline bool CompileThemeSpec(
+    const char* themeSpecRaw,
+    JsonDocument& doc,
+    CompiledThemeSpec& scene,
+    bool* outOfMemory = nullptr) {
   if (themeSpecRaw == nullptr || themeSpecRaw[0] == '\0') {
     return false;
   }
   doc.clear();
   const DeserializationError err = deserializeJson(doc, themeSpecRaw);
   if (err) {
+    if (outOfMemory != nullptr) {
+      *outOfMemory = err == DeserializationError::NoMemory;
+    }
     return false;
   }
-  return CompileThemeSpecObject(doc.as<JsonObjectConst>(), scene);
+  return CompileThemeSpecObject(doc.as<JsonObjectConst>(), scene, outOfMemory);
 }
 
 struct Bounds {
@@ -1449,7 +1655,7 @@ inline int ApproxTextWidth(const char* text, int size) {
   return static_cast<int>(std::strlen(text)) * 6 * size;
 }
 
-inline int ApproxTextHeight(int font, int size) {
+inline int VisualFontHeight(int font, int size) {
   if (size <= 0) {
     return 0;
   }
@@ -1473,7 +1679,40 @@ inline int ApproxTextHeight(int font, int size) {
       baseHeight = 8;
       break;
   }
-  return (baseHeight * size) + 4;
+  return baseHeight * size;
+}
+
+inline int ApproxTextHeight(int font, int size) {
+  const int visual = VisualFontHeight(font, size);
+  if (visual <= 0) {
+    return 0;
+  }
+  return visual + 4;
+}
+
+// Vertical box for valign: explicit h/height, else the pre-shrink font lane
+// (ApproxTextHeight includes the same +4 pad as textClipH).
+inline int TextValignBoxHeight(int explicitHeight, int font, int maxSize) {
+  if (explicitHeight > 0) {
+    return explicitHeight;
+  }
+  return ApproxTextHeight(font, maxSize);
+}
+
+// valign 0=top (y is glyph top), 1=middle/center, 2=bottom.
+// glyphHeight is the visual TFT fontHeight after size is chosen — not clipH.
+inline int AlignedTextY(int boxY, int boxHeight, int glyphHeight, int valign) {
+  if (valign == 0 || boxHeight <= 0) {
+    return boxY;
+  }
+  const int glyph = glyphHeight > 0 ? glyphHeight : 0;
+  if (valign == 1) {
+    return boxY + (boxHeight - glyph) / 2;
+  }
+  if (valign == 2) {
+    return boxY + boxHeight - glyph;
+  }
+  return boxY;
 }
 
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
@@ -1486,6 +1725,75 @@ inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const 
     return ClampPct(frame.weekly);
   }
   return ClampPct(frame.session);
+}
+
+// colorStops are authored against remaining-style percent (high = healthy).
+// Frames in usageMode=used send the inverted number, so match 100-percent.
+inline int RemainingStyleProgressPercent(int percent, const char* usageMode) {
+  const int clamped = ClampPct(percent);
+  if (usageMode != nullptr && std::strcmp(usageMode, "used") == 0) {
+    return 100 - clamped;
+  }
+  return clamped;
+}
+
+inline uint16_t ResolveProgressFillColor(
+    const CompiledPrimitive& primitive,
+    int percent,
+    const char* usageMode) {
+  const int remainingStyle = RemainingStyleProgressPercent(percent, usageMode);
+  for (uint8_t i = 0; i < primitive.colorStopCount; ++i) {
+    if (remainingStyle >= primitive.colorStops[i].gte) {
+      return primitive.colorStops[i].color;
+    }
+  }
+  return primitive.color;
+}
+
+inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimitive& out) {
+  JsonArrayConst stops = JsonArrayFor(primitive, "colorStops", "cs");
+  if (stops.isNull() || stops.size() == 0) {
+    return true;
+  }
+  if (stops.size() > kMaxCompiledColorStops) {
+    return false;
+  }
+  CompiledColorStop compiled[kMaxCompiledColorStops];
+  uint8_t count = 0;
+  for (JsonVariantConst entry : stops) {
+    JsonObjectConst stop = entry.as<JsonObjectConst>();
+    if (stop.isNull()) {
+      return false;
+    }
+    const int gte = stop["gte"] | -1;
+    const char* color = JsonStringOrNull(stop["color"]);
+    if (color == nullptr || color[0] == '\0') {
+      color = JsonStringOrNull(stop["c"]);
+    }
+    if (gte < 0 || gte > 100 || color == nullptr || color[0] == '\0') {
+      return false;
+    }
+    compiled[count].gte = static_cast<int16_t>(gte);
+    compiled[count].color = ParseColor(color, 0xFFFF);
+    ++count;
+  }
+  for (uint8_t i = 0; i + 1 < count; ++i) {
+    for (uint8_t j = static_cast<uint8_t>(i + 1); j < count; ++j) {
+      if (compiled[j].gte > compiled[i].gte) {
+        const CompiledColorStop tmp = compiled[i];
+        compiled[i] = compiled[j];
+        compiled[j] = tmp;
+      }
+    }
+  }
+  out.colorStopCount = count;
+  for (uint8_t i = 0; i < count; ++i) {
+    out.colorStops[i] = compiled[i];
+  }
+  if (count > 0) {
+    out.liveFields |= kThemeSpecFieldUsageMode;
+  }
+  return true;
 }
 
 inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, const FrameData& frame) {
@@ -1502,17 +1810,21 @@ inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, 
   return frame.sessionUnavailable;
 }
 
-inline bool CompiledPrimitiveIsAnimated(const CompiledPrimitive& primitive, const FrameData& frame) {
+inline bool CompiledPrimitiveIsAnimated(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive,
+    const FrameData& frame) {
   if (primitive.kind == PrimitiveKind::Gif) {
     return true;
   }
   if (primitive.kind == PrimitiveKind::Sprite) {
-    return AssetPathLooksAnimated(CompiledStateAssetPathFor(primitive, frame));
+    return AssetPathLooksAnimated(CompiledStateAssetPathFor(scene, primitive, frame));
   }
   return false;
 }
 
 inline bool CompiledPrimitiveBounds(
+    const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive,
     const FrameData& frame,
     bool requireStableTextBounds,
@@ -1531,7 +1843,7 @@ inline bool CompiledPrimitiveBounds(
   }
 
   if (primitive.kind == PrimitiveKind::Sprite) {
-    const char* assetPath = CompiledStateAssetPathFor(primitive, frame);
+    const char* assetPath = CompiledStateAssetPathFor(scene, primitive, frame);
     if (assetPath == nullptr || assetPath[0] == '\0') {
       return false;
     }
@@ -1544,7 +1856,15 @@ inline bool CompiledPrimitiveBounds(
     if (primitive.size <= 0) {
       return false;
     }
-    bounds.height = ApproxTextHeight(primitive.font, primitive.size);
+    const int visualGlyph = VisualFontHeight(primitive.font, primitive.size);
+    const int clipH = ApproxTextHeight(primitive.font, primitive.size);
+    const int boxH = TextValignBoxHeight(primitive.height, primitive.font, primitive.size);
+    const int alignedY = AlignedTextY(primitive.y, boxH, visualGlyph, primitive.valign);
+    const int boxBottom = primitive.y + boxH;
+    const int glyphBottom = alignedY + clipH;
+    bounds.y = alignedY < primitive.y ? alignedY : primitive.y;
+    const int bottom = boxBottom > glyphBottom ? boxBottom : glyphBottom;
+    bounds.height = bottom - bounds.y;
     bounds.width = primitive.maxWidth;
     if (bounds.width <= 0) {
       if (requireStableTextBounds) {
@@ -1566,7 +1886,11 @@ inline bool CompiledPrimitiveBounds(
   return false;
 }
 
-inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const FrameData& frame, Sink& sink) {
+inline bool DrawCompiledPrimitive(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive,
+    const FrameData& frame,
+    Sink& sink) {
   if (primitive.usageSlot > 0 &&
       !UsageWindowOwnerAvailableFor(frame, static_cast<int>(primitive.usageSlot - 1))) {
     return false;
@@ -1599,6 +1923,8 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.maxWidth = primitive.maxWidth;
     cmd.fitShrink = primitive.fitShrink;
     cmd.align = primitive.align;
+    cmd.valign = primitive.valign;
+    cmd.height = primitive.height;
     if (cmd.size <= 0) {
       return false;
     }
@@ -1630,7 +1956,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.segments = primitive.segments;
     cmd.segmentGap = primitive.segmentGap;
     cmd.borderRadius = primitive.borderRadius;
-    cmd.fillColor = primitive.color;
+    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent, frame.usageMode);
     cmd.bgColor = primitive.bg;
     cmd.borderColor = primitive.border;
     if (cmd.width <= 0 || cmd.height <= 0) {
@@ -1646,7 +1972,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.y = primitive.y;
     cmd.width = primitive.width;
     cmd.height = primitive.height;
-    cmd.assetPath = CompiledStateAssetPathFor(primitive, frame);
+    cmd.assetPath = CompiledStateAssetPathFor(scene, primitive, frame);
     cmd.hasBg = primitive.hasBg;
     cmd.bg = primitive.bg;
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0' || cmd.width <= 0 || cmd.height <= 0) {
@@ -1662,7 +1988,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.y = primitive.y;
     cmd.width = primitive.width;
     cmd.height = primitive.height;
-    cmd.assetPath = CompiledStateAssetPathFor(primitive, frame);
+    cmd.assetPath = CompiledStateAssetPathFor(scene, primitive, frame);
     cmd.hasBg = primitive.hasBg;
     cmd.bg = primitive.bg;
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0') {
@@ -1706,7 +2032,7 @@ inline bool RenderCompiledThemeSpec(const CompiledThemeSpec& scene, const FrameD
   }
   sink.FillScreen(scene.bgColor);
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    (void)DrawCompiledPrimitive(scene.primitives[i], frame, sink);
+    (void)DrawCompiledPrimitive(scene, scene.primitives[i], frame, sink);
     RenderYield();
   }
   return true;
@@ -1718,8 +2044,8 @@ inline bool RenderCompiledThemeSpecStaticPrimitives(const CompiledThemeSpec& sce
   }
   sink.FillScreen(scene.bgColor);
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    if (!CompiledPrimitiveIsAnimated(scene.primitives[i], frame)) {
-      (void)DrawCompiledPrimitive(scene.primitives[i], frame, sink);
+    if (!CompiledPrimitiveIsAnimated(scene, scene.primitives[i], frame)) {
+      (void)DrawCompiledPrimitive(scene, scene.primitives[i], frame, sink);
       RenderYield();
     }
   }
@@ -1730,8 +2056,8 @@ inline bool RenderCompiledThemeSpecAnimatedPrimitives(const CompiledThemeSpec& s
   bool rendered = false;
   sink.PrimeBackground(scene.bgColor);
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    if (CompiledPrimitiveIsAnimated(scene.primitives[i], frame)) {
-      rendered = DrawCompiledPrimitive(scene.primitives[i], frame, sink) || rendered;
+    if (CompiledPrimitiveIsAnimated(scene, scene.primitives[i], frame)) {
+      rendered = DrawCompiledPrimitive(scene, scene.primitives[i], frame, sink) || rendered;
     }
   }
   return rendered;
@@ -1777,16 +2103,16 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     Bounds primitiveBounds;
     const CompiledPrimitive& primitive = scene.primitives[i];
-    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+    if (CompiledPrimitiveBounds(scene, primitive, frame, false, primitiveBounds) &&
         BoundsOverlap(region, primitiveBounds)) {
-      if (CompiledPrimitiveIsAnimated(primitive, frame)) {
+      if (CompiledPrimitiveIsAnimated(scene, primitive, frame)) {
         if (skippedAnimatedOverlap != nullptr) {
           *skippedAnimatedOverlap = true;
         }
         rendered = true;
         continue;
       }
-      rendered = DrawCompiledPrimitive(primitive, frame, sink) || rendered;
+      rendered = DrawCompiledPrimitive(scene, primitive, frame, sink) || rendered;
       RenderYield();
     }
   }
@@ -1832,7 +2158,7 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     }
     hasAffectedPrimitive = true;
     Bounds primitiveBounds;
-    if (!CompiledPrimitiveBounds(primitive, frame, true, primitiveBounds)) {
+    if (!CompiledPrimitiveBounds(scene, primitive, frame, true, primitiveBounds)) {
       if (error != nullptr) {
         *error = "unstable_dirty_bounds";
       }
@@ -1856,12 +2182,12 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
   bool dirtyBridgesUnchangedAnimation = false;
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const CompiledPrimitive& primitive = scene.primitives[i];
-    if (!CompiledPrimitiveIsAnimated(primitive, frame) ||
+    if (!CompiledPrimitiveIsAnimated(scene, primitive, frame) ||
         (primitive.liveFields & changedFields) != 0) {
       continue;
     }
     Bounds primitiveBounds;
-    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+    if (CompiledPrimitiveBounds(scene, primitive, frame, false, primitiveBounds) &&
         BoundsOverlap(dirty, primitiveBounds)) {
       dirtyBridgesUnchangedAnimation = true;
       break;
@@ -1876,7 +2202,7 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
         continue;
       }
       Bounds primitiveBounds;
-      if (!CompiledPrimitiveBounds(primitive, frame, true, primitiveBounds)) {
+      if (!CompiledPrimitiveBounds(scene, primitive, frame, true, primitiveBounds)) {
         if (error != nullptr) {
           *error = "unstable_dirty_bounds";
         }
@@ -1909,11 +2235,11 @@ inline bool AnyAnimatedCompiledPrimitiveOverlaps(
     const Bounds& region) {
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const CompiledPrimitive& primitive = scene.primitives[i];
-    if (!CompiledPrimitiveIsAnimated(primitive, frame)) {
+    if (!CompiledPrimitiveIsAnimated(scene, primitive, frame)) {
       continue;
     }
     Bounds primitiveBounds;
-    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+    if (CompiledPrimitiveBounds(scene, primitive, frame, false, primitiveBounds) &&
         BoundsOverlap(region, primitiveBounds)) {
       return true;
     }

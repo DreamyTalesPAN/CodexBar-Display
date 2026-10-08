@@ -20,6 +20,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -36,9 +37,16 @@ type Options struct {
 	Wake                   <-chan struct{}
 	PauseDeviceWrites      func() bool
 	BeginDeviceWrite       func() func()
+	// Dashboard belongs to the app runtime, across display transport restarts.
+	Dashboard codexbar.DashboardServe
+	// RenderWake reselects from existing collector snapshots without a provider fetch.
+	RenderWake <-chan struct{}
 }
 
 const (
+	// Firmware confirms or rolls back a WiFi switch within one minute of its
+	// reboot (no setup AP since #489), plus join/reboot time.
+	wifiTransitionQuietPeriod  = 2 * time.Minute
 	defaultInterval            = 2 * time.Second
 	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second
@@ -66,6 +74,7 @@ const (
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
+var ErrConnectionModeChanged = errors.New("VibeTV connection mode changed")
 
 type runtimeErrorKind errcode.Code
 
@@ -131,6 +140,7 @@ type runtimeDeps struct {
 	now                   func() time.Time
 	after                 func(time.Duration) <-chan time.Time
 	resolvePort           func(string) (string, error)
+	resolveUSBDevice      func(string, string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
@@ -254,6 +264,11 @@ type runtimeState struct {
 	lastActivity           string
 	lastActivityCause      string
 	deviceTarget           string
+	// providerDisplayFallback names the Manual selection that currently names
+	// no provider CodexBar still collects, so the runtime shows the remaining
+	// providers instead of a blank screen. Tied to that selection: a later
+	// Manual choice must not inherit the fallback frame.
+	providerDisplayFallback string
 }
 
 type cycleResult struct {
@@ -305,13 +320,14 @@ func Run(ctx context.Context, opts Options) error {
 // RunWithLogger runs the display worker with an optional injected logger. A
 // nil logger preserves the legacy stdout behavior used by standalone daemons.
 func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any)) error {
-	transportName := normalizeTransportName(opts.Transport)
+	transportName := configuredConnectionMode(opts.Transport)
 	if transportName == "" {
 		transportName = "usb"
 	}
 	if transportName != "usb" && transportName != "wifi" {
 		return fmt.Errorf("unsupported transport %q", opts.Transport)
 	}
+	opts.Transport = transportName
 	if transportName == "wifi" {
 		return runWithDeps(ctx, opts, runtimeDeps{
 			transport:         transportlayer.NewWiFiTransport(),
@@ -322,11 +338,11 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		})
 	}
 
-	sender := usb.NewSender()
-	defer sender.Close()
+	defer usb.CloseDefaultSender()
 	return runWithDeps(ctx, opts, runtimeDeps{
-		deviceCaps:        sender.DeviceCapabilities,
-		sendLine:          sender.Send,
+		deviceCaps:        usb.GetDeviceCapabilities,
+		resolveUSBDevice:  usb.ResolveVibeTVPort,
+		sendLine:          usb.SendLine,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
 		startDashboard:    codexbar.StartDashboardServe,
@@ -343,8 +359,13 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
-	if !opts.Once && deps.startDashboard != nil {
-		deps.dashboard = deps.startDashboard(ctx, deps.logf)
+	if opts.Dashboard != nil {
+		deps.dashboard = opts.Dashboard
+	} else if !opts.Once && deps.startDashboard != nil {
+		// Standalone workers own their serve; the app runtime supplies one above.
+		dashboardCtx, cancelDashboard := context.WithCancel(ctx)
+		defer cancelDashboard()
+		deps.dashboard = deps.startDashboard(dashboardCtx, deps.logf)
 		if deps.dashboard != nil {
 			info := deps.dashboard.Info()
 			deps.logf("codexbar-dashboard event=supervisor-started refreshInterval=%s\n", info.RefreshInterval)
@@ -352,10 +373,12 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 	var collectorWake <-chan struct{}
 	var wakeAfterCollect func()
-	if !syncCycleMode && opts.Wake != nil {
+	if !syncCycleMode {
 		collectorWakeCh := make(chan struct{}, 1)
 		cycleWakeCh := make(chan struct{}, 1)
-		go forwardWake(ctx, opts.Wake, collectorWakeCh)
+		if opts.Wake != nil {
+			go forwardWake(ctx, opts.Wake, collectorWakeCh)
+		}
 		collectorWake = collectorWakeCh
 		wakeAfterCollect = func() {
 			signalWake(cycleWakeCh)
@@ -459,6 +482,7 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	collector := newProviderCollector(deps, opts)
 	collector.wake = wake
 	collector.afterWakeCollect = afterWakeCollect
+	collector.afterFirstCollect = afterWakeCollect
 	collectorCtx, cancel := context.WithCancel(ctx)
 	collector.start(collectorCtx)
 	deps.logf("collector started transport=%s interval=%s timeout=%s providers=%s mode=fetch-all\n",
@@ -474,10 +498,35 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
+	var wifiQuietSince time.Time
 	deviceWritesPaused := false
 
 	for {
-		if opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites() {
+		// Joining WiFi must leave USB alone, including discovery: reopening the
+		// serial port can reset the board before it finishes joining.
+		waitingForWiFi := false
+		if deps.transportName == "usb" {
+			cfg, ok := loadRuntimeConfig(deps)
+			if ok && cfg.WiFiTransitionPending() {
+				now := deps.now()
+				if started := time.Unix(cfg.WiFiTransitionStartedAt, 0); cfg.WiFiTransitionStartedAt > 0 && !started.After(now) &&
+					(wifiQuietSince.IsZero() || started.After(wifiQuietSince)) {
+					wifiQuietSince = started
+				}
+				if wifiQuietSince.IsZero() {
+					wifiQuietSince = now
+				}
+				waitingForWiFi = now.Sub(wifiQuietSince) < wifiTransitionQuietPeriod
+				if !waitingForWiFi {
+					// One bounded probe lets persistActiveCableIdentity observe rollback.
+					// If the device is still absent/joining, leave another full quiet window.
+					wifiQuietSince = now
+				}
+			} else {
+				wifiQuietSince = time.Time{}
+			}
+		}
+		if waitingForWiFi || (opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites()) {
 			if !deviceWritesPaused {
 				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
 				deviceWritesPaused = true
@@ -486,6 +535,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-opts.Wake:
+			case <-opts.RenderWake:
 			case <-deps.after(opts.Interval):
 			}
 			continue
@@ -508,6 +558,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 
 		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
 		if opts.Once {
+			return err
+		}
+		if errors.Is(err, ErrConnectionModeChanged) {
 			return err
 		}
 
@@ -552,6 +605,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-opts.Wake:
+		case <-opts.RenderWake:
 		case <-deps.after(waitFor):
 		}
 	}
@@ -638,6 +692,62 @@ func normalizeTransportName(raw string) string {
 	return strings.TrimSpace(strings.ToLower(raw))
 }
 
+func configuredConnectionMode(fallback string) string {
+	fallback = normalizeTransportName(fallback)
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return fallback
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return fallback
+	}
+	if transport := transportForConnectionMode(cfg.ConnectionMode); transport != "" {
+		return transport
+	}
+	if cfg.WiFiTransitionPending() {
+		return "usb"
+	}
+	// Configs written before connectionMode existed could only describe WiFi.
+	// Preserve that proven customer choice instead of applying a newer Cable
+	// launch fallback to an upgraded legacy installation.
+	if strings.TrimSpace(cfg.DeviceTarget) != "" {
+		return "wifi"
+	}
+	return fallback
+}
+
+func transportForConnectionMode(mode string) string {
+	switch runtimeconfig.NormalizeConnectionMode(mode) {
+	case "cable":
+		return "usb"
+	case "wifi":
+		return "wifi"
+	default:
+		return ""
+	}
+}
+
+func connectionModeChanged(deps runtimeDeps) bool {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok {
+		return false
+	}
+	transport := transportForConnectionMode(cfg.ConnectionMode)
+	if cfg.WiFiTransitionPending() {
+		transport = "usb"
+	}
+	return transport != "" && transport != deps.transportName
+}
+
+func cableWriteBlocked(deps runtimeDeps) bool {
+	if deps.transportName != "usb" {
+		return false
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	return ok && cfg.CableAutoBindDisabled
+}
+
 func requestedDeviceTarget(opts Options) string {
 	if normalizeTransportName(opts.Transport) == "wifi" {
 		if target := strings.TrimSpace(opts.Target); target != "" {
@@ -683,6 +793,9 @@ func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 }
 
 func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
+	if connectionModeChanged(deps) {
+		return "", protocol.DeviceCapabilities{}, 0, ErrConnectionModeChanged
+	}
 	requestedPort = effectiveCycleTarget(requestedPort, state, deps)
 	if deps.transportName == "wifi" && isLegacyMDNSTarget(requestedPort) {
 		legacyErr := errors.New("legacy mDNS target requires IP migration")
@@ -691,7 +804,17 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 	}
-	port, err := resolvePortWithFallback(requestedPort, deps)
+	var port string
+	var err error
+	if deps.transportName == "usb" && deps.resolveUSBDevice != nil {
+		expectedDeviceID := ""
+		if cfg, ok := loadRuntimeConfig(deps); ok {
+			expectedDeviceID = strings.TrimSpace(cfg.DeviceID)
+		}
+		port, err = deps.resolveUSBDevice(requestedPort, expectedDeviceID)
+	} else {
+		port, err = resolvePortWithFallback(requestedPort, deps)
+	}
 	if err != nil {
 		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
 		if deps.transportName == "wifi" {
@@ -728,8 +851,81 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 		}
 	}
 
+	persistActiveCableIdentity(caps, deps)
 	rememberActiveWiFiTarget(port, caps, state)
 	return port, caps, maxFrameBytesForCaps(caps), nil
+}
+
+func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDeps) {
+	deviceID := strings.TrimSpace(caps.DeviceID)
+	if deps.transportName != "usb" || !caps.Known || deviceID == "" ||
+		!strings.EqualFold(caps.ActiveTransport, "usb") ||
+		!strings.EqualFold(caps.ConnectionMode, "cable") {
+		return
+	}
+	home, err := deps.homeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return
+	}
+	persisted := false
+	rolledBackFromWiFi := false
+	err = runtimeconfig.WithConfigLock(home, func() error {
+		cfg, err := deps.loadConfig(home)
+		if err != nil {
+			return err
+		}
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" {
+			return nil
+		}
+		rolledBackFromWiFi = cfg.WiFiTransitionPending() &&
+			strings.EqualFold(cfg.DeviceID, deviceID)
+		if cfg.CableAutoBindDisabled && !rolledBackFromWiFi {
+			return nil
+		}
+		if savedID := strings.TrimSpace(cfg.DeviceID); savedID != "" && !strings.EqualFold(savedID, deviceID) {
+			deps.logf("runtime event=cable-identity-persist-rejected expected=%s observed=%s\n", savedID, deviceID)
+			return nil
+		}
+		supportedTransports := append([]string(nil), caps.SupportedTransportChannels...)
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" &&
+			strings.EqualFold(cfg.DeviceID, deviceID) &&
+			strings.Join(cfg.DeviceTransports, "\x00") == strings.Join(supportedTransports, "\x00") {
+			return nil
+		}
+		freshSetup := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
+			strings.TrimSpace(cfg.DeviceID) == "" &&
+			strings.TrimSpace(cfg.DeviceTarget) == "" &&
+			len(cfg.KnownDevices) == 0
+		cfg.ConnectionMode = "cable"
+		cfg.DeviceID = deviceID
+		cfg.DeviceTransports = supportedTransports
+		if freshSetup {
+			cfg.SetProviderSelectionSetupComplete(false)
+			cfg.ConnectionModeChoiceRequired = true
+			cfg.CableAutoBindDisabled = true
+		}
+		if rolledBackFromWiFi {
+			cfg.ConnectionModeChoiceRequired = true
+			cfg.CableAutoBindDisabled = false
+		}
+		if err := deps.saveConfig(home, cfg); err != nil {
+			return err
+		}
+		persisted = true
+		return nil
+	})
+	if err != nil {
+		deps.logf("runtime event=cable-identity-persist-failed deviceId=%s err=%v\n", deviceID, err)
+		return
+	}
+	if !persisted {
+		return
+	}
+	if rolledBackFromWiFi {
+		deps.logf("runtime event=wifi-transition-rolled-back deviceId=%s\n", deviceID)
+	} else {
+		deps.logf("runtime event=cable-identity-persisted deviceId=%s\n", deviceID)
+	}
 }
 
 func wifiDeviceHelloRuntimeError(target string, err error) *RuntimeError {
@@ -768,16 +964,26 @@ func persistActiveWiFiTarget(target string, deps runtimeDeps) {
 		return
 	}
 	if home, err := deps.homeDir(); err == nil && strings.TrimSpace(home) != "" {
-		if cfg, err := deps.loadConfig(home); err == nil && strings.TrimSpace(cfg.DeviceID) != "" {
+		var deviceID string
+		err := runtimeconfig.WithConfigLock(home, func() error {
+			cfg, err := deps.loadConfig(home)
+			if err != nil || strings.TrimSpace(cfg.DeviceID) == "" {
+				return err
+			}
 			if isSameTarget(cfg.DeviceTarget, target) {
-				return
+				return nil
 			}
 			cfg.DeviceTarget = target
 			if err := deps.saveConfig(home, cfg); err != nil {
-				deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
-				return
+				return err
 			}
-			deps.logf("runtime event=wifi-target-persisted target=%s deviceId=%s\n", target, cfg.DeviceID)
+			deviceID = cfg.DeviceID
+			return nil
+		})
+		if err != nil {
+			deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
+		} else if strings.TrimSpace(deviceID) != "" {
+			deps.logf("runtime event=wifi-target-persisted target=%s deviceId=%s\n", target, deviceID)
 		}
 	}
 }
@@ -994,13 +1200,19 @@ func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
 	return latest.Compare(current) > 0
 }
 
-func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
+// providerOffFunc reports whether authoritative inventory lists a provider as
+// switched off, and whether that comes from the latest collection's own read.
+// Nil means no inventory is known, which never confirms it.
+type providerOffFunc func(provider string) (off, current bool)
+
+func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, providerOff providerOffFunc, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
 	result := cycleResult{
 		selectionReason: emptyReason,
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
-	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
+	invalidateLastGoodTerminal(state, allProviders, deps)
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps, providerOff)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -1048,7 +1260,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	return result
 }
 
-func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) []codexbar.ParsedFrame {
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc) []codexbar.ParsedFrame {
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok || cfg.ProviderDisplay == nil {
 		return preferAvailableProviders(providers)
@@ -1067,6 +1279,36 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			allowed[providerID] = struct{}{}
 		}
 	}
+	selectionKey := providerDisplaySelectionKey(cfg.ProviderDisplay.ProviderIDs)
+	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
+			filtered = append(filtered, provider)
+		}
+	}
+	// A Manual provider that was turned off in CodexBar is no longer
+	// collected at all. Filtering by it would leave the device blank although
+	// other providers have usage, so fall back to them like Automatic until
+	// the pinned provider is switched on again. Only authoritative inventory
+	// may say it is off: CodexBar can omit an enabled provider for a cycle, and
+	// that must stay the pinned provider's unavailable state. A running
+	// fallback survives one failed inventory read; starting one needs a
+	// current read.
+	fallbackActive := state != nil && selectionKey != "" && state.providerDisplayFallback == selectionKey
+	if len(filtered) == 0 && len(providers) > 0 && fixedSelectionDisabled(allowed, providerOff, fallbackActive) {
+		if state != nil && state.providerDisplayFallback != selectionKey {
+			state.providerDisplayFallback = selectionKey
+			if deps.logf != nil {
+				deps.logf("runtime event=provider-display-fallback reason=fixed-provider-not-collected\n")
+			}
+		}
+		return preferAvailableProviders(providers)
+	}
+	// Not confirmed off (any more): the pinned provider's own state applies,
+	// including a temporary omission, which stays visibly unavailable.
+	if state != nil {
+		state.providerDisplayFallback = ""
+	}
 	if state != nil && state.hasLastGood {
 		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
 			state.lastGood = protocol.Frame{}
@@ -1080,13 +1322,33 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			}
 		}
 	}
-	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
-	for _, provider := range providers {
-		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
-			filtered = append(filtered, provider)
+	return filtered
+}
+
+func providerDisplaySelectionKey(providerIDs []string) string {
+	keys := make([]string, 0, len(providerIDs))
+	for _, providerID := range providerIDs {
+		if key := normalizeProviderKey(providerID); key != "" {
+			keys = append(keys, key)
 		}
 	}
-	return filtered
+	if len(keys) == 0 {
+		return ""
+	}
+	return "fixed:" + strings.Join(keys, ",")
+}
+
+func fixedSelectionDisabled(allowed map[string]struct{}, providerOff providerOffFunc, acceptOlderInventory bool) bool {
+	if providerOff == nil || len(allowed) == 0 {
+		return false
+	}
+	for providerID := range allowed {
+		off, current := providerOff(providerID)
+		if !off || (!current && !acceptOlderInventory) {
+			return false
+		}
+	}
+	return true
 }
 
 func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
@@ -1340,6 +1602,12 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		}
 	}
 	frame = marshaledFrame
+	// A mode change can arrive while provider collection is running. Recheck
+	// before the only device write so an old transport never sends application
+	// data after the new customer choice was committed.
+	if connectionModeChanged(deps) {
+		return ErrConnectionModeChanged
+	}
 
 	sendTarget, authErr := sendTargetWithRuntimeAuth(port, deps)
 	if authErr != nil {
@@ -1363,6 +1631,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		if release := deps.beginDeviceWrite(); release != nil {
 			releaseDeviceWrite = release
 		}
+	}
+	if cableWriteBlocked(deps) {
+		releaseDeviceWrite()
+		deps.logf("runtime event=cable-frame-skipped reason=connection-choice-required\n")
+		return nil
 	}
 	sendErr := deps.sendLine(sendTarget, line)
 	releaseDeviceWrite()
@@ -1392,8 +1665,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("%s", SentFrameLogLine(publicPort, deps.transportName, caps.DeviceID, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame, result.selectionReason, result.selectionDetail, result.activityDetail))
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1408,6 +1680,15 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 
 	return nil
+}
+
+// SentFrameLogLine is the one writer of the "sent frame" line. The Companion
+// API reads the frame back from it for the preview
+// (frameFromDisplayStreamLogLine), so a field missing here is a field the
+// preview sees as empty; its test formats lines with this function.
+func SentFrameLogLine(port, transport, deviceID, source string, fresh bool, frame protocol.Frame, reason, detail, activityDetail string) string {
+	return fmt.Sprintf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t usageUnavailable=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q resetTrust=%s resetTrustSecs=%d resetSource=%q\n",
+		port, transport, deviceID, source, fresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.UsageUnavailable, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, reason, detail, activityDetail, frame.ResetTrust, frame.ResetTrustSec, frame.ResetSource)
 }
 
 func usageSlotsLogValue(slots []protocol.UsageSlot) string {
@@ -1585,6 +1866,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			allProviders,
 			deps.now(),
 			deps,
+			nil,
 			"select-provider",
 			"fetch-error",
 			"",
@@ -1613,11 +1895,18 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		allProviders,
 		now,
 		deps,
+		collector.providerOffByInventory,
 		"select-provider",
 		"collector-empty",
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
 		"collector",
 	)
+	first := collector.firstCollectState(now)
+	if !state.hasLastGood && first.bounded && !first.settled && (first.warming || !first.started) &&
+		(result.failureKind == runtimeErrorNoProviders || !result.usageFresh) {
+		deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
+		return nil
+	}
 
 	// Before the first collection since runtime start completes, a no-providers
 	// verdict is warm-up, not an answer about this Mac: the collector simply
@@ -1629,15 +1918,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	// and keeps the immediate no-providers verdict: the hosted guest matrix
 	// greps exactly that code from a provider-less one-shot run.
 	if result.failureKind == runtimeErrorNoProviders && !state.hasLastGood {
-		if first := collector.firstCollectState(now); first.bounded && !first.settled {
-			if first.warming || !first.started {
-				// Warm-up, or the device gate has not let the collector ask
-				// CodexBar even once (pairing can happen long after runtime
-				// start; the next tick or wake starts the collection and
-				// re-anchors the window). Neither is an answer about this Mac.
-				deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
-				return nil
-			}
+		if first.bounded && !first.settled {
 			fetchErr := first.fetchErr
 			failureKind := runtimeErrorKindFromFetchErr(fetchErr)
 			if fetchErr == nil {
@@ -1684,16 +1965,24 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 }
 
 func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
-	if state == nil || !state.hasLastGood {
+	if state == nil {
 		return
 	}
 	cfg, ok := loadRuntimeConfig(deps)
-	if !ok || cfg.ProviderDisplay == nil {
+	if !ok || cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic" {
+		// Leaving Manual ends its fallback: a later Manual choice of the same
+		// provider is a new choice and must not inherit the fallback frame.
+		state.providerDisplayFallback = ""
 		return
 	}
-	if cfg.ProviderDisplay.Mode == "automatic" {
+	if !state.hasLastGood {
 		return
 	}
+	if state.providerDisplayFallback != "" &&
+		state.providerDisplayFallback == providerDisplaySelectionKey(cfg.ProviderDisplay.ProviderIDs) {
+		return
+	}
+	state.providerDisplayFallback = ""
 	provider := normalizeProviderKey(state.lastGood.Provider)
 	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
 		if normalizeProviderKey(providerID) == provider {
@@ -1724,6 +2013,33 @@ func clearPersistedDisplayFrame(state *runtimeState) error {
 		state.hasPersistedGood = false
 	}
 	return clearPersistedLastGood()
+}
+
+// invalidateLastGoodTerminal drops the runtime and persisted last-good frame
+// when CodexBar reported its provider as permanently unsupported; the bounded
+// retention exists for transient failures only.
+func invalidateLastGoodTerminal(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) {
+	if state == nil || !state.hasLastGood {
+		return
+	}
+	provider := normalizeProviderKey(state.lastGood.Provider)
+	for _, parsed := range providers {
+		if !parsed.Terminal || normalizeProviderKey(parsed.Provider) != provider {
+			continue
+		}
+		state.lastGood = protocol.Frame{}
+		state.lastGoodAt = time.Time{}
+		state.hasLastGood = false
+		if state.selector != nil {
+			state.selector.SetCurrentProvider("")
+		}
+		if err := clearPersistedDisplayFrame(state); err != nil {
+			deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+			return
+		}
+		deps.logf("runtime event=last-good-cleared provider=%s reason=provider-terminal\n", provider)
+		return
+	}
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
@@ -1931,7 +2247,7 @@ func lastGoodSnapshotPath() string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
+	return runtimepaths.Path(home, "last-good-frame.json")
 }
 
 func collectorInterval(renderInterval time.Duration) time.Duration {
@@ -2107,12 +2423,10 @@ func providerSnapshotMaxAge() time.Duration {
 
 func collectorWarmupMaxAge() time.Duration {
 	// Bound the warm-up window in which a cycle waits for the first collection
-	// instead of settling on a provider verdict. It must outlast a first read
-	// on a slow Mac, or a fresh one reports a fabricated collection error
-	// mid-setup. Generous on purpose: it only delays a "no providers" verdict,
-	// and the first-run inventory that used to make it necessary -- a 90s-4min
-	// probe holding the config bootstrap -- is gone.
-	const fallback = 5 * time.Minute
+	// instead of settling on a provider verdict. The bound must outlast the
+	// five-minute CodexBar command budget plus the observed dashboard recovery
+	// after that command. A definitive answer still ends warm-up immediately.
+	const fallback = 7 * time.Minute
 	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
 	if raw == "" {
 		return fallback
@@ -2145,7 +2459,7 @@ func providerSnapshotsPath() string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "provider-snapshots.json")
+	return runtimepaths.Path(home, "provider-snapshots.json")
 }
 
 func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt time.Time) error {

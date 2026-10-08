@@ -1,0 +1,57 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "tiny-office",
+  "name": "Tiny Office",
+  "version": "0.6.0",
+  "minFirmware": "1.0.42",
+  "usage": "live",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "text-valign-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/u/to-7-d7799cec.json",
+    "file": "theme.json",
+    "bytes": 1624,
+    "sha256": "d7799cec68ef4151e1d908155696922a4aee298539175d8cad8cdd1cfdd835d7",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/to-bg.cbi",
+      "file": "assets/to-bg.cbi",
+      "bytes": 269,
+      "sha256": "2832ae0aabc2ddee30686785683d6b7d696a6218513c518be1c243630801c92d",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-i.cbi",
+      "file": "assets/to-i.cbi",
+      "bytes": 3653,
+      "sha256": "84ccc384ac6f328f2e4464e58644a6b2ea940d9ee619962e0ceb173f031253de",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-c.cbi",
+      "file": "assets/to-c.cbi",
+      "bytes": 3803,
+      "sha256": "3a6487c62a09479c837188331f29fdffae4379cd63170303e135a451953f7f53",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-ia.cba",
+      "file": "assets/to-ia.cba",
+      "bytes": 5898,
+      "sha256": "6138a88231b63e8d6e0636c04da99147f4e40126a03f8d1034db82cdfaa726c6",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/to-ca.cba",
+      "file": "assets/to-ca.cba",
+      "bytes": 10779,
+      "sha256": "e271bd49852766752c4dc1d309fc2ce764125d45284ca3b27b80d3469a228248",
+      "contentType": "text/plain"
+    }
+  ]
+}

@@ -17,8 +17,6 @@ class ThemeSpecRuntimePolicy {
   static constexpr uint32_t kMinRenderMaxFreeBlockBytes = 2048UL;
   static constexpr uint32_t kMinAnimationFreeHeapBytes = 8192UL;
   static constexpr uint32_t kMinAnimationMaxFreeBlockBytes = 3072UL;
-  static constexpr uint32_t kCbaBufferHeapReserveBytes =
-      kMinAnimationFreeHeapBytes + 4096UL;
 
   static bool CanRender(uint32_t freeHeapBytes, uint32_t maxFreeBlockBytes) {
     return freeHeapBytes >= kMinRenderFreeHeapBytes &&
@@ -114,6 +112,19 @@ class ThemeSpecRuntimePolicy {
     return fps > 0 ? (1000UL / static_cast<unsigned long>(fps)) : 0;
   }
 
+  // Frames a CBA must decode cleanly before its render error is retired.
+  // An animating asset must prove every frame, because corruption can sit in
+  // a later frame while frame zero still decodes. A non-animating asset never
+  // advances past frame zero -- AnimatedAssetDue() stops for frameCount <= 1
+  // or fps <= 0 -- so requiring the full table would pin /health at
+  // renderOk: false forever even after the asset renders correctly.
+  static int CleanFramesRequiredForRecovery(int frameCount, int fps) {
+    if (frameCount <= 1 || fps <= 0) {
+      return 1;
+    }
+    return frameCount;
+  }
+
   static uint32_t CbaBufferBytes(int width, int height) {
     if (width <= 0 || height <= 0 ||
         width > kMaxCbaBufferWidth || height > kMaxCbaBufferHeight) {
@@ -122,12 +133,37 @@ class ThemeSpecRuntimePolicy {
     return static_cast<uint32_t>(width) * static_cast<uint32_t>(height) * 2UL;
   }
 
+  // The frame buffer holds one axis of a sprite at the smaller of its source
+  // and drawn size. An enlarged sprite is decoded at source size and scaled
+  // only while it is pushed, so Claude Creature's 52 px sprite drawn at 77 px
+  // needs 5408 bytes instead of 11858. That difference decides whether the
+  // animation fits the heap left over in WiFi mode (issue #498).
+  static int CbaBufferExtent(int drawnExtent, int sourceExtent) {
+    if (drawnExtent <= 0) {
+      return sourceExtent;
+    }
+    return sourceExtent > 0 && sourceExtent < drawnExtent ? sourceExtent : drawnExtent;
+  }
+
+  // The buffer row or column shown at a drawn position when an enlarged
+  // sprite is pushed. It is the last source index whose span starts at or
+  // before the position, which is the pixel the full-size decode used to
+  // leave there: each source run filled floor(start) to ceil(end) and the
+  // next run overwrote the shared edge pixel.
+  static int CbaScaledSourceIndex(int drawnIndex, int drawnExtent, int sourceExtent) {
+    if (drawnExtent <= 0 || sourceExtent <= 0 || drawnIndex < 0) {
+      return 0;
+    }
+    const int index = ((drawnIndex + 1) * sourceExtent + drawnExtent - 1) / drawnExtent - 1;
+    return index < sourceExtent - 1 ? index : sourceExtent - 1;
+  }
+
   static bool CanAllocateCbaBuffer(
       uint32_t freeHeapBytes,
       uint32_t maxFreeBlockBytes,
       uint32_t bufferBytes) {
     return bufferBytes > 0 &&
-           freeHeapBytes >= bufferBytes + kCbaBufferHeapReserveBytes &&
+           freeHeapBytes >= bufferBytes + kMinAnimationFreeHeapBytes &&
            maxFreeBlockBytes >= bufferBytes;
   }
 
@@ -181,6 +217,39 @@ class ThemeSpecRuntimePolicy {
     const int drawY2 = targetY + (((sourceRow + 1) * targetHeight + sourceHeight - 1) / sourceHeight);
     return drawY1 < clipY + clipHeight && drawY2 > clipY;
   }
+};
+
+// Watches sprites that find the shared CBA frame buffer taken. A tall sprite
+// legitimately holds it for many resume ticks, so waiting alone is no fault.
+// Progress is a completed frame, or the same owner decoding further rows. A
+// change of owner is not: with more tall CBAs than cache slots the sprites
+// evict each other mid-frame, the buffer keeps changing hands and no frame
+// ever completes (#472).
+class CbaContentionWatch {
+ public:
+  static constexpr unsigned int kStreakLimit = 12;
+
+  // Records one contended draw attempt. True once the waiting has outlasted
+  // kStreakLimit attempts without progress.
+  bool Observe(const void* owner, int ownerRow, unsigned long completedFrames) {
+    const bool progressed =
+        completedFrames != completedFrames_ || (owner == owner_ && ownerRow > ownerRow_);
+    if (progressed) {
+      streak_ = 0;
+    } else if (streak_ < kStreakLimit) {
+      ++streak_;
+    }
+    owner_ = owner;
+    ownerRow_ = ownerRow;
+    completedFrames_ = completedFrames;
+    return streak_ >= kStreakLimit;
+  }
+
+ private:
+  const void* owner_ = nullptr;
+  int ownerRow_ = -1;
+  unsigned long completedFrames_ = 0;
+  unsigned int streak_ = 0;
 };
 
 }  // namespace esp8266

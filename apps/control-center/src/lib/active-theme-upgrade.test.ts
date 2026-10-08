@@ -46,6 +46,9 @@ function device(
       theme: {
         supportsUsageSlotsV1,
         supportsUsageWindowsV1: supportsUsageSlotsV1,
+        supportsProviderAssetsV1: supportsUsageSlotsV1,
+        supportsColorStopsV1: supportsUsageSlotsV1,
+        supportsTextValignV1: supportsUsageSlotsV1,
       },
     },
     connected: true,
@@ -140,6 +143,34 @@ describe("resolveActiveThemeUpgrade", () => {
       theme: themeWithoutCapabilities,
       unresolved: false,
     });
+  });
+
+  it.each([
+    "supportsProviderAssetsV1",
+    "supportsColorStopsV1",
+    "supportsTextValignV1",
+  ] as const)(
+    "keeps missing %s unresolved without theme requirements",
+    (capability) => {
+      const current = device(true, slotTheme.themeSpecPath);
+      current.capabilities!.theme![capability] = false;
+      const unknownRequirements = { ...slotTheme, requiredCapabilities: undefined };
+      const unrelated = { ...slotTheme, themeId: "other-theme" };
+
+      for (const catalog of [[], [unrelated], [unknownRequirements]]) {
+        expect(resolveActiveThemeUpgrade(catalog, current).unresolved).toBe(true);
+      }
+      expect(
+        resolveActiveThemeUpgrade(
+          [{ ...slotTheme, requiredCapabilities: [] }],
+          current,
+        ).unresolved,
+      ).toBe(false);
+    },
+  );
+
+  it("needs no catalog attention when all firmware capabilities are present", () => {
+    expect(resolveActiveThemeUpgrade([], device(true)).unresolved).toBe(false);
   });
 
   it("marks an incomplete non-empty catalog as unresolved on old firmware", () => {

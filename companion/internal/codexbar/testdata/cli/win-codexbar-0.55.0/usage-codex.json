@@ -1,0 +1,18 @@
+[
+  {
+    "cost": null,
+    "provider": "codex",
+    "source": "oauth",
+    "usage": {
+      "login_method": "ChatGPT Free",
+      "primary": {
+        "is_informational": false,
+        "reset_description": "30d",
+        "resets_at": "2026-10-02T13:55:46Z",
+        "used_percent": 0.0,
+        "window_minutes": 43200
+      },
+      "updated_at": "2026-09-02T13:55:45.851Z"
+    }
+  }
+]

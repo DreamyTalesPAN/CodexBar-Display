@@ -574,6 +574,50 @@ func TestApplyResetTrustReanchorsAllResetCountdowns(t *testing.T) {
 	}
 }
 
+// Issue #532: an account in which no window has a reset time is measured and
+// idle, not stale. Only a current collection may say so.
+func TestApplyResetTrustWithoutAnyDeadline(t *testing.T) {
+	sendAt := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	collectedAt := sendAt.Add(-12 * time.Second)
+	idle := func() Frame {
+		return Frame{
+			V:        ProtocolVersionV2,
+			Provider: "claude",
+			UsageWindows: []UsageWindow{
+				{ID: "session", Label: "Session"},
+				{ID: "weekly", Label: "Weekly"},
+			},
+		}
+	}
+
+	live := idle().ApplyResetTrust(collectedAt, sendAt, true)
+	wantTrustSec := int64(ResetTrustHorizon/time.Second) - 12
+	if live.ResetTrust != ResetTrustLive || live.ResetTrustSec != wantTrustSec ||
+		live.ResetSource != "claude" || live.ResetSec != 0 {
+		t.Fatalf("fresh frame without a deadline must be live under the provider key, got %+v", live)
+	}
+
+	withDeadline := idle()
+	withDeadline.UsageWindows[0].ResetSec = 5
+	unavailable := idle()
+	unavailable.UsageUnavailable = true
+	unattributable := idle()
+	unattributable.Provider = ""
+	stale := map[string]Frame{
+		"last good resend after a failed collection": idle().ApplyResetTrust(collectedAt, sendAt, false),
+		"unknown collection time":                    idle().ApplyResetTrust(time.Time{}, sendAt, true),
+		"deadline ran out before the send":           withDeadline.ApplyResetTrust(collectedAt, sendAt, true),
+		"usage unavailable":                          unavailable.ApplyResetTrust(collectedAt, sendAt, true),
+		"beyond the trust horizon":                   idle().ApplyResetTrust(sendAt.Add(-ResetTrustHorizon), sendAt, true),
+		"no provider to attribute it to":             unattributable.ApplyResetTrust(collectedAt, sendAt, true),
+	}
+	for name, got := range stale {
+		if got.ResetTrust != ResetTrustStale || got.ResetTrustSec != 0 || hasResetCountdown(got) {
+			t.Errorf("%s must stay stale without a budget or countdown, got %+v", name, got)
+		}
+	}
+}
+
 func TestMaximumUsageSlotFrameStaysInsideDocumentedBudget(t *testing.T) {
 	frame := Frame{
 		V:         2,
@@ -663,7 +707,10 @@ func TestV2WireFrameStaysReadableByPublicFirmware1039(t *testing.T) {
 		t.Fatalf("v2 frame must carry usageWindows: %s", line)
 	}
 	session, weekly, reset := legacyFirmwareReader(t, line)
-	if session != 42 || weekly != 7 || reset != 15480 {
+	// "secondary" is the weekly lane; with the informational primary filtered
+	// out the session lane stays unavailable (0 on this firmware) instead of
+	// borrowing the weekly percentage.
+	if session != 0 || weekly != 42 || reset != 15480 {
 		t.Fatalf("firmware 1.0.39 would render session=%d weekly=%d reset=%d from %s", session, weekly, reset, line)
 	}
 }
@@ -673,6 +720,65 @@ func TestV2WireFrameStaysReadableByPublicFirmware1039(t *testing.T) {
 // firmware 1.0.39 device has no usageMode field, so whatever lands in session
 // and weekly is what the customer reads off the screen.
 func TestV2WireFrameLegacyLanesAgreeWithUsageWindows(t *testing.T) {
+	t.Run("weekly-only keeps the session lane unavailable", func(t *testing.T) {
+		// Win-CodexBar marks its primary session window informational; after
+		// filtering, only the weekly quota remains and must not be shown as
+		// a session percentage on older firmware.
+		frame := Frame{
+			V:        ProtocolVersionV2,
+			Provider: "codex",
+			Label:    "Codex",
+			UsageWindows: []UsageWindow{
+				{ID: "weekly", Label: "Weekly", Percent: 75, ResetSec: 262464},
+			},
+		}
+		normalized := frame.Normalize()
+		if !normalized.SessionUnavailable || normalized.Session != 0 {
+			t.Fatalf("weekly-only frame must leave the session lane unavailable: %+v", normalized)
+		}
+		if normalized.WeeklyUnavailable || normalized.Weekly != 75 {
+			t.Fatalf("weekly lane must carry the weekly window: %+v", normalized)
+		}
+		legacy := Frame{V: ProtocolVersionV1, UsageWindows: frame.UsageWindows}.Normalize()
+		if !legacy.SessionUnavailable || legacy.Session != 0 || legacy.Weekly != 75 {
+			t.Fatalf("v1 projection drifted: %+v", legacy)
+		}
+	})
+	t.Run("windows without structural ids stay positional", func(t *testing.T) {
+		frame := Frame{
+			V: ProtocolVersionV2,
+			UsageWindows: []UsageWindow{
+				{ID: "five-hour", Label: "5h", Percent: 12},
+				{ID: "seven-day", Label: "7d", Percent: 34},
+			},
+		}
+		normalized := frame.Normalize()
+		if normalized.Session != 12 || normalized.Weekly != 34 || normalized.SessionUnavailable || normalized.WeeklyUnavailable {
+			t.Fatalf("positional fallback drifted: %+v", normalized)
+		}
+	})
+	t.Run("secondary-only from the direct CLI parser keeps the session lane unavailable", func(t *testing.T) {
+		// codexbar.parseUsageWindows names the lanes primary/secondary. With
+		// the informational primary filtered out, "secondary" alone is still
+		// the weekly lane and must not be projected into Session.
+		frame := Frame{
+			V: ProtocolVersionV2,
+			UsageWindows: []UsageWindow{
+				{ID: "secondary", Label: "Weekly", Percent: 75, ResetSec: 262464},
+			},
+		}
+		normalized := frame.Normalize()
+		if !normalized.SessionUnavailable || normalized.Session != 0 || normalized.WeeklyUnavailable || normalized.Weekly != 75 {
+			t.Fatalf("secondary-only frame drifted: %+v", normalized)
+		}
+		both := Frame{V: ProtocolVersionV2, UsageWindows: []UsageWindow{
+			{ID: "primary", Label: "Session", Percent: 42},
+			{ID: "secondary", Label: "Weekly", Percent: 7},
+		}}.Normalize()
+		if both.Session != 42 || both.Weekly != 7 || both.SessionUnavailable || both.WeeklyUnavailable {
+			t.Fatalf("primary/secondary lanes drifted: %+v", both)
+		}
+	})
 	frame := Frame{
 		V:        ProtocolVersionV2,
 		Provider: "claude",
