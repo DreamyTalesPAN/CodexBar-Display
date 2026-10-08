@@ -96,3 +96,11 @@ describe("primitiveTitle", () => {
     ).toBe("Usage window 2 %");
   });
 });
+
+describe("provider readings", () => {
+  it("measures a provider reading instead of storing an empty width", () => {
+    for (const text of ["{providerSlot1Label}", "{providerSlot2Percent}%", "{providerSlot1Reset}"]) {
+      expect(textPrimitiveNaturalWidth({ type: "text", x: 0, y: 0, text, fontSize: 1 })).toBeGreaterThan(0);
+    }
+  });
+});

@@ -60,7 +60,7 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
     for(const key of ['x','y','width','height','fontSize'] as const){
       const value=edit[key];
       if(value==null) continue;
-      if(!Number.isInteger(value)||value<(['x','y'].includes(key)?0:1)||value>(key==='fontSize'?5:240)) return fail();
+      if(!Number.isInteger(value)||value<(['x','y'].includes(key)?0:1)||value>(key==='fontSize'?8:240)) return fail();
       p[key]=value;
     }
     if(edit.fps!=null){

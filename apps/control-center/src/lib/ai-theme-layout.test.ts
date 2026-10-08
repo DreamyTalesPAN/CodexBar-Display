@@ -119,4 +119,11 @@ describe('AI native layout edits',()=>{
   expect(()=>applyAIThemeLayout(doc,plan([{action:'remove',index:0}]))).toThrow();
   expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:1,y:120}]))).toThrow();
  });
+ it('lets the AI use every text size the editor offers',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives.push({type:'text',x:4,y:100,text:'HI',fontSize:6,color:'#FFFFFF'});
+  const index=doc.spec.primitives.length-1;
+  expect(applyAIThemeLayout(doc,plan([{action:'update',index,fontSize:8}])).spec.primitives[index].fontSize).toBe(8);
+  expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index,fontSize:9}]))).toThrow();
+ });
 });

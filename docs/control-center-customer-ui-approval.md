@@ -5420,3 +5420,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
 - Approved customer-visible result: Typing longer text or enlarging it widens the text box only up to the display edge, so the design stays valid and Save and Send to VibeTV stay available.
+
+
+## 2026-10-08 — Provider readings and AI text sizes
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Choosing a provider name, usage or reset countdown for a text keeps its box as wide as the reading, so right-aligned and centred provider texts stay in place. The AI can set every text size the editor offers, up to 8.

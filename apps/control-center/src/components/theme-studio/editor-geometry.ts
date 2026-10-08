@@ -437,6 +437,11 @@ function boundText(binding: string): string {
     }
     return String(window.percent);
   }
+  // A provider reading has the size of the matching usage reading.
+  const provider = /^providerSlot[12](Label|Percent|Reset|Available)$/.exec(binding);
+  if (provider) {
+    return provider[1] === "Label" ? DEFAULT_FRAME.label : boundText(`usageSlot1${provider[1]}`);
+  }
   switch (binding) {
     case "label":
       return DEFAULT_FRAME.label;

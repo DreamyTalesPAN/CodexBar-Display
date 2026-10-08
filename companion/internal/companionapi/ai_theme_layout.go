@@ -34,7 +34,7 @@ func (a *aiThemeState) planLayout(ctx context.Context, key string, req aiThemeCo
 		"action": map[string]any{"type": "string", "enum": []string{"add", "update", "remove"}},
 		"index":  map[string]any{"type": "integer", "minimum": -1, "maximum": 127},
 		"kind":   map[string]any{"type": []string{"string", "null"}, "enum": []any{nil, "text", "rect", "progress", "sprite"}},
-		"x":      nullableInt(0, 239), "y": nullableInt(0, 239), "width": nullableInt(1, 240), "height": nullableInt(1, 240), "fontSize": nullableInt(1, 5),
+		"x":      nullableInt(0, 239), "y": nullableInt(0, 239), "width": nullableInt(1, 240), "height": nullableInt(1, 240), "fontSize": nullableInt(1, 8),
 		"color": map[string]any{"type": []string{"string", "null"}, "pattern": "^#[A-Fa-f0-9]{6}$"}, "text": nullableString(160),
 		"reading": map[string]any{"type": []string{"string", "null"}, "enum": readings},
 		"fps":     map[string]any{"type": []string{"integer", "null"}, "enum": []any{nil, 0, 1, 2, 4, 8}},
