@@ -229,7 +229,9 @@ export function ThemeLibraryScreen({
     (theme) => (theme.usage || "live") === usage,
   );
   const screensavers = usage === "screensaver";
-  // The lines this page words itself name what its list holds (issue #558).
+  // The sentences this page writes itself name what its list holds (issue
+  // #558). Only those: a message from storage, the app or the Mac App can
+  // carry the customer's own name for a theme and is shown as it came.
   const say = (text: string) => wordsForUsage(text, usage);
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
   // What VibeTV itself reports in the slot this list fills, not what was
@@ -358,7 +360,7 @@ export function ThemeLibraryScreen({
   function persistUserThemes(next: UserThemeRecord[]) {
     if (storageLocked) {
       throw new Error(
-        storageWarning || "Browser storage must be repaired before saving themes.",
+        storageWarning || say("Browser storage must be repaired before saving themes."),
       );
     }
     const result = writeUserThemes(next);
@@ -419,7 +421,7 @@ export function ThemeLibraryScreen({
       });
     } catch (error) {
       setLibraryError(
-        error instanceof Error ? error.message : "Theme could not be opened.",
+        error instanceof Error ? error.message : say("Theme could not be opened."),
       );
     } finally {
       setLoadingEditorRow("");
@@ -517,7 +519,7 @@ export function ThemeLibraryScreen({
       return true;
     } catch (error) {
       setDeleteError(
-        error instanceof Error ? error.message : "Theme could not be deleted.",
+        error instanceof Error ? error.message : say("Theme could not be deleted."),
       );
       return false;
     }
@@ -567,7 +569,7 @@ export function ThemeLibraryScreen({
       }
     } catch (error) {
       setLibraryError(
-        error instanceof Error ? error.message : "Theme could not be prepared.",
+        error instanceof Error ? error.message : say("Theme could not be prepared."),
       );
     } finally {
       setPreparingInstallRow("");
@@ -661,14 +663,14 @@ export function ThemeLibraryScreen({
           <Alert className="mb-5">
             <Lock aria-hidden />
             <AlertTitle>{say("Theme storage needs attention")}</AlertTitle>
-            <AlertDescription>{say(storageWarning)}</AlertDescription>
+            <AlertDescription>{storageWarning}</AlertDescription>
           </Alert>
         ) : null}
         {libraryError ? (
           <Alert className="mb-5" variant="destructive">
             <Lock aria-hidden />
             <AlertTitle>{say("Theme action failed")}</AlertTitle>
-            <AlertDescription>{say(libraryError)}</AlertDescription>
+            <AlertDescription>{libraryError}</AlertDescription>
           </Alert>
         ) : null}
         {recovery && recoveryMatchesUsage ? (
@@ -838,7 +840,7 @@ function DeleteThemeDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? (
-          <Alert variant="destructive"><Lock /><AlertTitle>{say("Theme could not be deleted")}</AlertTitle><AlertDescription>{say(error)}</AlertDescription></Alert>
+          <Alert variant="destructive"><Lock /><AlertTitle>{say("Theme could not be deleted")}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
         ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel autoFocus onClick={onCancel}>
@@ -1062,7 +1064,9 @@ function ThemeListItem({
         }));
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || (installed && !retryingFailedInstall) || Boolean(blocker);
-  // The reasons are written for themes; this list may hold screensavers.
+  // The reasons are this file's own fixed sentences, written for themes; this
+  // list may hold screensavers. None carries a name: the only variable part
+  // is a firmware version.
   const title = disabled
       ? wordsForUsage(
           installDisabledReason({

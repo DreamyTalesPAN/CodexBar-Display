@@ -391,6 +391,55 @@ describe("ThemeLibraryScreen custom themes", () => {
     await act(async () => root.unmount());
   });
 
+  // Found in review: the Screensavers list swapped "theme" for "screensaver"
+  // in every message it showed, also in one that carries the customer's name
+  // for their screensaver.
+  it("leaves a message that names the customer's screensaver as it is", async () => {
+    const savedName = ownScreensaver.packName;
+    ownScreensaver.packName = "Dark Theme";
+    try {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const root = createRoot(host);
+      await act(async () =>
+        root.render(
+          <ThemeLibraryScreen
+            busyAction={null}
+            companionStatus="online"
+            device={{ connected: true, paired: true, ready: true }}
+            onInstallCustomTheme={async (payload) => {
+              throw new Error(`${payload.packName} uses a theme file that is too large.`);
+            }}
+            onInstallTheme={vi.fn()}
+            onSaveStandby={vi.fn()}
+            onSelectTheme={vi.fn()}
+            selectedThemeId=""
+            standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}
+            storefrontConfigured={false}
+            themeInstallEnabled
+            themes={[catalogTheme]}
+            usage="screensaver"
+          />,
+        ),
+      );
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>('button[title="Install Dark Theme"]')!.click();
+      });
+
+      // The page's own title is worded for the list; the message is not touched.
+      expect(host.textContent).toContain("Screensaver action failed");
+      expect(host.textContent).toContain("Dark Theme uses a theme file that is too large.");
+      expect(host.textContent).not.toContain("Dark Screensaver");
+      await act(async () => root.unmount());
+    } finally {
+      ownScreensaver.packName = savedName;
+    }
+  });
+
   // VibeTV names its screensaver only by the path of the theme file. For the
   // customer's own screensaver that is the path its file is sent under.
   it("keeps the customer's own screensaver installed after a theme was installed", async () => {
