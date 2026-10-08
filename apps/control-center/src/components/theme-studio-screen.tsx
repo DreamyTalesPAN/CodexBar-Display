@@ -1319,7 +1319,10 @@ export function ThemeStudioScreen({
                 <CardDescription>Add and arrange elements.</CardDescription>
               </CardHeader>
               <CardContent className="min-h-0 flex-1">
-                <ScrollArea className="h-full">
+                {/* The scroll area lays its content out as a table, which grows
+                    with the widest thing in it and is then cut off on the
+                    right. As a block it keeps the panel's width. */}
+                <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]>div]:block!">
                   <div className="flex flex-col gap-4 pr-3">
                 <div className="grid grid-cols-2 gap-2">
                   <AddButton
@@ -1421,7 +1424,9 @@ export function ThemeStudioScreen({
                 project: (
                 <section
                   aria-labelledby="theme-studio-tab-project"
-                  className="grid gap-3"
+                  // A label wider than the panel must wrap: a button's does not by
+                  // itself, and the list this sits in grows with its content.
+                  className="grid min-w-0 gap-3"
                   id="theme-studio-panel-project"
                   role="tabpanel"
                 >
@@ -1447,7 +1452,7 @@ export function ThemeStudioScreen({
                     }
                   />
                   <Button
-                    className="w-full"
+                    className="h-auto min-h-11 w-full py-2 whitespace-normal"
                     disabled={loadingPreset}
                     onClick={() =>
                       replaceDraft(() => void loadBuiltInTheme("mini-classic"))
@@ -1463,7 +1468,7 @@ export function ThemeStudioScreen({
                     <span>{loadingPreset ? "Loading" : "Mini theme"}</span>
                   </Button>
                   <Button
-                    className="w-full"
+                    className="h-auto min-h-11 w-full py-2 whitespace-normal"
                     onClick={() =>
                       replaceDraft(() => fileInputRef.current?.click())
                     }

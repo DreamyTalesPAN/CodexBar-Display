@@ -474,3 +474,25 @@ it("says on Windows that a repeated Export ZIP saved again", () => {
   fireEvent.click(button("Export ZIP"));
   expect(screen.getByText("Saved again in your Downloads folder (export 3). Nothing was sent.")).toBeTruthy();
 });
+
+// Seen on the Mac app on 2026-10-09: "Import screensaver JSON" does not fit
+// the left panel in one line, and a button's label does not wrap by itself,
+// so the whole panel grew wider and was cut off on the right. jsdom lays
+// nothing out: this checks the classes that let the label wrap, not a picture.
+it("lets the long labels under Advanced › Project wrap inside the panel", () => {
+  renderStudio("custom", {
+    initialTheme: {
+      assets: {}, packName: "S", source: "custom", spec: createBlankThemeSpec(), usage: "screensaver",
+    },
+  });
+  fireEvent.click(button("Advanced"));
+  for (const name of ["Import screensaver JSON", "Mini theme"]) {
+    const classes = button(name).className.split(" ");
+    expect(classes).toEqual(expect.arrayContaining(["h-auto", "whitespace-normal", "w-full"]));
+  }
+  expect(document.getElementById("theme-studio-panel-project")!.className.split(" ")).toContain("min-w-0");
+  // And the list they sit in does not grow with what is in it.
+  expect(
+    document.getElementById("theme-studio-panel-project")!.closest('[data-slot="scroll-area"]')!.className,
+  ).toContain("[&_[data-slot=scroll-area-viewport]>div]:block!");
+});
