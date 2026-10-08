@@ -2578,16 +2578,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       usage = "live",
     }: ThemeStudioInstallPayload): Promise<boolean> => {
       const pack = buildThemePack(spec, packName, assets, usage);
-      const sent = await installTheme({
+      // Noted when it is sent, not when the install is confirmed: an install
+      // that fails late, or that VibeTV has not confirmed yet, may still have
+      // put this file on VibeTV.
+      rememberSentOwnThemePath(pack.manifest.themeSpec.path);
+      return installTheme({
         packBytes: pack.zipBytes,
         themeId: pack.manifest.id,
         title: pack.manifest.name,
         usage,
       });
-      if (sent) {
-        rememberSentOwnThemePath(pack.manifest.themeSpec.path);
-      }
-      return sent;
     },
     [installTheme],
   );

@@ -8,6 +8,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import type { ThemeStudioSpec } from "@/lib/theme-studio";
 import { ControlCenterApp } from "./control-center-app";
 
@@ -287,6 +288,28 @@ it("keeps the failure dialog when the Mac App refuses a theme from Theme Studio"
   expect(page.installs).toHaveLength(1);
   const dialog = screen.getByRole("dialog", { name: "Theme file is invalid." });
   expect(within(dialog).getByText("Export the theme again, then retry.")).toBeTruthy();
+});
+
+// The app counts on this list to tell the customer's file from a catalog
+// theme. An install that is answered late, or not confirmed by VibeTV yet, may
+// still have put the file on VibeTV, so the file is noted when it is sent.
+it("remembers the file of an own theme when it is sent, whatever the answer", async () => {
+  const page = await openThemesWithSavedTheme({
+    type: "rect",
+    x: 10,
+    y: 10,
+    width: 20,
+    height: 20,
+    color: "#FFFFFF",
+  });
+  expect(sentOwnThemePaths()).toEqual([]);
+
+  await installSavedTheme(page.wait);
+
+  expect(page.installs).toHaveLength(1);
+  expect(sentOwnThemePaths()).toEqual([
+    expect.stringMatching(/^\/themes\/u\/my-the.*\.json$/),
+  ]);
 });
 
 // The install before it ran in this window and was followed to its end here.
