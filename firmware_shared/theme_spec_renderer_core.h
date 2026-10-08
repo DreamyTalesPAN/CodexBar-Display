@@ -31,6 +31,8 @@ constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldProviderSlots = 1UL << 13;
 // A ticking reset must not invalidate slot-owned labels, sprites, or progress bars.
 constexpr uint32_t kThemeSpecFieldUsageWindowReset = 1UL << 14;
+// CodexBar's pace for a usage window; unlike its countdown it does not tick.
+constexpr uint32_t kThemeSpecFieldUsageWindowPace = 1UL << 15;
 constexpr size_t kMaxThemeSpecProviderSlots = 2;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
@@ -76,6 +78,7 @@ struct UsageWindowData {
   int percent = 0;
   int64_t resetSecs = 0;
   bool available = false;
+  usage_window_contract::Pace pace;
 };
 
 struct FrameData {
@@ -615,6 +618,9 @@ inline const char* UsageWindowField(const char* key) {
       return key + 6 + consumed + 1;
     }
   }
+  if (const char* pace = std::strstr(key, "Pace")) {
+    return pace;
+  }
   if (std::strstr(key, "Available") != nullptr) {
     return "available";
   }
@@ -625,6 +631,19 @@ inline const char* UsageWindowField(const char* key) {
     return "reset";
   }
   return "percent";
+}
+
+// A countdown repaints whenever it moves. Compact countdowns: us1r/us2r,
+// pv1r/pv2r.
+inline bool UsageWindowKeyFollowsReset(const char* key) {
+  key = SafeText(key);
+  return std::strcmp(UsageWindowField(key), "reset") == 0 || (std::strlen(key) == 4 && key[3] == 'r');
+}
+
+// CodexBar's pace repaints only when the pace itself changes or its window's
+// countdown runs out, not with every tick of that countdown.
+inline bool UsageWindowKeyShowsPace(const char* key) {
+  return std::strncmp(UsageWindowField(key), "Pace", 4) == 0;
 }
 
 inline bool UsageWindowIndexSupported(int index) {
@@ -848,6 +867,18 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
         std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
       } else {
         FormatDuration(window.resetSecs, out, outSize);
+      }
+    } else if (std::strncmp(field, "Pace", 4) == 0) {
+      // CodexBar computed this pace for the running window; once its
+      // countdown expired or lost trust, the pace is unknown again.
+      const usage_window_contract::Pace& pace = UsageWindowFor(frame, slotIndex).pace;
+      if (pace.state == 0 || window.resetSecs <= 0) {
+        out[0] = '\0';
+      } else if (field[4] == 'D') {
+        std::snprintf(out, outSize, pace.delta > 0 ? "+%d%%" : "%d%%", pace.delta);
+      } else {
+        std::snprintf(out, outSize, "%s", usage_window_contract::PaceText(
+            field[4] == 'S' ? pace.state : field[4] == 'L' ? pace.lasts : 0));
       }
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(window.percent));
@@ -1085,9 +1116,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProviderSlots;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
-    const bool reset = std::strcmp(UsageWindowField(binding), "reset") == 0 ||
-                       StringEqualsAny(binding, "us1r", "us2r");
-    return kThemeSpecFieldUsageWindows | (reset ? kThemeSpecFieldUsageWindowReset : 0);
+    return kThemeSpecFieldUsageWindows |
+           (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0) |
+           (UsageWindowKeyShowsPace(binding) ? kThemeSpecFieldUsageWindowPace : 0);
   }
   if (StringEqualsAny(binding, "usageMode", "u")) {
     return kThemeSpecFieldUsageMode;
@@ -1442,6 +1473,11 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
     out.liveFields |= out.binding != nullptr ? BindingFieldMask(out.binding) : TextTemplateFieldMask(out.text);
+    // Text bound to a pace key takes its colour from the pace state.
+    if (out.binding != nullptr && std::strstr(out.binding, "Pace") != nullptr &&
+        !CompileProgressColorStops(primitive, out)) {
+      return false;
+    }
     return out.size > 0;
   }
 
@@ -1715,11 +1751,35 @@ inline int AlignedTextY(int boxY, int boxHeight, int glyphHeight, int valign) {
   return boxY;
 }
 
+// The pace behind a "...Pace..." usage window binding while its window still
+// runs, else nullptr (CodexBar sent none, or the countdown is gone).
+inline const usage_window_contract::Pace* BoundPaceFor(const char* binding, const FrameData& frame) {
+  const int slotIndex = UsageWindowBindingIndex(binding);
+  if (slotIndex < 0 || std::strncmp(UsageWindowField(binding), "Pace", 4) != 0) {
+    return nullptr;
+  }
+  const UsageWindowData& window = UsageWindowFor(frame, slotIndex);
+  return window.pace.state != 0 && window.resetSecs > 0 ? &window.pace : nullptr;
+}
+
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
     const UsageWindowData window = BoundUsageWindowFor(frame, primitive.binding, slotIndex);
-    return window.available ? ClampPct(window.percent) : 0;
+    if (!window.available) {
+      return 0;
+    }
+    // usageSlotNPaceExpected: where CodexBar expects the window to be by now.
+    // Its delta is counted in used percent.
+    if (std::strncmp(UsageWindowField(primitive.binding), "PaceE", 5) == 0) {
+      const usage_window_contract::Pace* pace = BoundPaceFor(primitive.binding, frame);
+      if (pace == nullptr) {
+        return 0;
+      }
+      const bool used = std::strcmp(SafeText(frame.usageMode), "used") == 0;
+      return ClampPct(window.percent + (used ? -pace->delta : pace->delta));
+    }
+    return ClampPct(window.percent);
   }
   if (StringEqualsAny(primitive.binding, "weekly", "weeklyPercent", "w")) {
     return ClampPct(frame.weekly);
@@ -1737,11 +1797,21 @@ inline int RemainingStyleProgressPercent(int percent, const char* usageMode) {
   return clamped;
 }
 
+// A pace binding matches its stops against CodexBar's state instead of the
+// quota: reserve 100, on pace 50, deficit 0. Without a pace it keeps `c`.
 inline uint16_t ResolveProgressFillColor(
     const CompiledPrimitive& primitive,
     int percent,
-    const char* usageMode) {
-  const int remainingStyle = RemainingStyleProgressPercent(percent, usageMode);
+    const FrameData& frame) {
+  int remainingStyle = RemainingStyleProgressPercent(percent, frame.usageMode);
+  if (UsageWindowBindingIndex(primitive.binding) >= 0 &&
+      std::strncmp(UsageWindowField(primitive.binding), "Pace", 4) == 0) {
+    const usage_window_contract::Pace* pace = BoundPaceFor(primitive.binding, frame);
+    if (pace == nullptr) {
+      return primitive.color;
+    }
+    remainingStyle = (3 - pace->state) * 50;
+  }
   for (uint8_t i = 0; i < primitive.colorStopCount; ++i) {
     if (remainingStyle >= primitive.colorStops[i].gte) {
       return primitive.colorStops[i].color;
@@ -1935,7 +2005,7 @@ inline bool DrawCompiledPrimitive(
       RenderTextTemplate(primitive.text, frame, text, sizeof(text));
     }
     cmd.text = text;
-    cmd.fg = primitive.color;
+    cmd.fg = primitive.colorStopCount > 0 ? ResolveProgressFillColor(primitive, 0, frame) : primitive.color;
     cmd.bg = primitive.bg;
     cmd.hasBg = primitive.hasBg;
     sink.DrawText(cmd);
@@ -1956,7 +2026,7 @@ inline bool DrawCompiledPrimitive(
     cmd.segments = primitive.segments;
     cmd.segmentGap = primitive.segmentGap;
     cmd.borderRadius = primitive.borderRadius;
-    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent, frame.usageMode);
+    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent, frame);
     cmd.bgColor = primitive.bg;
     cmd.borderColor = primitive.border;
     if (cmd.width <= 0 || cmd.height <= 0) {

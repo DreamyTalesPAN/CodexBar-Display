@@ -342,6 +342,7 @@ export type DeviceInfo = {
       supportsProviderAssetsV1?: boolean;
       supportsColorStopsV1?: boolean;
       supportsTextValignV1?: boolean;
+      supportsUsagePaceV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;

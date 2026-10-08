@@ -65,7 +65,10 @@ type UsageSlotFrame = {
   label?: string;
   percent?: number;
   resetSecs?: number;
+  pace?: UsagePaceFrame;
 };
+// CodexBar's pace for a usage window, as the Companion sends it (usage-pace-v1).
+type UsagePaceFrame = { delta?: number; state?: string; lasts?: boolean };
 type UsageWindowFrame = UsageSlotFrame;
 
 type DisplayFrame = {
@@ -179,6 +182,7 @@ type FrameData = {
     resetSecs: number;
     available: boolean;
     idle: boolean;
+    pace?: UsagePaceFrame;
   }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
@@ -220,8 +224,22 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "used",
   usageWindows: [
-    { label: "Session", percent: 64, resetSecs: 3600, available: true, idle: false },
-    { label: "Weekly", percent: 28, resetSecs: 7200, available: true, idle: false },
+    {
+      label: "Session",
+      percent: 64,
+      resetSecs: 3600,
+      available: true,
+      idle: false,
+      pace: { delta: -12, state: "reserve", lasts: true },
+    },
+    {
+      label: "Weekly",
+      percent: 28,
+      resetSecs: 7200,
+      available: true,
+      idle: false,
+      pace: { delta: 8, state: "deficit", lasts: false },
+    },
   ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
@@ -732,7 +750,11 @@ function ThemePrimitiveNode({
     return (
       <ThemeTextPrimitive
         align={primitive.align || primitive.al}
-        color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
+        color={
+          (primitive.binding || primitive.b || "").includes("Pace")
+            ? resolveProgressFillColor(primitive, 0, frame)
+            : colorFor(primitive.color || primitive.c, "#FFFFFF")
+        }
         font={font}
         fontSize={fontSize}
         fontWeight={themeFontWeight(font)}
@@ -991,11 +1013,7 @@ function ThemeProgress({
     "#7BEF7B",
   );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
-  const fillColor = resolveProgressFillColor(
-    primitive,
-    percent,
-    frame.usageMode,
-  );
+  const fillColor = resolveProgressFillColor(primitive, percent, frame);
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
@@ -1322,6 +1340,7 @@ export function buildFrameData(
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
       idle: windowIsIdle(slot),
+      pace: slot.pace,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
@@ -1652,7 +1671,37 @@ export function formatTokenCount(value: number): string {
   return `${whole}.${String(frac).padStart(2, "0")}${unit}`;
 }
 
+// Mirrors the firmware: CodexBar's pace in its own words, and nothing once the
+// window's countdown is gone.
+function usagePaceText(
+  window: FrameData["usageWindows"][number] | undefined,
+  field: string,
+): string {
+  const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
+  if (!pace?.state) {
+    return "";
+  }
+  if (field === "Delta") {
+    const delta = pace.delta ?? 0;
+    return `${delta > 0 ? "+" : ""}${delta}%`;
+  }
+  if (field === "State") {
+    return pace.state;
+  }
+  if (pace.lasts === undefined) {
+    return "";
+  }
+  return pace.lasts ? "lasts until reset" : "runs out";
+}
+
 export function boundValue(key: string, frame: FrameData): string {
+  const paceMatch = /^usageSlot([12])Pace(Delta|State|Lasts)$/.exec(key);
+  if (paceMatch) {
+    return usagePaceText(
+      frame.usageWindows[Number(paceMatch[1]) - 1],
+      paceMatch[2],
+    );
+  }
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
   );
@@ -1789,6 +1838,28 @@ export function progressPercent(
     const window = frame.usageWindows[Number(usageMatch[1])];
     return window?.available ? window.percent : 0;
   }
+  // Mirrors the firmware: PaceExpected is where CodexBar expects the window
+  // to be by now (its delta counts used percent); other pace bindings fill
+  // like the window's percent.
+  const paceMatch = /^usageSlot([12])Pace(\w+)$/.exec(binding);
+  if (paceMatch) {
+    const window = frame.usageWindows[Number(paceMatch[1]) - 1];
+    if (!window?.available) {
+      return 0;
+    }
+    if (!paceMatch[2].startsWith("E")) {
+      return window.percent;
+    }
+    const pace = boundPace(binding, frame);
+    if (!pace) {
+      return 0;
+    }
+    const delta = pace.delta ?? 0;
+    return Math.max(
+      0,
+      Math.min(100, window.percent + (frame.usageMode === "used" ? -delta : delta)),
+    );
+  }
   if (binding === "usageSlot1Percent" || binding === "us1p") {
     return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
   }
@@ -1801,11 +1872,30 @@ export function progressPercent(
   return frame.sessionUnavailable ? 0 : frame.session;
 }
 
-function resolveProgressFillColor(
+// The pace behind a usageSlotNPace... binding while its window still runs.
+function boundPace(binding: string, frame: FrameData): UsagePaceFrame | undefined {
+  const match = /^usageSlot([12])Pace/.exec(binding);
+  const window = match ? frame.usageWindows[Number(match[1]) - 1] : undefined;
+  const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
+  return pace?.state ? pace : undefined;
+}
+
+const PACE_STATE_LEVEL: Record<string, number> = { reserve: 100, "on pace": 50, deficit: 0 };
+
+// A pace binding matches its stops against CodexBar's state instead of the
+// quota, like the firmware; without a pace it keeps the solid colour.
+export function resolveProgressFillColor(
   primitive: ThemePrimitive,
   percent: number,
-  usageMode?: string,
+  frame: Pick<FrameData, "usageMode" | "usageWindows">,
 ): string {
+  const usageMode = frame.usageMode;
+  const binding = primitive.binding || primitive.b || "";
+  const paceBound = /^usageSlot[12]Pace/.test(binding);
+  const pace = paceBound ? boundPace(binding, frame as FrameData) : undefined;
+  if (paceBound && !pace) {
+    return colorFor(primitive.color || primitive.c, "#FFFFFF");
+  }
   const stops = [...(primitive.colorStops || primitive.cs || [])]
     .map((stop) => ({
       gte: typeof stop.gte === "number" ? stop.gte : -1,
@@ -1814,8 +1904,11 @@ function resolveProgressFillColor(
     .filter((stop) => stop.gte >= 0 && stop.gte <= 100 && stop.color)
     .sort((a, b) => b.gte - a.gte);
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
-  const remainingStyle =
-    usageMode === "used" ? 100 - clamped : clamped;
+  const remainingStyle = pace
+    ? (PACE_STATE_LEVEL[pace.state ?? ""] ?? 0)
+    : usageMode === "used"
+      ? 100 - clamped
+      : clamped;
   for (const stop of stops) {
     if (remainingStyle >= stop.gte) {
       return colorFor(stop.color, "#FFFFFF");
