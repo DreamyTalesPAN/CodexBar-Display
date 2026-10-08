@@ -201,6 +201,12 @@ firmware renders it and decides nothing itself.
 - **Every accepted frame restarts the countdown** with its own value. After
   the writer returns, the first frame is taken at its word; nothing from before
   the gap is replayed.
+- **Only the display stream writes activity.** One-shot frames from other
+  senders (the install screen and the live frame of a theme install, the
+  `theme-apply` command) carry neither `activity` nor `activityTtlSecs`. By the
+  rule above they show not working, and an idle state has nothing to expire,
+  so they need no bound; the display stream's next frame sets both again. A
+  sender that writes `activity:"coding"` must write `activityTtlSecs` with it.
 - **Compatibility.** A Companion from before this field sends no
   `activityTtlSecs`: its frames never expire, as before. Firmware from before
   this field ignores it and keeps the last activity until the next frame, as

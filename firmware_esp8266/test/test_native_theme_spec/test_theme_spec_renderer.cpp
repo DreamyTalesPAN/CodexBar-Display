@@ -1509,6 +1509,25 @@ void testActivityExpirySurvivesMillisWrapAround() {
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
 }
 
+// Frames from one-shot senders (theme install, `theme-apply`) carry neither
+// `activity` nor a bound. They cancel the running bound, and that is safe
+// because the same frame ends the working state: what remains is idle, which
+// has nothing to expire. No frame can leave "coding" on screen without a bound
+// unless it says "coding" itself.
+void testOneShotFrameWithoutActivityLeavesNoUnboundedWorkingState() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  const char* installing = R"JSON({"v":2,"provider":"vibetv","label":"Installing","session":45,"weekly":45,"usageMode":"remaining"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, installing, 2000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_EQUAL_UINT32(0, ActivityTtlRemainingSecs(state, 2000));
+  TEST_ASSERT_FALSE(ExpireActivity(state, 600000, event));
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+}
+
 // While the device takes a theme or an update it accepts no frames, so it
 // cannot tell whether the writer is still there. That time does not count
 // against the bound: a customer who codes through a long install must not see
@@ -4443,6 +4462,7 @@ int main() {
   RUN_TEST(testActivityWithoutATtlNeverExpires);
   RUN_TEST(testReconnectAfterExpiryTakesTheNewFrameAtItsWord);
   RUN_TEST(testActivityExpirySurvivesMillisWrapAround);
+  RUN_TEST(testOneShotFrameWithoutActivityLeavesNoUnboundedWorkingState);
   RUN_TEST(testActivityTtlDoesNotRunWhileTheDeviceAcceptsNoFrames);
   RUN_TEST(testActivityTtlIsCappedAtOneDay);
   RUN_TEST(testReportsWorkingIgnoresErrorFramesAndReplenishment);
