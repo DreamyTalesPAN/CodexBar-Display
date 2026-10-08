@@ -510,13 +510,22 @@ func TestSetupLogFilesARefusedScreensaverUploadUnderItsOwnStage(t *testing.T) {
 		return events[0]
 	}
 
-	if got := refused("/v1/themes/install?slot=screensaver&themeId=mine").Stage; got != "screensaver_install" {
+	screensaver := refused("/v1/themes/install?slot=screensaver&themeId=mine")
+	if got := screensaver.Stage; got != "screensaver_install" {
 		t.Fatalf("refused screensaver upload was filed under %q", got)
+	}
+	// And in its words (issue #558).
+	if screensaver.Message != "Screensaver file is invalid." || screensaver.NextAction != "Export the screensaver again, then retry." {
+		t.Fatalf("refused screensaver upload reads %+v", screensaver)
 	}
 	// A theme upload keeps its stage.
 	for _, target := range []string{"/v1/themes/install?slot=live&themeId=mine", "/v1/themes/install?themeId=mine"} {
-		if got := refused(target).Stage; got != "theme_install" {
+		theme := refused(target)
+		if got := theme.Stage; got != "theme_install" {
 			t.Fatalf("refused theme upload %s was filed under %q", target, got)
+		}
+		if theme.Message != "Theme file is invalid." {
+			t.Fatalf("refused theme upload %s reads %+v", target, theme)
 		}
 	}
 }

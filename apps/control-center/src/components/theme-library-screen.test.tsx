@@ -301,13 +301,13 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         />,
       );
 
-    expect(render()).not.toContain("Theme is already installed.");
+    expect(render()).not.toContain("is already installed.");
     expect(render("/themes/s/nc-3-e18e4217.json")).toContain(
-      "Theme is already installed.",
+      "Screensaver is already installed.",
     );
     // An older revision in the slot is still this screensaver.
     expect(render("/themes/s/nc-2-cb6d64ba.json")).toContain(
-      "Theme is already installed.",
+      "Screensaver is already installed.",
     );
   });
 
@@ -443,6 +443,31 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(
       list({ phase: "installing", themeId, title: "", startedAt: "", logs: [] }),
     ).toContain(`Preparing ${noun.toLowerCase()} install.`);
+  });
+
+  // Issue #558: the reasons an Install button gives are written for themes.
+  it.each([
+    ["screensaver", "This screensaver does not support this VibeTV."],
+    ["live", "This theme does not support this VibeTV."],
+  ] as const)("gives the reason an install is unavailable in the words of the %s list", (usage, reason) => {
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{ connected: true, paired: true, ready: true, board: "another-board" }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        standby={{ enabled: true, timeoutMinutes: 10, brightnessPercent: 20 }}
+        storefrontConfigured={false}
+        themeInstallEnabled
+        themes={themes.map((item) => ({ ...item, compatibleBoards: ["esp8266_smalltv_st7789"] }))}
+        usage={usage}
+      />,
+    );
+
+    expect(html).toContain(`title="${reason}"`);
   });
 
   it("shows a clear empty state when the catalog has no screensavers", () => {

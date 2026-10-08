@@ -5973,7 +5973,7 @@ func TestStatusNamesRenderFailureInsteadOfProviderSetup(t *testing.T) {
 func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
 	const hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
 	payload := func(cause error) apiError {
-		_, got := themeInstallErrorPayload(&themeinstall.InstallError{
+		_, got := themeInstallErrorPayload("live", &themeinstall.InstallError{
 			Op:   "theme-pack/render-health",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  cause,
@@ -5999,6 +5999,39 @@ func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
 		if got.Code == "display_render_failed" || got.NextAction != hint {
 			t.Fatalf("%v: must keep the retry advice, got %+v", cause, got)
 		}
+	}
+}
+
+// Issue #558: a screensaver that could not be installed was called a theme in
+// the failure the customer reads. The engine's own detail is not reworded.
+func TestScreensaverInstallFailureSaysScreensaver(t *testing.T) {
+	transfer := &themeinstall.InstallError{
+		Op:   "theme-pack/upload",
+		Err:  errors.New("write /themes/u/a.json: timeout"),
+		Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+	}
+	pairing := &statusAPIError{status: http.StatusForbidden, api: apiError{
+		Code:       "pairing_required",
+		Message:    "VibeTV pairing is required before installing a theme.",
+		NextAction: "Finish VibeTV setup, then retry the theme install.",
+	}}
+
+	_, got := themeInstallErrorPayload("screensaver", transfer)
+	if !strings.HasPrefix(got.Message, "Screensaver install failed: ") || !strings.Contains(got.Message, "/themes/u/a.json") ||
+		got.NextAction != "keep VibeTV powered and on the same WiFi, then retry screensaver install" {
+		t.Fatalf("screensaver transfer failure reads %+v", got)
+	}
+	_, got = themeInstallErrorPayload("screensaver", pairing)
+	if got.Message != "VibeTV pairing is required before installing a screensaver." || got.NextAction != "Finish VibeTV setup, then retry the screensaver install." {
+		t.Fatalf("screensaver pairing failure reads %+v", got)
+	}
+	// A theme keeps its words.
+	_, got = themeInstallErrorPayload("live", transfer)
+	if !strings.HasPrefix(got.Message, "Theme install failed: ") || !strings.HasSuffix(got.NextAction, "retry theme install") {
+		t.Fatalf("theme transfer failure reads %+v", got)
+	}
+	if _, got = themeInstallErrorPayload("live", pairing); got != pairing.api {
+		t.Fatalf("theme pairing failure reads %+v", got)
 	}
 }
 
@@ -12217,6 +12250,10 @@ func TestFirmwareUpdateInstallRefusesWhileThemeInstallIsActive(t *testing.T) {
 	}
 	if response.Error.Code != "theme_install_in_progress" {
 		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
+	}
+	// The running install can be a screensaver (issue #558).
+	if response.Error.Message != "A theme or screensaver is still being installed." {
+		t.Fatalf("refusal reads %q", response.Error.Message)
 	}
 	if _, active := server.activeFirmwareUpdateJob(); active {
 		t.Fatal("rejected firmware update created a job")

@@ -413,11 +413,11 @@ describe("ThemeLibraryScreen custom themes", () => {
 
     const installed = await render(sentPath);
     expect(installed.html).toContain("My Screensaver");
-    expect(installed.html).toContain("Theme is already installed.");
+    expect(installed.html).toContain("Screensaver is already installed.");
     await act(async () => installed.cleanup());
 
     const other = await render("/themes/s/other-1-abc123.json");
-    expect(other.html).not.toContain("Theme is already installed.");
+    expect(other.html).not.toContain("is already installed.");
     await act(async () => other.cleanup());
   });
 });

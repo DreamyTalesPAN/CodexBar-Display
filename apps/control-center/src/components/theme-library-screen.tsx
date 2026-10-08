@@ -74,6 +74,7 @@ import {
   importThemeSpec,
   normalizeThemeSpec,
   validateThemeSpec,
+  wordsForUsage,
   type ThemeStudioAsset,
   type ThemeStudioUsage,
 } from "@/lib/theme-studio";
@@ -228,6 +229,8 @@ export function ThemeLibraryScreen({
     (theme) => (theme.usage || "live") === usage,
   );
   const screensavers = usage === "screensaver";
+  // The lines this page words itself name what its list holds (issue #558).
+  const say = (text: string) => wordsForUsage(text, usage);
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
   // What VibeTV itself reports in the slot this list fills, not what was
   // installed last from here: an install into the other slot changes nothing.
@@ -323,7 +326,6 @@ export function ThemeLibraryScreen({
         device,
         selectedTheme: displayTheme,
         themeInstallEnabled,
-        usage,
         windowsHost,
       });
   useEffect(() => {
@@ -658,15 +660,15 @@ export function ThemeLibraryScreen({
         {storageWarning ? (
           <Alert className="mb-5">
             <Lock aria-hidden />
-            <AlertTitle>Theme storage needs attention</AlertTitle>
-            <AlertDescription>{storageWarning}</AlertDescription>
+            <AlertTitle>{say("Theme storage needs attention")}</AlertTitle>
+            <AlertDescription>{say(storageWarning)}</AlertDescription>
           </Alert>
         ) : null}
         {libraryError ? (
           <Alert className="mb-5" variant="destructive">
             <Lock aria-hidden />
-            <AlertTitle>Theme action failed</AlertTitle>
-            <AlertDescription>{libraryError}</AlertDescription>
+            <AlertTitle>{say("Theme action failed")}</AlertTitle>
+            <AlertDescription>{say(libraryError)}</AlertDescription>
           </Alert>
         ) : null}
         {recovery && recoveryMatchesUsage ? (
@@ -674,6 +676,7 @@ export function ThemeLibraryScreen({
             onDiscard={discardRecovery}
             onResume={resumeRecovery}
             recovery={recovery}
+            title={say("Continue your unsaved theme")}
           />
         ) : null}
         {catalogEmpty ? (
@@ -782,16 +785,18 @@ function RecoveryCard({
   onDiscard,
   onResume,
   recovery,
+  title,
 }: {
   onDiscard: () => void;
   onResume: () => void;
   recovery: ThemeStudioRecovery;
+  title: string;
 }) {
   return (
     <div className="mb-6 grid gap-4 border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <div className="text-base font-bold text-[#1B1B1B]">
-          Continue your unsaved theme
+          {title}
         </div>
         <p className="mt-1 text-sm leading-6 text-[#444933]">
           {recovery.document.packName} was last changed {formatRecoveryTime(recovery.updatedAt)}.
@@ -820,18 +825,20 @@ function DeleteThemeDialog({
   onConfirm: () => boolean;
   theme: UserThemeRecord;
 }) {
+  const say = (text: string) => wordsForUsage(text, themeDocumentUsage(theme.document));
   return (
     <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
       <AlertDialogContent className="sm:max-w-[520px]">
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {theme.document.packName}?</AlertDialogTitle>
           <AlertDialogDescription>
-          This deletes the local library copy only. It does not remove or change
-          the theme currently active on VibeTV.
+          {say(
+            "This deletes the local library copy only. It does not remove or change the theme currently active on VibeTV.",
+          )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? (
-          <Alert variant="destructive"><Lock /><AlertTitle>Theme could not be deleted</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
+          <Alert variant="destructive"><Lock /><AlertTitle>{say("Theme could not be deleted")}</AlertTitle><AlertDescription>{say(error)}</AlertDescription></Alert>
         ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel autoFocus onClick={onCancel}>
@@ -1055,13 +1062,17 @@ function ThemeListItem({
         }));
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || (installed && !retryingFailedInstall) || Boolean(blocker);
+  // The reasons are written for themes; this list may hold screensavers.
   const title = disabled
-      ? installDisabledReason({
-          actionInFlight,
-          installInFlight,
-          installed,
-          blocker,
-        })
+      ? wordsForUsage(
+          installDisabledReason({
+            actionInFlight,
+            installInFlight,
+            installed,
+            blocker,
+          }),
+          usage,
+        )
       : `Install ${item.title}`;
   const loadingEdit = loadingEditorRow === rowKey(item);
 
@@ -1139,7 +1150,7 @@ function ThemeListItem({
             onClick={() => onDeleteTheme(item.custom)}
             title={
               themeStorageLocked
-                ? "Theme storage needs attention before deleting themes."
+                ? wordsForUsage("Theme storage needs attention before deleting themes.", usage)
                 : `Delete ${item.title}`
             }
             type="button"
@@ -1329,14 +1340,12 @@ function buildInstallReadiness({
   device,
   selectedTheme,
   themeInstallEnabled,
-  usage,
   windowsHost,
 }: {
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   selectedTheme?: ThemeProduct;
   themeInstallEnabled: boolean;
-  usage: ThemeStudioUsage;
   windowsHost: boolean;
 }) {
   const metadataBlocker = selectedTheme
@@ -1405,7 +1414,7 @@ function buildInstallReadiness({
   }
 
   if (!themeInstallEnabled) {
-    const reason = `${usage === "screensaver" ? "Screensaver" : "Theme"} installs are not available right now.`;
+    const reason = "Theme installs are not available right now.";
     return {
       title: "Themes unavailable",
       detail: reason,
@@ -1433,7 +1442,7 @@ function installDisabledReason({
   blocker: ThemeInstallBlocker | null;
 }) {
   if (installInFlight) {
-    return "Another theme install is already running.";
+    return "Another install is already running.";
   }
   if (actionInFlight) {
     return "Please wait for the current step to finish.";

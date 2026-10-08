@@ -200,6 +200,22 @@ it.each([
   expect(await screen.findByText(failed)).toBeTruthy();
 });
 
+// Issue #558: Screensaver Studio said "theme" under Advanced.
+it.each([
+  ["live", "Import theme JSON", "Theme JSON"],
+  ["screensaver", "Import screensaver JSON", "Screensaver JSON"],
+] as const)("names what Advanced imports and edits (%s)", (usage, importJson, json) => {
+  renderStudio("custom", {
+    initialTheme: {
+      assets: {}, packName: "Mine", source: "custom", spec: createBlankThemeSpec(), usage,
+    },
+  });
+  fireEvent.click(button("Advanced"));
+  expect(button(importJson)).toBeTruthy();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  expect(screen.getByLabelText(json)).toBeTruthy();
+});
+
 it("names a failed check instead of asking to save while Save is unavailable too", () => {
   renderStudio("blank");
   fireEvent.click(button("Advanced"));

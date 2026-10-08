@@ -433,7 +433,8 @@ export function SettingsScreen({
                 <SelectContent>
                   {standbyTimeoutOptions.map((minutes) => (
                     <SelectItem key={minutes} value={String(minutes)}>
-                      {standbyTimeoutLabel(minutes)}
+                      {/* Says what the minutes count (issue #558). */}
+                      {standbyTimeoutLabel(minutes)} without AI usage
                     </SelectItem>
                   ))}
                 </SelectContent>

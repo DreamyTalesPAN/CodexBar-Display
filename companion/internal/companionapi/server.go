@@ -2081,8 +2081,8 @@ func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request)
 			w,
 			http.StatusConflict,
 			"theme_install_in_progress",
-			"Theme install is still running.",
-			"Wait for the theme install to finish.",
+			"A theme or screensaver is still being installed.",
+			"Wait for it to finish.",
 		)
 		return
 	}
@@ -2114,8 +2114,8 @@ func (s *Server) rejectActiveThemeInstall(w http.ResponseWriter) bool {
 		w,
 		http.StatusConflict,
 		"theme_install_in_progress",
-		"Theme install is still running.",
-		"Wait for the theme install to finish, then try again.",
+		"A theme or screensaver is still being installed.",
+		"Wait for it to finish, then try again.",
 	)
 	return true
 }
@@ -5237,13 +5237,13 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	switch refusal := s.tryStartThemeInstall(); refusal {
 	case "":
 	case "mac_app_restarting":
-		writeError(w, http.StatusConflict, refusal, "Mac App is restarting.", "Wait a moment, then start the theme install again.")
+		writeError(w, http.StatusConflict, refusal, "Mac App is restarting.", "Wait a moment, then try again.")
 		return
 	case "firmware_update_in_progress":
-		writeError(w, http.StatusConflict, refusal, "VibeTV update is still running.", "Wait for the update to finish, then install the theme again.")
+		writeError(w, http.StatusConflict, refusal, "VibeTV update is still running.", "Wait for the update to finish, then try again.")
 		return
 	default:
-		writeError(w, http.StatusConflict, refusal, "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
+		writeError(w, http.StatusConflict, refusal, "A theme or screensaver is already being installed.", "Wait for it to finish, then try again.")
 		return
 	}
 	releaseInstall := true
@@ -5345,7 +5345,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	var installLog bytes.Buffer
 	result, err := s.runThemeInstall(r.Context(), cfg, req, &installLog)
 	if err != nil {
-		writeThemeInstallError(w, err)
+		writeThemeInstallError(w, req.Slot, err)
 		return
 	}
 	s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: installText(req.Slot, "Theme installed.")})
@@ -5374,39 +5374,45 @@ func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeIns
 	if !strings.EqualFold(contentType, "application/zip") {
 		return req, decodeJSON(w, r, &req)
 	}
+	// An upload names its slot in the URL, so a refused screensaver is not
+	// called a theme (issue #558).
+	slot := strings.TrimSpace(r.URL.Query().Get("slot"))
+	refuse := func(status int, code, message, nextAction string) {
+		writeError(w, status, code, installText(slot, message), installText(slot, nextAction))
+	}
 
 	async := false
 	if raw := strings.TrimSpace(r.URL.Query().Get("async")); raw != "" {
 		parsed, err := strconv.ParseBool(raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_theme_install_request", "Theme install request is invalid.", "Try the theme install again.")
+			refuse(http.StatusBadRequest, "invalid_theme_install_request", "Theme install request is invalid.", "Try the theme install again.")
 			return themeInstallRequest{}, false
 		}
 		async = parsed
 	}
 	if r.ContentLength > themepack.MaxZipBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
+		refuse(http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
 		return themeInstallRequest{}, false
 	}
-	packBytes, ok := readThemePackUpload(w, r)
+	packBytes, ok := readThemePackUpload(w, r, refuse)
 	if !ok {
 		return themeInstallRequest{}, false
 	}
 	if len(packBytes) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_theme_pack", "Theme file is empty.", "Export the theme again, then retry.")
+		refuse(http.StatusBadRequest, "empty_theme_pack", "Theme file is empty.", "Export the theme again, then retry.")
 		return themeInstallRequest{}, false
 	}
 	if len(packBytes) > themepack.MaxZipBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
+		refuse(http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
 		return themeInstallRequest{}, false
 	}
 	if _, err := themepack.LoadZipBytes(packBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_theme_pack", "Theme file is invalid.", "Export the theme again, then retry.")
+		refuse(http.StatusBadRequest, "invalid_theme_pack", "Theme file is invalid.", "Export the theme again, then retry.")
 		return themeInstallRequest{}, false
 	}
 
 	return themeInstallRequest{
-		Slot:      strings.TrimSpace(r.URL.Query().Get("slot")),
+		Slot:      slot,
 		ThemeID:   strings.TrimSpace(r.URL.Query().Get("themeId")),
 		ThemeName: strings.TrimSpace(r.URL.Query().Get("themeName")),
 		PackBytes: packBytes,
@@ -5414,12 +5420,12 @@ func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeIns
 	}, true
 }
 
-func readThemePackUpload(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+func readThemePackUpload(w http.ResponseWriter, r *http.Request, refuse func(status int, code, message, nextAction string)) ([]byte, bool) {
 	controller := http.NewResponseController(w)
 	deadlineSet := false
 	if err := controller.SetReadDeadline(time.Now().Add(themePackUploadReadTime)); err != nil {
 		if !errors.Is(err, http.ErrNotSupported) {
-			writeError(w, http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+			refuse(http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
 			return nil, false
 		}
 	} else {
@@ -5435,15 +5441,15 @@ func readThemePackUpload(w http.ResponseWriter, r *http.Request) ([]byte, bool) 
 		var timeoutErr net.Error
 		if errors.Is(readErr, os.ErrDeadlineExceeded) || (errors.As(readErr, &timeoutErr) && timeoutErr.Timeout()) {
 			w.Header().Set("Connection", "close")
-			writeError(w, http.StatusRequestTimeout, "theme_pack_upload_timeout", "Theme upload took too long.", "Export the theme again, then retry.")
+			refuse(http.StatusRequestTimeout, "theme_pack_upload_timeout", "Theme upload took too long.", "Export the theme again, then retry.")
 			return nil, false
 		}
-		writeError(w, http.StatusBadRequest, "invalid_theme_pack", "Theme file could not be read.", "Export the theme again, then retry.")
+		refuse(http.StatusBadRequest, "invalid_theme_pack", "Theme file could not be read.", "Export the theme again, then retry.")
 		return nil, false
 	}
 	if resetErr != nil {
 		w.Header().Set("Connection", "close")
-		writeError(w, http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+		refuse(http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
 		return nil, false
 	}
 	return packBytes, true
@@ -6298,7 +6304,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		result, err := s.runThemeInstall(ctx, cfg, req, writer)
 		finishedAt := time.Now().UTC()
 		if err != nil {
-			_, apiErr := themeInstallErrorPayload(err)
+			_, apiErr := themeInstallErrorPayload(req.Slot, err)
 			s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
 			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 				job.Phase = "error"
@@ -9433,27 +9439,33 @@ func writeInternalError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "internal_error", "The companion could not complete the request.", "Restart the companion and retry.")
 }
 
-func writeThemeInstallError(w http.ResponseWriter, err error) {
-	status, apiErr := themeInstallErrorPayload(err)
+func writeThemeInstallError(w http.ResponseWriter, slot string, err error) {
+	status, apiErr := themeInstallErrorPayload(slot, err)
 	writeError(w, status, apiErr.Code, apiErr.Message, apiErr.NextAction)
 }
 
-func themeInstallErrorPayload(err error) (int, apiError) {
+// The failure of an install into slot, in the words of that slot: a
+// screensaver that failed is not called a theme (issue #558).
+func themeInstallErrorPayload(slot string, err error) (int, apiError) {
 	var apiStatus *statusAPIError
 	if errors.As(err, &apiStatus) {
-		return apiStatus.status, apiStatus.api
+		api := apiStatus.api
+		api.Message = installText(slot, api.Message)
+		api.NextAction = installText(slot, api.NextAction)
+		return apiStatus.status, api
 	}
 	code := "theme_install_failed"
 	if c := errcode.Of(err); c != "" {
 		code = string(c)
 	}
-	next := errcode.Recovery(err)
+	next := installText(slot, errcode.Recovery(err))
 	if strings.TrimSpace(next) == "" {
 		next = "Keep VibeTV powered on and retry the install."
 	}
-	message := "Theme install failed."
+	// The detail is the engine's own text and stays as it is.
+	message := installText(slot, "Theme install failed.")
 	if detail := sanitizeErrorDetail(err); detail != "" {
-		message = "Theme install failed: " + detail
+		message = installText(slot, "Theme install failed: ") + detail
 	}
 	// Issue #498: the theme is on the VibeTV but it cannot draw it. The raw
 	// render health is for the support report, not for the customer's dialog.

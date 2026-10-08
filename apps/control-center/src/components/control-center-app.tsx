@@ -5993,7 +5993,7 @@ function currentFirmwareUpdate(firmware: string): FirmwareUpdateInfo {
 
 function customerInstallLogs(
   logs: string[] | undefined,
-  fallback: string[] = ["Preparing theme install."],
+  fallback: string[] = [],
 ): string[] {
   const cleaned = (logs || [])
     .map((line) => line.trim())
@@ -6006,7 +6006,7 @@ function themeInstallErrorText(error: ApiError): string {
   const message = error.message?.trim();
   const nextAction = error.nextAction?.trim();
   if (!message) {
-    return nextAction || "Theme install failed. Try again.";
+    return nextAction || "The install failed. Try again.";
   }
   if (!nextAction || nextAction === message) {
     return message;

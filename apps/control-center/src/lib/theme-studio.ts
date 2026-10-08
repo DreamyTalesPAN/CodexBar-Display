@@ -86,6 +86,16 @@ export type ThemeStudioSpec = {
 
 export type ThemeStudioUsage = "live" | "screensaver";
 
+/**
+ * A line written about a theme, worded for what it is about: on a screensaver
+ * it names the screensaver (issue #558).
+ */
+export function wordsForUsage(text: string, usage?: ThemeStudioUsage): string {
+  return usage === "screensaver"
+    ? text.replace(/\bTheme/g, "Screensaver").replace(/\btheme/g, "screensaver")
+    : text;
+}
+
 export type ThemeStudioDraft = {
   assets?: Record<string, ThemeStudioAsset>;
   savedAt: string;

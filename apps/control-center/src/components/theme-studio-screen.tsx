@@ -81,6 +81,7 @@ import {
   referencedThemeAssetPaths,
   updateThemeColors,
   validateThemeSpec,
+  wordsForUsage,
   type ThemeStudioAsset,
   type ThemeStudioPrimitive,
   type ThemeStudioSpec,
@@ -232,6 +233,7 @@ export function ThemeStudioScreen({
 }: ThemeStudioScreenProps = {}) {
   const usage = initialTheme?.usage || "live";
   const screensaver = usage === "screensaver";
+  const say = (text: string) => wordsForUsage(text, usage);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gifInputRef = useRef<HTMLInputElement>(null);
   const libraryButtonRef = useRef<HTMLDivElement>(null);
@@ -367,7 +369,10 @@ export function ThemeStudioScreen({
         markSaved: true,
         packName: initialTheme.packName,
         spec: initialTheme.spec,
-        status: { tone: "ready", message: "Theme opened." },
+        status: {
+          tone: "ready",
+          message: wordsForUsage("Theme opened.", initialTheme.usage),
+        },
       });
       return;
     }
@@ -618,7 +623,7 @@ export function ThemeStudioScreen({
     try {
       const response = await fetch(themeRenderPackUrl(themeId));
       if (!response.ok) {
-        throw new Error("Theme could not be opened.");
+        throw new Error(say("Theme could not be opened."));
       }
       const payload = (await response.json()) as {
         assets?: Record<string, ThemeStudioAsset>;
@@ -627,7 +632,7 @@ export function ThemeStudioScreen({
         themeId?: string;
       };
       if (!payload.spec) {
-        throw new Error("Theme could not be opened.");
+        throw new Error(say("Theme could not be opened."));
       }
       if (options.cancelled?.()) {
         return;
@@ -640,7 +645,7 @@ export function ThemeStudioScreen({
         spec: imported,
         status: options.quiet
           ? { tone: "ready", message: "Mini Classic loaded." }
-          : { tone: "ready", message: "Theme opened." },
+          : { tone: "ready", message: say("Theme opened.") },
       });
       setDeviceStatus(SEND_IDLE);
     } catch (error) {
@@ -650,7 +655,7 @@ export function ThemeStudioScreen({
       setJsonStatus({
         tone: "attention",
         message:
-          error instanceof Error ? error.message : "Theme could not be opened.",
+          error instanceof Error ? error.message : say("Theme could not be opened."),
       });
     } finally {
       if (!options.cancelled?.()) {
@@ -675,7 +680,7 @@ export function ThemeStudioScreen({
       setJsonStatus({
         tone: "attention",
         message:
-          error instanceof Error ? error.message : "Theme file was not opened.",
+          error instanceof Error ? error.message : say("Theme file was not opened."),
       });
     } finally {
       if (fileInputRef.current) {
@@ -1079,7 +1084,7 @@ export function ThemeStudioScreen({
       setDeviceStatus({
         tone: "attention",
         message: copyForHost(
-          "Open Theme Studio in the local Mac App to send this theme.",
+          say("Open Theme Studio in the local Mac App to send this theme."),
           windowsHost,
         ),
       });
@@ -1455,7 +1460,7 @@ export function ThemeStudioScreen({
                     variant="outline"
                   >
                     <FileUp data-icon="inline-start" aria-hidden />
-                    <span>Import theme JSON</span>
+                    <span>{say("Import theme JSON")}</span>
                   </Button>
                 </section>
                 ),
@@ -1553,7 +1558,7 @@ export function ThemeStudioScreen({
                   role="tabpanel"
                 >
                   <Textarea
-                    aria-label="Theme JSON"
+                    aria-label={say("Theme JSON")}
                     className="min-h-[220px] resize-y font-mono text-xs leading-5"
                     onChange={(event) => {
                       setJsonDraft(event.target.value);

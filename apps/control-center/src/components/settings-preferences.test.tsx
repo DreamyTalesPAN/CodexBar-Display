@@ -156,6 +156,37 @@ describe("SettingsScreen display preferences", () => {
   });
 });
 
+// Issue #558: "Show after 10 minutes" did not say minutes of what.
+describe("SettingsScreen screensaver timeout", () => {
+  it("says what the minutes of Show after count", () => {
+    const onSaveStandby = vi.fn();
+    const standby = { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 };
+    render(
+      <SettingsScreen
+        {...props({
+          device: {
+            active: true, connected: true, ready: true, paired: true,
+            capabilities: { standby: { supported: true } },
+          },
+          onSaveStandby,
+          standby,
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Show after" }).textContent).toBe(
+      "10 minutes without AI usage",
+    );
+    expect(openSelect("Show after")).toEqual(
+      ["1 minute", "5 minutes", "10 minutes", "15 minutes", "30 minutes", "60 minutes"].map(
+        (minutes) => `${minutes} without AI usage`,
+      ),
+    );
+    choose("30 minutes without AI usage");
+    expect(onSaveStandby).toHaveBeenLastCalledWith({ ...standby, timeoutMinutes: 30 });
+  });
+});
+
 // Issue #558: the customer's own screensaver is named as it was saved. VibeTV
 // reports it only by the path its theme file was sent under.
 describe("SettingsScreen installed screensaver", () => {
