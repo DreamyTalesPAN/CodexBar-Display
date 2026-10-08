@@ -79,6 +79,11 @@ type Options struct {
 	Now                 func() time.Time
 	FetchLiveFrame      func(context.Context) (protocol.Frame, error)
 	Cable               *CableInstallOptions
+	// ConfirmLiveTheme is the caller's own last check of a live theme install.
+	// It runs before the previous theme's files are removed, so over WiFi a
+	// failure there returns VibeTV to the previous theme like any earlier one
+	// (#583). Over the cable the firmware has already removed them.
+	ConfirmLiveTheme func(context.Context) error
 }
 
 type Result struct {
@@ -188,8 +193,19 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		themeName = pack.Manifest.ID
 	}
 	fmt.Fprintf(out, "Preparing theme: %s\n", themeName)
+	confirm := opts.ConfirmLiveTheme
+	if confirm == nil || !live {
+		confirm = func(context.Context) error { return nil }
+	}
 	if opts.Cable != nil {
-		return installCablePack(ctx, pack, slot, themeName, opts.Cable, out)
+		result, err := installCablePack(ctx, pack, slot, themeName, opts.Cable, out)
+		if err == nil {
+			err = confirm(ctx)
+		}
+		if err != nil {
+			return Result{}, err
+		}
+		return result, nil
 	}
 	if opts.Verbose {
 		themeSource := resolvedPack
@@ -275,6 +291,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if previousThemePathErr != nil && opts.Verbose {
 		fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
 	}
+	// True from the first write that changes what VibeTV shows.
 	installScreenShown := false
 	defer func() {
 		if (retErr == nil && live) || !installScreenShown {
@@ -352,6 +369,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 
 	if live {
 		fmt.Fprintln(out, "Activating theme...")
+		installScreenShown = true
 		if err := activateAndVerifyTheme(
 			ctx,
 			wifi,
@@ -379,6 +397,9 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 				Err:  err,
 				Hint: hint,
 			}
+		}
+		if err := confirm(ctx); err != nil {
+			return Result{}, err
 		}
 	} else {
 		// Selecting the screensaver only records a reference on the device, so

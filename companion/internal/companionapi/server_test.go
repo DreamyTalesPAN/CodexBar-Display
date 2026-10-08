@@ -11229,6 +11229,57 @@ func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
 	}
 }
 
+// Issue #583: the installer removes the previous theme's files only after this
+// check, and goes back to the previous theme when it fails. So the check has
+// to run inside the install, once, and leave the device quiet for what follows.
+func TestThemeInstallRunsItsLastRenderCheckInsideTheInstall(t *testing.T) {
+	for _, renderErr := range []error{nil, errors.New("render counters did not advance")} {
+		device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+		}))
+		cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+		server := newTestServer(t, cfg)
+		var ops []string
+		server.pauseDisplayStream = func(paused bool) { ops = append(ops, fmt.Sprintf("paused=%t", paused)) }
+		server.refreshStream = func(context.Context, string) error { return nil }
+		server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+			return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+		}
+		server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+			ops = append(ops, "render-check")
+			return deviceHealth{OK: true}, renderErr
+		}
+		server.installTheme = func(ctx context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+			ops = append(ops, "activate")
+			if err := opts.ConfirmLiveTheme(ctx); err != nil {
+				ops = append(ops, "restore")
+				return themeinstall.Result{}, err
+			}
+			ops = append(ops, "cleanup")
+			return themeinstall.Result{ThemeID: "mini"}, nil
+		}
+
+		_, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, io.Discard)
+		device.Close()
+
+		last := "cleanup"
+		if renderErr != nil {
+			last = "restore"
+			var statusErr *statusAPIError
+			if !errors.As(err, &statusErr) || statusErr.api.Code != "display_render_failed" {
+				t.Fatalf("expected the failed render check as the install error, got %v", err)
+			}
+		} else if err != nil {
+			t.Fatalf("run theme install: %v", err)
+		}
+		want := "paused=true,activate,paused=false,render-check,paused=true," + last + ",paused=false"
+		if got := strings.Join(ops, ","); got != want {
+			t.Fatalf("install order=%q, want %q", got, want)
+		}
+	}
+}
+
 func TestThemeInstallScreensaverSlotSkipsTheLiveRenderVerification(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("a screensaver install must not read the live render state: %s", r.URL.Path)
