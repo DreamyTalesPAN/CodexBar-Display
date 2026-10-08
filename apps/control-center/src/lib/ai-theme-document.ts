@@ -14,6 +14,7 @@ import {
   AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,
   AI_THEME_SCREENMASTER_ASSET_PATH as ART,
   AI_THEME_SCENE_LOOP_ASSET_PATH as LOOP,
+  encodeAIThemeCBA1,
   isAttachedSceneAnimation,
   isCompanionSprite,
   type AIThemeCompanion,
@@ -294,4 +295,52 @@ export function pruneUnusedThemeAssets(document: ThemeStudioDocument): void {
   for (const path of Object.keys(document.assets)) {
     if (!used.has(path)) delete document.assets[path];
   }
+}
+
+// The device cannot blend an animated sprite with what lies beneath it: it
+// fills the sprite's transparent pixels with the theme background colour. For
+// the copy that goes to the device, paint the artwork behind each companion
+// into its frames. The editable document keeps the transparent sprite.
+export function flattenCompanionSprites(document: ThemeStudioDocument): ThemeStudioDocument {
+  const art = document.spec.primitives.find((p) => p.assetPath === ART);
+  const artwork = decodeSprite(document.assets[ART]?.data || "");
+  if (!art || !artwork || !document.spec.primitives.some((p) => isCompanionSprite(p.assetPath))) return document;
+  const artWidth = art.width || artwork.width, artHeight = art.height || artwork.height;
+  const backdrop = new Array<string | undefined>(artWidth * artHeight);
+  const paint = (target: Array<string | undefined>, width: number, height: number, scaleX: number, scaleY: number, rects: typeof artwork.frames[number]) => {
+    for (const r of rects) {
+      const x2 = Math.min(width, Math.ceil((r.x + r.width) * scaleX)), y2 = Math.min(height, Math.ceil((r.y + r.height) * scaleY));
+      for (let y = Math.floor(r.y * scaleY); y < y2; y++)
+        for (let x = Math.floor(r.x * scaleX); x < x2; x++) target[y * width + x] = r.color;
+    }
+  };
+  paint(backdrop, artWidth, artHeight, artWidth / artwork.width, artHeight / artwork.height, artwork.frames[0]);
+  const next = cloneDocument(document);
+  for (const p of next.spec.primitives) {
+    if (!isCompanionSprite(p.assetPath)) continue;
+    const sprite = decodeSprite(next.assets[p.assetPath!]?.data || "");
+    if (!sprite) continue;
+    const { width, height } = sprite;
+    const shown = { width: p.width || width, height: p.height || height };
+    const frames = sprite.frames.map((rects) => {
+      const colors = new Array<string | undefined>(width * height);
+      for (let y = 0; y < height; y++) {
+        const artY = p.y - art.y + Math.floor(((y + 0.5) * shown.height) / height);
+        for (let x = 0; x < width; x++) {
+          const artX = p.x - art.x + Math.floor(((x + 0.5) * shown.width) / width);
+          if (artX >= 0 && artY >= 0 && artX < artWidth && artY < artHeight) colors[y * width + x] = backdrop[artY * artWidth + artX];
+        }
+      }
+      paint(colors, width, height, 1, 1, rects);
+      const rgba = new Uint8ClampedArray(width * height * 4);
+      colors.forEach((color, i) => {
+        if (!color) return;
+        const value = Number.parseInt(color.slice(1), 16);
+        rgba.set([value >> 16, (value >> 8) & 255, value & 255, 255], i * 4);
+      });
+      return rgba;
+    });
+    next.assets[p.assetPath!] = { ...next.assets[p.assetPath!], data: encodeAIThemeCBA1(frames, width, height, sprite.fps) };
+  }
+  return next;
 }

@@ -5390,3 +5390,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested that Send to VibeTV in the development preview reaches his VibeTV on the cable.
 - Approved customer-visible result: No customer-visible change. The development proxy also accepts the runtime of a locally built preview app as the owner of the local listener, so Send to VibeTV in the development preview installs the design through that app. Paul's cable VibeTV received and activated a design this way.
+
+
+## 2026-10-08 — Animated companions keep their surroundings on the device
+
+- User approval: Paul reported that the cat sent to his VibeTV sat in a solid box while the preview showed it cut out, and asked for it to be fixed.
+- Approved customer-visible result: On VibeTV an animated companion shows the artwork around it, as in the preview, instead of a box in the theme background colour. Send to VibeTV and the exported theme pack paint the artwork behind each companion into its frames; the saved, editable design is unchanged.

@@ -4,12 +4,14 @@ import {
   pruneUnusedThemeAssets,
   setAIAnimationSpeed,
   conceptFromDocument,
+  flattenCompanionSprites,
 } from "./ai-theme-document";
 import {
   AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,
   AI_THEME_SCREENMASTER_ASSET_PATH as ART,
   buildAIThemeAnimationCandidateFromRGBA,
   encodeAIThemeCBA1,
+  encodeAIThemeCBI1,
   type AIThemeConcept,
 } from "./ai-theme";
 import {
@@ -162,4 +164,39 @@ it("drops unused image bytes from the current draft and preserves exact Undo", (
   const removed = themeStudioEditorReducer(initial, {type:"mutate",mutate:(draft)=>{draft.spec.primitives=[];pruneUnusedThemeAssets(draft);}});
   expect(removed.present.assets).toEqual({});
   expect(themeStudioEditorReducer(removed,{type:"undo"}).present).toEqual(initial.present);
+});
+
+describe("companion sprites on the device", () => {
+  it("paints the artwork behind a companion into the copy sent to the device", () => {
+    const artwork = new Uint8ClampedArray(240 * 128 * 4);
+    for (let i = 0; i < artwork.length; i += 4) artwork.set([255, 0, 0, 255], i);
+    const frames = Array.from({ length: 8 }, () => {
+      const frame = new Uint8ClampedArray(16 * 16 * 4);
+      frame.set([0, 0, 255, 255], 0);
+      return frame;
+    });
+    const pet = "/themes/u/ai-pet-1.cba";
+    const document = {
+      packName: "Cat", usage: "live",
+      assets: {
+        [ART]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBI1(artwork, 240, 128) },
+        [pet]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBA1(frames, 16, 16, 2) },
+      },
+      spec: { primitives: [
+        { type: "sprite", assetPath: ART, x: 0, y: 0, width: 240, height: 128 },
+        { type: "sprite", assetPath: pet, x: 100, y: 120, width: 32, height: 32, frameCount: 8, fps: 2, sheetColumns: 8 },
+      ] },
+    } as unknown as ThemeStudioDocument;
+    const original = document.assets[pet].data;
+    const rows = flattenCompanionSprites(document).assets[pet].data.split("\n");
+    expect(document.assets[pet].data).toBe(original);
+    expect(rows.slice(0, 2)).toEqual(["CBA1", "16 16 8 2"]);
+    expect(rows.slice(3, 5).sort()).toEqual(["#0000FF", "#FF0000"]);
+    // The top quarter lies over the artwork; the rest hangs below it and stays
+    // transparent, where the device shows the theme background as before.
+    const pixels = rows.slice(5, 5 + 16);
+    expect(pixels[0]).toMatch(/^[ab]15[ab]$/);
+    expect(pixels[3]).not.toContain(".");
+    expect(pixels[4]).toBe("16.");
+  });
 });

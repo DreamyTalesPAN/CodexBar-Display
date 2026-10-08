@@ -93,6 +93,7 @@ import {
   applyAIThemeCandidate,
   pruneUnusedThemeAssets,
   conceptFromDocument,
+  flattenCompanionSprites,
   setAIAnimationSpeed,
   spritePNG,
 } from "@/lib/ai-theme-document";
@@ -495,11 +496,12 @@ export function AIThemeStudioScreen({
   }
   function exportPack() {
     try {
+      const device = flattenCompanionSprites(document);
       const pack = buildThemePack(
-        document.spec,
-        document.packName,
-        document.assets,
-        document.usage,
+        device.spec,
+        device.packName,
+        device.assets,
+        device.usage,
       );
       download(new Uint8Array(pack.zipBytes), pack.fileName, "application/zip");
       setStatus("Theme pack exported. No device was contacted.");
@@ -522,11 +524,11 @@ export function AIThemeStudioScreen({
     setTransferStatus("Sending…");
     try {
       if (onInstallTheme) {
-        const installed = await onInstallTheme(document);
+        const installed = await onInstallTheme(flattenCompanionSprites(document));
         setTransferStatus(installed ? "Theme sent to VibeTV." : "Check the transfer status.");
         return;
       }
-      setTransferStatus(await sendThemeToVibeTV(document, setTransferStatus, transferJob, (id) => {
+      setTransferStatus(await sendThemeToVibeTV(flattenCompanionSprites(document), setTransferStatus, transferJob, (id) => {
         acceptedJob = id;
         setTransferJob(id);
         try {
