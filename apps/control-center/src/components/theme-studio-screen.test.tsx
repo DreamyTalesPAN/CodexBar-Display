@@ -271,9 +271,12 @@ it("names the VibeTV's own limit when that is what keeps Send unavailable", () =
 // Issue #551: Export ZIP did not say where the file went. Windows saves a
 // download without asking (see #545); the Mac asks where and can be cancelled.
 // Windows gets no file name: it saves a second export as "… (1).zip".
+// Seen on the Mac app on 2026-10-09: "… exported." stood while the save dialog
+// was still open and after Cancel. The app does not learn how that dialog
+// ended, so the Mac sentence claims no saved file.
 it.each([
   [true, "Saved in your Downloads folder. Nothing was sent."],
-  [false, "vibetv-theme-new-theme.zip exported. Nothing was sent."],
+  [false, "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent."],
 ])("says after Export ZIP where the file is when the app saved it itself (windows=%s)", (windowsHost, message) => {
   // jsdom has neither blob URLs nor downloads.
   URL.createObjectURL = () => "blob:theme";
@@ -335,7 +338,7 @@ it("shows one answer at a time for Save, Export and Send, errors included", asyn
   URL.revokeObjectURL = () => {};
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   const saved = "Saved to library.";
-  const exported = "vibetv-theme-new-theme.zip exported. Nothing was sent.";
+  const exported = "Choose where to save vibetv-theme-new-theme.zip. Nothing was sent.";
   const sendFailed = "Theme install needs attention. Check the install status.";
   const shown = () => [saved, exported, sendFailed].filter(text => screen.queryByText(text));
   renderStudio("blank", { onInstallTheme: async () => false });

@@ -7,6 +7,7 @@ import {
   ArrowUp,
   CheckCircle2,
   Code2,
+  Download,
   FileUp,
   Film,
   ImagePlus,
@@ -1063,17 +1064,18 @@ export function ThemeStudioScreen({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       exportCountRef.current += 1;
       setExportStatus({
-        tone: "ready",
+        tone: windowsHost ? "ready" : "unknown",
         // Windows saves a download without asking where, so the app can name
         // the folder. It cannot name the file: a second export of the same
         // theme is saved as "… (1).zip", so that one is counted instead, or
         // the sentence would stand unchanged. The Mac asks where and can be
-        // cancelled; it gets no claim about a folder.
+        // cancelled, and the app does not learn which: its sentence says
+        // what is asked and claims no saved file.
         message: windowsHost
           ? exportCountRef.current > 1
             ? `Saved again in your Downloads folder (export ${exportCountRef.current}). Nothing was sent.`
             : "Saved in your Downloads folder. Nothing was sent."
-          : `${pack.fileName} exported. Nothing was sent.`,
+          : `Choose where to save ${pack.fileName}. Nothing was sent.`,
       });
     } catch (error) {
       setExportStatus({
@@ -1700,8 +1702,10 @@ export function ThemeStudioScreen({
                   icon={
                     exportStatus.tone === "attention" ? (
                       <AlertTriangle size={16} aria-hidden />
-                    ) : (
+                    ) : exportStatus.tone === "ready" ? (
                       <CheckCircle2 size={16} aria-hidden />
+                    ) : (
+                      <Download size={16} aria-hidden />
                     )
                   }
                   title="Export"
