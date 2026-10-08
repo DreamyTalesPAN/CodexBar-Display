@@ -4,6 +4,7 @@
 // would otherwise hold up or close the app at every start. The version and
 // the time are written to a file before the download starts; a start that is
 // offered the same version within the next 24 hours goes on without it.
+// A running VibeTV update or theme install is not an attempt.
 // No dependencies, so CI tests this file on its own with `rustc --test`.
 
 use std::path::Path;
@@ -34,6 +35,12 @@ pub fn claim(marker: &Path, offered: &str, now: u64) -> bool {
         let _ = std::fs::create_dir_all(dir);
     }
     std::fs::write(marker, format!("{offered}\n{now}")).is_ok()
+}
+
+// For an attempt that ended before anything could be installed, because a
+// VibeTV update or theme install was running: the next start tries again.
+pub fn release(marker: &Path) {
+    let _ = std::fs::remove_file(marker);
 }
 
 #[cfg(test)]
@@ -84,6 +91,15 @@ mod tests {
         assert!(claim(&marker, "1.0.63", NOON + RETRY_AFTER_SECS));
         assert!(!claim(&marker, "1.0.63", NOON + RETRY_AFTER_SECS + 60));
         assert!(claim(&marker, "1.0.64", NOON + RETRY_AFTER_SECS + 60));
+    }
+
+    #[test]
+    fn a_released_version_is_tried_at_the_next_start() {
+        let marker = marker("release");
+        assert!(claim(&marker, "1.0.63", NOON));
+        release(&marker);
+        assert!(claim(&marker, "1.0.63", NOON + 60));
+        assert!(!claim(&marker, "1.0.63", NOON + 120));
     }
 
     #[test]

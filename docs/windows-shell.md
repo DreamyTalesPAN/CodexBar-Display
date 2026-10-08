@@ -58,8 +58,9 @@ Companion for everything it needs.
   `%LOCALAPPDATA%\shop.vibetv.control-center\launch-update-attempt.txt` before
   the download starts, and a start that is offered that version within the
   next 24 hours skips it, whatever stopped the first attempt (a slow or
-  stalled download, a running VibeTV update, an installer that failed after
-  the app had closed). The rule is `due` in `src/launch_update.rs`, tested
+  stalled download, an installer that failed after the app had closed). A
+  running VibeTV update or theme install is not an attempt: the file is
+  removed and the next start tries again. The rule is `due` in `src/launch_update.rs`, tested
   alone in CI with `rustc --test`.
   The tray item and the Updates tab still install it. There is no switch that
   turns the check off and no way to point a build at another update source:

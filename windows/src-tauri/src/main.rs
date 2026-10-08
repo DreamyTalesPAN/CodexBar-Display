@@ -811,6 +811,10 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
         .await
         .map_err(|error| format!("update hold check failed: {error}"))?;
     if let UpdateHold::UpdateRunning = hold {
+        // Nothing was tried; the next start may install this version.
+        if let Some(marker) = &marker {
+            launch_update::release(marker);
+        }
         return Ok(UpdateOutcome::Busy);
     }
     log(&format!("installing update {}", update.version));
