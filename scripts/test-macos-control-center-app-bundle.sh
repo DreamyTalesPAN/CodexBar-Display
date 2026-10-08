@@ -450,6 +450,10 @@ main() {
     --output "$preview_app" >/dev/null
   [[ "$(plutil -extract VibeTVLocalPreviewRuntime raw -o - "${preview_app}/Contents/Info.plist")" == "true" ]] \
     || die "local preview bundle must opt into its isolated preview runtime"
+  # A local build carries a small build number, so the launch update would
+  # replace it with the public release.
+  [[ "$(plutil -extract SUEnableAutomaticChecks raw -o - "${preview_app}/Contents/Info.plist")" == "false" ]] \
+    || die "local preview app must not check for updates by itself"
 
   python3 - \
     "${app}/Contents/Info.plist" \
