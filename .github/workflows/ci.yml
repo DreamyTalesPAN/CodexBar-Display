@@ -54,7 +54,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: windows/src-tauri
-      - name: Test that the update check at launch installs a version only once
+      - name: Test that the update check at launch tries a version once in 24 hours
         shell: pwsh
         run: |
           rustc --edition 2024 --test windows/src-tauri/src/launch_update.rs -o "$env:RUNNER_TEMP/launch-update-test.exe"

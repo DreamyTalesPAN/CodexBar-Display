@@ -753,7 +753,7 @@ fn launch_update_check(app: &AppHandle) {
         Ok(UpdateOutcome::Installed) => {}
         Ok(UpdateOutcome::UpToDate) => log("launch update check: no newer version"),
         Ok(UpdateOutcome::AlreadyTried) => {
-            log("launch update skipped: this version was already installed at an earlier start")
+            log("launch update skipped: this version was tried at a start in the last 24 hours, or the attempt could not be noted")
         }
         Ok(UpdateOutcome::Busy) => {
             log("launch update skipped: a firmware update or theme install owns the runtime")
@@ -766,7 +766,8 @@ fn launch_update_check(app: &AppHandle) {
 // process inside `update.install`.
 async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, String> {
     let mut builder = app.updater_builder();
-    // The marker keeps the check at launch from installing a version twice.
+    // The marker keeps the check at launch to one attempt per version in
+    // 24 hours.
     let mut marker: Option<PathBuf> = None;
     if at_launch {
         // This limit covers the check only: the plugin hands the update
@@ -786,7 +787,11 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
         return Ok(UpdateOutcome::UpToDate);
     };
     if let Some(marker) = &marker {
-        if launch_update::tried(marker, &update.version) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_secs())
+            .unwrap_or(0);
+        if !launch_update::claim(marker, &update.version, now) {
             return Ok(UpdateOutcome::AlreadyTried);
         }
         update.timeout = Some(LAUNCH_UPDATE_DOWNLOAD_LIMIT);
@@ -808,12 +813,6 @@ async fn run_update(app: &AppHandle, at_launch: bool) -> Result<UpdateOutcome, S
     if let UpdateHold::UpdateRunning = hold {
         return Ok(UpdateOutcome::Busy);
     }
-    if let Some(marker) = &marker {
-        if !launch_update::record(marker, &update.version) {
-            let _ = tauri::async_runtime::spawn_blocking(release_update_hold).await;
-            return Err(format!("could not write {}", marker.display()));
-        }
-    }
     log(&format!("installing update {}", update.version));
     if let Err(error) = update.install(bytes) {
         // Nothing was replaced; give the runtime back to device jobs.
@@ -827,7 +826,7 @@ enum UpdateOutcome {
     Installed,
     UpToDate,
     Busy,
-    // Only the check at launch: it installs a version once.
+    // Only the check at launch: it tries a version once in 24 hours.
     AlreadyTried,
 }
 
