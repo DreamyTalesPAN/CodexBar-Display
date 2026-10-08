@@ -6205,3 +6205,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new control. The field `Name` in the header of Theme Studio and Screensaver Studio takes at most 80 characters. Typing stops there, and a longer pasted name is cut to its first 80 characters; there is no notice and no error. A theme saved earlier with a longer name opens with that name and can be shortened.
 - Scope: one attribute on the field in `apps/control-center/src/components/theme-studio-screen.tsx`, one line in `theme-studio-screen.test.tsx`, and this approval record. The test checks the limit on the field; that the browser cuts a pasted name is its own behaviour and was not seen in the built app.
 - What's new: none — a limit on a field
+
+## 2026-10-09 — Themes and Screensavers: a row's install notice comes into view
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; not yet seen by him. It answers a point of issue #579 from the walk-throughs of the Mac and Windows apps: `Install` on the last row of Appearance › Themes put the progress and the notice `Installed` below the edge of the window until the customer scrolled.
+- Approved customer-visible result: No wording, no new control. Appearance › Themes and Appearance › Screensavers: when the install of a row starts, and again when it ends with `Installed`, the page moves just far enough to show that row's progress and notice in full. It does not move when they are already in view, not for each new line of a running install, and not when the list is opened with an install that had already finished. Keyboard focus stays where it is. A failed install opens its dialog as before.
+- Scope: one effect in `InlineInstallProgress` in `apps/control-center/src/components/theme-library-screen.tsx`, the new test file `theme-library-screen.install-notice.test.tsx`, and this approval record. The tests check that the notice asks to be shown, with a stand-in for the browser's own scrolling; how far the window really moves was not seen in the built app.
+- What's new: none — the page moves to a notice

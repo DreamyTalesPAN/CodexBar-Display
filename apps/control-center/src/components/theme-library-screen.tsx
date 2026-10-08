@@ -1257,6 +1257,19 @@ function InlineInstallProgress({
   usage: ThemeStudioUsage;
 }) {
   const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
+  // The notice of the last row opens below the edge of the window (issue
+  // #579). When an install starts or ends, the page moves as far as it takes
+  // to show it, and not at all when it is in view. A finished install found
+  // when the list is opened leaves the page where it is.
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const shownPhaseRef = useRef<ThemeInstallStatus["phase"] | null>(null);
+  useEffect(() => {
+    if (status.phase === "installing" || shownPhaseRef.current === "installing") {
+      // Optional call: the unit tests' DOM has no scrollIntoView.
+      noticeRef.current?.scrollIntoView?.({ block: "nearest" });
+    }
+    shownPhaseRef.current = status.phase;
+  }, [status.phase]);
   // What this list installs, for the lines the page words itself (issue #558).
   const noun = usage === "screensaver" ? "Screensaver" : "Theme";
   if (status.phase === "error") {
@@ -1285,7 +1298,7 @@ function InlineInstallProgress({
   const previousSteps = complete ? [] : status.logs.slice(-4, -1);
   const title = complete ? "Installed" : "Installing";
   return (
-    <div className="flex flex-col gap-3" role="status" aria-live="polite">
+    <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
       <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampInstallProgress(complete ? 100 : status.progress)} />
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
