@@ -127,6 +127,14 @@ candidate above stays what the merge gate and a release need.
   delivery firmware (1.0.41, the firmware of v1.0.56), install, set up. Warm:
   the public installer with the released firmware first, then the candidate
   over it and the firmware update from Updates.
+- **What the Mac warm start of a review is, and is not:** the public app with
+  the released firmware is set up, the candidate is installed over it with all
+  customer state kept, and the firmware update runs from the app. Sparkle's
+  own step -- appcast, EdDSA signature, the native "Install Update" dialog --
+  is not exercised by a local build. That step needs the signed merge-gate
+  candidate and `scripts/vibetv-rehearse-warm-start.sh` and is checked there,
+  before a merge or a release. Write the result accordingly: "app replaced by
+  the candidate", not "updated through Sparkle".
 - **Delivery state of a VibeTV on the cable:** stop the app's service, then
   `esptool.py erase_region 0x200000 0x200000` and `write_flash 0x0` with the
   1.0.41 image. The erase takes the saved WiFi with it; read `0x3FA000`
