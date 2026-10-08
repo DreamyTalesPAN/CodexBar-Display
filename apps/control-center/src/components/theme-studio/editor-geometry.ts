@@ -28,6 +28,12 @@ const DEFAULT_FRAME = {
   usageSlot2Label: "Codex Spark Weekly",
   usageSlot2Percent: 38,
   usageSlot2Reset: "2h",
+  usageSlot1PaceDelta: "-12%",
+  usageSlot1PaceState: "reserve",
+  usageSlot1PaceLasts: "lasts until reset",
+  usageSlot2PaceDelta: "+8%",
+  usageSlot2PaceState: "deficit",
+  usageSlot2PaceLasts: "runs out",
   usageMode: "remaining",
   activity: "preview",
   sessionTokens: 12000,
@@ -403,6 +409,12 @@ const USAGE_BINDING_LABELS: Record<string, string> = {
   usageSlot2Label: "Usage window 2 label",
   usageSlot2Percent: "Usage window 2 %",
   usageSlot2Reset: "Usage window 2 reset",
+  usageSlot1PaceDelta: "Usage window 1 pace %",
+  usageSlot1PaceState: "Usage window 1 pace",
+  usageSlot1PaceLasts: "Usage window 1 lasts",
+  usageSlot2PaceDelta: "Usage window 2 pace %",
+  usageSlot2PaceState: "Usage window 2 pace",
+  usageSlot2PaceLasts: "Usage window 2 lasts",
 };
 
 export function bindingDisplayLabel(binding: string | undefined): string {
@@ -467,6 +479,13 @@ function boundText(binding: string): string {
       return DEFAULT_FRAME.usageSlot2Reset;
     case "usageSlot2Available":
       return "true";
+    case "usageSlot1PaceDelta":
+    case "usageSlot1PaceState":
+    case "usageSlot1PaceLasts":
+    case "usageSlot2PaceDelta":
+    case "usageSlot2PaceState":
+    case "usageSlot2PaceLasts":
+      return DEFAULT_FRAME[binding];
     case "usageMode":
       return DEFAULT_FRAME.usageMode;
     case "activity":

@@ -244,6 +244,21 @@ describe("validateThemeAgainstCapabilities", () => {
     expect(errorsFor(false)).toEqual([]);
   });
 
+  it("blocks CodexBar pace bindings on firmware without usage-pace-v1", () => {
+    const spec = baseSpec();
+    spec.primitives.push({ type: "text", x: 4, y: 4, text: "{usageSlot1PaceState}" });
+
+    expect(
+      validateThemeAgainstCapabilities(spec, {}, baseCapabilities).errors,
+    ).toContain("This VibeTV needs a firmware update before it can use this theme.");
+    expect(
+      validateThemeAgainstCapabilities(spec, {}, {
+        ...baseCapabilities,
+        supportsUsagePaceV1: true,
+      }).errors,
+    ).toEqual([]);
+  });
+
   it("blocks compact slot templates when the device lacks usage slot support", () => {
     const spec = baseSpec();
     spec.primitives.push({

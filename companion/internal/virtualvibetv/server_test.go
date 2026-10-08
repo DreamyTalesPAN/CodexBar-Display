@@ -227,6 +227,8 @@ func TestCapabilitiesMatchFirmware(t *testing.T) {
 
 // A theme feature the firmware announces is announced here too, in the feature
 // list and in the theme block, or a pack that needs it could not be rehearsed.
+// And the other way round: a feature only the virtual device claims would let
+// a harness rehearse a frame or install real hardware cannot render.
 func TestThemeFeaturesMatchFirmware(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "..", "firmware_esp8266", "src", "main.cpp"))
 	if err != nil {
@@ -251,6 +253,11 @@ func TestThemeFeaturesMatchFirmware(t *testing.T) {
 	for _, match := range flags {
 		if !bytes.Contains(block, []byte(`"`+string(match[1])+`":true`)) {
 			t.Errorf("firmware theme capability %s is missing from the virtual hello", match[1])
+		}
+	}
+	for _, feature := range hello.Features {
+		if feature != protocol.FeatureTheme && !bytes.Contains(source, []byte(`\"`+feature+`\"`)) {
+			t.Errorf("virtual feature %s is not advertised by the firmware", feature)
 		}
 	}
 }

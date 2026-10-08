@@ -35,13 +35,13 @@ func TestDashboardProviderCarriesTerminalError(t *testing.T) {
 	provider := dashboardusage.DashboardProvider{ID: "gemini", Name: "Gemini"}
 	usage := dashboardusage.UsageProvider{Provider: "gemini", Error: usageErr}
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
-	got := parsedFrameFromDashboardProvider(provider, dashboardusage.NormalizeProvider(provider, usage), now, now, usage.Error)
+	got := parsedFrameFromDashboardProvider(provider, dashboardusage.NormalizeProvider(provider, usage), now, now, usage)
 	if !got.Terminal || !got.Frame.UsageUnavailable {
 		t.Fatalf("dashboard terminal error lost: %#v", got)
 	}
 	transient, _ := json.Marshal(map[string]any{"message": "Gemini quota API request timed out."})
 	usage.Error = transient
-	if got := parsedFrameFromDashboardProvider(provider, dashboardusage.NormalizeProvider(provider, usage), now, now, usage.Error); got.Terminal {
+	if got := parsedFrameFromDashboardProvider(provider, dashboardusage.NormalizeProvider(provider, usage), now, now, usage); got.Terminal {
 		t.Fatalf("transient dashboard error marked terminal: %#v", got)
 	}
 }

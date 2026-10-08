@@ -512,6 +512,28 @@ describe("buildThemePack capability declaration", () => {
     expect(pack.manifest.minFirmware).toBe("1.0.40");
   });
 
+  // Older firmware renders an unknown usageSlotN key as the window percent.
+  it("declares usage-pace-v1 for CodexBar pace bindings", () => {
+    const spec = specWithBinding("usageSlot1PaceDelta", { slot: 1 });
+    spec.primitives.push({ text: "{usageSlot2PaceLasts}", type: "text", x: 0, y: 40 });
+    const pack = buildThemePack(spec, "Pace Pack");
+
+    expect(pack.manifest.requiredCapabilities).toEqual([
+      "usage-slots-v1",
+      "usage-pace-v1",
+    ]);
+    expect(
+      buildThemePack(specWithBinding("usageSlot1Percent", { slot: 1 }), "Usage Pack")
+        .manifest.requiredCapabilities,
+    ).toEqual(["usage-slots-v1"]);
+    // The firmware reads every usage window key with "Pace" as pace.
+    const compact = validSpec();
+    compact.primitives.push({ text: "{us1PaceDelta}", type: "text", x: 0, y: 40 });
+    expect(buildThemePack(compact, "Compact Pace").manifest.requiredCapabilities).toContain(
+      "usage-pace-v1",
+    );
+  });
+
   it("declares both when a design mixes them", () => {
     const spec = validSpec();
     spec.primitives = [

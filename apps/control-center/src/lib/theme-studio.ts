@@ -20,6 +20,12 @@ export type ThemeStudioBinding =
   | "usageSlot2Percent"
   | "usageSlot2Reset"
   | "usageSlot2Available"
+  | "usageSlot1PaceDelta"
+  | "usageSlot1PaceState"
+  | "usageSlot1PaceLasts"
+  | "usageSlot2PaceDelta"
+  | "usageSlot2PaceState"
+  | "usageSlot2PaceLasts"
   | "providerSlot1Label"
   | "providerSlot1Percent"
   | "providerSlot1Reset"
@@ -713,6 +719,7 @@ export function buildThemePack(
   const usesColorStops = themeStudioSpecUsesColorStops(normalized);
   const usesTextValign = themeStudioSpecUsesTextValign(normalized);
   const usesProgressArc = themeStudioSpecUsesProgressArc(normalized);
+  const usesUsagePace = themeStudioSpecUsesUsagePace(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
@@ -726,6 +733,7 @@ export function buildThemePack(
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
     ...(usesProgressArc ? ["progress-arc-v1"] : []),
+    ...(usesUsagePace ? ["usage-pace-v1"] : []),
   ];
   // The firmware that draws an arc has no number yet, so an arc carries the
   // newest floor that has one and relies on progress-arc-v1 for the rest.
@@ -807,6 +815,18 @@ export function themeStudioSpecUsesUsageSlots(
       primitive.text?.includes("{usageSlot") ||
       primitive.text?.includes("{us1") ||
       primitive.text?.includes("{us2"),
+  );
+}
+
+// Older firmware renders an unknown usageSlotN key as that window's percent,
+// so a pace binding must never reach it.
+// The firmware reads any usage window key containing "Pace" as pace
+// (usageSlot1PaceDelta, us1PaceDelta, usage.1.PaceDelta).
+export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      (primitive.binding ?? "").includes("Pace") ||
+      /\{[^{}]*Pace[^{}]*\}/.test(primitive.text ?? ""),
   );
 }
 
@@ -976,7 +996,8 @@ function validatePrimitive(
   }
   if (
     (primitive.colorStops || []).length > 0 &&
-    primitive.type !== "progress"
+    primitive.type !== "progress" &&
+    !(primitive.type === "text" && (primitive.binding ?? "").includes("Pace"))
   ) {
     errors.push(`${prefix}: colorStops is only supported on progress.`);
   }

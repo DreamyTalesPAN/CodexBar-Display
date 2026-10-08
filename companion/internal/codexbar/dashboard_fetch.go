@@ -193,7 +193,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			dashboardusage.NormalizeProvider(provider, usage),
 			now,
 			snapshotCollectedAt,
-			usage.Error,
+			usage,
 		)
 		if !usageOK {
 			parsed.Frame.UsageUnavailable = true
@@ -251,7 +251,7 @@ func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, 
 	return raw, nil
 }
 
-func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
+func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, usage dashboardusage.UsageProvider) ParsedFrame {
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
@@ -262,7 +262,11 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		countdownAt = now
 	}
 	metaWindows := usageWindowsFromDashboardWindows(normalized.Windows, countdownAt)
-	windows := usageWindowsFromWindows(metaWindows)
+	pace := parseProviderPace(usage.Pace)
+	if normalized.Unavailable {
+		pace = nil
+	}
+	windows := usageWindowsFromWindows(metaWindows, pace)
 	frame := protocol.Frame{
 		V:            protocol.ProtocolVersionV2,
 		Provider:     id,
@@ -292,11 +296,11 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Frame:              frame.Normalize(),
 		Provider:           id,
 		Source:             "codexbar-dashboard",
-		Meta:               ProviderUsageMeta{Windows: metaWindows},
+		Meta:               ProviderUsageMeta{Windows: metaWindows, Pace: pace},
 		CollectedAt:        collectedAt.UTC(),
 		ActivityObservedAt: activityObservedAt,
 		Stale:              frame.UsageUnavailable,
-		Terminal:           providerErrorJSONIsTerminal(provider.Error) || providerErrorJSONIsTerminal(usageError),
+		Terminal:           providerErrorJSONIsTerminal(provider.Error) || providerErrorJSONIsTerminal(usage.Error),
 	}
 }
 

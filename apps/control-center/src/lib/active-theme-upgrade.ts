@@ -151,7 +151,11 @@ export function resolveActiveThemeUpgrade(
       needsProviderAssets) ||
     (theme.requiredCapabilities.includes("color-stops-v1") && needsColorStops) ||
     (theme.requiredCapabilities.includes("text-valign-v1") && needsTextValign) ||
-    (theme.requiredCapabilities.includes("progress-arc-v1") && needsProgressArc);
+    (theme.requiredCapabilities.includes("progress-arc-v1") && needsProgressArc) ||
+    // Only a theme that needs pace makes its absence a gap: no shipped
+    // firmware has it yet, so it must not flag every other VibeTV.
+    (theme.requiredCapabilities.includes("usage-pace-v1") &&
+      device.capabilities?.theme?.supportsUsagePaceV1 !== true);
   return {
     needed: needsRequiredCapability || pathIsOutdated,
     needsFirmwareCapability: needsRequiredCapability,

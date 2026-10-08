@@ -143,7 +143,7 @@ it("clears the condition again when Always is picked", () => {
 it("shows every variable in full and inserts its token", () => {
   const { onInsertToken } = renderText();
   const chips = screen.getAllByRole("button", { name: /\{\w+\}$/ });
-  expect(chips).toHaveLength(13);
+  expect(chips).toHaveLength(19);
   for (const chip of chips) {
     // Nothing in a chip may cut its label or token short again.
     expect(chip.querySelector(".truncate")).toBeNull();

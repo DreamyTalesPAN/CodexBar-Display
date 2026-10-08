@@ -247,6 +247,23 @@ describe("resolveActiveThemeUpgrade", () => {
     },
   );
 
+  // No shipped firmware advertises usage-pace-v1 yet, so only a theme that
+  // needs it may ask for the firmware update.
+  it("asks for usage-pace-v1 only for a theme that needs it", () => {
+    const current = device(true, slotTheme.themeSpecPath);
+    const paceTheme = {
+      ...slotTheme,
+      requiredCapabilities: ["usage-slots-v1", "usage-pace-v1"],
+    };
+    expect(resolveActiveThemeUpgrade([slotTheme], current).needed).toBe(false);
+    expect(resolveActiveThemeUpgrade([paceTheme], current)).toMatchObject({
+      needed: true,
+      needsFirmwareCapability: true,
+    });
+    current.capabilities!.theme!.supportsUsagePaceV1 = true;
+    expect(resolveActiveThemeUpgrade([paceTheme], current).needed).toBe(false);
+  });
+
   it("needs no catalog attention when all firmware capabilities are present", () => {
     expect(resolveActiveThemeUpgrade([], device(true)).unresolved).toBe(false);
   });

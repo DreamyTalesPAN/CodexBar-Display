@@ -1695,7 +1695,8 @@ function themeCapabilityBlocker(
       capability !== "provider-assets-v1" &&
       capability !== "color-stops-v1" &&
       capability !== "text-valign-v1" &&
-      capability !== "progress-arc-v1",
+      capability !== "progress-arc-v1" &&
+      capability !== "usage-pace-v1",
   );
   if (unsupported.length > 0) {
     return {
@@ -1726,6 +1727,9 @@ function themeCapabilityBlocker(
     }
     if (capability === "progress-arc-v1") {
       return device.capabilities?.theme?.supportsProgressArcV1 !== true;
+    }
+    if (capability === "usage-pace-v1") {
+      return device.capabilities?.theme?.supportsUsagePaceV1 !== true;
     }
     return true;
   });

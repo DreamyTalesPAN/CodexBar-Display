@@ -594,6 +594,41 @@ describe("dynamic usage slot preview", () => {
     ).toBe("Reset unavailable");
   });
 
+  // #412: the firmware's words for CodexBar's pace, and nothing without it.
+  it("renders CodexBar pace like the firmware", () => {
+    const sentAt = "2026-09-21T08:30:00Z";
+    const paced = {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      usageWindows: [
+        { id: "session", label: "Session", percent: 8, resetSecs: 600, pace: { delta: -25, state: "reserve", lasts: true } },
+        { id: "weekly", label: "Weekly", percent: 73, resetSecs: 95000, pace: { delta: 14, state: "deficit", lasts: false } },
+      ],
+    };
+    const keys = ["Delta", "State", "Lasts"].flatMap((field) => [
+      `usageSlot1Pace${field}`,
+      `usageSlot2Pace${field}`,
+    ]);
+    const render = (frame: ReturnType<typeof buildFrameData>) =>
+      keys.map((key) => boundValue(key, frame));
+
+    expect(render(buildFrameData(sentAt, paced, new Date(sentAt)))).toEqual([
+      "-25%", "+14%", "reserve", "deficit", "lasts until reset", "runs out",
+    ]);
+    // Window 1 resets ten minutes after the frame; its pace ends with it.
+    expect(
+      render(buildFrameData(sentAt, paced, new Date("2026-09-21T08:45:00Z"))),
+    ).toEqual(["", "+14%", "", "deficit", "", "runs out"]);
+    const unknown = {
+      ...paced,
+      usageWindows: paced.usageWindows.map((window) => ({ ...window, pace: undefined })),
+    };
+    expect(render(buildFrameData(sentAt, unknown, new Date(sentAt)))).toEqual(
+      ["", "", "", "", "", ""],
+    );
+  });
+
   it("keeps an unavailable slot empty rather than reporting it unavailable", () => {
     const frame = buildFrameData("2026-07-24T10:30:00Z", {
       v: 2,

@@ -148,6 +148,10 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 			if !caps.SupportsProgressArcV1 {
 				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureProgressArcV1)
 			}
+		case protocol.FeatureUsagePaceV1:
+			if !caps.SupportsUsagePaceV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsagePaceV1)
+			}
 		default:
 			return fmt.Errorf("theme pack requires unsupported capability %q", capability)
 		}
@@ -447,7 +451,8 @@ func validateManifestFields(manifest Manifest) error {
 			protocol.FeatureProviderAssetsV1,
 			protocol.FeatureColorStopsV1,
 			protocol.FeatureTextValignV1,
-			protocol.FeatureProgressArcV1:
+			protocol.FeatureProgressArcV1,
+			protocol.FeatureUsagePaceV1:
 		default:
 			return fmt.Errorf("required capability %q is unsupported", capability)
 		}
