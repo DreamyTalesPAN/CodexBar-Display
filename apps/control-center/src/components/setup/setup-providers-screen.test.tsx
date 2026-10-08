@@ -236,6 +236,31 @@ describe("SetupProvidersScreen", () => {
     expect(document.body.innerHTML).not.toMatch(engineText);
   });
 
+  // Issue #558: the button copied the message and showed nothing. It answers
+  // like Copy on Support, and only once the text is on the clipboard.
+  it("confirms a copied provider message on the button", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    const openai = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
+    renderDom(<SetupProvidersScreen usage={usage}
+      providers={[failed, { ...openai, health: { ...openai.health, reported: "Authentication required" } }]}
+      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy provider message for GitHub Copilot" }));
+    });
+    expect(writeText).toHaveBeenCalledWith("No available fetch strategy for copilot.");
+    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
+    // The next provider's message has not been copied.
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    expect(screen.getByRole("button", { name: "Copy provider message for OpenAI" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
   it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
     const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
     renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}

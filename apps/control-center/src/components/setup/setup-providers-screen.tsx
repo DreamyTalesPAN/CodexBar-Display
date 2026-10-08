@@ -186,6 +186,10 @@ export function ProviderList({
     acknowledgedProviderIssues.delete(provider.id);
     setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
   };
+  // The message whose copy reached the clipboard; the button then says so,
+  // like Copy on Support. Another provider or a new message starts over.
+  const [copied, setCopied] = useState("");
+  const copyKey = issue ? `${issue.provider.id}\n${issue.provider.health.reported}` : "";
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
   const matching = setupProvidersEnabledFirst(
@@ -215,8 +219,13 @@ export function ProviderList({
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
           primaryAction={{ label: "OK", onSelect: dismissIssue }}
           secondaryAction={issue.provider.health.reported ? {
-            label: `Copy provider message for ${issue.provider.label}`,
-            onSelect: () => { void navigator.clipboard?.writeText(issue.provider.health.reported!); },
+            label: copied === copyKey
+              ? "Copied"
+              : `Copy provider message for ${issue.provider.label}`,
+            onSelect: () => {
+              void navigator.clipboard?.writeText(issue.provider.health.reported!)
+                .then(() => setCopied(copyKey), () => undefined);
+            },
           } : undefined}
         >
           {ownAppNotice ? (
