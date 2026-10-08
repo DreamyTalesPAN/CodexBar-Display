@@ -63,9 +63,11 @@ func ValidatePinnedCLI(ctx context.Context, app string) (string, error) {
 	return bin, nil
 }
 
-// PreparePinnedCLI preserves staging order and the running-app exception. The
-// shell supplies only whether the exact target is running; it owns GUI apps.
-func PreparePinnedCLI(ctx context.Context, archive string, running bool) (string, error) {
+// PreparePinnedCLI returns the private CodexBar CLI, unpacking the bundled
+// archive only when the installed copy does not pass the check. The shell still
+// says whether the exact target is running; that no longer changes anything,
+// because a copy that passes is kept either way.
+func PreparePinnedCLI(ctx context.Context, archive string, _ bool) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -88,10 +90,12 @@ func PreparePinnedCLI(ctx context.Context, archive string, running bool) (string
 	if err := safe(); err != nil {
 		return "", err
 	}
-	if running {
-		if bin, err := ValidatePinnedCLI(ctx, target); err == nil {
-			return bin, nil
-		}
+	// Every app start used to unpack the archive again and check the copy
+	// twice: 2 to 10 seconds, and the step that failed on a busy Mac or a full
+	// disk, with "Usage service needs repair" as the result (#556). The
+	// installed copy has to pass the same check as a fresh one.
+	if bin, err := ValidatePinnedCLI(ctx, target); err == nil {
+		return bin, nil
 	}
 	file, err := os.Open(archive)
 	if err != nil {
