@@ -6052,6 +6052,37 @@ func TestThemeInstallRenderHealthErrorIsPlainText(t *testing.T) {
 	}
 }
 
+// Issue #583: the dialog says when VibeTV is on the previous theme again, and
+// says nothing about it when the installer could not go back.
+func TestThemeInstallFailureSaysWhenThePreviousThemeIsBack(t *testing.T) {
+	failures := map[string]error{
+		"Keep VibeTV connected and try installing the theme again.": &statusAPIError{
+			status: http.StatusBadGateway,
+			api: apiError{
+				Code:       "display_render_failed",
+				Message:    "Theme installed, but VibeTV could not redraw the image.",
+				NextAction: "Keep VibeTV connected and try installing the theme again.",
+			},
+		},
+		"Choose another theme.": &themeinstall.InstallError{
+			Op:  "theme-pack/render-health",
+			Err: fmt.Errorf("%w: renderOk=false", themeinstall.ErrThemeNotRendered),
+		},
+	}
+	for nextAction, failure := range failures {
+		status, kept := themeInstallErrorPayload("live", failure)
+		if kept.NextAction != nextAction {
+			t.Fatalf("without a restore the text stays as it is, got %+v", kept)
+		}
+		restoredStatus, restored := themeInstallErrorPayload("live", &themeinstall.PreviousThemeRestoredError{Err: failure})
+		want := kept
+		want.NextAction = "Your previous theme is back on VibeTV. " + nextAction
+		if restored != want || restoredStatus != status {
+			t.Fatalf("got %d %+v, want %d %+v", restoredStatus, restored, status, want)
+		}
+	}
+}
+
 // Issue #558: a screensaver that could not be installed was called a theme in
 // the failure the customer reads. The engine's own detail is not reworded.
 func TestScreensaverInstallFailureSaysScreensaver(t *testing.T) {
