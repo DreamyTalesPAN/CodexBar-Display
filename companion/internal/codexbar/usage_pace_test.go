@@ -100,7 +100,7 @@ func TestUsagePaceMirrorsEveryCodexBarStage(t *testing.T) {
 		"farAhead": protocol.PaceDeficit, "ahead": protocol.PaceDeficit,
 		"slightlyBehind": protocol.PaceReserve, "behind": protocol.PaceReserve, "farBehind": protocol.PaceReserve,
 	} {
-		got := usageWindowPace([]ProviderPace{{Window: "secondary", Stage: stage, WillLastToReset: true}}, "weekly")
+		got, _ := UsageWindowPace([]ProviderPace{{Window: "secondary", Stage: stage, WillLastToReset: true}}, "weekly")
 		if !samePace(got, pace(0, state, true)) {
 			t.Fatalf("stage %s: %+v", stage, got)
 		}

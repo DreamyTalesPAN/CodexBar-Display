@@ -2958,14 +2958,107 @@ func TestUsageReturnsCollectorSnapshotsWithDynamicWindows(t *testing.T) {
 	if len(provider.Cost.Daily) != 3 || provider.Cost.Daily[2].Models[0].Name != "gpt-5.5" {
 		t.Fatalf("expected cost history metadata, got %+v", provider.Cost.Daily)
 	}
-	if len(provider.Pace) != 1 || provider.Pace[0].Window != "primary" || provider.Pace[0].Summary == "" {
-		t.Fatalf("expected pace metadata, got %+v", provider.Pace)
-	}
 	if len(provider.UsageOverTime) != 2 || provider.UsageOverTime[0].Day != "2026-06-24" || provider.UsageOverTime[0].TotalCreditsUsed != 12 {
 		t.Fatalf("expected usage-over-time metadata, got %+v", provider.UsageOverTime)
 	}
 	if len(provider.UsageOverTime[0].Services) != 2 || provider.UsageOverTime[0].Services[0].Service != "CLI" {
 		t.Fatalf("expected usage-over-time services, got %+v", provider.UsageOverTime[0].Services)
+	}
+}
+
+// The Usage page says per window what the usage engine says about its pace
+// (#210). The API passes the engine's verdict through and adds none.
+func usagePaceTestWindows(t *testing.T, stale bool, mode string) []usageWindowInfo {
+	t.Helper()
+	server := newTestServer(t, runtimeconfig.Config{})
+	if mode != "" {
+		t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", mode)
+	}
+	collectedAt := time.Date(2026, 10, 8, 20, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "claude",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "claude",
+				Frame:    protocol.Frame{Provider: "claude", Label: "Claude", Session: 8, Weekly: 73, ResetSec: 600, UsageMode: "used"},
+				Meta: codexbar.ProviderUsageMeta{
+					Windows: []codexbar.UsageWindow{
+						{ID: "session", Label: "Session", UsedPercent: 8, ResetSec: 600},
+						{ID: "weekly", Label: "Weekly", UsedPercent: 73, ResetSec: 86400},
+						{ID: "tertiary", Label: "Sonnet", UsedPercent: 5, ResetSec: 86400},
+						{ID: "fable", Label: "Fable only", UsedPercent: 1, ResetSec: 86400},
+						{ID: "daily", Label: "Daily", UsedPercent: 2, ResetSec: 0},
+						{ID: "monthly", Label: "Monthly", UsedPercent: 3, ResetSec: 86400},
+					},
+					Pace: []codexbar.ProviderPace{
+						{Window: "primary", Stage: "farBehind", DeltaPercent: -25, WillLastToReset: true, Summary: "25% in reserve | Expected 33% used | Lasts until reset"},
+						{Window: "secondary", Stage: "ahead", DeltaPercent: 30, ETASeconds: 115200, HasETA: true, Summary: "30% in deficit | Expected 33% used | Runs out in 1d 8h"},
+						{Window: "tertiary", Stage: "onTrack", Summary: "On pace"},
+						// No reset left, and a stage the engine does not define.
+						{Window: "daily", Stage: "behind", WillLastToReset: true},
+						{Window: "monthly", Stage: "sideways", WillLastToReset: true},
+					},
+				},
+				CollectedAt: collectedAt,
+				Stale:       stale,
+			}},
+		}, true
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Providers) != 1 {
+		t.Fatalf("usage response: err=%v body=%s", err, rec.Body.String())
+	}
+	if len(got.Providers[0].Windows) != 6 {
+		t.Fatalf("windows: %+v", got.Providers[0].Windows)
+	}
+	if strings.Contains(rec.Body.String(), "in reserve") {
+		t.Fatalf("the engine's summary text reached the page: %s", rec.Body.String())
+	}
+	return got.Providers[0].Windows
+}
+
+func TestUsageWindowCarriesEnginePace(t *testing.T) {
+	windows := usagePaceTestWindows(t, false, "")
+	session, weekly, onPace := windows[0].Pace, windows[1].Pace, windows[2].Pace
+	if session == nil || session.State != protocol.PaceReserve || session.Lasts == nil || !*session.Lasts || session.ETASeconds != 0 {
+		t.Fatalf("session pace: %+v", session)
+	}
+	if weekly == nil || weekly.State != protocol.PaceDeficit || weekly.Lasts == nil || *weekly.Lasts || weekly.ETASeconds != 115200 {
+		t.Fatalf("weekly pace: %+v", weekly)
+	}
+	// The engine projected neither outcome: no lasts, so the page promises none.
+	if onPace == nil || onPace.State != protocol.PaceOnPace || onPace.Lasts != nil {
+		t.Fatalf("on-pace window: %+v", onPace)
+	}
+}
+
+func TestUsageWindowWithoutEnginePaceHasNone(t *testing.T) {
+	windows := usagePaceTestWindows(t, false, "")
+	for _, window := range windows[3:] {
+		if window.Pace != nil {
+			t.Fatalf("window %s has a pace the engine did not give: %+v", window.ID, window.Pace)
+		}
+	}
+}
+
+func TestUsageStaleReadingCarriesNoPace(t *testing.T) {
+	for _, window := range usagePaceTestWindows(t, true, "") {
+		if window.Pace != nil {
+			t.Fatalf("stale window %s kept its pace: %+v", window.ID, window.Pace)
+		}
+	}
+}
+
+func TestUsageRemainingDisplayKeepsEnginePace(t *testing.T) {
+	windows := usagePaceTestWindows(t, false, "remaining")
+	if windows[0].UsedPercent != 92 || windows[0].Pace == nil || windows[0].Pace.State != protocol.PaceReserve || !*windows[0].Pace.Lasts {
+		t.Fatalf("session under Remaining: %+v pace=%+v", windows[0], windows[0].Pace)
+	}
+	if windows[1].UsedPercent != 27 || windows[1].Pace == nil || windows[1].Pace.State != protocol.PaceDeficit || windows[1].Pace.ETASeconds != 115200 {
+		t.Fatalf("weekly under Remaining: %+v pace=%+v", windows[1], windows[1].Pace)
 	}
 }
 
