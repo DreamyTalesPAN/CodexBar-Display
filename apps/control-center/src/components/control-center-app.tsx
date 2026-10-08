@@ -641,6 +641,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const didRunSetupVerification = useRef(false);
   const pendingPairingCandidate = useRef<DeviceCandidate | null>(null);
   const legacyRecoverySearchInFlight = useRef(false);
+  const settingsReadInFlight = useRef(false);
   const lastCompanionRequestAt = useRef(0);
   const statusPollInFlight = useRef(false);
   // Set by "Check for updates"; the next status read takes it along.
@@ -1062,6 +1063,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const loadSettings = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
     setBusyAction("settings");
+    settingsReadInFlight.current = true;
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
       if (setupGeneration !== setupGenerationRef.current) {
@@ -1113,6 +1115,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
     } finally {
+      settingsReadInFlight.current = false;
       if (setupGeneration === setupGenerationRef.current) {
         setBusyAction(null);
       }
@@ -1127,6 +1130,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   ]);
 
   const deviceConnectedForSettings = deviceIsCustomerConnected(device);
+
+  // The screensaver setting comes with the settings, and Screensavers installs
+  // nothing without it. A VibeTV that has the setting reports a standby state
+  // with every status; while the setting itself is missing -- the status found
+  // VibeTV ready without the settings being read, or reading them failed --
+  // they are read again: once when that state begins, and each time
+  // Screensavers is opened in it. The customer must not have to visit Settings.
+  const screensaverSettingMissing =
+    standby === null && Boolean(device?.standby) && deviceIsReady(device);
+  const screensaversOpen =
+    activeTab === "theme-library" && appearanceSection === "screensavers";
+  useEffect(() => {
+    if (!screensaverSettingMissing || settingsReadInFlight.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadSettings();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadSettings, screensaverSettingMissing, screensaversOpen]);
 
   useEffect(() => {
     if (activeTab !== "settings" || !deviceConnectedForSettings) {
