@@ -15,6 +15,7 @@ import {
   validateThemeSpec,
   type ThemeStudioSpec,
 } from "@/lib/theme-studio";
+import { rememberSentOwnThemePath } from "@/lib/sent-own-theme-paths";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   ThemeLibraryScreen,
@@ -226,6 +227,46 @@ describe("ThemeLibraryScreen custom themes", () => {
     expect(installTitle("My Theme")).toBe("Install My Theme");
     expect(installTitle("Catalog Namesake")).toBe("Theme is already installed.");
     await act(async () => olderCatalog.cleanup());
+  });
+
+  // The customer's theme had the id of a later catalog theme, was sent, and
+  // then edited and saved under another id. VibeTV still reports the shared id
+  // and the file that was sent, whose name starts like the catalog theme's.
+  it("offers Install for a catalog theme while VibeTV holds a file this app sent for an own theme", async () => {
+    window.localStorage.clear();
+    const miniClassic: ThemeProduct = {
+      ...catalogTheme,
+      id: "mini-classic",
+      themeId: "mini-classic",
+      themeSpecPath: "/themes/u/mini-cl-9-6d1af3.json",
+      title: "Mini Classic",
+    };
+    const sentPath = "/themes/u/mini-cl-1-0a1b2c.json";
+    const render = () =>
+      renderLibrary([miniClassic], {
+        device: {
+          activeTheme: "mini-classic",
+          capabilities: { theme: { supportsThemeSpecV1: true } },
+          connected: true,
+          display: { themeSpec: { path: sentPath } },
+          paired: true,
+          ready: true,
+        },
+        themeInstallEnabled: true,
+      });
+
+    // Not known as sent from here, the file passes for an old revision.
+    const unknown = await render();
+    expect(unknown.html).toContain("Theme is already installed.");
+    await act(async () => unknown.cleanup());
+    document.body.innerHTML = "";
+
+    rememberSentOwnThemePath(sentPath);
+    const own = await render();
+    expect(own.html).toContain('title="Install Mini Classic"');
+    expect(own.html).not.toContain("Theme is already installed.");
+    await act(async () => own.cleanup());
+    window.localStorage.clear();
   });
 
   it("shows the install progress only in the row that was installed when two rows share an id", async () => {

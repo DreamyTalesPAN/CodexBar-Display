@@ -64,6 +64,7 @@ import {
   pathMayNameCatalogTheme,
 } from "@/lib/active-theme-upgrade";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
+import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { cn } from "@/lib/utils";
 import { statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
@@ -284,6 +285,7 @@ export function ThemeLibraryScreen({
         : [],
     ),
   );
+  const sentOwnPaths = sentOwnThemePaths();
   const heldPath = screensavers
     ? screensaverPath
     : (device?.standby?.active === true
@@ -693,6 +695,7 @@ export function ThemeLibraryScreen({
                   installStatus={statusForHost(installStatus, windowsHost)}
                   key={rowKey(theme)}
                   heldPath={heldPath}
+                  sentOwnPaths={sentOwnPaths}
                   installRow={installRow}
                   installedThemeId={installedThemeId}
                   lastInstall={lastInstall}
@@ -931,6 +934,7 @@ function ThemeListItem({
   device,
   displayThemeId,
   heldPath,
+  sentOwnPaths,
   item,
   installRow,
   installStatus,
@@ -954,6 +958,7 @@ function ThemeListItem({
   device: ThemeLibraryDeviceInfo | null;
   displayThemeId?: string;
   heldPath?: string;
+  sentOwnPaths: string[];
   item: ThemeLibraryItem;
   installRow: string;
   installStatus?: ThemeInstallStatus | null;
@@ -985,7 +990,11 @@ function ThemeListItem({
       (isCustom
         ? installedPath === ownPathOfSharedId
         : Boolean(installedPath) && installedPath !== ownPathOfSharedId)) &&
-    (isCustom || pathMayNameCatalogTheme(theme?.themeSpecPath, installedPath));
+    (isCustom ||
+      (pathMayNameCatalogTheme(theme?.themeSpecPath, installedPath) &&
+        // A file this app sent for a theme the customer made is theirs, also
+        // when its name starts like the catalog theme's.
+        !sentOwnPaths.includes(installedPath ?? "")));
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallRow === rowKey(item);
