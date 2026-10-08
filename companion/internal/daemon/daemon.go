@@ -1724,16 +1724,14 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), cfg.UsageShowsUsed(deps.usageBarsShowUsed))
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
-		if !frame.UsageUnavailable || !expiredLastGood {
-			if state == nil || !state.hasLastGood {
-				deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
-				return nil
-			}
-			// The reading is only retained, so there is nothing new to show.
-			// Falling silent would look like a lost writer to the device,
-			// which then ends a working state on its own (#369). Restate the
-			// last good frame instead, as a failed collection does, with the
-			// activity verdict of this cycle.
+		// The reading is only retained, so there is nothing new to show.
+		// Falling silent would look like a lost writer to the device, which
+		// then ends a working state on its own (#369). Restate the last good
+		// frame instead, as a failed collection does, with the activity
+		// verdict of this cycle. Without a last good frame (the display was
+		// just moved to this provider) the retained reading itself goes out,
+		// marked as not live below and never stored as last good.
+		if state != nil && state.hasLastGood && (!frame.UsageUnavailable || !expiredLastGood) {
 			authoritativeFrame = state.lastGood
 			authoritativeFrame.Activity, authoritativeFrame.Update = result.frame.Activity, result.frame.Update
 			if !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge()) {

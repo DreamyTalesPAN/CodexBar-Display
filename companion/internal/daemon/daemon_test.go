@@ -611,6 +611,60 @@ func TestRunCycleWithDepsKeepsSendingTheLastGoodFrameWhileTheReadingIsOnlyRetain
 	}
 }
 
+// Issue #369: the display was just moved to a provider whose reading is only
+// retained, which clears the last good frame of the provider shown before. The
+// Companion is there and knows that reading and the current activity, so it
+// says so every interval instead of leaving the device to end a working state
+// on its own. The reading is sent as what it is: not live, and never stored
+// as a new last good frame.
+func TestRunCycleWithDepsSendsARetainedReadingWhenThereIsNoLastGoodFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collectedAt := now.Add(-time.Minute)
+	var sent []protocol.Frame
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("claude", 40, 60, 3600)
+			frame.Frame.Activity = "coding"
+			frame.CollectedAt = collectedAt
+			frame.Stale = true
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sent = append(sent, decodeFrameLine(t, line))
+			return nil
+		},
+	}
+	for i := 1; i <= 10; i++ {
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("cycle %d: %v", i, err)
+		}
+		if len(sent) != i {
+			t.Fatalf("cycle %d sent no frame although the Companion knows a reading and the activity", i)
+		}
+		now = now.Add(2 * time.Second)
+	}
+	first := sent[0]
+	if first.Provider != "claude" || first.Session != 40 || first.UsageUnavailable || first.Error != "" {
+		t.Fatalf("expected the retained Claude reading, got %+v", first)
+	}
+	if first.Activity != "coding" || first.ActivityTTLSec != 10 {
+		t.Fatalf("expected the activity verdict with its bound, got activity=%q ttl=%d", first.Activity, first.ActivityTTLSec)
+	}
+	if first.ResetTrust != protocol.ResetTrustOffline || first.ResetSec != 3600-60 {
+		t.Fatalf("expected a reading that is not live, counted from when it was taken, got trust=%q reset=%d", first.ResetTrust, first.ResetSec)
+	}
+	if state.hasLastGood {
+		t.Fatal("a retained reading must not become the last good frame")
+	}
+}
+
 func TestDefaultIntervalForTransport(t *testing.T) {
 	tests := []struct {
 		name      string

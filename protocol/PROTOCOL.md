@@ -190,10 +190,16 @@ firmware renders it and decides nothing itself.
   86400.
 - **A running Companion keeps writing.** While it has a device it sends a
   frame every interval, also when it has no fresh reading for the shown
-  provider: it then restates the last good frame with the current activity.
-  Silence therefore means the writer is gone or cannot reach the device
-  (stopped, Mac asleep, cable pulled, device writes held for setup or a
-  firmware update), and only then does the bound run out.
+  provider: it then restates the last good frame with the current activity,
+  or, when the display was just moved to that provider and no last good frame
+  exists, the provider's retained reading with `resetTrust:"offline"`.
+  It sends nothing in exactly these cases, and the bound then runs out:
+  the Companion is stopped, the Mac is asleep or the device cannot be reached;
+  device writes are held for setup, pairing, a reset or a firmware update;
+  the device waits for the customer's connection choice; and after a start
+  without any last good frame, until the first collection has answered (at
+  most 7 minutes) — a Companion that knows neither a reading nor an activity
+  verdict has nothing truthful to say.
 - **The countdown waits while the device accepts no frames.** During a theme
   transfer or an update the device cannot tell whether the writer is still
   there, so that time does not count; the full bound applies again from the
