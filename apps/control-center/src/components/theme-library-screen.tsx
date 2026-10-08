@@ -50,6 +50,7 @@ import {
   Item,
   ItemActions,
   ItemContent,
+  ItemDescription,
   ItemFooter,
   ItemGroup,
   ItemMedia,
@@ -87,6 +88,10 @@ import {
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
+import {
+  themeShowsTokenTotals,
+  type ThemeRenderPack,
+} from "./live-vibetv-preview";
 import { ThemeRenderPreview } from "./theme-render-preview";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import type { ApiError, StandbySettings } from "./control-center-types";
@@ -180,6 +185,8 @@ export type ThemeLibraryScreenProps = {
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   themeInstallEnabled: boolean;
+  /** What Usage reports as "Token history is unavailable". */
+  tokenHistoryUnavailable?: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
   installEntry?: boolean;
@@ -210,6 +217,7 @@ export function ThemeLibraryScreen({
   storefrontConfigured,
   standby,
   themeInstallEnabled,
+  tokenHistoryUnavailable = false,
   onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
@@ -712,6 +720,7 @@ export function ThemeLibraryScreen({
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
                   themeStorageLocked={storageLocked}
+                  tokenHistoryUnavailable={tokenHistoryUnavailable}
                 />
               ))}
             </ItemGroup>
@@ -954,6 +963,7 @@ function ThemeListItem({
   themeInstallBlockedReason,
   themeInstallEnabled,
   themeStorageLocked,
+  tokenHistoryUnavailable,
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
@@ -978,9 +988,17 @@ function ThemeListItem({
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
+  tokenHistoryUnavailable: boolean;
 }) {
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
+  // A catalog theme's elements are only known once its preview has loaded.
+  const [publishedPack, setPublishedPack] = useState<ThemeRenderPack | null>(null);
+  const showsNoTokens =
+    tokenHistoryUnavailable &&
+    themeShowsTokenTotals(
+      isCustom ? item.custom.document.spec : publishedPack?.spec,
+    );
   const sharesId = ownPathOfSharedId !== undefined;
   const installedPath =
     lastInstall?.themeId === item.themeId ? lastInstall.activePath : heldPath;
@@ -1060,13 +1078,18 @@ function ThemeListItem({
           type="button"
           variant="ghost"
         >
-          <ThemePreview theme={item} />
+          <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
       </ItemMedia>
       <ItemContent className="min-w-[180px]">
         <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
         {isCustom ? (
           <Badge variant="secondary">Custom</Badge>
+        ) : null}
+        {showsNoTokens ? (
+          <ItemDescription>
+            Shows -- while token history is unavailable. See Usage.
+          </ItemDescription>
         ) : null}
       </ItemContent>
       <ItemActions
@@ -1665,9 +1688,11 @@ function normalizeBoard(value: string): string {
 
 function ThemePreview({
   large,
+  onPack,
   theme,
 }: {
   large?: boolean;
+  onPack?: (pack: ThemeRenderPack) => void;
   theme: ThemeLibraryItem;
 }) {
   return (
@@ -1678,6 +1703,7 @@ function ThemePreview({
           ? "aspect-square w-full"
           : "size-28 rounded-lg sm:size-36"
       }
+      onPack={onPack}
       // A Theme Studio theme has no published pack to load: its spec only
       // exists in this app.
       pack={

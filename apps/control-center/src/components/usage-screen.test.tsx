@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { UsageSnapshot } from "./control-center-types";
-import { UsageScreen } from "./usage-screen";
+import { UsageScreen, usageTokenHistoryUnavailable } from "./usage-screen";
 
 const usage: UsageSnapshot = {
   ok: true,
@@ -52,6 +52,19 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Total tokens in the last 30 days");
     expect(html).toContain("Weekly: 34% used");
     expect(html).toContain("Weekly: 10% used");
+  });
+
+  // Themes shows its hint on token themes from the same answer (#551).
+  it("answers for Themes what the notice says", () => {
+    expect(usageTokenHistoryUnavailable(usage)).toBe(false);
+    expect(usageTokenHistoryUnavailable(null)).toBe(false);
+    expect(
+      usageTokenHistoryUnavailable({
+        ...usage,
+        tokenUsageReady: true,
+        providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
+      }),
+    ).toBe(true);
   });
 
   it("shows unavailable rather than zero or a spinner after a scan without history", () => {

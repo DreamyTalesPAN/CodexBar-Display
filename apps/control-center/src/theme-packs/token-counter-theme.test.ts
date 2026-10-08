@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, primitiveUsageSlotVisible, renderTextPrimitive, THEME_CATALOG_PREVIEW_FRAME,
-  ThemeSpecPreview, themeFirmwareTextMetrics, themeTextFittedSize,
+  ThemeSpecPreview, themeFirmwareTextMetrics, themeShowsTokenTotals, themeTextFittedSize,
   type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { importThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
@@ -42,6 +42,15 @@ describe("Token Counter theme pack", () => {
     expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/tc-2-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
+  });
+
+  // Themes says so on the row when the computer has no token history (#551).
+  it("is known as a theme that draws token numbers, unlike Mini Classic", () => {
+    const mini = JSON.parse(readFileSync(path.join(root, "theme-packs/mini-classic/theme.json"), "utf8"));
+    expect(themeShowsTokenTotals(pack.spec)).toBe(true);
+    expect(themeShowsTokenTotals(mini)).toBe(false);
+    expect(themeShowsTokenTotals({ primitives: [{ type: "text", text: "{totalTokens} in all" }] })).toBe(true);
+    expect(themeShowsTokenTotals({ primitives: [{ type: "text", text: "st" }] })).toBe(false);
   });
 
   it("shows every token magnitude at the same full size", () => {

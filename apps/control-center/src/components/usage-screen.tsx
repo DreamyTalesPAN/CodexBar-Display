@@ -79,8 +79,7 @@ export function UsageScreen({
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   // The Mac App owns this decision; the browser does not re-derive freshness.
   const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
-  const tokenHistoryUnavailable =
-    tokenUsageReady && hasProviders && providers.some((provider) => provider.cost == null);
+  const tokenHistoryUnavailable = usageTokenHistoryUnavailable(usage);
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   const usageLoading =
@@ -677,6 +676,19 @@ function UsageEmptyState({
         {action ? <EmptyDescription>{action}</EmptyDescription> : null}
       </EmptyHeader>
     </Empty>
+  );
+}
+
+// Token history was read and at least one shown provider has none. Themes
+// asks the same question for a theme that draws token numbers.
+export function usageTokenHistoryUnavailable(usage: UsageSnapshot | null): boolean {
+  const providers = filterVisibleProviders(
+    usage?.providers || [],
+    usage?.currentProvider,
+  );
+  return (
+    (usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers)) &&
+    providers.some((provider) => provider.cost == null)
   );
 }
 

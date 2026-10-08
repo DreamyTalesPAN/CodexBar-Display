@@ -111,6 +111,25 @@ describe("ThemeLibraryScreen custom themes", () => {
     await act(async () => cleanup());
   });
 
+  // Issue #551: Token Counter showed "-- SESSION TOKENS" on a computer
+  // without token history and its row did not say why.
+  it("says on the row of a theme with token numbers that they are missing", async () => {
+    const hint = "Shows -- while token history is unavailable. See Usage.";
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ ok: true, spec: { p: [{ t: "tx", b: "st" }] } }),
+    );
+    const without = await renderLibrary([catalogTheme], { tokenHistoryUnavailable: true });
+    // The customer's own theme in this library draws no token number.
+    expect(without.html.split(hint)).toHaveLength(2);
+    expect(without.html.indexOf(hint)).toBeGreaterThan(without.html.indexOf("Live Theme"));
+    await act(async () => without.cleanup());
+
+    const known = await renderLibrary();
+    expect(known.html).not.toContain(hint);
+    await act(async () => known.cleanup());
+    vi.unstubAllGlobals();
+  });
+
   it("keeps the catalog theme alongside it, without a delete action", async () => {
     const { html, cleanup } = await renderLibrary();
 

@@ -1548,6 +1548,19 @@ function rootResetIsIdle(frame: FrameData): boolean {
   return windows.length > 0 && windows.every((window) => window.idle);
 }
 
+// Whether a theme draws a value that boundValue shows as "--" on a computer
+// without token history.
+export function themeShowsTokenTotals(spec?: ThemeSpec | null): boolean {
+  return (spec?.primitives || spec?.p || []).some((primitive) => {
+    const binding = primitive.binding || primitive.b;
+    return binding
+      ? /^(sessionTokens|weekTokens|totalTokens|st|wt|tt)$/.test(binding)
+      : /\{(sessionTokens|weekTokens|totalTokens|st|wt|tt)\}/.test(
+          primitive.text || primitive.v || "",
+        );
+  });
+}
+
 export function renderTextPrimitive(
   primitive: ThemePrimitive,
   frame: FrameData,
