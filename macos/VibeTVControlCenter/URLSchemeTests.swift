@@ -1218,6 +1218,28 @@ private func testLegacyTerminalAppDetection() {
         menuBarItemDefaults["NSStatusItem Preferred Position VibeTVMenuBarItem"] == 400,
         "the menu bar item must start at a place right of the notch"
     )
+    // A VibeTV that stopped answering stays "connected" for a short while,
+    // in the state "reconnecting", with the stream error it had before.
+    for staleStream in [
+        #","stream":{"healthy":false,"running":true,"errorCode":"provider_setup_required"}"#,
+        #","stream":{"healthy":false,"running":true}"#,
+        "",
+    ] {
+        require(
+            notReady(#""connected":true,"paired":true,"connectionState":"reconnecting""# + staleStream)
+                == MenuBarStatus(
+                    icon: .offline,
+                    lines: ["Mac App: Online 1.9.0", "VibeTV vibetv-8caab5: Reconnecting", "Display: Not available"]
+                ),
+            "a VibeTV that is reconnecting must not send the customer to the providers"
+        )
+    }
+    require(
+        menuBar(
+            #"{"ok":true,"companion":{"version":"1.9.0"},"device":{"deviceId":"vibetv-8caab5","connected":true,"paired":true,"ready":false,"active":true,"connectionState":"reconnecting"},"firmwareUpdate":{"phase":"installing"}}"#
+        ).icon == .updating,
+        "a VibeTV that reconnects during its update must read as updating"
+    )
     // The state is told without colour: by the symbol, a mark, and in words.
     require(
         [MenuBarIcon.starting, .healthy, .actionRequired, .offline, .updating]

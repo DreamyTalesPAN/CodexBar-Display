@@ -1141,6 +1141,11 @@ func menuBarStatus(statusJSON: Data?) -> MenuBarStatus {
     let transport = device?.capabilities?.transport
     let cable = (transport?.active == "usb" && transport?.mode == "cable")
         || device?.target?.lowercased().hasPrefix("cable:") == true
+    // connectionState is the background service's own reading of the link,
+    // and it comes first. For a short while it keeps a VibeTV that stopped
+    // answering "connected" in the state "reconnecting"; the stream error
+    // beside it is then an old one and says nothing about now.
+    let reconnecting = device?.connectionState == "reconnecting"
     // What the Control Center answers with a step of its own: choosing
     // providers, choosing a theme, signing in to a provider, pairing again.
     // Any other stream error is a display that is still coming up.
@@ -1154,7 +1159,11 @@ func menuBarStatus(statusJSON: Data?) -> MenuBarStatus {
     let vibeTV: String
     let display: String
     var icon = MenuBarIcon.healthy
-    if connected {
+    if connected, reconnecting, !updating {
+        vibeTV = "Reconnecting"
+        display = "Not available"
+        icon = .offline
+    } else if connected {
         vibeTV = cable ? "Connected by Cable" : "Connected over WiFi"
         if device?.connectionState == "display_render_failed" {
             display = "Theme not shown"
