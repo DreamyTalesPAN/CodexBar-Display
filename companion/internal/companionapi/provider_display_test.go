@@ -831,6 +831,44 @@ func TestNextProviderShortcutPinsTheNextProviderAndWrapsAround(t *testing.T) {
 	}
 }
 
+// The display worker sends VibeTV only a current reading with usage in it. A
+// provider whose reading is kept from an earlier collection, has expired, or
+// carries no usage would be pinned in Settings while the screen stayed on the
+// provider before it, so the shortcut passes over it.
+func TestNextProviderShortcutPassesOverAReadingVibeTVWouldNotBeSent(t *testing.T) {
+	for name, middle := range map[string]daemon.ProviderUsageSnapshot{
+		"kept from an earlier collection": {Frame: protocol.Frame{Provider: "claude", Session: 40}, Retained: true, Stale: true},
+		"expired":                         {Frame: protocol.Frame{Provider: "claude", Session: 40}, Stale: true},
+		"no usage in the frame": {
+			Frame: protocol.Frame{Provider: "claude", UsageUnavailable: true},
+			Meta:  codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{ID: "weekly"}}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, _ := nextProviderServer(t,
+				&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeFixed, ProviderIDs: []string{"codex"}},
+				[]codexbar.ProviderSetting{
+					{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+					{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+					{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+				},
+				"codex", "codex", "gemini")
+			current := server.loadUsage
+			server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+				usage, ok := current(now)
+				middle.Provider, middle.CollectedAt = "claude", now.Add(-time.Minute)
+				usage.Providers = append(usage.Providers, middle)
+				return usage, ok
+			}
+
+			selection, _ := pressNextProvider(t, server)
+			if len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "gemini" {
+				t.Fatalf("answered %+v, want Claude passed over for Gemini", selection)
+			}
+		})
+	}
+}
+
 // With one provider to show there is nothing to switch to, and with none there
 // is nothing to show: the choice stays exactly as it was, Automatic included.
 func TestNextProviderShortcutChangesNothingBelowTwoShowableProviders(t *testing.T) {

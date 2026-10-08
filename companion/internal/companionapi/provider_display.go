@@ -160,10 +160,14 @@ func (s *Server) handleProviderDisplayNext(w http.ResponseWriter, r *http.Reques
 	if selection.Mode == providerDisplayModeFixed && len(selection.ProviderIDs) == 1 {
 		shown = selection.ProviderIDs[0]
 	}
+	// Only a reading the display worker sends to VibeTV (sendCycleResult): not a
+	// retained or expired one, which the snapshot calls stale, and with usage
+	// in its frame. Pinning another one would change Settings and not the
+	// screen.
 	readable := make(map[string]bool, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
 		if info, ok := usageProviderFromSnapshot(snapshot); ok {
-			readable[info.ID] = !info.UsageUnavailable
+			readable[info.ID] = !info.UsageUnavailable && !snapshot.Frame.UsageUnavailable
 		}
 	}
 	var eligible []string
