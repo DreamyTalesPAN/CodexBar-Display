@@ -5622,3 +5622,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Not separately approved by Paul. Correction from the automated review of head `6a4f118e` on 2026-10-08, inside the batch his blanket approval of 2026-10-07 covers.
 - Approved customer-visible result: No wording, no new screen, dialog, or button. Settings › Display › `Usage display`: when the customer changes the value, leaves Settings and comes back while the change is still on its way to the Mac App, the control keeps the value they chose. Before, the read that starts on coming back could find the old value and, answered after the change was stored, show it again until the next read, although the new value was stored.
 - Scope: `refreshDisplayPreferences` in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.display-preferences.test.tsx`, and this approval record; checked with unit tests only.
+
+## 2026-10-08 — Settings: after a refused save the Brightness slider shows VibeTV's value again
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `4e6b3bf4` on 2026-10-08, inside the batch his blanket approval of 2026-10-07 covers.
+- Approved customer-visible result: No wording, no new screen, dialog, or button. Settings › Display › `Brightness`: when a save is refused, the message appears as before and the thumb stays where the customer put it for the moment. The next time the app reads what VibeTV holds, for example when Settings is opened again, the slider shows VibeTV's value. Before, it kept showing the value that was never stored until the app was started again. A thumb the customer has dragged on to a newer value keeps that value.
+- Scope: the `catch` branch of `saveBrightness` in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.display-preferences.test.tsx`, and this approval record; checked with unit tests only.

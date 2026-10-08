@@ -2224,6 +2224,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (!newest()) {
             return;
           }
+          // Not stored: the next read of what VibeTV holds may show again. A
+          // thumb the customer has dragged on keeps its own, newer value.
+          if (brightnessDirtyRef.current === value) {
+            brightnessDirtyRef.current = null;
+          }
           const normalized = normalizeCaughtError(
             error,
             "Brightness needs attention.",

@@ -440,6 +440,27 @@ it("keeps Brightness focused through two arrow keys and saves both in order", as
   ]);
 });
 
+// A refused save left the app holding the value that was never stored, so
+// later reads of what VibeTV holds were ignored.
+it("shows VibeTV's brightness again after a refused save, once Settings is opened again", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const brightness = () => screen.getByRole("slider", { name: "Brightness" });
+
+  window.companion.refuseWrites = "once";
+  await window.step(() => fireEvent.keyDown(brightness(), { key: "ArrowRight" }));
+  await window.wait(1);
+  expect(window.companion.settings.display.brightnessPercent).toBe(20);
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect(brightness().getAttribute("aria-valuenow")).toBe("20");
+});
+
 // The answer to the first save set the thumb back to the saved value while the
 // customer was already dragging on, until the pointer moved again.
 it.each([
