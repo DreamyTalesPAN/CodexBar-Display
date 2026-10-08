@@ -196,6 +196,7 @@ export function ProviderList({
   })[0];
   const dismissIssue = () => {
     if (!issue) return;
+    setCopied("");
     acknowledgedProviderIssues.set(issue.provider.id, issue.message);
     setDismissedIssues((current) => ({ ...current, [issue.provider.id]: issue.message }));
   };
@@ -204,7 +205,8 @@ export function ProviderList({
     setDismissedIssues((current) => ({ ...current, [provider.id]: "" }));
   };
   // The message whose copy reached the clipboard; the button then says so,
-  // like Copy on Support. Another provider or a new message starts over.
+  // like Copy on Support. Another provider, a new message or closing the
+  // message starts over.
   const [copied, setCopied] = useState("");
   const copyKey = issue ? `${issue.provider.id}\n${issue.provider.health.reported}` : "";
   const [query, setQuery] = useState("");

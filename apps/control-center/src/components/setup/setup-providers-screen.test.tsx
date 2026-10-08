@@ -314,6 +314,28 @@ describe("SetupProvidersScreen", () => {
     vi.unstubAllGlobals();
   });
 
+  // Closing the message ends the confirmation: opened again from the row's
+  // warning icon, the button offers the copy again.
+  it("offers the copy again when a copied message is closed and opened again", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const openai = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Failure" });
+    renderDom(<SetupProvidersScreen usage={usage}
+      providers={[{ ...openai, health: { ...openai.health, reported: "Authentication required" } }]}
+      onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy provider message for OpenAI" }));
+    });
+    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for OpenAI" }));
+    expect(screen.getByRole("button", { name: "Copy provider message for OpenAI" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
     const second = provider({ providerId: "openai", label: "OpenAI", health: "unavailable", message: "Second failure" });
     renderDom(<SetupProvidersScreen usage={usage} providers={[{ ...copilot, value: true }, second]}
