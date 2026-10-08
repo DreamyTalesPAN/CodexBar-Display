@@ -157,7 +157,8 @@ export function ProviderList({
         pendingPreferenceIds.has(provider.id)) return [];
     const message = setupProviderIssueMessage({
       health: provider.health.state, label: provider.label,
-      detail: provider.health.message, reportedMessage: provider.health.reported,
+      detail: provider.health.message, nextAction: provider.health.nextAction,
+      reportedMessage: provider.health.reported,
     });
     // A stale row still shows its last reading and recovers by itself, e.g.
     // while CodexBar starts after the runtime restarted. Nothing for the

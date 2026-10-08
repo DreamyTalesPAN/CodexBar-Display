@@ -626,6 +626,11 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 	if len(setup.Providers) > 0 {
 		provider := setup.Providers[0]
 		check.Detail = provider.Detail
+		// CodexBar's own sentence names every source that failed; without it
+		// a support report only says which category the app chose.
+		if reported := reportedProviderMessage(provider.Reported); reported != "" {
+			check.Detail += " Provider message: " + reported
+		}
 		if provider.NextAction != "" {
 			check.NextAction = provider.NextAction
 		}
