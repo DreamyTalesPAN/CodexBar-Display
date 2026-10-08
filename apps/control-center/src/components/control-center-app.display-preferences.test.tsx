@@ -104,6 +104,9 @@ function startWindow(themes: unknown[] = []) {
     holdRead: null as Promise<void> | null,
     // While set, the next write is stored late.
     holdWrite: null as Promise<void> | null,
+    // While set, a read of VibeTV's settings answers late, with what it found
+    // when it started.
+    holdSettingsRead: null as Promise<void> | null,
   };
   const takeHeldWrite = () => {
     const held = companion.holdWrite;
@@ -202,7 +205,11 @@ function startWindow(themes: unknown[] = []) {
             ? { ...companion.settings, standby }
             : { ...companion.settings, display: { brightnessPercent } };
         }
-        return jsonResponse({ ok: true, settings: companion.settings });
+        const found = companion.settings;
+        if (!init?.body) {
+          await companion.holdSettingsRead;
+        }
+        return jsonResponse({ ok: true, settings: init?.body ? companion.settings : found });
       }
       if (url.endsWith("/v1/provider-display")) {
         if (init?.body && companion.refuseDisplayWrites) {
@@ -928,3 +935,63 @@ it("has no accessibility violations on any tab or in the setup question", async 
   for (const page of pages) await expectNoAxeViolations(page);
   // Nine full-app checks take about three seconds on an idle machine.
 }, 30_000);
+
+// Found in review: two places asked for VibeTV's settings at the same moment
+// and two reads ran. The first to answer opened the controls again while the
+// second was still on its way, and that one put back what it had found before
+// a change made in between.
+const settingsReads = (window: ReturnType<typeof startWindow>) =>
+  window.companion.requests.filter((request) => /^GET \S+\/v1\/settings$/.test(request)).length;
+
+it("reads VibeTV's settings once when two places ask at the same time", async () => {
+  let answerRead = () => {};
+  const window = startWindow();
+  window.companion.slot = {};
+  window.companion.holdSettingsRead = new Promise<void>((resolve) => {
+    answerRead = resolve;
+  });
+  // The status finds VibeTV ready and asks; opening Settings asks again.
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(2);
+  expect(settingsReads(window)).toBe(1);
+
+  window.companion.holdSettingsRead = null;
+  answerRead();
+  await window.wait(1);
+  expect(settingsReads(window)).toBe(1);
+  expect(screen.getByRole("switch", { name: "Show screensaver" })).toBeTruthy();
+
+  // The next one who asks gets a new read.
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect(settingsReads(window)).toBe(2);
+});
+
+it("keeps a saved screensaver switch when a settings read beside the save answers afterwards", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const toggle = () => screen.getByRole("switch", { name: "Show screensaver" });
+  expect(toggle().getAttribute("aria-checked")).toBe("false");
+
+  let answerRead = () => {};
+  window.companion.holdSettingsRead = new Promise<void>((resolve) => {
+    answerRead = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  fireEvent.click(toggle());
+  await window.wait(1);
+  expect(window.companion.settings.standby.enabled).toBe(true);
+
+  window.companion.holdSettingsRead = null;
+  answerRead();
+  await window.wait(1);
+  expect(toggle().getAttribute("aria-checked")).toBe("true");
+});

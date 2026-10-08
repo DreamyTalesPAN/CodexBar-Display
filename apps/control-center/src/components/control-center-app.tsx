@@ -641,7 +641,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const didRunSetupVerification = useRef(false);
   const pendingPairingCandidate = useRef<DeviceCandidate | null>(null);
   const legacyRecoverySearchInFlight = useRef(false);
-  const settingsReadInFlight = useRef(false);
+  const settingsReadRef = useRef<Promise<void> | null>(null);
   const lastCompanionRequestAt = useRef(0);
   const statusPollInFlight = useRef(false);
   // Set by "Check for updates"; the next status read takes it along.
@@ -1060,10 +1060,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
-  const loadSettings = useCallback(async () => {
+  const readSettings = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
+    // A change the customer makes while this read is on its way is newer than
+    // what the read finds; its answer must not put the old value back.
+    const writes = deviceSettingWritesRef.current;
+    const brightnessWrites = writes.brightness;
+    const standbyWrites = writes.standby;
     setBusyAction("settings");
-    settingsReadInFlight.current = true;
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
       if (setupGeneration !== setupGenerationRef.current) {
@@ -1071,10 +1075,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       const loadedBrightness =
         payload.settings?.display?.brightnessPercent ?? null;
-      if (brightnessDirtyRef.current === null) {
+      if (
+        brightnessDirtyRef.current === null &&
+        writes.brightness === brightnessWrites
+      ) {
         setBrightness(loadedBrightness);
       }
-      if (standbyDirtyRef.current === null) {
+      if (
+        standbyDirtyRef.current === null &&
+        writes.standby === standbyWrites
+      ) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
       }
@@ -1109,7 +1119,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
     } finally {
-      settingsReadInFlight.current = false;
       if (setupGeneration === setupGenerationRef.current) {
         setBusyAction(null);
       }
@@ -1122,6 +1131,31 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     markCompanionUnavailable,
     runCompanion,
   ]);
+
+  // One read of the settings at a time. Who asks while one is on its way gets
+  // that one's answer; two side by side answered in either order, and the
+  // first opened the controls while the second could still put old values
+  // back. `fresh` is for a caller that has just changed what the settings
+  // hold (another VibeTV, an installed screensaver): its read starts after
+  // the one on its way.
+  const loadSettings = useCallback(
+    (options?: { fresh?: boolean }) => {
+      const running = settingsReadRef.current;
+      if (running && !options?.fresh) {
+        return running;
+      }
+      const read: Promise<void> = (
+        running ? running.then(readSettings) : readSettings()
+      ).finally(() => {
+        if (settingsReadRef.current === read) {
+          settingsReadRef.current = null;
+        }
+      });
+      settingsReadRef.current = read;
+      return read;
+    },
+    [readSettings],
+  );
 
   const deviceConnectedForSettings = deviceIsCustomerConnected(device);
 
@@ -1136,7 +1170,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const screensaversOpen =
     activeTab === "theme-library" && appearanceSection === "screensavers";
   useEffect(() => {
-    if (!screensaverSettingMissing || settingsReadInFlight.current) {
+    if (!screensaverSettingMissing) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -1774,7 +1808,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             "The selected VibeTV is connected. Its display will update automatically.",
           tone: "ready",
         });
-        void loadSettings();
+        void loadSettings({ fresh: true });
         return payload.device;
       } catch (error) {
         if (setupGeneration !== setupGenerationRef.current) {
@@ -1812,7 +1846,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 "The selected VibeTV is connected. Its display will update automatically.",
               tone: "ready",
             });
-            void loadSettings();
+            void loadSettings({ fresh: true });
             return statusPayload.device;
           }
         } catch {
@@ -2535,7 +2569,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           result,
         });
         const [, verifiedDevice] = await Promise.all([
-          loadSettings(),
+          loadSettings({ fresh: true }),
           refreshDevice({ quiet: true }),
         ]);
         const setupVerified =
