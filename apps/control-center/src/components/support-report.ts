@@ -75,28 +75,50 @@ export function serializeSupportReport(report: SupportDiagnostics): string {
   );
 }
 
-// The folder under the home root is the account name of the computer:
-// `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` on any drive, with
-// either slash, also doubled inside JSON text. The report says `~` there in
-// every text it holds (issue #580); the app itself keeps the real path. A name
-// may hold spaces, so it runs through the separator that ends it, or, where
-// none follows, up to closing punctuation. `/Users` and `/home` count only
-// where they start a path, so a web address (`example.com/home/...`) stays
-// whole. Modelled on `reportedHomePath`, the rule for the Mac App's provider
-// messages.
-const homeNameWord = String.raw`[^\\/\s"<>|:*?;,]+`;
+// The folder under the home root is the account name of the computer. The
+// report says `~` for the root and that one name in every text it holds
+// (issue #580); the app itself keeps the real path. Everything else stays: a
+// path that is missed is the smaller harm than a sentence that loses words.
+//
+// A home root is `/Users/` or `/home/`, spelled exactly so, and on Windows
+// `C:\Users\` on any drive or `\\server\Users\`, with either slash, also
+// doubled inside JSON text. It counts only where a path starts -- at the
+// start of the text or after a space, a quote, `=`, `(` or `:` -- and never
+// inside a web address. `Public` and `Shared` are on every computer and name
+// nobody.
+const homeRoot = String.raw`(?:[\s"'=(:]|^)/(?:Users|home)/+|(?:(?:[^A-Za-z0-9]|^)[A-Za-z]:|(?:[\s"'=(]|^)\\{2,}[\w.$-]+)[\\/]+[Uu]sers[\\/]+`;
+// One word of a name inside a sentence: it ends before a space, a bracket,
+// `=` and punctuation, and a full stop behind it belongs to the sentence.
+const homeNameEnd = String.raw`\\/\s"'<>|:*?;,()\[\]{}=`;
+const homeNameWord = `[^${homeNameEnd}]*[^${homeNameEnd}.]`;
+// A name with spaces is a name only where the path goes on right behind it,
+// and inside a sentence it has at most three words.
 const homePath = new RegExp(
-  String.raw`(?:\b[A-Z]:[\\/]+Users|(^|[^A-Za-z0-9.-])/(?:Users|home))[\\/]+` +
-    `(?:${homeNameWord}(?: ${homeNameWord})*?([\\\\/])|` +
-    String.raw`[^\\/\r\n"<>|:*?)\]},;]+)`,
-  "gi",
+  `(${homeRoot})(${homeNameWord}(?: ${homeNameWord}){0,2}(?=[\\\\/])|${homeNameWord})`,
+  "g",
+);
+// A text that is one path, as the usage engine's own paths are: the name is
+// what stands before the next separator, however many words.
+const wholeHomePath = new RegExp(
+  String.raw`^(${homeRoot})([^\\/\r\n"]+)(?=[\\/])`,
 );
 
 function homeFolderAsTilde(value: string): string {
-  return value.replace(
-    homePath,
-    (_match, before = "", separator = "") => `${before}~${separator}`,
-  );
+  const shorten = (
+    match: string,
+    root: string,
+    name: string,
+    offset: number,
+    text: string,
+  ) => {
+    // The character in front of the root is not part of the path.
+    const before = root.slice(0, root.search(/[A-Za-z]:|\\{2}|\/(?:Users|home)/));
+    const token = text.slice(0, offset).split(/\s/).pop() ?? "";
+    return /^(?:public|shared)$/i.test(name) || token.includes("://")
+      ? match
+      : `${before}~`;
+  };
+  return value.replace(wholeHomePath, shorten).replace(homePath, shorten);
 }
 
 export function downloadSupportReport(report: SupportDiagnostics): void {

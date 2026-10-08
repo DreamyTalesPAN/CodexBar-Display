@@ -307,3 +307,53 @@ describe("support report file name", () => {
     expect(supportReportFilename("not a time")).toBe("vibetv-support-report-session.json");
   });
 });
+
+// A review of the first rule (issue #580): it took words after a path and
+// read web routes as home folders. Only the name behind the home root goes.
+describe("support report home folder, in a sentence", () => {
+  async function exportedDetail(detail: string): Promise<string> {
+    const exported = JSON.parse(
+      serializeSupportReport(
+        await report({ ok: true, checks: [{ name: "x", status: "fail", detail }] } as unknown as SupportDiagnostics),
+      ),
+    );
+    return exported.checks[0].detail;
+  }
+
+  it.each([
+    // The words after the name stay.
+    ["No such directory /Users/paul. Run setup again, then retry.", "No such directory ~. Run setup again, then retry."],
+    ["Log in as /Users/paul (admin) please", "Log in as ~ (admin) please"],
+    ["HOME=/Users/paul PATH=/usr/bin:/bin", "HOME=~ PATH=/usr/bin:/bin"],
+    ["cwd=/Users/paul cmd=/Applications/VibeTV.app/Contents/MacOS/x", "cwd=~ cmd=/Applications/VibeTV.app/Contents/MacOS/x"],
+    ["open /Users/paul or use the app at Applications/VibeTV", "open ~ or use the app at Applications/VibeTV"],
+    ["/Users/paul is missing", "~ is missing"],
+    // A name with spaces is a name where the path goes on behind it.
+    ["/Users/Paul Anduschus/Library/x", "~/Library/x"],
+    ["Could not open /Users/Paul Anduschus/Library/x today", "Could not open ~/Library/x today"],
+    ["C:\\Users\\Jane van Doe\\AppData\\Local\\VibeTV\\codexbar.exe", "~\\AppData\\Local\\VibeTV\\codexbar.exe"],
+    // A share on another computer names the account too.
+    ["\\\\fileserver\\Users\\paul\\AppData\\Roaming\\codexbar-display", "~\\AppData\\Roaming\\codexbar-display"],
+    ["Cannot read \\\\fileserver\\Users\\paul\\x.json now", "Cannot read ~\\x.json now"],
+    // What stands in front of the path stays.
+    ["[/Users/paul/x] and \\\\?\\C:\\Users\\paul\\x", "[/Users/paul/x] and \\\\?\\~\\x"],
+    ["see https://vibetv.shop/help and /home/jane/.codexbar", "see https://vibetv.shop/help and ~/.codexbar"],
+  ])("%s", async (detail, want) => {
+    expect(await exportedDetail(detail)).toBe(want);
+  });
+
+  it.each([
+    // Folders every computer has are not an account.
+    "C:\\Users\\Public\\Documents\\x",
+    "/Users/Shared/VibeTV/x",
+    // A web route, a query and a folder deeper in a path are not a home folder.
+    "GET /users/123/profile failed",
+    "https://example.com/?next=/home/dashboard/x",
+    "https://example.com/Users/paul/x",
+    "/Volumes/Backup/Users/paul/x",
+    "D:\\Data\\Users\\paul\\x",
+    '{"path":"D:\\\\Data\\\\Users\\\\paul\\\\x"}',
+  ])("leaves %s as it is", async (detail) => {
+    expect(await exportedDetail(detail)).toBe(detail);
+  });
+});
