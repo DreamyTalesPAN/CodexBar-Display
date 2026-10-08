@@ -189,7 +189,7 @@ write_info_plist() {
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>SUEnableAutomaticChecks</key>
-    <false/>
+    <$([[ "$LOCAL_PREVIEW" == "1" ]] && printf 'false' || printf 'true')/>
     <key>SUFeedURL</key>
     <string>$(xml_escape "$SPARKLE_FEED_URL")</string>
     <key>SUPublicEDKey</key>

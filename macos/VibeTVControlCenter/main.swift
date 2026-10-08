@@ -39,6 +39,8 @@ private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
+// Without an answer from the update feed the start goes on after this limit.
+private let launchUpdateCheckLimitSeconds = 5
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeUnregistrationQuiesceTimeout: TimeInterval = 20
 private let runtimeUnregistrationQuiescePollDelay: Duration = .milliseconds(250)
@@ -1147,6 +1149,7 @@ struct InstallationStatus {
     let failed: Bool
     let retryTitle: String
     let kind: InstallationStatusKind
+    var welcomeLine = "starting background service"
 }
 
 extension InstallationFailure {
@@ -1359,6 +1362,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         updaterDelegate: self,
         userDriverDelegate: nil
     )
+    // The Mac App installs its own update before it looks for a VibeTV
+    // (#561). `waiting` and `installing` hold the start back; `abandoned`
+    // means the feed did not answer in time and the start went on without it.
+    private enum LaunchUpdateCheck {
+        case waiting, installing, abandoned, done
+    }
+    private var launchUpdateCheck = LaunchUpdateCheck.done
+    private var launchUpdateTurnedDown = false
 #endif
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
@@ -1390,16 +1401,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 #if canImport(Sparkle)
-        _ = updaterController
+        startLaunchUpdateCheck()
+#else
+        startRuntimePreparation()
 #endif
+    }
+
+#if canImport(Sparkle)
+    private func startLaunchUpdateCheck() {
+        launchUpdateCheck = .waiting
         presentInstallationStatus(
             title: "Starting Control Center",
-            detail: "Checking the Mac App and your last connected VibeTV.",
+            detail: "Checking for a Mac App update.",
             failed: false,
-            kind: .welcome
+            kind: .welcome,
+            welcomeLine: "checking for mac app update"
         )
-        startRuntimePreparation()
+        // One limit for the question to the runtime and the update feed.
+        Task { @MainActor [weak self] in
+            try? await Task<Never, Never>.sleep(
+                for: .seconds(launchUpdateCheckLimitSeconds)
+            )
+            self?.finishLaunchUpdateCheck(timedOut: true)
+        }
+        Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+            // The runtime of the last session may still be writing firmware
+            // or a theme, and installing the update stops it. Ask before the
+            // updater exists, so nothing is downloaded that has to wait.
+            switch await self.runtimeClaimUpdateHold() {
+            case .updateRunning, .answeredWithoutField:
+                NSLog(
+                    "VibeTV Control Center skipped its launch update check while a VibeTV update is running"
+                )
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            case .noUpdate:
+                await self.runtimeReleaseUpdateHold()
+            case .noAnswer:
+                break
+            }
+            // A hung runtime used up the limit and the start went on.
+            guard self.launchUpdateCheck == .waiting else {
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            }
+            // Sparkle installs without its dialog only while this default is
+            // set, and reads it when the updater is created.
+            UserDefaults.standard.set(true, forKey: "SUAutomaticallyUpdate")
+            // "Skip This Version" in Sparkle's dialog would otherwise keep
+            // that version away from the launch check as well.
+            UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")
+            _ = updaterController
+            let updater = self.updaterController.updater
+            // A rehearsal turns the automatic checks off to keep the
+            // baseline app.
+            guard updater.automaticallyChecksForUpdates else {
+                self.finishLaunchUpdateCheck(timedOut: false)
+                return
+            }
+            updater.checkForUpdatesInBackground()
+        }
     }
+
+    private func finishLaunchUpdateCheck(timedOut: Bool) {
+        let previous = launchUpdateCheck
+        if timedOut {
+            guard previous == .waiting else {
+                return
+            }
+            launchUpdateCheck = .abandoned
+        } else {
+            guard previous != .done else {
+                return
+            }
+            launchUpdateCheck = .done
+            // Later checks show Sparkle's dialog: a silent install would
+            // restart the app under a customer who is using it.
+            let updater = updaterController.updater
+            updater.automaticallyDownloadsUpdates = false
+            if launchUpdateTurnedDown {
+                // The feed answered after the limit. Offer that update in
+                // Sparkle's dialog now instead of dropping it for a day.
+                launchUpdateTurnedDown = false
+                updater.checkForUpdatesInBackground()
+            }
+        }
+        if previous != .abandoned {
+            startRuntimePreparation()
+        }
+    }
+#endif
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard !installationRequired else {
@@ -1441,7 +1535,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 detail: status.detail,
                 failed: status.failed,
                 retryTitle: status.retryTitle,
-                kind: status.kind
+                kind: status.kind,
+                welcomeLine: status.welcomeLine
             )
         } else {
             window?.makeKeyAndOrderFront(nil)
@@ -2389,7 +2484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     /// Only the first log line is native. Preparing the background service is
     /// the only work this side of the app is doing, and claiming the WiFi scan
     /// or the provider read had started would report work that has not begun.
-    private func installWelcomeContent(in container: NSView) {
+    private func installWelcomeContent(in container: NSView, line: String) {
         let eyebrow = NSTextField(
             labelWithAttributedString: NSAttributedString(
                 string: "WELCOME TO",
@@ -2422,7 +2517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let brand = NSTextField(labelWithAttributedString: brandText)
         brand.alignment = .center
 
-        let logLabel = NSTextField(labelWithString: "> starting background service")
+        let logLabel = NSTextField(labelWithString: "> \(line)")
         logLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         logLabel.textColor = .vibetvMutedForeground
 
@@ -2513,14 +2608,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         detail: String,
         failed: Bool,
         retryTitle: String = "Try again",
-        kind: InstallationStatusKind = .standard
+        kind: InstallationStatusKind = .standard,
+        welcomeLine: String = "starting background service"
     ) {
         installationStatus = InstallationStatus(
             title: title,
             detail: detail,
             failed: failed,
             retryTitle: retryTitle,
-            kind: kind
+            kind: kind,
+            welcomeLine: welcomeLine
         )
         installationStatusTitle = title
         installationStatusDetail = detail
@@ -2534,7 +2631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         container.layer?.backgroundColor = NSColor.vibetvBackground.cgColor
 
         if kind == .welcome, !failed {
-            installWelcomeContent(in: container)
+            installWelcomeContent(in: container, line: welcomeLine)
             presentStatusContainer(container, in: window)
             return
         }
@@ -4233,6 +4330,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         untilInvokingBlock installHandler: @escaping () -> Void
     ) -> Bool {
         Task { @MainActor in
+            // A firmware update or theme install lives inside the runtime
+            // and dies with it. The Mac App update is the one that can wait:
+            // Sparkle holds the install until installHandler runs, so keep
+            // the handler and ask again until the runtime is free.
+            while await runtimeShouldDeferRepairForUpdate() {
+                NSLog(
+                    "VibeTV Control Center holds back its own update while a VibeTV update is running"
+                )
+                // A launch update must not keep the start screen up for the
+                // length of a firmware update.
+                finishLaunchUpdateCheck(timedOut: false)
+                try? await Task<Never, Never>.sleep(for: .seconds(10))
+            }
             // The replaced app must never leave its old runtime alive and
             // polling the device: that is the stale/duplicate-writer state
             // the whole update handoff exists to prevent. Retry the shutdown
@@ -4245,6 +4355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 stopped = await unregisterBundledRuntimeService()
             }
             guard stopped else {
+                await runtimeReleaseUpdateHold()
                 NSLog(
                     "VibeTV Control Center refused to install the update: runtime shutdown failed"
                 )
@@ -4254,11 +4365,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     "VibeTV Control Center could not stop its background runtime. Quit and reopen the app, then run the update again."
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
+                finishLaunchUpdateCheck(timedOut: false)
                 return
             }
             installHandler()
         }
         return true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        shouldProceedWithUpdate item: SUAppcastItem,
+        updateCheck: SPUUpdateCheck
+    ) throws {
+        switch launchUpdateCheck {
+        case .waiting:
+            launchUpdateCheck = .installing
+            presentInstallationStatus(
+                title: "Updating the Mac App",
+                detail: "Installing version \(item.displayVersionString). VibeTV Control Center restarts by itself.",
+                failed: false,
+                kind: .welcome,
+                welcomeLine: "installing mac app \(item.displayVersionString)"
+            )
+        case .abandoned:
+            // The start already went on. Installing now would restart the
+            // app in the middle of setup; the dialog offers the update once
+            // this check has ended.
+            launchUpdateTurnedDown = true
+            throw CocoaError(.userCancelled)
+        case .installing, .done:
+            break
+        }
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        willInstallUpdateOnQuit item: SUAppcastItem,
+        immediateInstallationBlock immediateInstallHandler: @escaping () -> Void
+    ) -> Bool {
+        guard launchUpdateCheck == .installing else {
+            return false
+        }
+        immediateInstallHandler()
+        return true
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+        error: Error?
+    ) {
+        finishLaunchUpdateCheck(timedOut: false)
     }
 #endif
 
