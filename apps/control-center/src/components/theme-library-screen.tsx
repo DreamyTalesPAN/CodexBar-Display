@@ -392,6 +392,15 @@ export function ThemeLibraryScreen({
     setUserThemes(result.value.themes);
   }
 
+  // Opens something other than the waiting draft, which the customer agreed
+  // to give up for it. The draft goes only now: what was chosen may have had
+  // to be fetched first, and when that fails nothing takes its place.
+  function openReplacingRecovery(theme: ThemeStudioEditorTheme) {
+    if (!recovery || discardRecovery()) {
+      setEditingTheme(theme);
+    }
+  }
+
   function openBlankTheme() {
     const existingIds = allThemeIds(themes, userThemes);
     const spec = createBlankThemeSpec();
@@ -400,7 +409,7 @@ export function ThemeLibraryScreen({
       existingIds,
     );
     setLibraryError("");
-    setEditingTheme({
+    openReplacingRecovery({
       assets: {},
       packName: screensavers ? "New Screensaver" : "New Theme",
       source: "blank",
@@ -412,7 +421,7 @@ export function ThemeLibraryScreen({
   async function openThemeEditor(item: ThemeLibraryItem) {
     setLibraryError("");
     if (item.kind === "custom") {
-      setEditingTheme({
+      openReplacingRecovery({
         assets: item.custom.document.assets,
         libraryId: item.custom.id,
         packName: item.custom.document.packName,
@@ -432,7 +441,7 @@ export function ThemeLibraryScreen({
       const spec = importThemeSpec(payload.spec);
       const existingIds = allThemeIds(themes, userThemes);
       spec.themeId = uniqueThemeId(`${item.product.themeId}-custom`, existingIds);
-      setEditingTheme({
+      openReplacingRecovery({
         assets: payload.assets || {},
         libraryId: item.product.themeId,
         packName: `${payload.name || item.product.title} Custom`,
@@ -791,9 +800,7 @@ export function ThemeLibraryScreen({
           onKeep={() => setReplacingRecovery(null)}
           onReplace={() => {
             setReplacingRecovery(null);
-            if (discardRecovery()) {
-              replacingRecovery();
-            }
+            replacingRecovery();
           }}
         >
           {recovery.document.packName} has changes that are not saved. What you

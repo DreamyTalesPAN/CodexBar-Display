@@ -81,6 +81,26 @@ it("asks before a new theme takes the place of an older unsaved draft", async ()
   expect(screen.getByText("Editor open")).toBeTruthy();
 });
 
+// Found in review: Replace removed the older draft before what was chosen had
+// opened. A catalog theme is fetched first, and when that failed there was no
+// editor and no draft.
+it("keeps the older draft when what should replace it cannot be opened", async () => {
+  vi.stubGlobal("fetch", async () => ({ ok: false }));
+  renderLibrary({
+    themes: [
+      { id: "drift", isFree: true, priceLabel: "Free", source: "github-catalog", themeId: "drift", title: "Drift" },
+    ],
+  });
+  await screen.findByText("Continue your unsaved theme");
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+  expect(await screen.findByText("Theme could not be opened.")).toBeTruthy();
+  expect(stored.cleared).toBe(0);
+  expect(screen.getByText("Continue your unsaved theme")).toBeTruthy();
+  expect(screen.queryByText("Editor open")).toBeNull();
+  vi.unstubAllGlobals();
+});
+
 it("opens a new theme at once when no unsaved draft waits", () => {
   stored.recovery = false;
   renderLibrary();
