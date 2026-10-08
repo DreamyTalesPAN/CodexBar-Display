@@ -100,6 +100,10 @@ func TestReportedProviderMessageRedactsTheWindowsHomePath(t *testing.T) {
 			in:   `Missing profile (C:\Users\Jane O'Doe), try again.`,
 			want: `Missing profile (~), try again.`,
 		},
+		{
+			in:   `Claude credentials not found at C:\Users\Jane (Work)\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("windows home path redaction:\n got %q\nwant %q", got, tc.want)
