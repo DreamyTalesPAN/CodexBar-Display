@@ -47,6 +47,13 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     theme: "token-counter",
   },
   {
+    id: "theme-pace-meter",
+    icon: PanelsTopLeft,
+    title: "New theme: Pace Meter",
+    body: "Shows whether your limit lasts until it resets.",
+    theme: "pace-meter",
+  },
+  {
     id: "provider-shortcut",
     icon: Keyboard,
     title: "Switch providers with a shortcut",
