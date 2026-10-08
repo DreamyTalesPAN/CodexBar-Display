@@ -380,6 +380,41 @@ it("keeps Brightness focused through two arrow keys and saves both in order", as
   ]);
 });
 
+// The answer to the first save set the thumb back to the saved value while the
+// customer was already dragging on, until the pointer moved again.
+it("leaves the Brightness thumb where it is dragged when an earlier save is answered", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const slider = screen.getByRole("slider", { name: "Brightness" });
+  // jsdom lays nothing out and holds no pointer: the track is 100 px wide
+  // here, and the pointer stays down from pointerDown to pointerUp.
+  const track = slider.closest<HTMLElement>('[data-slot="slider"]')!;
+  track.getBoundingClientRect = () => ({ left: 0, width: 100 }) as DOMRect;
+  track.setPointerCapture = () => {};
+  track.releasePointerCapture = () => {};
+  track.hasPointerCapture = () => true;
+
+  const store = window.holdNextWrite();
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  await window.step(() => fireEvent.pointerDown(track, { clientX: 60 }));
+  const dragged = slider.getAttribute("aria-valuenow");
+  expect(dragged).not.toBe("21");
+
+  store();
+  await window.wait(1);
+  expect(slider.getAttribute("aria-valuenow")).toBe(dragged);
+
+  await window.step(() => fireEvent.pointerUp(track, { clientX: 60 }));
+  await window.wait(1);
+  expect(slider.getAttribute("aria-valuenow")).toBe(dragged);
+  expect(window.settingsWrites()).toEqual([
+    { brightnessPercent: 21 },
+    { brightnessPercent: Number(dragged) },
+  ]);
+});
+
 // A brightness change that was still on its way, and one waiting behind it,
 // reached VibeTV during or after the reset.
 it.each([

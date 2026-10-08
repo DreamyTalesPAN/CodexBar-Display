@@ -598,7 +598,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
-  const brightnessDirtyRef = useRef(false);
+  // The brightness the customer chose and VibeTV has not confirmed yet.
+  const brightnessDirtyRef = useRef<number | null>(null);
   const standbyDirtyRef = useRef(false);
   const deviceSettingWritesRef = useRef({
     queue: Promise.resolve(),
@@ -1052,7 +1053,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       const loadedBrightness =
         payload.settings?.display?.brightnessPercent ?? null;
-      if (!brightnessDirtyRef.current) {
+      if (brightnessDirtyRef.current === null) {
         setBrightness(loadedBrightness);
       }
       if (!standbyDirtyRef.current) {
@@ -2018,7 +2019,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setConnectionModeChoiceRequired(
         payload.connectionModeChoiceRequired !== false,
       );
-      brightnessDirtyRef.current = false;
+      brightnessDirtyRef.current = null;
       setBrightness(null);
       standbyDirtyRef.current = false;
       lastSavedStandbyRef.current = null;
@@ -2182,7 +2183,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const saveBrightness = useCallback(
     (value: number) => {
-      brightnessDirtyRef.current = true;
+      brightnessDirtyRef.current = value;
       setBrightness(value);
       return queueDeviceSettingWrite("brightness", async (newest) => {
         try {
@@ -2198,8 +2199,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           const savedValue =
             payload.settings?.display?.brightnessPercent ?? value;
-          brightnessDirtyRef.current = false;
-          setBrightness(savedValue);
+          // While this was on its way the customer may have dragged on. The
+          // thumb then stays where they hold it; setting it back made it jump
+          // until the next move.
+          if (brightnessDirtyRef.current === value) {
+            brightnessDirtyRef.current = null;
+            setBrightness(savedValue);
+          }
           addEvent({
             label: "Brightness saved",
             detail: `Display brightness is set to ${savedValue}%.`,
@@ -2237,7 +2243,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const changeBrightness = useCallback((value: number) => {
-    brightnessDirtyRef.current = true;
+    brightnessDirtyRef.current = value;
     setBrightness(value);
   }, []);
 
