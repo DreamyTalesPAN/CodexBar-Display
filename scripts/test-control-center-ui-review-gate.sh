@@ -25,10 +25,15 @@ assert_contains() {
     || die "expected output to contain: ${needle}"
 }
 
+WHATS_NEW_NONE="- What's new: none — nothing a customer would look for"
+
+# The second argument is the entry's "What's new" line; empty leaves it out.
 approval_entry() {
   local label="$1"
+  local whats_new="${2-$WHATS_NEW_NONE}"
   printf '\n## %s\n\n- User approval: Explicit test approval.\n- Approved customer-visible result: %s\n' \
     "$label" "$label"
+  [[ -z "$whats_new" ]] || printf '%s\n' "$whats_new"
 }
 
 setup_repo() {
@@ -38,7 +43,10 @@ setup_repo() {
   git -C "$repo" config user.email "control-center-ui-review@example.test"
   git -C "$repo" config user.name "Control Center UI Review Test"
 
-  mkdir -p "$repo/docs" "$repo/apps/control-center/src/components"
+  mkdir -p "$repo/docs" "$repo/apps/control-center/src/components" \
+    "$repo/apps/control-center/src/lib"
+  printf 'export const WHATS_NEW = [\n  {\n    id: "provider-shortcut",\n  },\n];\n' \
+    > "$repo/apps/control-center/src/lib/whats-new.ts"
   printf '# Control Center Customer UI Approvals\n' \
     > "$repo/docs/control-center-customer-ui-approval.md"
   approval_entry "Initial UI" \
@@ -66,7 +74,7 @@ commit_file() {
 commit_approval() {
   local repo="$1"
   local label="$2"
-  approval_entry "$label" \
+  approval_entry "$label" "${@:3}" \
     >> "$repo/docs/control-center-customer-ui-approval.md"
   git -C "$repo" add docs/control-center-customer-ui-approval.md
   git -C "$repo" commit -q -m "Approve ${label}"
@@ -173,6 +181,44 @@ test_marker_without_evidence_does_not_reset_gate() {
   expect_gate_due "$repo"
 }
 
+# A UI change, then an approval entry with the given "What's new" line.
+approve_ui_change_with() {
+  local repo="$1"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  commit_approval "$repo" "Updated overview" "$2"
+}
+
+test_approval_without_whats_new_line_does_not_reset_gate() {
+  local repo="${TMP_ROOT}/whats-new-missing"
+  approve_ui_change_with "$repo" ""
+  expect_gate_due "$repo"
+}
+
+test_whats_new_none_needs_a_reason() {
+  local repo="${TMP_ROOT}/whats-new-none"
+  approve_ui_change_with "$repo" "- What's new: none — a fix, nothing new to use"
+  expect_gate_success "$repo"
+
+  repo="${TMP_ROOT}/whats-new-none-bare"
+  approve_ui_change_with "$repo" "- What's new: none"
+  expect_gate_due "$repo"
+}
+
+test_whats_new_entry_id_resets_gate() {
+  local repo="${TMP_ROOT}/whats-new-id"
+  approve_ui_change_with "$repo" "- What's new: \`provider-shortcut\`"
+  expect_gate_success "$repo"
+}
+
+test_unknown_whats_new_entry_id_does_not_reset_gate() {
+  local repo="${TMP_ROOT}/whats-new-unknown-id"
+  approve_ui_change_with "$repo" \
+    "- What's new: \`provider-shortcut\`, \`not-an-entry\`"
+  expect_gate_due "$repo"
+}
+
 test_pull_request_merge_commit_uses_pr_head() {
   local repo="${TMP_ROOT}/pull-request-merge"
   setup_repo "$repo"
@@ -205,6 +251,10 @@ test_working_tree_ui_change_blocks_immediately
 test_explicit_approval_resets_gate
 test_working_tree_approval_covers_same_change
 test_marker_without_evidence_does_not_reset_gate
+test_approval_without_whats_new_line_does_not_reset_gate
+test_whats_new_none_needs_a_reason
+test_whats_new_entry_id_resets_gate
+test_unknown_whats_new_entry_id_does_not_reset_gate
 test_pull_request_merge_commit_uses_pr_head
 
 printf 'control-center UI review gate tests passed\n'
