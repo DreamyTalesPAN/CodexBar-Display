@@ -5666,3 +5666,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new field. When an arc's box is made smaller than twice its ring, by dragging the handle in the preview or by the `Width` and `Height` fields, `Thickness` goes down with it to half the smaller side, in the same change. Before, the arc disappeared from the preview and Save and Export were off until Thickness was lowered by hand. The box of an arc is at least 2 px on each side. A box that grows leaves the ring as it is, and a straight bar is not touched.
 - Scope: `setPrimitiveField` in `apps/control-center/src/components/theme-studio/editor-geometry.ts`, the resize handler in `theme-studio-screen.tsx` (it now sets both sides with that function), one test in `editor-geometry.test.ts`, and this approval record; checked with unit tests only.
 - What's new: none — a fix inside the arc fields this pull request adds
+
+## 2026-10-08 — Previews: an empty long-form progress style decides, as on VibeTV
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `d9baa3cf` on 2026-10-08.
+- Approved customer-visible result: No wording, nothing changes for a theme built in Theme Studio or shipped in the catalog. A hand-written theme that holds both `"progressStyle":""` and `"ps":"arc"` (or `"ps":"segments"`) is drawn in the app's previews as a straight bar, which is what VibeTV draws for it. Before, the previews drew the arc or the segments.
+- Scope: the style a progress element is drawn with in `apps/control-center/src/components/live-vibetv-preview.tsx`, one test in `live-vibetv-preview.test.ts`, and this approval record; checked with unit tests only.
+- What's new: none — a preview correction for hand-written themes

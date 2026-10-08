@@ -1082,6 +1082,13 @@ describe("arc-style progress", () => {
     expect(themeProgressArc(primitive, 50)).toBeNull();
     expect(markupFor(primitive, 50)).not.toContain("<circle");
   });
+
+  // VibeTV reads the long-form key when it is there, also when it is empty.
+  it("draws a straight bar when an empty progressStyle stands beside ps arc", () => {
+    const markup = markupFor({ ...arc, progressStyle: "" }, 50);
+    expect(markup).not.toContain("<circle");
+    expect(markup).toContain("<rect");
+  });
 });
 
 describe("live VibeTV partial usage", () => {

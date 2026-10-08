@@ -1013,7 +1013,9 @@ function ThemeProgress({
   );
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
-  const style = primitive.progressStyle || primitive.ps || "";
+  // A long-form key that is present decides, also when it is empty, as on
+  // VibeTV: `"progressStyle":""` beside `"ps":"arc"` is a straight bar.
+  const style = primitive.progressStyle ?? primitive.ps ?? "";
   if (style === "arc") {
     const arc = themeProgressArc(primitive, percent);
     // Each stroke runs clockwise along the middle of the ring. A circle's
