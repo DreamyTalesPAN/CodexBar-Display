@@ -31,17 +31,17 @@ const install: ThemeInstallStatus = {
   title: "Gauge",
 };
 
-function list(installStatus?: ThemeInstallStatus) {
+function list(installStatus?: ThemeInstallStatus, busyAction: string | null = null, selectedThemeId = "") {
   return (
     <ThemeLibraryScreen
-      busyAction={null}
+      busyAction={busyAction}
       companionStatus="online"
       device={{ connected: true, paired: true, ready: true }}
       installStatus={installStatus}
       onInstallCustomTheme={async () => false}
       onInstallTheme={vi.fn()}
       onSelectTheme={vi.fn()}
-      selectedThemeId=""
+      selectedThemeId={selectedThemeId}
       storefrontConfigured={false}
       themeInstallEnabled
       themes={[theme]}
@@ -83,4 +83,20 @@ it("leaves the page where it is when the list opens with a finished install", ()
 
   expect(screen.getByRole("status").textContent).toContain("Installed");
   expect(scrollIntoView).not.toHaveBeenCalled();
+});
+
+// Seen in the Windows app (#579): the notice already read "Installed" while
+// the row's button said "Wait" for about two seconds, because the app reads
+// VibeTV's settings after an install and the button followed that read.
+it("shows the row's button as Installed as soon as its notice says Installed", () => {
+  const view = render(list(install, "install", "gauge"));
+  expect(screen.getByRole("button", { name: "Installing" })).toBeTruthy();
+
+  for (const busyAction of ["install", "settings"]) {
+    view.rerender(list({ ...install, phase: "complete" }, busyAction, "gauge"));
+    expect(screen.getByRole("status").textContent).toContain("Installed");
+    expect(screen.getByRole("button", { name: "Installed" })).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("button", { name: "Wait" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Installing" })).toBeNull();
+  }
 });

@@ -1217,6 +1217,10 @@ function ThemeListItem({
             actionInFlight,
             blockedLabel: blocker ? blockedLabel : "",
             installInFlight: installInFlight || preparingInstall,
+            // The row's notice says "Installed" from here on; the button says
+            // the same while the app still reads VibeTV's settings (#579).
+            installFinished:
+              visibleInstallStatus && installStatus?.phase === "complete" && !preparingInstall,
             installed,
             selected: item.themeId === selectedThemeId,
             disabled,
@@ -1347,6 +1351,7 @@ function labelForInstallButton({
   actionInFlight,
   blockedLabel,
   disabled,
+  installFinished,
   installInFlight,
   installed,
   selected,
@@ -1355,12 +1360,16 @@ function labelForInstallButton({
   actionInFlight: boolean;
   blockedLabel: string;
   disabled: boolean;
+  installFinished: boolean;
   installInFlight: boolean;
   installed: boolean;
   selected: boolean;
   updateAvailable: boolean;
 }) {
   const action = updateAvailable ? "Update" : "Install";
+  if (installFinished && actionInFlight) {
+    return "Installed";
+  }
   if (installInFlight && selected) {
     return "Installing";
   }

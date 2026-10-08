@@ -6338,3 +6338,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new wording or control. On Usage, a click on `Refresh` while `Refreshing usage` is still shown keeps the first request: the notice ends with the first reading that is newer than the first click. Before, every further click moved the request to that moment, so a reading that had just arrived for the first click no longer counted and the notice waited for one more. Not changed: the notice still ends only when the usage engine has made a new reading, and the engine makes one about once a minute, so after a single click the notice can still stay for up to about 90 seconds.
 - Scope: `requestUsageRefresh` in `companion/internal/companionapi/server.go`, `TestUsageManualRefreshSecondClickKeepsTheFirstRequest` in `server_test.go`, one sentence in `docs/usage-polling-architecture.md`, and this approval record; checked with unit tests only.
 - What's new: none — a correction
+
+## 2026-10-09 — Themes: the row's button reads Installed together with its notice (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. It answers a finding from the click-through of the Windows app: after a theme install the notice under the row already read `Installed` / `Theme is active on VibeTV.` while the row's button showed `Wait` for about two seconds.
+- Approved customer-visible result: No new wording. In Appearance › Themes and Screensavers, the button of the row whose notice reads `Installed` reads `Installed` from the same moment, also while the app still reads VibeTV's settings after the install. The button stays switched off during that read, as before. The other rows read `Wait` during it, as before, and once the read has ended every button shows what VibeTV holds, as before.
+- Scope: `labelForInstallButton` and its call in `apps/control-center/src/components/theme-library-screen.tsx`, one test in `theme-library-screen.install-notice.test.tsx`, and this approval record; checked with unit tests only.
+- What's new: none — a correction
