@@ -74,7 +74,6 @@ import { importSpriteFile, uniqueAssetPath } from "@/lib/theme-studio-assets";
 import {
   loadUserThemes,
   loadThemeStudioRecovery,
-  clearThemeStudioRecovery,
   writeThemeStudioRecovery,
   writeUserThemes,
   type UserThemeRecord,
@@ -165,6 +164,7 @@ export function AIThemeStudioScreen({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [library, setLibrary] = useState<UserThemeRecord[]>([]);
+  const savedDesigns = initialTheme ? library.filter((theme) => (theme.document.usage || "live") === (initialTheme.usage || "live")) : library;
   const [libraryId, setLibraryId] = useState(initialTheme?.libraryId);
   const source = useRef(initialTheme?.source || "blank");
   const [saving, setSaving] = useState(false);
@@ -208,7 +208,7 @@ export function AIThemeStudioScreen({
     [document],
   );
   const validation = useMemo(
-    () => validateThemeSpec(document.spec, document.assets),
+    () => validateThemeSpec(document.spec, document.assets, document.usage),
     [document],
   );
 
@@ -256,14 +256,7 @@ export function AIThemeStudioScreen({
   }, [initialTheme, nativeInstall]);
   useEffect(() => {
     if (!recoveryReady || state.transactionBase) return;
-    if (nativeInstall && !dirty) {
-      const cleared = clearThemeStudioRecovery();
-      if (!cleared.ok) {
-        const timer = window.setTimeout(() => setError(cleared.error.message), 0);
-        return () => window.clearTimeout(timer);
-      }
-      return;
-    }
+    if (nativeInstall && !dirty) return;
     const result = writeThemeStudioRecovery({
       document,
       libraryId,
@@ -382,7 +375,7 @@ export function AIThemeStudioScreen({
   }
   function load(next: { document: ThemeStudioDocument; id?: string }) {
     documentVersion.current++;
-    dispatch({ type: "load", document: next.document });
+    dispatch({ type: "load", document: initialTheme ? { ...next.document, usage: initialTheme.usage || "live" } : next.document });
     setLibraryId(next.id);
     source.current = next.id ? "custom" : "blank";
     setSelected([]);
@@ -424,7 +417,7 @@ export function AIThemeStudioScreen({
         usage: document.usage || "live",
       };
       setAIAnimationSpeed(next, AI_THEME_ANIMATION_ASSET_PATH, 4);
-      if (validateThemeSpec(spec, assets).errors.length)
+      if (validateThemeSpec(spec, assets, next.usage).errors.length)
         throw new Error("Invalid sample");
       requestLoad({ document: next });
       setStatus(
@@ -584,7 +577,8 @@ export function AIThemeStudioScreen({
         if (request.current || sendRequest.current || version !== documentVersion.current) return;
         const spec = importThemeSpec(parsed.spec);
         const assets = parsed.assets || {};
-        const valid = validateThemeSpec(spec, assets);
+        const usage = initialTheme ? initialTheme.usage || "live" : parsed.usage === "screensaver" ? "screensaver" : "live";
+        const valid = validateThemeSpec(spec, assets, usage);
         if (valid.errors.length) throw new Error("Invalid theme");
         requestLoad({
           document: {
@@ -594,7 +588,7 @@ export function AIThemeStudioScreen({
               typeof parsed.packName === "string"
                 ? parsed.packName
                 : "Imported scene",
-            usage: "live",
+            usage,
           },
         });
       }
@@ -711,7 +705,7 @@ export function AIThemeStudioScreen({
       if (layout.mode === "layout") {
         const next = applyAIThemeLayout(document, layout);
         pruneUnusedThemeAssets(next);
-        const check = validateThemeSpec(next.spec, next.assets);
+        const check = validateThemeSpec(next.spec, next.assets, next.usage);
         if (check.errors.length) throw new Error(check.errors[0]);
         documentVersion.current++;
         dispatch({type:"update",document:next});
@@ -743,7 +737,7 @@ export function AIThemeStudioScreen({
       if (request.current !== controller || controller.signal.aborted) return;
       const next = applyAIThemeCandidate(document, candidate, "auto");
       pruneUnusedThemeAssets(next);
-      const check = validateThemeSpec(next.spec, next.assets);
+      const check = validateThemeSpec(next.spec, next.assets, next.usage);
       if (check.errors.length) throw new Error(check.errors[0]);
       documentVersion.current++;
       dispatch({ type: "update", document: next });
@@ -1749,8 +1743,8 @@ export function AIThemeStudioScreen({
           ) : null}
           {panel === "library" ? (
             <div className="grid gap-2">
-              {library.length ? (
-                library.map((t) => (
+              {savedDesigns.length ? (
+                savedDesigns.map((t) => (
                   <Button
                     key={t.id}
                     variant="outline"

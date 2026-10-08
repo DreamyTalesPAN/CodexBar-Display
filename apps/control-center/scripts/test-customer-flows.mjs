@@ -10349,6 +10349,24 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   assert(requests.filter(isDirectDeviceWriteUrl).length === 0, "All hardware traffic stays mocked");
   await page.getByRole("button", { name: "Back to library", exact: true }).click();
   await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
+    schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
+  })), saved.themes[0].document);
+  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByLabel("Your idea", { exact: true }).waitFor();
+  if (screensaver) {
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: "New design", exact: true }).click();
+    await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
+    await page.locator('input[accept="application/json,.json"]').setInputFiles({
+      name: "theme.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ ...saved.themes[0].document, usage: "live" })),
+    });
+    await page.getByText("Design opened.", { exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
+  }
+  await page.getByRole("button", { name: "Back to library", exact: true }).click();
+  await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  assert(await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.themeStudioDraft"))?.recovery?.document?.packName) === "Unsaved other design", "Opening a clean design preserves unrelated recovery");
   assert(errors.length === 0, errors.join("\n"));
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
