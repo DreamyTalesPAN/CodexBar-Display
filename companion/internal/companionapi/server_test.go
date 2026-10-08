@@ -5150,6 +5150,51 @@ func TestControlCenterStaticUnavailableWithoutIndex(t *testing.T) {
 	}
 }
 
+// The two pages the server words itself never pass through the app's screens,
+// so they name the host themselves (#548). The Mac text stays as it was.
+func TestServerWordedPagesNameTheHost(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+
+	body := func(installationMode string, files fstest.MapFS) string {
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.installationMode = installationMode
+		server.controlCenterFS = files
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/control-center", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		server.Handler().ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+	const (
+		macMoved   = `<h1>VibeTV Control Center moved to the Mac App.</h1><p>Open VibeTV Control Center from Applications.</p>`
+		macMissing = `<p>VibeTV Control Center is not bundled with this Mac App. Run setup again.</p>`
+		winMoved   = `<h1>VibeTV Control Center moved to the app.</h1><p>Open VibeTV Control Center from the Start menu.</p>`
+		winMissing = `<p>VibeTV Control Center is not bundled with this app. Run setup again.</p>`
+	)
+
+	providerCopyGOOS = "darwin"
+	if got := body("dmg", fstest.MapFS{}); !strings.Contains(got, macMoved) {
+		t.Fatalf("Mac moved page = %q", got)
+	}
+	if got := body("legacy", fstest.MapFS{}); !strings.Contains(got, macMissing) {
+		t.Fatalf("Mac missing page = %q", got)
+	}
+
+	providerCopyGOOS = "windows"
+	for _, got := range []string{body("dmg", fstest.MapFS{}), body("legacy", fstest.MapFS{})} {
+		if strings.Contains(got, "Mac") || strings.Contains(got, "Applications") {
+			t.Fatalf("Windows page names the Mac: %q", got)
+		}
+	}
+	if got := body("dmg", fstest.MapFS{}); !strings.Contains(got, winMoved) {
+		t.Fatalf("Windows moved page = %q", got)
+	}
+	if got := body("legacy", fstest.MapFS{}); !strings.Contains(got, winMissing) {
+		t.Fatalf("Windows missing page = %q", got)
+	}
+}
+
 func TestFirmwareLatestUsesReleaseManifest(t *testing.T) {
 	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/firmware-manifest.json" {

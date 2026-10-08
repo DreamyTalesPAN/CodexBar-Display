@@ -1218,7 +1218,11 @@ func (s *Server) handleControlCenter(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusGone)
 		if r.Method == http.MethodGet {
-			_, _ = io.WriteString(w, `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>VibeTV Control Center</title><main><h1>VibeTV Control Center moved to the Mac App.</h1><p>Open VibeTV Control Center from Applications.</p></main>`)
+			moved, open := "moved to the Mac App.", "from Applications."
+			if providerCopyGOOS == "windows" {
+				moved, open = "moved to the app.", "from the Start menu."
+			}
+			_, _ = io.WriteString(w, `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>VibeTV Control Center</title><main><h1>VibeTV Control Center `+moved+`</h1><p>Open VibeTV Control Center `+open+`</p></main>`)
 		}
 		return
 	}
@@ -1370,7 +1374,11 @@ func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, 
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			if r.Method != http.MethodHead {
-				_, _ = io.WriteString(w, "<!doctype html><title>VibeTV Control Center unavailable</title><p>VibeTV Control Center is not bundled with this Mac App. Run setup again.</p>")
+				app := "Mac App"
+				if providerCopyGOOS == "windows" {
+					app = "app"
+				}
+				_, _ = io.WriteString(w, "<!doctype html><title>VibeTV Control Center unavailable</title><p>VibeTV Control Center is not bundled with this "+app+". Run setup again.</p>")
 			}
 			return false
 		}
