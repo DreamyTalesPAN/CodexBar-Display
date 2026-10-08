@@ -5659,3 +5659,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new field. Inspector › Style › `Arc` on a bar that already holds a sweep but no thickness, as an imported theme may, adds the thickness in the same change, so the theme can be saved and exported; the sweep it holds stays, and a start angle that is left out stays left out (12 o'clock). A bar that holds a start angle or a thickness but no sweep keeps them and gets the sweep. A bar without any arc value gets all three, as before.
 - Scope: `setPrimitiveField` in `apps/control-center/src/components/theme-studio/editor-geometry.ts`, two tests in `editor-geometry.test.ts`, and this approval record; checked with unit tests only.
 - What's new: none — a fix inside the arc fields this pull request adds
+
+## 2026-10-08 — Theme Studio: an arc's ring gets thinner when its box is made smaller
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `13739155` on 2026-10-08 to the arc fields of this pull request, which he has not seen.
+- Approved customer-visible result: No wording, no new field. When an arc's box is made smaller than twice its ring, by dragging the handle in the preview or by the `Width` and `Height` fields, `Thickness` goes down with it to half the smaller side, in the same change. Before, the arc disappeared from the preview and Save and Export were off until Thickness was lowered by hand. The box of an arc is at least 2 px on each side. A box that grows leaves the ring as it is, and a straight bar is not touched.
+- Scope: `setPrimitiveField` in `apps/control-center/src/components/theme-studio/editor-geometry.ts`, the resize handler in `theme-studio-screen.tsx` (it now sets both sides with that function), one test in `editor-geometry.test.ts`, and this approval record; checked with unit tests only.
+- What's new: none — a fix inside the arc fields this pull request adds

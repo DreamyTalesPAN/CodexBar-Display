@@ -114,21 +114,38 @@ export function setPrimitiveField(
 ) {
   if (value === "") {
     delete primitive[field];
+  } else {
+    (primitive as Record<FieldKey, unknown>)[field] = value;
+  }
+  if (primitive.progressStyle !== "arc") {
     return;
   }
-  (primitive as Record<FieldKey, unknown>)[field] = value;
   // A bar that becomes an arc gets its ring in the same change, so one Undo
-  // takes all of it back: three quarters of a circle open at the bottom, as
-  // thick as the box allows up to 12 px.
-  // A bar that kept part of an arc, as an imported one may, gets only what is
-  // missing; a start angle that is left out means 12 o'clock.
-  if (field === "progressStyle" && value === "arc") {
-    const { height, width } = primitiveBounds(primitive);
+  // takes all of it back: three quarters of a circle open at the bottom, up to
+  // 12 px thick. A bar that kept part of an arc, as an imported one may, gets
+  // only what is missing; a start angle that is left out means 12 o'clock.
+  if (field === "progressStyle") {
     if (primitive.arcSweep === undefined) {
       primitive.arcStart ??= 225;
       primitive.arcSweep = 270;
     }
-    primitive.arcThickness ??= Math.max(1, Math.min(12, Math.floor(Math.min(width, height) / 2)));
+    primitive.arcThickness ??= 12;
+  }
+  // The ring is at most half as thick as the smaller side of its box, so that
+  // side is at least 2 px. A box made smaller takes the ring with it;
+  // otherwise the arc could not be saved until Thickness was lowered by hand.
+  if (field === "progressStyle" || field === "width" || field === "height") {
+    if (primitive.width !== undefined) {
+      primitive.width = Math.max(2, primitive.width);
+    }
+    if (primitive.height !== undefined) {
+      primitive.height = Math.max(2, primitive.height);
+    }
+    const { height, width } = primitiveBounds(primitive);
+    primitive.arcThickness = Math.max(
+      1,
+      Math.min(primitive.arcThickness ?? 1, Math.floor(Math.min(width, height) / 2)),
+    );
   }
 }
 

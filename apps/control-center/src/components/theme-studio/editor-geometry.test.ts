@@ -102,4 +102,24 @@ describe("setPrimitiveField", () => {
     setPrimitiveField(noSweep, "progressStyle", "arc");
     expect(noSweep).toMatchObject({ arcStart: 90, arcSweep: 270, arcThickness: 4 });
   });
+
+  // The ring may be half as thick as the smaller side of the box. Dragging the
+  // box smaller left an arc that could not be saved.
+  it("makes an arc's ring thinner when its box gets smaller", () => {
+    const primitive = bar();
+    setPrimitiveField(primitive, "progressStyle", "arc");
+    setPrimitiveField(primitive, "height", 12);
+    expect(primitive).toMatchObject({ height: 12, arcThickness: 6 });
+    setPrimitiveField(primitive, "width", 1);
+    expect(primitive).toMatchObject({ width: 2, arcThickness: 1 });
+    // A box that grows again leaves the ring as it is.
+    setPrimitiveField(primitive, "width", 100);
+    setPrimitiveField(primitive, "height", 100);
+    expect(primitive.arcThickness).toBe(1);
+
+    // A straight bar has no ring to fit.
+    const straight = { ...bar(), arcThickness: 10 };
+    setPrimitiveField(straight, "height", 4);
+    expect(straight).toMatchObject({ height: 4, arcThickness: 10 });
+  });
 });
