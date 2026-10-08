@@ -1099,7 +1099,7 @@ export function ThemeStudioScreen({
     setSending(true);
     setDeviceStatus({
       tone: "unknown",
-      message: `Sending ${screensaver ? "screensaver" : "theme"} after your click.`,
+      message: say("Sending the theme to VibeTV."),
     });
     try {
       const installed = await onInstallTheme({
@@ -1117,7 +1117,7 @@ export function ThemeStudioScreen({
         tone: "ready",
         message: screensaver
           ? "Screensaver is ready on VibeTV."
-          : copyForHost("Theme installed through the Mac App.", windowsHost),
+          : "Theme is installed on VibeTV.",
       });
     } catch (error) {
       setDeviceStatus({

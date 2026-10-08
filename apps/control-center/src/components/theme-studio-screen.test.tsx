@@ -200,6 +200,27 @@ it.each([
   expect(await screen.findByText(failed)).toBeTruthy();
 });
 
+// Issue #558: "Sending theme after your click." and "Theme installed through
+// the app." were the app's own words, not the customer's.
+it.each([
+  ["live", "Sending the theme to VibeTV.", "Theme is installed on VibeTV."],
+  ["screensaver", "Sending the screensaver to VibeTV.", "Screensaver is ready on VibeTV."],
+] as const)("says in plain words that it sends and that VibeTV has the %s", async (usage, sending, done) => {
+  let finish = (_installed: boolean) => {};
+  renderStudio("custom", {
+    initialTheme: {
+      assets: {}, packName: "Mine", source: "custom", spec: createBlankThemeSpec(), usage,
+    },
+    onInstallTheme: () => new Promise<boolean>(resolve => { finish = resolve; }),
+  });
+
+  fireEvent.click(button("Send to VibeTV"));
+  expect(await screen.findByText(sending)).toBeTruthy();
+  finish(true);
+  expect(await screen.findByText(done)).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/after your click|through the/);
+});
+
 // Issue #558: Screensaver Studio said "theme" under Advanced.
 it.each([
   ["live", "Import theme JSON", "Theme JSON"],

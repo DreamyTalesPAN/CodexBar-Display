@@ -10624,8 +10624,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     ),
   );
   assert(
-    (await page.getByText("Theme installed through the Mac App.").count()) ===
-      1,
+    (await page.getByText("Theme is installed on VibeTV.").count()) === 1,
     "Theme Studio should report the Companion install as complete",
   );
 
