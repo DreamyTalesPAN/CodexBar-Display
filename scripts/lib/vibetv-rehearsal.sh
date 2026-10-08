@@ -234,7 +234,7 @@ rehearsal::require_free_disk() {
   free_kb="$(rehearsal::free_disk_kb "$REHEARSAL_STATE_DIR")"
   [[ "$free_kb" =~ ^[0-9]+$ ]] || { rehearsal::warn 'could not read the free disk space'; return 0; }
   if ((free_kb < REHEARSAL_MIN_FREE_GB * 1024 * 1024)); then
-    rehearsal::die "only $((free_kb / 1024)) MB free on this disk; a rehearsal needs at least $REHEARSAL_MIN_FREE_GB GB. Nothing was purged or flashed. Free space first, for example manual-* folders, candidates and old runs under $REHEARSAL_STATE_DIR."
+    rehearsal::die "only $((free_kb / 1024)) MB free on this disk; a rehearsal needs at least $REHEARSAL_MIN_FREE_GB GB. This Mac's VibeTV state was not purged and nothing was flashed (old run folders may have been removed just before, see above). Free space first, for example manual-* folders, candidates and old runs under $REHEARSAL_STATE_DIR."
   fi
 }
 
@@ -250,6 +250,8 @@ rehearsal::open_run_dir() {
   # Mirror everything into the log while keeping the terminal readable.
   exec > >(tee -a "$REHEARSAL_LOG") 2>&1
   ln -sfn "$REHEARSAL_RUN_DIR" "$REHEARSAL_STATE_DIR/latest"
+  # Pruning comes first on purpose: it only removes run folders the keep rule has
+  # already given up, and that may be what gets the disk back over the limit.
   rehearsal::prune_runs
   rehearsal::require_free_disk
   rehearsal::record mode "$REHEARSAL_MODE"
