@@ -153,6 +153,41 @@ func TestHistorySurvivesARestart(t *testing.T) {
 	}
 }
 
+// Issue #581: a second process on the same home folder wrote the whole file
+// from its own memory and erased the first one's events.
+func TestAReadOnlyStoreLeavesTheFileToItsWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.json")
+	reader := OpenReadOnly(path)
+	reader.Record(t0, Event{Component: "device", State: "unreachable"})
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("a read-only store created the file: %v", err)
+	}
+	if log := reader.Snapshot(t0); len(log.Events) != 0 || len(log.Current) != 0 {
+		t.Fatalf("a read-only store kept its own event: %+v", log)
+	}
+
+	writer := Open(path)
+	writer.Record(t0, Event{Component: "companion", State: "started"})
+	reader.Record(t0.Add(time.Second), Event{Component: "device", State: "unreachable"})
+	writer.Record(t0.Add(time.Minute), Event{Component: "device", State: "reachable"})
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The reader shows what the writer saved, also what came after its first look.
+	log := reader.Snapshot(t0.Add(time.Hour))
+	if got := strings.Join(states(log), " "); got != "companion=started device=reachable" || log.Events[1].ID != 2 || len(log.Current) != 2 {
+		t.Fatalf("reader = %q %+v", got, log)
+	}
+	if latest, ok := reader.Latest("device"); !ok || latest.State != "reachable" {
+		t.Fatalf("reader latest = %+v", latest)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(saved) {
+		t.Fatalf("reading changed the file:\n%s\n%s", saved, after)
+	}
+}
+
 func TestCorruptedHistoryStartsAnEmptyTimeline(t *testing.T) {
 	for name, content := range map[string]string{
 		"truncated":       `{"version":1,"events":[{"id":1,"at":"2026-10-06T08:00:00Z","compon`,

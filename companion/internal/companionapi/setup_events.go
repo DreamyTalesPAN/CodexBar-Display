@@ -59,11 +59,24 @@ type setupEventLog struct {
 	// path is where the session is saved; empty keeps it in memory only.
 	path     string
 	restored bool
+	// readOnly is the log of a runtime that is not the display writer. The
+	// writer saves the whole session from its own memory, so a second writer
+	// would erase its events (issue #581): this one records nothing and shows
+	// what is saved.
+	readOnly bool
 }
 
 // openLocked makes sure a session exists: the saved one when this runtime has
 // not looked yet and it is recent enough, otherwise a new one.
 func (l *setupEventLog) openLocked(now time.Time) {
+	if l.readOnly {
+		if saved, ok := l.savedLocked(now); ok {
+			l.session = saved
+		} else if l.session.SessionID == "" || len(l.session.Events) > 0 {
+			l.startLocked(now)
+		}
+		return
+	}
 	if !l.restored {
 		l.restored = true
 		if l.restoreLocked(now) {
@@ -75,23 +88,32 @@ func (l *setupEventLog) openLocked(now time.Time) {
 	}
 }
 
+// savedLocked reads the saved session when it is recent enough.
+func (l *setupEventLog) savedLocked(now time.Time) (setupLog, bool) {
+	var saved setupLog
+	raw, err := os.ReadFile(l.path)
+	if err != nil {
+		return saved, false
+	}
+	if err := json.Unmarshal(raw, &saved); err != nil || saved.SessionID == "" || len(saved.Events) == 0 {
+		return saved, false
+	}
+	last, err := time.Parse(time.RFC3339, saved.Events[len(saved.Events)-1].At)
+	if err != nil || now.Sub(last) > setupLogMaxAge {
+		return saved, false
+	}
+	saved.OK = true
+	return saved, true
+}
+
 func (l *setupEventLog) restoreLocked(now time.Time) bool {
 	if l.path == "" || l.session.SessionID != "" {
 		return false
 	}
-	raw, err := os.ReadFile(l.path)
-	if err != nil {
+	saved, ok := l.savedLocked(now)
+	if !ok {
 		return false
 	}
-	var saved setupLog
-	if err := json.Unmarshal(raw, &saved); err != nil || saved.SessionID == "" || len(saved.Events) == 0 {
-		return false
-	}
-	last, err := time.Parse(time.RFC3339, saved.Events[len(saved.Events)-1].At)
-	if err != nil || now.Sub(last) > setupLogMaxAge {
-		return false
-	}
-	saved.OK = true
 	l.session = saved
 	l.nextSeq = 0
 	for _, event := range saved.Events {
@@ -137,6 +159,9 @@ func (l *setupEventLog) startLocked(now time.Time) {
 }
 
 func (l *setupEventLog) reset(now time.Time) {
+	if l.readOnly {
+		return
+	}
 	l.mu.Lock()
 	l.restored = true
 	l.startLocked(now)
@@ -145,6 +170,9 @@ func (l *setupEventLog) reset(now time.Time) {
 }
 
 func (l *setupEventLog) record(now time.Time, event setupEvent) {
+	if l.readOnly {
+		return
+	}
 	event.Message = sanitizeErrorDetail(errors.New(event.Message))
 	event.At = now.UTC().Format(time.RFC3339)
 	l.mu.Lock()

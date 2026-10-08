@@ -70,10 +70,13 @@ type Log struct {
 // Store owns the timeline file. One process writes it: the runtime, which
 // holds the display writer lock. A nil Store records nothing.
 type Store struct {
-	mu     sync.Mutex
-	path   string
-	loaded bool
-	events []Event
+	mu   sync.Mutex
+	path string
+	// readOnly is a store of any other process: it records nothing and reads
+	// the file on every use.
+	readOnly bool
+	loaded   bool
+	events   []Event
 	// current is the latest event of every component. Retention never
 	// shortens it, so a repeated state is recognised after its event is gone.
 	current map[string]Event
@@ -86,11 +89,18 @@ func Open(path string) *Store {
 	return &Store{path: path}
 }
 
+// OpenReadOnly returns the timeline that another process saves at path. Two
+// processes that each wrote the whole file from their own memory would erase
+// each other's events (issue #581).
+func OpenReadOnly(path string) *Store {
+	return &Store{path: path, readOnly: true}
+}
+
 // Record adds a transition at the given time. An event that repeats the latest
 // event of its component is not a transition and is dropped, so a caller may
 // report its state on every poll.
 func (s *Store) Record(at time.Time, event Event) {
-	if s == nil {
+	if s == nil || s.readOnly {
 		return
 	}
 	event.Component = cleanField(event.Component)
@@ -168,14 +178,15 @@ func (s *Store) currentLocked() []Event {
 	return out
 }
 
-// loadLocked reads the saved file once. A missing, unreadable or damaged file,
+// loadLocked reads the saved file once, and a read-only store every time. A missing, unreadable or damaged file,
 // or one written in another format version, starts an empty timeline: history
 // that cannot be trusted is not shown to support.
 func (s *Store) loadLocked() {
-	if s.loaded {
+	if s.loaded && !s.readOnly {
 		return
 	}
 	s.loaded = true
+	s.events, s.current, s.nextID = nil, nil, 0
 	if s.path == "" {
 		return
 	}

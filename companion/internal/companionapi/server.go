@@ -1043,11 +1043,19 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("load embedded control center: %w", err)
 		}
 	}
+	// The runtime that owns the display stream holds the display writer lock,
+	// so there is one of it per home folder. Only that one saves the setup
+	// log and the timeline; an API server beside it reads them.
+	displayWriter := opts.PauseDisplayStream != nil
+	openTimeline := timeline.OpenReadOnly
+	if displayWriter {
+		openTimeline = timeline.Open
+	}
 	server := &Server{
 		addr:                   addr,
 		home:                   home,
-		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json")},
-		timeline:               timeline.Open(runtimepaths.Path(home, "timeline.json")),
+		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json"), readOnly: !displayWriter},
+		timeline:               openTimeline(runtimepaths.Path(home, "timeline.json")),
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,
 		client:                 client,

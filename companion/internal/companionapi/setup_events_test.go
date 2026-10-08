@@ -420,7 +420,7 @@ func TestDiagnosticsTimelineHoldsSetupAndUpdateTransitions(t *testing.T) {
 
 func TestTimelineIsSavedBesideTheSetupLogAndSurvivesARestart(t *testing.T) {
 	home := t.TempDir()
-	first, err := New(Options{Home: home})
+	first, err := New(Options{Home: home, PauseDisplayStream: func(bool) {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +428,7 @@ func TestTimelineIsSavedBesideTheSetupLogAndSurvivesARestart(t *testing.T) {
 	if _, err := os.Stat(runtimepaths.Path(home, "timeline.json")); err != nil {
 		t.Fatalf("timeline file: %v", err)
 	}
-	second, err := New(Options{Home: home})
+	second, err := New(Options{Home: home, PauseDisplayStream: func(bool) {}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,6 +476,87 @@ func TestIncompatibleEngineWinsOverCachedUsage(t *testing.T) {
 		providerReadinessNextAction(codexbar.ProviderEngineIncompatible) == "" ||
 		strings.Contains(providerReadinessMessage(codexbar.ProviderEngineIncompatible), "CodexBar") {
 		t.Fatal("engine_incompatible is not mapped like an engine failure")
+	}
+}
+
+// Issue #581: an API server beside the runtime shares its home folder. Each
+// saved the whole setup log and timeline from its own memory, so the last
+// writer erased the other's entries. Only the runtime that owns the display
+// stream saves them now; the other one shows what is saved.
+func TestOnlyTheDisplayWriterSavesTheSetupLogAndTheTimeline(t *testing.T) {
+	home := t.TempDir()
+	files := []string{runtimepaths.Path(home, "setup-log.json"), runtimepaths.Path(home, "timeline.json")}
+	read := func() string {
+		t.Helper()
+		out := ""
+		for _, file := range files {
+			raw, err := os.ReadFile(file)
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			out += string(raw) + "\n"
+		}
+		return out
+	}
+	// The answer of a server on these files. It is a test server, so the
+	// request searches no network and no cable; its stores are the ones a
+	// runtime beside the display writer gets.
+	reader := newTestServer(t, runtimeconfig.Config{})
+	reader.setupEvents.path, reader.setupEvents.readOnly = files[0], true
+	reader.timeline = timeline.OpenReadOnly(files[1])
+	diagnostics := func() diagnosticsResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		reader.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+		var got diagnosticsResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("diagnostics: %v: %s", err, rec.Body.String())
+		}
+		return got
+	}
+
+	beside, err := New(Options{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !beside.setupEvents.readOnly {
+		t.Fatal("a runtime without a display stream must not own the setup log")
+	}
+	beside.recordSetupEvent(setupEvent{Stage: "device_search", Status: "succeeded", Message: "Found 1 VibeTV."})
+	if got := read(); got != "\n\n" {
+		t.Fatalf("a runtime that is not the display writer saved: %s", got)
+	}
+
+	writer, err := New(Options{Home: home, PauseDisplayStream: func(bool) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "started", Message: "Installing theme."})
+	saved := read()
+	if !strings.Contains(saved, "Installing theme.") || !strings.Contains(saved, `"component":"theme_install"`) {
+		t.Fatalf("the display writer saved: %s", saved)
+	}
+
+	beside.recordSetupEvent(setupEvent{Stage: "device_search", Status: "failed", Message: "No VibeTV found.", Code: "device_not_found"})
+	beside.setupEvents.reset(beside.currentTime())
+	got := diagnostics()
+	if after := read(); after != saved {
+		t.Fatalf("the other runtime changed the files:\n%s\n%s", saved, after)
+	}
+	// It still answers the support report, with what the writer saved.
+	if len(got.SetupLog.Events) != 1 || got.SetupLog.Events[0].Message != "Installing theme." ||
+		got.SetupLog.SessionID != writer.setupEvents.sessionID(writer.currentTime()) {
+		t.Fatalf("setupLog of the other runtime = %+v", got.SetupLog)
+	}
+	if len(got.Timeline.Events) != 1 || got.Timeline.Events[0].Component != "theme_install" || got.Timeline.Events[0].State != "started" {
+		t.Fatalf("timeline of the other runtime = %+v", got.Timeline.Events)
+	}
+
+	// And what the writer saves afterwards.
+	writer.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: "Theme installed."})
+	got = diagnostics()
+	if len(got.SetupLog.Events) != 2 || len(got.Timeline.Events) != 2 || got.Timeline.Events[1].ID != 2 {
+		t.Fatalf("after the writer went on: %+v %+v", got.SetupLog.Events, got.Timeline.Events)
 	}
 }
 
