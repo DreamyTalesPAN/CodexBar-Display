@@ -1971,17 +1971,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     try {
       // A display-mode save still in flight would land after the reset and
       // write the old selection back, so the rerun skipped the display step.
-      // Every entry point -- Settings, Support -- comes through here, so this
-      // is where the reset waits for it; the busy state above is what the
-      // customer sees meanwhile.
+      // A brightness or screensaver change still waiting its turn would reach
+      // VibeTV during or after the reset. Every entry point -- Settings,
+      // Support -- comes through here, so this is where the reset waits for
+      // them; the busy state above is what the customer sees meanwhile.
       for (;;) {
         const preferenceWrites = providerPreferenceWritesRef.current;
         await preferenceWrites;
         const displayWrites = providerDisplayWriteQueueRef.current;
         await displayWrites;
+        const settingWrites = deviceSettingWritesRef.current.queue;
+        await settingWrites;
         if (
           preferenceWrites === providerPreferenceWritesRef.current &&
-          displayWrites === providerDisplayWriteQueueRef.current
+          displayWrites === providerDisplayWriteQueueRef.current &&
+          settingWrites === deviceSettingWritesRef.current.queue
         ) {
           break;
         }
@@ -2110,6 +2114,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setBusyAction("erase-device");
     setLastError(null);
     try {
+      // A brightness or screensaver change still on its way is sent first; it
+      // must not reach a VibeTV that is being erased. The busy state above
+      // keeps new ones from being made.
+      await deviceSettingWritesRef.current.queue;
       await runCompanion<{ ok?: boolean }>(
         "/v1/device/factory-reset",
         { method: "POST" },

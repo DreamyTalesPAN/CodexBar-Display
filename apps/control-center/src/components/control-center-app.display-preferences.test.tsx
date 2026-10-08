@@ -380,6 +380,38 @@ it("keeps Brightness focused through two arrow keys and saves both in order", as
   ]);
 });
 
+// A brightness change that was still on its way, and one waiting behind it,
+// reached VibeTV during or after the reset.
+it.each([
+  ["Run setup again", "Run setup again", "/v1/setup/reset"],
+  ["Reset to factory settings", "Reset", "/v1/device/factory-reset"],
+])("%s waits until a brightness change is saved", async (button, confirm, reset) => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const slider = screen.getByRole("slider", { name: "Brightness" });
+  const sent = () =>
+    window.companion.requests
+      .filter((request) => /^POST \S+\/v1\/(settings|setup\/reset|device\/factory-reset) /.test(`${request} `))
+      .map((request) => request.split(" ")[1].replace("/api/local-companion", ""));
+
+  const store = window.holdNextWrite();
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  await window.step(() => fireEvent.click(screen.getByRole("button", { name: button })));
+  await window.step(() =>
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: confirm }),
+    ),
+  );
+  expect(sent()).toEqual(["/v1/settings"]);
+
+  store();
+  await window.wait(1);
+  expect(sent()).toEqual(["/v1/settings", "/v1/settings", reset]);
+});
+
 // A held arrow key repeats faster than VibeTV stores a value. The values in
 // between are not sent one by one after the key is let go.
 it("sends the first and the last value of a held arrow key", async () => {
