@@ -151,7 +151,7 @@ import {
   type ThemeStudioInstallPayload,
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
-import { UsageScreen, usageTokenHistoryUnavailable } from "./usage-screen";
+import { UsageScreen, usageTokenHistoryUnavailableOnVibeTV } from "./usage-screen";
 import { WhatsNewDialog } from "./whats-new-dialog";
 import {
   startUsageSurfacePolling,
@@ -5536,7 +5536,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             storefrontConfigured={catalog.storefrontConfigured}
             themeInstallEnabled={themeInstallEnabled}
             themes={catalog.themes}
-            tokenHistoryUnavailable={usageTokenHistoryUnavailable(usage)}
+            tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(usage)}
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }

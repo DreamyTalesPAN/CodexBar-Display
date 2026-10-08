@@ -684,8 +684,7 @@ function UsageEmptyState({
   );
 }
 
-// Token history was read and at least one shown provider has none. Themes
-// asks the same question for a theme that draws token numbers.
+// Token history was read and at least one shown provider has none.
 export function usageTokenHistoryUnavailable(usage: UsageSnapshot | null): boolean {
   const providers = filterVisibleProviders(
     usage?.providers || [],
@@ -695,6 +694,15 @@ export function usageTokenHistoryUnavailable(usage: UsageSnapshot | null): boole
     (usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers)) &&
     providers.some((provider) => provider.cost == null)
   );
+}
+
+// Themes asks for a theme that draws token numbers. VibeTV draws those of one
+// provider, so only that one counts; without one, all shown must have none.
+export function usageTokenHistoryUnavailableOnVibeTV(usage: UsageSnapshot | null): boolean {
+  if (!usage || !usageTokenHistoryUnavailable(usage)) return false;
+  const providers = filterVisibleProviders(usage.providers || [], usage.currentProvider);
+  const current = providers.find((provider) => provider.id === usage.currentProvider);
+  return current ? current.cost == null : !usageProvidersHaveTokenResult(providers);
 }
 
 function filterVisibleProviders(

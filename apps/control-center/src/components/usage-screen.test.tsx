@@ -2,7 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { UsageSnapshot } from "./control-center-types";
-import { UsageScreen, usageTokenHistoryUnavailable } from "./usage-screen";
+import {
+  UsageScreen,
+  usageTokenHistoryUnavailable,
+  usageTokenHistoryUnavailableOnVibeTV,
+} from "./usage-screen";
 
 const usage: UsageSnapshot = {
   ok: true,
@@ -66,6 +70,26 @@ describe("UsageScreen", () => {
         providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
       }),
     ).toBe(true);
+  });
+
+  // VibeTV draws the token numbers of one provider. The hint on Themes says
+  // "Shows --" only when that provider has none, whatever the others have.
+  it("answers for Themes by the provider on VibeTV", () => {
+    const cursor = { id: "cursor", label: "Cursor", session: 0, weekly: 10, usageMode: "used" as const };
+    const mixed = { ...usage, providers: [...usage.providers, cursor] };
+    expect(usageTokenHistoryUnavailable(mixed)).toBe(true);
+    expect(usageTokenHistoryUnavailableOnVibeTV(mixed)).toBe(false);
+    expect(usageTokenHistoryUnavailableOnVibeTV({ ...mixed, currentProvider: "cursor" })).toBe(true);
+    // No provider on VibeTV: only when none of the shown ones has a history.
+    expect(usageTokenHistoryUnavailableOnVibeTV({ ...mixed, currentProvider: undefined })).toBe(false);
+    expect(
+      usageTokenHistoryUnavailableOnVibeTV({ ...usage, currentProvider: undefined, providers: [cursor] }),
+    ).toBe(true);
+    expect(usageTokenHistoryUnavailableOnVibeTV(null)).toBe(false);
+    // Token history not read yet: no claim.
+    expect(
+      usageTokenHistoryUnavailableOnVibeTV({ ...usage, tokenUsageReady: false, providers: [cursor] }),
+    ).toBe(false);
   });
 
   // Issue #558: with one provider on, "not available for every selected
