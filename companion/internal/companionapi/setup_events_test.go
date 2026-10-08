@@ -650,7 +650,7 @@ func TestARetriedSetupStepDoesNotFloodTheTimeline(t *testing.T) {
 	for _, event := range server.Timeline().Snapshot(server.currentTime()).Events {
 		got = append(got, event.State)
 	}
-	if want := "started,failed,succeeded"; strings.Join(got, ",") != want {
+	if want := "failed,succeeded"; strings.Join(got, ",") != want {
 		t.Fatalf("timeline states = %v, want %s", got, want)
 	}
 }
@@ -761,5 +761,33 @@ func TestAStartAfterAFailureOfAnEarlierSessionIsRecorded(t *testing.T) {
 	server.recordSetupEvent(setupEvent{Stage: "firmware_install", Status: "started", Message: "Installing."})
 	if got, want := timelineStatesOf(server, "firmware_install"), "started,failed,started"; got != want {
 		t.Fatalf("new session = %s, want %s", got, want)
+	}
+}
+
+// Fourth review: the app searches and checks providers on its own, also
+// while nothing changes. A check has no start worth recording, and a result
+// that repeats the last one is no transition. A job the customer starts
+// twice (TestASecondRunOfAStepRecordsItsOwnStartAndEnd) keeps both runs.
+func TestARepeatedCheckWithTheSameResultIsRecordedOnce(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	for i := 0; i < 10; i++ {
+		server.recordSetupEvent(setupEvent{Stage: "device_search", Status: "started", Message: "Searching for VibeTV."})
+		server.recordSetupEvent(setupEvent{Stage: "device_search", Status: "succeeded", Message: "Found 1 VibeTV."})
+	}
+	if got := timelineStatesOf(server, "device_search"); got != "succeeded" {
+		t.Fatalf("ten searches that found the same VibeTV = %s, want succeeded once", got)
+	}
+	server.recordSetupEvent(setupEvent{Stage: "device_search", Status: "started", Message: "Searching for VibeTV."})
+	server.recordSetupEvent(setupEvent{Stage: "device_search", Status: "failed", Message: "No VibeTV found.", Code: "vibetv_not_found"})
+	if got := timelineStatesOf(server, "device_search"); got != "succeeded,failed" {
+		t.Fatalf("a search with a new result = %s, want succeeded,failed", got)
+	}
+
+	ready := codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{ID: "codex", Label: "Codex", Status: codexbar.ProviderReady}}}
+	for i := 0; i < 10; i++ {
+		server.recordProviderSetupEvents(ready, "codex", "Codex")
+	}
+	if got := timelineStatesOf(server, "provider_check/codex"); got != "succeeded" {
+		t.Fatalf("ten provider checks with the same result = %s, want succeeded once", got)
 	}
 }

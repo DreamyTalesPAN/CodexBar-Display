@@ -233,6 +233,11 @@ func (s *Server) recordSetupEvent(event setupEvent) {
 func (s *Server) recordSetupEventAs(component string, event setupEvent) {
 	now := s.currentTime()
 	s.setupEvents.record(now, event)
+	if event.Stage == "device_search" && event.Status == "started" {
+		// The app searches on its own, also while nothing changes. A search
+		// is a check: only a result that differs from the last is a transition.
+		return
+	}
 	if last, ok := s.timeline.Latest(component); ok && last.State == "failed" && event.Status == "started" &&
 		last.CorrelationID == s.setupEvents.sessionID(now) {
 		return
