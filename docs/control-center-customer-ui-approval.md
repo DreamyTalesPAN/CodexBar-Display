@@ -6079,3 +6079,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Nothing changes for the customer. The automated customer flow that sends a screensaver from Screensaver Studio now starts with `Show screensaver` on, because Studio sends only then, as the entry about `Send to VibeTV` in Screensaver Studio above describes it.
 - Scope: the device state of one flow in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record.
 - What's new: none — a test only
+
+## 2026-10-09 — Theme Studio: a file that could not be imported is answered where the customer is
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; not yet seen by him. It answers a finding from the re-check of the Windows app in that night: `Import theme JSON` is on Advanced › Project, `This file is not valid JSON. Nothing was changed.` stood on the JSON tab only, and it was still there after three exports.
+- Approved customer-visible result: No new sentence; one new notice title. When a file chosen with `Import theme JSON` / `Import screensaver JSON` (or `JSON` in `Layers & assets`) is not opened, the reason stands as a notice titled `Import` above the Inspector, where `Library`, `Export` and `VibeTV` answer, whichever Advanced tab is open; it no longer stands on the JSON tab. It is taken away by the next `Save`, `Export ZIP`, `Send to VibeTV` or import and by the next change to the theme, and choosing a file takes the other three notices away, by the rule of one notice at a time. The notice `JSON` on the JSON tab that says why `Apply JSON` refused the typed text also leaves with the next Save, Export, Send or import and then reads `JSON has local edits.` again; the typed text stays.
+- Scope: the notice and when it leaves in `apps/control-center/src/components/theme-studio-screen.tsx`, one test in `theme-studio-screen.test.tsx`, and this approval record (issue #558); checked with unit tests only. Not changed: `Mini theme` that cannot be loaded still answers on the JSON tab only.
+- What's new: none — a notice moved

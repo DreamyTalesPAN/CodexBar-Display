@@ -260,6 +260,7 @@ export function ThemeStudioScreen({
   const dispatchEditor = useCallback((action: ThemeStudioEditorAction) => {
     if (action.type !== "mark_saved" && !action.type.endsWith("_transaction")) {
       setLibraryStatus(withoutLibraryAnswer);
+      setImportError("");
     }
     dispatchEditorState(action);
   }, []);
@@ -294,6 +295,9 @@ export function ThemeStudioScreen({
     message: "Draft ready.",
   });
   const [exportStatus, setExportStatus] = useState(EXPORT_IDLE);
+  // Why a chosen file was not opened. The button for it is on another tab
+  // than the JSON notice, so it is answered where Save, Export and Send are.
+  const [importError, setImportError] = useState("");
   const [deviceStatus, setDeviceStatus] = useState(SEND_IDLE);
   const [assetStatus, setAssetStatus] = useState<EditorStatus>({
     tone: "unknown",
@@ -311,6 +315,13 @@ export function ThemeStudioScreen({
     setLibraryStatus(withoutLibraryAnswer);
     setExportStatus(EXPORT_IDLE);
     setDeviceStatus(SEND_IDLE);
+    setImportError("");
+    // What Apply JSON refused is an answer as well; the typed text stays.
+    setJsonStatus((current) =>
+      current.tone === "attention"
+        ? { tone: "unknown", message: "JSON has local edits." }
+        : current,
+    );
   }
 
   const validation = useMemo(
@@ -665,6 +676,7 @@ export function ThemeStudioScreen({
     if (!file) {
       return;
     }
+    clearAnswers();
     try {
       const imported = importThemeSpec(JSON.parse(await file.text()));
       replaceLoadedTheme({
@@ -674,16 +686,14 @@ export function ThemeStudioScreen({
         status: { tone: "ready", message: `${file.name} opened.` },
       });
     } catch (error) {
-      setJsonStatus({
-        tone: "attention",
+      setImportError(
         // The parser's own sentence quotes the text and is written for developers.
-        message:
-          error instanceof SyntaxError
-            ? "This file is not valid JSON. Nothing was changed."
-            : error instanceof Error
-              ? error.message
-              : say("Theme file was not opened."),
-      });
+        error instanceof SyntaxError
+          ? "This file is not valid JSON. Nothing was changed."
+          : error instanceof Error
+            ? error.message
+            : say("Theme file was not opened."),
+      );
     } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -1699,6 +1709,14 @@ export function ThemeStudioScreen({
                   }
                   title="Library"
                   tone={libraryNotice.tone}
+                />
+              ) : null}
+              {importError ? (
+                <StatusLine
+                  detail={importError}
+                  icon={<AlertTriangle size={16} aria-hidden />}
+                  title="Import"
+                  tone="attention"
                 />
               ) : null}
               {exportStatus !== EXPORT_IDLE ? (

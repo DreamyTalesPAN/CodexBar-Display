@@ -496,3 +496,43 @@ it("lets the long labels under Advanced › Project wrap inside the panel", () =
     document.getElementById("theme-studio-panel-project")!.closest('[data-slot="scroll-area"]')!.className,
   ).toContain("[&_[data-slot=scroll-area-viewport]>div]:block!");
 });
+
+// Seen on the Windows app on 2026-10-09: the import button is on Advanced ›
+// Project, and what it answered stood on the JSON tab only. It also stayed
+// there through three exports.
+it("answers a file that could not be imported where Save, Export and Send answer, until the next answer", async () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const failed = "This file is not valid JSON. Nothing was changed.";
+  renderStudio("custom");
+  fireEvent.click(button("Advanced"));
+  fireEvent.change(document.querySelector('input[accept="application/json,.json"]')!, {
+    target: { files: [new File(['{"p": [QA'], "broken.json")] },
+  });
+  const notice = await screen.findByText(failed);
+  expect(screen.getByRole("tab", { name: "Project" }).getAttribute("aria-selected")).toBe("true");
+  expect(
+    notice.compareDocumentPosition(screen.getByText("Inspector")) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+
+  // A change to the theme takes it away, like what Save answered.
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(screen.queryByText(failed)).toBeNull();
+  fireEvent.change(document.querySelector('input[accept="application/json,.json"]')!, {
+    target: { files: [new File(["{"], "broken.json")] },
+  });
+  await screen.findByText(failed);
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.queryByText(failed)).toBeNull();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  expect(screen.queryByText(failed)).toBeNull();
+
+  // What Apply JSON answered leaves with the next answer too.
+  const rejected = "This text is not valid JSON. Nothing was changed.";
+  fireEvent.change(screen.getByLabelText("Theme JSON"), { target: { value: "{" } });
+  fireEvent.click(button("Apply JSON"));
+  expect(screen.getByText(rejected)).toBeTruthy();
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.queryByText(rejected)).toBeNull();
+});
