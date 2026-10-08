@@ -320,8 +320,9 @@ func ProviderSettingsErrorKindOf(err error) ProviderSettingsErrorKind {
 
 // FetchProviderSettings reads CodexBar's dynamic provider inventory and joins
 // best-effort health. Provider errors are classified here and never exposed.
-// Under WithServeReading the health is serve's last reading where that covers
-// every switched-on provider; it carries no service status.
+// On Windows, under WithServeReading, the health is serve's last reading
+// where that covers every switched-on provider. The Mac always runs its own
+// scan, which also brings the service status.
 func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 	settings, bin, err := fetchProviderInventory(ctx)
 	if err != nil {
@@ -355,12 +356,16 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 // switched-on provider on its own, exactly like runUsageAllEnabled, and joins
 // the answers into the array the Mac CLI returns.
 func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin string, settings []ProviderSetting) ([]byte, error) {
-	if answer, ok := serveUsageAnswer(ctx, settings); ok {
-		return answer, nil
-	}
 	statusArgs := []string{"--status", "--web-timeout", "8"}
 	if !providerProbePerProvider {
+		// Never answered from serve's reading: this is the one call that
+		// brings the provider's status page, and serve's answer has none.
 		return runProviderCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, statusArgs...)...)
+	}
+	// Win-CodexBar prints the status as status.level, which is not read
+	// here, so on Windows the probes add nothing to serve's reading (#555).
+	if answer, ok := serveUsageAnswer(ctx, settings); ok {
+		return answer, nil
 	}
 	// Each probe gets its own short budget (#437): under the caller's shared
 	// deadline (25 s in the background health refresh) a slow first provider

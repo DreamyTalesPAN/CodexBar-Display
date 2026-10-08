@@ -69,6 +69,19 @@ including stale persisted snapshots.
 The browser receives only stable health states and short recovery messages.
 Local sign-in/setup health and upstream service status remain separate.
 
+While the window is open, two background checks run without the customer
+asking (#555):
+
+- The provider rows. On the Mac this is `codexbar usage --json --status
+  --web-timeout 8`, started when a row read finds its 10 s cache expired. It is
+  the only call that brings the provider's status page, so it is never
+  answered from the serve reading. On Windows the rows are answered from the
+  reading `codexbar-cli serve` delivered last: Win-CodexBar prints the status
+  in a form the adapter does not read, so a probe adds nothing there.
+- The setup status in `/v1/status`, every 30 s. On both platforms it is
+  answered from the serve reading while that is current and covers every
+  switched-on provider; otherwise the CLI is asked as before.
+
 ## Display adapter
 
 Display preferences are owned by VibeTV (`owner: "vibetv"`,

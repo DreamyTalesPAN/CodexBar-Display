@@ -51,7 +51,8 @@ type serveReadingKey struct{}
 // WithServeReading marks a check nobody asked for: the status and settings
 // polls of an open window. Such a check is answered from serve's last reading
 // instead of a second usage call for the same providers (#555). Every check a
-// customer starts stays without the mark and asks the CLI.
+// customer starts stays without the mark and asks the CLI, and so does the
+// Mac's scan behind the provider rows (runProviderHealthProbe).
 func WithServeReading(ctx context.Context) context.Context {
 	return context.WithValue(ctx, serveReadingKey{}, true)
 }

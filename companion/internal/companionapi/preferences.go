@@ -516,6 +516,7 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 	revision := s.providerPreferences.revision
 	go func() {
 		// Nobody asked for this check either (see providerSetupForStatus).
+		// The Mac still runs its scan: only that brings the status page.
 		ctx, cancel := context.WithTimeout(codexbar.WithServeReading(context.Background()), providerCheckTimeout)
 		defer cancel()
 		settings, err := s.providerPreferences.load(ctx)

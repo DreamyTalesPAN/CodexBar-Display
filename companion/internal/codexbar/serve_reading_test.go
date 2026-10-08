@@ -106,8 +106,9 @@ func TestOpenWindowPollsStartNoUsageProbeWhileServeDelivers(t *testing.T) {
 					t.Fatalf("a provider serve reads must be healthy: %+v", settings[0])
 				}
 				// The failure serve reported is the row's state, with the
-				// engine's own sentence.
-				if settings[1].Health != ProviderHealthAuthRequired || !strings.Contains(settings[1].Reported, "authentication expired") {
+				// engine's own sentence. On the Mac the rows keep their own
+				// scan (TestMacProviderRowsKeepTheirStatusScan).
+				if perProvider && (settings[1].Health != ProviderHealthAuthRequired || !strings.Contains(settings[1].Reported, "authentication expired")) {
 					t.Fatalf("a provider serve cannot read must show its failure: %+v", settings[1])
 				}
 				setup := ProbeProviderSetup(poll, t.TempDir())
@@ -117,8 +118,12 @@ func TestOpenWindowPollsStartNoUsageProbeWhileServeDelivers(t *testing.T) {
 					t.Fatalf("setup status from serve's reading: %+v", setup)
 				}
 			}
-			if probes := usageProbes(*started); len(probes) != 0 {
+			probes := usageProbes(*started)
+			if perProvider && len(probes) != 0 {
 				t.Fatalf("five polls started %d usage probes, want 0: %q", len(probes), probes)
+			}
+			if !perProvider && (len(probes) != 5 || strings.Join(probes, "") != strings.Repeat("usage --json --status --web-timeout 8", 5)) {
+				t.Fatalf("five Mac polls must start the five row scans and nothing else: %q", probes)
 			}
 			// Windows keeps the inventory too, so nothing is left to start.
 			if perProvider && len(*started) != 1 {
@@ -327,5 +332,54 @@ func TestProviderWithCreditsOnlyDoesNotSendEveryPollToTheCLI(t *testing.T) {
 	// The same state a probe reports for this item.
 	if settings[1].Health != ProviderHealthHealthy {
 		t.Fatalf("credits-only provider: %+v", settings[1])
+	}
+}
+
+// Serve's answer has no status page in it. On the Mac the scan behind the
+// provider rows is the one call that asks for it ("--status"), so it stays a
+// call of its own at its cadence: answered from serve, a provider that reports
+// an outage only there read as healthy. Windows never had that state: its
+// engine prints the status in another form, which the Companion does not read.
+func TestMacProviderRowsKeepTheirStatusScan(t *testing.T) {
+	started := serveReadingEngine(t, false, claudeAndCodexOn)
+	scan := runProviderCommandFn
+	runProviderCommandFn = func(ctx context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {
+		if args[0] == "config" {
+			return scan(ctx, timeout, bin, args...)
+		}
+		_, _ = scan(ctx, timeout, bin, args...) // counted
+		return []byte(`[
+			{"provider":"claude","status":{"indicator":"major"},"usage":{"primary":{"usedPercent":8}}},
+			{"provider":"codex","status":{"indicator":"none"},"error":{"message":"authentication expired"}}
+		]`), nil
+	}
+	collectFromServe(t)
+	poll := WithServeReading(context.Background())
+
+	for range 3 {
+		settings, err := FetchProviderSettings(poll)
+		if err != nil || len(settings) != 3 {
+			t.Fatalf("settings=%+v err=%v", settings, err)
+		}
+		if settings[0].Health != ProviderHealthHealthy || settings[0].Service != ProviderServiceOutage {
+			t.Fatalf("the outage the provider reports did not reach its row: %+v", settings[0])
+		}
+		if settings[1].Health != ProviderHealthAuthRequired || settings[1].Service != ProviderServiceOperational {
+			t.Fatalf("row scan: %+v", settings[1])
+		}
+	}
+	if probes := usageProbes(*started); len(probes) != 3 || probes[0] != "usage --json --status --web-timeout 8" {
+		t.Fatalf("three row polls must start three status scans: %q", probes)
+	}
+
+	// The setup status asks for no status page; serve answers it.
+	*started = nil
+	for range 3 {
+		if setup := ProbeProviderSetup(poll, t.TempDir()); setup.Status != ProviderReady {
+			t.Fatalf("setup status: %+v", setup)
+		}
+	}
+	if probes := usageProbes(*started); len(probes) != 0 {
+		t.Fatalf("the Mac setup status started usage probes while serve delivers: %q", probes)
 	}
 }
