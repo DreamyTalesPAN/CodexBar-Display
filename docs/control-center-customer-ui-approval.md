@@ -5722,3 +5722,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new control. In a window too short for all items, the title and the bar with `You can read this again under Updates.` and `Got it` stay in place and only the list between them scrolls. The notice opens at its first items, and `Got it`, which has the keyboard focus, is in view. Before, the whole dialog scrolled: either the list jumped to its end, or the focused button was below the visible part. In a window that fits everything nothing changes.
 - Scope: the layout classes and the focus call in `apps/control-center/src/components/whats-new-dialog.tsx`, the assertion in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only. A picture of the dialog in a 960 × 640 window follows from the Windows run.
 - What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: Paul approved the wording of the two theme items
+
+- User approval: Paul had the two texts in front of him in chat on 2026-10-08, first in a drawing of the dialog with the theme items on top, then quoted word for word: "New theme: Gauge – A half ring that fills as you use your limit." and "New theme: Token Counter – The tokens of your session as one large number." He answered: "ok".
+- Approved customer-visible result: The wording of the two theme items of the dialog `What's new`, as the entry `What's new: new themes always get an entry and stand first` above lists it: `New theme: Gauge` with `A half ring that fills as you use your limit.`, and `New theme: Token Counter` with `The tokens of your session as one large number.`, each with the link `Show me in Themes`. He has seen them drawn and quoted, not in the built dialog.
+- Scope: this approval record only; it changes no file of the app. The entry named above keeps its status line as written at the time.
+- What's new: none — the two theme entries are named by the entry about the theme rule above
