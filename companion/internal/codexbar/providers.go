@@ -66,6 +66,42 @@ func providerInventoryArgs() []string {
 	return []string{"config", "providers", "--json"}
 }
 
+var engineInventory engineAnswer[[]byte]
+
+// inventoryMaxAge is the longest an inventory answer is kept. Win-CodexBar
+// 0.60.3 answers with its default switches, Claude and Codex on, and exit
+// code 0 whenever it cannot read or decrypt settings.json. One answer can
+// therefore be wrong while the file is untouched; asked again, the CLI
+// corrects itself. A minute keeps that as short as the engine's own refresh
+// and still takes away most of the starts: the five readers asked every 30 s.
+const inventoryMaxAge = time.Minute
+
+// readProviderInventory runs the inventory command with the caller's runner.
+// Where engine answers are reused (Windows, reuseEngineAnswers) it returns
+// the last answer instead for as long as the CLI and its settings.json are
+// unchanged, up to inventoryMaxAge: Win-CodexBar 0.60.3 builds the inventory
+// from those two files and nothing else. Every write to settings.json moves
+// its stamp, the CLI's own on a provider switch included, and
+// SetProviderEnabled forgets the answer as well. Only an answer that parses
+// is kept.
+//
+// The check of one named provider -- "Check again" on its row, and the check
+// after it was switched on -- does not come through here; it always asks the
+// CLI (probeProviderSetup).
+func readProviderInventory(ctx context.Context, timeout time.Duration, bin string, run func(context.Context, time.Duration, string, ...string) ([]byte, error)) ([]byte, error) {
+	stamp := engineStamp(bin, windowsSettingsPath())
+	if raw, ok := engineInventory.load(stamp, inventoryMaxAge); ok {
+		return raw, nil
+	}
+	raw, err := run(ctx, timeout, bin, providerInventoryArgs()...)
+	if stamp != "" && err == nil {
+		if _, parseErr := parseProviderSettings(raw); parseErr == nil {
+			engineInventory.store(stamp, raw)
+		}
+	}
+	return raw, err
+}
+
 // runUsageAllEnabled asks for usage of every switched-on provider. The Mac
 // CLI does that with a plain "usage --json". Win-CodexBar 0.56.8 defaults to
 // Claude only and its "--provider all" walks all 69 providers, which does not
@@ -76,7 +112,7 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 	if !providerProbePerProvider {
 		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
 	}
-	raw, err := runUsageCommandFn(ctx, 5*time.Second, bin, providerInventoryArgs()...)
+	raw, err := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
 	if err != nil {
 		return nil, fmt.Errorf("read provider inventory: %w", err)
 	}
@@ -351,8 +387,7 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 		return nil, "", err
 	}
 
-	timeout := commandTimeout()
-	raw, err := runProviderCommandFn(ctx, timeout, bin, providerInventoryArgs()...)
+	raw, err := readProviderInventory(ctx, commandTimeout(), bin, runProviderCommandFn)
 	if err != nil {
 		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
@@ -385,6 +420,9 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	if enabled {
 		action = "enable"
 	}
+	// The switch ends whatever the inventory said before it, also when it
+	// fails halfway: the next read asks the CLI.
+	defer engineInventory.store("", nil)
 	// Consent first: if the settings file cannot take the flag, Claude
 	// stays switched off and the UI matches CodexBar without a rollback.
 	if enabled && providerID == "claude" && providerProbePerProvider {
@@ -561,6 +599,11 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 			if page := browserSignInPage(id, reported); page != "" {
 				state = ProviderHealthBrowserSignIn
 				signInURL = page
+				// The marker is CodexBar's whole diagnosis. The summary around
+				// it lists every source it tried ("Web: No cookies ...; OAuth:
+				// ... rate limited ...") and repeats the marker with its URL, so
+				// it is no guidance and is not kept as the reported sentence.
+				reported = ""
 			}
 		} else if !providerPayloadHasUsage(payload) {
 			state = ProviderHealthNoUsage

@@ -34,7 +34,9 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { copyForHost } from "@/lib/customer-platform";
+import type { ThemeProduct } from "@/lib/themes";
 import {
   deviceIsCustomerConnected,
   deviceIsReady,
@@ -56,6 +58,8 @@ export type LogEvent = {
 export type LogsScreenProps = {
   events?: LogEvent[];
   device?: DeviceInfo | null;
+  /** The catalog, to name the live theme while a screensaver is on screen. */
+  themes?: ThemeProduct[];
   diagnostics?: SupportDiagnostics | null;
   lastError?: {
     code: string;
@@ -76,6 +80,7 @@ export type LogsScreenProps = {
 export function LogsScreen({
   events = [],
   device,
+  themes = [],
   diagnostics,
   lastError,
   onLoadDiagnostics,
@@ -88,6 +93,9 @@ export function LogsScreen({
   windowsHost = false,
 }: LogsScreenProps) {
   const deviceConnected = deviceIsCustomerConnected(device);
+  // Issue #265: only a VibeTV on WiFi reports a signal, and a reading kept
+  // from before it went away says nothing about now.
+  const wifi = deviceConnected ? device?.health?.wifi : undefined;
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
@@ -96,7 +104,7 @@ export function LogsScreen({
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Connected VibeTV</CardTitle>
+            <CardTitle asChild><h2>Connected VibeTV</h2></CardTitle>
             <CardDescription>
               {deviceConnected
                 ? copyForHost(
@@ -127,8 +135,14 @@ export function LogsScreen({
               />
               <SupportFact
                 label="Active theme"
-                value={activeThemeLabel(device)}
+                value={activeThemeLabel(themes, device)}
               />
+              {wifi ? (
+                <SupportFact
+                  label="WiFi signal"
+                  value={wifi.weak ? `Weak (${wifi.rssi} dBm)` : `${wifi.rssi} dBm`}
+                />
+              ) : null}
             </dl>
           </CardContent>
           {onRunSetupAgain ? (
@@ -153,7 +167,7 @@ export function LogsScreen({
 
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Support report</CardTitle>
+            <CardTitle asChild><h2>Support report</h2></CardTitle>
             <CardDescription>
               Create a diagnostic file when support asks for it.
             </CardDescription>
@@ -163,6 +177,7 @@ export function LogsScreen({
               creating={supportReportBusy}
               diagnostics={diagnostics}
               onCreate={onLoadDiagnostics}
+              windowsHost={windowsHost}
             />
           </CardContent>
         </Card>
@@ -170,7 +185,7 @@ export function LogsScreen({
 
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Diagnostics</CardTitle>
+          <CardTitle asChild><h2>Diagnostics</h2></CardTitle>
         </CardHeader>
         <CardContent>
           <DiagnosticsPanel
@@ -186,7 +201,7 @@ export function LogsScreen({
 
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Setup log</CardTitle>
+          <CardTitle asChild><h2>Setup log</h2></CardTitle>
         </CardHeader>
         <CardContent>
           <SetupEventLog windowsHost={windowsHost} />
@@ -195,7 +210,7 @@ export function LogsScreen({
 
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Recent activity</CardTitle>
+          <CardTitle asChild><h2>Recent activity</h2></CardTitle>
           <CardDescription>Connection and setup changes from this session.</CardDescription>
           {onRefresh ? (
             <CardAction>
@@ -218,7 +233,7 @@ export function LogsScreen({
             <div className="max-h-[320px] overflow-y-auto rounded-lg border">
               <ItemGroup className="gap-0 divide-y">
                 {events.map((event) => (
-                  <Item className="rounded-none border-0" key={event.id} size="sm">
+                  <Item className="rounded-none border-0" key={event.id} role="listitem" size="sm">
                     <ItemMedia variant="icon"><Activity aria-hidden /></ItemMedia>
                     <ItemContent>
                       <ItemTitle>{supportText(event.label)}</ItemTitle>
@@ -261,8 +276,18 @@ function formatDeviceAddress(value?: string): string {
 }
 
 
-function activeThemeLabel(device: DeviceInfo | null | undefined): string {
-  const theme = device?.activeTheme?.trim();
-  if (!theme) return deviceIsReady(device) ? "Default" : "Not available";
+function activeThemeLabel(
+  themes: ThemeProduct[],
+  device: DeviceInfo | null | undefined,
+): string {
+  const theme = activeLiveThemeId(themes, device)?.trim();
+  if (!theme) {
+    // During standby a Theme Studio theme in the live slot has no name here;
+    // the screensaver on screen is not it.
+    if (device?.standby?.active === true && device.standby.liveThemePath?.trim()) {
+      return "Custom theme";
+    }
+    return deviceIsReady(device) ? "Default" : "Not available";
+  }
   return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

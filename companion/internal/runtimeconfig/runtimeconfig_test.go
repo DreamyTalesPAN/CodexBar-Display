@@ -297,6 +297,60 @@ func TestProviderDisplayNormalizeAndSetupMigration(t *testing.T) {
 	}
 }
 
+func TestUsageDisplayModeOverridesCodexBarAndSurvivesRestart(t *testing.T) {
+	codexBarShowsUsed := func(value bool) func() bool { return func() bool { return value } }
+	for _, tt := range []struct {
+		mode     string
+		codexBar bool
+		want     bool
+	}{
+		{mode: "", codexBar: true, want: true},
+		{mode: "", codexBar: false, want: false},
+		{mode: "remaining", codexBar: true, want: false},
+		{mode: "used", codexBar: false, want: true},
+	} {
+		cfg := Config{UsageDisplayMode: tt.mode}
+		if got := cfg.UsageShowsUsed(codexBarShowsUsed(tt.codexBar)); got != tt.want {
+			t.Fatalf("mode=%q codexBar=%t shows used=%t, want %t", tt.mode, tt.codexBar, got, tt.want)
+		}
+	}
+
+	home := t.TempDir()
+	if err := Save(home, Config{UsageDisplayMode: "remaining"}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(home)
+	if err != nil || loaded.UsageDisplayMode != "remaining" {
+		t.Fatalf("usage display mode did not persist: %+v err=%v", loaded, err)
+	}
+
+	unknown := Config{UsageDisplayMode: "percent"}
+	unknown.Normalize()
+	if unknown.UsageDisplayMode != "" {
+		t.Fatalf("unknown usage display mode was kept: %q", unknown.UsageDisplayMode)
+	}
+}
+
+func TestDisplayRotateSecondsSurvivesRestartAndKeepsOnlyOfferedIntervals(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{DisplayRotateSeconds: 30}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(home)
+	if err != nil || loaded.DisplayRotateSeconds != 30 {
+		t.Fatalf("rotation interval did not persist: %+v err=%v", loaded, err)
+	}
+
+	// Settings offers 30, 60 and 300 seconds; anything else is no timer.
+	for _, other := range []int{-5, 45} {
+		cfg := Config{DisplayRotateSeconds: other}
+		cfg.Normalize()
+		if cfg.DisplayRotateSeconds != 0 {
+			t.Fatalf("rotation interval %d was kept as %d", other, cfg.DisplayRotateSeconds)
+		}
+	}
+}
+
 func TestResetDeviceBindingPreservesAuthenticationProfiles(t *testing.T) {
 	cfg := Config{
 		DeviceID:         "device-a",

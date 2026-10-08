@@ -190,7 +190,7 @@ export type SupportDiagnostics = {
       viewport?: string;
       timezone?: string;
       visibility?: string;
-      surface?: "native-mac-app" | "browser";
+      surface?: "native-mac-app" | "native-windows-app" | "browser";
       appVersion?: string;
       appBuild?: string;
       /** Loopback runtime address. Diagnostic only; not navigable. */
@@ -299,6 +299,14 @@ export type DeviceInfo = {
     resetReason?: string;
     lastResetAt?: string;
     error?: string;
+    /**
+     * The signal reading of a VibeTV on WiFi, in dBm. The Mac App decides
+     * `weak`; the page never compares the number itself.
+     */
+    wifi?: {
+      rssi: number;
+      weak?: boolean;
+    };
   };
   display?: {
     themeSpec?: {

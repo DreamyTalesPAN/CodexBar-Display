@@ -6,7 +6,7 @@ on the active theme.
 
 ## Included Themes
 
-The current catalog includes six live themes:
+The current catalog includes seven live themes:
 
 | Theme | Preview | Notes |
 | --- | --- | --- |
@@ -16,6 +16,7 @@ The current catalog includes six live themes:
 | Synthwave | <img src="assets/vibetv-theme-synthwave.png" alt="Synthwave screen preview" width="180"> | Neon skyline and usage bars. |
 | Pixel Battery | <img src="assets/vibetv-theme-pixel-battery.png" alt="Pixel Battery screen preview" width="180"> | Segmented batteries show usage for two windows. |
 | Tiny Office | <img src="assets/vibetv-theme-tiny-office.png" alt="Tiny Office screen preview" width="180"> | Pixel-art developer desk with an animated monitor; idle and coding scenes. See [tiny-office-theme.md](tiny-office-theme.md). |
+| Token Counter | <img src="assets/vibetv-theme-token-counter.png" alt="Token Counter screen preview" width="180"> | One large session token total with the reset countdown. |
 
 ## Included Screensavers
 
@@ -95,7 +96,7 @@ Theme Studio now lives inside the local Control Center served by the Mac App.
 Open Control Center, choose **Theme Library**, then create a new theme or edit
 an existing one. Theme Studio can create a local draft, open ThemeSpec JSON,
 edit the 240x240 layout, validate it, export an installable theme-pack ZIP, and
-send the current theme to VibeTV from an explicit **Send to VibeTV** action.
+send the saved theme to VibeTV from an explicit **Send to VibeTV** action.
 The Mac App performs the same device, pairing, capability, upload, and render
 checks as every other theme install.
 
@@ -106,10 +107,18 @@ Theme Studio can:
 
 - edit 240x240 layouts
 - import sprites and GIFs in the local Control Center
+- make one color of a sprite transparent with **Transparent color** in the
+  sprite's Inspector (GIFs are not keyed)
 - preview usage bindings with neutral example values
 - export theme packs from Control Center without an automatic hardware write
 - install the generated pack through the Mac App only after the customer clicks
   **Send to VibeTV**
+
+VibeTV paints the transparent pixels of a sprite with the theme background
+color, or with the sprite's own `bgColor` when it has one (always for an
+animated sprite, on partial redraws for a static one), while the Theme Studio
+preview shows what lies underneath, so a sprite with transparent pixels matches
+the preview only where it sits on the plain background.
 
 For reliable hardware themes, keep static visual detail in streamed assets and
 keep ThemeSpec JSON focused on live fields. Start with

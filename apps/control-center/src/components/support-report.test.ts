@@ -120,3 +120,64 @@ describe("support report setup log", () => {
     expect(fallback.setupLog).toEqual({ unavailable: true });
   });
 });
+
+// Issue #558: the report a Windows customer downloaded spoke of the Mac. The
+// runtime's texts name the Mac; the screens reword them, the report did not.
+describe("support report from the Windows app", () => {
+  const diagnostics = {
+    ok: true,
+    companion: {
+      installationMode: "dmg",
+      update: { message: "Mac App is up to date." },
+    },
+    setupLog: {
+      sessionId: "s1",
+      startedAt: "2026-10-08T12:00:00Z",
+      truncated: false,
+      dropped: 0,
+      events: [
+        { seq: 1, at: "2026-10-08T12:00:00Z", stage: "service_restart", status: "succeeded", message: "The Mac App's background service started again." },
+      ],
+    },
+    checks: [
+      { name: "network_discovery", status: "attention", nextAction: "Keep VibeTV powered on and connected to the same WiFi as this Mac." },
+    ],
+  } as unknown as SupportDiagnostics;
+
+  it("says what the Windows app's screens say and names its own surface", async () => {
+    visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
+
+    const windows = await collectSupportReport(async () => diagnostics, clientState, true);
+    const text = serializeSupportReport(windows);
+
+    expect(windows.client?.environment.surface).toBe("native-windows-app");
+    expect(text).toContain('"message": "App is up to date."');
+    expect(text).toContain('"message": "The app\'s background service started again."');
+    expect(text).toContain("the same WiFi as this computer.");
+    expect(text).not.toMatch(/\bMac\b|native-mac-app/);
+    // The name of the mode in which the app owns the runtime, on both systems.
+    expect(text).toContain('"installationMode": "dmg"');
+  });
+
+  it("words a report without the app's own diagnostics the same way", async () => {
+    visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
+
+    const fallback = await collectSupportReport(async () => {
+      throw new Error("diagnostics unreachable");
+    }, clientState, true);
+
+    expect(serializeSupportReport(fallback)).not.toMatch(/\bMac\b/);
+  });
+
+  it("leaves the Mac App's report as it is", async () => {
+    visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
+
+    const mac = await report(diagnostics);
+    const text = serializeSupportReport(mac);
+
+    expect(mac.client?.environment.surface).toBe("native-mac-app");
+    expect(text).toContain('"message": "Mac App is up to date."');
+    expect(text).toContain("The Mac App's background service started again.");
+    expect(text).toContain("the same WiFi as this Mac.");
+  });
+});

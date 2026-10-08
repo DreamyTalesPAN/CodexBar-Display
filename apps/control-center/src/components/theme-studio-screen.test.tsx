@@ -1,0 +1,330 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  createBlankThemeSpec,
+  THEME_STUDIO_DRAFT_STORAGE_KEY,
+} from "@/lib/theme-studio";
+import { ThemeStudioScreen } from "./theme-studio-screen";
+
+// jsdom has no matchMedia; the preview asks it about reduced motion.
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  }));
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+function renderStudio(
+  source: "blank" | "custom",
+  props: Partial<ComponentProps<typeof ThemeStudioScreen>> = {},
+) {
+  render(
+    <TooltipProvider>
+      <ThemeStudioScreen
+        initialTheme={{
+          assets: {}, packName: "New Theme", source, spec: createBlankThemeSpec(),
+        }}
+        onSaveToLibrary={async payload => ({
+          document: { assets: payload.assets, packName: payload.packName, spec: payload.spec },
+          libraryId: payload.spec.themeId, savedAt: "2026-10-08T00:00:00Z",
+        })}
+        {...props}
+      />
+    </TooltipProvider>,
+  );
+}
+const button = (name: string) =>
+  screen.getByRole("button", { name }) as HTMLButtonElement;
+
+it("calls a new theme a draft until it is saved, and counts one element", async () => {
+  renderStudio("blank");
+  expect(screen.getByText("1 element")).toBeTruthy();
+  expect(screen.getByText("Draft")).toBeTruthy();
+  expect(screen.queryByText("Saved")).toBeNull();
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(screen.getByText("2 elements")).toBeTruthy();
+  expect(screen.getByText("Unsaved changes")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Save theme" }));
+  expect(await screen.findByText("Saved")).toBeTruthy();
+});
+
+it("calls a theme opened from the library saved", () => {
+  renderStudio("custom");
+  expect(screen.getByText("Saved")).toBeTruthy();
+});
+
+// Issue #551: the JSON tab kept a copy of the theme that only an edit renewed.
+it("shows the theme as it is in the JSON tab after Save renamed its id and after Undo", async () => {
+  renderStudio("blank", {
+    // The library gives a theme whose id is taken a free one.
+    onSaveToLibrary: async payload => ({
+      document: {
+        assets: payload.assets, packName: payload.packName,
+        spec: { ...payload.spec, themeId: "my-theme-2" },
+      },
+      libraryId: "my-theme-2", savedAt: "2026-10-08T00:00:00Z",
+    }),
+  });
+  fireEvent.click(button("Advanced"));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  const json = () => screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  expect(json().value).toContain('"id": "my-theme"');
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(json().value).toContain('"id": "my-theme-2"'));
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(json().value).toContain('"t": "tx"');
+  fireEvent.click(button("Undo"));
+  expect(json().value).not.toContain('"t": "tx"');
+
+  // An emptied field stays empty, so new JSON can be pasted into it.
+  fireEvent.change(json(), { target: { value: "" } });
+  expect(json().value).toBe("");
+  fireEvent.click(button("Reset JSON"));
+  expect(json().value).toContain('"id": "my-theme-2"');
+});
+
+// Issue #551: the name could only be changed under Advanced › Project, so
+// themes were saved as "New Theme".
+it("lets the customer name the theme in the header, without opening Advanced", async () => {
+  const saved: string[] = [];
+  renderStudio("blank", {
+    onSaveToLibrary: async payload => {
+      saved.push(payload.packName);
+      return {
+        document: { assets: payload.assets, packName: payload.packName, spec: payload.spec },
+        libraryId: payload.spec.themeId, savedAt: "2026-10-08T00:00:00Z",
+      };
+    },
+  });
+
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retro Clock" } });
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(saved).toEqual(["Retro Clock"]));
+
+  // The field moved; Advanced › Project no longer holds a second one.
+  fireEvent.click(button("Advanced"));
+  expect(screen.getAllByLabelText("Name")).toHaveLength(1);
+  expect(screen.getByLabelText("ID")).toBeTruthy();
+});
+
+// Seen on the Windows app on 2026-10-07: emptying the name raised a red Library
+// notice about the recovery copy, and typing a name again did not remove it.
+it("takes an emptied name without a notice and still keeps the recovery copy", async () => {
+  window.localStorage.clear();
+  renderStudio("blank");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "" } });
+
+  // The copy is stored under the name Save would give the theme.
+  await waitFor(() =>
+    expect(
+      JSON.parse(window.localStorage.getItem(THEME_STUDIO_DRAFT_STORAGE_KEY) || "{}")
+        .recovery?.document.packName,
+    ).toBe("My Theme"),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
+});
+
+it("drops the notice of a recovery copy that was not written once a later one is", async () => {
+  window.localStorage.clear();
+  const failed = "Theme data could not be saved to this browser.";
+  vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
+    throw new Error("storage failed");
+  });
+  renderStudio("blank");
+
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "First" } });
+  expect(await screen.findByText(failed)).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Second" } });
+  await waitFor(() => expect(screen.queryByText(failed)).toBeNull());
+});
+
+// Issue #551: a greyed-out Send to VibeTV gave no reason.
+it("says why Send to VibeTV is unavailable, and stops once it is available", async () => {
+  renderStudio("custom");
+  const reason = "Save this theme before sending it to VibeTV.";
+  expect(button("Send to VibeTV").disabled).toBe(false);
+  expect(screen.queryByText(reason)).toBeNull();
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(screen.getByText(reason)).toBeTruthy();
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(button("Send to VibeTV").disabled).toBe(false));
+  expect(screen.queryByText(reason)).toBeNull();
+});
+
+// Seen on the Windows app on 2026-10-07: a new theme was sent before it was
+// ever saved. VibeTV then showed a theme that no list in the app contained.
+it.each([
+  ["live", "Save theme", "Save this theme before sending it to VibeTV."],
+  ["screensaver", "Save screensaver", "Save this screensaver before sending it to VibeTV."],
+] as const)("keeps Send to VibeTV unavailable until a new %s theme is saved", async (usage, save, reason) => {
+  renderStudio("blank", {
+    initialTheme: {
+      assets: {}, packName: "New", source: "blank", spec: createBlankThemeSpec(), usage,
+    },
+  });
+  expect(screen.getByText("Draft")).toBeTruthy();
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(screen.getByText(reason)).toBeTruthy();
+
+  fireEvent.click(button(save));
+  await waitFor(() => expect(button("Send to VibeTV").disabled).toBe(false));
+  expect(screen.queryByText(reason)).toBeNull();
+});
+
+// Issue #558: Screensaver Studio's button read "Save theme".
+it.each([
+  ["live", "Save theme", "Theme could not be saved."],
+  ["screensaver", "Save screensaver", "Screensaver could not be saved."],
+] as const)("names what Save saves, also when it fails (%s)", async (usage, save, failed) => {
+  renderStudio("blank", {
+    initialTheme: {
+      assets: {}, packName: "New", source: "blank", spec: createBlankThemeSpec(), usage,
+    },
+    onSaveToLibrary: () => Promise.reject("storage failed"),
+  });
+  expect(screen.getAllByRole("button", { name: /^Save / })).toHaveLength(1);
+
+  fireEvent.click(button(save));
+  expect(await screen.findByText(failed)).toBeTruthy();
+});
+
+it("names a failed check instead of asking to save while Save is unavailable too", () => {
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.change(screen.getByLabelText("ID"), { target: { value: "x" } });
+
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(button("Save theme").disabled).toBe(true);
+  // Once above the buttons, once in the Inspector's Validation box.
+  expect(screen.getAllByText("Theme ID must be lowercase and 3-64 characters.")).toHaveLength(2);
+  expect(screen.queryByText("Save this theme before sending it to VibeTV.")).toBeNull();
+});
+
+// While the library cannot be written, Save is unavailable as well.
+it("names why the theme cannot be saved instead of asking to save it", () => {
+  const locked = "Saved themes contain invalid data. The original data was left unchanged.";
+  renderStudio("blank", { saveBlockedReason: locked });
+
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(button("Save theme").disabled).toBe(true);
+  // Once above the buttons, once as the Library notice.
+  expect(screen.getAllByText(locked)).toHaveLength(2);
+  expect(screen.queryByText("Save this theme before sending it to VibeTV.")).toBeNull();
+});
+
+it("names the VibeTV's own limit when that is what keeps Send unavailable", () => {
+  renderStudio("custom", { deviceCapabilities: { supportsStoredThemes: false } });
+  expect(button("Send to VibeTV").disabled).toBe(true);
+  expect(button("Save theme").disabled).toBe(false);
+  expect(screen.getByText("This VibeTV does not support stored themes.")).toBeTruthy();
+});
+
+// Issue #551: Export ZIP did not say where the file went. Windows saves a
+// download without asking (see #545); the Mac asks where and can be cancelled.
+// Windows gets no file name: it saves a second export as "… (1).zip".
+it.each([
+  [true, "Saved in your Downloads folder. Nothing was sent."],
+  [false, "vibetv-theme-my-theme.zip exported. Nothing was sent."],
+])("says after Export ZIP where the file is when the app saved it itself (windows=%s)", (windowsHost, message) => {
+  // jsdom has neither blob URLs nor downloads.
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  const download = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  renderStudio("custom", { windowsHost });
+
+  fireEvent.click(button("Export ZIP"));
+
+  expect(download).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(message)).toBeTruthy();
+});
+
+// Issue #551: the notices sat under the Inspector's fields, below the fold
+// for an element with many fields.
+it("shows what Save, Export and Send answered above the Inspector's fields", async () => {
+  renderStudio("blank");
+  fireEvent.click(button("Save theme"));
+  const notice = await screen.findByText("Saved to library.");
+  expect(
+    notice.compareDocumentPosition(screen.getByText("Inspector")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+// The Inspector box is hidden in a window narrower than 1024 px; the Windows
+// app can be 960 px wide. The notices must not be hidden with it.
+it("keeps those notices outside the box a narrow window hides", async () => {
+  renderStudio("blank");
+  fireEvent.click(button("Save theme"));
+  const notice = await screen.findByText("Saved to library.");
+  expect(screen.getByText("Inspector").closest("aside")!.className).toContain("hidden");
+  expect(notice.closest("aside")).toBeNull();
+});
+
+// Seen on the Windows app on 2026-10-07: "Saved to library." stayed above the
+// Inspector after the next change, beside the badge "Unsaved changes".
+it("takes Saved to library away with the next change, Undo included", async () => {
+  renderStudio("blank");
+  const addText = () => fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  fireEvent.click(button("Save theme"));
+  await screen.findByText("Saved to library.");
+
+  addText();
+  expect(screen.getByText("Unsaved changes")).toBeTruthy();
+  expect(screen.queryByText("Saved to library.")).toBeNull();
+
+  fireEvent.click(button("Save theme"));
+  await screen.findByText("Saved to library.");
+  fireEvent.click(button("Undo"));
+  expect(screen.queryByText("Saved to library.")).toBeNull();
+});
+
+// Also seen there: "Export … Nothing was sent." stood beside "Theme installed".
+it("shows one answer at a time for Save, Export and Send, errors included", async () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const saved = "Saved to library.";
+  const exported = "vibetv-theme-my-theme.zip exported. Nothing was sent.";
+  const sendFailed = "Theme install needs attention. Check the install status.";
+  const shown = () => [saved, exported, sendFailed].filter(text => screen.queryByText(text));
+  renderStudio("blank", { onInstallTheme: async () => false });
+
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(shown()).toEqual([saved]));
+  fireEvent.click(button("Export ZIP"));
+  expect(shown()).toEqual([exported]);
+  fireEvent.click(button("Send to VibeTV"));
+  await waitFor(() => expect(shown()).toEqual([sendFailed]));
+  fireEvent.click(button("Save theme"));
+  await waitFor(() => expect(shown()).toEqual([saved]));
+});
+
+// Why nothing can be saved is not an answer to a click and stays.
+it("keeps saying why saving is locked after a change and after Export", () => {
+  URL.createObjectURL = () => "blob:theme";
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const locked = "Saved themes contain invalid data. The original data was left unchanged.";
+  renderStudio("custom", { saveBlockedReason: locked });
+  expect(screen.getAllByText(locked)).toHaveLength(1);
+
+  fireEvent.click(button("Export ZIP"));
+  expect(screen.getAllByText(locked)).toHaveLength(1);
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  // Now the line above the buttons names it too.
+  expect(screen.getAllByText(locked)).toHaveLength(2);
+});

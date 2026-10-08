@@ -10,12 +10,15 @@ import {
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
   PROVIDER_LOADING_LOG_INTERVAL_MS,
+  ProviderList,
   SIGN_IN_PROVIDER_IDS,
   SetupProvidersScreen,
+  acknowledgedProviderIssues,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
   setupProviderOffersSignIn,
@@ -24,6 +27,7 @@ import {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  acknowledgedProviderIssues.clear();
 });
 
 function provider(fields: {
@@ -156,6 +160,80 @@ describe("SetupProvidersScreen", () => {
     expect(within(screen.getByRole("dialog")).getByText(stale.health.message)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // Settings takes the list off the page whenever the customer leaves it.
+  // Remembered in the list alone, an acknowledged message opened again on
+  // every visit and took the click meant for another control.
+  it("keeps an acknowledged message closed when the list is shown again", () => {
+    const signedOut = provider({ providerId: "codex", label: "Codex",
+      health: "auth_required", message: "Authentication required." });
+    const props = { usage, onCheckAgain: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const setup = renderDom(<SetupProvidersScreen {...props} onContinue={vi.fn()}
+      providers={[signedOut, claude]} />);
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    setup.unmount();
+
+    // Settings shows this same list.
+    const settings = renderDom(<ProviderList {...props} providers={[{ ...signedOut }, claude]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The row still carries the message, and asking for it shows it.
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
+    expect(within(screen.getByRole("dialog")).getByText("Authentication required.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    settings.unmount();
+
+    // A different problem is new to the customer.
+    const timedOut = provider({ providerId: "codex", label: "Codex",
+      health: "timeout", message: "The provider check timed out." });
+    renderDom(<ProviderList {...props} providers={[timedOut, claude]} />);
+    expect(within(screen.getByRole("dialog")).getByText("The provider check timed out.")).toBeTruthy();
+  });
+
+  // Only the acknowledgement outlives the list. A switch pressed on one visit
+  // must not let a stale message open by itself on a later one.
+  it("does not open a stale message by itself on a later visit", () => {
+    const off = provider({ providerId: "codex", label: "Codex", health: "disabled", value: false });
+    const props = { usage, onCheckAgain: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const first = renderDom(<ProviderList {...props} providers={[off, claude]} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Codex" }));
+    first.unmount();
+
+    const stale = provider({ providerId: "codex", label: "Codex", health: "stale",
+      message: "Live usage is unavailable; the last successful reading is still saved." });
+    renderDom(<ProviderList {...props} providers={[stale, claude]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // Windows, Claude delivering usage, Codex just switched on: one throttled
+  // check made the usage engine ask for a browser sign-in, and its list of
+  // failed sources opened by itself under the title "Claude". The Mac App now
+  // keeps that row healthy and sends no engine sentence for a browser sign-in.
+  it("opens nothing for a healthy provider and shows no engine text for a browser sign-in", () => {
+    const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: [redacted] error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]";
+    const engineText = /OAuth|cookies|https:\/\/|\[claude:/;
+    const codex = provider({ providerId: "codex", label: "Codex", health: "checking" });
+    const props = { usage, onOpenSignIn: vi.fn(), onContinue: vi.fn(), onCheckAgain: vi.fn(),
+      onToggle: vi.fn(), pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    // A healthy row has nothing to say, whatever an earlier check left on it.
+    const { rerender } = renderDom(<SetupProvidersScreen {...props}
+      providers={[codex, { ...claude, health: { ...claude.health, reported: summary } }]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show provider message for Claude Code" })).toBeNull();
+    expect(document.body.innerHTML).not.toMatch(engineText);
+
+    // A provider that really needs the browser session says so in our words.
+    const message = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again.";
+    const signIn = provider({ providerId: "claude", label: "Claude Code", health: "browser_sign_in_required", message });
+    rerender(<SetupProvidersScreen {...props}
+      providers={[codex, { ...signIn, health: { ...signIn.health, signInUrl: "https://claude.ai/login" } }]} />);
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText(message)).toBeTruthy();
+    expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open Claude Code sign-in in your browser" })).toBeTruthy();
+    expect(document.body.innerHTML).not.toMatch(engineText);
   });
 
   it("queues simultaneous provider failures and lets a dismissed message be opened again", () => {
@@ -618,5 +696,28 @@ describe("SetupProvidersScreen", () => {
         ),
       ).toBe(false);
     }
+  });
+});
+
+describe("SetupProvidersScreen accessibility", () => {
+  it("has no violations with the list, without a match, while loading and with a provider message open", async () => {
+    await expectNoAxeViolations(render());
+    await expectNoAxeViolations(render({ providers: [] }));
+    await expectNoAxeViolations(render({ providers: [], loading: true }));
+    const failed = { ...copilot, value: true,
+      health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
+    renderDom(
+      <SetupProvidersScreen
+        onCheckAgain={vi.fn()}
+        onContinue={vi.fn()}
+        onToggle={vi.fn()}
+        pendingCheckIds={new Set<string>()}
+        pendingPreferenceIds={new Set<string>()}
+        providers={[claude, failed]}
+        usage={usage}
+      />,
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await expectNoAxeViolations(document.body.innerHTML);
   });
 });

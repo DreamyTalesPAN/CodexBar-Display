@@ -14,6 +14,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 
 import type { DeviceCandidate } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
@@ -2127,3 +2128,24 @@ describe("SetupWizard with a broken usage service", () => {
     },
   );
 });
+
+describe("SetupWizard: accessibility", () => {
+  it.each(["welcome", "device", "providers", "display", "theme", "live"] as const)(
+    "has no violations on the %s step",
+    async (step) => {
+      render(<SetupWizard {...baseProps({ step })} />);
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+      await expectNoAxeViolations(document.body.innerHTML);
+    },
+  );
+
+  it("moves focus to the new step's title once the pressed button is gone", () => {
+    const view = render(<SetupWizard {...baseProps({ step: "providers" })} />);
+    const pressed = screen.getByRole("button", { name: "Continue" });
+    pressed.focus();
+    expect(document.activeElement).toBe(pressed);
+    view.rerender(<SetupWizard {...baseProps({ step: "display" })} />);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+  });
+});
+

@@ -87,7 +87,7 @@ describe("buildAiFixPrompt", () => {
   it("carries the log the screen is showing, which the event log is not", () => {
     const prompt = buildAiFixPrompt({
       ...base,
-      events: [event("1", "Control Center opened", "Browser session started.")],
+      events: [event("1", "Control Center opened", "This session started.")],
       setupLog: [
         "connecting to 192.168.178.153",
         "error: connection could not be completed",

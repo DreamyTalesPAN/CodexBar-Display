@@ -578,6 +578,78 @@ func TestRateLimitedHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	}
 }
 
+// Seen in the Windows app: Claude was delivering usage, Codex was switched on,
+// and the next health scan met one Claude call the provider throttled. CodexBar
+// marks that summary as a browser sign-in, the row left "healthy" and its
+// dialog opened by itself. A reading that did arrive answers the diagnosis;
+// without one the row still asks for the browser session.
+func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
+	const summary = "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Claude OAuth usage endpoint is rate limited. Retrying in about 1s; credentials were preserved.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits. [claude:browser-sign-in-required https://claude.ai/login]"
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	scanned := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true,
+		Health:    providerHealthFromReadiness(codexbar.ProviderErrorKind("claude", summary)),
+		SignInURL: "https://claude.ai/login",
+	}}
+	if scanned[0].Health != codexbar.ProviderHealthBrowserSignIn {
+		t.Fatalf("the summary must classify as a browser sign-in, got %s", scanned[0].Health)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("claude", "Claude", now), true
+	}
+	items := server.providerDescriptors(scanned)
+	if len(items) != 1 || items[0].Health.State != "healthy" || items[0].Health.SignInURL != "" {
+		t.Fatalf("fresh usage must keep the row healthy: %#v", items[0].Health)
+	}
+
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	// The sentence approved for this row on 2026-09-17, from the health scan
+	// and from the exact check alike: a dismissed message opens again when its
+	// text changes, and the exact check ages out after five minutes.
+	const guidance = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser, then check again."
+	for _, source := range []string{"health scan", "exact check"} {
+		items = server.providerDescriptors(scanned)
+		if len(items) != 1 || items[0].Health.State != "browser_sign_in_required" ||
+			items[0].Health.SignInURL != "https://claude.ai/login" ||
+			items[0].Health.Message != guidance || items[0].Health.Reported != "" {
+			t.Fatalf("no reading, %s: the row must ask for the browser session in our words: %#v", source, items[0].Health)
+		}
+		server.providerReadiness = map[string]providerReadinessRecord{"claude": {
+			Status:    codexbar.ProviderBrowserSignInRequired,
+			Detail:    "Claude usage needs a signed-in claude.ai session in your browser.",
+			SignInURL: "https://claude.ai/login", CheckedAt: now,
+		}}
+	}
+}
+
+// A fresh reading speaks over a browser sign-in diagnosis only until the next
+// collection. A customer who really signed out stops delivering usage: that
+// collection fails, the reading is merely kept, and the row leaves "healthy".
+func TestBrowserSignInHealthScanIsOnlyOverriddenByAFreshReading(t *testing.T) {
+	now := time.Date(2026, 10, 7, 22, 0, 0, 0, time.UTC)
+	scanned := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true,
+		Health:    codexbar.ProviderHealthBrowserSignIn,
+		SignInURL: "https://claude.ai/login",
+	}}
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("claude", "Claude", now.Add(-40*time.Second))
+		usage.Providers[0].Retained = true
+		usage.Providers[0].Stale = true
+		return usage, true
+	}
+
+	items := server.providerDescriptors(scanned)
+	if len(items) != 1 || items[0].Health.State != providerHealthStateStale {
+		t.Fatalf("a reading that is only kept must not report the provider healthy: %#v", items[0].Health)
+	}
+}
+
 func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
@@ -1295,6 +1367,157 @@ func TestPreferenceRegistrySupportsTypedDescriptorsWithoutNewRoutes(t *testing.T
 		if adapter.writes[test.id] != test.want {
 			t.Fatalf("patch %s wrote %#v, want %#v", test.id, adapter.writes[test.id], test.want)
 		}
+	}
+}
+
+func TestUsageDisplayPreferenceOverridesCodexBarAndReturnsToDefault(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return collectedAt.Add(time.Minute) }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12, Weekly: 30}, CollectedAt: collectedAt,
+		}}}, true
+	}
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+
+	read := func() preferenceDescriptor {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=display", nil))
+		var response preferencesResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK || len(response.Items) == 0 {
+			t.Fatalf("list display preferences: %d %s", recorder.Code, recorder.Body.String())
+		}
+		return response.Items[0]
+	}
+	patch := func(value string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		body := bytes.NewBufferString(`{"value":` + value + `}`)
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPatch, "/v1/preferences/"+usageDisplayModePreferenceID, body))
+		return recorder
+	}
+	usage := func() usageResponse {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+		var response usageResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK || len(response.Providers) != 1 {
+			t.Fatalf("read usage: %d %s", recorder.Code, recorder.Body.String())
+		}
+		return response
+	}
+
+	// Default follows CodexBar, which newTestServer sets to "used", and offers
+	// exactly Used and Remaining beside it.
+	item := read()
+	if item.ID != usageDisplayModePreferenceID || item.Label != "Usage display" || item.Value != nil || item.EffectiveValue != "used" || !item.AllowsDefault ||
+		len(item.Options) != 2 || item.Options[0].Label != "Used" || item.Options[1].Label != "Remaining" {
+		t.Fatalf("unexpected default descriptor: %#v", item)
+	}
+
+	if recorder := patch(`"remaining"`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch remaining: %d %s", recorder.Code, recorder.Body.String())
+	}
+	cfg, _ := server.config()
+	if item = read(); cfg.UsageDisplayMode != "remaining" || item.Value != "remaining" || item.EffectiveValue != "remaining" || renders != 1 {
+		t.Fatalf("remaining was not stored and rendered: cfg=%q item=%#v renders=%d", cfg.UsageDisplayMode, item, renders)
+	}
+	if got := usage(); got.UsageMode != "remaining" || got.Providers[0].Session != 88 || got.Providers[0].Weekly != 70 {
+		t.Fatalf("usage did not follow the preference: %#v", got)
+	}
+
+	if recorder := patch(`"percent"`); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unregistered option was accepted: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	// Back to Default: CodexBar decides again, here "remaining" and then "used".
+	if recorder := patch(`null`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch default: %d %s", recorder.Code, recorder.Body.String())
+	}
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "remaining")
+	cfg, _ = server.config()
+	if item = read(); cfg.UsageDisplayMode != "" || item.Value != nil || item.EffectiveValue != "remaining" || usage().UsageMode != "remaining" {
+		t.Fatalf("default did not follow CodexBar: cfg=%q item=%#v", cfg.UsageDisplayMode, item)
+	}
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "used")
+	if got := usage(); read().EffectiveValue != "used" || got.UsageMode != "used" || got.Providers[0].Session != 12 {
+		t.Fatalf("default did not follow CodexBar back to used: %#v", got)
+	}
+}
+
+func TestDisplayRotatePreferenceStoresTheIntervalAndSurvivesProviderDisplayWrites(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(method, path, bytes.NewBufferString(body)))
+		return recorder
+	}
+	read := func() preferenceDescriptor {
+		t.Helper()
+		recorder := request(http.MethodGet, "/v1/preferences?section=display", "")
+		var response preferencesResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK {
+			t.Fatalf("list display preferences: %d %s", recorder.Code, recorder.Body.String())
+		}
+		for _, item := range response.Items {
+			if item.ID == displayRotatePreferenceID {
+				return item
+			}
+		}
+		t.Fatalf("rotation preference is not listed: %s", recorder.Body.String())
+		return preferenceDescriptor{}
+	}
+
+	item := read()
+	labels := make([]string, 0, len(item.Options))
+	for _, option := range item.Options {
+		labels = append(labels, option.Value+"="+option.Label)
+	}
+	if item.Label != "Switch providers" || item.Value != "0" || item.AllowsDefault ||
+		strings.Join(labels, "|") != "0=When activity changes|30=Every 30 seconds|60=Every minute|300=Every 5 minutes" {
+		t.Fatalf("unexpected rotation descriptor: %#v", item)
+	}
+
+	path := "/v1/preferences/" + displayRotatePreferenceID
+	if recorder := request(http.MethodPatch, path, `{"value":"30"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch 30 seconds: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 30 || read().Value != "30" || renders != 1 {
+		t.Fatalf("interval was not stored and rendered: cfg=%d renders=%d", cfg.DisplayRotateSeconds, renders)
+	}
+	for _, invalid := range []string{`"45"`, `30`, `null`} {
+		if recorder := request(http.MethodPatch, path, `{"value":`+invalid+`}`); recorder.Code != http.StatusBadRequest {
+			t.Fatalf("value %s was accepted: %d %s", invalid, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// The Control Center rewrites the display selection whenever a provider is
+	// switched on or off. That write must leave the interval alone.
+	if recorder := request(http.MethodPatch, "/v1/provider-display", `{"mode":"automatic","providerIds":["codex","claude"]}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch provider display: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 30 || cfg.ProviderDisplay == nil {
+		t.Fatalf("provider display write lost the interval: %+v", cfg)
+	}
+
+	if recorder := request(http.MethodPatch, path, `{"value":"0"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch back to activity: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.DisplayRotateSeconds != 0 || read().Value != "0" {
+		t.Fatalf("interval was not cleared: %d", cfg.DisplayRotateSeconds)
 	}
 }
 

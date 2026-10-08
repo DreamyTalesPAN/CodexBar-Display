@@ -38,8 +38,10 @@ const (
 	// reset after this long still leaves it the rest of the hello window.
 	silentBoardResetAfter = 2 * time.Second
 	wifiScanReadWindow    = 12 * time.Second
-	helloReadStepTimeout  = 80 * time.Millisecond
-	helloReadBufferBytes  = 2048
+	// A health answer normally arrives within a fraction of a second.
+	requestRetryStep     = 2 * time.Second
+	helloReadStepTimeout = 80 * time.Millisecond
+	helloReadBufferBytes = 2048
 )
 
 var helloRequestLine = []byte("{\"kind\":\"request\",\"op\":\"hello\"}\n")

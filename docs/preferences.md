@@ -6,12 +6,14 @@ Control Center settings:
 ```http
 GET /v1/preferences
 GET /v1/preferences?section=providers
+GET /v1/preferences?section=display
 PATCH /v1/preferences/{settingId}
 ```
 
 The first production adapter is the `providers` section. It reads the complete
 provider inventory from the supported CodexBar CLI, changes real CodexBar
-provider enablement, and never stores a second VibeTV provider list.
+provider enablement, and never stores a second VibeTV provider list. The
+`display` section holds the Mac App's own display preferences.
 
 ## Descriptor contract
 
@@ -67,6 +69,86 @@ including stale persisted snapshots.
 The browser receives only stable health states and short recovery messages.
 Local sign-in/setup health and upstream service status remain separate.
 
+## Display adapter
+
+Display preferences are owned by VibeTV (`owner: "vibetv"`,
+`writeStrategy: "vibetv_override"`). They are stored in the Mac App's runtime
+configuration, and a write re-renders the VibeTV frame from the usage already
+collected. No provider is asked again and nothing in CodexBar is changed.
+
+| ID | Type | Values |
+| --- | --- | --- |
+| `vibetv.usage.displayMode` | `enum`, `allowsDefault` | `null` (Default), `"used"`, `"remaining"` |
+| `vibetv.display.rotateSeconds` | `enum` | `"0"` (When activity changes), `"30"`, `"60"`, `"300"` |
+
+`vibetv.usage.displayMode` decides whether percentages count what is used or
+what remains, on the VibeTV frame and in `GET /v1/usage` alike. `null` follows
+CodexBar's own setting, as before this preference existed; `effectiveValue`
+then reports the mode in use. An explicit value wins over CodexBar's setting.
+Settings shows it as `Usage display` with `Default`, `Used` and `Remaining`.
+
+```http
+PATCH /v1/preferences/vibetv.usage.displayMode
+{"value": "remaining"}
+```
+
+`vibetv.display.rotateSeconds` decides when the Automatic display mode moves
+to another provider. Settings shows it under the Automatic card as
+`Switch providers`. It is stored beside the display selection, not inside it,
+so saving `/v1/provider-display` never changes it.
+
+```http
+PATCH /v1/preferences/vibetv.display.rotateSeconds
+{"value": "30"}
+```
+
+### What Automatic does
+
+Automatic shows one provider at a time. Only providers that are switched on
+and have a current reading take part; a provider without one is skipped, and a
+single remaining provider simply stays on screen.
+
+- `"0"`, `When activity changes` (the default): VibeTV shows the provider whose
+  usage rose since the previous reading. If several rose, the larger rise wins
+  (token counts before percentages), and an equal rise goes to the provider
+  that comes first in CodexBar's order. While nothing rises, the provider on
+  screen stays. With no provider shown yet, the first one in CodexBar's order
+  is shown.
+- `"30"`, `"60"`, `"300"`: the timer alone decides. Each provider keeps the
+  screen for that many seconds, then the next one in CodexBar's order follows.
+  Usage on another provider does not cut a turn short. Switching the timer on
+  starts with the provider already on screen.
+
+The timer is checked each time a frame is sent. The Mac App sends one every 2
+seconds over USB-C and every 30 seconds over WiFi, so over WiFi a switch can
+come up to 30 seconds late. The `coding`/`idle` state in the frame is the same
+in both cases and covers all providers, so the screensaver does not depend on
+which provider is on screen. Manual ignores this preference.
+
+### Showing the next provider
+
+```http
+POST /v1/provider-display/next
+```
+
+The runtime stores Manual on the provider after the one on screen, exactly as
+`PATCH /v1/provider-display` does for a choice made in Settings, so Automatic
+does not take the screen back. The order is the provider list's and wraps after
+the last. Only providers Manual offers take part: switched on, in working
+order, and with a reading that can be shown. With fewer than two of them the
+stored choice stays as it is. The answer is the selection now stored, in the
+shape of `GET /v1/provider-display`. Nothing about a provider is changed.
+
+The Mac App (⌃⌥⌘P) and the Windows App (Ctrl+Alt+Shift+P) register one global
+keyboard shortcut and send this request on every press (issue #424). Settings
+names the keys under Display mode. An app whose keys the system refused appends
+` ProviderShortcut/unavailable` to its user agent, and Settings says that
+instead. After a press the app sends the page the event
+`vibetv:provider-display-changed`, and the page reads the selection again.
+
+Brightness and the screensaver stay on `/v1/settings`; they are device
+settings and are not part of this section.
+
 ## Security boundaries
 
 - Never use or expose `config dump`.
@@ -76,6 +158,8 @@ Local sign-in/setup health and upstream service status remain separate.
   `value` and `effectiveValue` stay `null`.
 - Do not put provider state in browser storage, VibeTV runtime configuration,
   Theme Studio drafts, ThemeSpec, or theme packs.
+- Display preferences live in the runtime configuration only. They never
+  change theme drafts, ThemeSpec, theme packs, or Theme Studio dirty state.
 - Credential entry, OAuth, and provider-specific integrations are outside this
   registry slice.
 - No device or firmware write is needed for provider preferences.

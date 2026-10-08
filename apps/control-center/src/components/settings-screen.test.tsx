@@ -1,8 +1,19 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { DeviceInfo, StandbySettings } from "./control-center-types";
+import { expectNoAxeViolations } from "@/test/axe";
+import type { ThemeProduct } from "@/lib/themes";
+import type {
+  DeviceInfo,
+  PreferenceDescriptor,
+  StandbySettings,
+} from "./control-center-types";
 import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
-import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
+import {
+  SettingsScreen,
+  standbyTimeoutLabel,
+  type SettingsScreenProps,
+} from "./settings-screen";
+import type { SetupDisplayModePreview } from "./setup/setup-display-mode-screen";
 
 const providerPicker: ProviderPickerProps = {
   usage: { providers: ["codex", "claude", "cursor"].map((id) => ({
@@ -58,6 +69,44 @@ function provider(
   };
 }
 
+const usageDisplay: PreferenceDescriptor = {
+  allowsDefault: true,
+  availability: { state: "available" },
+  effectiveValue: "used",
+  id: "vibetv.usage.displayMode",
+  label: "Usage display",
+  options: [
+    { value: "used", label: "Used" },
+    { value: "remaining", label: "Remaining" },
+  ],
+  owner: "vibetv",
+  section: "display",
+  type: "enum",
+  value: null,
+  writable: true,
+  writeStrategy: "vibetv_override",
+};
+
+const rotation: PreferenceDescriptor = {
+  allowsDefault: false,
+  availability: { state: "available" },
+  effectiveValue: "0",
+  id: "vibetv.display.rotateSeconds",
+  label: "Switch providers",
+  options: [
+    { value: "0", label: "When activity changes" },
+    { value: "30", label: "Every 30 seconds" },
+    { value: "60", label: "Every minute" },
+    { value: "300", label: "Every 5 minutes" },
+  ],
+  owner: "vibetv",
+  section: "display",
+  type: "enum",
+  value: "0",
+  writable: true,
+  writeStrategy: "vibetv_override",
+};
+
 function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
@@ -65,14 +114,18 @@ function render(
   brightness: number | null = 70,
   connectionMode: "cable" | "wifi" = "cable",
   windowsHost = false,
+  displayPreferences: PreferenceDescriptor[] = [],
+  automaticPreviews: SetupDisplayModePreview[] = [],
+  providerShortcut: SettingsScreenProps["providerShortcut"] = null,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
-      automaticPreviews={[]}
+      automaticPreviews={automaticPreviews}
       brightness={brightness}
       busyAction={null}
       connectionMode={connectionMode}
       device={device}
+      displayPreferences={displayPreferences}
       standby={standby}
       onBrightnessChange={vi.fn()}
       onChooseScreensaver={vi.fn()}
@@ -83,6 +136,7 @@ function render(
       onSaveStandby={vi.fn()}
       onStandbyBrightnessChange={vi.fn()}
       providerPicker={picker}
+      providerShortcut={providerShortcut}
       windowsHost={windowsHost}
     />,
   );
@@ -128,6 +182,12 @@ describe("SettingsScreen standby controls", () => {
 
     expect(cable).toContain("Reset to factory settings");
     expect(wifi).not.toContain("Reset to factory settings");
+    // Paul, 2026-10-08: the two setup actions sit side by side in one row, and
+    // Run diagnostics is on Support only.
+    expect(cable).toMatch(
+      /Run setup again<\/span><\/button><button[^>]*><span>Reset to factory settings/,
+    );
+    expect(cable).not.toContain("Run diagnostics");
   });
 
   it("labels unsupported brightness without a loading state", () => {
@@ -433,6 +493,140 @@ describe("SettingsScreen standby controls", () => {
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
+  // Issue #183: the usage display preference is one row under Display, and a
+  // Mac App that does not send it shows no such row.
+  it("offers the usage display under Display only when the app sends it", () => {
+    const html = render(
+      standbyDevice, savedStandby, providerPicker, 70, "cable", false,
+      [usageDisplay],
+    );
+    const displaySection = html.slice(
+      html.indexOf(">Display</h2>"),
+      html.indexOf(">Display mode</h2>"),
+    );
+
+    expect(displaySection).toMatch(
+      /for="vibetv\.usage\.displayMode"[^>]*>Usage display<\/label>/,
+    );
+    expect(displaySection).toMatch(
+      /role="combobox"[^>]*aria-label="Usage display"[^>]*id="vibetv\.usage\.displayMode"/,
+    );
+    expect(render(standbyDevice)).not.toContain("Usage display");
+  });
+
+  // Issue #322: the timed rotation is one select under the Automatic card.
+  it("offers the rotation under Display mode only while Automatic is chosen", () => {
+    const displayMode = (
+      mode: "automatic" | "fixed",
+      preferences: PreferenceDescriptor[],
+    ) => {
+      const html = render(
+        standbyDevice,
+        savedStandby,
+        {
+          ...providerPicker,
+          display: { mode, providerIds: ["claude"], configured: true, valid: true },
+          items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+        },
+        70, "cable", false, preferences,
+      );
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Screensaver</h2>"),
+      );
+    };
+    const byActivity =
+      "VibeTV switches between your providers based on recent activity and usage.";
+    const onATimer = "VibeTV switches between your providers on a timer.";
+
+    const automatic = displayMode("automatic", [rotation]);
+    expect(automatic).toMatch(
+      /for="vibetv\.display\.rotateSeconds"[^>]*>Switch providers<\/label>/,
+    );
+    expect(automatic).toContain(byActivity);
+    expect(automatic).not.toContain(onATimer);
+
+    // The Automatic card says what the chosen timer makes it do.
+    const timed = displayMode("automatic", [{ ...rotation, value: "30" }]);
+    expect(timed).toContain(onATimer);
+    expect(timed).not.toContain(byActivity);
+
+    expect(displayMode("fixed", [rotation])).not.toContain("Switch providers");
+    expect(displayMode("automatic", [])).not.toContain("Switch providers");
+  });
+
+  // Windows walk-through of 2026-10-08: with Automatic chosen and a signed-out
+  // provider first in the list, the Manual card read "No usage yet" although a
+  // click on it showed Claude.
+  it("previews on the Manual card the provider a click on Manual would show", () => {
+    const signedOut: ProviderItem = {
+      ...provider("codex", "Codex", true),
+      health: { message: "Authentication required.", service: "operational", state: "auth_required" },
+    };
+    const manualPanel = (mode: "automatic" | "fixed", providerIds: string[]) => {
+      const panel = render(
+        standbyDevice,
+        savedStandby,
+        {
+          ...providerPicker,
+          display: { mode, providerIds, configured: true, valid: true },
+          items: [signedOut, provider("claude", "Claude", true)],
+        },
+        70, "cable", false, [],
+        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
+      ).split('data-slot="display-mode-preview"')[2] ?? "";
+      return panel.slice(0, panel.indexOf(">Manual<"));
+    };
+
+    const automatic = manualPanel("automatic", ["codex", "claude"]);
+    expect(automatic).toContain("Claude");
+    expect(automatic).toContain("12");
+    expect(automatic).not.toContain("No usage yet");
+
+    // Pinned to a provider that shows nothing, the card keeps saying so.
+    expect(manualPanel("fixed", ["codex"])).toContain("No usage yet");
+    expect(manualPanel("fixed", ["claude"])).toContain("Claude");
+  });
+
+  // Issue #424: the app's global shortcut for the next provider is named
+  // under Display mode, and so is the case that the system refused its keys.
+  it("names the provider shortcut under Display mode", () => {
+    const displayMode = (
+      providerShortcut: SettingsScreenProps["providerShortcut"],
+      windowsHost = false,
+    ) => {
+      const html = render(
+        standbyDevice, savedStandby, providerPicker, 70, "cable", windowsHost,
+        [], [], providerShortcut,
+      );
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Screensaver</h2>"),
+      );
+    };
+
+    expect(displayMode("available")).toContain(
+      "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.",
+    );
+    expect(displayMode("unavailable")).toContain(
+      "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.",
+    );
+    expect(displayMode("unavailable")).not.toContain("Press ");
+
+    const windows = displayMode("available", true);
+    expect(windows).toContain(
+      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to Manual.",
+    );
+    expect(windows).not.toContain("⌘");
+    expect(displayMode("unavailable", true)).toContain(
+      "The shortcut Ctrl+Alt+Shift+P for the next provider is not available: another app may already be using these keys.",
+    );
+
+    // A browser has no global shortcut, so Settings names none.
+    expect(displayMode(null)).not.toContain("shortcut");
+    expect(displayMode(null)).not.toContain("Press ");
+  });
+
   it("says why Display mode switched to Automatic", () => {
     const notice = "Codex is off, so VibeTV now switches automatically.";
     const html = render(standbyDevice, savedStandby, {
@@ -448,5 +642,99 @@ describe("SettingsScreen standby controls", () => {
 
     expect(displaySection).toContain(`role="status">${notice}</p>`);
     expect(render(standbyDevice)).not.toContain("now switches automatically");
+  });
+
+  // Issue #558, seen in the Windows app: "Show screensaver" could be switched
+  // on with no screensaver installed, and Settings never said which one it
+  // shows.
+  describe("the installed screensaver", () => {
+    const nightClock: ThemeProduct = {
+      id: "night-clock",
+      isFree: true,
+      priceLabel: "Free",
+      source: "github-catalog",
+      themeId: "night-clock",
+      themeSpecPath: "/themes/s/nc-3-e18e4217.json",
+      title: "Night Clock",
+      usage: "screensaver",
+    };
+    const block = (
+      enabled: boolean,
+      slot?: NonNullable<DeviceInfo["standby"]>,
+    ) => {
+      const html = renderToStaticMarkup(
+        <SettingsScreen
+          automaticPreviews={[]}
+          brightness={70}
+          busyAction={null}
+          connectionMode="cable"
+          device={{ ...standbyDevice, standby: slot }}
+          standby={{ ...savedStandby, enabled }}
+          onBrightnessChange={vi.fn()}
+          onChooseScreensaver={vi.fn()}
+          onConnectionModeChange={vi.fn()}
+          onDismissError={vi.fn()}
+          onResetSetup={vi.fn()}
+          onSaveBrightness={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onStandbyBrightnessChange={vi.fn()}
+          providerPicker={providerPicker}
+          themes={[nightClock]}
+        />,
+      );
+      return html.slice(
+        html.indexOf(">Screensaver</h2>"),
+        html.indexOf(">Setup</h2>"),
+      );
+    };
+    const link = /<a aria-disabled="false"[^>]*>Choose screensaver<\/a>/;
+
+    it("is named beside Choose screensaver while the screensaver is on", () => {
+      // An older revision in the slot is still this screensaver.
+      const named = block(true, { screensaverPath: "/themes/s/nc-2-cb6d64ba.json" });
+      expect(named).toMatch(/>Night Clock is installed\.<\/span><a /);
+      expect(named).toMatch(link);
+
+      // A screensaver neither the catalog nor this computer knows.
+      const unknown = block(true, { screensaverPath: "/themes/s/other-1-abc123.json" });
+      expect(unknown).toContain(">A custom screensaver is installed.</span>");
+    });
+
+    it("says that none is installed, with Choose screensaver as the way out", () => {
+      const none = block(true, { active: false });
+
+      expect(none).toMatch(/>No screensaver is installed yet\.<\/span><a /);
+      expect(none).toMatch(link);
+    });
+
+    it("leaves the block as it is while the screensaver is off", () => {
+      const off = block(false, { screensaverPath: "/themes/s/nc-3-e18e4217.json" });
+
+      expect(off).not.toContain("installed");
+      expect(off).toBe(block(false));
+      expect(block(false, { active: false })).toBe(off);
+    });
+
+    // Without the slot in the device status nothing is known about it.
+    it("says nothing while VibeTV does not report its screensaver", () => {
+      expect(block(true)).not.toContain("installed");
+    });
+  });
+
+  it("has no accessibility violations with every section shown", async () => {
+    await expectNoAxeViolations(
+      render(
+        // With the line that names the installed screensaver.
+        { ...standbyDevice, standby: { screensaverPath: "/themes/s/nc-3-e18e4217.json" } },
+        { ...savedStandby, enabled: true },
+        {
+          ...providerPicker,
+          display: { mode: "fixed", providerIds: ["claude"], configured: true, valid: true },
+          items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
+        },
+        70, "cable", false, [usageDisplay, rotation],
+        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
+      ),
+    );
   });
 });

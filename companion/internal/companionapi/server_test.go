@@ -2787,6 +2787,40 @@ func TestStatusReportsCachedMacAppUpdateState(t *testing.T) {
 	}
 }
 
+// Observed on the Windows app on 2026-10-07: "Check for updates" left the app
+// card's "Last checked" where it was, because the click read the same status
+// as the background reads and got the answer of up to six hours ago.
+func TestStatusAsksForTheAppReleaseAgainWhenTheCustomerChecks(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	calls := 0
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		calls++
+		return githubRelease{TagName: "v1.0.99"}, nil
+	}
+	read := func(path string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for %s, got %d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	read("/v1/status")
+	read("/v1/status")
+	if calls != 1 {
+		t.Fatalf("background status reads must share one release check, got %d", calls)
+	}
+	read("/v1/status?checkAppUpdate=1")
+	if calls != 2 {
+		t.Fatalf("a check the customer asked for must ask the release source again, got %d calls", calls)
+	}
+	read("/v1/status")
+	if calls != 2 {
+		t.Fatalf("the status read after it must reuse that answer, got %d calls", calls)
+	}
+}
+
 func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 	t.Setenv(macAppVersionEnv, "1.0.98")
 	t.Setenv(macAppBuildEnv, "198")
@@ -6868,6 +6902,200 @@ func TestDeviceHealthReportsResetReason(t *testing.T) {
 	}
 }
 
+// Issue #265: the signal strength the firmware already reports reaches the
+// status and the support report, which is /v1/diagnostics. Diagnostics only.
+func TestStatusCarriesDeviceWiFiHealth(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.56","deviceId":"vibetv-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"wifi":{"rssi":-67,"channel":6,"phyMode":"11n","sleepMode":"none"}}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "vibetv-wifi"})
+	server.subnetTargets = func() []string { return nil }
+	for _, endpoint := range []string{"/v1/status", "/v1/diagnostics"} {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		var got struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v", endpoint, err)
+		}
+		want := deviceWiFiHealth{RSSI: -67, Channel: 6, PhyMode: "11n", SleepMode: "none"}
+		if got.Device.Health == nil || got.Device.Health.WiFi == nil || *got.Device.Health.WiFi != want {
+			t.Fatalf("%s: device.health.wifi missing or wrong: %s", endpoint, rec.Body.String())
+		}
+	}
+}
+
+// A VibeTV on the Cable has no signal: the ESP8266 reports 31 instead of a
+// negative dBm value, and that must not look like a reading.
+func TestStatusOmitsWiFiHealthForCableDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = []string{protocol.FeatureCableHealthV1}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.WiFi = deviceWiFiHealth{RSSI: 31, PhyMode: "11n", SleepMode: "modem"}
+		return health, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Health == nil || !got.Device.Health.OK || got.Device.Health.WiFi != nil {
+		t.Fatalf("Cable device health must carry no WiFi reading: %s", rec.Body.String())
+	}
+}
+
+// Issue #265: a VibeTV on WiFi whose signal is at or below wifiSignalWeakDBm
+// on two readings in a row is named weak, and one better reading ends it.
+func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
+	wifi := `,"wifi":{"rssi":-80,"channel":11,"phyMode":"11g","sleepMode":"none"}`
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.56","deviceId":"vibetv-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true` + wifi + `}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "vibetv-wifi"})
+	server.subnetTargets = func() []string { return nil }
+	now := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	weak := func(endpoint string) bool {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		var got struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v body=%s", endpoint, err, rec.Body.String())
+		}
+		return got.Device.Health != nil && got.Device.Health.WiFi != nil && got.Device.Health.WiFi.Weak
+	}
+	// The app's next status poll, 5 s later.
+	nextPoll := func() bool {
+		t.Helper()
+		now = now.Add(5 * time.Second)
+		return weak("/v1/status")
+	}
+
+	if weak("/v1/status") {
+		t.Fatal("one low reading must not name a weak signal")
+	}
+	now = now.Add(themeNotDrawnConfirmTime - time.Millisecond)
+	if weak("/v1/status") {
+		t.Fatal("a second look inside the same poll window is not a second reading")
+	}
+	if !nextPoll() {
+		t.Fatal("a signal at the threshold on the next poll is weak")
+	}
+	// The page takes its VibeTV from these too and must not see another answer.
+	for _, endpoint := range []string{"/v1/device", "/v1/diagnostics"} {
+		if !weak(endpoint) {
+			t.Fatalf("%s must name the same weak signal as /v1/status", endpoint)
+		}
+	}
+
+	// Around the threshold the name must not flip with every reading, and
+	// polls that get no answer are what a weak signal looks like.
+	wifi = `,"wifi":{"rssi":-78}`
+	if !nextPoll() {
+		t.Fatal("a named weak signal must not end one or two dB above the threshold")
+	}
+	now = now.Add(time.Minute)
+	wifi = `,"wifi":{"rssi":-80}`
+	if !nextPoll() {
+		t.Fatal("a minute without a reading must not end a weak signal")
+	}
+	wifi = `,"wifi":{"rssi":-76}`
+	if nextPoll() {
+		t.Fatal("a reading clearly above the threshold ends the weak signal")
+	}
+	wifi = `,"wifi":{"rssi":-79}`
+	if nextPoll() {
+		t.Fatal("above the threshold a signal that is not named weak stays unnamed")
+	}
+	wifi = `,"wifi":{"rssi":-80}`
+	if nextPoll() {
+		t.Fatal("the first low reading after a better one must not name a weak signal")
+	}
+	if !nextPoll() {
+		t.Fatal("two low readings in a row are a weak signal again")
+	}
+	// A low reading long ago does not confirm one now.
+	wifi = `,"wifi":{"rssi":-76}`
+	nextPoll()
+	wifi = `,"wifi":{"rssi":-80}`
+	nextPoll()
+	now = now.Add(wifiSignalRunForget + time.Second)
+	if nextPoll() {
+		t.Fatal("a low reading from before a long gap must not confirm the next one")
+	}
+
+	// Firmware that reports no signal strength never gets the flag.
+	wifi = ""
+	first, second := nextPoll(), nextPoll()
+	if first || second {
+		t.Fatal("a VibeTV that reports no signal strength must not be named weak")
+	}
+
+	// The bench VibeTV sits next to its router; the override reaches it there.
+	t.Setenv(wifiSignalWeakEnvVar, "-40")
+	wifi = `,"wifi":{"rssi":-48}`
+	if nextPoll() || !nextPoll() {
+		t.Fatal("the bench override must replace the threshold and keep the two readings")
+	}
+}
+
+// The Cable never gets the flag, whatever its health reading carries.
+func TestStatusNeverNamesAWeakWiFiSignalOnTheCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	hello := cableHelloForTest("cable-a")
+	hello.Features = []string{protocol.FeatureCableHealthV1}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.WiFi = deviceWiFiHealth{RSSI: -90}
+		return health, nil
+	}
+	now := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+
+	for range 3 {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Device.Health == nil || got.Device.Health.WiFi == nil || got.Device.Health.WiFi.Weak {
+			t.Fatalf("a VibeTV on the Cable must not be named weak: %s", rec.Body.String())
+		}
+		now = now.Add(5 * time.Second)
+	}
+}
+
 func TestDeviceReloadDisplayWaitsForRenderHealth(t *testing.T) {
 	var healthCalls int
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6961,6 +7189,10 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	}
 	if !hasDiagnosticCheck(got.Checks, "device_target", "attention") {
 		t.Fatalf("expected missing target diagnostic, got %+v", got.Checks)
+	}
+	// The Control Center shows this sentence as "Mac App is running."
+	if got.Checks[0].Detail != "Companion API is running." {
+		t.Fatalf("expected the plain app check sentence, got %+v", got.Checks[0])
 	}
 }
 
@@ -11306,6 +11538,71 @@ func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
 	}
 	if strings.Contains(joinedLogs, "/themes/u") || strings.Contains(joinedLogs, "https://example.com") {
 		t.Fatalf("async progress leaked technical install detail: %q", joinedLogs)
+	}
+}
+
+// Issue #558: the progress of a screensaver install read "Uploading theme
+// files." The lines are written for a theme; a screensaver job says what it
+// installs.
+func TestScreensaverInstallProgressSaysScreensaver(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	install := func(installErr error) themeInstallJob {
+		t.Helper()
+		server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+		server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+			_, _ = io.WriteString(opts.Out, "Preparing theme: Retro 3D\n")
+			_, _ = io.WriteString(opts.Out, "Uploading theme files...\n")
+			_, _ = io.WriteString(opts.Out, "Uploaded asset: /themes/s/r3.cbi bytes=123\n")
+			_, _ = io.WriteString(opts.Out, "Uploaded theme spec: /themes/s/r3-2.json bytes=456\n")
+			if installErr != nil {
+				return themeinstall.Result{}, installErr
+			}
+			_, _ = io.WriteString(opts.Out, "Done: screensaver retro-3d installed on VibeTV\n")
+			return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, nil
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"retro-3d","packUrl":"https://example.com/r3.zip","slot":"screensaver","async":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		var started themeInstallJobResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil || rec.Code != http.StatusAccepted {
+			t.Fatalf("start screensaver install: status=%d err=%v body=%s", rec.Code, err, rec.Body.String())
+		}
+		if started.Job.Message != "Preparing screensaver install." {
+			t.Fatalf("expected the first line to name the screensaver, got %q", started.Job.Message)
+		}
+		for attempt := 0; attempt < 100; attempt++ {
+			if job, ok := server.themeInstallJobSnapshot(started.Job.ID); ok && job.Phase != "installing" {
+				return job
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("screensaver install job did not finish")
+		return themeInstallJob{}
+	}
+
+	done := install(nil)
+	want := []string{
+		"Preparing screensaver install.",
+		"Preparing screensaver files.",
+		"Uploading screensaver files.",
+		"Uploaded screensaver file 1.",
+		"Uploaded screensaver layout.",
+		"Screensaver installed.",
+		"Screensaver is ready on VibeTV.",
+	}
+	if done.Phase != "complete" || !slices.Equal(done.Logs, want) || done.Message != want[len(want)-1] {
+		t.Fatalf("unexpected screensaver progress: phase=%q message=%q logs=%q", done.Phase, done.Message, done.Logs)
+	}
+
+	failed := install(errors.New("upload failed"))
+	if failed.Phase != "error" || failed.Message != "Screensaver install failed." || failed.Logs[len(failed.Logs)-1] != failed.Message {
+		t.Fatalf("unexpected failed screensaver job: phase=%q message=%q logs=%q", failed.Phase, failed.Message, failed.Logs)
+	}
+	if text := strings.ToLower(strings.Join(failed.Logs, "\n")); strings.Contains(text, "theme") {
+		t.Fatalf("a screensaver install still says theme: %q", text)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ const (
 	dashboardSnapshotPath = "/dashboard/v1/snapshot"
 	dashboardUsagePath    = "/usage"
 )
+
+var dashboardUsageByProvider = runtime.GOOS == "windows"
 
 func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now time.Time) ([]ParsedFrame, error) {
 	endpoint := strings.TrimRight(strings.TrimSpace(info.Endpoint), "/")
@@ -33,26 +36,34 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	if err != nil {
 		return nil, err
 	}
-	// On macOS, omitting the override selects the configured enabled set,
-	// just like the dashboard. Explicit "all" probes disabled providers too.
-	// Win-CodexBar 0.60.3 instead defaults to Claude, so retain its all-provider
-	// join until it supports the enabled-set contract (see #415).
-	usagePath := dashboardUsagePath
-	if runtime.GOOS == "windows" {
-		usagePath += "?provider=all"
-	}
-	usageRaw, err := fetchDashboardJSON(ctx, endpoint+usagePath, strings.TrimSpace(info.Token))
-	if err != nil {
-		return nil, err
-	}
-
 	snapshot, err := dashboardusage.DecodeSnapshot(snapshotRaw)
 	if err != nil {
 		return nil, fmt.Errorf("decode dashboard snapshot: %w", err)
 	}
-	usageProviders, err := dashboardusage.DecodeUsage(usageRaw)
-	if err != nil {
-		return nil, fmt.Errorf("decode dashboard usage: %w", err)
+	// On macOS, omitting the override selects the configured enabled set,
+	// just like the dashboard. Win-CodexBar 0.60.3 instead defaults to Claude,
+	// and its explicit "all" fetches every provider it knows, switched on or
+	// not: on every collection it looked for browser cookies of providers the
+	// customer never chose and started the Antigravity CLI (#554). So ask it
+	// for exactly the providers the snapshot lists (see #415).
+	usageQueries := []string{""}
+	if dashboardUsageByProvider {
+		usageQueries = usageQueries[:0]
+		for _, provider := range snapshot.Providers {
+			usageQueries = append(usageQueries, "?provider="+url.QueryEscape(provider.ID))
+		}
+	}
+	var usageProviders []dashboardusage.UsageProvider
+	for _, query := range usageQueries {
+		usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+query, strings.TrimSpace(info.Token))
+		if err != nil {
+			return nil, err
+		}
+		decoded, err := dashboardusage.DecodeUsage(usageRaw)
+		if err != nil {
+			return nil, fmt.Errorf("decode dashboard usage: %w", err)
+		}
+		usageProviders = append(usageProviders, decoded...)
 	}
 
 	snapshotCollectedAt := time.Time{}

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { bindingDisplayLabel, primitiveTitle } from "./editor-geometry";
+import {
+  bindingDisplayLabel,
+  defaultPrimitive,
+  primitiveBounds,
+  primitiveTitle,
+} from "./editor-geometry";
 
 describe("bindingDisplayLabel", () => {
   it("shows customer labels for stored usage-window bindings", () => {
@@ -32,6 +37,13 @@ describe("bindingDisplayLabel", () => {
   });
 });
 
+describe("defaultPrimitive", () => {
+  // It was "session", which the Binding list calls "Session (legacy)" (#548).
+  it("binds a new Bar to the first usage window, like the built-in themes", () => {
+    expect(defaultPrimitive("progress", 0).binding).toBe("usageSlot1Percent");
+  });
+});
+
 describe("primitiveTitle", () => {
   it("uses display labels for bound layer titles", () => {
     expect(
@@ -52,5 +64,15 @@ describe("primitiveTitle", () => {
         y: 0,
       }),
     ).toBe("Usage window 2 %");
+  });
+});
+
+describe("primitiveBounds", () => {
+  it("boxes text as wide as the preview draws it", () => {
+    // Font 1 advances 6px per glyph and size; "Text" at size 2 is 48px wide.
+    expect(
+      primitiveBounds({ fontSize: 2, text: "Text", type: "text", x: 32, y: 32 })
+        .width,
+    ).toBe(48);
   });
 });

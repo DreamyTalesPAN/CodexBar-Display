@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleArrowRight, Wifi } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Item, ItemSeparator } from "@/components/ui/item";
@@ -25,6 +25,10 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { installedScreensaver } from "@/lib/active-theme-upgrade";
+import { loadUserThemes } from "@/lib/theme-studio-storage";
+import type { ThemeProduct } from "@/lib/themes";
+import { PreferenceControl } from "./preference-control";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
   DisplayModeChoice,
@@ -41,6 +45,8 @@ import {
   deviceOffersCable,
   type ApiError,
   type DeviceInfo,
+  type PreferenceDescriptor,
+  type PreferenceValue,
   type StandbySettings,
 } from "./control-center-types";
 
@@ -54,6 +60,8 @@ export type SettingsScreenProps = {
   /** Live usage per provider, in the order Automatic moves through them. */
   automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
+  /** The app's own display preferences; a Mac App without them sends none. */
+  displayPreferences?: PreferenceDescriptor[];
   brightness: number | null;
   busyAction: string | null;
   actionError?: ApiError | null;
@@ -63,15 +71,25 @@ export type SettingsScreenProps = {
   onBrightnessChange: (value: number) => void;
   onChooseScreensaver: () => void;
   onConnectionModeChange: (mode: "cable" | "wifi") => void;
+  onDisplayPreferenceChange?: (
+    item: PreferenceDescriptor,
+    value: PreferenceValue,
+  ) => void | Promise<void>;
   onResetSetup: () => void;
   /** Erases the VibeTV over the USB cable, then starts setup again. */
   onEraseDevice?: () => void;
   /** Opens Support and runs diagnostics there. */
-  onRunDiagnostics?: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
+  /**
+   * The app's global shortcut for the next provider, or that the system
+   * refused its keys. Null in a browser, which has no such shortcut.
+   */
+  providerShortcut?: "available" | "unavailable" | null;
   onSaveStandby: (value: StandbySettings) => void;
   onStandbyBrightnessChange: (value: number) => void;
+  /** The catalog, to name the screensaver VibeTV has installed. */
+  themes?: ThemeProduct[];
   /** The app runs on Windows; the Mac wording stays exactly as it is. */
   windowsHost?: boolean;
 };
@@ -79,6 +97,7 @@ export type SettingsScreenProps = {
 export function SettingsScreen({
   automaticPreviews,
   device,
+  displayPreferences = [],
   brightness,
   busyAction,
   actionError,
@@ -88,16 +107,20 @@ export function SettingsScreen({
   onBrightnessChange,
   onChooseScreensaver,
   onConnectionModeChange,
+  onDisplayPreferenceChange,
   onResetSetup,
   onEraseDevice,
-  onRunDiagnostics,
   onSaveBrightness,
   providerPicker,
+  providerShortcut = null,
   onSaveStandby,
   onStandbyBrightnessChange,
+  themes = [],
   windowsHost = false,
 }: SettingsScreenProps) {
   const thisHost = windowsHost ? "this computer" : "this Mac";
+  // The keys the Windows App and the Mac App register (issue #424).
+  const shortcutKeys = windowsHost ? "Ctrl+Alt+Shift+P" : "⌃⌥⌘P";
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const [eraseRequested, setEraseRequested] = useState(false);
   const brightnessSupport =
@@ -107,9 +130,11 @@ export function SettingsScreen({
   const maxBrightness =
     device?.capabilities?.display?.brightness?.maxPercent ?? 100;
   const currentBrightness = brightness ?? minBrightness;
+  // Saving brightness, the screensaver or the display mode closes nothing
+  // here: a control that closes during its own save drops keyboard focus to
+  // the page, and the next arrow key goes nowhere (issue #558). The app sends
+  // these writes one after the other, so the next change can follow at once.
   const localActionBusy =
-    busyAction === "brightness" ||
-    busyAction === "standby" ||
     busyAction === "connection-mode" ||
     busyAction === "reset-setup" ||
     busyAction === "erase-device" ||
@@ -126,6 +151,25 @@ export function SettingsScreen({
     !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
+  // The customer's own screensavers are saved in this browser, by Theme Studio.
+  const [ownThemes] = useState(() => {
+    const saved = loadUserThemes();
+    return saved.ok ? saved.value.themes : saved.data?.themes || [];
+  });
+  const screensaverPath = device?.standby?.screensaverPath?.trim();
+  const screensaver = useMemo(
+    () => installedScreensaver(themes, ownThemes, screensaverPath),
+    [ownThemes, screensaverPath, themes],
+  );
+  // Which screensaver the switch shows, said only while it is on and VibeTV
+  // reports its slot. A path that no listed or saved screensaver has is still
+  // a screensaver, in the word the Themes list uses for the customer's own.
+  const screensaverLine =
+    !standbyValues.enabled || !device?.standby
+      ? null
+      : !screensaverPath
+        ? "No screensaver is installed yet."
+        : `${screensaver?.title ?? "A custom screensaver"} is installed.`;
   const supportedTransports = device?.capabilities?.transport?.supported;
   const cableSupported =
     connectionMode === "cable" || deviceOffersCable(device);
@@ -154,11 +198,14 @@ export function SettingsScreen({
     ? currentProviderId
     : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
-  // Optional prop: `undefined` means "nothing pending", the same as null.
-  // Comparing against null alone left both mode cards disabled forever.
-  const displaySavePending = Boolean(providerPicker.displayPendingProviderId);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
+  const usageDisplay = displayPreferences.find(
+    (item) => item.id === "vibetv.usage.displayMode",
+  );
+  const rotation = displayPreferences.find(
+    (item) => item.id === "vibetv.display.rotateSeconds",
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
@@ -256,6 +303,13 @@ export function SettingsScreen({
                 : `${brightness}%`
           }
         />
+        {usageDisplay ? (
+          <PreferenceRow
+            descriptor={usageDisplay}
+            disabled={localActionBusy}
+            onChange={onDisplayPreferenceChange}
+          />
+        ) : null}
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
@@ -267,6 +321,11 @@ export function SettingsScreen({
           </p>
         ) : null}
         <DisplayModeChoice
+          automaticDescription={
+            rotation && rotation.value !== "0"
+              ? "VibeTV switches between your providers on a timer."
+              : undefined
+          }
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}
           manualPreview={
@@ -275,7 +334,12 @@ export function SettingsScreen({
                 preview.providerLabel ===
                 displayable.find(
                   (item) =>
-                    item.providerId === providerPicker.display?.providerIds[0],
+                    // While Manual is chosen, the provider VibeTV is pinned
+                    // to; otherwise the one a click on Manual would pin.
+                    item.providerId ===
+                    (displayMode === "fixed"
+                      ? currentProviderId
+                      : manualProviderId),
                 )?.label,
             ) ?? null
           }
@@ -304,9 +368,22 @@ export function SettingsScreen({
             id: item.providerId,
             label: item.label,
           }))}
-          saving={displaySavePending}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
         />
+        {displayMode === "automatic" && rotation ? (
+          <PreferenceRow
+            descriptor={rotation}
+            disabled={localActionBusy}
+            onChange={onDisplayPreferenceChange}
+          />
+        ) : null}
+        {providerShortcut ? (
+          <p className="text-sm text-muted-foreground">
+            {providerShortcut === "available"
+              ? `Press ${shortcutKeys} in any app to show the next provider. This switches to Manual.`
+              : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
+          </p>
+        ) : null}
       </SettingsSection>
 
       {standbySupport ? (
@@ -363,6 +440,11 @@ export function SettingsScreen({
               valueLabel={`${standbyValues.brightnessPercent}%`}
             />
             <div className="pt-1">
+              {screensaverLine ? (
+                <span className="mr-2 text-sm text-muted-foreground">
+                  {screensaverLine}
+                </span>
+              ) : null}
               <a
                 aria-disabled={standbyDetailsDisabled}
                 className={
@@ -392,7 +474,7 @@ export function SettingsScreen({
         description={`Connect ${thisHost} to another VibeTV.`}
         title="Setup"
       >
-        <div>
+        <div className="flex flex-wrap gap-3">
           <Button
             disabled={localActionBusy}
             onClick={onResetSetup}
@@ -406,9 +488,7 @@ export function SettingsScreen({
               {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
             </span>
           </Button>
-        </div>
-        {onEraseDevice && connectionMode === "cable" ? (
-          <div>
+          {onEraseDevice && connectionMode === "cable" ? (
             <Button
               disabled={localActionBusy || !deviceIsCustomerConnected(device)}
               onClick={() => setEraseRequested(true)}
@@ -424,8 +504,8 @@ export function SettingsScreen({
                   : "Reset to factory settings"}
               </span>
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
         {eraseRequested ? (
           <Dialog
             open
@@ -484,13 +564,6 @@ export function SettingsScreen({
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}
         />
-        {onRunDiagnostics ? (
-          <div>
-            <Button onClick={onRunDiagnostics} size="sm" type="button" variant="outline">
-              <span>Run diagnostics</span>
-            </Button>
-          </div>
-        ) : null}
       </SettingsSection>
     </div>
   );
@@ -521,6 +594,28 @@ function SettingsSection({
       </div>
       <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>
     </section>
+  );
+}
+
+/** One registry preference: its label beside the control its type calls for. */
+function PreferenceRow({
+  descriptor,
+  disabled,
+  onChange,
+}: {
+  descriptor: PreferenceDescriptor;
+  disabled: boolean;
+  onChange: SettingsScreenProps["onDisplayPreferenceChange"];
+}) {
+  return (
+    <Field data-disabled={disabled} orientation="horizontal">
+      <FieldLabel htmlFor={descriptor.id}>{descriptor.label}</FieldLabel>
+      <PreferenceControl
+        descriptor={descriptor}
+        disabled={disabled}
+        onChange={(value) => onChange?.(descriptor, value)}
+      />
+    </Field>
   );
 }
 

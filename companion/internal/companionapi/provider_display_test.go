@@ -754,3 +754,178 @@ func TestProviderSetupCompletionWhileBackgroundHealthIsChecking(t *testing.T) {
 		})
 	}
 }
+
+// nextProviderServer is a Mac with the given provider rows, a current reading
+// for each provider named in readings, and a VibeTV last showing shown.
+func nextProviderServer(t *testing.T, display *runtimeconfig.ProviderDisplayConfig, settings []codexbar.ProviderSetting, shown string, readings ...string) (*Server, *int) {
+	t.Helper()
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: display})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return settings, nil
+	}
+	server.providerPreferences.set = func(context.Context, string, bool) error {
+		t.Fatal("the shortcut switched a provider on or off")
+		return nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := daemon.PersistedUsage{CurrentProvider: shown}
+		for _, id := range readings {
+			usage.Providers = append(usage.Providers, daemon.ProviderUsageSnapshot{
+				Provider: id, Frame: protocol.Frame{Provider: id, Session: 12}, CollectedAt: now.Add(-time.Minute),
+			})
+		}
+		return usage, len(usage.Providers) > 0
+	}
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+	return server, &renders
+}
+
+// pressNextProvider is one press of the shortcut. It returns what the Mac App
+// answered and what is stored afterwards.
+func pressNextProvider(t *testing.T, server *Server) (providerDisplaySelection, *runtimeconfig.ProviderDisplayConfig) {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/provider-display/next", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("next provider: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response providerDisplayResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.Selection, cfg.ProviderDisplay
+}
+
+// Issue #424: every press shows the next provider of the list and stores it the
+// way choosing it under Manual does, so Automatic does not take the screen
+// back. After the last provider the first follows.
+func TestNextProviderShortcutPinsTheNextProviderAndWrapsAround(t *testing.T) {
+	server, renders := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"codex", "claude", "gemini"}},
+		[]codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		},
+		// Automatic is showing the second provider when the first press comes.
+		"claude", "codex", "claude", "gemini")
+
+	for press, want := range []string{"gemini", "codex", "claude", "gemini"} {
+		selection, stored := pressNextProvider(t, server)
+		if selection.Mode != providerDisplayModeFixed || len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != want || !selection.Valid {
+			t.Fatalf("press %d: answered %+v, want Manual on %s", press+1, selection, want)
+		}
+		if stored == nil || stored.Mode != providerDisplayModeFixed || len(stored.ProviderIDs) != 1 || stored.ProviderIDs[0] != want {
+			t.Fatalf("press %d: stored %+v, want Manual on %s", press+1, stored, want)
+		}
+	}
+	if *renders != 4 {
+		t.Fatalf("VibeTV was redrawn %d times for 4 presses", *renders)
+	}
+}
+
+// The display worker sends VibeTV only a current reading with usage in it. A
+// provider whose reading is kept from an earlier collection, has expired, or
+// carries no usage would be pinned in Settings while the screen stayed on the
+// provider before it, so the shortcut passes over it.
+func TestNextProviderShortcutPassesOverAReadingVibeTVWouldNotBeSent(t *testing.T) {
+	for name, middle := range map[string]daemon.ProviderUsageSnapshot{
+		"kept from an earlier collection": {Frame: protocol.Frame{Provider: "claude", Session: 40}, Retained: true, Stale: true},
+		"expired":                         {Frame: protocol.Frame{Provider: "claude", Session: 40}, Stale: true},
+		"no usage in the frame": {
+			Frame: protocol.Frame{Provider: "claude", UsageUnavailable: true},
+			Meta:  codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{ID: "weekly"}}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, _ := nextProviderServer(t,
+				&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeFixed, ProviderIDs: []string{"codex"}},
+				[]codexbar.ProviderSetting{
+					{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+					{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+					{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+				},
+				"codex", "codex", "gemini")
+			current := server.loadUsage
+			server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+				usage, ok := current(now)
+				middle.Provider, middle.CollectedAt = "claude", now.Add(-time.Minute)
+				usage.Providers = append(usage.Providers, middle)
+				return usage, ok
+			}
+
+			selection, _ := pressNextProvider(t, server)
+			if len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "gemini" {
+				t.Fatalf("answered %+v, want Claude passed over for Gemini", selection)
+			}
+		})
+	}
+}
+
+// With one provider to show there is nothing to switch to, and with none there
+// is nothing to show: the choice stays exactly as it was, Automatic included.
+func TestNextProviderShortcutChangesNothingBelowTwoShowableProviders(t *testing.T) {
+	settings := []codexbar.ProviderSetting{
+		{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+	}
+	for name, test := range map[string]struct {
+		display  *runtimeconfig.ProviderDisplayConfig
+		readings []string
+	}{
+		"none, never chosen":     {nil, nil},
+		"none, Automatic":        {&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"codex", "claude"}}, nil},
+		"one, Automatic":         {&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"codex", "claude"}}, []string{"codex"}},
+		"one, Manual on it":      {&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeFixed, ProviderIDs: []string{"codex"}}, []string{"codex"}},
+		"one, Manual on another": {&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeFixed, ProviderIDs: []string{"claude"}}, []string{"codex"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, renders := nextProviderServer(t, test.display, settings, "claude", test.readings...)
+			wantMode := providerDisplayModeAutomatic
+			if test.display != nil {
+				wantMode = test.display.Mode
+			}
+
+			selection, stored := pressNextProvider(t, server)
+			if selection.Mode != wantMode {
+				t.Fatalf("answered %+v, want the %s choice kept", selection, wantMode)
+			}
+			if stored != test.display {
+				t.Fatalf("stored %+v, want the choice untouched", stored)
+			}
+			if *renders != 0 {
+				t.Fatalf("VibeTV was redrawn %d times although nothing changed", *renders)
+			}
+		})
+	}
+}
+
+// Only what Manual offers takes part: a provider that is switched off, one that
+// is not working, and one without a reading are passed over. The walk starts
+// from the pinned provider, whatever the last frame showed.
+func TestNextProviderShortcutSkipsProvidersManualWouldNotOffer(t *testing.T) {
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeFixed, ProviderIDs: []string{"codex"}},
+		[]codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "cursor", Label: "Cursor", Enabled: false, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+			{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "copilot", Label: "Copilot", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		},
+		// Every provider but Gemini has a reading; the last frame was Copilot's.
+		"copilot", "codex", "cursor", "claude", "copilot")
+
+	for press, want := range []string{"copilot", "codex", "copilot"} {
+		if selection, _ := pressNextProvider(t, server); len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != want {
+			t.Fatalf("press %d: answered %+v, want %s", press+1, selection, want)
+		}
+	}
+}

@@ -263,6 +263,8 @@ type Server struct {
 	healthProbeCache       map[string]healthProbeSnapshot
 	healthProbeFlights     map[string]*healthProbeFlight
 	probeCacheTime         time.Duration
+	weakWiFiMu             sync.Mutex
+	weakWiFi               weakWiFiRun
 	connectionMu           sync.Mutex
 	connectionStates       map[string]*configuredDeviceConnection
 	now                    func() time.Time
@@ -499,6 +501,26 @@ type deviceHealthInfo struct {
 	LastResetAt string `json:"lastResetAt,omitempty"`
 	RenderKind  string `json:"renderKind,omitempty"`
 	Error       string `json:"error,omitempty"`
+	// Set when the device reports a signal reading (#265).
+	WiFi *deviceWiFiHealth `json:"wifi,omitempty"`
+}
+
+type deviceWiFiHealth struct {
+	RSSI      int    `json:"rssi"`
+	Channel   int    `json:"channel,omitempty"`
+	PhyMode   string `json:"phyMode,omitempty"`
+	SleepMode string `json:"sleepMode,omitempty"`
+	// Weak is the Mac App's decision, set by getHealth for a VibeTV on WiFi.
+	Weak bool `json:"weak,omitempty"`
+}
+
+// The VibeTV whose WiFi readings are at or below the weak-signal threshold,
+// when that run of readings began and when its latest one was.
+type weakWiFiRun struct {
+	target string
+	since  time.Time
+	last   time.Time
+	named  bool
 }
 
 type themeSpecHealth struct {
@@ -1131,6 +1153,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/preferences", s.handlePreferences)
 	mux.HandleFunc("/v1/preferences/", s.handlePreference)
 	mux.HandleFunc("/v1/provider-display", s.handleProviderDisplay)
+	mux.HandleFunc("/v1/provider-display/next", s.handleProviderDisplayNext)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
@@ -1151,7 +1174,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/setup/events", s.handleSetupEvents)
 	mux.HandleFunc("/v1/setup/providers/complete", s.setupStep("provider_setup", "", "AI provider setup complete.", s.handleProviderSetupComplete))
 	mux.HandleFunc("/v1/settings", s.handleSettings)
-	mux.HandleFunc("/v1/themes/install", s.setupStep("theme_install", "Installing theme.", "", s.handleThemeInstall))
+	mux.HandleFunc("/v1/themes/install", s.setupStep("theme_install", "", "", s.handleThemeInstall))
 	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
 	mux.HandleFunc("/v1/updates/latest", s.handleFirmwareLatest)
 	mux.HandleFunc("/v1/updates/install", s.setupStep("firmware_update", "Starting the VibeTV update.", "", s.handleFirmwareUpdateInstall))
@@ -1421,6 +1444,13 @@ func isAllowedPreviewOrigin(origin string) bool {
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
+	}
+	if r.URL.Query().Has("checkAppUpdate") {
+		// The customer clicked "Check for updates": this read asks the release
+		// source again instead of repeating an answer up to six hours old.
+		s.macAppReleaseMu.Lock()
+		s.macAppReleaseChecked = false
+		s.macAppReleaseMu.Unlock()
 	}
 	cfg, _ := s.config()
 	statusTarget := configuredStatusTarget(cfg)
@@ -1890,6 +1920,56 @@ func (c *configuredDeviceConnection) themeStaysUndrawn(display *deviceDisplayInf
 	return now.Sub(c.themeNotDrawnAt) >= themeNotDrawnConfirmTime
 }
 
+// wifiSignalWeakDBm is the signal strength at or below which a VibeTV on WiFi
+// is too far from its router for reliable updates (issue #265). It is a
+// conservative first value and has not been validated against real
+// weak-signal conditions yet, which the issue asks for.
+const wifiSignalWeakDBm = -80
+
+// wifiSignalWeakEnvVar replaces wifiSignalWeakDBm on the bench, where the
+// VibeTV sits next to its router.
+const wifiSignalWeakEnvVar = "CODEXBAR_DISPLAY_WIFI_WEAK_SIGNAL_DBM"
+
+// A signal that was named weak keeps the name until it is wifiSignalRecoverDB
+// above the threshold, or it would flip with every reading around it. A run of
+// low readings is forgotten after wifiSignalRunForget without one: readings
+// that go missing are what a weak signal looks like, so a few missed polls
+// must not end it.
+const (
+	wifiSignalRecoverDB = 3
+	wifiSignalRunForget = 5 * time.Minute
+)
+
+// wifiSignalStaysWeak reports a signal at or below the threshold on two health
+// readings in a row, the second at least themeNotDrawnConfirmTime after the
+// first. One low reading can be a passing dip, a better reading ends the run,
+// and another VibeTV starts it over. The threshold is always negative, so
+// firmware that reports no signal strength, which leaves 0, is never weak.
+func (s *Server) wifiSignalStaysWeak(target string, rssi int) bool {
+	threshold := wifiSignalWeakDBm
+	if dbm, err := strconv.Atoi(strings.TrimSpace(os.Getenv(wifiSignalWeakEnvVar))); err == nil && dbm < 0 {
+		threshold = dbm
+	}
+	now := s.currentTime()
+	target = normalizeTarget(target)
+	s.weakWiFiMu.Lock()
+	defer s.weakWiFiMu.Unlock()
+	sameRun := s.weakWiFi.target == target && now.Sub(s.weakWiFi.last) <= wifiSignalRunForget
+	if sameRun && s.weakWiFi.named {
+		threshold += wifiSignalRecoverDB
+	}
+	if rssi > threshold {
+		s.weakWiFi = weakWiFiRun{}
+		return false
+	}
+	if !sameRun {
+		s.weakWiFi = weakWiFiRun{target: target, since: now}
+	}
+	s.weakWiFi.last = now
+	s.weakWiFi.named = now.Sub(s.weakWiFi.since) >= themeNotDrawnConfirmTime
+	return s.weakWiFi.named
+}
+
 // renderOk=false also covers states the firmware leaves on its own, and one
 // health reading has to tell them apart.
 //   - "low_heap" ("low_heap_full_render" on older firmware): a full redraw
@@ -2094,7 +2174,8 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := s.currentTime()
-	showUsed := codexbar.UsageBarsShowUsed()
+	cfg, _ := s.config()
+	showUsed := cfg.UsageShowsUsed(codexbar.UsageBarsShowUsed)
 	manualRefresh := usageRefreshRequested(r)
 	if manualRefresh {
 		s.requestUsageRefresh(now)
@@ -2393,7 +2474,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		{
 			Name:   "companion_api",
 			Status: "pass",
-			Detail: "Companion API is responding on loopback.",
+			Detail: "Companion API is running.",
 		},
 		usageEngineDiagnosticCheck(providerSetup.Engine),
 		providerDiagnosticCheck(providerSetup),
@@ -5171,6 +5252,11 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 			s.finishThemeInstall()
 		}
 	}()
+	// An upload names its slot in the URL, so a refusal while its file is read
+	// is filed under screensaver_install as well.
+	if step, ok := w.(*setupStepRecorder); ok {
+		step.stage = installText(strings.TrimSpace(r.URL.Query().Get("slot")), "theme_install")
+	}
 	req, ok := decodeThemeInstallRequest(w, r)
 	if !ok {
 		return
@@ -5189,6 +5275,15 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_install_slot", "This theme cannot be installed here.", "Reload Control Center, then try again.")
 		return
 	}
+	// The setup log files a screensaver install under screensaver_install.
+	// Only the request names the slot, so the entry opens here and not at the
+	// route. A request that names the slot in its JSON body is still logged as
+	// theme_install when it is refused before this point.
+	stage := installText(req.Slot, "theme_install")
+	if step, ok := w.(*setupStepRecorder); ok {
+		step.stage = stage
+	}
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: installText(req.Slot, "Installing theme.")})
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,
@@ -5253,7 +5348,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeThemeInstallError(w, err)
 		return
 	}
-	s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: "Theme installed."})
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: installText(req.Slot, "Theme installed.")})
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool                `json:"ok"`
 		Result themeinstall.Result `json:"result"`
@@ -6150,11 +6245,10 @@ func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob 
 		ThemeName: strings.TrimSpace(req.ThemeName),
 		Slot:      slot,
 		Phase:     "installing",
-		Message:   "Preparing theme install.",
 		Progress:  5,
 		StartedAt: time.Now().UTC(),
-		Logs:      []string{"Preparing theme install."},
 	}
+	job.say("Preparing theme install.")
 	s.installJobs[id] = job
 	return cloneThemeInstallJob(job)
 }
@@ -6199,19 +6293,19 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		defer s.finishThemeInstall()
 		ctx, cancel := context.WithTimeout(context.Background(), themeInstallJobTime)
 		defer cancel()
+		stage := installText(req.Slot, "theme_install")
 		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
 		result, err := s.runThemeInstall(ctx, cfg, req, writer)
 		finishedAt := time.Now().UTC()
 		if err != nil {
 			_, apiErr := themeInstallErrorPayload(err)
-			s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
+			s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
 			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 				job.Phase = "error"
-				job.Message = "Theme install failed."
 				job.Progress = 100
 				job.FinishedAt = &finishedAt
 				job.Error = &apiErr
-				appendInstallJobLog(job, "Theme install failed.")
+				job.say("Theme install failed.")
 			})
 			return
 		}
@@ -6221,7 +6315,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		if req.Slot == themepack.UsageScreensaver {
 			done = "Screensaver is ready on VibeTV."
 		}
-		s.recordSetupEvent(setupEvent{Stage: "theme_install", Status: "succeeded", Message: done})
+		s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: done})
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
 			// Without a ready provider the VibeTV keeps drawing the error frame,
@@ -6229,8 +6323,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 			// looking at. The install still succeeded: the provider outcome owns
 			// the final message and says what is still missing.
 			if job.Message != themeInstallAwaitingProviderMessage {
-				job.Message = done
-				appendInstallJobLog(job, done)
+				job.say(done)
 			}
 			job.Progress = 100
 			job.FinishedAt = &finishedAt
@@ -6330,11 +6423,10 @@ func (w *themeInstallProgressWriter) noteLine(line string) {
 		if !ok {
 			return
 		}
-		job.Message = message
 		if progress > job.Progress {
 			job.Progress = progress
 		}
-		appendInstallJobLog(job, message)
+		job.say(message)
 	})
 }
 
@@ -6382,11 +6474,19 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 	}
 }
 
-func appendInstallJobLog(job *themeInstallJob, message string) {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return
+// installText words text that is written for a theme install for the slot
+// installed into: a screensaver install names the screensaver instead.
+func installText(slot, text string) string {
+	if slot != themepack.UsageScreensaver {
+		return text
 	}
+	return strings.NewReplacer("Theme", "Screensaver", "theme", "screensaver").Replace(text)
+}
+
+// say makes message the job's current line and logs it.
+func (job *themeInstallJob) say(message string) {
+	message = installText(job.Slot, message)
+	job.Message = message
 	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
 		return
 	}
@@ -8623,6 +8723,7 @@ type deviceHealth struct {
 		ResetCount  uint32 `json:"resetCount"`
 		ResetReason string `json:"resetReason"`
 	} `json:"system"`
+	WiFi    deviceWiFiHealth `json:"wifi"`
 	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
@@ -8648,6 +8749,10 @@ func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHea
 	if err := s.doJSON(ctx, http.MethodGet, target, "/health", token, nil, &health); err != nil {
 		return deviceHealth{}, err
 	}
+	// Every reading over WiFi passes here, so each device answer counts once
+	// however many callers reuse it. The Cable reads health another way and
+	// never gets the flag.
+	health.WiFi.Weak = s.wifiSignalStaysWeak(target, health.WiFi.RSSI)
 	return health, nil
 }
 
@@ -9554,6 +9659,11 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 		ResetReason: strings.TrimSpace(health.System.ResetReason),
 		LastResetAt: lastResetAt,
 		RenderKind:  strings.TrimSpace(health.Render.LastKind),
+	}
+	// Signal strength is negative dBm. A VibeTV that is not on WiFi, such as
+	// one on the Cable, reports 31.
+	if health.WiFi.RSSI < 0 {
+		device.Health.WiFi = &health.WiFi
 	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
 	device.Standby = nil

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
@@ -91,6 +92,13 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 		writePreferencesReadError(w, err)
 		return
 	}
+	s.saveProviderDisplay(w, selection, settings)
+}
+
+// saveProviderDisplay checks a display choice, stores it and puts it on
+// VibeTV. The Settings page and the keyboard shortcut both end here, so a
+// choice made either way is the same choice.
+func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDisplaySelection, settings []codexbar.ProviderSetting) {
 	if !automaticProviderDisplayIncludesAllEnabled(selection, settings) {
 		s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "failed", Message: "Every enabled provider must be included for display.", Code: "provider_display_incomplete", NextAction: "Refresh providers and save Automatic again."})
 		writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Refresh providers and save Automatic again.")
@@ -102,7 +110,7 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	selection.Valid = true
-	_, err = s.updateConfig(func(cfg *runtimeconfig.Config) {
+	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
 			Mode:        selection.Mode,
 			ProviderIDs: append([]string(nil), selection.ProviderIDs...),
@@ -117,6 +125,71 @@ func (s *Server) handleProviderDisplayPatch(w http.ResponseWriter, r *http.Reque
 	}
 	s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "succeeded", Message: providerDisplayMessage(selection, settings)})
 	writeJSON(w, http.StatusOK, providerDisplayResponse{OK: true, Selection: selection})
+}
+
+// handleProviderDisplayNext is the keyboard shortcut of the Mac App and the
+// Windows App (issue #424). It pins VibeTV to the provider after the one on
+// screen and saves that exactly as choosing it under Manual does, so Automatic
+// does not take the screen back. The order is the provider list's and wraps
+// after the last. Only providers Manual offers take part
+// (setup-providers-screen.tsx setupProviderCanDisplay): switched on, in working
+// order, and with a reading VibeTV can show. Fewer than two of them leave
+// nothing to switch to, and the choice stays as it is.
+func (s *Server) handleProviderDisplayNext(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	settings, err := s.cachedProviderSettings(r.Context(), false)
+	if err != nil {
+		writePreferencesReadError(w, err)
+		return
+	}
+	selection := effectiveProviderDisplay(cfg, settings)
+	var usage daemon.PersistedUsage
+	if s.loadUsage != nil {
+		usage, _ = s.loadUsage(s.currentTime().UTC())
+	}
+	// Automatic has no provider of its own: the one on screen is the one the
+	// last frame was built from.
+	shown := usage.CurrentProvider
+	if selection.Mode == providerDisplayModeFixed && len(selection.ProviderIDs) == 1 {
+		shown = selection.ProviderIDs[0]
+	}
+	// Only a reading the display worker sends to VibeTV (sendCycleResult): not a
+	// retained or expired one, which the snapshot calls stale, and with usage
+	// in its frame. Pinning another one would change Settings and not the
+	// screen.
+	readable := make(map[string]bool, len(usage.Providers))
+	for _, snapshot := range usage.Providers {
+		if info, ok := usageProviderFromSnapshot(snapshot); ok {
+			readable[info.ID] = !info.UsageUnavailable && !snapshot.Frame.UsageUnavailable
+		}
+	}
+	var eligible []string
+	next := 0
+	for _, descriptor := range s.providerDescriptors(settings) {
+		if !providerCanDisplay(descriptor) || !readable[descriptor.ProviderID] {
+			continue
+		}
+		if descriptor.ProviderID == shown {
+			next = len(eligible) + 1
+		}
+		eligible = append(eligible, descriptor.ProviderID)
+	}
+	if len(eligible) < 2 {
+		writeJSON(w, http.StatusOK, providerDisplayResponse{OK: true, Selection: selection})
+		return
+	}
+	s.saveProviderDisplay(w, providerDisplaySelection{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{eligible[next%len(eligible)]},
+		Configured:  true,
+	}, settings)
 }
 
 // providerDisplayMessage names the saved display choice in the customer's words.
@@ -187,16 +260,7 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	readyShown := 0
 	readyAnywhere := 0
 	for _, descriptor := range s.providerDescriptors(settings) {
-		on, _ := descriptor.Value.(bool)
-		if !on || descriptor.Health == nil {
-			continue
-		}
-		// A saved reading counts too: it is still a real reading, and it is the
-		// same rule setup-providers-screen.tsx setupProviderCanDisplay uses to
-		// decide what may be pinned. Refusing here what the display step still
-		// offers would be a loop with no way out.
-		if descriptor.Health.State != string(codexbar.ProviderHealthHealthy) &&
-			descriptor.Health.State != providerHealthStateStale {
+		if !providerCanDisplay(descriptor) {
 			continue
 		}
 		readyAnywhere++
@@ -232,6 +296,18 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, providerSetupCompleteResponse{OK: true, Setup: setupProgressForConfig(cfg)})
+}
+
+// providerCanDisplay reports whether a provider row is switched on and in
+// working order. A saved reading counts too: it is still a real reading, and it
+// is the same rule setup-providers-screen.tsx setupProviderCanDisplay uses to
+// decide what may be pinned. Refusing at the end of setup what the display step
+// still offers would be a loop with no way out.
+func providerCanDisplay(descriptor preferenceDescriptor) bool {
+	on, _ := descriptor.Value.(bool)
+	return on && descriptor.Health != nil &&
+		(descriptor.Health.State == string(codexbar.ProviderHealthHealthy) ||
+			descriptor.Health.State == providerHealthStateStale)
 }
 
 func effectiveProviderDisplay(cfg runtimeconfig.Config, settings []codexbar.ProviderSetting) providerDisplaySelection {

@@ -56,6 +56,18 @@ describe("SetupDisplayModeScreen", () => {
     );
   });
 
+  // The row stretches both cards to one height. Centred, the card with the
+  // shorter description showed its preview 9 px lower (#548).
+  it("holds both previews at the top of their cards", () => {
+    const cards = render().match(/<button[^>]*aria-pressed[^>]*>/g) ?? [];
+
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card).toContain("items-start");
+      expect(card).not.toContain("items-center");
+    }
+  });
+
   it("offers the provider list only in Manual", () => {
     const automatic = render();
     expect(automatic).not.toContain("Show this provider");

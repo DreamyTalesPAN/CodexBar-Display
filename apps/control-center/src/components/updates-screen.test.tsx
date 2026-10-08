@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { UpdatesScreen } from "./updates-screen";
 
 afterEach(cleanup);
@@ -417,6 +418,25 @@ describe("UpdatesScreen Mac-App-first gate", () => {
     expect(html.includes("Mac")).toBe(!windowsHost);
   });
 
+  // Issue #558: the cards were titled "App" and "VibeTV update": one named
+  // what is updated, the other the update.
+  it.each([
+    [false, "Mac App"],
+    [true, "App"],
+  ])("titles both cards with what they update (windows=%s)", (windowsHost, app) => {
+    render(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        onInstallUpdate={() => true}
+        windowsHost={windowsHost}
+      />,
+    );
+
+    expect(
+      screen.getAllByRole("heading", { level: 3 }).map((title) => title.textContent),
+    ).toEqual([app, "VibeTV"]);
+  });
+
   it("asks a Windows customer to update the app first", () => {
     const html = renderMarkup(
       <UpdatesScreen
@@ -437,5 +457,119 @@ describe("UpdatesScreen Mac-App-first gate", () => {
 
     expect(html).toContain("Update the app first");
     expect(html).not.toContain("Mac");
+  });
+
+  it("names the update progress bar and says how far it is", () => {
+    render(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        updateStatus={{ phase: "installing", startedAt: "2026-08-09T13:01:00Z", progress: 40, logs: [] }}
+      />,
+    );
+    expect(
+      screen.getByRole("progressbar", { name: "Updating VibeTV" }).getAttribute("aria-valuenow"),
+    ).toBe("40");
+  });
+
+  it.each([
+    ["offered", undefined],
+    ["running", { phase: "installing" as const, startedAt: "2026-08-09T13:01:00Z", progress: 40, logs: [] }],
+    ["failed", { phase: "error" as const, startedAt: "2026-08-09T13:01:00Z", error: "Update was not installed.", logs: [] }],
+  ])("has no accessibility violations with an update %s", async (_name, updateStatus) => {
+    await expectNoAxeViolations(
+      renderMarkup(
+        <UpdatesScreen
+          {...firmwareUpdateAvailableProps}
+          companionRelease={{
+            checkedAt: "2026-08-09T13:00:00Z",
+            status: "available",
+            updateAvailable: false,
+            message: "Mac App is up to date.",
+          }}
+          onCheckUpdates={() => undefined}
+          onCreateReport={() => undefined}
+          onInstallUpdate={() => true}
+          updateStatus={updateStatus}
+        />,
+      ),
+    );
+  });
+
+  // Issue #551: "Check for updates" answered within a second and left the
+  // page exactly as it was, so nothing showed that a check had happened.
+  describe("last checked", () => {
+    const checked = {
+      companionStatus: "online" as const,
+      companionRelease: {
+        checkedAt: "2026-10-07T06:12:04Z",
+        status: "available" as const,
+        latestVersion: "1.0.52",
+        updateAvailable: false,
+        message: "Mac App is up to date.",
+      },
+      device: { connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" },
+      firmwareUpdate: {
+        checkedAt: "2026-10-07T12:32:07Z",
+        status: "current" as const,
+        installedFirmware: "1.0.40",
+        latestFirmware: "1.0.40",
+        updateAvailable: false,
+      },
+    };
+    const at = (value: string) =>
+      `Last checked ${new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "medium",
+      }).format(new Date(value))}`;
+    const lines = () =>
+      screen.getAllByText(/^Last checked /).map((line) => line.textContent);
+
+    it("gives each card the time of its own check and moves it after a click", () => {
+      const view = render(<UpdatesScreen {...checked} />);
+      // The app's own check is repeated every six hours at most, so its time
+      // can be hours older than the firmware's.
+      expect(lines()).toEqual([
+        at("2026-10-07T06:12:04Z"),
+        at("2026-10-07T12:32:07Z"),
+      ]);
+
+      // A click two seconds later: the firmware was read again, the app was not.
+      view.rerender(
+        <UpdatesScreen
+          {...checked}
+          firmwareUpdate={{
+            ...checked.firmwareUpdate,
+            checkedAt: "2026-10-07T12:32:09Z",
+          }}
+        />,
+      );
+      expect(lines()).toEqual([
+        at("2026-10-07T06:12:04Z"),
+        at("2026-10-07T12:32:09Z"),
+      ]);
+      expect(lines()[1]).not.toBe(at("2026-10-07T12:32:07Z"));
+    });
+
+    it("claims no check that did not answer", () => {
+      render(
+        <UpdatesScreen
+          {...checked}
+          companionRelease={{
+            checkedAt: "2026-10-07T12:32:07Z",
+            status: "check_failed",
+            latestVersion: "1.0.52",
+            updateAvailable: false,
+            message: "Mac App check failed.",
+          }}
+          firmwareUpdate={{
+            checkedAt: "2026-10-07T12:32:07Z",
+            status: "check_failed",
+            installedFirmware: "1.0.40",
+            updateAvailable: false,
+          }}
+        />,
+      );
+      expect(screen.queryByText(/^Last checked /)).toBeNull();
+    });
   });
 });

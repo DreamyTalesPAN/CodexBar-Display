@@ -39,8 +39,11 @@
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <!-- Standard, not Background: as a Background job the service got so
+         little processor time that usage came back 24 to 40 seconds after
+         every start instead of about 10 (issue #557). -->
     <key>ProcessType</key>
-    <string>Background</string>
+    <string>Standard</string>
     <key>ThrottleInterval</key>
     <integer>10</integer>
   </dict>

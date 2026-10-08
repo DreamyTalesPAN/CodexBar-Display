@@ -29,8 +29,12 @@ const (
 	dashboardServeDefaultBackoffMax      = 30 * time.Second
 	dashboardServeDefaultHealthInterval  = 2 * time.Second
 	dashboardServeDefaultStartupTimeout  = 30 * time.Second
-	dashboardServeHealthTimeout          = 2 * time.Second
-	dashboardServeMaxHealthFailures      = 3
+	// On a Mac with every core busy the engine answers /health late, not
+	// never. With 2 s here a late answer skipped that collection, and three
+	// in a row killed a working engine, whose restart is the most expensive
+	// thing it can be asked to do under load (#557).
+	dashboardServeHealthTimeout     = 10 * time.Second
+	dashboardServeMaxHealthFailures = 3
 )
 
 type DashboardServe interface {

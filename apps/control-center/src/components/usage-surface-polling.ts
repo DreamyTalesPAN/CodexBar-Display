@@ -1,4 +1,7 @@
 export const USAGE_SURFACE_POLL_INTERVAL_MS = 30_000;
+// A manual refresh ends on the first read after the new snapshot. Reading on
+// the 30 s cadence left "Refreshing usage" up for a minute over fresh values.
+export const USAGE_REFRESH_PENDING_POLL_INTERVAL_MS = 3_000;
 
 type IntervalHandle = ReturnType<typeof globalThis.setInterval>;
 type TimeoutHandle = ReturnType<typeof globalThis.setTimeout>;

@@ -594,11 +594,16 @@ func runInstallUpdate(args []string) (retErr error) {
 		// Firmware from before the Cable identity contract has neither a
 		// deviceId nor Cable transfer. The ROM loader rewrites it anyway.
 		var device usb.CableDevice
-		device, err = findLegacyCableVibeTVFn()
-		if err != nil {
-			// The parent released the port a moment ago; a reset from that
-			// handover can swallow the boot hello. One fresh probe decides.
-			device, err = findLegacyCableVibeTVFn()
+		// The parent released the port a moment ago; a reset from that
+		// handover can swallow the boot hello. Issue #536: on a Mac under
+		// heavy load two probes both found nothing, so there are three, and
+		// each one that fails is printed for firmware-update.log.
+		const probes = 3
+		for probe := 1; probe <= probes; probe++ {
+			if device, err = findLegacyCableVibeTVFn(); err == nil {
+				break
+			}
+			fmt.Printf("Cable rescue probe %d/%d failed: %v\n", probe, probes, err)
 		}
 		if err != nil {
 			return &commandError{Op: "cable-rescue-device", Code: errcode.UpgradeFlashFirmware, Err: err}

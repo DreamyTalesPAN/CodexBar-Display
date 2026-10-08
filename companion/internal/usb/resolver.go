@@ -459,20 +459,30 @@ func FindLegacyCableVibeTV() (CableDevice, error) {
 func findLegacyCableVibeTV(candidates []string, readHello func(string) (protocol.DeviceHello, error)) (CableDevice, error) {
 	// Probe every port at once: a silent one holds its read for the whole
 	// hello window, and Windows lists many COM ports that never answer.
-	results := make(chan CableDevice, len(candidates))
+	type probe struct {
+		device CableDevice
+		err    error
+	}
+	results := make(chan probe, len(candidates))
 	for _, port := range candidates {
 		go func() {
 			hello, err := readHello(port)
 			if err != nil {
 				hello = protocol.DeviceHello{}
 			}
-			results <- CableDevice{Port: port, Hello: hello.Normalize()}
+			results <- probe{CableDevice{Port: port, Hello: hello.Normalize()}, err}
 		}()
 	}
 	var found []CableDevice
+	// Issue #536: a port another program holds was not asked, and the VibeTV
+	// may be on it, so the open error is the answer when none was found.
+	var openErr error
 	for range candidates {
-		device := <-results
-		if isLegacyCableHello(device.Hello) && strings.EqualFold(strings.TrimSpace(device.Hello.Board), vibeTVBoardID) {
+		result := <-results
+		if errcode.Of(result.err) == errcode.TransportSerialOpen {
+			openErr = result.err
+		}
+		if device := result.device; isLegacyCableHello(device.Hello) && strings.EqualFold(strings.TrimSpace(device.Hello.Board), vibeTVBoardID) {
 			found = append(found, device)
 		}
 	}
@@ -480,6 +490,9 @@ func findLegacyCableVibeTV(candidates []string, readHello func(string) (protocol
 	case 1:
 		return found[0], nil
 	case 0:
+		if openErr != nil {
+			return CableDevice{}, openErr
+		}
 		return CableDevice{}, wrapTransportError(
 			errcode.TransportNoMatchingDevice,
 			"find-legacy-vibetv",

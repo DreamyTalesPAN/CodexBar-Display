@@ -261,6 +261,7 @@ type runtimeState struct {
 	lastIdleEvidenceAt     time.Time
 	idleEvidenceCount      int
 	lastCodingAt           time.Time
+	lastCodingTokenScanAt  time.Time
 	lastActivity           string
 	lastActivityCause      string
 	deviceTarget           string
@@ -269,6 +270,10 @@ type runtimeState struct {
 	// providers instead of a blank screen. Tied to that selection: a later
 	// Manual choice must not inherit the fallback frame.
 	providerDisplayFallback string
+	// rotationProvider is the provider the timed rotation of Automatic shows,
+	// and rotationAt is when its turn began. Empty while nothing rotates.
+	rotationProvider string
+	rotationAt       time.Time
 }
 
 type cycleResult struct {
@@ -543,6 +548,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if deviceWritesPaused {
 			deps.logf("runtime event=device-writes-resumed reason=device-maintenance-complete\n")
 			deviceWritesPaused = false
+			// Issue #536: the pause is not a sleep, so its length must not be
+			// logged as a sleep-wake gap.
+			lastCycleStart = time.Time{}
 		}
 		cycleStart := deps.now()
 		if startedAt.IsZero() {
@@ -1228,6 +1236,14 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		return finalizeCycleResult(state, result, now)
 	}
 
+	// A timed rotation changes which provider is shown, nothing else: the
+	// coding/idle verdict below stays the one for the provider the selector
+	// chose, because the VibeTV starts its screensaver from it.
+	activity := decision
+	if provider, detail, ok := rotateShownProvider(state, allProviders, decision.Selected, now, deps); ok {
+		decision.Selected, decision.Reason, decision.Detail = provider, "timed-rotation", detail
+	}
+
 	result.frame = decision.Selected.Frame
 	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) {
 		// Providers are enumerated but none has ever delivered usage: for the
@@ -1251,13 +1267,59 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	collectedAt := decision.Selected.CollectedAt
 	if collectedAt.IsZero() {
 		collectedAt = now
-		decision.Selected.CollectedAt = collectedAt
 	}
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
 	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
-	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
+	result.frame, result.activityDetail = applySelectionActivity(result.frame, activity, state, now)
 	return result
+}
+
+// rotateShownProvider is the timed rotation of Automatic (issue #322). With an
+// interval set, the timer alone decides which provider is shown: each one keeps
+// the screen for the interval, then the next in CodexBar's order follows, and a
+// usage change elsewhere does not cut a turn short. Only providers with a
+// current reading take a turn, and fewer than two of them leave nothing to
+// rotate. The first turn, and the one after the provider on screen lost its
+// reading, goes to selected: the provider Automatic would show anyway, so
+// switching the timer on does not change the screen.
+func rotateShownProvider(state *runtimeState, providers []codexbar.ParsedFrame, selected codexbar.ParsedFrame, now time.Time, deps runtimeDeps) (codexbar.ParsedFrame, string, bool) {
+	cfg, _ := loadRuntimeConfig(deps)
+	interval := time.Duration(cfg.DisplayRotateSeconds) * time.Second
+	if interval <= 0 || (cfg.ProviderDisplay != nil && cfg.ProviderDisplay.Mode != "automatic") {
+		state.rotationProvider = ""
+		return codexbar.ParsedFrame{}, "", false
+	}
+	var available []codexbar.ParsedFrame
+	for _, provider := range providers {
+		if !provider.Stale && !provider.Frame.UsageUnavailable {
+			available = append(available, provider)
+		}
+	}
+	if len(available) < 2 {
+		// The turn is kept: a collection that fails once must not restart
+		// the rotation.
+		return codexbar.ParsedFrame{}, "", false
+	}
+
+	position := func(key string) int {
+		for i, provider := range available {
+			if normalizeProviderKey(provider.Frame.Provider) == key {
+				return i
+			}
+		}
+		return -1
+	}
+	index := position(state.rotationProvider)
+	if index < 0 {
+		index = max(position(normalizeProviderKey(selected.Frame.Provider)), 0)
+		state.rotationAt = now
+	} else if now.Sub(state.rotationAt) >= interval {
+		index = (index + 1) % len(available)
+		state.rotationAt = now
+	}
+	state.rotationProvider = normalizeProviderKey(available[index].Frame.Provider)
+	return available[index], fmt.Sprintf("provider=%s every=%s", state.rotationProvider, interval), true
 }
 
 func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc) []codexbar.ParsedFrame {
@@ -1468,17 +1530,26 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	if activityObservedAt.IsZero() {
 		activityObservedAt = collectedAt
 	}
-	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state.lastCodingAt, now)
+	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state, now)
+	// A token scan that completed after the one that showed the work, and
+	// brought no delta, is the answer coding was waiting for. It must be
+	// looked at, not answered from the remembered activity.
+	tokenScanAnswered := state.lastActivity == "coding" && !state.lastCodingTokenScanAt.IsZero() &&
+		decision.Selected.TokenStatsCollectedAt.After(state.lastCodingTokenScanAt)
 	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
 		!activityObservedAt.IsZero() &&
 		activityObservedAt.Equal(state.lastActivityObservedAt) &&
 		state.lastActivity != "" &&
-		!codingExpired {
+		!codingExpired && !tokenScanAnswered {
 		state.lastActivityAt = collectedAt
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
 	}
-	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired {
+	// Token totals are scanned on their own schedule and land on a usage
+	// snapshot that keeps its collection time, so a delta must never be
+	// answered from the remembered activity.
+	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
+		!collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired && !tokenScanAnswered {
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
 	}
@@ -1490,11 +1561,18 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	case codexbar.SelectionReasonUsageDelta:
 		activity = "coding"
 		state.lastCodingAt = now
+		// The mark names the token scan that showed this work. A provider
+		// without token totals, or one whose history is still being read
+		// in, has no such scan; its delta leaves alone the scan another
+		// provider's work is still waiting for.
+		if decision.Selected.Frame.TokenTotalsKnown && !decision.Selected.TokenHistoryGrowing {
+			state.lastCodingTokenScanAt = decision.Selected.TokenStatsCollectedAt
+		}
 		state.lastIdleEvidenceAt = time.Time{}
 		state.idleEvidenceCount = 0
 	default:
 		if state.lastActivity == "coding" {
-			if codingMaxAgeExpired(state.lastCodingAt, now) {
+			if codingMaxAgeExpired(state, now) {
 				state.lastIdleEvidenceAt = time.Time{}
 				state.idleEvidenceCount = 0
 				signalReason = "coding-max-age-expired"
@@ -1504,10 +1582,17 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 					state.lastIdleEvidenceAt = activityObservedAt
 					state.idleEvidenceCount++
 				}
-				if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
+				// Token totals only move with a token scan. Until the next
+				// scan has completed, usage refreshes without a delta say
+				// nothing about whether the customer stopped working. That
+				// scan covers the whole time since the last one, so it is
+				// all the idle evidence there can be.
+				awaitingTokenScan := !state.lastCodingTokenScanAt.IsZero() && !tokenScanAnswered
+				needsIdleEvidence := !tokenScanAnswered && state.idleEvidenceCount < activityIdleEvidenceRequired()
+				if codingHoldActive(state.lastCodingAt, now) || needsIdleEvidence || awaitingTokenScan {
 					activity = "coding"
 					signalReason = "coding-waiting-for-idle-evidence"
-					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
+					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d awaiting_token_scan=%t observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), awaitingTokenScan, activityObservedAt.Format(time.RFC3339))
 				} else {
 					state.lastIdleEvidenceAt = time.Time{}
 					state.idleEvidenceCount = 0
@@ -1527,6 +1612,9 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 		reason = "no-usage-delta"
 	}
 
+	if activity == "idle" {
+		state.lastCodingTokenScanAt = time.Time{}
+	}
 	state.lastActivityAt = collectedAt
 	state.lastActivityObservedAt = activityObservedAt
 	state.lastActivity = activity
@@ -1545,20 +1633,28 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 	return now.Sub(lastCodingAt) <= activityHoldDuration()
 }
 
-func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
-	if lastCodingAt.IsZero() {
+func codingMaxAgeExpired(state *runtimeState, now time.Time) bool {
+	if state.lastCodingAt.IsZero() {
 		return false
 	}
-	if now.Before(lastCodingAt) {
+	if now.Before(state.lastCodingAt) {
 		return false
 	}
-	return now.Sub(lastCodingAt) > activityCodingMaxAge()
+	maxAge := activityCodingMaxAge()
+	if !state.lastCodingTokenScanAt.IsZero() {
+		// Coding that waits for the next token scan must outlast one scan
+		// period (cooldown plus the scan itself), or continuous work is cut
+		// to idle just before that scan.
+		maxAge = max(maxAge, tokenStatsScanCooldown+tokenStatsCollectorTimeout+time.Minute)
+	}
+	return now.Sub(state.lastCodingAt) > maxAge
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame := result.frame
-	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
+	cfg, _ := loadRuntimeConfig(deps)
+	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), cfg.UsageShowsUsed(deps.usageBarsShowUsed))
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {
@@ -2128,6 +2224,12 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 	if showUsed {
 		frame.UsageMode = "used"
 		return frame
+	}
+	// The cross-provider rows carry a percentage of their own, which a theme
+	// can bind; it has to read the same way as everything else in a frame
+	// that says "remaining", also when the shown provider has no usage.
+	for i := range frame.ProviderSlots {
+		frame.ProviderSlots[i].Percent = 100 - clampPercent(frame.ProviderSlots[i].Percent)
 	}
 	if frame.UsageUnavailable {
 		frame.UsageMode = "remaining"

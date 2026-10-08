@@ -1,8 +1,10 @@
 "use client";
 
+import { useId, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
+import { spritePalette } from "@/lib/theme-studio-assets";
 import { ColorField, NumberField, SelectField, TextField } from "./editor-fields";
 import {
   primitiveBounds,
@@ -32,12 +34,17 @@ export function PrimitiveInspector({
   onChange,
   onDelete,
   onInsertToken,
+  onKeySpriteColor,
   primitive,
+  spriteData,
 }: {
   onChange: (field: FieldKey, value: unknown) => void;
   onDelete: () => void;
   onInsertToken: (token: string) => void;
+  onKeySpriteColor: (color: string) => void;
   primitive: ThemeStudioPrimitive;
+  // The encoded sprite behind the primitive's asset path, when it is loaded.
+  spriteData?: string;
 }) {
   const bounds = primitiveBounds(primitive);
   return (
@@ -198,19 +205,17 @@ export function PrimitiveInspector({
             <span className="text-xs font-black uppercase tracking-normal text-muted-foreground">
               Variables
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-2">
               {VARIABLE_TOKENS.map((item) => (
                 <Button
-                  className="h-auto min-w-0 justify-start px-2 py-2 text-left text-xs"
+                  className="h-auto flex-wrap justify-start gap-y-0.5 px-2 py-2 text-left text-xs whitespace-normal"
                   key={item.token}
                   onClick={() => onInsertToken(item.token)}
                   type="button"
                   variant="outline"
                 >
-                  <span className="block truncate font-black">{item.label}</span>
-                  <code className="block truncate text-[11px] text-ring">
-                    {item.token}
-                  </code>
+                  <span className="font-black">{item.label}</span>
+                  <code className="text-[11px] text-ring">{item.token}</code>
                 </Button>
               ))}
             </div>
@@ -327,6 +332,13 @@ export function PrimitiveInspector({
         </div>
       ) : null}
 
+      {primitive.type === "sprite" ? (
+        <SpriteTransparentColor
+          onMakeTransparent={onKeySpriteColor}
+          palette={spritePalette(spriteData)}
+        />
+      ) : null}
+
       <Button
         className="mt-1"
         onClick={onDelete}
@@ -336,6 +348,61 @@ export function PrimitiveInspector({
         <Trash2 size={16} aria-hidden />
         <span>Delete</span>
       </Button>
+    </div>
+  );
+}
+
+function SpriteTransparentColor({
+  onMakeTransparent,
+  palette,
+}: {
+  onMakeTransparent: (color: string) => void;
+  palette: string[];
+}) {
+  const labelId = useId();
+  const [picked, setPicked] = useState("");
+  // A sprite keeps at least one color, so its last one cannot be keyed.
+  if (palette.length < 2) {
+    return null;
+  }
+  const selected = palette.includes(picked) ? picked : "";
+  return (
+    <div aria-labelledby={labelId} className="grid gap-2" role="group">
+      <span
+        className="text-xs font-black uppercase tracking-normal text-muted-foreground"
+        id={labelId}
+      >
+        Transparent color
+      </span>
+      <div className="flex flex-wrap gap-2">
+        {palette.map((color) => (
+          <Button
+            aria-label={color}
+            aria-pressed={color === selected}
+            className="aria-pressed:border-ring aria-pressed:ring-2 aria-pressed:ring-ring"
+            key={color}
+            onClick={() => setPicked(color === selected ? "" : color)}
+            size="icon-sm"
+            style={{ backgroundColor: color }}
+            title={color}
+            type="button"
+            variant="outline"
+          />
+        ))}
+      </div>
+      {selected ? (
+        <Button
+          onClick={() => onMakeTransparent(selected)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Make transparent
+        </Button>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        On VibeTV, transparent areas show the theme background.
+      </p>
     </div>
   );
 }

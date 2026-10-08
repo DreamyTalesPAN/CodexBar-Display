@@ -262,7 +262,7 @@ func (s *Server) preferenceRegistry() []preferenceAdapter {
 	if len(s.preferenceAdapters) > 0 {
 		return s.preferenceAdapters
 	}
-	return []preferenceAdapter{providerPreferenceAdapter{server: s}}
+	return []preferenceAdapter{providerPreferenceAdapter{server: s}, displayPreferenceAdapter{server: s}}
 }
 
 func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
@@ -735,6 +735,10 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			if signInURL == "" {
 				signInURL = setting.SignInURL
 			}
+			// CodexBar's summary is not kept for this state, so this sentence
+			// is the row's message. The exact check and the health scan share
+			// it: a dismissed message opens again when its text changes.
+			message = codexbar.BrowserSignInGuidance(setting.ID, signInURL)
 			// The background scan carries no exact-check next action; the
 			// close-the-browser step is the one that makes the re-check work
 			// on Windows, so it must reach the row from this path too.
@@ -925,7 +929,10 @@ func providerCanUseUsageEvidence(setting codexbar.ProviderSetting) bool {
 			setting.Health == codexbar.ProviderHealthChecking ||
 			setting.Health == codexbar.ProviderHealthUnavailable ||
 			// A refused check says nothing against a reading that did arrive.
-			setting.Health == codexbar.ProviderHealthRateLimited)
+			setting.Health == codexbar.ProviderHealthRateLimited ||
+			// Neither does a browser sign-in diagnosis: CodexBar derives it
+			// from one refused usage call, also while it is only retrying.
+			setting.Health == codexbar.ProviderHealthBrowserSignIn)
 }
 
 func providerPreferenceID(providerID string) string {

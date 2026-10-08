@@ -128,6 +128,22 @@
       "bytes": 8071
     },
     {
+      "id": "token-counter",
+      "title": "Token Counter",
+      "usage": "live",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/u/tc-2-d5ddb991.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "text-valign-v1"
+      ],
+      "downloadAsset": "vibetv-theme-token-counter-v0.1.0.zip",
+      "sha256": "52ec00deb0b9c66218fd548ce7439e74a6933807ffa563f3468e6e364bf3f735",
+      "bytes": 784
+    },
+    {
       "id": "token-fire",
       "title": "Token Fire",
       "usage": "screensaver",

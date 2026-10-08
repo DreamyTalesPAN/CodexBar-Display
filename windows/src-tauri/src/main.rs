@@ -78,7 +78,7 @@ fn main() {
             if let Err(error) = handle.autolaunch().enable() {
                 log(&format!("could not enable autostart: {error}"));
             }
-            create_window(&handle)?;
+            create_window(&handle, register_provider_shortcut(handle.clone()))?;
             std::thread::spawn(move || prepare_and_load(handle));
             Ok(())
         })
@@ -103,8 +103,10 @@ fn version(app: &AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-fn user_agent(app: &AppHandle) -> String {
-    format!("VibeTVControlCenter/{}+{}", version(app), BUILD)
+// The suffix tells Settings that Ctrl+Alt+Shift+P is not available.
+fn user_agent(app: &AppHandle, provider_shortcut: bool) -> String {
+    let suffix = if provider_shortcut { "" } else { " ProviderShortcut/unavailable" };
+    format!("VibeTVControlCenter/{}+{}{suffix}", version(app), BUILD)
 }
 
 fn companion_path(app: &AppHandle) -> PathBuf {
@@ -199,13 +201,13 @@ fn configure_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn create_window(app: &AppHandle) -> tauri::Result<()> {
+fn create_window(app: &AppHandle, provider_shortcut: bool) -> tauri::Result<()> {
     let actions = app.clone();
     let window = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
         .title("VibeTV Control Center")
         .inner_size(1280.0, 900.0)
         .min_inner_size(960.0, 640.0)
-        .user_agent(&user_agent(app))
+        .user_agent(&user_agent(app, provider_shortcut))
         // vibetv:// links are the UI's way of asking the shell for something;
         // handled here, so WebView2 never looks for a protocol handler.
         .on_navigation(move |url| {
@@ -254,6 +256,76 @@ fn hide_after_flush(app: &AppHandle) {
             let _ = window.hide();
         }
     });
+}
+
+// Issue #424: Ctrl+Alt+Shift+P shows the next provider on VibeTV from any app.
+// Windows delivers WM_HOTKEY to the thread that registered the hot key, so
+// that thread keeps a message loop of its own. Returns false when Windows
+// refused the keys, which it does while another app holds them.
+fn register_provider_shortcut(app: AppHandle) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+            MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
+        let (report, registered) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // SAFETY: no window handle and no pointer is passed; 0x50 is the P key.
+            let ok = unsafe {
+                RegisterHotKey(
+                    std::ptr::null_mut(),
+                    1,
+                    MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
+                    0x50,
+                )
+            } != 0;
+            let _ = report.send(ok);
+            if !ok {
+                return;
+            }
+            // SAFETY: MSG is plain data and GetMessageW fills it in.
+            let mut message: MSG = unsafe { std::mem::zeroed() };
+            while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {
+                if message.message == WM_HOTKEY {
+                    show_next_provider(&app);
+                }
+            }
+        });
+        registered.recv().unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+// Which provider comes next is the Companion's decision; the shell only asks
+// for it, and only its own runtime.
+#[cfg(windows)]
+fn show_next_provider(app: &AppHandle) {
+    let origin = app.state::<Shell>().runtime_origin.lock().unwrap().clone();
+    let http = runtime_http();
+    if !runtime_identity_matches(&http, &origin) {
+        log("next provider skipped: the runtime did not answer at its known address");
+        return;
+    }
+    let url = origin.join("/v1/provider-display/next").expect("static path");
+    match http
+        .post(url.as_str())
+        .header("Content-Type", "application/json")
+        .send("{}")
+    {
+        Ok(response) if response.status() == 200 => {
+            // An open Settings page shows the display choice; it reads it again.
+            if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+                let _ = window.eval("window.dispatchEvent(new Event('vibetv:provider-display-changed'))");
+            }
+        }
+        Ok(response) => log(&format!("next provider refused: HTTP {}", response.status())),
+        Err(error) => log(&format!("next provider request failed: {error}")),
+    }
 }
 
 fn handle_native_action(app: &AppHandle, url: &Url) {

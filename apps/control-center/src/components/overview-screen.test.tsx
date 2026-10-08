@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { expectNoAxeViolations } from "@/test/axe";
 import { OverviewScreen } from "./overview-screen";
 
 describe("OverviewScreen", () => {
@@ -47,6 +48,36 @@ describe("OverviewScreen", () => {
       "VibeTV can&#x27;t show this theme. Choose another theme.",
     );
     expect(html).not.toContain("Waiting for first image");
+  });
+
+  // Issue #265: the Mac App decides that the signal is weak; the page says so.
+  it("names a weak WiFi signal and what to do about it (#265)", () => {
+    const overview = (connected: boolean, health?: { ok: boolean; wifi?: { rssi: number; weak?: boolean } }) =>
+      renderToStaticMarkup(
+        <OverviewScreen
+          companionStatus="online"
+          device={{ active: true, connected, paired: true, ready: connected, health }}
+        />,
+      );
+
+    const weak = overview(true, { ok: true, wifi: { rssi: -82, weak: true } });
+    expect(weak).toContain("VibeTV is connected");
+    expect(weak).toContain("Weak WiFi signal");
+    expect(weak).toContain("Move VibeTV closer to your router.");
+
+    // A good signal, a low reading the Mac App has not named weak, a VibeTV
+    // that reports no signal (the Cable, older firmware), and a reading kept
+    // from a VibeTV that has gone away.
+    for (const html of [
+      overview(true, { ok: true, wifi: { rssi: -48 } }),
+      overview(true, { ok: true, wifi: { rssi: -85 } }),
+      overview(true, { ok: true }),
+      overview(true),
+      overview(false, { ok: true, wifi: { rssi: -82, weak: true } }),
+    ]) {
+      expect(html).not.toContain("Weak WiFi signal");
+      expect(html).not.toContain("closer to your router");
+    }
   });
 
   it("keeps a genuinely disconnected selected VibeTV not connected", () => {
@@ -188,6 +219,33 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Change connection");
   });
 
+  // Issue #558: while the screensaver is on screen, VibeTV does not show live
+  // usage, and the Display tile must not say it does.
+  it("names the screensaver on the Display tile while it is on screen (#558)", () => {
+    const overview = (standby?: { active?: boolean; screensaverPath?: string }) =>
+      renderToStaticMarkup(
+        <OverviewScreen
+          companionStatus="online"
+          device={{ active: true, connected: true, paired: true, ready: true, standby }}
+        />,
+      );
+
+    const screensaver = overview({ active: true, screensaverPath: "/themes/s/r3-2.json" });
+    expect(screensaver).toContain("VibeTV is connected");
+    expect(screensaver).toContain(">Screensaver<");
+    expect(screensaver).not.toContain(">Live<");
+
+    // The screensaver is installed but not on screen, and firmware that
+    // reports no standby state at all.
+    for (const html of [
+      overview({ active: false, screensaverPath: "/themes/s/r3-2.json" }),
+      overview(),
+    ]) {
+      expect(html).toContain(">Live<");
+      expect(html).not.toContain(">Screensaver<");
+    }
+  });
+
   // Issues #438/#460: the Windows app must not call itself a Mac App. The
   // Mac wording is asserted too, because it must not change at all.
   it.each([
@@ -207,5 +265,16 @@ describe("OverviewScreen", () => {
     expect(unknown).toContain(waiting);
     expect(missing.includes("Mac")).toBe(!windowsHost);
     expect(unknown.includes("Mac")).toBe(!windowsHost);
+  });
+
+  it.each([true, false])("has no accessibility violations (connected=%s)", async (connected) => {
+    await expectNoAxeViolations(
+      renderToStaticMarkup(
+        <OverviewScreen
+          companionStatus="online"
+          device={{ active: true, connected, deviceId: "14799300", paired: true, ready: connected }}
+        />,
+      ),
+    );
   });
 });

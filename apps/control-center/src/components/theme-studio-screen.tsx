@@ -49,6 +49,7 @@ import {
   ItemGroup,
   ItemTitle,
 } from "@/components/ui/item";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -81,6 +82,7 @@ import {
   fileToBase64,
   formatBytes,
   importSpriteFile,
+  keySpriteColor,
   spriteMetadata,
   themeAssetPathForFile,
 } from "@/lib/theme-studio-assets";
@@ -98,6 +100,7 @@ import {
   reorderPrimitiveIndices,
   themeStudioEditorReducer,
   type ThemeStudioDocument,
+  type ThemeStudioEditorAction,
 } from "./theme-studio/theme-studio-editor-state";
 import {
   AdvancedPanel,
@@ -141,6 +144,23 @@ const DEFAULT_GIF_SIZE = 80;
 const MAX_TEXT_FONT_SIZE = 30;
 const RETIRED_AI_THEME_STORAGE_PREFIX = "vibetv.controlCenter.aiTheme";
 const NATIVE_WINDOW_WILL_CLOSE_EVENT = "vibetv:native-window-will-close";
+// No Export or Send has answered yet: these two are not shown as notices.
+const EXPORT_IDLE: EditorStatus = {
+  tone: "unknown",
+  message: "Export is ready after validation.",
+};
+const SEND_IDLE: EditorStatus = {
+  tone: "unknown",
+  message: "Nothing is sent until you click Send.",
+};
+type LibraryStatus = EditorStatus & {
+  /** The recovery copy could not be written; no answer to a click. */
+  recovery?: boolean;
+};
+// Takes the Library notice away, except the one about the recovery copy:
+// that one leaves with the next copy that is written.
+const withoutLibraryAnswer = (current: LibraryStatus | null) =>
+  current?.recovery ? current : null;
 
 export type ThemeStudioEditorSource = "blank" | "custom" | "published";
 
@@ -215,7 +235,7 @@ export function ThemeStudioScreen({
   const sourceRef = useRef<ThemeStudioEditorSource>(
     initialTheme?.source || "custom",
   );
-  const [editorState, dispatchEditor] = useReducer(
+  const [editorState, dispatchEditorState] = useReducer(
     themeStudioEditorReducer,
     undefined,
     () =>
@@ -226,20 +246,32 @@ export function ThemeStudioScreen({
         usage,
       }),
   );
+  const [libraryStatus, setLibraryStatus] = useState<LibraryStatus | null>(null);
+  // What Save answered was about the theme as it was. Every change to it,
+  // Undo and Redo included, takes that answer away.
+  const dispatchEditor = useCallback((action: ThemeStudioEditorAction) => {
+    if (action.type !== "mark_saved" && !action.type.endsWith("_transaction")) {
+      setLibraryStatus(withoutLibraryAnswer);
+    }
+    dispatchEditorState(action);
+  }, []);
   const { assets, packName, spec } = editorState.present;
   const [recoveryDirty, setRecoveryDirty] = useState(
     Boolean(initialTheme?.recovered),
   );
   const dirty = recoveryDirty || isThemeStudioDirty(editorState);
+  // Only a theme that is in the library can be called saved; a new or
+  // published one opened here has no changes yet and is still just a draft.
+  const [inLibrary, setInLibrary] = useState(initialTheme?.source === "custom");
   recoverySnapshotRef.current = {
     dirty,
     document: editorState.present,
   };
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0]);
-  const [jsonText, setJsonText] = useState(() =>
-    prettyJson(createStarterThemeSpec()),
-  );
-  const [jsonDirty, setJsonDirty] = useState(false);
+  // What the customer typed into the JSON tab and has not applied; without it
+  // the tab shows the theme as it is, also after Save, Undo and Redo.
+  const [jsonDraft, setJsonDraft] = useState<string | null>(null);
+  const jsonDirty = jsonDraft !== null;
   const [loadingPreset, setLoadingPreset] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -250,23 +282,25 @@ export function ThemeStudioScreen({
     tone: "unknown",
     message: "Draft ready.",
   });
-  const [exportStatus, setExportStatus] = useState<EditorStatus>({
-    tone: "unknown",
-    message: "Export is ready after validation.",
-  });
-  const [deviceStatus, setDeviceStatus] = useState<EditorStatus>({
-    tone: "unknown",
-    message: "Nothing is sent until you click Send.",
-  });
+  const [exportStatus, setExportStatus] = useState(EXPORT_IDLE);
+  const [deviceStatus, setDeviceStatus] = useState(SEND_IDLE);
   const [assetStatus, setAssetStatus] = useState<EditorStatus>({
     tone: "unknown",
     message: "",
   });
-  const [libraryStatus, setLibraryStatus] = useState<EditorStatus | null>(() =>
-    saveBlockedReason
-      ? { message: saveBlockedReason, tone: "attention" }
-      : null,
-  );
+  // Why nothing can be saved is no answer to a click either: it stands for as
+  // long as it is true and nothing else is said under Library.
+  const libraryNotice: EditorStatus | null =
+    libraryStatus ||
+    (saveBlockedReason
+      ? { tone: "attention", message: saveBlockedReason }
+      : null);
+  // One answer at a time: a new Save, Export or Send takes the others' away.
+  function clearAnswers() {
+    setLibraryStatus(withoutLibraryAnswer);
+    setExportStatus(EXPORT_IDLE);
+    setDeviceStatus(SEND_IDLE);
+  }
 
   const validation = useMemo(
     () => validateThemeSpec(spec, assets, usage),
@@ -279,6 +313,17 @@ export function ThemeStudioScreen({
         : null,
     [assets, deviceCapabilities, spec],
   );
+  // Why Send is unavailable. The toolbar disables the button on it and says it.
+  // A failed check comes first: it also keeps Save unavailable, so asking the
+  // customer to save would name a button that cannot be pressed. Only what is
+  // in the library is sent: a draft on VibeTV would appear in no list. While
+  // the library cannot be written, the reason for that stands in for "Save".
+  const sendBlockedReason =
+    validation.errors[0] ||
+    (dirty || !inLibrary
+      ? saveBlockedReason ||
+        `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`
+      : deviceValidation?.errors[0] || "");
   const visibleSelectedIndices = useMemo(
     () => normalizeSelectedIndices(selectedIndices, spec.primitives.length),
     [selectedIndices, spec.primitives.length],
@@ -355,15 +400,11 @@ export function ThemeStudioScreen({
       type: markSaved ? "load" : "update",
     });
     setSelectedIndices(normalized.primitives.length > 0 ? [0] : []);
-    setJsonText(prettyJson(normalized));
-    setJsonDirty(false);
+    setJsonDraft(null);
     if (status) {
       setJsonStatus(status);
     }
-    setExportStatus({
-      tone: "unknown",
-      message: "Export is ready after validation.",
-    });
+    setExportStatus(EXPORT_IDLE);
   }
 
   const updateDocument = useCallback(
@@ -372,9 +413,7 @@ export function ThemeStudioScreen({
         mutate: (draft) => {
           updater(draft);
           draft.spec = normalizeThemeSpec(draft.spec);
-          if (!jsonDirty) {
-            setJsonText(prettyJson(draft.spec));
-          } else {
+          if (jsonDirty) {
             setJsonStatus({
               tone: "unknown",
               message: "JSON is out of date. Apply or reset it before editing JSON.",
@@ -384,7 +423,7 @@ export function ThemeStudioScreen({
         type: "mutate",
       });
     },
-    [jsonDirty],
+    [dispatchEditor, jsonDirty],
   );
 
   const updateSpec = useCallback(
@@ -399,31 +438,38 @@ export function ThemeStudioScreen({
     if (!snapshot?.dirty) {
       return true;
     }
+    const { document } = snapshot;
     const result = writeThemeStudioRecovery({
-      document: snapshot.document,
+      // A name emptied while typing is no error. The copy cannot be stored
+      // without one, so it gets the name Save gives a theme without a name.
+      document: document.packName.trim()
+        ? document
+        : { ...document, packName: titleFromThemeId(document.spec.themeId) },
       libraryId: libraryIdRef.current,
       originThemeId:
         sourceRef.current === "published" ? libraryIdRef.current : undefined,
       source: sourceRef.current,
       updatedAt: new Date().toISOString(),
     });
-    if (!result.ok) {
-      setLibraryStatus({
-        tone: "attention",
-        message: result.error.message,
-      });
-      return false;
+    if (result.ok) {
+      recoveryWrittenRef.current = true;
     }
-    recoveryWrittenRef.current = true;
-    return true;
+    setLibraryStatus((current) =>
+      !result.ok
+        ? { tone: "attention", message: result.error.message, recovery: true }
+        : current?.recovery
+          ? null
+          : current,
+    );
+    return result.ok;
   }, []);
 
   async function saveThemeToLibrary(): Promise<boolean> {
     if (!onSaveToLibrary) {
       return false;
     }
+    clearAnswers();
     if (saveBlockedReason) {
-      setLibraryStatus({ tone: "attention", message: saveBlockedReason });
       return false;
     }
     if (validation.errors.length > 0) {
@@ -447,6 +493,7 @@ export function ThemeStudioScreen({
         libraryIdRef.current = result.libraryId;
       }
       sourceRef.current = "custom";
+      setInLibrary(true);
       recoveryWrittenRef.current = false;
       setRecoveryDirty(false);
       dispatchEditor({
@@ -466,7 +513,9 @@ export function ThemeStudioScreen({
       setLibraryStatus({
         tone: "attention",
         message:
-          error instanceof Error ? error.message : "Theme could not be saved.",
+          error instanceof Error
+            ? error.message
+            : `${screensaver ? "Screensaver" : "Theme"} could not be saved.`,
       });
       return false;
     } finally {
@@ -572,10 +621,7 @@ export function ThemeStudioScreen({
           ? { tone: "ready", message: "Mini Classic loaded." }
           : { tone: "ready", message: "Theme opened." },
       });
-      setDeviceStatus({
-        tone: "unknown",
-        message: "Nothing is sent until you click Send.",
-      });
+      setDeviceStatus(SEND_IDLE);
     } catch (error) {
       if (options.cancelled?.()) {
         return;
@@ -619,7 +665,9 @@ export function ThemeStudioScreen({
 
   function applyJson() {
     try {
-      const imported = importThemeSpec(JSON.parse(jsonText));
+      const imported = importThemeSpec(
+        JSON.parse(jsonDraft ?? prettyJson(spec)),
+      );
       replaceLoadedTheme({
         assets,
         packName: titleFromThemeId(imported.themeId),
@@ -767,6 +815,16 @@ export function ThemeStudioScreen({
     });
   }
 
+  function keySelectedSpriteColor(color: string) {
+    const assetPath = selectedPrimitive?.assetPath;
+    updateDocument((document) => {
+      const asset = assetPath ? document.assets[assetPath] : undefined;
+      if (asset) {
+        asset.data = keySpriteColor(asset.data, color);
+      }
+    });
+  }
+
   function removeAsset(assetPath: string) {
     updateDocument((document) => {
       delete document.assets[assetPath];
@@ -886,7 +944,7 @@ export function ThemeStudioScreen({
 
     window.addEventListener("keydown", handleEditorShortcut);
     return () => window.removeEventListener("keydown", handleEditorShortcut);
-  }, [spec.primitives, updateSpec, visibleSelectedIndices]);
+  }, [dispatchEditor, spec.primitives, updateSpec, visibleSelectedIndices]);
 
   useEffect(() => {
     if (!dirty) {
@@ -935,26 +993,10 @@ export function ThemeStudioScreen({
         return () => window.clearTimeout(statusTimer);
       }
     }
-    const timer = window.setTimeout(() => {
-      const result = writeThemeStudioRecovery({
-        document: editorState.present,
-        libraryId: libraryIdRef.current,
-        originThemeId:
-          sourceRef.current === "published" ? libraryIdRef.current : undefined,
-        source: sourceRef.current,
-        updatedAt: new Date().toISOString(),
-      });
-      if (!result.ok) {
-        setLibraryStatus({
-          tone: "attention",
-          message: result.error.message,
-        });
-      } else {
-        recoveryWrittenRef.current = true;
-      }
-    }, 300);
+    // Every change to the theme starts this wait again.
+    const timer = window.setTimeout(persistThemeStudioRecovery, 300);
     return () => window.clearTimeout(timer);
-  }, [dirty, editorState.present, onRecoveryDiscarded]);
+  }, [dirty, editorState.present, onRecoveryDiscarded, persistThemeStudioRecovery]);
 
   function insertToken(token: string) {
     updateSelectedPrimitive((primitive) => {
@@ -967,6 +1009,7 @@ export function ThemeStudioScreen({
   }
 
   function exportThemePack() {
+    clearAnswers();
     if (validation.errors.length > 0) {
       setExportStatus({
         tone: "attention",
@@ -989,7 +1032,13 @@ export function ThemeStudioScreen({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setExportStatus({
         tone: "ready",
-        message: `${pack.fileName} exported. Nothing was sent.`,
+        // Windows saves a download without asking where, so the app can name
+        // the folder. It cannot name the file: a second export of the same
+        // theme is saved as "… (1).zip". The Mac asks where and can be
+        // cancelled; it gets no claim about a folder.
+        message: windowsHost
+          ? "Saved in your Downloads folder. Nothing was sent."
+          : `${pack.fileName} exported. Nothing was sent.`,
       });
     } catch (error) {
       setExportStatus({
@@ -1000,29 +1049,10 @@ export function ThemeStudioScreen({
   }
 
   async function sendTheme() {
-    if (dirty) {
-      setDeviceStatus({
-        tone: "attention",
-        message: `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`,
-      });
+    if (sendBlockedReason) {
       return;
     }
-    const checked = validateThemeSpec(spec, assets, usage);
-    if (checked.errors.length > 0) {
-      setDeviceStatus({
-        tone: "attention",
-        message: checked.errors[0],
-      });
-      return;
-    }
-    if (deviceValidation && deviceValidation.errors.length > 0) {
-      setDeviceStatus({
-        tone: "attention",
-        message: deviceValidation.errors[0],
-      });
-      setAdvancedTab("device");
-      return;
-    }
+    clearAnswers();
 
     if (!onInstallTheme) {
       setDeviceStatus({
@@ -1076,9 +1106,7 @@ export function ThemeStudioScreen({
 
   const validationOk = validation.errors.length === 0;
   const assetCount = referencedAssets.length;
-  const showDeviceStatus =
-    deviceStatus.tone === "attention" ||
-    deviceStatus.message !== "Nothing is sent until you click Send.";
+  const showDeviceStatus = deviceStatus !== SEND_IDLE;
   const showJsonStatus = jsonStatus.tone === "attention";
 
   return (
@@ -1102,9 +1130,13 @@ export function ThemeStudioScreen({
                   </Button>
                 </div>
               ) : null}
-              <h3 className="truncate text-3xl font-black leading-tight text-foreground">
-                {packName || (screensaver ? "Untitled screensaver" : "Untitled theme")}
-              </h3>
+              <Input
+                aria-label="Name"
+                className="h-12 max-w-xl text-2xl font-black md:text-2xl"
+                onChange={(event) => setPackName(event.target.value)}
+                placeholder={screensaver ? "Untitled screensaver" : "Untitled theme"}
+                value={packName}
+              />
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {screensaver ? (
                   <StatusPill label="Screensaver" tone="neutral" />
@@ -1133,7 +1165,7 @@ export function ThemeStudioScreen({
                   }
                 />
                 <StatusPill
-                  label={`${validation.primitiveCount} elements`}
+                  label={`${validation.primitiveCount} ${validation.primitiveCount === 1 ? "element" : "elements"}`}
                   tone={validation.primitiveCount > 32 ? "attention" : "neutral"}
                 />
                 <StatusPill
@@ -1141,8 +1173,10 @@ export function ThemeStudioScreen({
                   tone={assetCount > 0 ? "warn" : "neutral"}
                 />
                 <StatusPill
-                  label={dirty ? "Unsaved changes" : "Saved"}
-                  tone={dirty ? "warn" : "ready"}
+                  label={
+                    dirty ? "Unsaved changes" : inLibrary ? "Saved" : "Draft"
+                  }
+                  tone={dirty ? "warn" : inLibrary ? "ready" : "neutral"}
                 />
               </div>
             </div>
@@ -1154,18 +1188,15 @@ export function ThemeStudioScreen({
             canSave={
               validation.errors.length === 0 && !saveBlockedReason
             }
-            canSend={
-              !dirty &&
-              validation.errors.length === 0 &&
-              (deviceValidation?.errors.length || 0) === 0
-            }
             canUndo={editorState.past.length > 0}
             onExport={exportThemePack}
             onRedo={() => dispatchEditor({ type: "redo" })}
             onSave={() => void saveThemeToLibrary()}
             onSend={() => void sendTheme()}
             onUndo={() => dispatchEditor({ type: "undo" })}
+            saveLabel={screensaver ? "Save screensaver" : "Save theme"}
             saving={saving}
+            sendBlockedReason={sendBlockedReason}
             sending={sending}
             showSave={Boolean(onSaveToLibrary)}
           />
@@ -1222,12 +1253,13 @@ export function ThemeStudioScreen({
                       onChange={(field, value) => updateSelectedPrimitive((primitive) => setPrimitiveField(primitive, field, value))}
                       onDelete={deleteSelectedPrimitives}
                       onInsertToken={insertToken}
+                      onKeySpriteColor={keySelectedSpriteColor}
                       primitive={selectedPrimitive}
+                      spriteData={assets[selectedPrimitive.assetPath || ""]?.data}
                     />
                   ) : <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">Select an element.</p>}
                   <div className="grid gap-3 border-t pt-5">
                     <PanelTitle icon={<Palette aria-hidden />} title="Project" />
-                    <TextField label="Name" value={packName} onChange={setPackName} />
                     <ColorField label="Background" value={spec.bgColor || COLOR_FALLBACK} onChange={(value) => updateSpec((draft) => { Object.assign(draft, updateThemeColors(draft, { background: value })); })} />
                   </div>
                   <StatusLine
@@ -1356,7 +1388,6 @@ export function ThemeStudioScreen({
                   id="theme-studio-panel-project"
                   role="tabpanel"
                 >
-                  <TextField label="Name" value={packName} onChange={setPackName} />
                   <TextField
                     label="ID"
                     value={spec.themeId}
@@ -1500,15 +1531,14 @@ export function ThemeStudioScreen({
                     aria-label="Theme JSON"
                     className="min-h-[220px] resize-y font-mono text-xs leading-5"
                     onChange={(event) => {
-                      setJsonText(event.target.value);
-                      setJsonDirty(true);
+                      setJsonDraft(event.target.value);
                       setJsonStatus({
                         tone: "unknown",
                         message: "JSON has local edits.",
                       });
                     }}
                     spellCheck={false}
-                    value={jsonText || prettyJson(spec)}
+                    value={jsonDraft ?? prettyJson(spec)}
                   />
                   <div className="grid gap-2">
                     {jsonDirty || showJsonStatus ? (
@@ -1531,8 +1561,7 @@ export function ThemeStudioScreen({
                     <Button
                       className="w-full"
                       onClick={() => {
-                        setJsonText(prettyJson(spec));
-                        setJsonDirty(false);
+                        setJsonDraft(null);
                         setJsonStatus({ tone: "ready", message: "JSON reset." });
                       }}
                       type="button"
@@ -1605,7 +1634,50 @@ export function ThemeStudioScreen({
             />
           </main>
 
-          <aside className="order-3 hidden gap-4 rounded-[var(--radius-card)] border bg-card p-4 lg:grid lg:max-h-full lg:overflow-y-auto">
+          {/* The right-hand column. A narrow window has no such column and
+              hides the Inspector, so there the notices stand above the preview. */}
+          <div className="order-3 min-h-0 gap-4 max-lg:contents lg:flex lg:max-h-full lg:flex-col">
+            {/* What Save, Export and Send answered comes first: under the
+                Inspector's fields it was below the fold. */}
+            <div className="grid gap-4 empty:hidden">
+              {libraryNotice ? (
+                <StatusLine
+                  detail={libraryNotice.message}
+                  icon={
+                    libraryNotice.tone === "attention" ? (
+                      <AlertTriangle size={16} aria-hidden />
+                    ) : (
+                      <CheckCircle2 size={16} aria-hidden />
+                    )
+                  }
+                  title="Library"
+                  tone={libraryNotice.tone}
+                />
+              ) : null}
+              {exportStatus !== EXPORT_IDLE ? (
+                <StatusLine
+                  detail={exportStatus.message}
+                  icon={
+                    exportStatus.tone === "attention" ? (
+                      <AlertTriangle size={16} aria-hidden />
+                    ) : (
+                      <CheckCircle2 size={16} aria-hidden />
+                    )
+                  }
+                  title="Export"
+                  tone={exportStatus.tone}
+                />
+              ) : null}
+              {showDeviceStatus ? (
+                <StatusLine
+                  detail={deviceStatus.message}
+                  icon={<Send size={16} aria-hidden />}
+                  title="VibeTV"
+                  tone={deviceStatus.tone}
+                />
+              ) : null}
+            </div>
+            <aside className="hidden min-h-0 gap-4 rounded-[var(--radius-card)] border bg-card p-4 lg:grid lg:overflow-y-auto">
             <div>
               <PanelTitle
                 icon={<LayoutGrid size={16} aria-hidden />}
@@ -1621,7 +1693,9 @@ export function ThemeStudioScreen({
                   }
                   onDelete={deleteSelectedPrimitives}
                   onInsertToken={insertToken}
+                  onKeySpriteColor={keySelectedSpriteColor}
                   primitive={selectedPrimitive}
+                  spriteData={assets[selectedPrimitive.assetPath || ""]?.data}
                 />
               ) : (
                 <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">
@@ -1658,43 +1732,8 @@ export function ThemeStudioScreen({
                 </div>
               </Card>
             ) : null}
-            {libraryStatus ? (
-              <StatusLine
-                detail={libraryStatus.message}
-                icon={
-                  libraryStatus.tone === "attention" ? (
-                    <AlertTriangle size={16} aria-hidden />
-                  ) : (
-                    <CheckCircle2 size={16} aria-hidden />
-                  )
-                }
-                title="Library"
-                tone={libraryStatus.tone}
-              />
-            ) : null}
-            {exportStatus.message !== "Export is ready after validation." ? (
-              <StatusLine
-                detail={exportStatus.message}
-                icon={
-                  exportStatus.tone === "attention" ? (
-                    <AlertTriangle size={16} aria-hidden />
-                  ) : (
-                    <CheckCircle2 size={16} aria-hidden />
-                  )
-                }
-                title="Export"
-                tone={exportStatus.tone}
-              />
-            ) : null}
-            {showDeviceStatus ? (
-              <StatusLine
-                detail={deviceStatus.message}
-                icon={<Send size={16} aria-hidden />}
-                title="VibeTV"
-                tone={deviceStatus.tone}
-              />
-            ) : null}
-          </aside>
+            </aside>
+          </div>
         </section>
       </section>
 

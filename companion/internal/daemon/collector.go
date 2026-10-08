@@ -21,6 +21,10 @@ const (
 	// This cadence applies only once a provider's history stopped growing;
 	// see tokenStatsHistorySettled.
 	tokenStatsScanCooldown = 5 * time.Minute
+	// A failed scan is tried again sooner. After the full cadence the retry
+	// found the stored totals expired (ten minutes), took the new ones for a
+	// first reading and could show no work for one more scan period.
+	tokenStatsFailedScanCooldown = time.Minute
 )
 
 type providerSnapshot struct {
@@ -94,8 +98,12 @@ type providerCollector struct {
 	tokenStatsCooldown      time.Duration
 	tokenStatsLastCompleted time.Time
 	tokenStatsSettled       bool
+	tokenStatsRescan        bool
 	tokenStatsFailed        bool
 	tokenHistoryPrints      map[string]string
+	// tokenHistoryRead marks providers whose token history has settled once
+	// since this start: from then on a higher total is new work.
+	tokenHistoryRead map[string]bool
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -256,16 +264,22 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 	// A still-growing history must be corrected by the next scan instead of
 	// waiting out the completed-scan cadence. Single-flight still prevents
 	// overlapping scans.
-	cooling := (c.tokenStatsSettled || c.tokenStatsFailed) &&
-		c.tokenStatsCooldown > 0 &&
+	cooldown := c.tokenStatsCooldown
+	if c.tokenStatsFailed {
+		cooldown = min(cooldown, tokenStatsFailedScanCooldown)
+	}
+	cooling := !c.tokenStatsRescan &&
+		(c.tokenStatsSettled || c.tokenStatsFailed) &&
+		cooldown > 0 &&
 		!c.tokenStatsLastCompleted.IsZero() &&
-		now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))
+		now.Before(c.tokenStatsLastCompleted.Add(cooldown))
 	if c.tokenStatsRunning || cooling {
 		c.tokenStatsMu.Unlock()
 		cancel()
 		return false
 	}
 	c.tokenStatsRunning = true
+	c.tokenStatsRescan = false
 	c.tokenStatsCancel = cancel
 	c.tokenStatsWG.Add(1)
 	c.tokenStatsMu.Unlock()
@@ -525,6 +539,19 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 
 func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.ProviderSetting) bool {
 	enabledOrder, enabled := enabledProviderInventory(settings)
+	if c.inventoryKnown {
+		for key := range enabled {
+			if _, had := c.inventoryEnabled[key]; !had {
+				// A provider that was just switched on has no token totals
+				// yet. The last scan could not know about it, so it must not
+				// wait out that scan's cooldown.
+				c.tokenStatsMu.Lock()
+				c.tokenStatsRescan = true
+				c.tokenStatsMu.Unlock()
+				break
+			}
+		}
+	}
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
 	c.inventoryDisabled = make(map[string]struct{}, len(settings))
@@ -540,6 +567,8 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 			continue
 		}
 		delete(c.providers, key)
+		// Switched on again, its history is read in from the start.
+		delete(c.tokenHistoryRead, key)
 		updated = true
 	}
 	return updated
@@ -829,6 +858,12 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		// a provider must not keep the collector scanning.
 		providerSettled := stats.Cost == nil || (hadPrevious && previousPrint == print)
 		settled = settled && providerSettled
+		if providerSettled {
+			if c.tokenHistoryRead == nil {
+				c.tokenHistoryRead = make(map[string]bool)
+			}
+			c.tokenHistoryRead[key] = true
+		}
 
 		c.providers[key] = providerSnapshot{
 			Provider:  key,
@@ -858,6 +893,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		}
 		if hadTokenStats {
 			clearSnapshotTokenStats(&snapshot)
+			delete(c.tokenHistoryRead, key)
 		}
 		// TokenStatsCollected is also the completion marker for a successful
 		// empty result. A failed provider remains in seen and keeps its
@@ -1073,14 +1109,16 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			frame.Provider = key
 		}
 		frames = append(frames, codexbar.ParsedFrame{
-			Frame:              frame,
-			Provider:           key,
-			Source:             snapshot.Source,
-			Meta:               snapshot.Meta,
-			CollectedAt:        snapshot.Collected,
-			ActivityObservedAt: snapshot.ActivityObservedAt,
-			Stale:              snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
-			Terminal:           snapshot.Terminal,
+			Frame:                 frame,
+			Provider:              key,
+			Source:                snapshot.Source,
+			Meta:                  snapshot.Meta,
+			CollectedAt:           snapshot.Collected,
+			ActivityObservedAt:    snapshot.ActivityObservedAt,
+			TokenStatsCollectedAt: snapshot.TokenStatsCollected,
+			TokenHistoryGrowing:   snapshotHasTokenStats(snapshot) && !c.tokenHistoryRead[key],
+			Stale:                 snapshot.Retained || frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
+			Terminal:              snapshot.Terminal,
 		})
 	}
 	return frames

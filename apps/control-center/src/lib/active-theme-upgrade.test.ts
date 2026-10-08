@@ -1,9 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
 import type { DeviceInfo } from "@/components/control-center-types";
+import {
+  buildThemePack,
+  createBlankThemeSpec,
+  importThemeSpec,
+  validateThemeSpec,
+} from "@/lib/theme-studio";
+import { rememberSentOwnThemePath } from "@/lib/sent-own-theme-paths";
+import type { UserThemeRecord } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import {
+  activeLiveThemeId,
+  installedScreensaver,
+  ownThemePaths,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
+  NO_THEME_UPGRADE,
   resolveScreensaverUpgrade,
 } from "./active-theme-upgrade";
 
@@ -95,34 +110,95 @@ describe("resolveActiveThemeUpgrade", () => {
   });
 
   it("resolves the saved live theme while a screensaver is on screen", () => {
+    // Two catalog revisions: in standby revision 1 is a Theme Studio theme.
+    const current = {
+      ...slotTheme,
+      themeRev: 3,
+      themeSpecPath: "/themes/u/synthwa-3-619665.json",
+    };
     const inStandby: DeviceInfo = {
       ...device(true, "/themes/s/night-clock.json"),
       activeTheme: "night-clock",
       standby: {
         active: true,
-        liveThemePath: "/themes/u/synthwa-1-6b39a3.json",
+        liveThemePath: slotTheme.themeSpecPath,
       },
     };
 
-    expect(resolveActiveLiveTheme([screensaver, slotTheme], inStandby)).toBe(
-      slotTheme,
+    expect(resolveActiveLiveTheme([screensaver, current], inStandby)).toBe(
+      current,
     );
     expect(
-      resolveActiveThemeUpgrade([screensaver, slotTheme], inStandby),
+      resolveActiveThemeUpgrade([screensaver, current], inStandby),
     ).toEqual({
       needed: true,
       needsFirmwareCapability: false,
       needsThemeSpec: true,
-      theme: slotTheme,
+      theme: current,
       unresolved: false,
     });
 
     expect(
-      resolveActiveLiveTheme([screensaver, slotTheme], {
+      resolveActiveLiveTheme([screensaver, current], {
         ...inStandby,
         standby: { active: true },
       }),
     ).toBeUndefined();
+  });
+
+  // Seen on a real VibeTV: in standby `activeTheme` named the screensaver, and
+  // the theme library then showed no live theme as installed.
+  it("names the live theme whether or not a screensaver is on screen", () => {
+    const catalog = [screensaver, slotTheme];
+    const awake = device(true, "/themes/u/synthwa-2-5f8ac7.json");
+    const inStandby: DeviceInfo = {
+      ...device(true, "/themes/s/night-clock.json"),
+      activeTheme: "night-clock",
+      standby: {
+        active: true,
+        liveThemePath: "/themes/u/synthwa-2-5f8ac7.json",
+      },
+    };
+
+    expect(activeLiveThemeId(catalog, awake)).toBe("synthwave");
+    expect(activeLiveThemeId(catalog, inStandby)).toBe("synthwave");
+    // A theme the catalog does not list is named as VibeTV reports it.
+    expect(activeLiveThemeId(catalog, { ...awake, activeTheme: "my-theme" })).toBe(
+      "my-theme",
+    );
+    expect(activeLiveThemeId(catalog, null)).toBeUndefined();
+  });
+
+  // A later catalog can give one of its themes the id of a theme the customer
+  // saved earlier. Awake, VibeTV names both by that id, and the catalog theme
+  // was installed over the customer's, again after every app start.
+  it("leaves a theme the customer saved alone when a catalog theme has its id", () => {
+    const own: UserThemeRecord = {
+      document: {
+        assets: {},
+        packName: "My Synthwave",
+        spec: { ...createBlankThemeSpec(), themeId: "synthwave" },
+      },
+      id: "synthwave",
+      updatedAt: "2026-10-08T00:00:00Z",
+    };
+    const ownPaths = ownThemePaths([own]);
+    expect(ownPaths[0]).toMatch(/^\/themes\/u\/synthwa-1-[0-9a-f]{6}\.json$/);
+    const awake = device(true, ownPaths[0]);
+
+    expect(resolveActiveThemeUpgrade([slotTheme], awake, ownPaths)).toEqual(
+      NO_THEME_UPGRADE,
+    );
+    // A file that is no saved theme's is judged by the id, as is a VibeTV
+    // that reports no file.
+    expect(resolveActiveThemeUpgrade([slotTheme], awake).needed).toBe(true);
+    expect(
+      resolveActiveThemeUpgrade(
+        [slotTheme],
+        { ...awake, display: { themeSpec: { active: true } } },
+        ownPaths,
+      ).needed,
+    ).toBe(true);
   });
 
   it("reinstalls a cataloged ThemeSpec missing from the device status", () => {
@@ -215,6 +291,103 @@ describe("resolveScreensaverUpgrade", () => {
     expect(resolveScreensaverUpgrade(catalog, "  ").needed).toBe(false);
   });
 
+  // Screensaver Studio saves under the first characters of the id as
+  // revision 1, so the customer's screensaver `rcf` lies on VibeTV as
+  // rcf-1-<hash> beside the catalog's Reset Countdown, rcf-6-03e818f0. The
+  // path a saved screensaver is sent under is what makes the file theirs.
+  it("leaves a screensaver the customer saved alone when its file name starts like a catalog one", () => {
+    const resetCountdown = {
+      ...screensaver,
+      id: "reset-countdown",
+      themeId: "reset-countdown",
+      themeSpecPath: "/themes/s/rcf-6-03e818f0.json",
+      title: "Reset Countdown",
+    } satisfies ThemeProduct;
+    const own: UserThemeRecord = {
+      document: {
+        assets: {},
+        packName: "My Fire",
+        spec: { ...createBlankThemeSpec(), themeId: "rcf" },
+        usage: "screensaver",
+      },
+      id: "rcf",
+      updatedAt: "2026-10-08T00:00:00Z",
+    };
+    const ownPaths = ownThemePaths([own]);
+    expect(ownPaths[0]).toMatch(/^\/themes\/s\/rcf-1-[0-9a-f]{6}\.json$/);
+
+    expect(
+      resolveScreensaverUpgrade([resetCountdown], ownPaths[0], ownPaths),
+    ).toEqual(NO_THEME_UPGRADE);
+    expect(installedScreensaver([resetCountdown], [own], ownPaths[0])).toEqual({
+      themeId: "rcf",
+      title: "My Fire",
+    });
+    // Changed and saved again since it was sent: the file on VibeTV is no
+    // saved screensaver's any more and is told by its name.
+    expect(
+      resolveScreensaverUpgrade(
+        [resetCountdown],
+        "/themes/s/rcf-1-0a1b2c.json",
+        ownPaths,
+      ).theme,
+    ).toBe(resetCountdown);
+  });
+
+  // Sent, then changed and saved again, or deleted: no saved screensaver has
+  // that file any more. The app sent it, so Settings and the Screensavers list
+  // do not name it after the catalog screensaver its file name starts like.
+  it("does not name a file the app sent for an own screensaver after a catalog one", () => {
+    const resetCountdown = {
+      ...screensaver,
+      id: "reset-countdown",
+      themeId: "reset-countdown",
+      themeSpecPath: "/themes/s/rcf-6-03e818f0.json",
+      title: "Reset Countdown",
+    } satisfies ThemeProduct;
+    const sent = "/themes/s/rcf-1-0a1b2c.json";
+    const stored = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => void stored.set(key, value),
+      },
+    });
+    try {
+      expect(installedScreensaver([resetCountdown], [], sent)?.title).toBe(
+        "Reset Countdown",
+      );
+      rememberSentOwnThemePath(sent);
+      expect(installedScreensaver([resetCountdown], [], sent)).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // Token Fire 0.1.3 was shipped as tf-1-874fd8e2. Taking every revision-1
+  // path for the customer's own left its holders without the update.
+  it("updates a catalog screensaver that is still on its first revision", () => {
+    const tokenFire = {
+      ...screensaver,
+      id: "token-fire",
+      themeId: "token-fire",
+      themeSpecPath: "/themes/s/tf-5-9aeed240.json",
+      title: "Token Fire",
+    } satisfies ThemeProduct;
+    const firstRevision = "/themes/s/tf-1-874fd8e2.json";
+
+    expect(resolveScreensaverUpgrade([tokenFire], firstRevision)).toEqual({
+      needed: true,
+      needsFirmwareCapability: false,
+      needsThemeSpec: true,
+      theme: tokenFire,
+      unresolved: false,
+    });
+    expect(installedScreensaver([tokenFire], [], firstRevision)?.title).toBe(
+      "Token Fire",
+    );
+  });
+
   // A studio-built screensaver has no catalog entry to upgrade towards, so the
   // customer's own file must never be replaced by a lookalike.
   it("ignores a screensaver that is not in the catalog", () => {
@@ -266,5 +439,121 @@ describe("versioned path matching against shipped paths", () => {
       } as never);
       expect(found?.themeSpecPath).toBe(path);
     }
+  });
+});
+
+// Found on 2026-10-08: a Theme Studio copy of Mini Classic lands on VibeTV as
+// /themes/u/mini-cl-1-<hash>.json, the catalog theme as mini-cl-9-<hash>.json.
+// During standby the live theme is known by its path alone, the copy was taken
+// for revision 1 of the catalog theme, and the automatic update installed the
+// catalog theme over it and swept the customer's files off the device.
+describe("a Theme Studio theme in the live slot during standby", () => {
+  const dist = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../../dist/theme-packs",
+  );
+  const readJson = (file: string) =>
+    JSON.parse(readFileSync(path.join(dist, file), "utf8"));
+  // The catalog this build ships, not a fixture.
+  const catalog: ThemeProduct[] = readJson("vibetv-theme-packs-v2.json").themes.map(
+    (entry: ThemeProduct & { id: string }) => ({
+      ...slotTheme,
+      ...entry,
+      themeId: entry.id,
+    }),
+  );
+  const liveThemes = catalog.filter((theme) => theme.usage === "live");
+  const inStandby = (liveThemePath: string): DeviceInfo => ({
+    ...device(true, "/themes/s/nc-3-e18e4217.json"),
+    activeTheme: "night-clock",
+    standby: { active: true, liveThemePath },
+  });
+  // What "Edit" on a catalog theme in the Themes library opens: the published
+  // spec under the id `<catalog id>-custom`.
+  const customCopy = (themeId: string) => {
+    const published = readJson(`render/${themeId}.json`);
+    const spec = importThemeSpec(published.spec);
+    spec.themeId = `${themeId}-custom`;
+    return { assets: published.assets, name: `${published.name} Custom`, spec };
+  };
+  // The file name Theme Studio gives it on VibeTV.
+  const customCopyPath = (themeId: string): string => {
+    const copy = customCopy(themeId);
+    return validateThemeSpec(copy.spec, copy.assets).themeSpecPath;
+  };
+
+  it("sends the copy to VibeTV under the catalog theme's file name prefix", () => {
+    const copy = customCopy("mini-classic");
+    const sent = buildThemePack(copy.spec, copy.name, copy.assets);
+
+    expect(sent.manifest.themeSpec.path).toBe(customCopyPath("mini-classic"));
+    expect(sent.manifest.themeSpec.path).toMatch(
+      /^\/themes\/u\/mini-cl-1-[0-9a-f]{6}\.json$/,
+    );
+  });
+
+  it.each(liveThemes.map((theme) => theme.themeId))(
+    "leaves a customised copy of %s alone",
+    (themeId) => {
+      const standby = inStandby(customCopyPath(themeId));
+
+      expect(resolveActiveLiveTheme(catalog, standby)).toBeUndefined();
+      expect(resolveActiveThemeUpgrade(catalog, standby)).toEqual({
+        needed: false,
+        needsFirmwareCapability: false,
+        needsThemeSpec: false,
+        unresolved: false,
+      });
+      // Not named after the catalog theme, and not after the screensaver
+      // that is on screen.
+      expect(activeLiveThemeId(catalog, standby)).toBeUndefined();
+    },
+  );
+
+  it("leaves a theme made from scratch alone", () => {
+    const spec = createBlankThemeSpec();
+    const standby = inStandby(
+      buildThemePack(spec, "New Theme").manifest.themeSpec.path,
+    );
+
+    expect(resolveActiveThemeUpgrade(catalog, standby).needed).toBe(false);
+  });
+
+  it("still updates every later revision the catalog has shipped", () => {
+    let checked = 0;
+    for (const theme of liveThemes) {
+      for (const file of readdirSync(path.join(dist, "render", theme.themeId))) {
+        const shipped = `/themes/u/${file}`;
+        if (shipped === theme.themeSpecPath || /-1-[0-9a-f]+\.json$/.test(file)) {
+          continue;
+        }
+        expect(
+          resolveActiveThemeUpgrade(catalog, inStandby(shipped)),
+          shipped,
+        ).toMatchObject({ needed: true, needsThemeSpec: true, theme });
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  // Revision 1 is where every Theme Studio theme lives, so the catalog's own
+  // first revision (public release v1.0.52) waits for VibeTV to wake up: then
+  // it reports the theme by id and is updated as before.
+  it("updates the catalog's own first revision once VibeTV is awake", () => {
+    const firstRevision = "/themes/u/mini-cl-1-e4fe6b.json";
+
+    expect(
+      resolveActiveThemeUpgrade(catalog, inStandby(firstRevision)).needed,
+    ).toBe(false);
+    expect(
+      resolveActiveThemeUpgrade(catalog, {
+        ...device(true, firstRevision),
+        activeTheme: "mini-classic",
+      }),
+    ).toMatchObject({
+      needed: true,
+      theme: { themeId: "mini-classic" },
+    });
   });
 });
