@@ -6,6 +6,7 @@ import type { ThemeProduct } from "@/lib/themes";
 import {
   ThemeLibraryScreen,
   themeNeedsUpgradeableFirmware,
+  type ThemeInstallStatus,
   type ThemeLibraryDeviceInfo,
 } from "./theme-library-screen";
 
@@ -402,6 +403,36 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain('aria-checked="true"');
     expect(html).not.toContain("Screensaver is turned off");
     expect(html).toContain("Night Clock");
+  });
+
+  // Issue #558: the Screensavers list said "theme" in these lines of its own.
+  it.each([
+    ["screensaver", "night-clock", "Screensaver"],
+    ["live", "live-theme", "Theme"],
+  ] as const)("words its own install lines on the %s list for what it installs", (usage, themeId, noun) => {
+    const list = (installStatus?: ThemeInstallStatus) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{ connected: true, paired: true, ready: true }}
+          installStatus={installStatus}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          storefrontConfigured={false}
+          themeInstallEnabled={false}
+          themes={themes}
+          usage={usage}
+        />,
+      );
+
+    expect(list()).toContain(`title="${noun} installs are not available right now."`);
+    // An install the page knows no line of yet.
+    expect(
+      list({ phase: "installing", themeId, title: "", startedAt: "", logs: [] }),
+    ).toContain(`Preparing ${noun.toLowerCase()} install.`);
   });
 
   it("shows a clear empty state when the catalog has no screensavers", () => {

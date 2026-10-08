@@ -1166,10 +1166,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
       themeInstallPollJobRef.current = job.id;
       setBusyAction("install");
+      // As in installTheme: what this install installs (issue #558).
+      const noun = job.slot === "screensaver" ? "Screensaver" : "Theme";
       try {
         const finishedJob = await pollThemeInstallJob({
           applyInstallJob: (nextJob) => applyThemeInstallJob(nextJob),
           jobId: job.id,
+          noun,
           runCompanion,
         });
         const finishedStatus = applyThemeInstallJob(finishedJob);
@@ -1178,7 +1181,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             setLastError(finishedJob.error);
           }
           addEvent({
-            label: "Theme install needs attention",
+            label: `${noun} install needs attention`,
             detail:
               finishedJob.error?.nextAction ||
               finishedStatus.message ||
@@ -1189,14 +1192,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         setLastError(null);
         addEvent({
-          label: "Theme installed",
+          label: `${noun} installed`,
           detail: finishedJob.result?.name || finishedStatus.title,
           tone: "ready",
         });
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
-          "Theme install needs attention.",
+          `${noun} install needs attention.`,
         );
         if (isLocalNetworkAccessError(normalized)) {
           markCompanionAccessBlocked();
@@ -1219,7 +1222,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           failure: normalized,
         });
         addEvent({
-          label: "Theme install needs attention",
+          label: `${noun} install needs attention`,
           detail: normalized.nextAction,
           tone: "attention",
         });
@@ -2459,6 +2462,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           const finishedJob = await pollThemeInstallJob({
             applyInstallJob,
             jobId: payload.job.id,
+            noun,
             runCompanion,
           });
           if (finishedJob.phase === "error") {
@@ -5706,10 +5710,12 @@ function normalizeError(error: unknown, status: number): ApiError {
 async function pollThemeInstallJob({
   applyInstallJob,
   jobId,
+  noun,
   runCompanion,
 }: {
   applyInstallJob: (job: ThemeInstallJob) => void;
   jobId: string;
+  noun: string;
   runCompanion: RunCompanion;
 }): Promise<ThemeInstallJob> {
   // The server may spend the full five-minute budget waiting for the first
@@ -5728,8 +5734,8 @@ async function pollThemeInstallJob({
   }
   throw {
     code: "theme_install_timeout",
-    message: "Theme install is taking longer than expected.",
-    nextAction: "Keep VibeTV powered on, then check the theme again.",
+    message: `${noun} install is taking longer than expected.`,
+    nextAction: `Keep VibeTV powered on, then check the ${noun.toLowerCase()} again.`,
   } satisfies ApiError;
 }
 
@@ -5811,6 +5817,7 @@ function themeInstallStatusFromJob(
       : job.phase === "error"
         ? "error"
         : "installing";
+  const noun = job.slot === "screensaver" ? "Screensaver" : "Theme";
   const themeId = job.result?.themeId || job.themeId || fallback.themeId || "";
   const catalogTitle = themes.find((theme) => theme.themeId === themeId)?.title;
   const title =
@@ -5819,8 +5826,10 @@ function themeInstallStatusFromJob(
     fallback.title ||
     catalogTitle ||
     themeId ||
-    "Theme";
-  const logs = customerInstallLogs(job.logs);
+    noun;
+  const logs = customerInstallLogs(job.logs, [
+    `Preparing ${noun.toLowerCase()} install.`,
+  ]);
   const finished = phase === "complete" || phase === "error";
   return {
     phase,
@@ -5828,11 +5837,7 @@ function themeInstallStatusFromJob(
     title,
     startedAt: job.startedAt || fallback.startedAt || formatTime(),
     finishedAt: finished ? job.finishedAt || formatTime() : undefined,
-    message:
-      job.error?.nextAction ||
-      job.message ||
-      logs[logs.length - 1] ||
-      "Preparing theme install.",
+    message: job.error?.nextAction || job.message || logs[logs.length - 1],
     progress: clampProgress(job.progress),
     logs,
     result: job.result,

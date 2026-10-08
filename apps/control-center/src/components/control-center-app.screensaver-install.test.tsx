@@ -59,13 +59,25 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it.each([
-  ["Screensavers", "Retro 3D", "Screensaver", "Theme"],
-  ["Themes", "Synthwave", "Theme", "Screensaver"],
-])("words an install under %s for what it installs", async (section, title, noun, other) => {
-  // The Mac App answers the install only once the test lets it.
+const job = { id: "job-1", phase: "installing", progress: 40 };
+
+// The app beside a connected VibeTV. `install` is an install the Mac App names
+// with its status, as it does for one that runs when the window is opened.
+function startApp(install?: Record<string, unknown>) {
+  // The Mac App answers an install from this window only once the test lets it.
   let answerInstall: (response: Response) => void = () => {};
-  const job = { id: "job-1", phase: "installing", progress: 40 };
+  const app = {
+    answerInstall: (response: Response) => answerInstall(response),
+    // What the Mac App says about the named install when it is asked.
+    install,
+    wait: async (seconds: number) => {
+      for (let quarter = 0; quarter < seconds * 4; quarter += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(250);
+        });
+      }
+    },
+  };
   window.localStorage.clear();
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
@@ -111,11 +123,12 @@ it.each([
               theme: { supportsThemeSpecV1: true },
             },
           },
+          themeInstall: app.install,
         });
       }
       if (url.includes("/v1/themes/install/status")) {
-        // The install ends without the Mac App saying why.
-        return jsonResponse({ ok: true, job: { ...job, phase: "error" } });
+        // An install from this window ends without the Mac App saying why.
+        return jsonResponse({ ok: true, job: app.install ?? { ...job, phase: "error" } });
       }
       if (url.includes("/v1/themes/install")) {
         return new Promise<Response>((resolve) => {
@@ -171,13 +184,14 @@ it.each([
       createElement(ControlCenterApp, { catalog: { themes } as never }),
     ),
   );
-  const wait = async (seconds: number) => {
-    for (let quarter = 0; quarter < seconds * 4; quarter += 1) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(250);
-      });
-    }
-  };
+  return app;
+}
+
+it.each([
+  ["Screensavers", "Retro 3D", "Screensaver", "Theme"],
+  ["Themes", "Synthwave", "Theme", "Screensaver"],
+])("words an install under %s for what it installs", async (section, title, noun, other) => {
+  const { answerInstall, wait } = startApp();
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   await wait(1);
@@ -201,5 +215,46 @@ it.each([
   await wait(2);
   expect(screen.getByText(`${noun} install started`)).toBeTruthy();
   expect(screen.getByText(`${noun} install needs attention`)).toBeTruthy();
+  expect(screen.queryByText(new RegExp(`${other} install`))).toBeNull();
+});
+
+// The Mac App names an install that is still running when the window is opened
+// again, and the page follows it from there.
+it.each([
+  ["screensaver", "retro-3d", "Screensaver", "Theme"],
+  ["live", "synthwave", "Theme", "Screensaver"],
+])("words an install picked up again in the %s slot for what it installs", async (slot, themeId, noun, other) => {
+  const app = startApp({ ...job, slot, themeId });
+  await app.wait(10);
+  // The start screen shows the install's lines until it has ended.
+  expect(screen.getByText(`> Preparing ${noun.toLowerCase()} install.`)).toBeTruthy();
+
+  // It ends without the Mac App saying why.
+  app.install = { ...app.install, phase: "error" };
+  await app.wait(6);
+  const failed = screen.getByRole("dialog", { name: `${noun} install failed.` });
+  expect(
+    within(failed).getByText(
+      `Keep VibeTV connected and try installing the ${noun.toLowerCase()} again.`,
+    ),
+  ).toBeTruthy();
+  fireEvent.click(within(failed).getByRole("button", { name: "Close" }));
+
+  // The next one runs longer than the seven and a half minutes the page asks
+  // about it, and then finishes.
+  app.install = { ...job, id: "job-2", slot, themeId };
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(460_000);
+  });
+  app.install = { ...app.install, phase: "complete" };
+  await app.wait(2);
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await app.wait(2);
+  expect(screen.getAllByText(`${noun} install needs attention`)).toHaveLength(2);
+  expect(
+    screen.getByText(`Keep VibeTV powered on, then check the ${noun.toLowerCase()} again.`),
+  ).toBeTruthy();
+  expect(screen.getByText(`${noun} installed`)).toBeTruthy();
   expect(screen.queryByText(new RegExp(`${other} install`))).toBeNull();
 });

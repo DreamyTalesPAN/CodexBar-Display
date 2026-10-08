@@ -315,6 +315,7 @@ export function ThemeLibraryScreen({
         device,
         selectedTheme: displayTheme,
         themeInstallEnabled,
+        usage,
         windowsHost,
       });
   useEffect(() => {
@@ -1153,6 +1154,8 @@ function InlineInstallProgress({
   usage: ThemeStudioUsage;
 }) {
   const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
+  // What this list installs, for the lines the page words itself (issue #558).
+  const noun = usage === "screensaver" ? "Screensaver" : "Theme";
   if (status.phase === "error") {
     const dismissed = dismissedErrorAt === status.startedAt;
     const retry = () => {
@@ -1163,8 +1166,8 @@ function InlineInstallProgress({
       <SetupStepFailedDialog
         error={dismissed ? null : status.failure || {
           code: "theme_install_failed",
-          message: "Theme install failed.",
-          nextAction: status.error || "Keep VibeTV connected and try installing the theme again.",
+          message: `${noun} install failed.`,
+          nextAction: status.error || `Keep VibeTV connected and try installing the ${noun.toLowerCase()} again.`,
         }}
         onOpenChange={(open) => { if (!open) setDismissedErrorAt(status.startedAt); }}
         onRetry={canRetry ? retry : undefined}
@@ -1175,7 +1178,7 @@ function InlineInstallProgress({
   const complete = status.phase === "complete";
   const detail = complete
     ? status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
-    : status.message || status.logs[status.logs.length - 1] || "Preparing theme install.";
+    : status.message || status.logs[status.logs.length - 1] || `Preparing ${noun.toLowerCase()} install.`;
   const previousSteps = complete ? [] : status.logs.slice(-4, -1);
   const title = complete ? "Installed" : "Installing";
   return (
@@ -1303,12 +1306,14 @@ function buildInstallReadiness({
   device,
   selectedTheme,
   themeInstallEnabled,
+  usage,
   windowsHost,
 }: {
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   selectedTheme?: ThemeProduct;
   themeInstallEnabled: boolean;
+  usage: ThemeStudioUsage;
   windowsHost: boolean;
 }) {
   const metadataBlocker = selectedTheme
@@ -1377,10 +1382,11 @@ function buildInstallReadiness({
   }
 
   if (!themeInstallEnabled) {
+    const reason = `${usage === "screensaver" ? "Screensaver" : "Theme"} installs are not available right now.`;
     return {
       title: "Themes unavailable",
-      detail: "Theme installs are not available right now.",
-      buttonReason: "Theme installs are not available right now.",
+      detail: reason,
+      buttonReason: reason,
       icon: <Lock size={22} aria-hidden />,
     };
   }
