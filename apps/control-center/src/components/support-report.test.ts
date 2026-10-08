@@ -210,3 +210,87 @@ describe("support report timeline", () => {
     expect(fallback.timeline).toEqual({ unavailable: true });
   });
 });
+
+// Issue #580: the folder under the home root is the account name of the
+// computer. Support needs the rest of the path, not the name.
+describe("support report home folder", () => {
+  const timeline = {
+    version: 1,
+    events: [
+      { id: 7, at: "2026-10-06T08:00:00Z", component: "device", state: "unreachable", reason: "runtime/serial-write", correlationId: "9f3c2b1a5d6e7f80" },
+      { id: 8, at: "2026-10-06T08:00:40Z", component: "provider_check/home", deviceId: "vibetv-8caab5", state: "failed" },
+    ],
+  };
+
+  it("writes the home folder as ~ in every path of a Mac report", async () => {
+    const exported = JSON.parse(
+      serializeSupportReport(
+        await report({
+          ok: true,
+          providerSetup: {
+            engine: {
+              path: "/Users/Jane Doe/Library/Application Support/codexbar-display/bin/codexbar",
+              configPath: "/Users/Jane Doe/.codexbar/config.json",
+            },
+          },
+          usageEngine: { path: "/Users/paulanduschus/Library/Application Support/codexbar-display/bin/codexbar" },
+          checks: [
+            { name: "usage_engine", status: "fail", detail: "Could not read /Users/paulanduschus/.codexbar/config.json: permission denied (/home/jane)" },
+          ],
+          companion: { update: { feedUrl: "https://vibetv.shop/home/updates/Users/appcast.xml" } },
+          timeline,
+        } as unknown as SupportDiagnostics),
+      ),
+    );
+
+    expect(exported.providerSetup.engine).toEqual({
+      path: "~/Library/Application Support/codexbar-display/bin/codexbar",
+      configPath: "~/.codexbar/config.json",
+    });
+    expect(exported.usageEngine.path).toBe("~/Library/Application Support/codexbar-display/bin/codexbar");
+    expect(exported.checks[0].detail).toBe("Could not read ~/.codexbar/config.json: permission denied (~)");
+    // A web address is not a path on this computer.
+    expect(exported.companion.update.feedUrl).toBe("https://vibetv.shop/home/updates/Users/appcast.xml");
+    expect(exported.timeline).toEqual(timeline);
+    expect(JSON.stringify(exported)).not.toMatch(/Jane|paulanduschus/);
+  });
+
+  it("does the same for a Windows report, on any drive and with either slash", async () => {
+    visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
+    const windows = await collectSupportReport(
+      async () =>
+        ({
+          ok: true,
+          providerSetup: {
+            engine: {
+              path: "C:\\Users\\Jane Doe\\AppData\\Local\\VibeTV\\codexbar.exe",
+              configPath: "d:/users/jane/.codexbar/config.json",
+            },
+          },
+          usageEngine: { path: "C:\\Users\\jane\\AppData\\Local\\VibeTV\\codexbar.exe" },
+          // A line the engine printed as JSON keeps its doubled backslashes.
+          checks: [{ name: "usage_engine", status: "fail", detail: '{"path":"C:\\\\Users\\\\jane\\\\AppData\\\\x.json"}' }],
+        }) as unknown as SupportDiagnostics,
+      clientState,
+      true,
+    );
+    const exported = JSON.parse(serializeSupportReport(windows));
+
+    expect(exported.providerSetup.engine).toEqual({
+      path: "~\\AppData\\Local\\VibeTV\\codexbar.exe",
+      configPath: "~/.codexbar/config.json",
+    });
+    expect(exported.usageEngine.path).toBe("~\\AppData\\Local\\VibeTV\\codexbar.exe");
+    expect(exported.checks[0].detail).toBe('{"path":"~\\\\AppData\\\\x.json"}');
+    expect(JSON.stringify(exported)).not.toMatch(/jane/i);
+  });
+
+  it("does the same for a Linux home", async () => {
+    const exported = JSON.parse(
+      serializeSupportReport(
+        await report({ ok: true, usageEngine: { path: "/home/jane/.local/share/codexbar-display/bin/codexbar" } } as unknown as SupportDiagnostics),
+      ),
+    );
+    expect(exported.usageEngine.path).toBe("~/.local/share/codexbar-display/bin/codexbar");
+  });
+});

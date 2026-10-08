@@ -68,8 +68,34 @@ export function serializeSupportReport(report: SupportDiagnostics): string {
   return JSON.stringify(
     redactSensitiveValues(report),
     (_key, value) =>
-      typeof value === "string" ? copyForHost(value, windowsHost) : value,
+      typeof value === "string"
+        ? copyForHost(homeFolderAsTilde(value), windowsHost)
+        : value,
     2,
+  );
+}
+
+// The folder under the home root is the account name of the computer:
+// `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` on any drive, with
+// either slash, also doubled inside JSON text. The report says `~` there in
+// every text it holds (issue #580); the app itself keeps the real path. A name
+// may hold spaces, so it runs through the separator that ends it, or, where
+// none follows, up to closing punctuation. `/Users` and `/home` count only
+// where they start a path, so a web address (`example.com/home/...`) stays
+// whole. Modelled on `reportedHomePath`, the rule for the Mac App's provider
+// messages.
+const homeNameWord = String.raw`[^\\/\s"<>|:*?;,]+`;
+const homePath = new RegExp(
+  String.raw`(?:\b[A-Z]:[\\/]+Users|(^|[^A-Za-z0-9.-])/(?:Users|home))[\\/]+` +
+    `(?:${homeNameWord}(?: ${homeNameWord})*?([\\\\/])|` +
+    String.raw`[^\\/\r\n"<>|:*?)\]},;]+)`,
+  "gi",
+);
+
+function homeFolderAsTilde(value: string): string {
+  return value.replace(
+    homePath,
+    (_match, before = "", separator = "") => `${before}~${separator}`,
   );
 }
 
