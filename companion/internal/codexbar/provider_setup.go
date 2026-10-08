@@ -109,7 +109,8 @@ const ()
 // provider inventory remain owned by CodexBar.
 func EnsureConfig(home string) (string, error) {
 	if runtime.GOOS == "windows" {
-		// Win-CodexBar 0.56.8 ignores CODEXBAR_CONFIG and has no
+		// The pinned Win-CodexBar (scripts/fetch-win-codexbar.ps1) ignores
+		// CODEXBAR_CONFIG and has no
 		// "config validate --format json"; it only reads
 		// %APPDATA%\CodexBar\settings.json (#415). Use its own location.
 		return ensureWindowsConfigDir()
@@ -147,7 +148,7 @@ func windowsSettingsPath() string {
 }
 
 // ensureWindowsConfigDir preserves existing settings verbatim. Only a missing
-// file receives an empty provider selection; Win-CodexBar 0.56.8 fills omitted
+// file receives an empty provider selection; the pinned Win-CodexBar fills omitted
 // settings with its own defaults. Publish the complete seed without replacing
 // a config another process may have created during startup.
 func ensureWindowsConfigDir() (string, error) {

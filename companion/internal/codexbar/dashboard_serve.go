@@ -216,7 +216,8 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		"--refresh-interval", strconv.Itoa(durationSecondsCeil(s.refreshInterval)),
 	)
 	if runtime.GOOS != "windows" {
-		// Win-CodexBar 0.56.8 rejects the flag and exits; see #415.
+		// The pinned Win-CodexBar (scripts/fetch-win-codexbar.ps1) rejects
+		// the flag and exits; see #415.
 		args = append(args, "--request-timeout", "0")
 	}
 

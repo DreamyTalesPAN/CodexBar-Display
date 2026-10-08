@@ -131,7 +131,7 @@ caused `PREVIEW UNAVAILABLE` in the 2026-09-09 VM rehearsal although the exact
 Tiny Office revision existed in the export. Verify the installed app serves
 `/theme-packs/render/tiny-office/to-6-6eed22ed.json?specHash=4f824ce2` and renders it.
 
-Win-CodexBar 0.56.8's local cost command is `cost --json --days 30 --provider all`;
+The pinned Win-CodexBar's local cost command is `cost --json --days 30 --provider all`;
 it rejects the Mac `--refresh` option and defaults to Claude if the provider is
 omitted. Its `spendContract.daily` format is adapted centrally. Unestablished
 coverage, null daily token counts, or an unsupported provider remain unavailable,
