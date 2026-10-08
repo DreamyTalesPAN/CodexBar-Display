@@ -648,7 +648,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	var noReadingSince map[string]string
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok {
-			noReadingSince = noReadingSinceByProvider(usage)
+			noReadingSince = noReadingSinceByProvider(usage, false)
 			for _, provider := range usage.Providers {
 				id := strings.TrimSpace(strings.ToLower(provider.Provider))
 				if id == "" {
@@ -790,18 +790,20 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	return items
 }
 
-// noReadingSinceByProvider is, per provider, when the collector last stored a
-// usage state for it. The collector leaves that time alone while a provider
-// keeps failing, so it is the last good reading -- or, for a provider that
-// never delivered, its first failed one. Either way no reading came after it,
-// which is all the name claims; a provider without an entry was never read.
-func noReadingSinceByProvider(usage daemon.PersistedUsage) map[string]string {
+// noReadingSinceByProvider is, per provider, when its last usage reading was
+// collected. The collector leaves that time alone while the provider keeps
+// failing. A provider that never delivered has no entry: the time its snapshot
+// carries is a failed reading. staleOnly leaves out providers whose reading is
+// current, for a list that names only the ones not delivering.
+func noReadingSinceByProvider(usage daemon.PersistedUsage, staleOnly bool) map[string]string {
 	since := make(map[string]string)
 	for _, provider := range usage.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.Provider))
-		if id != "" && !provider.CollectedAt.IsZero() {
-			since[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
+		if id == "" || provider.CollectedAt.IsZero() || provider.NoReading ||
+			staleOnly && !provider.Stale && !provider.Frame.UsageUnavailable {
+			continue
 		}
+		since[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
 	}
 	return since
 }

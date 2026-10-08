@@ -178,17 +178,24 @@ func TestTerminalVerdictSurvivesRestartAndDropsLastGood(t *testing.T) {
 	}
 }
 
-// Issue #368: "no usage reading since" is read from the stored collection
-// time, so that time must not move while a provider keeps failing. It is the
-// last good reading, or the first failed one for a provider that never
-// delivered -- also after the reading expired and the Companion restarted.
-func TestPersistedUsageKeepsCollectionTimeWhileProviderKeepsFailing(t *testing.T) {
+// Issue #368: "no usage reading since" is the stored collection time of a
+// provider that delivered before. It must not move while the provider keeps
+// failing, also after the reading expired and the Companion restarted. A
+// provider that never delivered has no such time: what its snapshot carries is
+// the time of a failed reading, and the snapshot says so -- also after a token
+// scan rebuilt it.
+func TestPersistedUsageSeparatesNoReadingFromStoppedDelivering(t *testing.T) {
 	prepareFastTestEnv(t)
 	start := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	now := start
 	frames := []codexbar.ParsedFrame{testParsedFrame("gemini", 73, 21, 3600), terminalTestFrame("claude", false)}
 	collector := terminalTestCollector(&now, &frames)
+	collector.fetchTokenStatsReport = func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+		return map[string]codexbar.ProviderTokenStats{"claude": {TotalTokens: 5}, "gemini": {TotalTokens: 7}},
+			codexbar.ProviderTokenStatsReport{OK: true}
+	}
 	collector.collectOnce(context.Background())
+	collector.collectTokenStatsOnce(context.Background())
 
 	frames = []codexbar.ParsedFrame{terminalTestFrame("gemini", false), terminalTestFrame("claude", false)}
 	for _, later := range []time.Duration{time.Minute, 16 * 24 * time.Hour} {
@@ -197,12 +204,22 @@ func TestPersistedUsageKeepsCollectionTimeWhileProviderKeepsFailing(t *testing.T
 	}
 
 	usage, ok := LoadPersistedUsage(now)
-	if !ok || len(usage.Providers) != 2 {
-		t.Fatalf("expected both providers on disk, got ok=%v %#v", ok, usage.Providers)
+	if !ok || len(usage.Providers) != 2 || usage.Providers[0].Provider != "claude" || usage.Providers[1].Provider != "gemini" {
+		t.Fatalf("expected claude and gemini on disk, got ok=%v %#v", ok, usage.Providers)
 	}
-	for _, provider := range usage.Providers {
-		if !provider.CollectedAt.Equal(start) || !provider.Frame.UsageUnavailable {
-			t.Fatalf("%s: collection time moved or usage survived: %#v", provider.Provider, provider)
-		}
+	claude, gemini := usage.Providers[0], usage.Providers[1]
+	if gemini.NoReading || !gemini.CollectedAt.Equal(start) || !gemini.Frame.UsageUnavailable {
+		t.Fatalf("gemini lost the time of its last good reading: %#v", gemini)
+	}
+	if !claude.NoReading {
+		t.Fatalf("claude never delivered, but its snapshot reads like a reading: %#v", claude)
+	}
+
+	// The first real reading ends "never".
+	frames = []codexbar.ParsedFrame{terminalTestFrame("gemini", false), testParsedFrame("claude", 40, 30, 3600)}
+	collector.collectOnce(context.Background())
+	if usage, _ = LoadPersistedUsage(now); len(usage.Providers) != 2 || usage.Providers[0].NoReading ||
+		!usage.Providers[0].CollectedAt.Equal(now) {
+		t.Fatalf("claude's first reading did not count: %#v", usage.Providers)
 	}
 }

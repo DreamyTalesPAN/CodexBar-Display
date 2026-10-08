@@ -40,6 +40,10 @@ type providerSnapshot struct {
 	// Terminal survives a restart: a reload must not turn a known terminal
 	// error back into stale data that keeps an old last-good frame alive.
 	Terminal bool `json:"terminal,omitempty"`
+	// NoReading marks a snapshot that a failed reading created: Collected is
+	// then the time of that failure, not of a reading. The provider's first
+	// real reading replaces the snapshot and with it the mark (#368).
+	NoReading bool `json:"noReading,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -485,6 +489,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Source:    strings.TrimSpace(parsed.Source),
 					Collected: parsedCollectedAt,
 					Terminal:  parsed.Terminal,
+					NoReading: true,
 				}
 			}
 			continue
@@ -879,6 +884,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Meta:      meta,
 			Collected: snapshot.Collected,
 			Retained:  snapshot.Retained,
+			NoReading: snapshot.NoReading,
 			// A successful scan makes these totals current even when CodexBar
 			// reports that no new activity occurred. UpdatedAt remains the
 			// activity timestamp above, not the token-stat freshness timestamp.

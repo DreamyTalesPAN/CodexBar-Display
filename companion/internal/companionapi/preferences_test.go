@@ -103,6 +103,9 @@ func TestPreferencesReportNoReadingSinceFromStoredCollectionTime(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
 			Provider: "claude", Frame: protocol.Frame{Provider: "claude", UsageUnavailable: true}, CollectedAt: collectedAt, Stale: true,
+		}, {
+			// Never delivered: this time is its first failed reading.
+			Provider: "cursor", Frame: protocol.Frame{Provider: "cursor", UsageUnavailable: true}, CollectedAt: collectedAt, Stale: true, NoReading: true,
 		}}}, true
 	}
 
@@ -120,7 +123,7 @@ func TestPreferencesReportNoReadingSinceFromStoredCollectionTime(t *testing.T) {
 		t.Fatalf("unexpected health for the failing provider: %#v", claude)
 	}
 	if cursor.NoReadingSince != "" {
-		t.Fatalf("a provider that was never read must not name a time: %#v", cursor)
+		t.Fatalf("a provider that never delivered must not name a time: %#v", cursor)
 	}
 }
 

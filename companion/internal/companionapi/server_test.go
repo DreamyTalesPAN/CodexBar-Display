@@ -7312,9 +7312,13 @@ func TestDiagnosticsReportsLastCollectionCounts(t *testing.T) {
 func TestDiagnosticsReportsNoReadingSincePerProvider(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		at := time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)
 		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{
-			{Provider: "claude", CollectedAt: time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)},
-			{Provider: "codex"},
+			{Provider: "claude", CollectedAt: at, Stale: true},
+			// A working provider is not in the list, nor is one that never
+			// delivered: its time is a failed reading.
+			{Provider: "codex", CollectedAt: at.Add(16 * 24 * time.Hour)},
+			{Provider: "cursor", CollectedAt: at, Stale: true, NoReading: true},
 		}}, true
 	}
 	rec := httptest.NewRecorder()

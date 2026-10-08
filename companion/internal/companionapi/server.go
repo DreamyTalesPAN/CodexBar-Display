@@ -735,8 +735,8 @@ type diagnosticsResponse struct {
 	SetupLog       setupLog               `json:"setupLog"`
 	Timeline       timeline.Log           `json:"timeline"`
 	Checks         []diagnosticCheck      `json:"checks"`
-	// NoReadingSince names, per provider, since when no newer usage reading
-	// arrived (#368); see noReadingSinceByProvider.
+	// NoReadingSince names the providers that are not delivering and when
+	// each one's last usage reading was (#368); see noReadingSinceByProvider.
 	NoReadingSince map[string]string `json:"noReadingSince,omitempty"`
 }
 
@@ -2512,7 +2512,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	var noReadingSince map[string]string
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(s.currentTime().UTC()); ok {
-			noReadingSince = noReadingSinceByProvider(usage)
+			noReadingSince = noReadingSinceByProvider(usage, true)
 		}
 	}
 	writeReport := func(device deviceInfo) {
