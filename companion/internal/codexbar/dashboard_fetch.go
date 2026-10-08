@@ -101,8 +101,11 @@ func forgetServeUsage() {
 	serveUsage.forgotten++
 }
 
-// serveUsageItem is one provider's item of serve's answer, or false when the
-// item does not say what the collector made of it: then the CLI is asked. A
+// serveUsageItem is one provider's item of serve's answer. The item stands for
+// what a probe would print, so the probe parser's reading of it is the
+// provider's state: a balance without usage windows is healthy there, as
+// before. Only an item the parser would call "no usage" although the
+// collector read usage from serve is no reading, and the CLI is asked. A
 // failure serve reports in its snapshot only is carried in the item.
 func serveUsageItem(provider dashboardusage.DashboardProvider, item map[string]any, usable bool) (json.RawMessage, bool) {
 	if !providerPayloadHasError(item) {
@@ -111,7 +114,7 @@ func serveUsageItem(provider dashboardusage.DashboardProvider, item map[string]a
 			item = map[string]any{"provider": provider.ID, "error": failure}
 		}
 	}
-	if item == nil || !providerPayloadHasError(item) && providerPayloadHasUsage(item) != usable {
+	if item == nil || usable && !providerPayloadHasError(item) && !providerPayloadHasUsage(item) {
 		return nil, false
 	}
 	raw, err := json.Marshal(item)

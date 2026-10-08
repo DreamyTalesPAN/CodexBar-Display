@@ -289,3 +289,43 @@ func TestStoppedServeLeavesNoReading(t *testing.T) {
 		t.Fatalf("the reading of a stopped serve stood in for a probe: %s", answer)
 	}
 }
+
+// A provider with a balance and no usage windows gives the collector nothing
+// to show, and the probe parser calls it healthy. Its item was therefore no
+// reading, and with it switched on every poll asked the CLI for all providers
+// again.
+func TestProviderWithCreditsOnlyDoesNotSendEveryPollToTheCLI(t *testing.T) {
+	started := serveReadingEngine(t, true, `[
+		{"provider":"claude","displayName":"Claude","enabled":true},
+		{"provider":"openrouter","displayName":"OpenRouter","enabled":true}
+	]`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == dashboardSnapshotPath {
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[
+				{"id":"claude","windows":[{"kind":"session","label":"Session","usedPercent":8}]},
+				{"id":"openrouter","windows":[],"credits":{"remaining":12.5,"unit":"USD"}}
+			]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`[
+			{"provider":"claude","usage":{"primary":{"usedPercent":8,"windowMinutes":300}}},
+			{"provider":"openrouter","credits":{"remaining":12.5},"usage":{}}
+		]`))
+	}))
+	defer server.Close()
+	if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := FetchProviderSettings(WithServeReading(context.Background()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probes := usageProbes(*started); len(probes) != 0 {
+		t.Fatalf("a credits-only provider sent the poll to the CLI: %q", probes)
+	}
+	// The same state a probe reports for this item.
+	if settings[1].Health != ProviderHealthHealthy {
+		t.Fatalf("credits-only provider: %+v", settings[1])
+	}
+}
