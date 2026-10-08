@@ -79,7 +79,6 @@ export type SettingsScreenProps = {
   /** Erases the VibeTV over the USB cable, then starts setup again. */
   onEraseDevice?: () => void;
   /** Opens Support and runs diagnostics there. */
-  onRunDiagnostics?: () => void;
   onSaveBrightness: (value: number) => void;
   providerPicker: ProviderPickerProps;
   /**
@@ -111,7 +110,6 @@ export function SettingsScreen({
   onDisplayPreferenceChange,
   onResetSetup,
   onEraseDevice,
-  onRunDiagnostics,
   onSaveBrightness,
   providerPicker,
   providerShortcut = null,
@@ -476,7 +474,7 @@ export function SettingsScreen({
         description={`Connect ${thisHost} to another VibeTV.`}
         title="Setup"
       >
-        <div>
+        <div className="flex flex-wrap gap-3">
           <Button
             disabled={localActionBusy}
             onClick={onResetSetup}
@@ -490,9 +488,7 @@ export function SettingsScreen({
               {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
             </span>
           </Button>
-        </div>
-        {onEraseDevice && connectionMode === "cable" ? (
-          <div>
+          {onEraseDevice && connectionMode === "cable" ? (
             <Button
               disabled={localActionBusy || !deviceIsCustomerConnected(device)}
               onClick={() => setEraseRequested(true)}
@@ -508,8 +504,8 @@ export function SettingsScreen({
                   : "Reset to factory settings"}
               </span>
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
         {eraseRequested ? (
           <Dialog
             open
@@ -568,13 +564,6 @@ export function SettingsScreen({
           pendingPreferenceIds={providerPicker.pendingPreferenceIds}
           providers={providers}
         />
-        {onRunDiagnostics ? (
-          <div>
-            <Button onClick={onRunDiagnostics} size="sm" type="button" variant="outline">
-              <span>Run diagnostics</span>
-            </Button>
-          </div>
-        ) : null}
       </SettingsSection>
     </div>
   );

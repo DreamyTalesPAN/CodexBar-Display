@@ -182,6 +182,12 @@ describe("SettingsScreen standby controls", () => {
 
     expect(cable).toContain("Reset to factory settings");
     expect(wifi).not.toContain("Reset to factory settings");
+    // Paul, 2026-10-08: the two setup actions sit side by side in one row, and
+    // Run diagnostics is on Support only.
+    expect(cable).toMatch(
+      /Run setup again<\/span><\/button><button[^>]*><span>Reset to factory settings/,
+    );
+    expect(cable).not.toContain("Run diagnostics");
   });
 
   it("labels unsupported brightness without a loading state", () => {

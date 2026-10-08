@@ -13,9 +13,9 @@ afterEach(() => {
 });
 
 describe("ControlCenterShell", () => {
-  // Issue #558: Settings › Run diagnostics opened Support 1086 px down, with
-  // the results above the view, and Choose screensaver cut off the heading
-  // Screensavers. The window scrolls, so it kept the place of the last tab.
+  // Issue #558: a button far down in Settings opened Support 1086 px down,
+  // and Choose screensaver cut off the heading Screensavers. The window
+  // scrolls, so it kept the place of the last tab.
   it("opens a tab and an Appearance section at the top of the page", () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),

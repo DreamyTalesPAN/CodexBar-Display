@@ -4249,11 +4249,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [runCompanion],
   );
 
-  const runDiagnosticsFromSettings = useCallback(() => {
-    setActiveTab("logs");
-    void loadSupportDiagnostics();
-  }, [loadSupportDiagnostics]);
-
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
       return;
@@ -5413,7 +5408,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onResetSetup={() => setSetupAgainRequested(true)}
             onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
-            onRunDiagnostics={runDiagnosticsFromSettings}
             onDisplayPreferenceChange={updateDisplayPreference}
             onSaveBrightness={saveBrightness}
             providerPicker={providerPickerProps}
