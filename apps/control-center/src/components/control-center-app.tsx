@@ -18,6 +18,10 @@ import {
   resolveScreensaverUpgrade,
 } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import {
+  rememberSentOwnThemePath,
+  sentOwnThemePaths,
+} from "@/lib/sent-own-theme-paths";
 import { buildThemePack } from "@/lib/theme-studio";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
@@ -2560,12 +2564,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       usage = "live",
     }: ThemeStudioInstallPayload): Promise<boolean> => {
       const pack = buildThemePack(spec, packName, assets, usage);
-      return installTheme({
+      const sent = await installTheme({
         packBytes: pack.zipBytes,
         themeId: pack.manifest.id,
         title: pack.manifest.name,
         usage,
       });
+      if (sent) {
+        rememberSentOwnThemePath(pack.manifest.themeSpec.path);
+      }
+      return sent;
     },
     [installTheme],
   );
@@ -6293,12 +6301,17 @@ function mergeDeviceCapabilities(
   };
 }
 
-// The paths of the themes and screensavers the customer saved in this browser.
-// Theme Studio changes them without the app hearing of it, so they are read
-// where they are needed.
+// The paths of the themes and screensavers the customer saved in this browser,
+// and of those sent to VibeTV from it: a theme that was edited and saved since
+// it was sent has another path now, but VibeTV still holds the file that was
+// sent. Theme Studio changes them without the app hearing of it, so they are
+// read where they are needed.
 function savedThemePaths(): string[] {
   const saved = loadUserThemes();
-  return ownThemePaths(saved.ok ? saved.value.themes : saved.data?.themes || []);
+  return [
+    ...ownThemePaths(saved.ok ? saved.value.themes : saved.data?.themes || []),
+    ...sentOwnThemePaths(),
+  ];
 }
 
 function readInitialDeviceTarget(): string {

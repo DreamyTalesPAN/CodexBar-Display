@@ -12,6 +12,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ownThemePaths } from "@/lib/active-theme-upgrade";
+import { rememberSentOwnThemePath } from "@/lib/sent-own-theme-paths";
 import { createBlankThemeSpec, type ThemeStudioUsage } from "@/lib/theme-studio";
 import {
   writeUserThemes,
@@ -162,6 +163,20 @@ it("keeps a saved theme of the customer that has the id of a catalog theme", asy
       { display: { themeSpec: { active: true, path } } },
       [own],
     ),
+  ).toEqual([]);
+});
+
+// Edited and saved since it was sent, the theme has another id and path in
+// the library, while VibeTV still reports the shared id and the file that was
+// sent. What tells that file from a first revision of the catalog theme is
+// that this app sent it.
+it("keeps a theme of the customer that was edited and saved since it was sent", async () => {
+  const [sentPath] = ownThemePaths([saved("mini-classic", "live")]);
+  const device = { display: { themeSpec: { active: true, path: sentPath } } };
+
+  rememberSentOwnThemePath(sentPath);
+  expect(
+    await automaticInstalls(device, [saved("mini-classic-2", "live")]),
   ).toEqual([]);
 });
 
