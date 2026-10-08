@@ -155,6 +155,12 @@ export type ThemePrimitive = {
   sg?: number;
   segmentGap?: number;
   gg?: number;
+  arcStart?: number;
+  as?: number;
+  arcSweep?: number;
+  aw?: number;
+  arcThickness?: number;
+  at?: number;
   colorStops?: Array<{ gte?: number; color?: string; c?: string }>;
   cs?: Array<{ gte?: number; color?: string; c?: string }>;
   assetPath?: string;
@@ -1008,6 +1014,30 @@ function ThemeProgress({
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
+  if (style === "arc") {
+    const arc = themeProgressArc(primitive, percent);
+    // Each stroke runs clockwise along the middle of the ring. A circle's
+    // outline starts at 3 o'clock, a quarter turn after 12 o'clock.
+    const stroke = (degrees: number, color: string) =>
+      arc && degrees > 0 ? (
+        <circle
+          cx={arc.cx}
+          cy={arc.cy}
+          fill="none"
+          r={arc.radius}
+          stroke={color}
+          strokeDasharray={`${(arc.radius * degrees * Math.PI) / 180} ${arc.radius * 2 * Math.PI}`}
+          strokeWidth={arc.thickness}
+          transform={`rotate(${arc.start - 90} ${arc.cx} ${arc.cy})`}
+        />
+      ) : null;
+    return (
+      <g>
+        {stroke(arc?.sweep ?? 0, bgColor)}
+        {stroke(arc?.filled ?? 0, fillColor)}
+      </g>
+    );
+  }
   const segmented = style === "segments" || style === "segmented";
   const radius = clampRadius(
     primitive.borderRadius ?? primitive.br ?? 0,
@@ -1813,6 +1843,40 @@ export function progressPercent(
     return frame.weeklyUnavailable ? 0 : frame.weekly;
   }
   return frame.sessionUnavailable ? 0 : frame.session;
+}
+
+// The ring an arc-style progress draws, as CompilePrimitive and
+// DrawProgressArc in theme_spec_renderer_core.h work it out: inside the box,
+// angles in whole degrees clockwise from 12 o'clock, and the filled share of
+// the sweep cut to whole degrees. The device skips an arc outside its limits,
+// so there is none here either.
+export function themeProgressArc(primitive: ThemePrimitive, percent: number) {
+  const width = primitive.width || primitive.w || 0;
+  const height = primitive.height || primitive.h || 0;
+  const diameter = Math.min(width, height);
+  const start = primitive.arcStart ?? primitive.as ?? 0;
+  const sweep = primitive.arcSweep ?? primitive.aw ?? 0;
+  const thickness = primitive.arcThickness ?? primitive.at ?? 0;
+  if (
+    ![start, sweep, thickness].every(Number.isInteger) ||
+    start < 0 ||
+    start > 359 ||
+    sweep < 1 ||
+    sweep > 360 ||
+    thickness < 1 ||
+    thickness * 2 > diameter
+  ) {
+    return null;
+  }
+  return {
+    cx: (primitive.x || 0) + width / 2,
+    cy: (primitive.y || 0) + height / 2,
+    radius: (diameter - thickness) / 2,
+    thickness,
+    start,
+    sweep,
+    filled: Math.floor((sweep * Math.max(0, Math.min(100, percent))) / 100),
+  };
 }
 
 function resolveProgressFillColor(

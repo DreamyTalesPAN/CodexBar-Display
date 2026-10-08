@@ -16,6 +16,7 @@ import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
+  themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
   themeTextLayout,
@@ -990,6 +991,96 @@ describe("firmware-compatible ThemeSpec text layout", () => {
       /<text[^>]*y="22\.8"[^>]*text-anchor="start"[^>]*x="10">/,
     );
     expect(markup).toContain('lengthAdjust="spacingAndGlyphs"');
+  });
+});
+
+describe("arc-style progress", () => {
+  // The arc of the firmware's own test: a 100 px box at 20,30 with a 10 px
+  // ring from 7:30 clockwise over three quarters of a turn.
+  const arc: ThemePrimitive = {
+    t: "p", x: 20, y: 30, w: 100, h: 100, b: "us1p", ps: "arc", as: 225, aw: 270, at: 10,
+    c: "#00FF00", bg: "#333333",
+  };
+  const frameAt = (percent: number) => ({
+    ...THEME_CATALOG_PREVIEW_FRAME,
+    usageSlot1Percent: percent,
+  });
+  const markupFor = (primitive: ThemePrimitive, percent: number) =>
+    renderToStaticMarkup(
+      createElement(ThemeSpecPreview, {
+        animate: false,
+        frame: frameAt(percent),
+        pack: { ok: true, themeId: "arc", spec: { p: [primitive] } },
+        status: "ready",
+        themeId: "arc",
+      }),
+    );
+  const strokes = (markup: string) =>
+    [...markup.matchAll(/<circle[^>]*>/g)].map(([circle]) => ({
+      color: /stroke="([^"]+)"/.exec(circle)?.[1],
+      degrees: Number(/stroke-dasharray="([\d.]+) /.exec(circle)?.[1]) / ((45 * Math.PI) / 180),
+      circle,
+    }));
+
+  it("places the ring in the middle of the box and fills whole degrees like the firmware", () => {
+    expect(themeProgressArc(arc, 50)).toEqual({
+      cx: 70, cy: 80, radius: 45, thickness: 10, start: 225, sweep: 270, filled: 135,
+    });
+    // 270 * 33 / 100 is 89.1: the device cuts it to 89 degrees.
+    expect(themeProgressArc(arc, 33)?.filled).toBe(89);
+    expect(themeProgressArc(arc, 0)?.filled).toBe(0);
+    expect(themeProgressArc(arc, 100)?.filled).toBe(270);
+    expect(themeProgressArc(arc, 140)?.filled).toBe(270);
+    expect(themeProgressArc(arc, -20)?.filled).toBe(0);
+    // A box that is not square holds the ring in its middle.
+    expect(themeProgressArc({ ...arc, w: 140 }, 50)).toMatchObject({ cx: 90, cy: 80, radius: 45 });
+    expect(
+      themeProgressArc({ type: "progress", x: 0, y: 0, width: 60, height: 60, progressStyle: "arc", arcSweep: 360, arcThickness: 30 }, 50),
+    ).toMatchObject({ radius: 15, thickness: 30, start: 0, sweep: 360, filled: 180 });
+  });
+
+  it("draws the track over the sweep and the fill clockwise from the start angle", () => {
+    const empty = strokes(markupFor(arc, 0));
+    expect(empty).toHaveLength(1);
+    expect(empty[0].color).toBe("#333333");
+    expect(empty[0].degrees).toBeCloseTo(270);
+    expect(empty[0].circle).toContain('cx="70" cy="80"');
+    expect(empty[0].circle).toContain('r="45"');
+    expect(empty[0].circle).toContain('stroke-width="10"');
+    expect(empty[0].circle).toContain('fill="none"');
+    // 225 degrees from 12 o'clock is 135 degrees from a circle's 3 o'clock start.
+    expect(empty[0].circle).toContain('transform="rotate(135 70 80)"');
+
+    const half = strokes(markupFor(arc, 50));
+    expect(half.map((stroke) => stroke.color)).toEqual(["#333333", "#00FF00"]);
+    expect(half[0].degrees).toBeCloseTo(270);
+    expect(half[1].degrees).toBeCloseTo(135);
+    expect(half[1].circle).toContain('transform="rotate(135 70 80)"');
+
+    const full = strokes(markupFor(arc, 100));
+    expect(full[1].degrees).toBeCloseTo(270);
+    // No bar is drawn beside the ring.
+    expect(markupFor(arc, 50)).not.toMatch(/<rect[^>]*x="2[01]"/);
+  });
+
+  it("picks the fill colour from the colour stops like the bar", () => {
+    const stops = { ...arc, cs: [{ gte: 0, c: "#FF0000" }, { gte: 40, c: "#00FF00" }] };
+    // The catalog frame counts used percent: 70 % used leaves 30 %.
+    expect(strokes(markupFor(stops, 70))[1].color).toBe("#FF0000");
+    expect(strokes(markupFor(stops, 30))[1].color).toBe("#00FF00");
+  });
+
+  it.each([
+    ["no thickness", { at: undefined }],
+    ["a ring thicker than the radius", { at: 51 }],
+    ["no sweep", { aw: undefined }],
+    ["a sweep above a full turn", { aw: 361 }],
+    ["a start of a full turn", { as: 360 }],
+    ["a start below 0", { as: -1 }],
+  ])("draws nothing for %s, which the firmware skips", (_name, change) => {
+    const primitive = { ...arc, ...change };
+    expect(themeProgressArc(primitive, 50)).toBeNull();
+    expect(markupFor(primitive, 50)).not.toContain("<circle");
   });
 });
 

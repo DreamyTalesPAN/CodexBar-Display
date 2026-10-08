@@ -239,12 +239,23 @@ export function PrimitiveInspector({
           <SelectField
             label="Style"
             value={primitive.progressStyle || "solid"}
-            onChange={(value) =>
-              onChange("progressStyle", value === "solid" ? "" : value)
-            }
+            onChange={(value) => {
+              onChange("progressStyle", value === "solid" ? "" : value);
+              if (value === "arc" && primitive.arcSweep === undefined) {
+                // A three-quarter ring open at the bottom, as thick as the box
+                // allows up to 12 px.
+                onChange("arcStart", 225);
+                onChange("arcSweep", 270);
+                onChange(
+                  "arcThickness",
+                  Math.max(1, Math.min(12, Math.floor(Math.min(bounds.width, bounds.height) / 2))),
+                );
+              }
+            }}
             options={[
               ["solid", "Solid"],
               ["segments", "Segments"],
+              ["arc", "Arc"],
             ]}
           />
           {primitive.progressStyle === "segments" ? (
@@ -261,6 +272,28 @@ export function PrimitiveInspector({
               />
             </div>
           ) : null}
+          {primitive.progressStyle === "arc" ? (
+            <div className="grid grid-cols-3 gap-2">
+              <NumberField
+                label="Start angle"
+                max={359}
+                value={primitive.arcStart ?? 0}
+                onChange={(value) => onChange("arcStart", value)}
+              />
+              <NumberField
+                label="Sweep"
+                max={360}
+                value={primitive.arcSweep ?? 0}
+                onChange={(value) => onChange("arcSweep", value)}
+              />
+              <NumberField
+                label="Thickness"
+                max={120}
+                value={primitive.arcThickness ?? 0}
+                onChange={(value) => onChange("arcThickness", value)}
+              />
+            </div>
+          ) : null}
           <ProgressColorStopsEditor
             color={primitive.color || "#C7FF68"}
             stops={primitive.colorStops || []}
@@ -274,17 +307,21 @@ export function PrimitiveInspector({
             value={primitive.bgColor || "#111111"}
             onChange={(value) => onChange("bgColor", value)}
           />
-          <ColorField
-            label="Border color"
-            value={primitive.borderColor || "#3B4552"}
-            onChange={(value) => onChange("borderColor", value)}
-          />
-          <NumberField
-            label="Border radius"
-            max={120}
-            value={primitive.borderRadius ?? 0}
-            onChange={(value) => onChange("borderRadius", value)}
-          />
+          {primitive.progressStyle === "arc" ? null : (
+            <>
+              <ColorField
+                label="Border color"
+                value={primitive.borderColor || "#3B4552"}
+                onChange={(value) => onChange("borderColor", value)}
+              />
+              <NumberField
+                label="Border radius"
+                max={120}
+                value={primitive.borderRadius ?? 0}
+                onChange={(value) => onChange("borderRadius", value)}
+              />
+            </>
+          )}
         </>
       ) : null}
 

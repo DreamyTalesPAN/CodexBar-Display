@@ -5031,6 +5031,7 @@ async function testPostFlashMissingCapabilitiesKeepThemeAttention(browser, appUr
     "supportsProviderAssetsV1",
     "supportsColorStopsV1",
     "supportsTextValignV1",
+    "supportsProgressArcV1",
   ]) {
     await testPostFlashMissingCapabilityKeepsThemeAttention(
       browser,
@@ -5081,6 +5082,7 @@ async function testPostFlashMissingCapabilityKeepsThemeAttention(
         supportsProviderAssetsV1: true,
         supportsColorStopsV1: true,
         supportsTextValignV1: true,
+        supportsProgressArcV1: true,
         [missingCapability]: false,
       },
     },
@@ -5163,6 +5165,7 @@ async function testFirmwareUpdateRechecksThemeCatalogAfterCapabilityUpgrade(
         supportsProviderAssetsV1: true,
         supportsColorStopsV1: true,
         supportsTextValignV1: true,
+        supportsProgressArcV1: true,
       },
     },
   };

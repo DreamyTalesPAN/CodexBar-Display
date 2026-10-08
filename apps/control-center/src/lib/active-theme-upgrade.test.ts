@@ -64,6 +64,7 @@ function device(
         supportsProviderAssetsV1: supportsUsageSlotsV1,
         supportsColorStopsV1: supportsUsageSlotsV1,
         supportsTextValignV1: supportsUsageSlotsV1,
+        supportsProgressArcV1: supportsUsageSlotsV1,
       },
     },
     connected: true,
@@ -225,6 +226,7 @@ describe("resolveActiveThemeUpgrade", () => {
     "supportsProviderAssetsV1",
     "supportsColorStopsV1",
     "supportsTextValignV1",
+    "supportsProgressArcV1",
   ] as const)(
     "keeps missing %s unresolved without theme requirements",
     (capability) => {

@@ -49,6 +49,26 @@ it("can remove a threshold, add one, and return to a solid color", () => {
   expect(screen.getByRole("textbox", { name: "Bar color" })).toBeTruthy();
 });
 
+it("turns a bar into an arc that fits its box and edits the arc", () => {
+  render(createElement(Harness));
+  expect(screen.queryByRole("spinbutton", { name: "Sweep" })).toBeNull();
+  // Typing on the closed select picks the option that starts with the key.
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Style" }), { key: "A" });
+  expect(screen.getByRole("combobox", { name: "Style" }).textContent).toBe("Arc");
+  const value = (name: string) =>
+    screen.getByRole("spinbutton", { name }).getAttribute("value");
+  // The 100 x 20 box holds a ring of at most 10 px.
+  expect([value("Start angle"), value("Sweep"), value("Thickness")]).toEqual(["225", "270", "10"]);
+  // A ring has no border and no corners.
+  expect(screen.queryByRole("spinbutton", { name: "Border radius" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Border color" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Track color" })).toBeTruthy();
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Sweep" }), { target: { value: "180" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Start angle" }), { target: { value: "270" } });
+  expect([value("Start angle"), value("Sweep"), value("Thickness")]).toEqual(["270", "180", "10"]);
+});
+
 function SpriteHarness({ type }: { type: "gif" | "sprite" }) {
   const [spriteData, setSpriteData] = useState(
     "CBI1\n3 1\n3\n#000000\n#FF0000\n#FFFFFF\nabc\n",

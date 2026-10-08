@@ -57,9 +57,13 @@ export type ThemeStudioPrimitive = {
   borderRadius?: number;
   align?: "left" | "center" | "right";
   valign?: "top" | "middle" | "bottom";
-  progressStyle?: "solid" | "segments";
+  progressStyle?: "solid" | "segments" | "arc";
   segments?: number;
   segmentGap?: number;
+  // An arc is a ring inside the box: degrees clockwise from 12 o'clock.
+  arcStart?: number;
+  arcSweep?: number;
+  arcThickness?: number;
   colorStops?: Array<{ gte: number; color: string }>;
   assetPath?: string;
   stateAssets?: Record<string, string>;
@@ -496,7 +500,9 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
           : undefined,
     fit: primitive.fit === "shrink" ? "shrink" : undefined,
     progressStyle:
-      primitive.progressStyle === "segments" ? "segments" : undefined,
+      primitive.progressStyle === "segments" || primitive.progressStyle === "arc"
+        ? primitive.progressStyle
+        : undefined,
     frameCount:
       primitive.frameCount === undefined
         ? undefined
@@ -696,6 +702,7 @@ export function buildThemePack(
   const usesProviderAssets = themeStudioSpecUsesProviderAssets(normalized);
   const usesColorStops = themeStudioSpecUsesColorStops(normalized);
   const usesTextValign = themeStudioSpecUsesTextValign(normalized);
+  const usesProgressArc = themeStudioSpecUsesProgressArc(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
@@ -708,9 +715,12 @@ export function buildThemePack(
     ...(usesProviderAssets ? ["provider-assets-v1"] : []),
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
+    ...(usesProgressArc ? ["progress-arc-v1"] : []),
   ];
+  // The firmware that draws an arc has no number yet, so an arc carries the
+  // newest floor that has one and relies on progress-arc-v1 for the rest.
   const minFirmware =
-    usesProviderAssets || usesColorStops || usesTextValign
+    usesProviderAssets || usesColorStops || usesTextValign || usesProgressArc
       ? "1.0.42"
       : usesProviderSlots
         ? "1.0.41"
@@ -834,6 +844,15 @@ export function themeStudioSpecUsesTextValign(
   return spec.primitives.some(
     (primitive) =>
       primitive.valign === "middle" || primitive.valign === "bottom",
+  );
+}
+
+export function themeStudioSpecUsesProgressArc(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.type === "progress" && primitive.progressStyle === "arc",
   );
 }
 
@@ -986,9 +1005,32 @@ function validatePrimitive(
     if (
       primitive.progressStyle !== undefined &&
       primitive.progressStyle !== "solid" &&
-      primitive.progressStyle !== "segments"
+      primitive.progressStyle !== "segments" &&
+      primitive.progressStyle !== "arc"
     ) {
-      errors.push(`${prefix}: progress style must be solid or segments.`);
+      errors.push(`${prefix}: progress style must be solid, segments or arc.`);
+    }
+    if (primitive.progressStyle === "arc") {
+      // The limits of CompilePrimitive in theme_spec_renderer_core.h, which
+      // skips an arc outside them.
+      const arcStart = primitive.arcStart ?? 0;
+      const arcSweep = primitive.arcSweep ?? 0;
+      const arcThickness = primitive.arcThickness ?? 0;
+      if (!Number.isInteger(arcStart) || arcStart < 0 || arcStart > 359) {
+        errors.push(`${prefix}: arc start must be between 0 and 359.`);
+      }
+      if (!Number.isInteger(arcSweep) || arcSweep < 1 || arcSweep > 360) {
+        errors.push(`${prefix}: arc sweep must be between 1 and 360.`);
+      }
+      if (
+        !Number.isInteger(arcThickness) ||
+        arcThickness < 1 ||
+        arcThickness * 2 > Math.min(primitive.width ?? 0, primitive.height ?? 0)
+      ) {
+        errors.push(
+          `${prefix}: arc thickness must be between 1 and half the smaller of width and height.`,
+        );
+      }
     }
     if (
       primitive.segments !== undefined &&
@@ -1321,8 +1363,17 @@ function buildDevicePrimitive(
   if (primitive.valign && primitive.valign !== "top") {
     compact.va = primitive.valign;
   }
-  if (primitive.progressStyle === "segments") {
-    compact.ps = "segments";
+  if (primitive.progressStyle === "segments" || primitive.progressStyle === "arc") {
+    compact.ps = primitive.progressStyle;
+  }
+  if (primitive.arcStart !== undefined) {
+    compact.as = primitive.arcStart;
+  }
+  if (primitive.arcSweep !== undefined) {
+    compact.aw = primitive.arcSweep;
+  }
+  if (primitive.arcThickness !== undefined) {
+    compact.at = primitive.arcThickness;
   }
   if (primitive.segments !== undefined) {
     compact.sg = primitive.segments;
@@ -1452,6 +1503,20 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const progressStyle = stringValue(value.progressStyle) ?? stringValue(value.ps);
   if (progressStyle === "segments" || progressStyle === "segmented") {
     primitive.progressStyle = "segments";
+  } else if (progressStyle === "arc") {
+    primitive.progressStyle = "arc";
+  }
+  const arcStart = numberValue(value.arcStart) ?? numberValue(value.as);
+  if (arcStart !== undefined) {
+    primitive.arcStart = arcStart;
+  }
+  const arcSweep = numberValue(value.arcSweep) ?? numberValue(value.aw);
+  if (arcSweep !== undefined) {
+    primitive.arcSweep = arcSweep;
+  }
+  const arcThickness = numberValue(value.arcThickness) ?? numberValue(value.at);
+  if (arcThickness !== undefined) {
+    primitive.arcThickness = arcThickness;
   }
   const segments = numberValue(value.segments) ?? numberValue(value.sg);
   if (segments !== undefined) {
