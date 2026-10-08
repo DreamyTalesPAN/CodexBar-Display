@@ -3594,7 +3594,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             "EnvironmentVariables": environment,
             "RunAtLoad": true,
             "KeepAlive": true,
-            "ProcessType": "Background",
+            // As in the release LaunchAgent: Background delayed usage by 24
+            // to 40 seconds after every start (issue #557).
+            "ProcessType": "Standard",
             "ThrottleInterval": 10,
         ]
 
