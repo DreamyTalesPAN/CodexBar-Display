@@ -188,7 +188,7 @@ function shouldIgnoreText(text) {
   if (!text) {
     return true;
   }
-  if (text.startsWith("/") || text.startsWith("http://") || text.startsWith("https://")) {
+  if (text.startsWith("/") || text.startsWith("./") || text.startsWith("../") || text.startsWith("http://") || text.startsWith("https://")) {
     return true;
   }
   if (text.includes("VibeTV-Companion-API-")) {

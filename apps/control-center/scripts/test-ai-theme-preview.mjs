@@ -267,10 +267,10 @@ try {
     }
   }
   // Device transfers are intercepted too: no real hardware writes.
-  let uploads=0,failTransfer=false;
+  let uploads=0,failTransfer=false,failStatus=false;
   await page.route("**/api/local-companion/v1/themes/install**",async route=>{
     const request=route.request(),url=new URL(request.url());
-    if(url.pathname.endsWith("/status")) return route.fulfill({json:{ok:true,job:{id:"fixture-install",phase:"complete",message:"Theme is active on VibeTV.",result:{themeId:"fixture"}}}});
+    if(url.pathname.endsWith("/status")) return failStatus ? route.fulfill({status:503,json:{ok:false,error:{message:"Status temporarily unavailable."}}}) : route.fulfill({json:{ok:true,job:{id:"fixture-install",phase:"complete",message:"Theme is active on VibeTV.",result:{themeId:"fixture"}}}});
     uploads++;
     assert.equal(request.method(),"POST");
     assert.equal(request.headers()["content-type"],"application/zip");
@@ -284,11 +284,21 @@ try {
   await send.click();
   await page.getByRole("status").filter({hasText:"Theme is active on VibeTV."}).waitFor();
   assert.equal(uploads,1);
+  failStatus=true;
+  await send.click();
+  await page.getByRole("button",{name:"Check transfer",exact:true}).waitFor();
+  await page.getByRole("alert").filter({hasText:"Status temporarily unavailable."}).waitFor();
+  assert.equal(uploads,2);
+  await page.reload();
+  failStatus=false;
+  await page.getByRole("button",{name:"Check transfer",exact:true}).click();
+  await page.getByRole("status").filter({hasText:"Theme is active on VibeTV."}).waitFor();
+  assert.equal(uploads,2,"Reload resumes the accepted job without uploading again");
   failTransfer=true;
   await send.click();
   await page.getByRole("alert").filter({hasText:"Connect your VibeTV in the Mac App."}).waitFor();
-  assert.equal(uploads,2,"Each click sends once; errors never retry a hardware write");
-  console.log("PASS explicit ZIP transfer, install completion and actionable failure without retries (mocked device)");
+  assert.equal(uploads,3,"Each click sends once; errors never retry a hardware write");
+  console.log("PASS explicit ZIP transfer, accepted-job recovery after reload and actionable failure without retries (mocked device)");
 
   // Another tab can have a connected helper but no billing consent yet.
   await page.evaluate(()=>sessionStorage.clear());

@@ -41,8 +41,7 @@ type InstallJob = {
   error?: ApiError;
 };
 
-export async function sendThemeToVibeTV(document: ThemeStudioDocument, onStatus: (message: string) => void) {
-  const pack = buildThemePack(document.spec, document.packName, document.assets, document.usage);
+export async function sendThemeToVibeTV(document: ThemeStudioDocument, onStatus: (message: string) => void, pendingJob: string | null, onJob: (id: string | null) => void) {
   const runCompanion = async <T>(path: string, init?: RequestInit): Promise<T> => {
     const response = await fetch(companionRequestUrl(path), {
       ...init, cache: "no-store", signal: AbortSignal.timeout(30_000),
@@ -53,22 +52,28 @@ export async function sendThemeToVibeTV(document: ThemeStudioDocument, onStatus:
     }
     return payload;
   };
-  const query = new URLSearchParams({
-    async: "true", slot: document.usage || "live",
-    themeId: pack.manifest.id, themeName: pack.manifest.name,
-  });
-  const payload = await runCompanion<{ job?: InstallJob; result?: unknown }>(`/v1/themes/install?${query}`, {
-    method: "POST", headers: { "Content-Type": "application/zip" },
-    body: new Uint8Array(pack.zipBytes),
-  });
-  if (!payload.job) {
-    if (!payload.result) throw new Error("VibeTV could not confirm the transfer.");
-    return "Theme sent to VibeTV.";
+  if (!pendingJob) {
+    const pack = buildThemePack(document.spec, document.packName, document.assets, document.usage);
+    const query = new URLSearchParams({
+      async: "true", slot: document.usage || "live",
+      themeId: pack.manifest.id, themeName: pack.manifest.name,
+    });
+    const payload = await runCompanion<{ job?: InstallJob; result?: unknown }>(`/v1/themes/install?${query}`, {
+      method: "POST", headers: { "Content-Type": "application/zip" },
+      body: new Uint8Array(pack.zipBytes),
+    });
+    if (!payload.job) {
+      if (!payload.result) throw new Error("VibeTV could not confirm the transfer.");
+      return "Theme sent to VibeTV.";
+    }
+    pendingJob = payload.job.id;
+    onJob(pendingJob);
   }
   const job = await pollThemeInstallJob({
-    jobId: payload.job.id, runCompanion,
+    jobId: pendingJob, runCompanion,
     applyInstallJob: (job: InstallJob) => onStatus(job.message || "Sending…"),
   });
+  onJob(null);
   if (job.phase === "error") throw new Error(job.error?.nextAction || job.error?.message || job.message || "Theme transfer failed.");
   if (!job.result) throw new Error("VibeTV could not confirm the transfer.");
   return job.message || "Theme sent to VibeTV.";

@@ -101,6 +101,17 @@ describe("themeStudioEditorReducer", () => {
   });
 });
 
+it("keeps recovered edits dirty against the saved library document", () => {
+  const saved = document();
+  const recovered = document("Unsaved draft");
+  let state = themeStudioEditorReducer(createThemeStudioEditorState(saved), {
+    type: "load", document: recovered, savedDocument: saved,
+  });
+  expect(isThemeStudioDirty(state)).toBe(true);
+  state = themeStudioEditorReducer(state, { type: "mark_saved" });
+  expect(isThemeStudioDirty(state)).toBe(false);
+});
+
 describe("reorderPrimitiveIndices", () => {
   it("moves adjacent selections as a block and preserves their order", () => {
     const primitives = document().spec.primitives;

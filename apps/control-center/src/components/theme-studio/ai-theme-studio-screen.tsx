@@ -120,11 +120,13 @@ export function AIThemeStudioScreen() {
   // Async import paths read this after awaiting file contents so an edit made
   // meanwhile still triggers the unsaved-changes confirmation.
   const dirtyRef = useRef(dirty);
+  const documentRef = useRef(document);
   const [recoveryReady, setRecoveryReady] = useState(false);
   const persistedDraft = useRef<ThemeStudioDocument | null>(null);
   useEffect(() => {
     dirtyRef.current = dirty;
-  }, [dirty]);
+    documentRef.current = document;
+  }, [dirty, document]);
   const [selected, setSelected] = useState<number[]>([]);
   const [panel, setPanel] = useState<
     "setup" | "settings" | "add" | "library" | null
@@ -143,6 +145,7 @@ export function AIThemeStudioScreen() {
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [transferStatus, setTransferStatus] = useState("");
+  const [transferJob, setTransferJob] = useState<string | null>(null);
   const sendRequest = useRef(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [status, setStatus] = useState("");
@@ -202,8 +205,9 @@ export function AIThemeStudioScreen() {
     const hydration = window.setTimeout(() => {
       try {
         setConsent(sessionStorage.getItem("vibetv.aiTheme.consent") === "1");
+        setTransferJob(sessionStorage.getItem("vibetv.themeStudio.transferJob"));
       } catch {
-        /* Consent remains per-page when storage is unavailable. */
+        /* Keep consent and transfer state per-page when storage is unavailable. */
       }
       const loaded = loadUserThemes();
       const recovery = loadThemeStudioRecovery();
@@ -215,7 +219,8 @@ export function AIThemeStudioScreen() {
       const saved = restored || latest;
       if (saved && !dirtyRef.current) {
         documentVersion.current++;
-        dispatch({ type: "load", document: saved.document });
+        const baseline = restored ? (loaded.ok ? loaded.value.themes.find((theme) => theme.id === restored.libraryId)?.document : undefined) || blank() : undefined;
+        dispatch({ type: "load", document: saved.document, savedDocument: baseline });
         setLibraryId(restored ? restored.libraryId : latest?.id);
       }
       setRecoveryReady(recovery.ok);
@@ -444,15 +449,23 @@ export function AIThemeStudioScreen() {
     }
   }
   async function send() {
-    if (locked || sendRequest.current || !document.spec.primitives.length || validation.errors.length) return;
+    if (locked || sendRequest.current || (!transferJob && (!document.spec.primitives.length || validation.errors.length))) return;
+    let acceptedJob = transferJob;
     sendRequest.current = true;
     setSending(true);
     setError("");
     setTransferStatus("Sending…");
     try {
-      setTransferStatus(await sendThemeToVibeTV(document, setTransferStatus));
+      setTransferStatus(await sendThemeToVibeTV(document, setTransferStatus, transferJob, (id) => {
+        acceptedJob = id;
+        setTransferJob(id);
+        try {
+          if (id) sessionStorage.setItem("vibetv.themeStudio.transferJob", id);
+          else sessionStorage.removeItem("vibetv.themeStudio.transferJob");
+        } catch { /* Keep the accepted job in memory when storage is unavailable. */ }
+      }));
     } catch (error) {
-      setTransferStatus("");
+      setTransferStatus(acceptedJob ? "Check the existing transfer before sending again." : "");
       setError(error instanceof Error ? error.message : "Theme transfer failed. Check the VibeTV Mac App.");
     } finally {
       sendRequest.current = false;
@@ -471,7 +484,7 @@ export function AIThemeStudioScreen() {
         const imported = await importSpriteFile(file, "live", "image");
         if (request.current || sendRequest.current || version !== documentVersion.current) return;
         if (
-          document.spec.primitives.some((p) =>
+          documentRef.current.spec.primitives.some((p) =>
             isAttachedSceneAnimation(p.assetPath),
           ) &&
           (imported.frameCount || 0) > 1
@@ -496,7 +509,7 @@ export function AIThemeStudioScreen() {
             sheetColumns: imported.sheetColumns,
           });
         });
-        setSelected([document.spec.primitives.length]);
+        setSelected([documentRef.current.spec.primitives.length]);
       } else {
         const parsed = JSON.parse(await file.text()) as ThemeStudioDocument;
         if (request.current || sendRequest.current || version !== documentVersion.current) return;
@@ -853,9 +866,9 @@ export function AIThemeStudioScreen() {
             >
               Save
             </Button>
-            <Button disabled={locked || !document.spec.primitives.length || validation.errors.length > 0} onClick={() => void send()}>
+            <Button disabled={locked || (!transferJob && (!document.spec.primitives.length || validation.errors.length > 0))} onClick={() => void send()}>
               {sending ? <Spinner /> : null}
-              {sending ? "Sending…" : "Send to VibeTV"}
+              {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
             </Button>
           </div>
         </header>

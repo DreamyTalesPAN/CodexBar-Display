@@ -169,3 +169,25 @@ func TestCompanionCreatesCleanBackgroundAndNoPartialResult(t *testing.T) {
 		t.Fatalf("Unsafe partial result: %d %s", resp.Code, resp.Body.String())
 	}
 }
+
+func TestStaticCompanionSceneIncludesSubject(t *testing.T) {
+	style, pets := companionPlanFixture(0)
+	style.PreserveArtwork = false
+	style.ArtPrompt = "A still cat in a cabin"
+	images := 0
+	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v1/responses" {
+			return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
+		}
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), style.ArtPrompt) || strings.Contains(string(body), "Do NOT draw") {
+			t.Fatal("Static scene omitted its subject")
+		}
+		images++
+		return aiResponse(200, `{"data":[{"b64_json":"`+aiTestPNG()+`"}]}`), nil
+	}))
+	_, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "A still cat in a cabin, no animation"}, nil)
+	if err != nil || images != 1 {
+		t.Fatalf("Static scene failed: %v; calls=%d", err, images)
+	}
+}

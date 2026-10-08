@@ -16,7 +16,7 @@ export type ThemeStudioEditorState = {
 };
 
 export type ThemeStudioEditorAction =
-  | { document: ThemeStudioDocument; type: "load" }
+  | { document: ThemeStudioDocument; savedDocument?: ThemeStudioDocument; type: "load" }
   | { document: ThemeStudioDocument; type: "update" }
   | { mutate: (document: ThemeStudioDocument) => void; type: "mutate" }
   | { type: "begin_transaction" }
@@ -50,8 +50,11 @@ export function themeStudioEditorReducer(
   action: ThemeStudioEditorAction,
 ): ThemeStudioEditorState {
   switch (action.type) {
-    case "load":
-      return createThemeStudioEditorState(action.document);
+    case "load": {
+      const loaded = createThemeStudioEditorState(action.document);
+      if (action.savedDocument) loaded.savedDocument = createThemeStudioEditorState(action.savedDocument).present;
+      return loaded;
+    }
     case "update": {
       const next = cloneDocument(action.document);
       if (documentsEqual(state.present, next)) {

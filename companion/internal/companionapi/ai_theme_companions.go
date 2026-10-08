@@ -132,6 +132,9 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 		stage = "artwork"
 		layout, _ := json.Marshal(plan.Companions)
 		prompt := "Create only ONE beautiful STATIC BACKGROUND illustration, front-on 15:8 composition for a 240x128 pixel-art display. Crisp large pixel clusters, limited cohesive palette. No UI, words, numbers, device or frame. Do NOT draw any of the animated subjects or duplicate characters: they will be added as separate foreground sprites. Reserve unobstructed space and appropriate ground contact for these planned sprite rectangles (coordinates are final 240x128 pixels; subjects are NOT part of this image): " + string(layout) + ". Environment: " + plan.Style.EnvironmentPrompt
+		if len(plan.Companions) == 0 {
+			prompt = "Create ONE complete STATIC pixel-art scene, front-on 15:8 composition for a 240x128 display. Crisp large pixel clusters, limited cohesive palette. No UI, words, numbers, device or frame. Include the subjects and scene described here: " + plan.Style.ArtPrompt + ". Environment: " + plan.Style.EnvironmentPrompt
+		}
 		result.ImageBase64, e = a.createConceptImage(ctx, key, prompt, previous)
 		if e != nil {
 			return result, e

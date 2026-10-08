@@ -3976,3 +3976,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested Create beside the prompt, an icon-only manual add action below it, removal of the OpenAI status row, and primary Send to VibeTV with secondary Save in the header.
 - Approved customer-visible result: Settings, Save and Send to VibeTV appear in that order. Create shares the prompt row; the manual add control is a left-aligned plus. Sending uses the existing Mac App install endpoint and shared install-job polling, surfaces its result and locks edits during transfer. No hardware write test was authorized or performed.
+
+
+## 2026-10-08 — Remaining Theme Studio review corrections
+
+- User approval: Paul authorized refactoring and pushing this Theme Studio batch, then explicitly requested restoring the flat display instead of the 3D model.
+- Approved customer-visible result: Keep the existing flat display with no 3D model or additional graphics dependency. Static scenes include the requested subject; recovered edits retain their unsaved status; concurrent image imports select the correct element. Device transfers resolve the installed Mac App's owned listener and retain an accepted job across polling errors and page reloads, allowing Check transfer without uploading again. No hardware write test was performed.
