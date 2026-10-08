@@ -579,11 +579,6 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 }
 
 func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
-	// The Mac CLI's command line; Windows leaves "--status" out (see
-	// TestCheckOfOneProviderDoesNotAskForTheStatusPageOnWindows).
-	originalMode := providerProbePerProvider
-	t.Cleanup(func() { providerProbePerProvider = originalMode })
-	providerProbePerProvider = false
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -982,47 +977,5 @@ func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
 	if windows.Detail != "Windows blocked access required by this provider." ||
 		windows.NextAction != "Allow the requested access, then check again." {
 		t.Fatalf("Windows copy = %+v", windows)
-	}
-}
-
-// Win-CodexBar (pinned v0.60.3-vibetv.8, rust/src/cli/usage.rs
-// render_json_result) answers "--status" with status.level and
-// status.description, and only next to a successful reading. The Companion
-// reads status.indicator, the Mac CLI's field, so on Windows the flag cost a
-// status-page fetch on every "Check again" and could never show an outage.
-func TestCheckOfOneProviderDoesNotAskForTheStatusPageOnWindows(t *testing.T) {
-	originalMode := providerProbePerProvider
-	originalUsage, originalVersion := runUsageCommandFn, runVersionCommandFn
-	t.Cleanup(func() {
-		providerProbePerProvider = originalMode
-		runUsageCommandFn, runVersionCommandFn = originalUsage, originalVersion
-	})
-	providerProbePerProvider = true
-	bin := filepath.Join(t.TempDir(), "codexbar-cli.exe")
-	writeExecutable(t, bin)
-	t.Setenv("CODEXBAR_BIN", bin)
-	setExistingConfig(t)
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("codexbar-cli 0.60.3"), nil
-	}
-	var usageArgs []string
-	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
-		if args[0] == "config" {
-			return []byte(`[{"provider":"claude","displayName":"Claude","enabled":true}]`), nil
-		}
-		usageArgs = append([]string(nil), args...)
-		return []byte(`[{"provider":"claude","source":"oauth","usage":{"primary":{"used_percent":8,"window_minutes":300},"updated_at":"2026-10-08T21:00:00Z"},"cost":null,"status":{"level":"major","description":"Major Outage"}}]`), nil
-	}
-
-	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "claude")
-	if got.Status != ProviderReady || len(got.Providers) != 1 {
-		t.Fatalf("unexpected readiness: %+v", got)
-	}
-	want := []string{"usage", "--json", "--provider", "claude", "--source", "auto", "--web-timeout", "8"}
-	if !reflect.DeepEqual(usageArgs, want) {
-		t.Fatalf("Windows check asked for a status page it cannot read: got %v want %v", usageArgs, want)
-	}
-	if got.Providers[0].Service != ProviderServiceUnknown {
-		t.Fatalf("a field the Companion does not read became a service state: %+v", got.Providers[0])
 	}
 }

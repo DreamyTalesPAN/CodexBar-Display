@@ -86,8 +86,8 @@ type ProviderReadiness struct {
 	// exposing it.
 	Reported string `json:"-"`
 	// Service is the provider's own status page, read by the check of one
-	// provider the customer starts ("--status", Mac only). The checks answered
-	// from serve's reading carry none, so this is how an outage reaches the row.
+	// provider the customer starts ("--status"). The checks answered from
+	// serve's reading carry none, so this is how an outage reaches the row.
 	Service ProviderServiceState `json:"-"`
 	// Cause names where a config_error came from and carries the raw reason
 	// ("inventory: ...", "provider message: ..."). Internal like Reported: the
@@ -473,16 +473,13 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		args := []string{"usage", "--json", "--provider", exactProvider, "--source", "auto"}
-		// The status page is asked only where its answer can be read:
-		// Win-CodexBar prints status.level, not the Mac CLI's
-		// status.indicator, and only next to a successful reading (pinned
-		// v0.60.3-vibetv.8, rust/src/cli/usage.rs render_json_result). There
-		// the flag costs a fetch on every check and never shows an outage.
-		if !providerProbePerProvider {
-			args = append(args, "--status")
-		}
-		out, commandErr = runUsageCommandFn(probeCtx, perProviderProbeTimeout, bin, append(args, "--web-timeout", "8")...)
+		out, commandErr = runUsageCommandFn(probeCtx, perProviderProbeTimeout, bin,
+			"usage", "--json",
+			"--provider", exactProvider,
+			"--source", "auto",
+			"--status",
+			"--web-timeout", "8",
+		)
 	} else {
 		out, commandErr = runUsageAllEnabled(aggregateCtx, perProviderProbeTimeout, bin, "--web-timeout", "8")
 	}
