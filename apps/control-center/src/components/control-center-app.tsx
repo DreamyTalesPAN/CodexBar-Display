@@ -25,6 +25,11 @@ import {
 import { buildThemePack } from "@/lib/theme-studio";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
+import {
+  markWhatsNewSeen,
+  newestWhatsNew,
+  seenWhatsNew,
+} from "@/lib/whats-new";
 import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
@@ -147,6 +152,7 @@ import {
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
+import { WhatsNewDialog } from "./whats-new-dialog";
 import {
   startUsageSurfacePolling,
   USAGE_REFRESH_PENDING_POLL_INTERVAL_MS,
@@ -599,6 +605,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
   // "Run setup again" asks first, from Settings and from Support alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
+  // The "What's new" entries this customer has seen, null while nothing is
+  // stored, and whether Updates has opened the notice again.
+  const [whatsNewSeen, setWhatsNewSeen] = useState(seenWhatsNew);
+  const [whatsNewReopened, setWhatsNewReopened] = useState(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
@@ -4990,6 +5000,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           candidate.deviceId === deviceRecoveryGateRef.current.preferredDeviceId,
       ));
 
+  // A customer who is setting VibeTV up has nothing to catch up on: every
+  // "What's new" entry counts as seen. Only while nothing is stored, so one who
+  // runs setup again keeps what they have not read yet.
+  const whatsNewIsNotNews =
+    setupOwnsScreen && providerSelectionRequired && whatsNewSeen === null;
+  useEffect(() => {
+    if (!whatsNewIsNotNews) {
+      return;
+    }
+    const timer = window.setTimeout(() => setWhatsNewSeen(markWhatsNewSeen()), 0);
+    return () => window.clearTimeout(timer);
+  }, [whatsNewIsNotNews]);
+  // The notice opens by itself on Overview, once nothing else asks for the
+  // customer: not during setup or a firmware update, and under no other dialog.
+  const whatsNewEntries = whatsNewReopened
+    ? newestWhatsNew()
+    : !setupOwnsScreen &&
+        activeShellTab === "overview" &&
+        !firmwareUpdateInProgress &&
+        !needsRuntimeRecovery &&
+        !lostDevicePickerOpen &&
+        !(usageFailure && !usageFailureHidden)
+      ? newestWhatsNew(whatsNewSeen)
+      : [];
+  const closeWhatsNew = () => {
+    setWhatsNewSeen(markWhatsNewSeen());
+    setWhatsNewReopened(false);
+  };
+
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
@@ -5498,6 +5537,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }}
             onInstallUpdate={installFirmwareUpdate}
             onRetryThemeUpdate={retryActiveThemeUpgrade}
+            onShowWhatsNew={() => setWhatsNewReopened(true)}
             requiresMacAppMigration={requiresMacAppMigration}
             supportReportBusy={supportReportBusy}
             themeUpdateAvailable={activeThemeUpdateAvailable}
@@ -5602,6 +5642,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }}
           showCloseButton={false}
           title="Run setup again?"
+        />
+      ) : null}
+      {whatsNewEntries.length > 0 ? (
+        <WhatsNewDialog
+          appVersion={companionInfo?.app?.version}
+          entries={whatsNewEntries}
+          onClose={closeWhatsNew}
+          onShowSettings={() => {
+            closeWhatsNew();
+            setActiveTab("settings");
+          }}
+          windowsHost={windowsHost}
         />
       ) : null}
     </SetupEventsContext.Provider>

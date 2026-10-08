@@ -87,6 +87,8 @@ export type UpdatesScreenProps = {
   onCreateReport?: () => void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
   onRetryThemeUpdate?: () => Promise<boolean> | boolean | void;
+  /** Opens the "What's new" notice again. */
+  onShowWhatsNew?: () => void;
   requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
@@ -107,6 +109,7 @@ export function UpdatesScreen({
   onCreateReport,
   onInstallUpdate,
   onRetryThemeUpdate,
+  onShowWhatsNew,
   requiresMacAppMigration = false,
   busyAction,
   updateStatus,
@@ -244,7 +247,20 @@ export function UpdatesScreen({
 
   return (
     <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
-      <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-x-4">
+        <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
+        {onShowWhatsNew ? (
+          <Button
+            className="px-0"
+            onClick={onShowWhatsNew}
+            size="sm"
+            type="button"
+            variant="link"
+          >
+            What&apos;s new
+          </Button>
+        ) : null}
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
           checkedAt={

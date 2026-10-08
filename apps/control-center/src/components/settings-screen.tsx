@@ -94,6 +94,11 @@ export type SettingsScreenProps = {
   windowsHost?: boolean;
 };
 
+/** The keys the Windows App and the Mac App register (issue #424). */
+export function providerShortcutKeys(windowsHost: boolean): string {
+  return windowsHost ? "Ctrl+Alt+Shift+P" : "⌃⌥⌘P";
+}
+
 export function SettingsScreen({
   automaticPreviews,
   device,
@@ -119,8 +124,7 @@ export function SettingsScreen({
   windowsHost = false,
 }: SettingsScreenProps) {
   const thisHost = windowsHost ? "this computer" : "this Mac";
-  // The keys the Windows App and the Mac App register (issue #424).
-  const shortcutKeys = windowsHost ? "Ctrl+Alt+Shift+P" : "⌃⌥⌘P";
+  const shortcutKeys = providerShortcutKeys(windowsHost);
   const [requestedMode, setRequestedMode] = useState<"cable" | "wifi" | null>(null);
   const [eraseRequested, setEraseRequested] = useState(false);
   const brightnessSupport =

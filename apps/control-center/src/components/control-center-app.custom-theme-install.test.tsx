@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import type { ThemeStudioSpec } from "@/lib/theme-studio";
+import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 
 vi.mock("./theme-render-preview", () => ({ ThemeRenderPreview: () => null }));
@@ -94,6 +95,8 @@ async function openThemesWithSavedTheme(
       ],
     }),
   );
+  // A customer who has read "What's new"; it would lie over Overview.
+  markWhatsNewSeen();
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,

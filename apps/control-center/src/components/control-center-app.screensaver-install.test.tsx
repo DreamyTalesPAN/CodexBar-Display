@@ -8,6 +8,7 @@ import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 
 vi.mock("./theme-render-preview", () => ({ ThemeRenderPreview: () => null }));
@@ -79,6 +80,8 @@ function startApp(install?: Record<string, unknown>) {
     },
   };
   window.localStorage.clear();
+  // A customer who has read "What's new"; it would lie over Overview.
+  markWhatsNewSeen();
   vi.useFakeTimers();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,

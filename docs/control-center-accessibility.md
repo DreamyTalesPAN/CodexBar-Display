@@ -66,10 +66,12 @@ npx vitest run src/components/usage-screen.test.tsx
 | Support | `logs-screen.test.tsx`, `setup-event-log.test.tsx` | diagnostics, recent activity, error, setup log |
 | Settings | `settings-screen.test.tsx`, `settings-connection.test.tsx` | every section, factory reset question, connection question |
 | Whole app | `control-center-shell.test.tsx`, `control-center-app.display-preferences.test.tsx` | navigation with an update waiting, every tab inside the real navigation, `Run setup again?` |
+| What's new | `control-center-app.whats-new.test.tsx` | the dialog over Updates |
 
 Focus has its own tests in the same files: into the factory reset question and
 back to its button, into a setup dialog and back, back to Delete from the
-delete question, and onto the new title after a setup step.
+delete question, onto `Got it` in `What's new` and back to the button on
+Updates, and onto the new title after a setup step.
 
 That a control keeps focus while its change is saved is checked with
 `expectKeepsFocus` (`src/test/focus.ts`) in
