@@ -25,8 +25,8 @@ export type WhatsNewEntry = {
   title: string;
   /** "{shortcut}" stands for the keys of the shortcut for the next provider. */
   body: string;
-  /** The entry offers "Show me in Settings". */
-  inSettings?: boolean;
+  /** The Settings section the entry is about; offers "Show me in Settings". */
+  inSettings?: "settings-display" | "settings-display-mode";
   /** The catalog id of the theme the entry announces; offers "Show me in Themes". */
   theme?: string;
 };
@@ -57,16 +57,21 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     icon: Repeat,
     title: "Choose how often VibeTV switches",
     body: "In Automatic mode VibeTV can switch when your activity changes, or every 30 seconds, every minute or every 5 minutes.",
-    inSettings: true,
+    inSettings: "settings-display-mode",
   },
   {
     id: "usage-display",
     icon: Percent,
     title: "Show what is used or what is left",
     body: "Choose whether VibeTV shows how much of your limit you have used or how much remains.",
-    inSettings: true,
+    inSettings: "settings-display",
   },
 ];
+
+/** The id of a catalog theme's row in Themes, where "Show me in Themes" goes. */
+export function catalogThemeRowId(themeId: string): string {
+  return `catalog-theme-${themeId}`;
+}
 
 const STORAGE_KEY = "vibetv.controlCenter.seenWhatsNew";
 /** More than three of a kind at once is a list nobody reads. */

@@ -69,6 +69,7 @@ import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { cn } from "@/lib/utils";
 import { statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
+import { catalogThemeRowId } from "@/lib/whats-new";
 import {
   createBlankThemeSpec,
   importThemeSpec,
@@ -1144,6 +1145,7 @@ function ThemeListItem({
 
   return (
     <Item
+      id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >

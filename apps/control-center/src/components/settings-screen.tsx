@@ -292,7 +292,7 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="Display">
+      <SettingsSection id="settings-display" title="Display">
         <BrightnessControl
           disabled={
             !brightnessSupport ||
@@ -331,7 +331,7 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection title="Display mode">
+      <SettingsSection id="settings-display-mode" title="Display mode">
         {providerPicker.displayNotice ? (
           <p className="text-sm text-muted-foreground" role="status">
             {providerPicker.displayNotice}
@@ -608,14 +608,17 @@ export function SettingsScreen({
 function SettingsSection({
   children,
   description,
+  id,
   title,
 }: {
   children: ReactNode;
   description?: string;
+  /** For a link that opens Settings at this group ("What's new"). */
+  id?: string;
   title: string;
 }) {
   return (
-    <section className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
+    <section id={id} className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
       <div className="min-w-0">
         <h2 className="text-base font-semibold">{title}</h2>
         {description ? (

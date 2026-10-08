@@ -30,6 +30,32 @@ const claude = {
   writable: true,
 };
 
+// The catalog theme the newest "New theme" entry announces.
+const gauge = {
+  id: "gauge",
+  themeId: "gauge",
+  title: "Gauge",
+  isFree: true,
+  priceLabel: "Free",
+  packUrl: "/theme-packs/gauge.zip",
+  packSha256: "a".repeat(64),
+  packSizeBytes: 100,
+  source: "github-catalog",
+  themeSpecPath: "/themes/u/gauge.json",
+  usage: "live",
+};
+
+// jsdom scrolls nothing. Each call notes what was brought into view, and moves
+// the window as a browser would, so a later return to the top would show.
+function watchScrolling() {
+  const shown: Element[] = [];
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+    shown.push(this);
+    document.documentElement.scrollTop = 400;
+  };
+  return shown;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as unknown as Response;
 }
@@ -165,7 +191,7 @@ function startWindow({
     createElement(
       TooltipProvider,
       null,
-      createElement(ControlCenterApp, { catalog: { themes: [] } as never }),
+      createElement(ControlCenterApp, { catalog: { themes: [gauge] } as never }),
     ),
   );
   return {
@@ -378,21 +404,59 @@ it("waits while a newer app is on offer", async () => {
   expect(notice()).not.toBeNull();
 });
 
-it("opens Settings from the notice and counts it as read", async () => {
+// Issue #584: "Show me in Settings" opened Settings at its top, with the
+// control the entry is about further down. The window here is on Manual, where
+// `Switch providers` is not on the page: the group with the two mode cards is
+// what the customer is shown.
+it.each([
+  ["Choose how often VibeTV switches", "Display mode"],
+  ["Show what is used or what is left", "Display"],
+])("opens Settings from the entry %s at the group %s and counts the notice as read", async (title, group) => {
+  const shown = watchScrolling();
   const window = startWindow();
   await window.wait(10);
+  document.documentElement.scrollTop = 900;
 
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Settings" })[0],
+    within(
+      within(notice()!).getByRole("heading", { name: title }).closest("li")!,
+    ).getByRole("button", { name: "Show me in Settings" }),
   );
   await window.wait(1);
 
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
   expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+  expect(shown).toEqual([
+    screen.getByRole("heading", { name: group }).closest("section"),
+  ]);
+  // The page was put at its top first, and the group brought into view after.
+  expect(document.documentElement.scrollTop).toBe(400);
+  expect(screen.queryByRole("combobox", { name: "Switch providers" })).toBeNull();
 });
 
-it("opens Themes from a new theme and counts the notice as read", async () => {
+it("brings nothing into view when Settings is opened from the sidebar afterwards", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Settings" })[0],
+  );
+  await window.wait(1);
+  shown.length = 0;
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+  expect(shown).toEqual([]);
+  expect(document.documentElement.scrollTop).toBe(0);
+});
+
+it("opens Themes from a new theme at that theme and counts the notice as read", async () => {
+  const shown = watchScrolling();
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
@@ -403,6 +467,11 @@ it("opens Themes from a new theme and counts the notice as read", async () => {
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
   expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
+  // Issue #584: the list is longer than the window; the row of the theme the
+  // entry announces is brought into view.
+  expect(shown).toEqual([
+    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+  ]);
 });
 
 it("opens again from Updates with the keys of a Windows computer", async () => {

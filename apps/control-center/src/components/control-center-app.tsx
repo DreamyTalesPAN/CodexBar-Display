@@ -5071,6 +5071,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const timer = window.setTimeout(() => setWhatsNewReopened(false), 0);
     return () => window.clearTimeout(timer);
   }, [whatsNewReopenIsOver]);
+  // A "Show me" link of the notice is about one place on the page it opens
+  // (issue #584). Every opened page starts at the top; after that, this place
+  // is brought into view.
+  const shownAfterPageOpensRef = useRef("");
+  useEffect(() => {
+    const id = shownAfterPageOpensRef.current;
+    shownAfterPageOpensRef.current = "";
+    if (id) {
+      document.getElementById(id)?.scrollIntoView();
+    }
+  }, [activeShellTab, appearanceSection]);
   const closeWhatsNew = () => {
     setWhatsNewSeen(markWhatsNewSeen());
     setWhatsNewReopened(false);
@@ -5699,14 +5710,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           appVersion={companionInfo?.app?.version}
           entries={whatsNewEntries}
           onClose={closeWhatsNew}
-          onShowSettings={() => {
+          onShow={(page, id) => {
             closeWhatsNew();
-            setActiveTab("settings");
-          }}
-          onShowThemes={() => {
-            closeWhatsNew();
-            setAppearanceSection("themes");
-            setActiveTab("theme-library");
+            shownAfterPageOpensRef.current = id;
+            if (page === "themes") {
+              setAppearanceSection("themes");
+            }
+            setActiveTab(page === "themes" ? "theme-library" : "settings");
           }}
           windowsHost={windowsHost}
         />
