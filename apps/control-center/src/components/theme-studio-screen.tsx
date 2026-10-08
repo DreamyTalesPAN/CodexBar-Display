@@ -26,16 +26,6 @@ import {
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -124,6 +114,7 @@ import {
   type EditorStatus,
 } from "./theme-studio/editor-status";
 import { LeaveEditorDialog } from "./theme-studio/leave-editor-dialog";
+import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
 import { ThemeStudioToolbar } from "./theme-studio/theme-studio-toolbar";
 import { EditableThemePreview } from "./theme-studio/editable-theme-preview";
 import { PrimitiveInspector } from "./theme-studio/primitive-inspector";
@@ -1791,23 +1782,13 @@ export function ThemeStudioScreen({
         type="file"
       />
       {replacement ? (
-        <AlertDialog open onOpenChange={(open) => !open && setReplacement(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Replace your changes?</AlertDialogTitle>
-              <AlertDialogDescription>
-                What you open takes the place of this draft, including its
-                name. Your changes are not saved yet.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel autoFocus>Keep editing</AlertDialogCancel>
-              <AlertDialogAction onClick={replacement} variant="destructive">
-                Replace
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ReplaceDraftDialog
+          onKeep={() => setReplacement(null)}
+          onReplace={replacement}
+        >
+          What you open takes the place of this draft, including its name.
+          Your changes are not saved yet.
+        </ReplaceDraftDialog>
       ) : null}
       {leaveDialogOpen ? (
         <LeaveEditorDialog

@@ -94,6 +94,7 @@ import {
   type ThemeRenderPack,
 } from "./live-vibetv-preview";
 import { ThemeRenderPreview } from "./theme-render-preview";
+import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
 import type { ApiError, StandbySettings } from "./control-center-types";
 import {
@@ -245,6 +246,9 @@ export function ThemeLibraryScreen({
     ? screensaverThemeId
     : activeLiveThemeId(themes, device);
   const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
+  // There is one recovery copy, and the editor writes a new draft over it. What
+  // would be opened while an older draft waits there, until the customer agrees.
+  const [replacingRecovery, setReplacingRecovery] = useState<(() => void) | null>(null);
   const [editingTheme, setEditingTheme] =
     useState<ThemeStudioEditorTheme | null>(null);
   const [libraryError, setLibraryError] = useState("");
@@ -498,13 +502,22 @@ export function ThemeLibraryScreen({
     });
   }
 
-  function discardRecovery() {
+  function discardRecovery(): boolean {
     const result = clearThemeStudioRecovery();
     if (!result.ok) {
       setLibraryError(result.error.message);
-      return;
+      return false;
     }
     setRecovery(null);
+    return true;
+  }
+
+  function openInEditor(open: () => void) {
+    if (recovery) {
+      setReplacingRecovery(() => open);
+    } else {
+      open();
+    }
   }
 
   function confirmDeleteTheme(): boolean {
@@ -620,7 +633,7 @@ export function ThemeLibraryScreen({
               : "Customize how your live usage screen looks while VibeTV is active."}
           </p>
         </div>
-        <Button onClick={openBlankTheme} type="button">
+        <Button onClick={() => openInEditor(openBlankTheme)} type="button">
           <Plus data-icon="inline-start" aria-hidden />
           <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
         </Button>
@@ -714,7 +727,9 @@ export function ThemeLibraryScreen({
                   installedThemeId={installedThemeId}
                   lastInstall={lastInstall}
                   loadingEditorRow={loadingEditorRow}
-                  onEditTheme={openThemeEditor}
+                  onEditTheme={(item) =>
+                    openInEditor(() => void openThemeEditor(item))
+                  }
                   onDeleteTheme={requestDeleteTheme}
                   onInstallTheme={installLibraryTheme}
                   onPreviewTheme={setPreviewTheme}
@@ -751,6 +766,20 @@ export function ThemeLibraryScreen({
             <ThemePreview large theme={previewTheme} />
           </DialogContent>
         </Dialog>
+      ) : null}
+      {replacingRecovery && recovery ? (
+        <ReplaceDraftDialog
+          onKeep={() => setReplacingRecovery(null)}
+          onReplace={() => {
+            setReplacingRecovery(null);
+            if (discardRecovery()) {
+              replacingRecovery();
+            }
+          }}
+        >
+          {recovery.document.packName} has changes that are not saved. What you
+          open takes its place.
+        </ReplaceDraftDialog>
       ) : null}
       {deleteTheme ? (
         <DeleteThemeDialog
