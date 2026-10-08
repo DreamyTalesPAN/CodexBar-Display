@@ -328,3 +328,38 @@ it("keeps saying why saving is locked after a change and after Export", () => {
   // Now the line above the buttons names it too.
   expect(screen.getAllByText(locked)).toHaveLength(2);
 });
+
+// Issue #558: "Mini theme" took the draft's place, name and id included,
+// without a question.
+it("asks before Mini theme or an opened file replaces a draft with changes", async () => {
+  const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Text" })[0]);
+  fireEvent.click(button("Mini theme"));
+  expect(screen.getByRole("alertdialog", { name: "Replace your changes?" })).toBeTruthy();
+  fireEvent.click(button("Keep editing"));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  fireEvent.click(button("Import theme JSON"));
+  expect(screen.getByRole("alertdialog")).toBeTruthy();
+  fireEvent.click(button("Keep editing"));
+
+  fireEvent.click(button("Mini theme"));
+  fireEvent.click(button("Replace"));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+it("opens Mini theme at once in a draft without changes", async () => {
+  const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.click(button("Mini theme"));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+});

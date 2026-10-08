@@ -26,6 +26,16 @@ import {
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -276,6 +286,9 @@ export function ThemeStudioScreen({
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  // What "Mini theme" or an opened file would put in place of a draft that
+  // has changes; it waits here until the customer has answered.
+  const [replacement, setReplacement] = useState<(() => void) | null>(null);
   const [advancedTab, setAdvancedTab] =
     useState<ThemeStudioAdvancedTab>("project");
   const [jsonStatus, setJsonStatus] = useState<EditorStatus>({
@@ -538,6 +551,14 @@ export function ThemeStudioScreen({
       return;
     }
     setLeaveDialogOpen(true);
+  }
+
+  function replaceDraft(run: () => void) {
+    if (dirty) {
+      setReplacement(() => run);
+    } else {
+      run();
+    }
   }
 
   function keepEditing() {
@@ -1217,7 +1238,7 @@ export function ThemeStudioScreen({
                     <AddButton icon={Square} label="Rect" onClick={() => addPrimitive("rect")} />
                     <AddButton icon={Film} label="GIF" onClick={() => gifInputRef.current?.click()} />
                     <AddButton icon={ImagePlus} label="Sprite" onClick={() => spriteInputRef.current?.click()} />
-                    <AddButton icon={FileUp} label="JSON" onClick={() => fileInputRef.current?.click()} />
+                    <AddButton icon={FileUp} label="JSON" onClick={() => replaceDraft(() => fileInputRef.current?.click())} />
                   </div>
                   <div className="grid gap-2">
                     {spec.primitives.map((primitive, index) => (
@@ -1412,7 +1433,9 @@ export function ThemeStudioScreen({
                   <Button
                     className="w-full"
                     disabled={loadingPreset}
-                    onClick={() => void loadBuiltInTheme("mini-classic")}
+                    onClick={() =>
+                      replaceDraft(() => void loadBuiltInTheme("mini-classic"))
+                    }
                     type="button"
                     variant="outline"
                   >
@@ -1425,7 +1448,9 @@ export function ThemeStudioScreen({
                   </Button>
                   <Button
                     className="w-full"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() =>
+                      replaceDraft(() => fileInputRef.current?.click())
+                    }
                     type="button"
                     variant="outline"
                   >
@@ -1759,6 +1784,25 @@ export function ThemeStudioScreen({
         ref={spriteInputRef}
         type="file"
       />
+      {replacement ? (
+        <AlertDialog open onOpenChange={(open) => !open && setReplacement(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Replace your changes?</AlertDialogTitle>
+              <AlertDialogDescription>
+                What you open takes the place of this draft, including its
+                name. Your changes are not saved yet.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel autoFocus>Keep editing</AlertDialogCancel>
+              <AlertDialogAction onClick={replacement} variant="destructive">
+                Replace
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
       {leaveDialogOpen ? (
         <LeaveEditorDialog
           saving={saving}
