@@ -274,6 +274,36 @@
           },
           "cs": {
             "$ref": "#/$defs/colorStops"
+          },
+          "arcStart": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 359
+          },
+          "as": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 359
+          },
+          "arcSweep": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 360
+          },
+          "aw": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 360
+          },
+          "arcThickness": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          },
+          "at": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
           }
         },
         "additionalProperties": true,

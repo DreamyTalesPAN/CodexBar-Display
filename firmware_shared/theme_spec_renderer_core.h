@@ -187,6 +187,7 @@ constexpr size_t kMaxCompiledThemeSpecPrimitives = 32;
 constexpr size_t kMaxCompiledThemeSpecStringBytes = 1024;
 constexpr size_t kMaxCompiledProviderAssets = 16;
 constexpr size_t kMaxCompiledColorStops = 4;
+constexpr int kProgressStyleArc = 2;
 
 struct CompiledProviderAsset {
   const char* key = nullptr;
@@ -1454,9 +1455,25 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     if (progressStyle != nullptr && (std::strcmp(progressStyle, "segments") == 0 || std::strcmp(progressStyle, "segmented") == 0)) {
       out.style = 1;
     }
-    out.segments = JsonIntFor(primitive, "segments", "sg", 0);
-    out.segmentGap = JsonIntFor(primitive, "segmentGap", "gg", 1);
-    out.borderRadius = JsonIntFor(primitive, "borderRadius", "br", 0);
+    if (progressStyle != nullptr && std::strcmp(progressStyle, "arc") == 0) {
+      // An arc has no segments, gap or corners. Those three fields hold its
+      // start angle, sweep and thickness instead, so a compiled primitive
+      // stays as small as it is: the device keeps up to 32 of them in RAM.
+      out.style = kProgressStyleArc;
+      out.segments = JsonIntFor(primitive, "arcStart", "as", 0);
+      out.segmentGap = JsonIntFor(primitive, "arcSweep", "aw", 0);
+      out.borderRadius = JsonIntFor(primitive, "arcThickness", "at", 0);
+      const int diameter = out.width < out.height ? out.width : out.height;
+      if (out.segments < 0 || out.segments > 359 ||
+          out.segmentGap < 1 || out.segmentGap > 360 ||
+          out.borderRadius < 1 || out.borderRadius * 2 > diameter) {
+        return false;
+      }
+    } else {
+      out.segments = JsonIntFor(primitive, "segments", "sg", 0);
+      out.segmentGap = JsonIntFor(primitive, "segmentGap", "gg", 1);
+      out.borderRadius = JsonIntFor(primitive, "borderRadius", "br", 0);
+    }
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
@@ -1796,6 +1813,82 @@ inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimiti
   return true;
 }
 
+// sin(degrees) times 4096 by Bhaskara's formula: whole numbers only, no table
+// and no float library. It is off by at most 0.1 degree, less than half a
+// pixel at the edge of the display.
+inline int ArcSin4096(int degrees) {
+  const int half = degrees % 180;
+  const int k = half * (180 - half);
+  const int value = (k << 14) / (40500 - k);
+  return degrees % 360 < 180 ? value : -value;
+}
+
+// A direction from the arc centre, or a pixel measured from it. Angles run
+// clockwise from 12 o'clock; y grows downwards as on the display.
+struct ArcVector {
+  int x;
+  int y;
+};
+
+inline ArcVector ArcDirection(int degrees) {
+  return {ArcSin4096(degrees), -ArcSin4096(degrees + 90)};
+}
+
+// Whether `to` lies at most half a turn clockwise of `from`.
+inline bool ArcClockwise(const ArcVector& from, const ArcVector& to) {
+  return from.x * to.y - from.y * to.x >= 0;
+}
+
+inline bool ArcSweepContains(const ArcVector& start, const ArcVector& end, int sweep, const ArcVector& pixel) {
+  const bool afterStart = ArcClockwise(start, pixel);
+  const bool beforeEnd = ArcClockwise(pixel, end);
+  return sweep >= 360 || (sweep > 180 ? afterStart || beforeEnd : afterStart && beforeEnd);
+}
+
+// Draws the ring row by row as FillRect runs: the track over the whole sweep
+// and, from the start angle, the filled share of it. 0 % is track only, 100 %
+// is filled to the end.
+inline void DrawProgressArc(const CompiledPrimitive& primitive, int percent, uint16_t fillColor, Sink& sink) {
+  const int start = primitive.segments;
+  const int sweep = primitive.segmentGap;
+  const int filled = sweep * percent / 100;
+  // Distances are doubled so that a box with an even side has its centre
+  // between two pixels.
+  const int outer = primitive.width < primitive.height ? primitive.width : primitive.height;
+  const int inner = outer - 2 * primitive.borderRadius;
+  const ArcVector startEdge = ArcDirection(start);
+  const ArcVector filledEdge = ArcDirection(start + filled);
+  const ArcVector endEdge = ArcDirection(start + sweep);
+  RectCommand run;
+  run.height = 1;
+  for (int row = 0; row < primitive.height; ++row) {
+    run.y = primitive.y + row;
+    int kind = 0;  // 0 outside the arc, 1 track, 2 filled
+    for (int col = 0; col <= primitive.width; ++col) {
+      const ArcVector pixel = {2 * col + 1 - primitive.width, 2 * row + 1 - primitive.height};
+      const int distance = pixel.x * pixel.x + pixel.y * pixel.y;
+      int next = 0;
+      if (col < primitive.width && distance <= outer * outer && distance >= inner * inner) {
+        if (filled > 0 && ArcSweepContains(startEdge, filledEdge, filled, pixel)) {
+          next = 2;
+        } else if (ArcSweepContains(startEdge, endEdge, sweep, pixel)) {
+          next = 1;
+        }
+      }
+      if (next == kind) {
+        continue;
+      }
+      if (kind != 0) {
+        run.width = primitive.x + col - run.x;
+        run.color = kind == 2 ? fillColor : primitive.bg;
+        sink.FillRect(run);
+      }
+      run.x = primitive.x + col;
+      kind = next;
+    }
+  }
+}
+
 inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
@@ -1945,6 +2038,11 @@ inline bool DrawCompiledPrimitive(
   if (primitive.kind == PrimitiveKind::Progress) {
     if (CompiledProgressLaneUnavailable(primitive, frame)) {
       return false;
+    }
+    if (primitive.style == kProgressStyleArc) {
+      const int percent = CompiledProgressPercentFor(primitive, frame);
+      DrawProgressArc(primitive, percent, ResolveProgressFillColor(primitive, percent, frame.usageMode), sink);
+      return true;
     }
     ProgressCommand cmd;
     cmd.x = primitive.x;

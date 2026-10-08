@@ -305,6 +305,7 @@ Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`, `sprite`, `pixels`) and validated by companion before send.
 - Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/ft/al/va/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives. `va` is optional vertical text align (`middle`/`center`/`bottom`).
+- A progress primitive with `progressStyle: "arc"` (compact `ps`) draws a ring instead of a bar: the circle that fits the `width` x `height` box, centred in it. `arcStart` (compact `as`, 0-359, default 0) is the angle where the ring starts, in whole degrees clockwise from 12 o'clock; `arcSweep` (compact `aw`, 1-360) is how far it runs clockwise; `arcThickness` (compact `at`, 1 to half the smaller box side) is the width of the ring in pixels. `bgColor` draws the track over the whole sweep and `color` or `colorStops` the filled share from the start angle: `arcSweep * percent / 100` whole degrees, so 0 % shows only the track and 100 % fills the sweep. Bindings, clamping and a missing window behave as for the bar; `borderColor`, `borderRadius` and the segment fields are not used. An arc outside these limits is skipped. Themes that use it require the advertised `progress-arc-v1` capability, because older firmware draws a straight bar across the whole box.
 - A primitive may declare usage-lane ownership with `slot: 1|2` (compact `sl`). The renderer skips the entire primitive when that slot is absent, including static decoration and progress tracks. Themes that use slot bindings or ownership require the advertised `usage-slots-v1` capability.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
 - Text primitives scale with `fontSize`. When `fit` is `shrink` (compact `ft`), the renderer treats that size as the maximum and chooses the largest supported integer size that fits `maxWidth`/`width`.
@@ -420,7 +421,7 @@ WiFi:
   "firmware": "1.0.0",
   "deviceId": "14799300",
   "networkMode": "off",
-  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
+  "features": ["theme", "theme-spec-v1", "provider-slots-v1", "provider-assets-v1", "color-stops-v1", "text-valign-v1", "progress-arc-v1", "cable-transfer-v1", "cable-transfer-v2", "cable-health-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {
@@ -443,6 +444,7 @@ WiFi:
       "supportsProviderAssetsV1": true,
       "supportsColorStopsV1": true,
       "supportsTextValignV1": true,
+      "supportsProgressArcV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -480,6 +482,7 @@ Fields:
   - `theme.supportsProviderAssetsV1` gates `providerAssets` / `pa` sprite maps. Older firmware ignores `pa` and draws `assetPath` / `a`; that fallback is compatible only when `a` is a valid sprite. Hosts still require the capability (or `minFirmware` 1.0.42) before installing a pack that uses `pa`.
   - `theme.supportsColorStopsV1` gates `colorStops` / `cs`. Older firmware uses solid `c`. Stops are authored against remaining-style percent; when the frame `usageMode` is `used`, firmware matches `100 - percent` so warning colors stay correct.
   - `theme.supportsTextValignV1` gates `valign` / `va`. Older firmware treats `y` as the glyph top, so shrink+middle is not a compatible fallback. Hosts must not install a spec that emits `va` onto firmware without this capability.
+  - `theme.supportsProgressArcV1` gates `progressStyle: "arc"` / `ps: "arc"`. Older firmware does not know the style and draws a straight bar across the arc's box, so there is no compatible fallback. Hosts must not install a spec that uses it onto firmware without this capability.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.
