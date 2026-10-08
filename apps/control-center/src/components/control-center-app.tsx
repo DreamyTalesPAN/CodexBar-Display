@@ -2443,7 +2443,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       });
       addEvent({
         label: `${noun} install started`,
-        detail: `${theme.title} is ready for device install.`,
+        detail: `${theme.title} is being installed on VibeTV.`,
         at: startedAt,
         tone: "unknown",
       });

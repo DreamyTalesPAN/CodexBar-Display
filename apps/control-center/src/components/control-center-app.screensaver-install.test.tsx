@@ -217,6 +217,8 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: "Support" }));
   await wait(2);
   expect(screen.getByText(`${noun} install started`)).toBeTruthy();
+  // Issue #579: it read "Retro 3D is ready for device install."
+  expect(screen.getByText(`${title} is being installed on VibeTV.`)).toBeTruthy();
   expect(screen.getByText(`${noun} install needs attention`)).toBeTruthy();
   expect(screen.queryByText(new RegExp(`${other} install`))).toBeNull();
 });
