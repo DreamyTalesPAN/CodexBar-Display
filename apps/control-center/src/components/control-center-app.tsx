@@ -1087,14 +1087,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setSelectedThemeId(activeLiveTheme.themeId);
         }
       }
-      addEvent({
-        label: "Settings loaded",
-        detail:
-          loadedBrightness == null
-            ? "Brightness is ready to load."
-            : `Brightness is set to ${loadedBrightness}%.`,
-        tone: "ready",
-      });
+      // A read that changes nothing leaves no entry under Recent activity
+      // (issue #579); a failed one does, below.
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;

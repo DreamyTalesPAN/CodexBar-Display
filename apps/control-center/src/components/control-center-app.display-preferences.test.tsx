@@ -813,6 +813,20 @@ it("asks before running setup again and lets the customer cancel", async () => {
   expect(resets()).toHaveLength(1);
 });
 
+// Issue #579: every start of the app left "Settings loaded" with "Brightness
+// is set to 20%." under Recent activity, although nobody had changed anything.
+it("leaves no Recent activity entry for reading the settings", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  expect(window.companion.requests).toContain("GET /api/local-companion/v1/settings");
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+
+  expect(window.text()).toContain("Control Center opened");
+  expect(window.text()).not.toContain("Settings loaded");
+  expect(window.text()).not.toContain("Brightness is set to");
+});
+
 it("has no accessibility violations on any tab or in the setup question", async () => {
   const window = startWindow();
   await window.wait(10);
