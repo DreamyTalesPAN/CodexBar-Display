@@ -3966,3 +3966,13 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul authorized refactoring, simplification and pushing this Theme Studio batch in the current chat.
 - Approved customer-visible result: Async imports stay with their originating draft; removing the last reference to an image removes its stored bytes from the current draft while Undo can restore it.
+
+## 2026-10-08 — Theme Studio autosave failure protection
+
+- User approval: Paul authorized refactoring, simplification and pushing this Theme Studio batch in the current chat.
+- Approved customer-visible result: Successfully saved drafts close normally; changes that could not be saved show the browser's standard warning before closing or reloading.
+
+## 2026-10-08 — Theme Studio creation and device actions
+
+- User approval: Paul requested Create beside the prompt, an icon-only manual add action below it, removal of the OpenAI status row, and primary Send to VibeTV with secondary Save in the header.
+- Approved customer-visible result: Settings, Save and Send to VibeTV appear in that order. Create shares the prompt row; the manual add control is a left-aligned plus. Sending uses the existing Mac App install endpoint and shared install-job polling, surfaces its result and locks edits during transfer. No hardware write test was authorized or performed.

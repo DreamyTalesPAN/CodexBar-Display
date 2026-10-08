@@ -83,7 +83,7 @@ try {
   });
   await page.reload();
   const input=page.getByLabel("Your idea",{exact:true});
-  const create=page.getByRole("button",{name:"Create with AI",exact:true});
+  const create=page.getByRole("button",{name:"Create",exact:true});
   const openDetails=async()=>{
     const details=page.getByRole("button",{name:"Details",exact:true});
     if(await details.getAttribute("aria-expanded")!=="true") await details.click();
@@ -122,7 +122,7 @@ try {
   await page.screenshot({path:join(output,"connection-retry-desktop.png")});
   // A reload must not turn a saved-but-unverified credential into readiness.
   await page.reload();await input.waitFor();await input.fill("A quiet office");await create.click();
-  await page.getByText("Key saved · check needed",{exact:true}).waitFor();
+  await page.getByRole("button",{name:"Retry connection check",exact:true}).waitFor();
   assert.equal(requests.length,0);
   temporaryFailure=false;
   await page.getByRole("button",{name:"Retry connection check",exact:true}).click();
@@ -198,7 +198,7 @@ try {
   for(let i=0;i<8;i++){await page.waitForTimeout(160);renderedFrames.add(await renderer.innerHTML());}
   assert(renderedFrames.size>1,"Genuine frame playback in the renderer");
   assert.equal(await page.getByRole("button",{name:"Pause animation",exact:true}).count(),0);
-  await page.getByRole("button",{name:"Save theme",exact:true}).click();
+  await page.getByRole("button",{name:"Save",exact:true}).click();
   const saved=await page.evaluate(()=>localStorage.getItem("vibetv.controlCenter.userThemes"));
   const savedDoc=JSON.parse(saved).themes[0].document;
   assert(savedDoc.assets["/themes/u/ai-scene-loop.cba"]);
@@ -266,6 +266,30 @@ try {
       if(width===1200) await page.screenshot({path:join(output,(dark?"dark":"light")+"-"+width+".png"),fullPage:true,animations:"disabled"});
     }
   }
+  // Device transfers are intercepted too: no real hardware writes.
+  let uploads=0,failTransfer=false;
+  await page.route("**/api/local-companion/v1/themes/install**",async route=>{
+    const request=route.request(),url=new URL(request.url());
+    if(url.pathname.endsWith("/status")) return route.fulfill({json:{ok:true,job:{id:"fixture-install",phase:"complete",message:"Theme is active on VibeTV.",result:{themeId:"fixture"}}}});
+    uploads++;
+    assert.equal(request.method(),"POST");
+    assert.equal(request.headers()["content-type"],"application/zip");
+    assert.equal(url.searchParams.get("async"),"true");
+    assert.equal(url.searchParams.get("slot"),"live");
+    assert.equal(request.postDataBuffer().subarray(0,2).toString(),"PK");
+    return failTransfer ? route.fulfill({status:503,json:{ok:false,error:{message:"Device unavailable.",nextAction:"Connect your VibeTV in the Mac App."}}}) : route.fulfill({status:202,json:{ok:true,job:{id:"fixture-install",phase:"installing"}}});
+  });
+  const send=page.getByRole("button",{name:"Send to VibeTV",exact:true});
+  assert.equal(uploads,0,"No automatic device transfer");
+  await send.click();
+  await page.getByRole("status").filter({hasText:"Theme is active on VibeTV."}).waitFor();
+  assert.equal(uploads,1);
+  failTransfer=true;
+  await send.click();
+  await page.getByRole("alert").filter({hasText:"Connect your VibeTV in the Mac App."}).waitFor();
+  assert.equal(uploads,2,"Each click sends once; errors never retry a hardware write");
+  console.log("PASS explicit ZIP transfer, install completion and actionable failure without retries (mocked device)");
+
   // Another tab can have a connected helper but no billing consent yet.
   await page.evaluate(()=>sessionStorage.clear());
   await page.reload();

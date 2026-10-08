@@ -134,7 +134,10 @@ credentials or change the installed app's settings.
 Save writes the editable document to this browser's local library (not to the
 installed app). Export editable JSON for a portable backup, or a theme-pack ZIP.
 Existing browser data is preserved. The isolated development instance never
-opens or installs the exported pack on a device.
+automatically opens or installs the exported pack on a device. The explicit
+Send to VibeTV action sends the current pack through the installed Mac App
+Companion and its existing install job; it requires a connected display.
+The AI helper remains isolated and owns no device endpoints.
 
 ## Verification
 

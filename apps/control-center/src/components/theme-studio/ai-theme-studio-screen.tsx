@@ -98,6 +98,7 @@ import {
 import { AI_THEME_SCREENMASTER_ASSET_PATH } from "@/lib/ai-theme";
 import { isAttachedSceneAnimation } from "@/lib/ai-theme";
 import {applyAIThemeLayout,layoutContext} from "@/lib/ai-theme-layout";
+import { sendThemeToVibeTV } from "@/lib/theme-install";
 
 function blank(): ThemeStudioDocument {
   return {
@@ -120,6 +121,7 @@ export function AIThemeStudioScreen() {
   // meanwhile still triggers the unsaved-changes confirmation.
   const dirtyRef = useRef(dirty);
   const [recoveryReady, setRecoveryReady] = useState(false);
+  const persistedDraft = useRef<ThemeStudioDocument | null>(null);
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
@@ -139,6 +141,9 @@ export function AIThemeStudioScreen() {
   const [connecting, setConnecting] = useState(false);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [transferStatus, setTransferStatus] = useState("");
+  const sendRequest = useRef(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -166,7 +171,7 @@ export function AIThemeStudioScreen() {
       : resetBinding === "usageSlot2Reset"
         ? 2
         : undefined;
-  const locked = busy;
+  const locked = busy || sending;
   const canCancel = busy && !loadingSample;
   const aiReady = configured === true && consent;
   const elementName = primitive
@@ -234,7 +239,18 @@ export function AIThemeStudioScreen() {
       const timer = window.setTimeout(() => setError(result.error.message), 0);
       return () => window.clearTimeout(timer);
     }
+    persistedDraft.current = document;
   }, [document, libraryId, recoveryReady, state.transactionBase]);
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (event: BeforeUnloadEvent) => {
+      if (persistedDraft.current === document) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [dirty, document]);
 
   function updateCapabilities(capabilities: AIThemeCapabilities) {
     setEnabled(capabilities.enabled);
@@ -318,7 +334,7 @@ export function AIThemeStudioScreen() {
     });
   }
   function history(type: "undo" | "redo") {
-    if (busy) return;
+    if (locked) return;
     documentVersion.current++;
     dispatch({ type });
     setSelected([]);
@@ -427,6 +443,22 @@ export function AIThemeStudioScreen() {
       );
     }
   }
+  async function send() {
+    if (locked || sendRequest.current || !document.spec.primitives.length || validation.errors.length) return;
+    sendRequest.current = true;
+    setSending(true);
+    setError("");
+    setTransferStatus("Sending…");
+    try {
+      setTransferStatus(await sendThemeToVibeTV(document, setTransferStatus));
+    } catch (error) {
+      setTransferStatus("");
+      setError(error instanceof Error ? error.message : "Theme transfer failed. Check the VibeTV Mac App.");
+    } finally {
+      sendRequest.current = false;
+      setSending(false);
+    }
+  }
   async function importFile(file: File | undefined, sprite: boolean) {
     if (!file || locked) return;
     if (file.size > 8 * 1024 * 1024) {
@@ -437,7 +469,7 @@ export function AIThemeStudioScreen() {
     try {
       if (sprite) {
         const imported = await importSpriteFile(file, "live", "image");
-        if (request.current || version !== documentVersion.current) return;
+        if (request.current || sendRequest.current || version !== documentVersion.current) return;
         if (
           document.spec.primitives.some((p) =>
             isAttachedSceneAnimation(p.assetPath),
@@ -467,7 +499,7 @@ export function AIThemeStudioScreen() {
         setSelected([document.spec.primitives.length]);
       } else {
         const parsed = JSON.parse(await file.text()) as ThemeStudioDocument;
-        if (request.current || version !== documentVersion.current) return;
+        if (request.current || sendRequest.current || version !== documentVersion.current) return;
         const spec = importThemeSpec(parsed.spec);
         const assets = parsed.assets || {};
         const valid = validateThemeSpec(spec, assets);
@@ -552,7 +584,7 @@ export function AIThemeStudioScreen() {
   async function generate(connectedNow = false) {
     if (
       request.current ||
-      busy ||
+      locked ||
       loadingSample ||
       attaching ||
       (connecting && !connectedNow) ||
@@ -761,7 +793,7 @@ export function AIThemeStudioScreen() {
     <div
       className="h-dvh overflow-y-auto [scrollbar-gutter:stable] bg-background p-3 text-foreground sm:p-6"
       onKeyDown={(event) => {
-        if (isTypingTarget(event.target) || busy || panel || pending || event.nativeEvent.isComposing)
+        if (isTypingTarget(event.target) || locked || panel || pending || event.nativeEvent.isComposing)
           return;
         const command = event.metaKey || event.ctrlKey;
         const key = event.key.toLowerCase();
@@ -805,24 +837,29 @@ export function AIThemeStudioScreen() {
           <h1 className="text-sm font-medium">Theme Studio</h1>
           <div className="ml-auto flex items-center gap-2">
             <Button
-              variant="outline"
-              disabled={locked || !document.spec.primitives.length || validation.errors.length > 0}
-              onClick={save}
-            >
-              Save theme
-            </Button>
-            <Button
               variant="ghost"
               size="icon"
               title="Settings"
               aria-label="Settings"
-              disabled={busy}
+              disabled={locked}
               onClick={() => openPanel("settings")}
             >
               <Settings />
             </Button>
+            <Button
+              variant="outline"
+              disabled={locked || !document.spec.primitives.length || validation.errors.length > 0}
+              onClick={save}
+            >
+              Save
+            </Button>
+            <Button disabled={locked || !document.spec.primitives.length || validation.errors.length > 0} onClick={() => void send()}>
+              {sending ? <Spinner /> : null}
+              {sending ? "Sending…" : "Send to VibeTV"}
+            </Button>
           </div>
         </header>
+        {transferStatus ? <p role="status" className="px-6 pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
           <main className="px-6 py-5">
             <div className="mx-auto mb-4 flex max-w-[680px] items-center justify-end gap-2">
               <div className="flex gap-1">
@@ -831,7 +868,7 @@ export function AIThemeStudioScreen() {
                   size="icon"
                   title="Undo · ⌘Z / Ctrl+Z"
                   aria-label="Undo last edit"
-                  disabled={!state.past.length || busy}
+                  disabled={!state.past.length || locked}
                   onClick={() => history("undo")}
                 >
                   <Undo2 />
@@ -841,7 +878,7 @@ export function AIThemeStudioScreen() {
                   size="icon"
                   title="Redo · ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y"
                   aria-label="Redo edit"
-                  disabled={!state.future.length || busy}
+                  disabled={!state.future.length || locked}
                   onClick={() => history("redo")}
                 >
                   <Redo2 />
@@ -957,8 +994,9 @@ export function AIThemeStudioScreen() {
               >
                 Your idea
               </label>
+              <div className="flex items-end gap-3">
               <div
-                className="relative overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
@@ -1033,21 +1071,25 @@ export function AIThemeStudioScreen() {
                 </Button>
               </div>
               <Button
-                className="h-11 w-60 self-center"
+                className="h-14 shrink-0 px-6"
                 aria-busy={busy}
                 disabled={locked || attaching || !enabled || connecting || !prompt.trim()}
                 onClick={() => void generate()}
               >
                 {busy ? <Spinner className="motion-reduce:animate-none" /> : <Sparkles />}
-                {busy ? "Creating…" : "Create with AI"}
+                {busy ? "Creating…" : "Create"}
               </Button>
+              </div>
               <Button
-                variant="outline"
-                className="h-11 w-60 self-center"
+                variant="ghost"
+                size={canCancel ? "default" : "icon"}
+                className="self-start"
+                aria-label={canCancel ? "Cancel" : "Add manually"}
+                title={canCancel ? "Cancel" : "Add manually"}
                 disabled={locked && !canCancel}
                 onClick={canCancel ? cancel : () => openPanel("add")}
               >
-                {canCancel ? "Cancel" : "Add manually"}
+                {canCancel ? "Cancel" : <Plus />}
               </Button>
             {primitive && !isAttachedSceneAnimation(primitive.assetPath) ? (
               <Collapsible className="w-full">
@@ -1341,12 +1383,6 @@ export function AIThemeStudioScreen() {
           </DialogHeader>
           {panel === "setup" || panel === "settings" ? (
             <div className="space-y-4">
-              <div className="flex justify-between gap-3 border-b pb-3">
-                <span className="font-medium">OpenAI</span>
-                <span className="text-sm text-muted-foreground">
-                  {configured === "pending" ? "Key saved · check needed" : configured ? "Connected" : "Not connected"}
-                </span>
-              </div>
                 <Collapsible open={panel === "setup" ? true : undefined}>
                   <CollapsibleTrigger asChild className={panel === "setup" ? "hidden" : undefined}>
                     <Button

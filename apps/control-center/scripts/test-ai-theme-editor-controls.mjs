@@ -25,8 +25,12 @@ try {
   page.setDefaultTimeout(12000);
   const errors = [];
   const requests = [];
+  const dialogs = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("dialog", (dialog) => dialog.accept());
+  page.on("dialog", (dialog) => {
+    dialogs.push(dialog.type());
+    return dialog.accept();
+  });
   await page.addInitScript((document) => {
     localStorage.setItem("vibetv.controlCenter.userThemes", JSON.stringify({ schemaVersion: 1, themes: [{ id: "fixture", updatedAt: "2026-09-09T09:00:00Z", document }] }));
     sessionStorage.setItem("vibetv.aiTheme.consent", "1");
@@ -154,6 +158,22 @@ try {
   await page.screenshot({ path: join(output, "desktop.png"), fullPage: true });
   assert.deepEqual(errors, []);
   console.log("PASS desktop rendering and no browser errors");
+  await page.evaluate(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "vibetv.controlCenter.themeStudioDraft") throw new DOMException("Storage full", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  const details = page.getByRole("button", { name: "Details", exact: true });
+  if (await details.getAttribute("aria-expanded") !== "true") await details.click();
+  const size = page.getByLabel("Text size", { exact: true });
+  await size.fill((Number(await size.inputValue()) + 1).toString());
+  await page.getByRole("alert").filter({ hasText: "Browser storage is full" }).waitFor();
+  dialogs.length = 0;
+  await page.reload();
+  assert(dialogs.includes("beforeunload"), "Failed autosave warns before losing changes");
+  console.log("PASS unload protection when draft storage fails");
   console.log(`Screenshots: ${output}`);
 } finally {
   await browser.close();
