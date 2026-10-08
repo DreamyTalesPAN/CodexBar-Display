@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout the candidate's trusted validator
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -60,7 +60,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout the exact candidate source before staging assets
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -176,7 +176,7 @@ jobs:
       STORE_CONTAINER: windows
     steps:
       - name: Checkout the Store submission script from the candidate source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
