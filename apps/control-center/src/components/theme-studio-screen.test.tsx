@@ -236,7 +236,7 @@ it("names the VibeTV's own limit when that is what keeps Send unavailable", () =
 // Windows gets no file name: it saves a second export as "… (1).zip".
 it.each([
   [true, "Saved in your Downloads folder. Nothing was sent."],
-  [false, "vibetv-theme-my-theme.zip exported. Nothing was sent."],
+  [false, "vibetv-theme-new-theme.zip exported. Nothing was sent."],
 ])("says after Export ZIP where the file is when the app saved it itself (windows=%s)", (windowsHost, message) => {
   // jsdom has neither blob URLs nor downloads.
   URL.createObjectURL = () => "blob:theme";
@@ -298,7 +298,7 @@ it("shows one answer at a time for Save, Export and Send, errors included", asyn
   URL.revokeObjectURL = () => {};
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   const saved = "Saved to library.";
-  const exported = "vibetv-theme-my-theme.zip exported. Nothing was sent.";
+  const exported = "vibetv-theme-new-theme.zip exported. Nothing was sent.";
   const sendFailed = "Theme install needs attention. Check the install status.";
   const shown = () => [saved, exported, sendFailed].filter(text => screen.queryByText(text));
   renderStudio("blank", { onInstallTheme: async () => false });

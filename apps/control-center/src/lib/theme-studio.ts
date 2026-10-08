@@ -777,7 +777,9 @@ export function buildThemePack(
   ]);
 
   return {
-    fileName: `vibetv-theme-${normalized.themeId}.zip`,
+    // Named after what the customer called the theme; the id is theirs only
+    // when they typed one, and a name without a usable character has no other.
+    fileName: `vibetv-theme-${slug(packName) || normalized.themeId}.zip`,
     manifest,
     themeJson,
     themeSpecPath: validation.themeSpecPath,
@@ -1815,13 +1817,16 @@ function normalizeColor(value: string | undefined): string | undefined {
   return named || undefined;
 }
 
-function slugThemeId(value: string): string {
-  const slug = value
+function slug(value: string): string {
+  return value
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug || "custom-mini";
+}
+
+function slugThemeId(value: string): string {
+  return slug(value) || "custom-mini";
 }
 
 function cleanPackName(value: string): string {

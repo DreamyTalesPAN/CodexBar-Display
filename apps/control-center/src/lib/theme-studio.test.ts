@@ -128,6 +128,17 @@ describe("validateThemeSpec", () => {
     expect(() => buildThemePack(spec, "Mismatched sprite", assets)).toThrow(error);
   });
 
+  // Issue #558: the export of "QA3 Night" was called vibetv-theme-my-theme-5.zip.
+  it.each([
+    ["QA3 Night", "vibetv-theme-qa3-night.zip"],
+    ["  Müsli / Bar: 2  ", "vibetv-theme-m-sli-bar-2.zip"],
+    ["夜", "vibetv-theme-my-theme-5.zip"],
+    ["", "vibetv-theme-my-theme-5.zip"],
+  ])("names the exported file after the theme %j", (name, fileName) => {
+    const spec = { ...validSpec(), themeId: "my-theme-5" };
+    expect(buildThemePack(spec, name, {}).fileName).toBe(fileName);
+  });
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [
