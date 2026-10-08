@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Item, ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatResetCountdown, secondsSince } from "@/lib/reset-countdown";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
@@ -114,6 +115,22 @@ export function setupProviderNeedsOwnApp(
 
 export function setupProviderOwnAppNotice(label: string): string {
   return `VibeTV reads ${label} usage from ${label}'s own app on this computer. Make sure it is installed and signed in, then click Check again.`;
+}
+
+/**
+ * How long a provider that is on has gone without a usage reading (#368).
+ * Beside the message, never part of it: the message is what a customer
+ * acknowledges, and a time that moves would open the popup again.
+ */
+export function setupProviderNoReadingLine(
+  since: string | undefined,
+  now = new Date(),
+): string {
+  if (!since) return "No usage reading yet.";
+  const seconds = secondsSince(since, now);
+  return seconds < 60
+    ? "No usage reading for less than a minute."
+    : `No usage reading for ${formatResetCountdown(seconds)}.`;
 }
 
 /**
@@ -241,6 +258,9 @@ export function ProviderList({
               </Button>
             </div>
           ) : null}
+          <p className="text-sm text-muted-foreground">
+            {setupProviderNoReadingLine(issue.provider.health.noReadingSince)}
+          </p>
         </SetupDialog>
       ) : null}
       <div className="relative w-full">

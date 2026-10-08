@@ -21,6 +21,7 @@ import {
   acknowledgedProviderIssues,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
+  setupProviderNoReadingLine,
   setupProviderOffersSignIn,
 } from "./setup-providers-screen";
 
@@ -160,6 +161,46 @@ describe("SetupProvidersScreen", () => {
     expect(within(screen.getByRole("dialog")).getByText(stale.health.message)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // Issue #368: a provider was on, used daily and silent for 16 days, and
+  // nothing said for how long.
+  it("says how long a provider that is on has gone without a usage reading", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-13T09:43:00Z"));
+    const props = { usage, onContinue: vi.fn(), onCheckAgain: vi.fn(), onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    const failing = provider({ providerId: "codex", label: "Codex", health: "auth_required",
+      message: "Sign in required." });
+    const since = (item: ProviderItem, noReadingSince: string): ProviderItem =>
+      ({ ...item, health: { ...item.health, noReadingSince } });
+
+    const { rerender } = renderDom(<SetupProvidersScreen {...props}
+      providers={[since(failing, "2026-07-28T08:29:00Z")]} />);
+    expect(within(screen.getByRole("dialog")).getByText("No usage reading for 16d 1h.")).toBeTruthy();
+
+    // The line is not part of what was acknowledged: time passing keeps the
+    // popup closed.
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    vi.setSystemTime(new Date("2026-08-14T09:43:00Z"));
+    rerender(<SetupProvidersScreen {...props} providers={[since(failing, "2026-07-28T08:29:00Z")]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Never read at all.
+    fireEvent.click(screen.getByRole("button", { name: "Show provider message for Codex" }));
+    rerender(<SetupProvidersScreen {...props} providers={[failing]} />);
+    expect(within(screen.getByRole("dialog")).getByText("No usage reading yet.")).toBeTruthy();
+
+    // Nothing for a provider that delivers or one that is switched off.
+    rerender(<SetupProvidersScreen {...props} providers={[
+      since(claude, "2026-08-13T09:42:00Z"),
+      since({ ...failing, value: false }, "2026-07-28T08:29:00Z"),
+    ]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.body.textContent).not.toContain("No usage reading");
+
+    expect(setupProviderNoReadingLine("2026-08-14T09:42:30Z")).toBe("No usage reading for less than a minute.");
+    expect(setupProviderNoReadingLine("2026-08-14T07:40:00Z")).toBe("No usage reading for 2h 3m.");
   });
 
   // Settings takes the list off the page whenever the customer leaves it.
