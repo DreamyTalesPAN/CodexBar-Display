@@ -652,6 +652,10 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 // recordCycleFailure attributes a failed cycle to the part that failed: the
 // VibeTV when it did not answer or refused the pairing, otherwise the stream.
 func recordCycleFailure(deps runtimeDeps, runtimeErr *RuntimeError) {
+	if runtimeErr.Op == "fetch-usage" || runtimeErr.Op == "select-provider" {
+		// The frame was sent; its usage entry already names this failure.
+		return
+	}
 	event := timeline.Event{Component: "stream", State: "failed", Reason: string(runtimeErr.ErrorCode())}
 	if deviceUnreachableError(runtimeErr) {
 		event.Component, event.State = "device", "unreachable"
@@ -1837,10 +1841,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		{Component: "theme", State: frame.Theme},
 		{Component: "provider", State: timelineStateOrUnknown(frame.Provider)},
 		usage,
-	}
-	if result.failureErr == nil || result.usedLastGood {
-		// Otherwise this cycle ends in an error and the loop records that.
-		events = append(events, timeline.Event{Component: "stream", State: "sending"})
+		// The VibeTV took the frame, whatever it says about usage.
+		{Component: "stream", State: "sending"},
 	}
 	for _, event := range events {
 		event.DeviceID = caps.DeviceID
@@ -3179,9 +3181,12 @@ func timelineStateOrUnknown(state string) string {
 
 // usageTimelineEvent names what the sent frame says about usage. A frame that
 // repeats the last good values after a failed collection is "stale", so an
-// outage does not read as fresh usage in the support timeline.
+// outage does not read as fresh usage in the support timeline. When the
+// collection failed, its error code is the reason.
 func usageTimelineEvent(unavailable, usedLastGood bool, failureKind, selectionReason string) timeline.Event {
 	switch {
+	case unavailable && failureKind != "":
+		return timeline.Event{Component: "usage", State: "unavailable", Reason: failureKind}
 	case unavailable:
 		return timeline.Event{Component: "usage", State: "unavailable", Reason: selectionReason}
 	case usedLastGood:
