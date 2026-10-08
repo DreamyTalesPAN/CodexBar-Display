@@ -246,3 +246,24 @@ func TestSkippedCableFramesAreRecordedAsAPausedStream(t *testing.T) {
 		t.Fatalf("timeline:\n%s\nwant stream=paused(connection-choice-required) before the stop", strings.Join(got, "\n"))
 	}
 }
+
+// Review of #525: when a pause ends and the VibeTV then does not answer, the
+// stream entry must not stay "paused" while the worker is retrying.
+func TestTheEndOfAPauseIsRecorded(t *testing.T) {
+	pauseChecks := 0
+	got := timelineOfWorker(t, 6, Options{
+		PauseDeviceWrites: func() bool { pauseChecks++; return pauseChecks <= 2 },
+	}, runtimeDeps{
+		sendLine: func(string, []byte) error { return errors.New("write serial: I/O error") },
+	})
+	want := []string{
+		"stream=started(usb)",
+		"stream=paused(device-maintenance)",
+		"stream=resumed",
+		"device=unreachable(runtime/serial-write)",
+		"stream=stopped",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("timeline:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
