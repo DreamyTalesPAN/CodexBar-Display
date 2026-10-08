@@ -350,6 +350,34 @@ it("leaves the saved themes and a theme with unsaved changes as they are when a 
   }
 });
 
+// Issue #368: Settings reads the providers again every few seconds while it
+// is open, and the row that is already on the screen takes the new state.
+it("changes a provider's row in Settings with the next read, without drawing the row anew", async () => {
+  const window = startWindow();
+  window.companion.providers = [
+    { ...claude, health: { state: "auth_required", service: "unknown", message: "Sign in to Claude." } },
+  ];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const row = screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]');
+  expect(row).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).not.toBeNull();
+
+  window.companion.providers = [claude];
+  await window.wait(5);
+
+  expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).toBeNull();
+  expect(screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]')).toBe(row);
+  expect(window.companion.requests.some((request) => request.includes("/v1/providers/retry"))).toBe(false);
+
+  window.companion.providers = [{ ...claude, health: { state: "checking", service: "unknown", message: "Checking." } }];
+  await window.wait(5);
+  expect(row?.querySelector('[role="status"], svg.animate-spin')).not.toBeNull();
+  expect(screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]')).toBe(row);
+});
+
 it("keeps the stored usage display and says so when the write is refused", async () => {
   const window = startWindow();
   window.companion.refuseWrites = true;

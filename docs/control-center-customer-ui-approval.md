@@ -5869,3 +5869,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Unchanged. A new test opens Settings with a saved theme and a theme with unsaved changes in the app's storage, saves the usage display twice, and checks that both are stored exactly as before.
 - Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. No product code, copy, control or state changes.
 - What's new: none — a test, nothing a customer sees
+
+## 2026-10-09 — Test only: a provider's row in Settings follows the next read (#368)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. This adds no visible result.
+- Approved customer-visible result: Unchanged. A new test opens Settings with a provider that needs a sign-in, lets the app's regular read of the providers answer "working" and then "checking", and checks that the same row on the screen loses its message button and then shows the spinner, without a retry of the provider.
+- Scope: `apps/control-center/src/components/control-center-app.display-preferences.test.tsx` and this approval record. No product code, copy, control or state changes.
+- What's new: none — a test, nothing a customer sees
