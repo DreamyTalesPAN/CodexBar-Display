@@ -481,6 +481,68 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	}
 }
 
+func TestActivityTTLIsThreeFrameIntervalsWithAFloor(t *testing.T) {
+	tests := []struct {
+		name      string
+		interval  time.Duration
+		transport string
+		want      time.Duration
+	}{
+		{name: "usb default cadence sits on the floor", transport: "usb", want: 10 * time.Second},
+		{name: "wifi default cadence", transport: "wifi", want: 90 * time.Second},
+		{name: "configured interval wins over the transport default", interval: time.Minute, transport: "usb", want: 3 * time.Minute},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := activityTTL(tt.interval, tt.transport); got != tt.want {
+				t.Fatalf("activityTTL(%s, %q)=%s, expected %s", tt.interval, tt.transport, got, tt.want)
+			}
+		})
+	}
+}
+
+// Issue #369: the device expires a frame's activity on its own, and only the
+// Companion knows how often frames come. Every frame it sends therefore says
+// how long it is good for, the error frame included.
+func TestRunCycleWithDepsWritesActivityTTLIntoEveryFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	send := func(transport string, fetch func(context.Context) ([]codexbar.ParsedFrame, error)) protocol.Frame {
+		t.Helper()
+		var sentLine []byte
+		_ = runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+			now:            func() time.Time { return now },
+			resolvePort:    func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			fetchProviders: fetch,
+			transportName:  transport,
+			logf:           func(string, ...any) {},
+			sendLine: func(port string, line []byte) error {
+				sentLine = append([]byte(nil), line...)
+				return nil
+			},
+		})
+		if len(sentLine) == 0 {
+			t.Fatalf("expected a frame on %s", transport)
+		}
+		return decodeFrameLine(t, sentLine)
+	}
+	usage := func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+	}
+	failed := func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorParse, Err: errors.New("invalid json")}
+	}
+
+	if frame := send("usb", usage); frame.Error != "" || frame.ActivityTTLSec != 10 {
+		t.Fatalf("expected a usage frame valid for 10s on the cable, got %+v", frame)
+	}
+	if frame := send("usb", failed); frame.Error == "" || frame.ActivityTTLSec != 10 {
+		t.Fatalf("expected an error frame valid for 10s on the cable, got %+v", frame)
+	}
+}
+
 func TestDefaultIntervalForTransport(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -98,8 +98,12 @@ type Frame struct {
 	// TokenTotalsKnown marks a completed token-history result on the wire.
 	// Zero totals are omitted by omitempty, so without this marker a device
 	// cannot tell a genuine all-zero history from an unavailable one.
-	TokenTotalsKnown      bool            `json:"tokenTotalsKnown,omitempty"`
-	Activity              string          `json:"activity,omitempty"`
+	TokenTotalsKnown bool   `json:"tokenTotalsKnown,omitempty"`
+	Activity         string `json:"activity,omitempty"`
+	// ActivityTTLSec is how long the device may keep showing Activity without
+	// a fresh frame, counted from receipt. Past it the device shows idle on
+	// its own (#369). Zero means no expiry.
+	ActivityTTLSec        int64           `json:"activityTtlSecs,omitempty"`
 	Theme                 string          `json:"theme,omitempty"`
 	ThemeSpec             json.RawMessage `json:"themeSpec,omitempty"`
 	ConfirmClearThemeSpec bool            `json:"confirmClearThemeSpec,omitempty"`

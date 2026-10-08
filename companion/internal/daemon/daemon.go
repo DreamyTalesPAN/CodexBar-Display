@@ -152,6 +152,7 @@ type runtimeDeps struct {
 	dashboard             codexbar.DashboardServe
 	usageBarsShowUsed     func() bool
 	beginDeviceWrite      func() func()
+	interval              time.Duration
 	sendLine              func(string, []byte) error
 	fetchUpdateState      func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
 	newSelector           func() *codexbar.ProviderSelector
@@ -360,6 +361,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
 	deps.beginDeviceWrite = opts.BeginDeviceWrite
+	deps.interval = opts.Interval
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
 
@@ -662,6 +664,18 @@ func defaultIntervalForTransport(transportName string) time.Duration {
 		return defaultWiFiInterval
 	}
 	return defaultInterval
+}
+
+// activityTTL is how long a device may keep showing a frame's activity when no
+// further frame arrives (#369). It guards against the writer going away, not
+// against routine switching, so it is three frame intervals: two lost frames
+// do not flip a working device to idle. The floor keeps one slow cycle on the
+// 2s cable cadence from doing that either.
+func activityTTL(interval time.Duration, transportName string) time.Duration {
+	if interval <= 0 {
+		interval = defaultIntervalForTransport(transportName)
+	}
+	return max(3*interval, 10*time.Second)
 }
 
 func startupInterval(normal, uptime time.Duration) time.Duration {
@@ -1684,6 +1698,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	// metadata before every send keeps the JSON document small enough for
 	// devices that have just left WiFi setup with a fragmented heap.
 	frame.Update = compactFrameUpdate(frame.Update)
+	frame.ActivityTTLSec = int64(activityTTL(deps.interval, deps.transportName) / time.Second)
 
 	line, marshaledFrame, err := marshalFrameWithinLimit(frame, maxFrameBytes)
 	if err != nil {
