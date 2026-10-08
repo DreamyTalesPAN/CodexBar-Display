@@ -1798,6 +1798,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	if cableWriteBlocked(deps) {
 		releaseDeviceWrite()
 		deps.logf("runtime event=cable-frame-skipped reason=connection-choice-required\n")
+		deps.recordEvent(timeline.Event{Component: "stream", DeviceID: caps.DeviceID, State: "paused", Reason: "connection-choice-required"})
 		return nil
 	}
 	sendErr := deps.sendLine(sendTarget, line)

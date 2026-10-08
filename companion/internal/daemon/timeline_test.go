@@ -9,6 +9,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
@@ -227,5 +228,21 @@ func TestADeliveredErrorFrameIsRecordedAsSendingWithUsageUnavailable(t *testing.
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("timeline:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// Review of #525: after "Run setup again" the cable frames are skipped until
+// the customer chooses a connection. The last entry must not stay "sending".
+func TestSkippedCableFramesAreRecordedAsAPausedStream(t *testing.T) {
+	blocked := false
+	got := timelineOfWorker(t, 6, Options{}, runtimeDeps{
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{CableAutoBindDisabled: blocked}, nil
+		},
+		saveConfig: func(string, runtimeconfig.Config) error { return nil },
+		sendLine:   func(string, []byte) error { blocked = true; return nil },
+	})
+	if len(got) < 2 || got[len(got)-2] != "stream=paused(connection-choice-required)" {
+		t.Fatalf("timeline:\n%s\nwant stream=paused(connection-choice-required) before the stop", strings.Join(got, "\n"))
 	}
 }
