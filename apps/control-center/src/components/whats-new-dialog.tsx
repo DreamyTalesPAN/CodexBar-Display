@@ -37,12 +37,13 @@ export function WhatsNewDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         aria-describedby={undefined}
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
+        // In a short window only the list scrolls: the title stays on top and
+        // `Got it`, which has the focus, stays in view below it.
+        className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-lg"
         onOpenAutoFocus={(event) => {
-          // Enter closes the notice. The first control would open Settings. In
-          // a short window the list scrolls; it stays at its first entry.
+          // Enter closes the notice. The first control would open Settings.
           event.preventDefault();
-          gotIt.current?.focus({ preventScroll: true });
+          gotIt.current?.focus();
         }}
         showCloseButton={false}
       >
@@ -54,7 +55,7 @@ export function WhatsNewDialog({
           ) : null}
           <DialogTitle className="text-xl font-bold">What&apos;s new</DialogTitle>
         </DialogHeader>
-        <ul className="flex flex-col gap-4">
+        <ul className="-mr-2 flex min-h-0 flex-col gap-4 overflow-y-auto pr-2">
           {entries.map((entry) => (
             <li className="flex items-start gap-3" key={entry.id}>
               <div

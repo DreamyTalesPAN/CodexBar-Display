@@ -5715,3 +5715,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new control. While the app knows of a newer app version, the notice does not open by itself on Overview: the app's own update prompt asks first, and the two no longer come up together. After that update the notice opens as before, with whatever the customer has not seen. `What's new` on Updates still opens it at any time.
 - Scope: when the dialog opens by itself, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
 - What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: in a short window only the list scrolls
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `fb6b8bbb` on 2026-10-08; it replaces the way the entry `What's new: in a short window the notice opens at its first entry` above did it.
+- Approved customer-visible result: No wording, no new control. In a window too short for all items, the title and the bar with `You can read this again under Updates.` and `Got it` stay in place and only the list between them scrolls. The notice opens at its first items, and `Got it`, which has the keyboard focus, is in view. Before, the whole dialog scrolled: either the list jumped to its end, or the focused button was below the visible part. In a window that fits everything nothing changes.
+- Scope: the layout classes and the focus call in `apps/control-center/src/components/whats-new-dialog.tsx`, the assertion in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only. A picture of the dialog in a 960 × 640 window follows from the Windows run.
+- What's new: none — a correction to the notice itself

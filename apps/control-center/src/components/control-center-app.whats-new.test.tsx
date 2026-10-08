@@ -188,14 +188,14 @@ afterEach(() => {
 });
 
 it("tells a set-up customer what is new once, on Overview, until they close it", async () => {
-  const focus = vi.spyOn(HTMLElement.prototype, "focus");
   const window = startWindow();
   await window.wait(10);
-  // In a short window the list scrolls. Focus on the button at its end must
-  // not scroll past the first entries.
-  expect(focus.mock.contexts.at(-1)).toHaveProperty("textContent", "Got it");
-  expect(focus.mock.calls.at(-1)).toEqual([{ preventScroll: true }]);
-  focus.mockRestore();
+  // In a short window only the list scrolls. The button that has the focus
+  // stands outside it, so it stays in view and the list stays at its start.
+  const list = notice()!.querySelector("ul")!;
+  expect(list.className).toContain("overflow-y-auto");
+  expect(notice()!.className).not.toContain("overflow-y-auto");
+  expect(list.contains(within(notice()!).getByRole("button", { name: "Got it" }))).toBe(false);
 
   const text = notice()?.textContent ?? "";
   expect(text).toContain("Version 1.0.63");
