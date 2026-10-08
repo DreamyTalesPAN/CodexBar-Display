@@ -5736,3 +5736,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new control. The notice that was opened with `What's new` on Updates is shown on Updates only. When the app moves the window to another page under it — to Themes, for example, because a theme install was started in another window — the notice is closed and does not come back by itself. Before, it stayed open on that page and could stand together with that page's own dialog, such as the one for a failed install. The notice that opens by itself is shown on Overview only, as before.
 - Scope: when the reopened dialog shows, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
 - What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: a customer with a new VibeTV is not told what is new, also without a provider step
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `419c5e1f` on 2026-10-08 to the rule he was told with the dialog: a customer who is setting VibeTV up never gets it.
+- Approved customer-visible result: No wording, no new control. A new customer whose AI providers were set up before, so that setup has no provider step, got the notice right after setup. The app now also takes a VibeTV that has no theme yet as a first setup and counts every entry as read. A set-up customer who starts the app after an update still gets the notice, also when their VibeTV is not plugged in at that moment.
+- Scope: when the entries count as read during setup, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
+- What's new: none — a correction to the notice itself

@@ -5002,9 +5002,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   // A customer who is setting VibeTV up has nothing to catch up on: every
   // "What's new" entry counts as seen. Only while nothing is stored, so one who
-  // runs setup again keeps what they have not read yet.
+  // runs setup again keeps what they have not read yet. A first setup shows in
+  // the provider step or in a VibeTV that has no theme yet; the start screen
+  // alone does not, a set-up customer passes it at every launch.
   const whatsNewIsNotNews =
-    setupOwnsScreen && providerSelectionRequired && whatsNewSeen === null;
+    setupOwnsScreen &&
+    (providerSelectionRequired || themeSetupRequired) &&
+    whatsNewSeen === null;
   useEffect(() => {
     if (!whatsNewIsNotNews) {
       return;

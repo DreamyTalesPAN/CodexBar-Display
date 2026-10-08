@@ -36,7 +36,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 // The app window of a customer with a connected VibeTV. `setUp: false` is a
 // customer who has not chosen their providers yet, so setup is still to do.
-function startWindow({ setUp = true, os = "darwin", appVersion = "1.0.63" } = {}) {
+// `newVibeTV`: the VibeTV is as it comes out of the box, without a theme.
+function startWindow({
+  setUp = true,
+  os = "darwin",
+  appVersion = "1.0.63",
+  newVibeTV = false,
+} = {}) {
   // `usageBroken`: the usage service cannot start, which the app says in a
   // dialog of its own.
   // `appUpdate`: a newer app is on offer.
@@ -83,14 +89,14 @@ function startWindow({ setUp = true, os = "darwin", appVersion = "1.0.63" } = {}
             active: true,
             connected: true,
             paired: true,
-            ready: true,
+            ready: !newVibeTV,
             connectionState: "ready",
             deviceId: "16199235",
             target: "cable://vibetv",
             board: "esp8266",
             firmware: "9999.0.524",
-            activeTheme: "codex",
-            display: { themeSpec },
+            activeTheme: newVibeTV ? "theme-missing" : "codex",
+            display: newVibeTV ? undefined : { themeSpec },
             health: { ok: true },
           },
         });
@@ -280,6 +286,16 @@ it("tells a customer who is setting VibeTV up nothing", async () => {
 
   expect(notice()).toBeNull();
   expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+});
+
+// Providers that were set up before, by another app on this computer, leave
+// no provider step. The VibeTV out of the box still makes it a first setup.
+it("tells a customer with a new VibeTV nothing, also without a provider step", async () => {
+  const window = startWindow({ newVibeTV: true });
+  await window.wait(10);
+
+  expect(notice()).toBeNull();
+  expect(seen()).toEqual(allIds);
 });
 
 it("waits until another dialog over Overview is gone", async () => {
