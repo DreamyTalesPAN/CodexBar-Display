@@ -5701,3 +5701,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new control. This replaces one sentence of the entry above: a notice that was opened from Updates and is taken away by something else — setup, a firmware update, the stopped Mac App, a lost VibeTV, usage that cannot start — does not come back by itself; the customer opens it again with `What's new` on Updates. Before, it came back as soon as the other thing was over, and after a firmware update that failed it then stood together with the `Update failed` dialog. While one of those things holds, Updates does not show the link `What's new`. The notice that opens by itself on Overview is unchanged: it waits and opens afterwards.
 - Scope: when the reopened dialog shows and when Updates offers the link, in `apps/control-center/src/components/control-center-app.tsx`, the test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
 - What's new: none — a correction to the notice itself
+
+## 2026-10-08 — What's new: in a short window the notice opens at its first entry
+
+- User approval: Not separately approved by Paul. Correction from the automated review of head `74dfef14` on 2026-10-08 to the dialog he chose from a drawing.
+- Approved customer-visible result: No wording, no new control. In a window too short for all five items the list scrolls. The notice now opens showing its first items, the new themes; before, putting the keyboard focus on `Got it` scrolled the list to its end. The focus is on `Got it` as before, and Enter closes the notice.
+- Scope: the focus call in `apps/control-center/src/components/whats-new-dialog.tsx`, one assertion in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only, not in a real window.
+- What's new: none — a correction to the notice itself

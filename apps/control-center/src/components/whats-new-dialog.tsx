@@ -39,9 +39,10 @@ export function WhatsNewDialog({
         aria-describedby={undefined}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
         onOpenAutoFocus={(event) => {
-          // Enter closes the notice. The first control would open Settings.
+          // Enter closes the notice. The first control would open Settings. In
+          // a short window the list scrolls; it stays at its first entry.
           event.preventDefault();
-          gotIt.current?.focus();
+          gotIt.current?.focus({ preventScroll: true });
         }}
         showCloseButton={false}
       >
