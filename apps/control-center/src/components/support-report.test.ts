@@ -327,7 +327,18 @@ describe("support report home folder, in a sentence", () => {
     ["HOME=/Users/paul PATH=/usr/bin:/bin", "HOME=~ PATH=/usr/bin:/bin"],
     ["cwd=/Users/paul cmd=/Applications/VibeTV.app/Contents/MacOS/x", "cwd=~ cmd=/Applications/VibeTV.app/Contents/MacOS/x"],
     ["open /Users/paul or use the app at Applications/VibeTV", "open ~ or use the app at Applications/VibeTV"],
-    ["/Users/paul is missing", "~ is missing"],
+    ["/Users/paul: missing", "~: missing"],
+    ["/Users/paul is missing\nRun setup again.", "~ is missing\nRun setup again."],
+    // A text that is a home path to its end is the name to its end: half a
+    // name must not stay. A sentence of this shape loses its words instead.
+    ["/Users/Jane Doe", "~"],
+    ["/home/jane", "~"],
+    ["C:\\Users\\Jane Doe", "~"],
+    ["C:\\\\Users\\\\Jane Doe", "~"],
+    ["d:/users/Jane van der Doe", "~"],
+    ["\\\\fileserver\\Users\\Jane Doe", "~"],
+    ["/Users/Jane Doe/Library/x", "~/Library/x"],
+    ["/Users/paul is missing", "~"],
     // A name with spaces is a name where the path goes on behind it.
     ["/Users/Paul Anduschus/Library/x", "~/Library/x"],
     ["Could not open /Users/Paul Anduschus/Library/x today", "Could not open ~/Library/x today"],
@@ -346,6 +357,8 @@ describe("support report home folder, in a sentence", () => {
     // Folders every computer has are not an account.
     "C:\\Users\\Public\\Documents\\x",
     "/Users/Shared/VibeTV/x",
+    "/Users/Shared",
+    "C:\\Users\\Public",
     // A web route, a query and a folder deeper in a path are not a home folder.
     "GET /users/123/profile failed",
     "https://example.com/?next=/home/dashboard/x",

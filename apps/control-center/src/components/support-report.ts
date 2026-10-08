@@ -98,9 +98,11 @@ const homePath = new RegExp(
   "g",
 );
 // A text that is one path, as the usage engine's own paths are: the name is
-// what stands before the next separator, however many words.
+// what stands before the next separator, however many words, and where no
+// separator follows, everything to the end of the text. `/Users/Jane Doe`
+// must not keep half a name, so a sentence of that shape loses its words.
 const wholeHomePath = new RegExp(
-  String.raw`^(${homeRoot})([^\\/\r\n"]+)(?=[\\/])`,
+  String.raw`^(${homeRoot})([^\\/\r\n"<>|:*?]+)(?=[\\/]|$)`,
 );
 
 function homeFolderAsTilde(value: string): string {
