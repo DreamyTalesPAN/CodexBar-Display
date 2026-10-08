@@ -3982,3 +3982,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul authorized refactoring and pushing this Theme Studio batch, then explicitly requested restoring the flat display instead of the 3D model.
 - Approved customer-visible result: Keep the existing flat display with no 3D model or additional graphics dependency. Static scenes include the requested subject; recovered edits retain their unsaved status; concurrent image imports select the correct element. Device transfers resolve the installed Mac App's owned listener and retain an accepted job across polling errors and page reloads, allowing Check transfer without uploading again. No hardware write test was performed.
+
+
+## 2026-10-08 — Prompt action alignment
+
+- User approval: Paul requested keeping Create vertically centered when the prompt spans multiple lines.
+- Approved customer-visible result: Create stays vertically centered beside the prompt box at every prompt height.

@@ -1007,7 +1007,7 @@ export function AIThemeStudioScreen() {
               >
                 Your idea
               </label>
-              <div className="flex items-end gap-3">
+              <div className="flex items-center gap-3">
               <div
                 className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-background shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
