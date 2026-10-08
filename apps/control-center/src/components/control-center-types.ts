@@ -610,9 +610,8 @@ export type PreferenceDescriptor = {
     reported?: string;
     lastSuccessAt?: string;
     /**
-     * Since when no newer usage reading arrived: the last good reading, or the
-     * first failed one for a provider that never delivered. Absent when the
-     * provider was never read.
+     * When the provider's last usage reading was collected. Absent for a
+     * provider that has not delivered one yet.
      */
     noReadingSince?: string;
     checkedAt?: string;

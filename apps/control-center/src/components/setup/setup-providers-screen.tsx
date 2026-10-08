@@ -118,18 +118,20 @@ export function setupProviderOwnAppNotice(label: string): string {
 }
 
 /**
- * How long a provider that is on has gone without a usage reading (#368).
+ * How long ago a provider that is on delivered its last usage reading, or
+ * that it has not delivered one yet (#368).
  * Beside the message, never part of it: the message is what a customer
  * acknowledges, and a time that moves would open the popup again.
  */
 export function setupProviderNoReadingLine(
   since: string | undefined,
   now = new Date(),
-): string {
+): string | null {
   if (!since) return "No usage reading yet.";
   const seconds = secondsSince(since, now);
+  // Below a minute the provider only just stopped: nothing to say.
   return seconds < 60
-    ? "No usage reading for less than a minute."
+    ? null
     : `No usage reading for ${formatResetCountdown(seconds)}.`;
 }
 
@@ -220,6 +222,8 @@ export function ProviderList({
   // everyone who does not know what to search for.
   const visible = matching.slice(0, shown);
   const remaining = matching.length - visible.length;
+  const noReadingLine =
+    issue && setupProviderNoReadingLine(issue.provider.health.noReadingSince);
   const ownAppNotice =
     issue && onOpenSetupGuide && setupProviderNeedsOwnApp(issue.provider);
 
@@ -260,9 +264,9 @@ export function ProviderList({
               </Button>
             </div>
           ) : null}
-          <p className="text-sm text-muted-foreground">
-            {setupProviderNoReadingLine(issue.provider.health.noReadingSince)}
-          </p>
+          {noReadingLine ? (
+            <p className="text-sm text-muted-foreground">{noReadingLine}</p>
+          ) : null}
         </SetupDialog>
       ) : null}
       <div className="relative w-full">

@@ -199,7 +199,11 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.body.textContent).not.toContain("No usage reading");
 
-    expect(setupProviderNoReadingLine("2026-08-14T09:42:30Z")).toBe("No usage reading for less than a minute.");
+    // The provider only just stopped: nothing to say yet.
+    expect(setupProviderNoReadingLine("2026-08-14T09:42:30Z")).toBeNull();
+    rerender(<SetupProvidersScreen {...props} providers={[since(failing, "2026-08-14T09:42:30Z")]} />);
+    expect(screen.getByRole("dialog").textContent).not.toContain("No usage reading");
+    expect(setupProviderNoReadingLine("2026-08-14T09:42:00Z")).toBe("No usage reading for 1m.");
     expect(setupProviderNoReadingLine("2026-08-14T07:40:00Z")).toBe("No usage reading for 2h 3m.");
   });
 
