@@ -1149,6 +1149,7 @@ struct InstallationStatus {
     let failed: Bool
     let retryTitle: String
     let kind: InstallationStatusKind
+    var welcomeLine = "starting background service"
 }
 
 extension InstallationFailure {
@@ -1534,7 +1535,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 detail: status.detail,
                 failed: status.failed,
                 retryTitle: status.retryTitle,
-                kind: status.kind
+                kind: status.kind,
+                welcomeLine: status.welcomeLine
             )
         } else {
             window?.makeKeyAndOrderFront(nil)
@@ -2614,7 +2616,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             detail: detail,
             failed: failed,
             retryTitle: retryTitle,
-            kind: kind
+            kind: kind,
+            welcomeLine: welcomeLine
         )
         installationStatusTitle = title
         installationStatusDetail = detail
