@@ -6093,3 +6093,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new control. `Apply JSON` in Theme Studio and Screensaver Studio leaves the name in the `Name` field as the customer gave it. The JSON text holds the theme's ID and elements and no name, so applying it cannot say a new one; before, the name was replaced by one made up from the ID in the text. `Import theme JSON` and `Mini theme` are unchanged: they open another theme and give the draft that theme's name, after the question `Replace your changes?`.
 - Scope: one line in `applyJson` in `apps/control-center/src/components/theme-studio-screen.tsx`, one test in `theme-studio-screen.test.tsx`, and this approval record (issue #558); checked with unit tests only.
 - What's new: none — a correction
+
+## 2026-10-09 — Screensaver Studio: the exported file is called a screensaver
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; not yet seen by him. It answers a finding from the re-check of the Windows app in that night: a screensaver's export was called `vibetv-theme-<name>.zip`.
+- Approved customer-visible result: No new screen, dialog, or button. `Export ZIP` in Screensaver Studio saves `vibetv-screensaver-<name>.zip`, for example `vibetv-screensaver-night-drift.zip`; before, it was `vibetv-theme-night-drift.zip`. On the Mac the notice `Export` names that file (`Choose where to save vibetv-screensaver-night-drift.zip. Nothing was sent.`). Theme Studio keeps `vibetv-theme-<name>.zip`. What is inside the file is unchanged.
+- Scope: the file name in `buildThemePack` in `apps/control-center/src/lib/theme-studio.ts`, one test in `theme-studio.test.ts`, and this approval record (issue #558); checked with unit tests only. Nothing reads the name of an exported file: the app imports JSON only, the install sends the bytes without the name, and the checks on `vibetv-theme-` in `build-local-static.mjs` and the pack scripts are about the catalog's own archives in `dist/theme-packs`.
+- What's new: none — a file name

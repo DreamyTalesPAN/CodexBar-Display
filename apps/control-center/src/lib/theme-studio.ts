@@ -789,7 +789,7 @@ export function buildThemePack(
   return {
     // Named after what the customer called the theme; the id is theirs only
     // when they typed one, and a name without a usable character has no other.
-    fileName: `vibetv-theme-${fileSlug(packName) || normalized.themeId}.zip`,
+    fileName: `vibetv-${usage === "screensaver" ? "screensaver" : "theme"}-${fileSlug(packName) || normalized.themeId}.zip`,
     manifest,
     themeJson,
     themeSpecPath: validation.themeSpecPath,

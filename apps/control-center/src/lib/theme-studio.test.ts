@@ -147,6 +147,19 @@ describe("validateThemeSpec", () => {
     expect(buildThemePack(spec, name, {}).fileName).toBe(fileName);
   });
 
+  // Seen on the Windows app on 2026-10-09: a screensaver's export was called
+  // vibetv-theme-….zip.
+  it("names an exported screensaver a screensaver", () => {
+    const spec = { ...validSpec(), themeId: "my-screensaver" };
+    expect(buildThemePack(spec, "Night Drift", {}, "screensaver").fileName).toBe(
+      "vibetv-screensaver-night-drift.zip",
+    );
+    expect(buildThemePack(spec, "", {}, "screensaver").fileName).toBe(
+      "vibetv-screensaver-my-screensaver.zip",
+    );
+    expect(buildThemePack(spec, "Night Drift", {}).fileName).toBe("vibetv-theme-night-drift.zip");
+  });
+
   it("builds a screensaver pack in its own slot without hidden state assets", () => {
     const spec = validSpec();
     spec.primitives = [
