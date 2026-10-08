@@ -239,19 +239,7 @@ export function PrimitiveInspector({
           <SelectField
             label="Style"
             value={primitive.progressStyle || "solid"}
-            onChange={(value) => {
-              onChange("progressStyle", value === "solid" ? "" : value);
-              if (value === "arc" && primitive.arcSweep === undefined) {
-                // A three-quarter ring open at the bottom, as thick as the box
-                // allows up to 12 px.
-                onChange("arcStart", 225);
-                onChange("arcSweep", 270);
-                onChange(
-                  "arcThickness",
-                  Math.max(1, Math.min(12, Math.floor(Math.min(bounds.width, bounds.height) / 2))),
-                );
-              }
-            }}
+            onChange={(value) => onChange("progressStyle", value === "solid" ? "" : value)}
             options={[
               ["solid", "Solid"],
               ["segments", "Segments"],

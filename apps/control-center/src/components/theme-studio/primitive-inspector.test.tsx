@@ -2,6 +2,7 @@
 import { createElement, useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { setPrimitiveField } from "./editor-geometry";
 import { PrimitiveInspector } from "./primitive-inspector";
 import { normalizeThemeSpec, type ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { keySpriteColor } from "@/lib/theme-studio-assets";
@@ -14,17 +15,29 @@ const initial: ThemeStudioPrimitive = {
     { gte: 25, color: "#F97316" }, { gte: 0, color: "#EF4444" },
   ],
 };
+// Each change the Inspector reports is one step of Undo in Theme Studio.
+const reported = vi.fn();
 function Harness() {
   const [primitive, setPrimitive] = useState(initial);
   return createElement(PrimitiveInspector, {
     primitive, onDelete: () => {}, onInsertToken: () => {}, onKeySpriteColor: () => {},
-    onChange: (field, value) => setPrimitive(p => normalizeThemeSpec({
-      themeId: "focus-test", themeRev: 1, themeSpecVersion: 1,
-      primitives: [{ ...p, [field]: value }],
-    }).primitives[0]),
+    onChange: (field, value) => {
+      reported(field);
+      setPrimitive(p => {
+        const next = { ...p };
+        setPrimitiveField(next, field, value);
+        return normalizeThemeSpec({
+          themeId: "focus-test", themeRev: 1, themeSpecVersion: 1,
+          primitives: [next],
+        }).primitives[0];
+      });
+    },
   });
 }
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  reported.mockClear();
+});
 
 it("keeps focus and the same color row while typing across other thresholds", () => {
   render(createElement(Harness));
@@ -55,6 +68,8 @@ it("turns a bar into an arc that fits its box and edits the arc", () => {
   // Typing on the closed select picks the option that starts with the key.
   fireEvent.keyDown(screen.getByRole("combobox", { name: "Style" }), { key: "A" });
   expect(screen.getByRole("combobox", { name: "Style" }).textContent).toBe("Arc");
+  // One change: one Undo takes the whole arc back, not only its thickness.
+  expect(reported.mock.calls).toEqual([["progressStyle"]]);
   const value = (name: string) =>
     screen.getByRole("spinbutton", { name }).getAttribute("value");
   // The 100 x 20 box holds a ring of at most 10 px.

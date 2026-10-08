@@ -117,6 +117,15 @@ export function setPrimitiveField(
     return;
   }
   (primitive as Record<FieldKey, unknown>)[field] = value;
+  // A bar that becomes an arc gets its ring in the same change, so one Undo
+  // takes all of it back: three quarters of a circle open at the bottom, as
+  // thick as the box allows up to 12 px.
+  if (field === "progressStyle" && value === "arc" && primitive.arcSweep === undefined) {
+    const { height, width } = primitiveBounds(primitive);
+    primitive.arcStart = 225;
+    primitive.arcSweep = 270;
+    primitive.arcThickness = Math.max(1, Math.min(12, Math.floor(Math.min(width, height) / 2)));
+  }
 }
 
 export function primitiveBounds(primitive: ThemeStudioPrimitive) {
