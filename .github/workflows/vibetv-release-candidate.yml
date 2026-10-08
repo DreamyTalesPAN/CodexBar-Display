@@ -142,7 +142,7 @@ jobs:
           cp tmp/vibetv-rc/publish/firmware/firmware-manifest.json "tmp/vibetv-rc/publish/firmware/firmware-manifest-v${version}.json"
           printf '%s\n' "$version" > tmp/vibetv-rc/version.txt
           printf '%s\n' "$GITHUB_SHA" > tmp/vibetv-rc/source-sha.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
           path: tmp/vibetv-rc
@@ -392,7 +392,7 @@ jobs:
             }
           }
           Set-Content -Path tmp/vibetv-rc-windows/latest-windows.json -Encoding utf8 -Value ($manifest | ConvertTo-Json -Depth 5)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-rc-windows-${{ github.run_id }}
           path: tmp/vibetv-rc-windows
@@ -494,7 +494,7 @@ jobs:
               }, destination, indent=2)
               destination.write("\n")
           PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vibetv-release-candidate
           path: |
@@ -572,7 +572,7 @@ jobs:
             --release-version "$VERSION" \
             --firmware-mode "$FIRMWARE_MODE" \
             --output effective-firmware-versions.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: |
@@ -630,7 +630,7 @@ jobs:
           fi
           firmware_asset="$(python3 -c 'import json; print(next(a["asset"] for a in json.load(open("candidate/publish/firmware/firmware-manifest.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
           ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware "candidate/publish/firmware/$firmware_asset" --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]+"${baseline_args[@]}"}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: CODEX-vibetv-rc-results-${{ matrix.state }}-${{ github.run_id }}
@@ -669,7 +669,7 @@ jobs:
           if result != "success":
               raise SystemExit("candidate matrix did not pass; result artifact is intentionally non-publishable")
           PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: vibetv-release-candidate-result

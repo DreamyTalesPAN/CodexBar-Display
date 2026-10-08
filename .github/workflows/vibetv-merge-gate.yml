@@ -137,7 +137,7 @@ jobs:
           printf '%s\n' "$version" > tmp/vibetv-merge/version.txt
 
       - name: Upload unsigned candidate inputs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-merge-inputs-${{ github.run_id }}
           path: tmp/vibetv-merge
@@ -218,7 +218,7 @@ jobs:
           PY
 
       - name: Upload signed merge candidate
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-merge-candidate-${{ github.run_id }}
           path: |
@@ -247,7 +247,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/resolve-vibetv-public-baselines.sh --output baseline-manifest.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CODEX-vibetv-merge-baselines-${{ github.run_id }}
           path: baseline-manifest.json
@@ -302,7 +302,7 @@ jobs:
             --virtual-vibetv candidate/tmp/vibetv-merge/virtual-vibetv --companion candidate/tmp/vibetv-merge/codexbar-display \
             --firmware candidate/tmp/vibetv-merge/firmware.bin --firmware-manifest candidate/tmp/vibetv-merge/firmware-manifest.json \
             --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]+"${baseline_args[@]}"}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: CODEX-vibetv-merge-results-${{ matrix.state }}-${{ github.run_id }}
