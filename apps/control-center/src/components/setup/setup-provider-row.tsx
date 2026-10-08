@@ -211,7 +211,9 @@ export function setupProviderIssueMessage({
   // A throttled check needs no repair, but CodexBar's sentence lists every
   // source that failed beside the throttle and reads like a sign-in problem.
   // The customer gets what happens next; the sentence stays one click away.
-  if (health === "rate_limited" && detail) {
+  // A throttled provider with a saved reading is "stale" and carries the
+  // same guidance; a stale row without guidance keeps its generic text.
+  if (detail && (health === "rate_limited" || (health === "stale" && nextAction))) {
     return [detail, nextAction].filter(Boolean).join(" ");
   }
   // Its own text: a generic engine message hides that an update fixes it.

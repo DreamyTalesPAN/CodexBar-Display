@@ -570,6 +570,33 @@ func TestRateLimitedHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	if items := server.providerDescriptors(rateLimited); len(items) != 1 || items[0].Health.State != providerHealthStateStale {
 		t.Fatalf("a saved reading must show as stale: %#v", items[0].Health)
 	}
+	// Stale because of the throttle: the row says why and what to do, the
+	// same as a throttled row without a reading (#500).
+	if items := server.providerDescriptors(rateLimited); items[0].Health.Message != providerHealthMessage(codexbar.ProviderHealthRateLimited) ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("a throttled stale row must explain the throttle: %#v", items[0].Health)
+	}
+	// Stale for any other reason keeps the generic stale wording.
+	unavailable := []codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable,
+	}}
+	if items := server.providerDescriptors(unavailable); items[0].Health.State != providerHealthStateStale ||
+		items[0].Health.Message != "Live usage is unavailable; the last successful reading is still saved." ||
+		items[0].Health.NextAction != "" {
+		t.Fatalf("an unavailable stale row changed: %#v", items[0].Health)
+	}
+
+	// A retained reading wins over every other state; a throttle still explains itself.
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", Frame: protocol.Frame{Provider: "codex", Session: 12}, CollectedAt: now.Add(-time.Minute), Retained: true,
+		}}}, true
+	}
+	if items := server.providerDescriptors(rateLimited); items[0].Health.State != providerHealthStateStale ||
+		items[0].Health.Message != providerHealthMessage(codexbar.ProviderHealthRateLimited) ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("a retained throttled row must explain the throttle: %#v", items[0].Health)
+	}
 
 	// Without any reading the row still says what the scan found.
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }

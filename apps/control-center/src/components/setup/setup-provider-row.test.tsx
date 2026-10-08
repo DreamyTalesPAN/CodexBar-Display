@@ -101,6 +101,19 @@ describe("provider popup guidance", () => {
     })).toBe("Claude is pausing usage checks. Nothing to fix.");
   });
 
+  it("explains a throttle behind a saved reading the same way", () => {
+    expect(setupProviderIssueMessage({
+      health: "stale", label: "Claude",
+      detail: "Claude is pausing usage checks.", nextAction: "Nothing to fix.",
+      reportedMessage: "Live usage is unavailable; ... Claude usage failed from all configured sources.",
+    })).toBe("Claude is pausing usage checks. Nothing to fix.");
+    expect(setupProviderIssueMessage({
+      health: "stale", label: "Claude",
+      detail: "Live usage is unavailable; the last successful reading is still saved.",
+      reportedMessage: "Live usage is unavailable; the last successful reading is still saved. Sign-in expired.",
+    })).toBe("Live usage is unavailable; the last successful reading is still saved. Sign-in expired.");
+  });
+
   it("preserves the exact reported message before generic detail", () => {
     const reportedMessage = "Codex connection failed: account authentication required to read rate limits";
     expect(setupProviderIssueMessage({ health: "auth_required", label: "Codex",

@@ -729,6 +729,16 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
+		// A throttled provider that delivered before keeps its saved reading
+		// and stays stale, but the customer still has to learn why live usage
+		// stopped and that waiting fixes it. Without this, the popup showed the
+		// usage engine's sentence, which reads like a sign-in problem (#500).
+		if state == providerHealthStateStale &&
+			(setting.Health == codexbar.ProviderHealthRateLimited ||
+				readinessApplies && readiness.Status == codexbar.ProviderRateLimited) {
+			message = providerHealthMessage(codexbar.ProviderHealthRateLimited)
+			nextAction = providerReadinessNextAction(codexbar.ProviderRateLimited)
+		}
 		if state == string(codexbar.ProviderHealthRateLimited) && nextAction == "" {
 			nextAction = providerReadinessNextAction(codexbar.ProviderRateLimited)
 		}
