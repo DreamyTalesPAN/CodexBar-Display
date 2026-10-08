@@ -10,7 +10,7 @@
   "app": {
     "windows": [],
     "trayIcon": {
-      "iconPath": "icons/icon.png",
+      "iconPath": "icons/tray.png",
       "tooltip": "VibeTV Control Center"
     },
     "security": {
