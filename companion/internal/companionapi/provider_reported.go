@@ -20,6 +20,10 @@ const reportedCredentialName = `[A-Za-z0-9._-]*(?:token|cookie|secret|key|sessio
 // silently dropped sentence would not be.
 var (
 	reportedHomePath = regexp.MustCompile(`(?i)/Users/[^/\s)]+`)
+	// The Windows engine names files under the profile folder, whose name is
+	// the account name: `C:\Users\Alice\.claude\...`, in JSON also with
+	// doubled backslashes.
+	reportedWindowsHomePath = regexp.MustCompile(`(?i)\b[A-Z]:\\+Users\\+[^\\\s)"']+`)
 	// URL userinfo carries credentials before the host (`https://token@host` or
 	// `https://user:pass@host`).
 	// Redact it as one span so neither the username nor password reaches the UI.
@@ -77,6 +81,7 @@ func reportedProviderMessage(raw string) string {
 	message = reportedCodexBarAntigravity.ReplaceAllString(message, "Antigravity")
 	// Order matters: a redacted span must never be rescanned as a secret, and
 	// the pair rule must claim `Authorization: Bearer x` before the bare rule.
+	message = reportedWindowsHomePath.ReplaceAllString(message, "~")
 	message = reportedHomePath.ReplaceAllString(message, "~")
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
 	message = reportedCookieHeader.ReplaceAllString(message, "${1}"+reportedRedacted)

@@ -72,6 +72,29 @@ func TestReportedProviderMessageRedactsTheHomePath(t *testing.T) {
 	}
 }
 
+// The Windows engine names files under C:\Users\<account>; a support report
+// carries that sentence, so the account name has to go there too.
+func TestReportedProviderMessageRedactsTheWindowsHomePath(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{
+			in:   `Claude credentials not found at C:\Users\Patrick\.claude\.credentials.json.`,
+			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
+		},
+		{
+			in:   `{"path":"c:\\Users\\Patrick\\AppData\\Roaming\\CodexBar\\settings.json"}`,
+			want: `{"path":"~\\AppData\\Roaming\\CodexBar\\settings.json"}`,
+		},
+		{
+			in:   `Missing file (C:\Users\Patrick)`,
+			want: `Missing file (~)`,
+		},
+	} {
+		if got := reportedProviderMessage(tc.in); got != tc.want {
+			t.Fatalf("windows home path redaction:\n got %q\nwant %q", got, tc.want)
+		}
+	}
+}
+
 // CodexBar 0.46.0 interpolates the account address and whole HTTP bodies into
 // the sentences this field carries -- "OpenAI dashboard signed in as ",
 // "Antigravity local session is signed in as ", "Unexpected response body (".
