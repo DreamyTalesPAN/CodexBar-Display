@@ -1,8 +1,9 @@
 name: CODEX Board PR Review
 
-# Puts every pull request that is ready for review into the Review column of
-# the VibeTV Backlog board. The board's built-in workflows can only set one
-# status for all new items, so pull requests are handled here.
+# Keeps pull requests on the VibeTV Backlog board: a newly opened pull request
+# goes to Doing, and it moves to Review when a draft is marked ready for
+# review. The board's built-in workflows can only set one status for all new
+# items, so pull requests are handled here.
 #
 # pull_request_target runs this file from main and never checks out pull
 # request code, so the board token is not exposed to forks.
@@ -19,13 +20,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  review-column:
-    if: >-
-      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
-      (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft)
+  board-column:
+    if: github.repository == 'DreamyTalesPAN/CodexBar-Display'
     runs-on: ubuntu-latest
     steps:
-      - name: Add pull requests to the board in Review
+      - name: Add pull requests to the board
         env:
           # Classic token with the `project` scope. The board belongs to a
           # user account, which the workflow's own token cannot reach.
@@ -34,6 +33,7 @@ jobs:
           PROJECT_OWNER: DreamyTalesPAN
           PROJECT_NUMBER: '2'
           PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
           set -euo pipefail
           [[ -n "$GH_TOKEN" ]] || { echo 'PROJECT_TOKEN is not available to this run' >&2; exit 1; }
@@ -51,27 +51,43 @@ jobs:
             }' > project.json
           project_id="$(jq -er '.data.user.projectV2.id' project.json)"
           field_id="$(jq -er '.data.user.projectV2.field.id' project.json)"
-          review_id="$(jq -er '.data.user.projectV2.field.options[] | select(.name == "Review") | .id' project.json)"
+          # Only "ready for review" means Review; everything else starts in Doing.
+          if [[ "$EVENT_ACTION" == 'ready_for_review' ]]; then status='Review'; else status='Doing'; fi
+          option_id="$(jq -er --arg name "$status" '.data.user.projectV2.field.options[] | select(.name == $name) | .id' project.json)"
 
           if [[ -n "$PR_NODE_ID" ]]; then
             pr_ids="$PR_NODE_ID"
           else
-            # Manual run: catch up on every open pull request that is not a draft.
+            # Manual run: catch up on every open pull request.
             pr_ids="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
-              --jq '.[] | select(.draft | not) | .node_id')"
+              --jq '.[].node_id')"
           fi
 
           for pr_id in $pr_ids; do
-            item_id="$(gh api graphql -f project="$project_id" -f content="$pr_id" -f query='
+            gh api graphql -f project="$project_id" -f content="$pr_id" -f query='
               mutation($project: ID!, $content: ID!) {
-                addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } }
-              }' --jq '.data.addProjectV2ItemById.item.id')"
-            gh api graphql -f project="$project_id" -f item="$item_id" -f field="$field_id" -f option="$review_id" -f query='
+                addProjectV2ItemById(input: {projectId: $project, contentId: $content}) {
+                  item {
+                    id
+                    fieldValueByName(name: "Status") {
+                      ... on ProjectV2ItemFieldSingleSelectValue { name }
+                    }
+                  }
+                }
+              }' > item.json
+            item_id="$(jq -er '.data.addProjectV2ItemById.item.id' item.json)"
+            current="$(jq -r '.data.addProjectV2ItemById.item.fieldValueByName.name // ""' item.json)"
+            # A manual run must not move cards that already have a column.
+            if [[ -z "$PR_NODE_ID" && -n "$current" ]]; then
+              echo "Kept in $current: $pr_id"
+              continue
+            fi
+            gh api graphql -f project="$project_id" -f item="$item_id" -f field="$field_id" -f option="$option_id" -f query='
               mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
                 updateProjectV2ItemFieldValue(input: {
                   projectId: $project, itemId: $item, fieldId: $field,
                   value: {singleSelectOptionId: $option}
                 }) { projectV2Item { id } }
               }' > /dev/null
-            echo "Review: $pr_id"
+            echo "$status: $pr_id"
           done
