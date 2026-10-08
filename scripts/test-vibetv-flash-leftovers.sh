@@ -95,6 +95,22 @@ refuse "--port needs a value" --port
 head -c 4096 "${WORK}/erased.bin" >"${WORK}/truncated.bin"
 refuse "dump has 4096 bytes" --dump "${WORK}/truncated.bin"
 
+# A dump that cannot be judged is exit 2 with one plain line, never a traceback.
+unjudgeable() {
+  refuse "dump is missing, unreadable or not a regular file" --dump "$1"
+  local output
+  output="$("$SCRIPT" --ldscript "${WORK}/layout.ld" --dump "$1" 2>&1 || true)"
+  [[ "$output" != *Traceback* && "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" == "1" ]] ||
+    die "expected one plain message for $1: ${output}"
+}
+unjudgeable "${WORK}/missing.bin"
+unjudgeable "${WORK}"
+cp "${WORK}/erased.bin" "${WORK}/unreadable.bin"
+chmod 000 "${WORK}/unreadable.bin"
+if [[ ! -r "${WORK}/unreadable.bin" ]]; then   # root reads it anyway
+  unjudgeable "${WORK}/unreadable.bin"
+fi
+
 # Serial paths against a fake pio that only writes files. FAKE_PIO decides what
 # the "device" returns; the port is a path that does not exist.
 mkdir "${WORK}/bin" "${WORK}/tmp"

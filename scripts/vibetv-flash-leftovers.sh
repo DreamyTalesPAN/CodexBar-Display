@@ -144,6 +144,13 @@ judge() {
   python3 - "$1" "$region_start" "$region_size" <<'PY'
 import sys
 
+def no_verdict(kind, error, trace):
+    print(f"error: cannot judge the dump: {error}; no verdict", file=sys.stderr)
+    sys.exit(2)
+
+# Exit 1 means LEFTOVERS, so nothing unexpected may end in Python's own exit 1.
+sys.excepthook = no_verdict
+
 path, base, want = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 data = open(path, "rb").read()
 if len(data) != want:
@@ -193,7 +200,7 @@ check_device() {
 
 if [[ -n "$dump" ]]; then
   [[ "$usb_erase" == "0" && -z "$port" ]] || die "--dump cannot be combined with --port or --usb-erase"
-  [[ -f "$dump" ]] || die "dump not found: $dump"
+  [[ -f "$dump" && -r "$dump" ]] || die "dump is missing, unreadable or not a regular file: $dump; no verdict"
   judge "$dump"
   exit
 fi
