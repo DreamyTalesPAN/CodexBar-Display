@@ -911,3 +911,58 @@ func TestProviderCheckLogsRedactedCauseOfSettingsError(t *testing.T) {
 		t.Fatalf("unexpected log lines:\n got %q\nwant %q", lines, want)
 	}
 }
+
+// The status poll and the provider-row poll of an open window are checks
+// nobody asked for: they read what the usage service delivered last (#555).
+// "Check again" and Run diagnostics are the customer's and ask the provider.
+func TestOnlyChecksNobodyAskedForReadTheServeReading(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	setupChecks := make(chan bool, 4)
+	server.probeProviderSetup = func(ctx context.Context, _ string) codexbar.ProviderSetup {
+		setupChecks <- codexbar.UsesServeReading(ctx)
+		return setupFixture(codexbar.ProviderReady)
+	}
+	rowChecks := make(chan bool, 1)
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true}}, nil
+	}
+	server.providerPreferences.load = func(ctx context.Context) ([]codexbar.ProviderSetting, error) {
+		rowChecks <- codexbar.UsesServeReading(ctx)
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy}}, nil
+	}
+	next := func(checks chan bool, what string) bool {
+		t.Helper()
+		select {
+		case fromServe := <-checks:
+			return fromServe
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s started no check", what)
+			return false
+		}
+	}
+
+	server.providerSetupForStatus()
+	if !next(setupChecks, "the status poll") {
+		t.Fatal("the status poll asked every provider instead of reading the serve reading")
+	}
+	server.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	if !next(rowChecks, "the provider-row poll") {
+		t.Fatal("the provider-row poll asked every provider instead of reading the serve reading")
+	}
+
+	forgetCachedSetup := func() {
+		server.providerSetupMu.Lock()
+		server.providerSetupCachedAt = time.Time{}
+		server.providerSetupMu.Unlock()
+	}
+	forgetCachedSetup()
+	server.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/providers/retry", nil))
+	if next(setupChecks, "Check again") {
+		t.Fatal("Check again must ask the provider, not repeat the serve reading")
+	}
+	forgetCachedSetup()
+	if server.currentProviderSetup(context.Background(), false); next(setupChecks, "Run diagnostics") {
+		t.Fatal("Run diagnostics must ask the provider, not repeat the serve reading")
+	}
+}

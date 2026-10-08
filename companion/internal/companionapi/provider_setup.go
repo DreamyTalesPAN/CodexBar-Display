@@ -87,7 +87,9 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 	if s.providerSetupRefresh.CompareAndSwap(false, true) {
 		go func() {
 			defer s.providerSetupRefresh.Store(false)
-			ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
+			// Nobody asked for this check, so it may read what the usage
+			// service delivered last instead of asking every provider again.
+			ctx, cancel := context.WithTimeout(codexbar.WithServeReading(context.Background()), providerCheckTimeout)
 			defer cancel()
 			_ = s.currentProviderSetup(ctx, false)
 		}()

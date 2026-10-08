@@ -110,6 +110,9 @@ func readProviderInventory(ctx context.Context, timeout time.Duration, bin strin
 // joins the answers into the same JSON array the Mac CLI returns.
 func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, extra ...string) ([]byte, error) {
 	if !providerProbePerProvider {
+		if answer, ok := serveUsageAnswer(ctx, nil); ok {
+			return answer, nil
+		}
 		return runUsageCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, extra...)...)
 	}
 	raw, err := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
@@ -119,6 +122,9 @@ func runUsageAllEnabled(ctx context.Context, timeout time.Duration, bin string, 
 	inventory, err := parseProviderSettings(raw)
 	if err != nil {
 		return nil, fmt.Errorf("read provider inventory: %w", err)
+	}
+	if answer, ok := serveUsageAnswer(ctx, inventory); ok {
+		return answer, nil
 	}
 	// One hanging provider CLI must not hold every provider after it for
 	// the collector's 300 s default; each probe gets the same short cap as
@@ -308,6 +314,8 @@ func ProviderSettingsErrorKindOf(err error) ProviderSettingsErrorKind {
 
 // FetchProviderSettings reads CodexBar's dynamic provider inventory and joins
 // best-effort health. Provider errors are classified here and never exposed.
+// Under WithServeReading the health is serve's last reading where that covers
+// every switched-on provider; it carries no service status.
 func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 	settings, bin, err := fetchProviderInventory(ctx)
 	if err != nil {
@@ -341,6 +349,9 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 // switched-on provider on its own, exactly like runUsageAllEnabled, and joins
 // the answers into the array the Mac CLI returns.
 func runProviderHealthProbe(ctx context.Context, timeout time.Duration, bin string, settings []ProviderSetting) ([]byte, error) {
+	if answer, ok := serveUsageAnswer(ctx, settings); ok {
+		return answer, nil
+	}
 	statusArgs := []string{"--status", "--web-timeout", "8"}
 	if !providerProbePerProvider {
 		return runProviderCommandFn(ctx, timeout, bin, append([]string{"usage", "--json"}, statusArgs...)...)
@@ -423,6 +434,7 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	// The switch ends whatever the inventory said before it, also when it
 	// fails halfway: the next read asks the CLI.
 	defer engineInventory.store("", nil)
+	defer forgetServeUsage()
 	// Consent first: if the settings file cannot take the flag, Claude
 	// stays switched off and the UI matches CodexBar without a rollback.
 	if enabled && providerID == "claude" && providerProbePerProvider {

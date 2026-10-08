@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	dashboardusage "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar/dashboard"
@@ -23,7 +24,109 @@ const (
 
 var dashboardUsageByProvider = runtime.GOOS == "windows"
 
-func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now time.Time) ([]ParsedFrame, error) {
+// serveUsage is the usage answer the long-running serve gave the collector
+// last: one item per provider, in the form "usage --json" prints it. The
+// recordings in testdata/cli show the two forms are the same, for the pinned
+// Mac CLI and for Win-CodexBar.
+var serveUsage struct {
+	mu    sync.Mutex
+	at    time.Time
+	order []string
+	items map[string]json.RawMessage
+	// complete: every provider serve listed has an item.
+	complete bool
+}
+
+// serveUsageMaxAge is how long serve's answer stands in for a probe. Serve is
+// read every 30 to 60 s and one read may take as long as its slowest provider.
+const serveUsageMaxAge = 2 * time.Minute
+
+type serveReadingKey struct{}
+
+// WithServeReading marks a check nobody asked for: the status and settings
+// polls of an open window. Such a check is answered from serve's last reading
+// instead of a second usage call for the same providers (#555). Every check a
+// customer starts stays without the mark and asks the CLI.
+func WithServeReading(ctx context.Context) context.Context {
+	return context.WithValue(ctx, serveReadingKey{}, true)
+}
+
+// UsesServeReading reports the mark of WithServeReading.
+func UsesServeReading(ctx context.Context) bool {
+	return ctx.Value(serveReadingKey{}) != nil
+}
+
+// serveUsageAnswer is what a usage probe of the switched-on providers would
+// print, taken from serve's last reading. It answers only a marked check, only
+// while the reading is current, and only when every switched-on provider is
+// in it: a provider that was just switched on is probed as before. Without
+// settings the providers are the ones serve itself listed.
+func serveUsageAnswer(ctx context.Context, settings []ProviderSetting) ([]byte, bool) {
+	if !UsesServeReading(ctx) {
+		return nil, false
+	}
+	serveUsage.mu.Lock()
+	defer serveUsage.mu.Unlock()
+	if age := time.Since(serveUsage.at); age < 0 || age > serveUsageMaxAge {
+		return nil, false
+	}
+	var items []json.RawMessage
+	if settings == nil {
+		if !serveUsage.complete {
+			return nil, false
+		}
+		for _, id := range serveUsage.order {
+			items = append(items, serveUsage.items[id])
+		}
+	}
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+		item, ok := serveUsage.items[setting.ID]
+		if !ok {
+			return nil, false
+		}
+		items = append(items, item)
+	}
+	if len(items) == 0 {
+		return nil, false
+	}
+	raw, err := json.Marshal(items)
+	return raw, err == nil
+}
+
+// forgetServeUsage ends the reading: a serve read that failed and a provider
+// switch both leave the next check to the CLI.
+func forgetServeUsage() {
+	serveUsage.mu.Lock()
+	defer serveUsage.mu.Unlock()
+	serveUsage.at, serveUsage.order, serveUsage.items, serveUsage.complete = time.Time{}, nil, nil, false
+}
+
+// serveUsageItem is one provider's item of serve's answer, or false when the
+// item does not say what the collector made of it: then the CLI is asked. A
+// failure serve reports in its snapshot only is carried in the item.
+func serveUsageItem(provider dashboardusage.DashboardProvider, item map[string]any, usable bool) (json.RawMessage, bool) {
+	if !providerPayloadHasError(item) {
+		var failure any
+		if json.Unmarshal(provider.Error, &failure) == nil && failure != nil {
+			item = map[string]any{"provider": provider.ID, "error": failure}
+		}
+	}
+	if item == nil || !providerPayloadHasError(item) && providerPayloadHasUsage(item) != usable {
+		return nil, false
+	}
+	raw, err := json.Marshal(item)
+	return raw, err == nil
+}
+
+func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now time.Time) (_ []ParsedFrame, err error) {
+	defer func() {
+		if err != nil {
+			forgetServeUsage()
+		}
+	}()
 	endpoint := strings.TrimRight(strings.TrimSpace(info.Endpoint), "/")
 	if endpoint == "" || strings.TrimSpace(info.Token) == "" || !info.Running || !info.Healthy {
 		return nil, fmt.Errorf("dashboard serve unavailable")
@@ -54,6 +157,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		}
 	}
 	var usageProviders []dashboardusage.UsageProvider
+	usageItems := make(map[string]map[string]any)
 	for _, query := range usageQueries {
 		usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+query, strings.TrimSpace(info.Token))
 		if err != nil {
@@ -64,6 +168,12 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			return nil, fmt.Errorf("decode dashboard usage: %w", err)
 		}
 		usageProviders = append(usageProviders, decoded...)
+		items, _ := extractProvidersFromRawJSON(usageRaw)
+		for _, item := range items {
+			if payload, ok := item.(map[string]any); ok {
+				usageItems[strings.ToLower(strings.TrimSpace(firstString(payload, "provider")))] = payload
+			}
+		}
 	}
 
 	snapshotCollectedAt := time.Time{}
@@ -71,6 +181,8 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		snapshotCollectedAt = snapshot.GeneratedAt.UTC()
 	}
 	out := make([]ParsedFrame, 0, len(snapshot.Providers))
+	order := make([]string, 0, len(snapshot.Providers))
+	readings := make(map[string]json.RawMessage, len(snapshot.Providers))
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
 		parsed := parsedFrameFromDashboardProvider(
@@ -92,7 +204,16 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			parsed.Stale = true
 		}
 		out = append(out, parsed)
+		id := strings.ToLower(strings.TrimSpace(provider.ID))
+		if item, ok := serveUsageItem(provider, usageItems[id], !parsed.Frame.UsageUnavailable); ok {
+			order = append(order, id)
+			readings[id] = item
+		}
 	}
+	serveUsage.mu.Lock()
+	serveUsage.at, serveUsage.order, serveUsage.items = time.Now(), order, readings
+	serveUsage.complete = len(order) == len(snapshot.Providers)
+	serveUsage.mu.Unlock()
 	return out, nil
 }
 

@@ -358,7 +358,8 @@ func configPathFromContext(ctx context.Context) string {
 	return strings.TrimSpace(path)
 }
 
-// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe. Raw
+// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe, or
+// under WithServeReading reads serve's last answer in its place. Raw
 // provider text stays in the internal json:"-" field so status and retry JSON
 // expose only the generic Detail until the preferences adapter redacts it.
 func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {

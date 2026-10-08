@@ -510,7 +510,8 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 	s.providerPreferences.healthRefresh = true
 	revision := s.providerPreferences.revision
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
+		// Nobody asked for this check either (see providerSetupForStatus).
+		ctx, cancel := context.WithTimeout(codexbar.WithServeReading(context.Background()), providerCheckTimeout)
 		defer cancel()
 		settings, err := s.providerPreferences.load(ctx)
 
