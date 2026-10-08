@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -97,22 +98,34 @@ func TestCompanionReusesUntouchedSprite(t *testing.T) {
 }
 
 func TestCompanionAppearanceEditReachesImagePrompt(t *testing.T) {
-	style, pets := companionPlanFixture(1)
-	pets[0].Subject = "The same cat with pink fur"
-	s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path == "/v1/responses" {
-			return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
-		}
-		body, _ := io.ReadAll(r.Body)
-		if strings.Contains(string(body), "change only the requested motion") || !strings.Contains(string(body), "Customer change request: Make the cat pink") {
-			t.Fatal("Appearance request is missing or contradicted by identity instructions")
-		}
-		return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheet()+`"}]}`), nil
-	}))
-	previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestPNG()}}}
-	bg, _ := validateConceptImage(aiTestPNG(), "image/png")
-	if _, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "Make the cat pink", Previous: previous}, bg); err != nil {
-		t.Fatal(err)
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprint("legacy=", legacy), func(t *testing.T) {
+			style, pets := companionPlanFixture(1)
+			pets[0].Subject = "The same cat with pink fur"
+			s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/v1/responses" {
+					body, _ := io.ReadAll(r.Body)
+					if legacy && !strings.Contains(string(body), "Existing legacy animated subject") {
+						t.Fatal("Legacy identity missing from planning")
+					}
+					return autoTextResponse(map[string]any{"style": style, "companions": pets}), nil
+				}
+				body, _ := io.ReadAll(r.Body)
+				if strings.Contains(string(body), "change only the requested motion") || !strings.Contains(string(body), "Customer change request: Make the cat pink") || !strings.Contains(string(body), "existing sprite sheet is the identity reference") {
+					t.Fatal("Appearance request is missing or contradicted by identity instructions")
+				}
+				return aiResponse(200, `{"data":[{"b64_json":"`+aiTestCompanionSheet()+`"}]}`), nil
+			}))
+			previous := &aiThemePreviousConcept{Style: style, ImageBase64: aiTestPNG(), ImageContentType: "image/png", Companions: []aiCompanion{{ID: "pet-1", X: 20, Y: 40, Size: 32, FPS: 4, FrameCount: 8, KeyColor: "#FF00FF", SheetBase64: aiTestPNG()}}}
+			if legacy {
+				previous.AnimationSheetBase64 = aiTestCompanionSheet()
+				previous.Companions = nil
+			}
+			bg, _ := validateConceptImage(aiTestPNG(), "image/png")
+			if _, err := s.aiTheme.createCompanionConcept(context.Background(), "fixture", aiThemeConceptRequest{Prompt: "Make the cat pink", Previous: previous}, bg); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 func TestCompanionRejectsInvalidPlansBeforeImages(t *testing.T) {

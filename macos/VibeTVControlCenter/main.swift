@@ -2812,8 +2812,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard let result = runCodexBarCommand(
             executableURL: companionURL,
             arguments: arguments
-        ), result.exitCode == 0 else {
-            NSLog("VibeTV Control Center could not verify its pinned CodexBar through the Companion")
+        ) else {
+            NSLog("VibeTV Control Center could not launch its CodexBar preparation helper")
+            return nil
+        }
+        guard result.exitCode == 0 else {
+            NSLog("VibeTV Control Center CodexBar preparation failed (%d): %@", result.exitCode, result.output)
             return nil
         }
         let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)

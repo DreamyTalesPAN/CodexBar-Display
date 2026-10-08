@@ -11374,7 +11374,7 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	}
 
 	var got firmwareUpdateJobResponse
-	for attempt := 0; attempt < 50; attempt++ {
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
 		rec = httptest.NewRecorder()
 		req = httptest.NewRequest(http.MethodGet, "/v1/updates/install/status?jobId="+started.Job.ID, nil)
 		server.Handler().ServeHTTP(rec, req)

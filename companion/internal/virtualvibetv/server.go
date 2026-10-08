@@ -534,7 +534,14 @@ func (s *Server) handleThemeActive(w http.ResponseWriter, r *http.Request) {
 	data, ok := s.assets[path]
 	if ok {
 		s.activeThemePath = path
-		s.activeTheme = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		var spec struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(data, &spec)
+		s.activeTheme = spec.ID
+		if s.activeTheme == "" {
+			s.activeTheme = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		}
 		s.activeThemeSHA256 = sha256Hex(data)
 	}
 	s.mu.Unlock()

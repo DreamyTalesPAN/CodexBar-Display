@@ -77,6 +77,7 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 		content = append(content, aiText(message.Role+": "+message.Content))
 	}
 	old := map[string]aiCompanion{}
+	var legacyAnimation []byte
 	if req.Previous != nil {
 		style, _ := json.Marshal(req.Previous.Style)
 		content = append(content, aiText("Current style: "+string(style)), aiText("Current BACKGROUND layer:"), aiVisionImage(req.Previous.ImageBase64))
@@ -85,6 +86,13 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 				return result, e
 			}
 			content = append(content, aiText("Current composed scene:"), aiVisionImage(req.Previous.ReferenceImageBase64))
+		}
+		if len(req.Previous.Companions) == 0 && req.Previous.AnimationSheetBase64 != "" {
+			legacyAnimation, err = validateConceptImage(req.Previous.AnimationSheetBase64, "image/png")
+			if err != nil {
+				return result, err
+			}
+			content = append(content, aiText("Existing legacy animated subject, all poses. Refine this subject as pet-1 with reuse=false when changing it:"), aiVisionImage(req.Previous.AnimationSheetBase64))
 		}
 		for _, p := range req.Previous.Companions {
 			old[p.ID] = p
@@ -152,8 +160,14 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 		} else {
 			reference := background
 			identity := "The supplied background is ONLY a style, palette and lighting reference. Do not include any scenery."
+			var identityReference []byte
 			if prior, ok := old[p.ID]; ok {
-				reference, _ = validateConceptImage(prior.SheetBase64, "image/png")
+				identityReference, _ = validateConceptImage(prior.SheetBase64, "image/png")
+			} else if p.ID == "pet-1" {
+				identityReference = legacyAnimation
+			}
+			if len(identityReference) > 0 {
+				reference = identityReference
 				identity = "The supplied existing sprite sheet is the identity reference. Apply the requested appearance, color or motion changes to this subject; preserve only the traits the customer did not ask to change. A requested new fur/body color must replace the old color, not just recolor an accessory. Keep its lighting and pixel-art style, but never draw an environment."
 			}
 			prompt := fmt.Sprintf("%s Create ONE sprite sheet with EXACTLY EIGHT animation frames in a regular 4-COLUMN, 2-ROW grid of equal SQUARE cells, aspect ratio 2:1. Each cell contains the SAME complete isolated subject at identical scale and body anchor. Generous padding; no clipping. Draw one continuous cyclic action in reading order, frame8 returning smoothly to frame1. Keep body size, face, markings and ground/hover anchor consistent; only intended body parts change pose. Chunky crisp pixel art readable at %dx%d display pixels. Use perfectly flat opaque pure magenta RGB(255,0,255) #FF00FF everywhere outside the subject, including holes between limbs. NO checkerboard, scenery, floor, shadows, captions, borders or grid lines. Do not use magenta in the subject. For grounded subjects keep feet at the same baseline around 88%% cell height. Subject: %s. Motion: %s.", identity, p.Size, p.Size, p.Subject, p.Motion)
@@ -168,12 +182,8 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 			if issue := companionSheetIssue(c.SheetBase64); issue != "" {
 				// Repair this sprite once. Never send the rejected scene back as an
 				// identity reference, and never regenerate other layers here.
-				var repairReference []byte
-				if prior, ok := old[p.ID]; ok {
-					repairReference, _ = validateConceptImage(prior.SheetBase64, "image/png")
-				}
 				repairPrompt := "REPAIR: The previous output was rejected: " + issue + ". Return ONLY an isolated sprite sheet, never an illustration or scene. " + prompt + " FINAL OUTPUT REQUIREMENT: exactly 4 columns by 2 rows of square cells; eight complete poses with empty padding on every edge. Every pixel outside the subject must be uniform #FF00FF. NO environment, floor, UI, text or extra poses."
-				c.SheetBase64, e = a.createConceptImageSized(ctx, key, repairPrompt, repairReference, "1536x768")
+				c.SheetBase64, e = a.createConceptImageSized(ctx, key, repairPrompt, identityReference, "1536x768")
 				if e != nil {
 					return result, e
 				}
