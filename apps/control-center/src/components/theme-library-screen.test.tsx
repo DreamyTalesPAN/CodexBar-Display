@@ -298,6 +298,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           onSaveStandby={vi.fn()}
           onSelectTheme={vi.fn()}
           selectedThemeId=""
+          // The settings are read: without them a screensaver is not installed.
+          standby={{ brightnessPercent: 20, enabled: true, timeoutMinutes: 10 }}
           storefrontConfigured={false}
           themeInstallEnabled
           themes={[

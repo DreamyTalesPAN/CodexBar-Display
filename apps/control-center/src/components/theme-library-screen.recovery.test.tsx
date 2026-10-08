@@ -90,16 +90,38 @@ it("opens a new theme at once when no unsaved draft waits", () => {
 });
 
 // The list does not install a screensaver while Show screensaver is off;
-// Screensaver Studio sent one all the same.
+// Screensaver Studio sent one all the same. And while the setting is not
+// known -- the settings are still loading, or reading them failed -- both
+// were open, although the screensaver may be off (automated review).
+const OFF = "Turn on Show screensaver first.";
+const UNKNOWN = "Screensaver installs are not available right now.";
+const on = { brightnessPercent: 20, enabled: true, timeoutMinutes: 10 };
+const withSlot = { connected: true, paired: true, ready: true, standby: { active: false } };
 it.each([
-  [false, "Editor open, no send: Turn on Show screensaver first."],
-  [true, "Editor open"],
-])("tells Screensaver Studio whether the screensaver is on (%s)", (enabled, editor) => {
+  ["not read yet", { device: withSlot, standby: null }, UNKNOWN],
+  ["off", { device: withSlot, standby: { ...on, enabled: false } }, OFF],
+  ["on", { device: withSlot, standby: on }, ""],
+  // Firmware without a screensaver setting reports no standby at all.
+  ["not there on this VibeTV", { device: { ...withSlot, standby: undefined }, standby: null }, ""],
+] as const)("closes Install and Send for a screensaver while its setting is %s", (_state, props, reason) => {
   stored.recovery = false;
   renderLibrary({
-    standby: { brightnessPercent: 20, enabled, timeoutMinutes: 10 },
+    ...props,
+    themes: [
+      {
+        id: "drift", isFree: true, priceLabel: "Free", source: "github-catalog",
+        themeId: "drift", title: "Drift", usage: "screensaver",
+      },
+    ],
     usage: "screensaver",
   });
+  // The row's buttons are Preview, Edit and Install; closed, Install carries
+  // the reason as its title.
+  const install = screen.getByRole("listitem").querySelectorAll("button")[2];
+  expect([OFF, UNKNOWN].find((text) => install.title === text) ?? "").toBe(reason);
+  if (reason) {
+    expect(install.disabled).toBe(true);
+  }
   fireEvent.click(screen.getByRole("button", { name: "Create Screensaver" }));
-  expect(screen.getByText(editor)).toBeTruthy();
+  expect(screen.getByText(reason ? `Editor open, no send: ${reason}` : "Editor open")).toBeTruthy();
 });

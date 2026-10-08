@@ -234,8 +234,19 @@ export function ThemeLibraryScreen({
   const screensavers = usage === "screensaver";
   // A screensaver is installed only while the screensaver is turned on, from
   // the list and from Screensaver Studio alike.
-  const screensaverInstallLocked =
-    screensavers && Boolean(standby) && !standby?.enabled;
+  const screensaverInstallBlockedReason = !screensavers
+    ? ""
+    : standby
+      ? standby.enabled
+        ? ""
+        : SCREENSAVER_OFF_REASON
+      : // The switch comes with the settings. A VibeTV that has it reports a
+        // standby state; while the settings are not there (still loading, or
+        // reading them failed) the app does not know whether it is on. A
+        // VibeTV without the switch reports neither and is not held back.
+        device?.standby
+        ? "Screensaver installs are not available right now."
+        : "";
   // The sentences this page writes itself name what its list holds (issue
   // #558). Only those: a message from storage, the app or the Mac App can
   // carry the customer's own name for a theme and is shown as it came.
@@ -601,7 +612,7 @@ export function ThemeLibraryScreen({
         deviceCapabilities={themeStudioCapabilitiesFromDevice(device)}
         initialTheme={editingTheme}
         installBlockedReason={
-          screensaverInstallLocked ? SCREENSAVER_OFF_REASON : undefined
+          screensaverInstallBlockedReason || undefined
         }
         onBackToLibrary={() => setEditingTheme(null)}
         onInstallTheme={onInstallCustomTheme}
@@ -722,7 +733,7 @@ export function ThemeLibraryScreen({
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
-                  screensaverInstallLocked={screensaverInstallLocked}
+                  screensaverInstallBlockedReason={screensaverInstallBlockedReason}
                   device={device}
                   displayThemeId={displayTheme?.themeId}
                   item={theme}
@@ -1003,7 +1014,7 @@ function ThemeListItem({
   onPreviewTheme,
   ownPathOfSharedId,
   preparingInstallRow,
-  screensaverInstallLocked = false,
+  screensaverInstallBlockedReason,
   selectedThemeId,
   usage,
   themeInstallBlockedReason,
@@ -1028,7 +1039,7 @@ function ThemeListItem({
   onPreviewTheme: (theme: ThemeLibraryItem) => void;
   ownPathOfSharedId?: string;
   preparingInstallRow: string;
-  screensaverInstallLocked?: boolean;
+  screensaverInstallBlockedReason: string;
   selectedThemeId: string;
   usage: ThemeStudioUsage;
   themeInstallBlockedReason: string;
@@ -1084,8 +1095,8 @@ function ThemeListItem({
         : installStatus.phase !== "complete" || installed));
   const retryingFailedInstall = visibleInstallStatus && installStatus?.phase === "error";
   const screensaverLockBlocker: ThemeInstallBlocker | null =
-    screensaverInstallLocked
-      ? { reason: SCREENSAVER_OFF_REASON }
+    screensaverInstallBlockedReason
+      ? { reason: screensaverInstallBlockedReason }
       : null;
   // The VibeTV cannot draw its active theme (#498): the way out is another
   // theme, so that state must not block installing one.
