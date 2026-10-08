@@ -1110,6 +1110,81 @@ func TestValidateAgainstCapabilitiesRequiresProviderAssetsColorStopsAndValign(t 
 	}
 }
 
+func TestValidateAcceptsProgressArcAtTheFirmwareLimits(t *testing.T) {
+	for _, raw := range []string{
+		`{"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":20,"y":30,"w":200,"h":180,"b":"us1p","ps":"arc","as":225,"aw":270,"at":16,"c":"#22C55E","bg":"#1E293B"}]}`,
+		`{"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":100,"ps":"arc","aw":1,"at":1}]}`,
+		`{"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":101,"ps":"arc","as":359,"aw":360,"at":50}]}`,
+		`{"themeSpecVersion":1,"themeId":"arc","themeRev":1,"primitives":[{"type":"progress","x":0,"y":0,"width":100,"height":100,"progressStyle":"arc","arcStart":90,"arcSweep":180,"arcThickness":8}]}`,
+		// The arc fields mean nothing on a bar, as on the device.
+		`{"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":10,"ps":"segments","as":900,"aw":0,"at":0}]}`,
+	} {
+		spec, _, err := Parse([]byte(raw))
+		if err != nil {
+			t.Fatalf("parse %s: %v", raw, err)
+		}
+		if err := Validate(spec); err != nil {
+			t.Fatalf("expected %s to validate, got %v", raw, err)
+		}
+	}
+}
+
+func TestValidateRejectsProgressArcOutsideTheFirmwareLimits(t *testing.T) {
+	for name, tc := range map[string]struct{ fields, want string }{
+		"start below 0":             {`"as":-1,"aw":270,"at":10`, "arcStart"},
+		"start of a full turn":      {`"as":360,"aw":270,"at":10`, "arcStart"},
+		"no sweep":                  {`"as":0,"at":10`, "arcSweep"},
+		"sweep above a full turn":   {`"as":0,"aw":361,"at":10`, "arcSweep"},
+		"no thickness":              {`"as":0,"aw":270`, "arcThickness"},
+		"thicker than the radius":   {`"as":0,"aw":270,"at":51`, "arcThickness"},
+		"long keys out of range":    {`"arcStart":0,"arcSweep":400,"arcThickness":10`, "arcSweep"},
+		"thickness against height":  {`"h":60,"as":0,"aw":270,"at":31`, "arcThickness"},
+		"sweep of the wrong type":   {`"as":0,"aw":"270","at":10`, "parse theme spec"},
+		"thickness with a fraction": {`"as":0,"aw":270,"at":10.5`, "parse theme spec"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw := `{"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":100,"ps":"arc",` + tc.fields + `}]}`
+			spec, _, err := Parse([]byte(raw))
+			if err == nil {
+				err = Validate(spec)
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected a %s error for %s, got %v", tc.want, raw, err)
+			}
+		})
+	}
+}
+
+func TestValidateAgainstCapabilitiesRequiresProgressArc(t *testing.T) {
+	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true}
+	for _, raw := range []string{
+		`{"v":1,"id":"arc","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":100,"ps":"arc","aw":270,"at":10}]}`,
+		`{"themeSpecVersion":1,"themeId":"arc","themeRev":1,"primitives":[{"type":"progress","x":0,"y":0,"width":100,"height":100,"progressStyle":"arc","arcSweep":270,"arcThickness":10}]}`,
+	} {
+		spec, wire, err := Parse([]byte(raw))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		caps.SupportsProgressArcV1 = false
+		if err := ValidateAgainstCapabilities(spec, wire, caps); err == nil ||
+			!strings.Contains(err.Error(), "progress-arc-v1") {
+			t.Fatalf("expected progress-arc-v1 rejection, got %v", err)
+		}
+		caps.SupportsProgressArcV1 = true
+		if err := ValidateAgainstCapabilities(spec, wire, caps); err != nil {
+			t.Fatalf("expected capable device to accept the arc: %v", err)
+		}
+	}
+	bar, wire, err := Parse([]byte(`{"v":1,"id":"bar","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":10,"ps":"segments"}]}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	caps.SupportsProgressArcV1 = false
+	if err := ValidateAgainstCapabilities(bar, wire, caps); err != nil {
+		t.Fatalf("a bar must not need progress-arc-v1: %v", err)
+	}
+}
+
 func TestFeatureContainerAliasesMatchFirmware(t *testing.T) {
 	for _, tc := range []struct {
 		name, stopField, assetField string

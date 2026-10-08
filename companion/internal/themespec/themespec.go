@@ -99,6 +99,14 @@ type Primitive struct {
 	ShortProviderAssets map[string]string `json:"pa,omitempty"`
 	ColorStops          []ColorStop       `json:"colorStops,omitempty"`
 	ShortColorStops     []ColorStop       `json:"cs,omitempty"`
+	ProgressStyle       string            `json:"progressStyle,omitempty"`
+	ShortProgressStyle  string            `json:"ps,omitempty"`
+	ArcStart            int               `json:"arcStart,omitempty"`
+	ShortArcStart       int               `json:"as,omitempty"`
+	ArcSweep            int               `json:"arcSweep,omitempty"`
+	ShortArcSweep       int               `json:"aw,omitempty"`
+	ArcThickness        int               `json:"arcThickness,omitempty"`
+	ShortArcThickness   int               `json:"at,omitempty"`
 	Data                string            `json:"data,omitempty"`
 	ShortData           string            `json:"d,omitempty"`
 	Palette             []string          `json:"p,omitempty"`
@@ -269,6 +277,9 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if specUsesTextValign(spec) && !caps.SupportsTextValignV1 {
 		return errors.New("device does not advertise text-valign-v1 support")
 	}
+	if specUsesProgressArc(spec) && !caps.SupportsProgressArcV1 {
+		return errors.New("device does not advertise progress-arc-v1 support")
+	}
 	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
 		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
 	}
@@ -358,6 +369,15 @@ func specUsesTextValign(spec Spec) bool {
 		}
 		switch valign {
 		case "middle", "center", "bottom":
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesProgressArc(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if primitive.Type == "progress" && primitive.ProgressStyle == "arc" {
 			return true
 		}
 	}
@@ -517,6 +537,18 @@ func normalizePrimitive(p Primitive) Primitive {
 		p.ColorStops = p.ShortColorStops
 	}
 	p.ColorStops = normalizeColorStops(p.ColorStops)
+	if p.ProgressStyle == "" {
+		p.ProgressStyle = p.ShortProgressStyle
+	}
+	if p.ArcStart == 0 {
+		p.ArcStart = p.ShortArcStart
+	}
+	if p.ArcSweep == 0 {
+		p.ArcSweep = p.ShortArcSweep
+	}
+	if p.ArcThickness == 0 {
+		p.ArcThickness = p.ShortArcThickness
+	}
 	if p.Data == "" {
 		p.Data = p.ShortData
 	}
@@ -755,6 +787,24 @@ func validatePrimitive(p Primitive) error {
 	}
 	if err := validateColorStops(p); err != nil {
 		return err
+	}
+	return validateProgressArc(p)
+}
+
+// validateProgressArc holds the limits of CompilePrimitive in
+// firmware_shared/theme_spec_renderer_core.h, which skips an arc outside them.
+func validateProgressArc(p Primitive) error {
+	if p.Type != "progress" || p.ProgressStyle != "arc" {
+		return nil
+	}
+	if p.ArcStart < 0 || p.ArcStart > 359 {
+		return errors.New("arcStart must be between 0 and 359")
+	}
+	if p.ArcSweep < 1 || p.ArcSweep > 360 {
+		return errors.New("arcSweep must be between 1 and 360")
+	}
+	if p.ArcThickness < 1 || p.ArcThickness*2 > min(p.Width, p.Height) {
+		return errors.New("arcThickness must be between 1 and half the smaller of width and height")
 	}
 	return nil
 }
