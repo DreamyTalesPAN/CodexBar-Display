@@ -59,8 +59,7 @@ describe("UsageScreen", () => {
     expect(html).toContain("Weekly: 10% used");
   });
 
-  // Themes shows its hint on token themes from the same answer (#551).
-  it("answers for Themes what the notice says", () => {
+  it("says when the Usage notice stands", () => {
     expect(usageTokenHistoryUnavailable(usage)).toBe(false);
     expect(usageTokenHistoryUnavailable(null)).toBe(false);
     expect(

@@ -19,7 +19,7 @@ const (
 	// Cost history scans can take over a minute. Keep their post-completion
 	// cadence below the ten-minute last-good window without running continuously.
 	// This cadence applies only once a provider's history stopped growing;
-	// see tokenStatsHistorySettled.
+	// see tokenStatsSettled.
 	tokenStatsScanCooldown = 5 * time.Minute
 	// A failed scan is tried again sooner. After the full cadence the retry
 	// found the stored totals expired (ten minutes), took the new ones for a

@@ -190,7 +190,7 @@ export type ThemeLibraryScreenProps = {
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   themeInstallEnabled: boolean;
-  /** What Usage reports as "Token history is unavailable". */
+  /** The provider on VibeTV has no token history (usageTokenHistoryUnavailableOnVibeTV). */
   tokenHistoryUnavailable?: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
@@ -630,9 +630,7 @@ export function ThemeLibraryScreen({
       <ThemeStudioScreen
         deviceCapabilities={themeStudioCapabilitiesFromDevice(device)}
         initialTheme={editingTheme}
-        installBlockedReason={
-          screensaverInstallBlockedReason || undefined
-        }
+        installBlockedReason={screensaverInstallBlockedReason}
         onBackToLibrary={() => setEditingTheme(null)}
         onInstallTheme={onInstallCustomTheme}
         onRecoveryDiscarded={() => setRecovery(null)}

@@ -41,6 +41,12 @@ it can be removed when the engine closes the gap.
   `runUsageAllEnabled` and `runProviderHealthProbe` in `providers.go`); the
   dashboard's `/usage` is asked per provider for the same reason
   (`dashboardUsageByProvider` in `dashboard_fetch.go`, #554).
+- The usage answer carries the provider status as `status.level`, which the
+  adapter does not read. A probe per provider therefore adds nothing to the
+  serve reading, and Windows answers the provider rows from that reading
+  instead of probing each provider, as long as the reading is current and
+  holds every switched-on provider (`runProviderHealthProbe` in
+  `providers.go`, #555).
 - `CODEXBAR_CONFIG` is ignored and `config validate` has no `--format json`.
   The CLI reads only `%APPDATA%\CodexBar\settings.json`, so Windows uses that
   location (`EnsureConfig`, `windowsSettingsPath`, `commandEnvironment` in

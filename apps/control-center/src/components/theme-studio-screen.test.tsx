@@ -209,7 +209,7 @@ it.each([
   ["live", "Sending the theme to VibeTV.", "Theme is installed on VibeTV."],
   ["screensaver", "Sending the screensaver to VibeTV.", "Screensaver is ready on VibeTV."],
 ] as const)("says in plain words that it sends and that VibeTV has the %s", async (usage, sending, done) => {
-  let finish = (_installed: boolean) => {};
+  let finish: (installed: boolean) => void = () => {};
   renderStudio("custom", {
     initialTheme: {
       assets: {}, packName: "Mine", source: "custom", spec: createBlankThemeSpec(), usage,

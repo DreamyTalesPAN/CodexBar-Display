@@ -6268,3 +6268,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Nothing changes for the customer. The test for `Downloaded` on the Mac takes the report's file name from the app's own naming (local date and time since the entry about the report's file name above) instead of a fixed UTC name.
 - Scope: one test in `apps/control-center/src/components/support-report-actions.test.tsx` and this approval record.
 - What's new: none — a test only
+
+## 2026-10-09 — No customer-visible change: comments, a test title and a lint warning
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; no wording, nothing for him to see.
+- Approved customer-visible result: Nothing changes for the customer. Three comments in the app's code say what the code does now, one test has a title that fits what it checks, one test no longer raises a lint warning, and Theme Studio is handed the empty reason of an allowed screensaver install as it is instead of as "none", which it reads the same way.
+- Scope: comments in `apps/control-center/src/components/theme-library-screen.tsx` and `control-center-app.tsx`, the prop `installBlockedReason` passed in `theme-library-screen.tsx`, the tests `usage-screen.test.tsx` and `theme-studio-screen.test.tsx`, comments and one parameter name in `companion/internal/daemon`, `docs/windows-platform-neutral.md`, `docs/theme-packs.md`, and this approval record.
+- What's new: none — comments, a test title and a lint warning

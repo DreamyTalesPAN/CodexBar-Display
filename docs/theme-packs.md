@@ -43,6 +43,12 @@ Rules:
   `theme pack "night-clock" is a screensaver pack and cannot be installed into the live slot`.
 - Generated catalog entries carry `usage`, normalized to `live` when the
   manifest omits it.
+- Generated catalog entries carry `earlierThemeSpecPaths`: every ThemeSpec
+  device path the theme was shipped under before its current `themeSpecPath`.
+  The app takes a file VibeTV holds for the catalog theme's only when it is the
+  current path or one of these (#559). The list only grows: a path the catalog
+  on `main` names stays named when the theme moves on
+  (`scripts/check-theme-pack-history.sh`).
 - Device paths must start with `/themes/`.
 - A `screensaver` pack must put every file under `/themes/s/`, and no other pack
   may use that directory. Installing into a slot deletes the stale files in that

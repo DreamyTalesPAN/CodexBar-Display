@@ -5783,10 +5783,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
 /**
  * Recent activity, newest first. An entry that says the same as an earlier one
- * takes its place instead of standing beside it: the Support page showed
- * "Settings loaded" with the same brightness again after every other entry
- * (issues #548, #558). The entry carries the time of the latest occurrence, so
- * a failure that repeats does not look like an old one.
+ * takes its place instead of standing beside it, so the Support page does not
+ * list the same entry again after every other one (issues #548, #558). The
+ * entry carries the time of the latest occurrence, so a failure that repeats
+ * does not look like an old one.
  */
 export function recentEventsWith(
   events: ControlCenterEvent[],

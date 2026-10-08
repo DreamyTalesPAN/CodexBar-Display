@@ -3207,17 +3207,17 @@ func timelineStateOrUnknown(state string) string {
 	return state
 }
 
-// usageTimelineEvent names what the sent frame says about usage. A frame that
-// repeats the last good values after a failed collection is "stale", so an
-// outage does not read as fresh usage in the support timeline. When the
-// collection failed, its error code is the reason.
-func usageTimelineEvent(unavailable, usedLastGood bool, failureKind, selectionReason string) timeline.Event {
+// usageTimelineEvent names what the sent frame says about usage. A frame
+// without a fresh reading (the last good frame restated, or a retained
+// reading) is "stale", so an outage does not read as fresh usage in the
+// support timeline. When the collection failed, its error code is the reason.
+func usageTimelineEvent(unavailable, restated bool, failureKind, selectionReason string) timeline.Event {
 	switch {
 	case unavailable && failureKind != "":
 		return timeline.Event{Component: "usage", State: "unavailable", Reason: failureKind}
 	case unavailable:
 		return timeline.Event{Component: "usage", State: "unavailable", Reason: selectionReason}
-	case usedLastGood:
+	case restated:
 		return timeline.Event{Component: "usage", State: "stale", Reason: failureKind}
 	}
 	return timeline.Event{Component: "usage", State: "shown"}
