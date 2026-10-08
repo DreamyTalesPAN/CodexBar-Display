@@ -56,6 +56,12 @@ function watchScrolling() {
   return shown;
 }
 
+// Who watches the height of the page. jsdom lays nothing out, so a test says
+// when the page grew: the customer's own themes, read after Themes opened,
+// stand above the catalog's rows.
+const pageWatchers = new Set<() => void>();
+const pageGrew = () => act(() => pageWatchers.forEach((changed) => changed()));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as unknown as Response;
 }
@@ -82,9 +88,16 @@ function startWindow({
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      observe() {}
+      constructor(private readonly changed: () => void) {}
+      observe(element: Element) {
+        if (element === document.body) {
+          pageWatchers.add(this.changed);
+        }
+      }
       unobserve() {}
-      disconnect() {}
+      disconnect() {
+        pageWatchers.delete(this.changed);
+      }
     },
   );
   vi.stubGlobal(
@@ -214,6 +227,7 @@ const allIds = WHATS_NEW.map(({ id }) => id);
 
 afterEach(() => {
   cleanup();
+  pageWatchers.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
   window.localStorage.clear();
@@ -472,6 +486,50 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
   expect(shown).toEqual([
     screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
   ]);
+});
+
+// Seen in the Windows app with nine own themes: their rows were laid out after
+// the row of the new theme had been brought into view, and pushed it about
+// 870 px below the window.
+it("brings the new theme into view again when the list above it grows, until the customer scrolls", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+  const row = screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]");
+  shown.length = 0;
+
+  pageGrew();
+  pageGrew();
+  expect(shown).toEqual([row, row]);
+
+  fireEvent.wheel(document.body);
+  pageGrew();
+  expect(shown).toEqual([row, row]);
+});
+
+it("leaves a page alone that grows after the customer went on from Themes", async () => {
+  const shown = watchScrolling();
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+  shown.length = 0;
+
+  // The sidebar is used with the keyboard here, so it is leaving the page
+  // that ends it and not a click.
+  act(() => screen.getByRole("button", { name: "Settings" }).click());
+  await window.wait(1);
+  pageGrew();
+
+  expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+  expect(shown).toEqual([]);
+  expect(document.documentElement.scrollTop).toBe(0);
 });
 
 it("opens again from Updates with the keys of a Windows computer", async () => {

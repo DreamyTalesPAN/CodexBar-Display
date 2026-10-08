@@ -5128,14 +5128,31 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [whatsNewReopenIsOver]);
   // A "Show me" link of the notice is about one place on the page it opens
   // (issue #584). Every opened page starts at the top; after that, this place
-  // is brought into view.
+  // is brought into view. The page may still grow above it, or get the place
+  // only then: Themes reads the customer's own themes after it opened, and
+  // their rows stand above the catalog's. So the place is brought into view
+  // again each time the page changes its height, until the customer scrolls,
+  // clicks or types, or the window moves to another page.
   const shownAfterPageOpensRef = useRef("");
   useEffect(() => {
     const id = shownAfterPageOpensRef.current;
     shownAfterPageOpensRef.current = "";
-    if (id) {
-      document.getElementById(id)?.scrollIntoView();
+    if (!id) {
+      return;
     }
+    const show = () => document.getElementById(id)?.scrollIntoView();
+    show();
+    const pageGrows = new ResizeObserver(show);
+    pageGrows.observe(document.body);
+    const customerActs = ["wheel", "touchmove", "pointerdown", "keydown"];
+    const stop = () => {
+      pageGrows.disconnect();
+      customerActs.forEach((act) => window.removeEventListener(act, stop));
+    };
+    customerActs.forEach((act) =>
+      window.addEventListener(act, stop, { passive: true }),
+    );
+    return stop;
   }, [activeShellTab, appearanceSection]);
   const closeWhatsNew = () => {
     setWhatsNewSeen(markWhatsNewSeen());
