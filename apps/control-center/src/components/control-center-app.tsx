@@ -2297,8 +2297,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (!newest()) {
             return;
           }
-          standbyDirtyRef.current = null;
-          setStandby(lastSavedStandbyRef.current);
+          // A thumb the customer has dragged on stays here as well; its
+          // release saves what the controls show.
+          if (standbyDirtyRef.current === value.brightnessPercent) {
+            standbyDirtyRef.current = null;
+            setStandby(lastSavedStandbyRef.current);
+          }
           const normalized = normalizeCaughtError(
             error,
             "Screensaver needs attention.",

@@ -176,6 +176,12 @@ function startWindow(themes: unknown[] = []) {
         if (init?.body) {
           const { brightnessPercent, standby } = JSON.parse(String(init.body));
           await takeHeldWrite();
+          if (companion.refuseWrites) {
+            if (companion.refuseWrites === "once") {
+              companion.refuseWrites = false;
+            }
+            return jsonResponse({ ok: false, error: refused }, 502);
+          }
           companion.settings = standby
             ? { ...companion.settings, standby }
             : { ...companion.settings, display: { brightnessPercent } };
@@ -443,6 +449,38 @@ it.each([
   await window.wait(1);
   expect(slider.getAttribute("aria-valuenow")).toBe(dragged);
   expect(window.settingsWrites()).toEqual([write(21), write(Number(dragged))]);
+});
+
+// A refused save set the screensaver thumb back to the last stored value while
+// the customer was already dragging on, and the release then saved that value.
+it("leaves the Brightness in screensaver thumb where it is dragged when an earlier save is refused", async () => {
+  const window = startWindow();
+  window.companion.settings.standby = { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 };
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const slider = screen.getByRole("slider", { name: "Brightness in screensaver" });
+  const track = slider.closest<HTMLElement>('[data-slot="slider"]')!;
+  track.getBoundingClientRect = () => ({ left: 0, width: 100 }) as DOMRect;
+  track.setPointerCapture = () => {};
+  track.releasePointerCapture = () => {};
+  track.hasPointerCapture = () => true;
+
+  const answer = window.holdNextWrite();
+  window.companion.refuseWrites = "once";
+  await window.step(() => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+  await window.step(() => fireEvent.pointerDown(track, { clientX: 60 }));
+  const dragged = slider.getAttribute("aria-valuenow");
+  expect(dragged).not.toBe("21");
+
+  answer();
+  await window.wait(1);
+  expect(slider.getAttribute("aria-valuenow")).toBe(dragged);
+
+  await window.step(() => fireEvent.pointerUp(track, { clientX: 60 }));
+  await window.wait(1);
+  expect(slider.getAttribute("aria-valuenow")).toBe(dragged);
+  expect(window.companion.settings.standby.brightnessPercent).toBe(Number(dragged));
 });
 
 // A brightness change that was still on its way, and one waiting behind it,
