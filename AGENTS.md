@@ -88,7 +88,7 @@ candidate above stays what the merge gate and a release need.
 
   ```bash
   V=9999.0.<n>; OUT=tmp/quick; mkdir -p "$OUT/fw"
-  (cd apps/control-center && npm run build:local)
+  (cd apps/control-center && npm ci && npm run build:local)
   rm -rf companion/internal/companionapi/controlcenter_static
   mkdir -p companion/internal/companionapi/controlcenter_static
   cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
@@ -118,7 +118,12 @@ candidate above stays what the merge gate and a release need.
   with `launchctl setenv`, on Windows as user variables.
 - **Windows:** the unsigned installer of the head's CI run (artifact
   `vibetv-control-center-windows`, version `9999.0.<n>`), on a real Windows
-  machine with a VibeTV on the cable. Cold: app state cleared, VibeTV on the
+  machine with a VibeTV on the cable. CI builds a pull request from GitHub's
+  merge commit, the head merged into the base branch, so this installer is
+  what would land and its `companion.runtime.commit` is that merge commit, not
+  the head. Tie it to the head through the run instead:
+  `gh run list --branch <branch> --json databaseId,headSha` must name the
+  reviewed head for the run the artifact was downloaded from. Cold: app state cleared, VibeTV on the
   delivery firmware (1.0.41, the firmware of v1.0.56), install, set up. Warm:
   the public installer with the released firmware first, then the candidate
   over it and the firmware update from Updates.
@@ -129,7 +134,9 @@ candidate above stays what the merge gate and a release need.
   holds the WiFi password: delete it after the last run.
 - **Passed** means paired, firmware equal to the candidate, theme active with
   `renderOk: true`, a healthy stream, the theme kept across the warm start, and
-  `companion.runtime.commit` in `/v1/status` equal to the head.
+  the right build running: on the Mac `companion.runtime.commit` in
+  `/v1/status` equals the head, on Windows `companion.version` is the
+  `9999.0.<n>` of the head's CI run.
 - What the pull request changes is looked at in the running app on both
   platforms, not only read from the API. The result goes into the pull request
   description: per platform and start the times, the build, the device, and
