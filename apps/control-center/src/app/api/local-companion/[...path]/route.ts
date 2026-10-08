@@ -12,9 +12,10 @@ const execFileAsync = promisify(execFile);
 async function localMacAppOrigin() {
   const configured = process.env.VIBETV_LOCAL_MAC_APP_ORIGIN?.trim();
   // Reuse the native runtime's existing port discovery and listener ownership
-  // check. A stale endpoint must never receive a customer's theme pack.
+  // check. A stale endpoint must never receive a customer's theme pack. A
+  // locally built preview app registers its runtime under its own label.
   const stdout = configured || (await execFileAsync("/bin/bash", ["-c",
-    'source "$1"; origin=$(bench::resolve_api); bench::api_owned_by_runtime "$origin" && printf "%s" "$origin"',
+    'source "$1"; owned() { origin=$(bench::resolve_api); bench::api_owned_by_runtime "$origin"; }; { owned || { BENCH_RUNTIME_LABEL=shop.vibetv.control-center.preview-runtime; owned; }; } && printf "%s" "$origin"',
     "vibetv", resolve(process.cwd(), "../../scripts/lib/vibetv-bench-api.sh"),
   ], { timeout: 10_000 })).stdout.trim();
   const url = new URL(stdout);

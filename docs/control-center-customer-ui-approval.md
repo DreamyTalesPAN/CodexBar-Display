@@ -5384,3 +5384,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested removing the editor's own VIBETV bar so Theme Studio sits in the original shell again, collapsing the sidebar when the editor opens, and moving the prompt box further down, then asked for the invisible result message after Create to be shown under the prompt box.
 - Approved customer-visible result: Theme Studio keeps the app header and the navigation sidebar, which collapses to icons when the editor opens and returns to its earlier state on leaving; the customer can still expand it. The editor shows no brand bar of its own, only Back, Settings, Save and Send to VibeTV. The display is centered in the free space and the prompt box with Create sits at the bottom of the window. The development preview renders the editor inside the same shell. The result message of each action, such as the AI plan after Create, is visible under the prompt box, so a request that changes nothing no longer ends without feedback.
+
+
+## 2026-10-08 — Send to VibeTV from the development preview
+
+- User approval: Paul requested that Send to VibeTV in the development preview reaches his VibeTV on the cable.
+- Approved customer-visible result: No customer-visible change. The development proxy also accepts the runtime of a locally built preview app as the owner of the local listener, so Send to VibeTV in the development preview installs the design through that app. Paul's cable VibeTV received and activated a design this way.
