@@ -267,3 +267,45 @@ func TestTheEndOfAPauseIsRecorded(t *testing.T) {
 		t.Fatalf("timeline:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// Review of the port: a frame restated because the provider has no fresh
+// reading (#369) repeats old values, so the timeline must not call it shown.
+func TestARestatedFrameWithoutAFreshReadingIsRecordedAsStale(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	retained := false
+	var got []string
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 12, 30, 3600)
+			frame.Stale = retained
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine:      func(string, []byte) error { return nil },
+		record: func(event timeline.Event) {
+			if event.Component != "usage" {
+				return
+			}
+			line := event.State + "(" + event.Reason + ")"
+			if len(got) == 0 || got[len(got)-1] != line {
+				got = append(got, line)
+			}
+		},
+	}
+	for i := 0; i < 4; i++ {
+		if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+			t.Fatalf("cycle %d: %v", i, err)
+		}
+		retained = true
+		now = now.Add(2 * time.Second)
+	}
+	if want := "shown(),stale(usage-not-fresh)"; strings.Join(got, ",") != want {
+		t.Fatalf("usage entries = %v, want %s", got, want)
+	}
+}

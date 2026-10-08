@@ -1850,7 +1850,14 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	// the changes. Every frame has a provider and every hello a firmware, so a
 	// missing one (an error frame) is recorded as unknown instead of leaving
 	// the last value standing. A frame names a theme only when it carries one.
-	usage := usageTimelineEvent(frame.UsageUnavailable || frame.Error != "", result.usedLastGood, string(result.failureKind), result.selectionReason)
+	// Both restatements of the last good frame are old values: after a failed
+	// collection, and while the provider has no fresh reading (#369).
+	restated := result.usageSource == "last-good"
+	failureKind := string(result.failureKind)
+	if restated && failureKind == "" {
+		failureKind = "usage-not-fresh"
+	}
+	usage := usageTimelineEvent(frame.UsageUnavailable || frame.Error != "", restated, failureKind, result.selectionReason)
 	events := []timeline.Event{
 		{Component: "device", State: "reachable"},
 		{Component: "firmware", State: timelineStateOrUnknown(caps.Firmware)},
