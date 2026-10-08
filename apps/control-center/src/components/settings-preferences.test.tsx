@@ -154,6 +154,27 @@ describe("SettingsScreen display preferences", () => {
     expect(screen.getByRole("combobox", { name: "Usage display" }).textContent).toBe("Default");
     expect(document.body.textContent).not.toMatch(/following|codexbar/i);
   });
+
+  // Issue #558: "Usage display: Default" did not say what Default shows.
+  it.each([
+    ["used", "Default is the same as Used."],
+    ["remaining", "Default is the same as Remaining."],
+  ])("says what Default stands for while it is chosen (%s)", (effectiveValue, line) => {
+    const view = render(
+      <SettingsScreen
+        {...props({ displayPreferences: [{ ...usageDisplay, effectiveValue, value: null }] })}
+      />,
+    );
+    expect(screen.getByText(line)).toBeTruthy();
+
+    // A choice of the customer's own needs no explanation.
+    view.rerender(
+      <SettingsScreen
+        {...props({ displayPreferences: [{ ...usageDisplay, effectiveValue, value: effectiveValue }] })}
+      />,
+    );
+    expect(document.body.textContent).not.toContain("Default is the same as");
+  });
 });
 
 // Issue #558: "Show after 10 minutes" did not say minutes of what.

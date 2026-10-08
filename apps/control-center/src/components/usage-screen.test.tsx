@@ -49,6 +49,7 @@ describe("UsageScreen", () => {
       providers: [...usage.providers, { id: "claude", label: "Claude", session: 0, weekly: 10, usageMode: "used" }],
     });
     expect(html).toContain("Token history is unavailable");
+    expect(html).toContain("not available for every selected provider");
     expect(html).not.toContain("Total tokens in the last 30 days");
     expect(html).toContain("Weekly: 34% used");
     expect(html).toContain("Weekly: 10% used");
@@ -65,6 +66,26 @@ describe("UsageScreen", () => {
         providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })),
       }),
     ).toBe(true);
+  });
+
+  // Issue #558: with one provider on, "not available for every selected
+  // provider" read like an error about providers the customer does not have.
+  it("names the one provider that has no token history", () => {
+    const one = (windowsHost: boolean) =>
+      renderToStaticMarkup(
+        <UsageScreen
+          busyAction={null}
+          companionStatus="online"
+          usage={{ ...usage, providers: usage.providers.map((provider) => ({ ...provider, cost: undefined })) }}
+          windowsHost={windowsHost}
+        />,
+      );
+
+    expect(one(false)).toContain(
+      "No token history was found for Codex on this Mac. Your usage limits are shown below.",
+    );
+    expect(one(false)).not.toContain("every selected provider");
+    expect(one(true)).toContain("No token history was found for Codex on this computer.");
   });
 
   it("shows unavailable rather than zero or a spinner after a scan without history", () => {

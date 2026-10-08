@@ -140,8 +140,13 @@ export function UsageScreen({
             <AlertTitle>Token history is unavailable</AlertTitle>
             <AlertDescription className="grid justify-items-start gap-3">
               <span>
-                Complete local token history is not available for every selected provider.
-                Available usage limits are shown below.
+                {/* With one provider on there is no "every" (issue #558). */}
+                {providers.length === 1
+                  ? copyForHost(
+                      `No token history was found for ${providers[0].label || providers[0].id} on this Mac. Your usage limits are shown below.`,
+                      windowsHost,
+                    )
+                  : "Complete local token history is not available for every selected provider. Available usage limits are shown below."}
               </span>
               {onRefresh ? (
                 <Button
