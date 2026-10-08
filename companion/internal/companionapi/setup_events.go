@@ -224,11 +224,26 @@ func (l *setupEventLog) sessionID(now time.Time) string {
 // so a search repeated with the same failure stays one entry, while a second
 // run of a step that had succeeded gets its own start and end.
 func (s *Server) recordSetupEvent(event setupEvent) {
+	s.recordSetupEventAs(event.Stage, event)
+}
+
+// recordSetupEventAs logs a setup step under its own timeline component, for
+// a stage that covers several things with a state each (one per provider).
+func (s *Server) recordSetupEventAs(component string, event setupEvent) {
 	s.setupEvents.record(s.currentTime(), event)
-	if last, ok := s.timeline.Latest(event.Stage); ok && last.State == "failed" && event.Status == "started" {
+	if last, ok := s.timeline.Latest(component); ok && last.State == "failed" && event.Status == "started" {
 		return
 	}
-	s.recordTimeline(timeline.Event{Component: event.Stage, State: event.Status, Reason: event.Code})
+	s.recordTimeline(timeline.Event{Component: component, State: event.Status, Reason: event.Code})
+}
+
+// providerTimelineComponent keeps one state per provider in the timeline, so
+// a provider that fails its check does not hide one that passed.
+func providerTimelineComponent(providerID string) string {
+	if providerID == "" {
+		return "provider_check"
+	}
+	return "provider_check/" + providerID
 }
 
 // Timeline is the support timeline. The runtime hands it to its display
@@ -311,8 +326,9 @@ func (r *setupStepRecorder) Write(p []byte) (int, error) {
 func (r *setupStepRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // recordProviderSetupEvents logs one provider check: the engine result only
-// when it changed, then the provider result.
-func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, label string) {
+// when it changed, then the provider result. providerID is empty for a check
+// of all providers.
+func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, providerID, label string) {
 	provider := providerDiagnosticCheck(setup)
 	if label != "" && provider.Status == "pass" {
 		provider.Detail = label + " is ready."
@@ -336,6 +352,10 @@ func (s *Server) recordProviderSetupEvents(setup codexbar.ProviderSetup, label s
 			event = setupEvent{Stage: stage, Status: "succeeded", Message: check.Detail}
 		}
 		if last, ok := s.setupEvents.lastOfStage(s.currentTime(), stage); stage == "usage_engine" && ok && sameSetupEvent(last, event) {
+			continue
+		}
+		if stage == "provider_check" {
+			s.recordSetupEventAs(providerTimelineComponent(providerID), event)
 			continue
 		}
 		s.recordSetupEvent(event)

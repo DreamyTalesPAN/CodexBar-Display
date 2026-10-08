@@ -433,7 +433,7 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.recordProviderSetupEvents(setup, label)
+	s.recordProviderSetupEvents(setup, providerID, label)
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}

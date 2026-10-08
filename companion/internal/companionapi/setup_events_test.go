@@ -258,11 +258,30 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 			t.Fatalf("event %d: got %+v want %+v", i, g, want[i])
 		}
 	}
+
+	// The timeline keeps one state per provider: a check that failed does not
+	// stand for the other providers, and not for a provider turned off since.
+	current := map[string]string{}
+	for _, event := range server.Timeline().Snapshot(server.currentTime()).Current {
+		current[event.Component] = strings.TrimSuffix(event.State+" "+event.Reason, " ")
+	}
+	if _, shared := current["provider_check"]; shared || current["provider_check/claude"] != "off" {
+		t.Fatalf("current provider states = %v, want provider_check/claude off", current)
+	}
+	var claude []string
+	for _, event := range server.Timeline().Snapshot(server.currentTime()).Events {
+		if event.Component == "provider_check/claude" {
+			claude = append(claude, strings.TrimSuffix(event.State+" "+event.Reason, " "))
+		}
+	}
+	if want := "failed " + codexbar.ProviderAuthRequired + ",off"; strings.Join(claude, ",") != want {
+		t.Fatalf("claude in the timeline = %v, want %s", claude, want)
+	}
 }
 
 func TestProviderCheckLogsReadyProviderByName(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
-	server.recordProviderSetupEvents(codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{ID: "codex", Label: "Codex", Status: codexbar.ProviderReady}}}, "Codex")
+	server.recordProviderSetupEvents(codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{ID: "codex", Label: "Codex", Status: codexbar.ProviderReady}}}, "codex", "Codex")
 	got := getSetupLog(t, server).Events
 	if len(got) != 1 || got[0].Stage != "provider_check" || got[0].Status != "succeeded" || got[0].Message != "Codex is ready." {
 		t.Fatalf("unexpected ready event: %+v", got)

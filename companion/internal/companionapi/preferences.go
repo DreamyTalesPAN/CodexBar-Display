@@ -14,6 +14,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 const (
@@ -218,6 +219,8 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	}
 	a.server.recordSetupEvent(setupEvent{Stage: "provider_choice", Status: "succeeded", Message: choice})
 	if !enabled {
+		// Its last check result no longer says anything about it.
+		a.server.recordTimeline(timeline.Event{Component: providerTimelineComponent(providerID), State: "off"})
 		if a.server.wakeDisplayStream != nil {
 			a.server.wakeDisplayStream()
 		}
@@ -238,7 +241,7 @@ func (s *Server) verifyEnabledProvider(providerID, label string, providerRevisio
 	s.recordExactProviderSetup(providerID, providerRevision, setup)
 	// A check the customer already overtook by switching again is not news.
 	if s.currentProviderRevision(providerID) == providerRevision {
-		s.recordProviderSetupEvents(setup, label)
+		s.recordProviderSetupEvents(setup, providerID, label)
 	}
 }
 
