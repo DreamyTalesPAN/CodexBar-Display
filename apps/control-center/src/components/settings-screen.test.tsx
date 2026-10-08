@@ -591,13 +591,22 @@ describe("SettingsScreen standby controls", () => {
   // Issue #424: the app's global shortcut for the next provider is named
   // under Display mode, and so is the case that the system refused its keys.
   it("names the provider shortcut under Display mode", () => {
+    const signedOut: ProviderItem = {
+      ...provider("codex", "Codex", true),
+      health: { message: "Authentication required.", service: "operational", state: "auth_required" },
+    };
+    const twoWithUsage = [provider("claude", "Claude", true), provider("cursor", "Cursor", true)];
     const displayMode = (
       providerShortcut: SettingsScreenProps["providerShortcut"],
       windowsHost = false,
+      mode: "automatic" | "fixed" = "automatic",
+      items: ProviderItem[] = twoWithUsage,
     ) => {
       const html = render(
-        standbyDevice, savedStandby, providerPicker, 70, "cable", windowsHost,
-        [], [], providerShortcut,
+        standbyDevice, savedStandby,
+        { ...providerPicker, items,
+          display: { mode, providerIds: ["claude"], configured: true, valid: true } },
+        70, "cable", windowsHost, [], [], providerShortcut,
       );
       return html.slice(
         html.indexOf(">Display mode</h2>"),
@@ -621,6 +630,20 @@ describe("SettingsScreen standby controls", () => {
     expect(displayMode("unavailable", true)).toContain(
       "The shortcut Ctrl+Alt+Shift+P for the next provider is not available: another app may already be using these keys.",
     );
+
+    // Issue #558: the line follows what a press would do. With Manual chosen
+    // nothing switches to Manual, and with one provider that has usage a
+    // press changes nothing, also when a second one is on without usage.
+    const manual = displayMode("available", false, "fixed");
+    expect(manual).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
+    expect(manual).not.toContain("This switches to Manual.");
+    for (const mode of ["automatic", "fixed"] as const) {
+      const one = displayMode("available", true, mode, [provider("claude", "Claude", true), signedOut]);
+      expect(one).toContain(
+        "Press Ctrl+Alt+Shift+P in any app to show the next provider. This needs two providers with usage.",
+      );
+      expect(one).not.toContain("This switches to Manual.");
+    }
 
     // A browser has no global shortcut, so Settings names none.
     expect(displayMode(null)).not.toContain("shortcut");
