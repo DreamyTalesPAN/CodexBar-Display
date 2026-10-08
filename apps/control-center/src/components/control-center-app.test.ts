@@ -215,10 +215,11 @@ describe("recent activity", () => {
 
     expect(
       recentEventsWith(events, { ...loaded, id: "2", at: "2026-10-07T17:05:00Z" }),
-    ).toEqual([{ ...loaded, at: "2026-10-07T17:05:00Z" }]);
+    ).toEqual([{ ...loaded, id: "2", at: "2026-10-07T17:05:00Z" }]);
   });
 
-  it("puts a different entry first, also one that was seen before", () => {
+  // Issue #558: "Settings loaded" came back after every install.
+  it("puts a different entry first, and lists an entry that comes back once", () => {
     const installed = { id: "2", label: "Screensaver installed", detail: "Night Clock" };
     const events = recentEventsWith([loaded], installed);
 
@@ -226,7 +227,10 @@ describe("recent activity", () => {
     expect(recentEventsWith(events, { ...loaded, id: "3" }).map((event) => event.id)).toEqual([
       "3",
       "2",
-      "1",
     ]);
+    // The same title with another text is another entry.
+    expect(
+      recentEventsWith(events, { ...loaded, id: "4", detail: "Brightness is set to 30%." }),
+    ).toHaveLength(3);
   });
 });

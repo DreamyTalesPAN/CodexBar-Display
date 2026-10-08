@@ -5693,20 +5693,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 }
 
 /**
- * Recent activity, newest first. An entry that says the same as the newest one
- * is not written again: the Support page showed "Settings loaded" with the same
- * brightness several times in a row. The entry keeps the time of the latest
- * occurrence, so a failure that repeats does not look like an old one.
+ * Recent activity, newest first. An entry that says the same as an earlier one
+ * takes its place instead of standing beside it: the Support page showed
+ * "Settings loaded" with the same brightness again after every other entry
+ * (issues #548, #558). The entry carries the time of the latest occurrence, so
+ * a failure that repeats does not look like an old one.
  */
 export function recentEventsWith(
   events: ControlCenterEvent[],
   event: ControlCenterEvent,
 ): ControlCenterEvent[] {
-  const newest = events[0];
-  if (newest?.label === event.label && newest.detail === event.detail) {
-    return [{ ...newest, at: event.at ?? newest.at }, ...events.slice(1)];
-  }
-  return [event, ...events].slice(0, RECENT_EVENT_LIMIT);
+  return [
+    event,
+    ...events.filter(
+      (earlier) => earlier.label !== event.label || earlier.detail !== event.detail,
+    ),
+  ].slice(0, RECENT_EVENT_LIMIT);
 }
 
 export function setupThemeCatalogError(
