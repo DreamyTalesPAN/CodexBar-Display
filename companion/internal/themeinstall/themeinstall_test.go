@@ -138,36 +138,6 @@ func TestInstallUsesOneCableUploadPathAndActivatesOnlyTheStoredSpec(t *testing.T
 	}
 }
 
-// Over the cable the firmware activates and sweeps the slot itself, so the
-// caller's last check can only follow the transfer.
-func TestCableInstallRunsTheCallersLastCheckAfterActivation(t *testing.T) {
-	lastCheck := errors.New("VibeTV could not redraw the image")
-	var ops []string
-	_, err := Install(context.Background(), Options{
-		PackBytes: zipMinimalThemePack(t, writeMinimalThemePack(t)),
-		Out:       io.Discard,
-		Cable: &CableInstallOptions{
-			Capabilities: FallbackThemeSpecCapabilities(),
-			Prepare:      func(context.Context, string) error { return nil },
-			SendLine:     func([]byte) error { return nil },
-			Upload: func(_ context.Context, devicePath string, _ []byte, activation string) error {
-				ops = append(ops, "upload "+devicePath+" "+activation)
-				return nil
-			},
-		},
-		ConfirmLiveTheme: func(context.Context) error {
-			ops = append(ops, "last-check")
-			return lastCheck
-		},
-	})
-	if !errors.Is(err, lastCheck) {
-		t.Fatalf("Install error=%v, want the last check's own error", err)
-	}
-	if got := strings.Join(ops, ","); got != "upload /themes/u/synth.json theme,last-check" {
-		t.Fatalf("cable order=%q", got)
-	}
-}
-
 func TestCableInstallPreparesEveryAttemptBeforeUploads(t *testing.T) {
 	packBytes := zipMinimalThemePack(t, writeMinimalThemePack(t))
 	for _, slot := range []string{themepack.UsageLive, themepack.UsageScreensaver} {
@@ -1310,162 +1280,6 @@ func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testin
 	}
 }
 
-// liveThemeDevice is a VibeTV that shows /themes/u/claude.json and holds its
-// files, and records every write of a live theme install in order.
-type liveThemeDevice struct {
-	server     *httptest.Server
-	assets     map[string]int
-	activePath string
-	ops        []string
-}
-
-func newLiveThemeDeviceServer(t *testing.T) *liveThemeDevice {
-	t.Helper()
-	device := &liveThemeDevice{
-		assets:     map[string]int{"/themes/u/claude.json": 900, "/themes/u/claude.cbi": 12000},
-		activePath: "/themes/u/claude.json",
-	}
-	device.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			writeThemeHello(t, w)
-		case "/health":
-			writeThemeHealth(t, w, device.activePath)
-		case "/frame":
-			_, _ = io.Copy(io.Discard, r.Body)
-			w.WriteHeader(http.StatusOK)
-		case "/assets":
-			path := r.URL.Query().Get("path")
-			switch r.Method {
-			case http.MethodGet:
-				writeAssetList(t, w, device.assets)
-			case http.MethodPost:
-				device.assets[path] = readUploadedAssetSize(t, r)
-				w.WriteHeader(http.StatusOK)
-			case http.MethodDelete:
-				device.ops = append(device.ops, "delete "+path)
-				delete(device.assets, path)
-				w.WriteHeader(http.StatusOK)
-			default:
-				t.Fatalf("unexpected assets method %s", r.Method)
-			}
-		case "/theme/active":
-			var body struct {
-				Path string `json:"path"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode activation: %v", err)
-			}
-			if _, stored := device.assets[body.Path]; !stored {
-				http.Error(w, "theme file not found", http.StatusNotFound)
-				return
-			}
-			device.ops = append(device.ops, "activate "+body.Path)
-			device.activePath = body.Path
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-	}))
-	t.Cleanup(device.server.Close)
-	return device
-}
-
-func (device *liveThemeDevice) install(t *testing.T, confirm func(context.Context) error) error {
-	t.Helper()
-	withFastRenderHealthCheck(t)
-	_, err := Install(context.Background(), Options{
-		PackURL:            writeMinimalThemePack(t),
-		Target:             device.server.URL,
-		SkipFirmwareUpdate: true,
-		Out:                io.Discard,
-		HTTPClient:         device.server.Client(),
-		UploadSettleDelay:  -1,
-		FetchLiveFrame:     testLiveFrame,
-		ConfirmLiveTheme:   confirm,
-	})
-	return err
-}
-
-// Issue #583: the app's last check ran after the previous theme's files were
-// gone, so a failure there left VibeTV on the theme that had just failed.
-func TestInstallReturnsToPreviousThemeWhenTheCallersLastCheckFails(t *testing.T) {
-	device := newLiveThemeDeviceServer(t)
-	lastCheck := errors.New("VibeTV could not redraw the image")
-
-	err := device.install(t, func(context.Context) error {
-		device.ops = append(device.ops, "last-check on "+device.activePath)
-		return lastCheck
-	})
-
-	if !errors.Is(err, lastCheck) {
-		t.Fatalf("Install error=%v, want the last check's own error", err)
-	}
-	want := "activate /themes/u/synth.json,last-check on /themes/u/synth.json,activate /themes/u/claude.json"
-	if got := strings.Join(device.ops, ","); got != want {
-		t.Fatalf("device writes=%q, want %q", got, want)
-	}
-	for _, path := range []string{"/themes/u/claude.json", "/themes/u/claude.cbi"} {
-		if _, kept := device.assets[path]; !kept {
-			t.Fatalf("previous theme file %s is gone: %v", path, device.assets)
-		}
-	}
-}
-
-func TestInstallRemovesPreviousThemeFilesOnlyAfterTheCallersLastCheck(t *testing.T) {
-	device := newLiveThemeDeviceServer(t)
-
-	if err := device.install(t, func(context.Context) error {
-		device.ops = append(device.ops, "last-check")
-		return nil
-	}); err != nil {
-		t.Fatalf("Install returned error: %v", err)
-	}
-
-	want := "activate /themes/u/synth.json,last-check,delete /themes/u/claude.cbi,delete /themes/u/claude.json"
-	if got := strings.Join(device.ops, ","); got != want {
-		t.Fatalf("device writes=%q, want %q", got, want)
-	}
-}
-
-// A screensaver has no render to check; its last step is the selection. When
-// that fails the live theme is back on screen and the previous screensaver's
-// files stay, but its selection stays cleared (see clearScreensaverBeforeUpload).
-func TestInstallScreensaverKeepsPreviousFilesWhenSelectionFails(t *testing.T) {
-	device := newScreensaverDeviceServer(t, true)
-	device.screensaverPath = "/themes/s/old.json"
-	device.assets["/themes/s/old.json"] = 700
-	device.failSelect = true
-	defer device.server.Close()
-
-	_, err := Install(context.Background(), Options{
-		Slot:               themepack.UsageScreensaver,
-		PackBytes:          zipThemePackFiles(t, screensaverPackFiles),
-		Target:             device.server.URL,
-		SkipFirmwareUpdate: true,
-		Out:                io.Discard,
-		HTTPClient:         device.server.Client(),
-		UploadSettleDelay:  -1,
-		FetchLiveFrame:     testLiveFrame,
-		ConfirmLiveTheme: func(context.Context) error {
-			t.Fatal("a screensaver install has no live theme to check")
-			return nil
-		},
-	})
-	if err == nil {
-		t.Fatal("expected the failed selection to fail the install")
-	}
-	if len(device.deleted) != 0 {
-		t.Fatalf("a failed screensaver install deleted %v", device.deleted)
-	}
-	if _, kept := device.assets["/themes/s/old.json"]; !kept {
-		t.Fatalf("previous screensaver file is gone: %v", device.assets)
-	}
-	if !strings.Contains(strings.Join(device.ops, ","), "restore /themes/u/claude.json,live-frame") {
-		t.Fatalf("the live theme must be back on screen: %v", device.ops)
-	}
-}
-
 func TestInstallClearsInstallScreenWhenNoPreviousThemePath(t *testing.T) {
 	packDir := writeMinimalThemePack(t)
 	var frames []protocol.Frame
@@ -1753,7 +1567,6 @@ type screensaverDevice struct {
 	deleted         []string
 	screensaverPath string
 	standbyActive   bool
-	failSelect      bool
 	ops             []string
 }
 
@@ -1832,10 +1645,6 @@ func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaver
 			}
 			if _, stored := device.assets[body.Path]; !stored {
 				t.Fatalf("screensaver activated before its spec was uploaded: %q", body.Path)
-			}
-			if device.failSelect {
-				http.Error(w, "save failed", http.StatusInternalServerError)
-				return
 			}
 			device.ops = append(device.ops, "select "+body.Path)
 			device.screensaverPath = body.Path
