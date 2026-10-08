@@ -15,7 +15,8 @@ afterEach(cleanup);
 describe("SupportReportActions", () => {
   // Issue #545: Windows saves the report without any sign that it did.
   it("confirms a download on Windows with the file name and the folder", () => {
-    const report = { ok: true, generatedAt: "2026-10-07T06:58:00.000Z" };
+    // 08:58 on this computer's clock, whatever its time zone.
+    const report = { ok: true, generatedAt: new Date(2026, 9, 7, 8, 58).toISOString() };
     const view = render(
       <SupportReportActions diagnostics={report} onCreate={vi.fn()} windowsHost />,
     );
@@ -25,7 +26,7 @@ describe("SupportReportActions", () => {
     expect(downloadSupportReport).toHaveBeenCalledWith(report);
     expect(screen.getByRole("button", { name: "Downloaded" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe(
-      "Saved as vibetv-support-report-2026-10-07T06-58-00-000Z.json in your Downloads folder.",
+      "Saved as vibetv-support-report-2026-10-07T08-58-00-000.json in your Downloads folder.",
     );
 
     // A report created afterwards has not been saved yet.

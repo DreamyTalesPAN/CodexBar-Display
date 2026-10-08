@@ -4,7 +4,7 @@
 // browser, so a support report must never present it as a page to open.
 import { afterEach, describe, expect, it } from "vitest";
 
-import { collectSupportReport, serializeSupportReport } from "./support-report";
+import { collectSupportReport, serializeSupportReport, supportReportFilename } from "./support-report";
 import type {
   SupportDiagnostics,
   SupportReportClientState,
@@ -292,5 +292,18 @@ describe("support report home folder", () => {
       ),
     );
     expect(exported.usageEngine.path).toBe("~/.local/share/codexbar-display/bin/codexbar");
+  });
+});
+
+// Issue #579: the name carried the UTC time, so a report saved late in the
+// evening or early in the morning was dated another day than the customer's.
+describe("support report file name", () => {
+  it("carries the date and time of this computer's clock", () => {
+    for (const [hour, time] of [[23, "23-58-07-000"], [0, "00-58-07-000"]] as const) {
+      expect(supportReportFilename(new Date(2026, 9, 7, hour, 58, 7).toISOString())).toBe(
+        `vibetv-support-report-2026-10-07T${time}.json`,
+      );
+    }
+    expect(supportReportFilename("not a time")).toBe("vibetv-support-report-session.json");
   });
 });
