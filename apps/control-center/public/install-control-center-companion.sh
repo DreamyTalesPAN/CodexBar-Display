@@ -1365,7 +1365,7 @@ main() {
   require_cmd_for uname "detect your Mac CPU architecture" "use a standard macOS Terminal, then rerun the installer."
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    die "this installer currently supports macOS only"
+    die "This installer is for macOS only. On Windows, open https://app.vibetv.shop and choose Download for Windows."
   fi
 
   if [[ "$MODE" == "uninstall" ]]; then

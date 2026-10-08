@@ -25,7 +25,8 @@ DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
 TARGET="${VIBETV_COMPANION_TARGET:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "error: this installer currently supports macOS only" >&2
+  echo "error: this installer is for macOS only" >&2
+  echo "hint: on Windows, open https://app.vibetv.shop and choose Download for Windows" >&2
   exit 1
 fi
 
