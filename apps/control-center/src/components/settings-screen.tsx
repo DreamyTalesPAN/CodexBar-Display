@@ -500,40 +500,51 @@ export function SettingsScreen({
 
       <ItemSeparator className="my-0" />
 
-      <SettingsSection
-        description={`Connect ${thisHost} to another VibeTV.`}
-        title="Setup"
-      >
-        <div className="flex flex-wrap gap-3">
-          <Button
-            disabled={localActionBusy}
-            onClick={onResetSetup}
-            type="button"
-            variant="outline"
-          >
-            {busyAction === "reset-setup" ? (
-              <Spinner data-icon="inline-start" />
-            ) : null}
-            <span>
-              {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
-            </span>
-          </Button>
-          {onEraseDevice && connectionMode === "cable" ? (
+      <SettingsSection title="Setup">
+        {/* Side by side, each with its own line: one line beside both
+            explained only the first (issue #579). */}
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
+          <div className="flex min-w-0 flex-1 basis-56 flex-col items-start gap-2">
             <Button
-              disabled={localActionBusy || !deviceIsCustomerConnected(device)}
-              onClick={() => setEraseRequested(true)}
+              aria-describedby="vibetv-run-setup-help"
+              disabled={localActionBusy}
+              onClick={onResetSetup}
               type="button"
               variant="outline"
             >
-              {busyAction === "erase-device" ? (
+              {busyAction === "reset-setup" ? (
                 <Spinner data-icon="inline-start" />
               ) : null}
               <span>
-                {busyAction === "erase-device"
-                  ? "Resetting"
-                  : "Reset to factory settings"}
+                {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
               </span>
             </Button>
+            <p className="text-sm text-muted-foreground" id="vibetv-run-setup-help">
+              Connect {thisHost} to another VibeTV.
+            </p>
+          </div>
+          {onEraseDevice && connectionMode === "cable" ? (
+            <div className="flex min-w-0 flex-1 basis-56 flex-col items-start gap-2">
+              <Button
+                aria-describedby="vibetv-factory-reset-help"
+                disabled={localActionBusy || !deviceIsCustomerConnected(device)}
+                onClick={() => setEraseRequested(true)}
+                type="button"
+                variant="outline"
+              >
+                {busyAction === "erase-device" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : null}
+                <span>
+                  {busyAction === "erase-device"
+                    ? "Resetting"
+                    : "Reset to factory settings"}
+                </span>
+              </Button>
+              <p className="text-sm text-muted-foreground" id="vibetv-factory-reset-help">
+                VibeTV forgets its WiFi details, pairing, settings and themes.
+              </p>
+            </div>
           ) : null}
         </div>
         {eraseRequested ? (
@@ -607,12 +618,10 @@ export function SettingsScreen({
  */
 function SettingsSection({
   children,
-  description,
   id,
   title,
 }: {
   children: ReactNode;
-  description?: string;
   /** For a link that opens Settings at this group ("What's new"). */
   id?: string;
   title: string;
@@ -621,9 +630,6 @@ function SettingsSection({
     <section id={id} className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
       <div className="min-w-0">
         <h2 className="text-base font-semibold">{title}</h2>
-        {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        ) : null}
       </div>
       <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>
     </section>

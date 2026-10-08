@@ -184,9 +184,14 @@ describe("SettingsScreen standby controls", () => {
     expect(wifi).not.toContain("Reset to factory settings");
     // Paul, 2026-10-08: the two setup actions sit side by side in one row, and
     // Run diagnostics is on Support only.
+    // Issue #579: each has its own line below it; before, the one line
+    // beside them explained only Run setup again.
     expect(cable).toMatch(
-      /Run setup again<\/span><\/button><button[^>]*><span>Reset to factory settings/,
+      /Run setup again<\/span><\/button><p[^>]*>Connect this Mac to another VibeTV\.<\/p><\/div><div[^>]*><button[^>]*><span>Reset to factory settings<\/span><\/button><p[^>]*>VibeTV forgets its WiFi details, pairing, settings and themes\.<\/p>/,
     );
+    expect(cable.match(/Connect this Mac to another VibeTV\./g)).toHaveLength(1);
+    expect(wifi).toContain("Connect this Mac to another VibeTV.");
+    expect(wifi).not.toContain("VibeTV forgets");
     expect(cable).not.toContain("Run diagnostics");
   });
 
