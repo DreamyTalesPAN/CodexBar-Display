@@ -471,7 +471,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       /<button[^>]*id="vibetv-library-standby"[^>]*>/,
     )?.[0];
     expect(standbySwitch).not.toContain('disabled=""');
-    expect(html).toContain("Turn On First");
+    // Sentence case, like every other button of the app.
+    expect(html).toContain(">Turn on first<");
     expect(html).toContain("Turn on Show screensaver to install");
   });
 
@@ -541,6 +542,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     );
 
     expect(html).toContain(`title="${reason}"`);
+    expect(html).toContain(">Not supported<");
   });
 
   it("shows a clear empty state when the catalog has no screensavers", () => {

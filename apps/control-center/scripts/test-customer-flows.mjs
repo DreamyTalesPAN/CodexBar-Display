@@ -11214,7 +11214,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture ESP32 Only Theme" })
-    .getByRole("button", { name: "Not Supported" });
+    .getByRole("button", { name: "Not supported" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -11246,7 +11246,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Future Firmware Theme" })
-    .getByRole("button", { name: "Update Needed" });
+    .getByRole("button", { name: "Update needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -11311,7 +11311,7 @@ async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
-    .getByRole("button", { name: "Update Needed" });
+    .getByRole("button", { name: "Update needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),

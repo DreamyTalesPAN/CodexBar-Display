@@ -1333,19 +1333,19 @@ function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
     return "Unavailable";
   }
   if (/firmware|update firmware/i.test(text)) {
-    return "Update Needed";
+    return "Update needed";
   }
   if (/board|support/i.test(text)) {
-    return "Not Supported";
+    return "Not supported";
   }
   if (/protected/i.test(text)) {
     return "Unavailable";
   }
   if (/show screensaver/i.test(text)) {
-    return "Turn On First";
+    return "Turn on first";
   }
   if (/paid|checkout/i.test(text)) {
-    return "Checkout Needed";
+    return "Checkout needed";
   }
   return "Unavailable";
 }
