@@ -79,7 +79,8 @@ fn main() {
         )
         .manage(Shell {
             runtime_origin: Mutex::new(Url::parse(DEFAULT_RUNTIME_ORIGIN).expect("static origin")),
-            preparing: Mutex::new(false),
+            // The update at launch owns the start until it has ended.
+            preparing: Mutex::new(true),
             presentations: AtomicU64::new(0),
             updating: AtomicBool::new(false),
         })
@@ -92,6 +93,7 @@ fn main() {
             create_window(&handle, register_provider_shortcut(handle.clone()))?;
             std::thread::spawn(move || {
                 launch_update_check(&handle);
+                *handle.state::<Shell>().preparing.lock().unwrap() = false;
                 prepare_and_load(handle);
             });
             Ok(())
@@ -525,6 +527,10 @@ fn prepare_and_load(app: AppHandle) -> bool {
     {
         let mut preparing = shell.preparing.lock().unwrap();
         if *preparing {
+            // Also while the update at launch downloads: loading the app
+            // now would put it under an installer that ends this process.
+            // Reload then only brings the start screen forward.
+            present_window(&app);
             return false;
         }
         *preparing = true;

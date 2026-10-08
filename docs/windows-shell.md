@@ -49,7 +49,9 @@ Companion for everything it needs.
   A newer version is downloaded and installed like above, and the start screen
   reads "Updating VibeTV Control Center…". The start waits for that download
   for at most 3 minutes, and for at most 20 seconds without a byte arriving
-  (`Update.timeout` and reqwest's `read_timeout` through `configure_client`). Every other outcome (no newer
+  (`Update.timeout` and reqwest's `read_timeout` through `configure_client`).
+  Until the check and a download have ended, "Reload Control Center" only
+  brings the start screen forward, like "Open" and a second launch. Every other outcome (no newer
   version, no answer, a running VibeTV update or theme install, a failed
   download) is logged to stderr only and the start goes on. A version is
   installed at launch once: it is written to

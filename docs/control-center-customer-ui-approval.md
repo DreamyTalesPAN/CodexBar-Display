@@ -5883,3 +5883,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Draft, to be confirmed by Paul. No wording changed. Correction from the review of the #565 entry above: the start waited for the download of a found update without any limit, so a connection that stopped in the middle left the start screen on "Updating VibeTV Control Center…" for good, at every start. The download now ends after 3 minutes in all, or after 20 seconds in which nothing arrives. The app then starts as usual with the version that is installed, with no message, and the tray item "Check for Updates…" works again. The installer is about 14 MB, so 3 minutes are enough from roughly 0.6 Mbit/s. Not seen on a screen: written without a Windows build.
 - Scope: `windows/src-tauri/src/main.rs`, `docs/windows-shell.md`, and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
 - What's new: none — a correction to the update at launch
+
+## 2026-10-09 — Windows: "Reload Control Center" during the update at launch only shows the start screen (#565)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him.
+- Approved customer-visible result: Draft, to be confirmed by Paul. No wording, no new control. Correction from the review of the #565 entry above: while the update at launch was downloading, the tray item "Reload Control Center" started the app behind the line "Updating VibeTV Control Center…", and the installer then closed the app under the customer. Until the update at launch has ended, "Reload Control Center" now only brings the window with the start screen forward, as "Open VibeTV Control Center" and a second start of the app already did. Not seen on a screen: written without a Windows build.
+- Scope: `windows/src-tauri/src/main.rs`, `docs/windows-shell.md`, and this approval record. This is a draft for the pull request only, not approval for merge, release, installation, or a device operation.
+- What's new: none — a correction to the update at launch
