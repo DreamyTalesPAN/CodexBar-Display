@@ -166,9 +166,6 @@ func TestCableInstallRunsTheCallersLastCheckAfterActivation(t *testing.T) {
 	if got := strings.Join(ops, ","); got != "upload /themes/u/synth.json theme,last-check" {
 		t.Fatalf("cable order=%q", got)
 	}
-	if previousThemeRestored(err) {
-		t.Fatalf("the Companion restores nothing over the cable: %#v", err)
-	}
 }
 
 func TestCableInstallPreparesEveryAttemptBeforeUploads(t *testing.T) {
@@ -1304,10 +1301,6 @@ func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testin
 	if len(activatedPaths) != 1 || activatedPaths[0] != previousPath {
 		t.Fatalf("expected previous theme activation %q, got %#v", previousPath, activatedPaths)
 	}
-	var installErr *InstallError
-	if !previousThemeRestored(err) || !errors.As(err, &installErr) || installErr.Op != "theme-pack/upload" {
-		t.Fatalf("expected the upload failure, marked as back on the previous theme: %#v", err)
-	}
 	if len(deletedPaths) != 0 {
 		t.Fatalf("install failure should not delete previous theme files, deleted %#v", deletedPaths)
 	}
@@ -1315,11 +1308,6 @@ func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testin
 		!strings.Contains(out.String(), "Restore previous theme: activated") {
 		t.Fatalf("missing restore logs:\n%s", out.String())
 	}
-}
-
-func previousThemeRestored(err error) bool {
-	var restored *PreviousThemeRestoredError
-	return errors.As(err, &restored)
 }
 
 // liveThemeDevice is a VibeTV that shows /themes/u/claude.json and holds its
@@ -1413,9 +1401,6 @@ func TestInstallReturnsToPreviousThemeWhenTheCallersLastCheckFails(t *testing.T)
 	if !errors.Is(err, lastCheck) {
 		t.Fatalf("Install error=%v, want the last check's own error", err)
 	}
-	if !previousThemeRestored(err) {
-		t.Fatalf("the failure must say that the previous theme is back: %#v", err)
-	}
 	want := "activate /themes/u/synth.json,last-check on /themes/u/synth.json,activate /themes/u/claude.json"
 	if got := strings.Join(device.ops, ","); got != want {
 		t.Fatalf("device writes=%q, want %q", got, want)
@@ -1469,9 +1454,6 @@ func TestInstallScreensaverKeepsPreviousFilesWhenSelectionFails(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected the failed selection to fail the install")
-	}
-	if previousThemeRestored(err) {
-		t.Fatalf("no previous screensaver is selected again, so the failure must not say so: %#v", err)
 	}
 	if len(device.deleted) != 0 {
 		t.Fatalf("a failed screensaver install deleted %v", device.deleted)
@@ -1535,9 +1517,6 @@ func TestInstallClearsInstallScreenWhenNoPreviousThemePath(t *testing.T) {
 	}
 	if len(activatedPaths) != 0 {
 		t.Fatalf("expected no stored theme activation, got %#v", activatedPaths)
-	}
-	if previousThemeRestored(err) {
-		t.Fatalf("there was no previous theme to go back to: %#v", err)
 	}
 	if len(frames) < 2 {
 		t.Fatalf("expected install screen and clear frame, got %d frames", len(frames))

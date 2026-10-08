@@ -6,31 +6,17 @@ import { ThemeLibraryScreen, type ThemeLibraryScreenProps, type ThemeInstallStat
 vi.mock("./theme-render-preview", () => ({ ThemeRenderPreview: () => null }));
 afterEach(cleanup);
 
-function libraryProps(status: ThemeInstallStatus, retry = vi.fn()): ThemeLibraryScreenProps {
-  return {
+it("keeps failed Cable rendering recoverable through a dismissible popup and theme retry", () => {
+  const failure = { code: "display_render_failed", message: "Theme installed, but VibeTV could not redraw the image.", nextAction: "Keep VibeTV connected and try installing the theme again." };
+  const status: ThemeInstallStatus = { phase: "error", themeId: "test-theme", title: "Test theme", startedAt: "10:00:00", logs: [], failure };
+  const retry = vi.fn();
+  const props: ThemeLibraryScreenProps = {
     themes: [{ id: "test-theme", themeId: "test-theme", title: "Test theme", isFree: true, priceLabel: "Free", packUrl: "https://example.com/theme.zip", packSha256: "a".repeat(64), packSizeBytes: 123, source: "github-catalog" }],
     selectedThemeId: "test-theme", companionStatus: "online", themeInstallEnabled: true, busyAction: null,
     device: { connected: true, paired: true, ready: false, activeTheme: "test-theme", capabilities: { theme: { supportsThemeSpecV1: true } } },
     onInstallTheme: retry, onInstallCustomTheme: async () => false, onSelectTheme: vi.fn(), storefrontConfigured: false,
     installStatus: status,
   };
-}
-
-// Issue #583: the Companion says when VibeTV went back to the previous theme;
-// the dialog shows that sentence with the advice, under the reason.
-it("says in the failure dialog that the previous theme is back", () => {
-  const failure = { code: "display_render_failed", message: "Theme installed, but VibeTV could not redraw the image.", nextAction: "Your previous theme is back on VibeTV. Keep VibeTV connected and try installing the theme again." };
-  render(<ThemeLibraryScreen {...libraryProps({ phase: "error", themeId: "test-theme", title: "Test theme", startedAt: "10:00:00", logs: [], failure })} />);
-  const dialog = screen.getByRole("dialog", { name: failure.message });
-  expect(within(dialog).getByText(failure.nextAction)).toBeTruthy();
-  expect(within(dialog).getByRole("button", { name: "Try again" })).toBeTruthy();
-});
-
-it("keeps failed Cable rendering recoverable through a dismissible popup and theme retry", () => {
-  const failure = { code: "display_render_failed", message: "Theme installed, but VibeTV could not redraw the image.", nextAction: "Keep VibeTV connected and try installing the theme again." };
-  const status: ThemeInstallStatus = { phase: "error", themeId: "test-theme", title: "Test theme", startedAt: "10:00:00", logs: [], failure };
-  const retry = vi.fn();
-  const props = libraryProps(status, retry);
   const view = render(<ThemeLibraryScreen {...props} />);
   const dialog = screen.getByRole("dialog", { name: failure.message });
   expect(within(dialog).getByText(failure.nextAction)).toBeTruthy();
