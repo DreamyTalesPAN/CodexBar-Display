@@ -140,13 +140,14 @@ export function downloadSupportReport(report: SupportDiagnostics): void {
 export function supportReportFilename(value?: string): string {
   const timestamp = value ? new Date(value) : new Date();
   // The customer's own date and time: the UTC time put a report saved around
-  // midnight on another day (issue #579). Without the "Z" that marks UTC.
+  // midnight on another day (issue #579). To the second: a report's time has
+  // no milliseconds, so the name always ended in "-000".
   const safeTimestamp = Number.isNaN(timestamp.getTime())
     ? "session"
     : new Date(timestamp.getTime() - timestamp.getTimezoneOffset() * 60_000)
         .toISOString()
-        .slice(0, -1)
-        .replace(/[:.]/g, "-");
+        .slice(0, 19)
+        .replace(/:/g, "-");
   return `vibetv-support-report-${safeTimestamp}.json`;
 }
 

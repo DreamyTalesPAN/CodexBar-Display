@@ -26,7 +26,7 @@ describe("SupportReportActions", () => {
     expect(downloadSupportReport).toHaveBeenCalledWith(report);
     expect(screen.getByRole("button", { name: "Downloaded" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe(
-      "Saved as vibetv-support-report-2026-10-07T08-58-00-000.json in your Downloads folder.",
+      "Saved as vibetv-support-report-2026-10-07T08-58-00.json in your Downloads folder.",
     );
 
     // A report created afterwards has not been saved yet.

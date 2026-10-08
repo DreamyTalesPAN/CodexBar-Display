@@ -6352,3 +6352,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new wording. Support › Setup log gets a `Display mode` line when the customer chooses another display mode or, under Manual, another provider to show, in Settings, in the setup wizard or with the keyboard shortcut. Switching a provider on or off leaves its own line (`Claude turned on.`) and no `Display mode` line, because the app only saves the same display mode again. After a `Display mode` line that failed, the next save that works is logged in any case, so the log does not end on a failure that is over. The same holds for the report's timeline. Recent activity is unchanged.
 - Scope: `saveProviderDisplay` in `companion/internal/companionapi/provider_display.go`, `TestSetupLogRecordsDisplayModeOnlyWhenTheSelectionChanged` in `setup_events_test.go`, and this approval record; checked with unit tests only.
 - What's new: none — a correction
+
+## 2026-10-09 — Support: the report's file name ends with the second (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. It answers a finding from the click-through of the Windows app: the report's file name always ended in `-000`, as in `vibetv-support-report-2026-10-08T13-59-18-000.json`.
+- Approved customer-visible result: The support report's file name carries the date and time to the second and no thousandths: `vibetv-support-report-2026-10-08T13-59-18.json`. On Windows the line under Support › Download names the file the same way: `Saved as vibetv-support-report-2026-10-08T13-59-18.json in your Downloads folder.` On the Mac this is the name the save dialog proposes. The date and time are still those of the customer's computer.
+- Scope: `supportReportFilename` in `apps/control-center/src/components/support-report.ts`, the expectations in `support-report.test.ts` and `support-report-actions.test.tsx`, and this approval record; checked with unit tests only. The customer flow scripts hold no expectation on the name.
+- What's new: none — a correction
