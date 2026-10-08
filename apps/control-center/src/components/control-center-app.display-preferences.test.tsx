@@ -182,6 +182,11 @@ function startWindow(themes: unknown[] = []) {
         companion.stored = { ...usageDisplay, value, effectiveValue: value ?? "used" };
         return jsonResponse({ ok: true, item: companion.stored });
       }
+      if (url.endsWith(`/v1/preferences/${claude.id}`) && method === "PATCH") {
+        const { value } = JSON.parse(String(init?.body));
+        companion.providers = [{ ...claude, value, effectiveValue: value }];
+        return jsonResponse({ ok: true, item: companion.providers[0] });
+      }
       if (url.endsWith("/v1/settings")) {
         if (init?.body) {
           const { brightnessPercent, standby } = JSON.parse(String(init.body));
@@ -825,6 +830,52 @@ it("leaves no Recent activity entry for reading the settings", async () => {
   expect(window.text()).toContain("Control Center opened");
   expect(window.text()).not.toContain("Settings loaded");
   expect(window.text()).not.toContain("Brightness is set to");
+});
+
+// Issue #579: Recent activity named a saved brightness, and nothing else the
+// customer changes in Settings.
+it("enters a changed display mode, usage display and provider under Recent activity", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  window.companion.selection.providerIds = ["claude"];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  fireEvent.click(screen.getByRole("button", { name: /Manual/ }));
+  await window.wait(1);
+  await window.choose("Remaining");
+  fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
+  await window.wait(2);
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  const entries = within(
+    screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
+  )
+    .getAllByRole("listitem")
+    .map((entry) => entry.textContent?.replace(/\d\d:\d\d:\d\d$/, ""));
+  expect(entries).toEqual([
+    "AI provider savedClaude turned off.",
+    "Usage display savedUsage display is set to Remaining.",
+    "Display mode savedAlways show Claude.",
+    "Control Center openedThis session started.Session",
+  ]);
+});
+
+// The refusal stands on the page; the list keeps it for the support report.
+it("enters a refused change of the usage display under Recent activity", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  window.companion.refuseWrites = true;
+  await window.choose("Remaining");
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  expect(window.text()).toContain("Usage display save needs attentionTry again in a moment.");
+  expect(window.text()).not.toContain("Usage display saved");
 });
 
 it("has no accessibility violations on any tab or in the setup question", async () => {

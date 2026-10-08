@@ -3527,17 +3527,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               preference.id === payload.item.id ? payload.item : preference,
             ),
           );
+          const saved = payload.item.value;
+          addEvent({
+            label: `${item.label} saved`,
+            detail: `${item.label} is set to ${
+              saved === null
+                ? "Default"
+                : item.options?.find((option) => option.value === saved)
+                    ?.label ?? saved
+            }.`,
+            tone: "ready",
+          });
           void refreshUsage({ quiet: true });
         } catch (error) {
-          setLastError(
-            normalizeCaughtError(error, "Display settings need attention."),
+          const normalized = normalizeCaughtError(
+            error,
+            "Display settings need attention.",
           );
+          setLastError(normalized);
+          addEvent({
+            label: `${item.label} save needs attention`,
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
         }
       });
       displayPreferenceWritesRef.current = write;
       return write;
     },
-    [refreshUsage, runCompanion],
+    [addEvent, refreshUsage, runCompanion],
   );
 
   const checkProvider = useCallback(
@@ -3725,17 +3743,41 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (retiresNotice) {
             setProviderDisplayNotice(null);
           }
+          // Recent activity names a change of what VibeTV shows, in the Setup
+          // log's sentences. A provider switched on or off only changes the
+          // pool Automatic moves through, and has its own entry.
+          const shown = selection.mode === "automatic" ? "" : selection.providerIds[0];
+          if (
+            previous?.mode !== selection.mode ||
+            (shown && previous.providerIds[0] !== shown)
+          ) {
+            addEvent({
+              label: "Display mode saved",
+              detail: shown
+                ? `Always show ${
+                    providerPreferencesRef.current?.find(
+                      (preference) => preference.providerId === shown,
+                    )?.label || "the chosen provider"
+                  }.`
+                : "Automatic: VibeTV switches between your providers.",
+              tone: "ready",
+            });
+          }
           void refreshUsage({ quiet: true });
           return true;
         } catch (error) {
+          const normalized = normalizeCaughtError(
+            error,
+            "Display selection could not be saved.",
+          );
           providerDisplayRef.current = previous;
           setProviderDisplay(previous);
-          setProviderDisplayError(
-            normalizeCaughtError(
-              error,
-              "Display selection could not be saved.",
-            ),
-          );
+          setProviderDisplayError(normalized);
+          addEvent({
+            label: "Display mode save needs attention",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
           return false;
         } finally {
           setPendingProviderDisplayId(null);
@@ -3748,7 +3790,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       return queued;
     },
-    [refreshUsage, runCompanion],
+    [addEvent, refreshUsage, runCompanion],
   );
 
   const completeProviderSetup = useCallback(async () => {
@@ -3921,6 +3963,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerPreferencesRef.current = confirmedPreferences;
         setProviderPreferences(confirmedPreferences);
         setProviderPreferencesError(null);
+        addEvent({
+          label: "AI provider saved",
+          detail: `${item.label} turned ${value ? "on" : "off"}.`,
+          tone: "ready",
+        });
         // Automatic means "every provider that is switched on", so switching
         // one on or off IS the change to the pool. The runtime filters strictly
         // by the stored list (daemon.go applyProviderDisplaySelection), so a
@@ -3944,11 +3991,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ).map((preference) =>
           preference.id === item.id ? item : preference,
         );
+        const normalized = normalizeCaughtError(
+          error,
+          "Provider could not be updated.",
+        );
         providerPreferencesRef.current = restoredPreferences;
         setProviderPreferences(restoredPreferences);
-        setProviderPreferencesError(
-          normalizeCaughtError(error, "Provider could not be updated."),
-        );
+        setProviderPreferencesError(normalized);
+        addEvent({
+          label: "AI provider save needs attention",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
       } finally {
         finishPreferenceWrite();
         setPendingPreferenceIds((current) => {
@@ -3959,6 +4013,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     },
     [
+      addEvent,
       refreshProviderDisplay,
       refreshProviderPreferences,
       refreshUsage,
