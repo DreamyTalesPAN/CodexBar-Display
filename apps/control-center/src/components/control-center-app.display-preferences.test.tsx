@@ -88,7 +88,7 @@ function startWindow(themes: unknown[] = []) {
     },
     selection: { mode: "automatic", providerIds: [] as string[], configured: true, valid: true },
     providers: [] as (typeof claude)[],
-    refuseWrites: false,
+    refuseWrites: false as boolean | "once",
     requests: [] as string[],
     // While set, a read of the display preferences answers late, with the
     // value it found when it started.
@@ -161,11 +161,14 @@ function startWindow(themes: unknown[] = []) {
         return jsonResponse({ ok: true, items: companion.providers });
       }
       if (url.endsWith(`/v1/preferences/${usageDisplay.id}`) && method === "PATCH") {
-        if (companion.refuseWrites) {
-          return jsonResponse({ ok: false, error: refused }, 502);
-        }
         const { value } = JSON.parse(String(init?.body));
         await takeHeldWrite();
+        if (companion.refuseWrites) {
+          if (companion.refuseWrites === "once") {
+            companion.refuseWrites = false;
+          }
+          return jsonResponse({ ok: false, error: refused }, 502);
+        }
         companion.stored = { ...usageDisplay, value, effectiveValue: value ?? "used" };
         return jsonResponse({ ok: true, item: companion.stored });
       }
@@ -334,6 +337,27 @@ it("stores two quick changes of the usage display in the order they were made", 
 
   expect(window.companion.stored.value).toBe("used");
   expect(window.usageDisplay().textContent).toBe("Used");
+});
+
+// The first of two quick changes is refused, the second is stored. The control
+// shows what is stored, and the refusal of the first is gone: every call to the
+// Mac App takes the shown error away when it starts.
+it("drops the refusal of a usage display change once a later change is stored", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const answerFirst = window.holdNextWrite();
+  window.companion.refuseWrites = "once";
+  await window.choose("Remaining");
+  await window.choose("Used");
+  answerFirst();
+  await window.wait(1);
+
+  expect(window.companion.stored.value).toBe("used");
+  expect(window.usageDisplay().textContent).toBe("Used");
+  expect(window.text()).not.toContain(refused.message);
 });
 
 // The activity entry counts minutes the way the "Show after" list does.

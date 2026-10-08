@@ -54,29 +54,42 @@ function jsonResponse(body: unknown, status = 200): Response {
 async function openThemesWithSavedTheme(
   primitive: ThemeStudioSpec["primitives"][number],
   assets: Record<string, unknown> = {},
+  // With this, no install has run before, a second theme is saved, and the
+  // Mac App installs the first theme sent to it as a job.
+  { firstInstallRuns = false } = {},
 ) {
   const installs: string[] = [];
+  const firstJob = {
+    ...earlierInstall,
+    id: "job-first",
+    themeId: "my-theme",
+    themeName: "My Theme",
+    result: { ...earlierInstall.result, themeId: "my-theme", name: "My Theme" },
+  };
+  let firstJobDone = false;
+  const document = (themeId: string, packName: string) => ({
+    id: themeId,
+    updatedAt: "2026-10-07T00:00:00Z",
+    document: {
+      assets,
+      packName,
+      spec: {
+        themeSpecVersion: 1,
+        themeId,
+        themeRev: 1,
+        bgColor: "#000000",
+        primitives: [primitive],
+      },
+    },
+  });
   window.localStorage.clear();
   window.localStorage.setItem(
     "vibetv.controlCenter.userThemes",
     JSON.stringify({
       schemaVersion: 1,
       themes: [
-        {
-          id: "my-theme",
-          updatedAt: "2026-10-07T00:00:00Z",
-          document: {
-            assets,
-            packName: "My Theme",
-            spec: {
-              themeSpecVersion: 1,
-              themeId: "my-theme",
-              themeRev: 1,
-              bgColor: "#000000",
-              primitives: [primitive],
-            },
-          },
-        },
+        document("my-theme", "My Theme"),
+        ...(firstInstallRuns ? [document("my-other", "My Other")] : []),
       ],
     }),
   );
@@ -121,11 +134,25 @@ async function openThemesWithSavedTheme(
             health: { ok: true },
             capabilities: { theme: { supportsThemeSpecV1: true } },
           },
-          themeInstall: earlierInstall,
+          themeInstall: firstInstallRuns
+            ? firstJobDone
+              ? firstJob
+              : undefined
+            : earlierInstall,
         });
+      }
+      if (url.includes("/v1/themes/install/status")) {
+        firstJobDone = true;
+        return jsonResponse({ ok: true, job: firstJob });
       }
       if (url.includes("/v1/themes/install")) {
         installs.push(url);
+        if (firstInstallRuns && installs.length === 1) {
+          return jsonResponse(
+            { ok: true, job: { ...firstJob, phase: "installing", result: undefined } },
+            202,
+          );
+        }
         return jsonResponse(
           {
             ok: false,
@@ -260,4 +287,29 @@ it("keeps the failure dialog when the Mac App refuses a theme from Theme Studio"
   expect(page.installs).toHaveLength(1);
   const dialog = screen.getByRole("dialog", { name: "Theme file is invalid." });
   expect(within(dialog).getByText("Export the theme again, then retry.")).toBeTruthy();
+});
+
+// The install before it ran in this window and was followed to its end here.
+// A finished install reads the status once before its row lets go, so that job
+// is known, and a status read after the refusal does not put its "Installed"
+// over the failure.
+it("keeps the failure when the install before it finished in this window", async () => {
+  const page = await openThemesWithSavedTheme(
+    { type: "rect", x: 10, y: 10, width: 20, height: 20, color: "#FFFFFF" },
+    {},
+    { firstInstallRuns: true },
+  );
+  const install = (title: string) =>
+    within(
+      screen.getAllByRole("listitem").find((row) => within(row).queryByText(title))!,
+    ).getByRole("button", { name: /Install/ });
+
+  fireEvent.click(install("My Theme"));
+  await page.wait(3);
+  fireEvent.click(install("My Other"));
+  // Longer than the 5 second status read.
+  await page.wait(12);
+
+  expect(page.installs).toHaveLength(2);
+  expect(screen.getByRole("dialog", { name: "Theme file is invalid." })).toBeTruthy();
 });
