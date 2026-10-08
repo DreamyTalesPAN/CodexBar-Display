@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -632,5 +633,59 @@ func TestARetriedSetupStepDoesNotFloodTheTimeline(t *testing.T) {
 	}
 	if want := "started,failed,started,succeeded"; strings.Join(got, ",") != want {
 		t.Fatalf("timeline states = %v, want %s", got, want)
+	}
+}
+
+// The timeline is part of the support report. Whatever a caller hands over,
+// the report gets identifiers only: a private value in any field the server
+// forwards is replaced, never copied.
+func TestDiagnosticsTimelineNeverCarriesPrivateValues(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	private := []string{
+		"/Users/paul/Library/Application Support/codexbar-display/config.json", // path with the user name
+		`C:\Users\paul\AppData\Roaming\codexbar-display`,                       // the same on Windows
+		"paul@example.com",                                  // provider account
+		"FRITZ!Box 7590 Paul",                               // WiFi name
+		"wifi password: hunter2",                            // WiFi password
+		"Bearer 0123456789abcdef0123456789abcdef",           // pairing token
+		"sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", // API key
+		"http://192.168.178.40/frame?token=abc123",          // VibeTV address with token
+	}
+	for i, value := range private {
+		server.recordSetupEvent(setupEvent{Stage: value, Status: fmt.Sprintf("s%d", i), Message: value, Code: value, NextAction: value})
+		server.recordSetupEvent(setupEvent{Stage: "wifi_setup", Status: value, Message: value, Code: value, NextAction: value})
+		server.applyFirmwareUpdateEvent("job-1", firmwareUpdateEvent{Stage: value, Outcome: value, DeviceID: value, Phase: value, Firmware: value})
+		job := server.createMacAppUpdateJob(macAppUpdateRequest{Version: "2.0.0"})
+		server.updateMacAppUpdateJob(job.ID, func(job *macAppUpdateJob) {
+			job.Phase = value
+			job.Message = value
+			job.Error = &apiError{Code: value, Message: value, NextAction: value}
+		})
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+	var got struct {
+		Timeline json.RawMessage `json:"timeline"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	var parsed timeline.Log
+	if err := json.Unmarshal(got.Timeline, &parsed); err != nil || len(parsed.Events) == 0 {
+		t.Fatalf("timeline = %s (%v)", got.Timeline, err)
+	}
+	for _, fragment := range append(private, "paul", "Paul", "FRITZ", "hunter2", "abc123", "192.168", "example.com", "0123456789abcdef", "AbCdEf") {
+		if strings.Contains(string(got.Timeline), fragment) {
+			t.Fatalf("timeline in the support report leaks %q:\n%s", fragment, got.Timeline)
+		}
+	}
+	identifier := regexp.MustCompile(`^[A-Za-z0-9._/-]{0,64}$`)
+	for _, event := range parsed.Events {
+		for _, field := range []string{event.Component, event.DeviceID, event.State, event.Reason, event.CorrelationID} {
+			if !identifier.MatchString(field) {
+				t.Fatalf("field %q of %+v is not an identifier", field, event)
+			}
+		}
 	}
 }
