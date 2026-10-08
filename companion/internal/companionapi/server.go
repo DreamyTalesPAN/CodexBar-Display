@@ -5327,7 +5327,9 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if step, ok := w.(*setupStepRecorder); ok {
 		step.stage = stage
 	}
-	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: installText(req.Slot, "Installing theme.")})
+	// The start names what is installed: the installs of two different themes
+	// are two entries, and only the same one made again is a repeat.
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "started", Message: installText(req.Slot, "Installing theme."), Subject: req.ThemeID + " " + req.PackURL})
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,

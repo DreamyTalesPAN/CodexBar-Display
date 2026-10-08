@@ -32,6 +32,9 @@ type setupEvent struct {
 	Code       string `json:"code,omitempty"`
 	NextAction string `json:"nextAction,omitempty"`
 	Count      int    `json:"count,omitempty"`
+	// Subject tells apart two events with the same wording, such as the
+	// installs of two different themes. It is compared, never shown or saved.
+	Subject string `json:"-"`
 }
 
 // setupLog is both the GET /v1/setup/events body and the diagnostics setupLog.
@@ -212,7 +215,7 @@ func (l *setupEventLog) appendLocked(event setupEvent) {
 }
 
 func sameSetupEvent(a, b setupEvent) bool {
-	return a.Stage == b.Stage && a.Status == b.Status && a.Code == b.Code && a.Message == b.Message
+	return a.Stage == b.Stage && a.Status == b.Status && a.Code == b.Code && a.Message == b.Message && a.Subject == b.Subject
 }
 
 func (l *setupEventLog) snapshot(now time.Time) setupLog {

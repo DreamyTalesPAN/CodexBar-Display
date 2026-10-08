@@ -681,6 +681,57 @@ func TestSetupLogFilesAScreensaverInstallUnderItsOwnStage(t *testing.T) {
 	}
 }
 
+// Issue #579: two different screensavers installed one after the other stood
+// as one "Started 2 times" and one "Done 2 times". Only the same install made
+// again is a repeat.
+func TestSetupLogFoldsOnlyRepeatsOfTheSameInstall(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: opts.ThemeID, Slot: opts.Slot}, nil
+	}
+	// Installs themeID and returns the log once the install has ended.
+	install := func(themeID string, done func([]setupEvent) bool) []setupEvent {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"`+themeID+`","packUrl":"https://example.com/`+themeID+`.zip","slot":"screensaver","async":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("install of %s answered %d: %s", themeID, rec.Code, rec.Body.String())
+		}
+		var events []setupEvent
+		for attempt := 0; attempt < 100; attempt++ {
+			time.Sleep(10 * time.Millisecond)
+			if events = getSetupLog(t, server).Events; done(events) {
+				// The job frees the install only after it has logged its end.
+				time.Sleep(20 * time.Millisecond)
+				return events
+			}
+		}
+		t.Fatalf("install of %s did not end: %+v", themeID, events)
+		return nil
+	}
+	counts := func(events []setupEvent) string {
+		var out []string
+		for _, event := range events {
+			out = append(out, fmt.Sprintf("%s %d", event.Status, event.Count))
+		}
+		return strings.Join(out, ", ")
+	}
+
+	install("retro-3d", func(events []setupEvent) bool { return len(events) == 2 })
+	again := install("retro-3d", func(events []setupEvent) bool { return len(events) == 2 && events[1].Count == 2 })
+	if got := counts(again); got != "started 2, succeeded 2" {
+		t.Fatalf("the same screensaver installed twice was logged as %s", got)
+	}
+	other := install("night-clock", func(events []setupEvent) bool { return len(events) == 4 || events[1].Count == 3 })
+	if got := counts(other); got != "started 2, succeeded 2, started 1, succeeded 1" {
+		t.Fatalf("another screensaver was logged as %s", got)
+	}
+}
+
 // The customer's own screensaver is uploaded with its slot in the URL. A file
 // the Mac App refuses while reading it was still filed under "Theme install".
 func TestSetupLogFilesARefusedScreensaverUploadUnderItsOwnStage(t *testing.T) {
