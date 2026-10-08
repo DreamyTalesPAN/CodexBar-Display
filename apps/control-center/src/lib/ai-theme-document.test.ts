@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyAIThemeCandidate,
+  pruneUnusedThemeAssets,
   setAIAnimationSpeed,
   conceptFromDocument,
 } from "./ai-theme-document";
@@ -150,4 +151,15 @@ describe("AI scene document", () => {
       result.spec.primitives.find((p) => p.assetPath === ANIMATION)?.fps,
     ).toBe(8);
   });
+});
+
+it("drops unused image bytes from the current draft and preserves exact Undo", () => {
+  const document: ThemeStudioDocument = {
+    packName: "Asset cleanup", assets: {"/themes/u/import.cbi": {contentType:"text/plain",encoding:"text",data:"original image"}},
+    spec: {themeSpecVersion:1,themeId:"asset-cleanup",themeRev:1,primitives:[{type:"sprite",assetPath:"/themes/u/import.cbi",x:0,y:0,width:24,height:24}]},
+  };
+  const initial = createThemeStudioEditorState(document);
+  const removed = themeStudioEditorReducer(initial, {type:"mutate",mutate:(draft)=>{draft.spec.primitives=[];pruneUnusedThemeAssets(draft);}});
+  expect(removed.present.assets).toEqual({});
+  expect(themeStudioEditorReducer(removed,{type:"undo"}).present).toEqual(initial.present);
 });

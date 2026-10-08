@@ -90,6 +90,7 @@ import {
 } from "@/lib/ai-theme";
 import {
   applyAIThemeCandidate,
+  pruneUnusedThemeAssets,
   conceptFromDocument,
   setAIAnimationSpeed,
   spritePNG,
@@ -148,6 +149,7 @@ export function AIThemeStudioScreen() {
     id?: string;
   }>();
   const request = useRef<AbortController | null>(null);
+  const documentVersion = useRef(0);
   const spriteInput = useRef<HTMLInputElement>(null);
   const jsonInput = useRef<HTMLInputElement>(null);
   const promptInput = useRef<HTMLTextAreaElement>(null);
@@ -207,6 +209,7 @@ export function AIThemeStudioScreen() {
       const latest = loaded.ok ? loaded.value.themes[0] : undefined;
       const saved = restored || latest;
       if (saved && !dirtyRef.current) {
+        documentVersion.current++;
         dispatch({ type: "load", document: saved.document });
         setLibraryId(restored ? restored.libraryId : latest?.id);
       }
@@ -265,6 +268,7 @@ export function AIThemeStudioScreen() {
             );
         }
         d.spec = normalizeThemeSpec(d.spec);
+        pruneUnusedThemeAssets(d);
       },
     });
     setError("");
@@ -315,11 +319,13 @@ export function AIThemeStudioScreen() {
   }
   function history(type: "undo" | "redo") {
     if (busy) return;
+    documentVersion.current++;
     dispatch({ type });
     setSelected([]);
     setStatus(type === "undo" ? "Last edit undone." : "Edit restored.");
   }
   function load(next: { document: ThemeStudioDocument; id?: string }) {
+    documentVersion.current++;
     dispatch({ type: "load", document: next.document });
     setLibraryId(next.id);
     setSelected([]);
@@ -427,10 +433,11 @@ export function AIThemeStudioScreen() {
       setError("Choose a file smaller than 8 MB.");
       return;
     }
+    const version = documentVersion.current;
     try {
       if (sprite) {
         const imported = await importSpriteFile(file, "live", "image");
-        if (request.current) return;
+        if (request.current || version !== documentVersion.current) return;
         if (
           document.spec.primitives.some((p) =>
             isAttachedSceneAnimation(p.assetPath),
@@ -460,7 +467,7 @@ export function AIThemeStudioScreen() {
         setSelected([document.spec.primitives.length]);
       } else {
         const parsed = JSON.parse(await file.text()) as ThemeStudioDocument;
-        if (request.current) return;
+        if (request.current || version !== documentVersion.current) return;
         const spec = importThemeSpec(parsed.spec);
         const assets = parsed.assets || {};
         const valid = validateThemeSpec(spec, assets);
@@ -485,6 +492,7 @@ export function AIThemeStudioScreen() {
   }
   async function attachImages(files: FileList | null) {
     if (!files?.length || locked || attaching) return;
+    const version = documentVersion.current;
     setAttaching(true);
     setError("");
     try {
@@ -506,7 +514,7 @@ export function AIThemeStudioScreen() {
         if (data.length > Math.ceil(2 * 1024 * 1024 * 4 / 3)) throw new Error("This image is too large. Choose a smaller image.");
         images.push({ name: file.name, data });
       }
-      setAttachments((current) => [...current, ...images]);
+      if (version === documentVersion.current) setAttachments((current) => [...current, ...images]);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not read this image.");
     } finally {
@@ -588,8 +596,10 @@ export function AIThemeStudioScreen() {
       }
       if (layout.mode === "layout") {
         const next = applyAIThemeLayout(document, layout);
+        pruneUnusedThemeAssets(next);
         const check = validateThemeSpec(next.spec, next.assets);
         if (check.errors.length) throw new Error(check.errors[0]);
+        documentVersion.current++;
         dispatch({type:"update",document:next});
         setSelected([]);
         setPrompt("");
@@ -618,8 +628,10 @@ export function AIThemeStudioScreen() {
       const candidate = await buildAIThemeCandidate(concept);
       if (request.current !== controller || controller.signal.aborted) return;
       const next = applyAIThemeCandidate(document, candidate, "auto");
+      pruneUnusedThemeAssets(next);
       const check = validateThemeSpec(next.spec, next.assets);
       if (check.errors.length) throw new Error(check.errors[0]);
+      documentVersion.current++;
       dispatch({ type: "update", document: next });
       setSelected([]);
       setPrompt("");

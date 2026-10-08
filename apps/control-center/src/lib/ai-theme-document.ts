@@ -1,3 +1,4 @@
+import { referencedThemeAssetPaths } from "./theme-studio";
 import { decodeSprite } from "@/components/live-vibetv-preview";
 import {
   applySceneMotion,
@@ -286,4 +287,11 @@ export function spritePNG(raw: string, sheet: boolean): string {
       }),
   );
   return canvas.toDataURL("image/png").split(",")[1];
+}
+
+export function pruneUnusedThemeAssets(document: ThemeStudioDocument): void {
+  const used = new Set(referencedThemeAssetPaths(document.spec));
+  for (const path of Object.keys(document.assets)) {
+    if (!used.has(path)) delete document.assets[path];
+  }
 }

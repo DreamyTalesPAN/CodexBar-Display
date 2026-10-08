@@ -3961,3 +3961,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul requested the visible changes through browser comments in this chat, then authorized refactoring and pushing the complete batch.
 - Approved customer-visible result: One desktop canvas with a larger rounded display, a wide prompt beneath it, selected-element reference chips, rotating typewriter inspirations, image attachments, Create with AI and Add manually actions, collapsed element Details, automatic draft recovery and Save theme in the header. One Settings menu replaces the ellipsis menu; it supports changing an existing API key, while first-use connection remains in the creation flow. Remove the display caption, pause control, elements list, shortcut help and preview-specific explanatory copy. Use existing shared UI controls; no mobile work.
+
+## 2026-10-08 — Theme Studio review fixes
+
+- User approval: Paul authorized refactoring, simplification and pushing this Theme Studio batch in the current chat.
+- Approved customer-visible result: Async imports stay with their originating draft; removing the last reference to an image removes its stored bytes from the current draft while Undo can restore it.
