@@ -1011,7 +1011,7 @@ function ThemeListItem({
   const sharesId = ownPathOfSharedId !== undefined;
   const installedPath =
     lastInstall?.themeId === item.themeId ? lastInstall.activePath : heldPath;
-  const installed =
+  const held =
     (lastInstall?.themeId === item.themeId ||
       installedThemeId === item.themeId) &&
     (!sharesId ||
@@ -1023,6 +1023,13 @@ function ThemeListItem({
         // A file this app sent for a theme the customer made is theirs, also
         // when its name starts like the catalog theme's.
         !sentOwnPaths.includes(installedPath ?? "")));
+  // VibeTV holds a file the catalog names as an earlier revision of this theme
+  // (#209). The app updates it on its own, but not while an app update is
+  // pending, not again after that install failed, and a screensaver not during
+  // standby; until then the row offers the same install.
+  const updateAvailable =
+    held && Boolean(theme?.earlierThemeSpecPaths?.includes(installedPath ?? ""));
+  const installed = held && !updateAvailable;
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallRow === rowKey(item);
@@ -1077,7 +1084,7 @@ function ThemeListItem({
           }),
           usage,
         )
-      : `Install ${item.title}`;
+      : `${updateAvailable ? "Update" : "Install"} ${item.title}`;
   const loadingEdit = loadingEditorRow === rowKey(item);
 
   return (
@@ -1145,6 +1152,7 @@ function ThemeListItem({
             installed,
             selected: item.themeId === selectedThemeId,
             disabled,
+            updateAvailable,
           })}
         </Button>
         {item.kind === "custom" ? (
@@ -1252,6 +1260,7 @@ function labelForInstallButton({
   installInFlight,
   installed,
   selected,
+  updateAvailable,
 }: {
   actionInFlight: boolean;
   blockedLabel: string;
@@ -1259,7 +1268,9 @@ function labelForInstallButton({
   installInFlight: boolean;
   installed: boolean;
   selected: boolean;
+  updateAvailable: boolean;
 }) {
+  const action = updateAvailable ? "Update" : "Install";
   if (installInFlight && selected) {
     return "Installing";
   }
@@ -1271,11 +1282,11 @@ function labelForInstallButton({
   }
   if (disabled) {
     if (blockedLabel === "Setup First" || blockedLabel === "Connect First") {
-      return "Install";
+      return action;
     }
     return blockedLabel;
   }
-  return "Install";
+  return action;
 }
 
 function buildCustomThemeInstallBlocker({

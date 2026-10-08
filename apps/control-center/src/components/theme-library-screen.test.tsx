@@ -263,9 +263,82 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(render("/themes/u/mt-3-0a1b2c.json", earlier)).toContain(
       'title="Install Catalog Namesake"',
     );
-    for (const held of [earlier[0], "/themes/u/mt-4-abcdef.json", undefined]) {
+    for (const held of ["/themes/u/mt-4-abcdef.json", undefined]) {
       expect(render(held, earlier)).toContain("Theme is already installed.");
     }
+  });
+
+  // #209: the app brings the theme on VibeTV up to the catalog on its own, but
+  // not while an app update is pending, not after that install failed once,
+  // and a screensaver not during standby. The row then read Installed with
+  // its button closed, although VibeTV held an earlier revision.
+  it("offers Update for a catalog theme while VibeTV holds a revision the catalog names as earlier", () => {
+    const earlier = "/themes/u/mt-3-123456.json";
+    const earlierScreensaver = "/themes/s/nc-2-12345678.json";
+    const render = (
+      usage: ThemeStudioUsage,
+      held: string,
+      ready = true,
+    ) =>
+      renderToStaticMarkup(
+        <ThemeLibraryScreen
+          busyAction={null}
+          companionStatus="online"
+          device={{
+            ...device,
+            ready,
+            activeTheme: "live-theme",
+            display: { themeSpec: { path: usage === "live" ? held : undefined } },
+            standby: {
+              screensaverPath: usage === "screensaver" ? held : undefined,
+            },
+          }}
+          onInstallCustomTheme={async () => false}
+          onInstallTheme={vi.fn()}
+          onSaveStandby={vi.fn()}
+          onSelectTheme={vi.fn()}
+          selectedThemeId=""
+          storefrontConfigured={false}
+          themeInstallEnabled
+          themes={[
+            {
+              ...themes[0],
+              themeSpecPath: "/themes/u/mt-4-abcdef.json",
+              earlierThemeSpecPaths: [earlier],
+            },
+            {
+              ...themes[1],
+              themeSpecPath: "/themes/s/nc-3-e18e4217.json",
+              earlierThemeSpecPaths: [earlierScreensaver],
+            },
+          ]}
+          usage={usage}
+        />,
+      );
+    const button = (html: string, title: string) =>
+      html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>([^<]*)<`));
+
+    const live = button(render("live", earlier), "Update Live Theme");
+    expect(live?.[1]).toBe("Update");
+    expect(live?.[0]).not.toContain(' disabled=""');
+    const screensaver = button(
+      render("screensaver", earlierScreensaver),
+      "Update Night Clock",
+    );
+    expect(screensaver?.[1]).toBe("Update");
+    expect(screensaver?.[0]).not.toContain(' disabled=""');
+
+    // The current file is installed, as before.
+    const current = button(
+      render("live", "/themes/u/mt-4-abcdef.json"),
+      "Theme is already installed.",
+    );
+    expect(current?.[1]).toBe("Installed");
+    expect(current?.[0]).toContain(' disabled=""');
+    // A VibeTV that cannot take an install keeps the word of the action.
+    const notReady = render("live", earlier, false);
+    expect(notReady).not.toContain("Theme is already installed.");
+    expect(notReady).toMatch(/<button[^>]* disabled=""[^>]*>Update</);
   });
 
   // Seen on the Windows app on 2026-10-07: Retro 3D said "Install" again after
