@@ -3317,6 +3317,65 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
+// A second click on Refresh while the first is still waiting must not move the
+// request: the reading that answers the first click would otherwise count as
+// too old, and the wait would start again (#579).
+func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	firstClick := time.Date(2026, 10, 8, 14, 0, 0, 0, time.UTC)
+	now := firstClick
+	collectedAt := firstClick.Add(-time.Minute)
+	server.now = func() time.Time { return now }
+	var wakeCount int
+	server.wakeDisplayStream = func() { wakeCount++ }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: collectedAt,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "claude",
+				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+	read := func(path string) usageRefreshInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return got.Refresh
+	}
+
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" {
+		t.Fatalf("first click must start a refresh, got %+v", got)
+	}
+	// The reading made for the first click is on its way when the customer
+	// clicks again.
+	collectedAt = firstClick.Add(5 * time.Second)
+	now = firstClick.Add(8 * time.Second)
+	if got := read("/v1/usage?refresh=1"); got.State != "fresh" {
+		t.Fatalf("second click restarted the wait although a reading newer than the first click is there: %+v", got)
+	}
+	if wakeCount != 2 {
+		t.Fatalf("each click must wake the collector, got %d", wakeCount)
+	}
+
+	// With no request pending, the next click starts a new one.
+	now = firstClick.Add(20 * time.Second)
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
+		t.Fatalf("a click after a finished refresh must start a new one, got %+v", got)
+	}
+
+	// A request that ran out is not kept either.
+	now = now.Add(usageRefreshRequestMaxAge)
+	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
+		t.Fatalf("a click after an expired refresh must start a new one, got %+v", got)
+	}
+}
+
 func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)

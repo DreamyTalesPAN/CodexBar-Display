@@ -72,7 +72,9 @@ different CLI result.
 ## Manual Refresh
 
 Control Center manual refresh wakes the existing collector. It never starts a
-second CodexBar fetch path.
+second CodexBar fetch path. A request made while one is still waiting keeps the
+first request's time, so the reading that answers the first also answers the
+second.
 
 `/v1/usage` reports:
 

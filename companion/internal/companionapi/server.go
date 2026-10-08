@@ -2302,7 +2302,11 @@ func (s *Server) requestUsageRefresh(now time.Time) {
 		now = time.Now().UTC()
 	}
 	s.usageRefreshMu.Lock()
-	s.usageRefresh.RequestedAt = now.UTC()
+	// A click while a refresh is waiting keeps that request: moved to now, it
+	// would turn down the reading the first click is waiting for (#579).
+	if pending := s.usageRefresh.RequestedAt; pending.IsZero() || !now.Before(pending.Add(usageRefreshRequestMaxAge)) {
+		s.usageRefresh.RequestedAt = now.UTC()
+	}
 	s.usageRefreshMu.Unlock()
 	if s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()

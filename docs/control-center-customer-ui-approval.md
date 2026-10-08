@@ -6331,3 +6331,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new wording or control. Support › `Active theme` first looks at the file VibeTV holds in its live slot. When that is the current file of a theme the customer saved, it shows that theme's name, whether VibeTV is awake or shows the screensaver, and also when the catalog has a theme of the same ID. A catalog theme's own file reads as the catalog theme, as before. The rest is unchanged: without such a file the name comes from the ID, and from a saved theme of that ID only when the catalog has none.
 - Scope: `activeThemeLabel` in `apps/control-center/src/components/logs-screen.tsx`, one test in `logs-screen.test.tsx`, and this approval record (issue #558); checked with unit tests only.
 - What's new: none — a correction
+
+## 2026-10-09 — Usage: a second click on Refresh no longer starts the wait again (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. It answers a finding from the click-through of the Windows app: after two clicks on `Refresh`, `Refreshing usage` stayed for about 100 seconds.
+- Approved customer-visible result: No new wording or control. On Usage, a click on `Refresh` while `Refreshing usage` is still shown keeps the first request: the notice ends with the first reading that is newer than the first click. Before, every further click moved the request to that moment, so a reading that had just arrived for the first click no longer counted and the notice waited for one more. Not changed: the notice still ends only when the usage engine has made a new reading, and the engine makes one about once a minute, so after a single click the notice can still stay for up to about 90 seconds.
+- Scope: `requestUsageRefresh` in `companion/internal/companionapi/server.go`, `TestUsageManualRefreshSecondClickKeepsTheFirstRequest` in `server_test.go`, one sentence in `docs/usage-polling-architecture.md`, and this approval record; checked with unit tests only.
+- What's new: none — a correction
