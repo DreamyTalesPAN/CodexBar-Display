@@ -36,9 +36,11 @@ REHEARSAL_RESTORE_FROM=""
 REHEARSAL_COMPANION_OVERRIDE=""
 
 REHEARSAL_STATE_DIR="$HOME/.vibetv-rehearsal"
-# Every run keeps a backup of the purged Mac state, about 283 MB. Runs with a
-# backup are restore points, so only the newest few and the oldest stay.
+# Every run keeps a backup of the purged Mac state, about 283 MB. The purge
+# moves files, so a backup is the only copy: a run goes only when it is both
+# beyond the newest few backups and older than REHEARSAL_KEEP_DAYS.
 REHEARSAL_KEEP_RUNS="${REHEARSAL_KEEP_RUNS:-6}"
+REHEARSAL_KEEP_DAYS="${REHEARSAL_KEEP_DAYS:-14}"
 REHEARSAL_MIN_FREE_GB="${REHEARSAL_MIN_FREE_GB:-3}"
 REHEARSAL_RUN_DIR=""
 REHEARSAL_BACKUP_DIR=""
@@ -146,18 +148,41 @@ rehearsal::parse_args() {
 
 # --------------------------------------------------------------- run directory
 
-# Removes old run folders so repeated rehearsals cannot fill the disk. Kept:
-# the newest REHEARSAL_KEEP_RUNS runs with a non-empty backup/manifest.txt and
-# everything newer than the last of them, the oldest run with a backup (what
-# the Mac looked like before the first rehearsal), and the run `latest` points
-# to. Only real folders named cold-<stamp> or warm-<stamp> directly under
-# runs/ are ever considered; manual-* and everything else stays. Age comes from
-# the stamp in the name, because a restore changes modification times.
+# True when a run's backup still holds something a restore could put back. The
+# manifest alone does not say so: --restore moves every entry out again and
+# leaves the manifest behind.
+rehearsal::run_has_backup() {
+  local backup="$1/backup" path
+  [[ -s "$backup/manifest.txt" ]] || return 1
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    [[ -e "$backup/${path#"$HOME"/}" ]] && return 0
+  done < "$backup/manifest.txt"
+  return 1
+}
+
+# Removes old run folders so repeated rehearsals cannot fill the disk. A run is
+# removed only when it is BOTH beyond the newest REHEARSAL_KEEP_RUNS runs that
+# still hold a backup AND older than REHEARSAL_KEEP_DAYS days, so the run that
+# captured the Mac's real state at the start of a session of the last two weeks
+# stays however many runs followed. Always kept as well: the oldest run that
+# still holds a backup, and the run `latest` points to. Only real folders named
+# cold-<stamp> or warm-<stamp> directly under runs/ are ever considered;
+# manual-* and everything else stays. Age comes from the stamp in the name,
+# because a restore changes modification times.
 rehearsal::prune_runs() {
-  local runs_dir="$REHEARSAL_STATE_DIR/runs" keep="$REHEARSAL_KEEP_RUNS"
+  local runs_dir="$REHEARSAL_STATE_DIR/runs" keep="$REHEARSAL_KEEP_RUNS" days="$REHEARSAL_KEEP_DAYS"
   [[ "$keep" =~ ^[1-9][0-9]*$ ]] \
-    || rehearsal::die "REHEARSAL_KEEP_RUNS must be a number from 1 up, got '$keep'"
+    || rehearsal::die "REHEARSAL_KEEP_RUNS must be a whole number from 1 up, got '$keep'"
+  [[ "$days" =~ ^[0-9]+$ ]] \
+    || rehearsal::die "REHEARSAL_KEEP_DAYS must be a whole number of days, got '$days'"
   [[ -d "$runs_dir" ]] || return 0
+
+  # Without a readable date nothing counts as old, so nothing is removed.
+  local oldest_kept_stamp=""
+  oldest_kept_stamp="$(date -u -v-"$days"d +%Y%m%dT%H%M%SZ 2>/dev/null \
+    || date -u -d "$days days ago" +%Y%m%dT%H%M%SZ 2>/dev/null || true)"
+  [[ "$oldest_kept_stamp" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || oldest_kept_stamp=""
 
   local latest=""
   latest="$(readlink "$REHEARSAL_STATE_DIR/latest" 2>/dev/null || true)"
@@ -167,14 +192,16 @@ rehearsal::prune_runs() {
   local names="" name
   names="$(ls -1 "$runs_dir" | { grep -E '^(cold|warm)-[0-9]{8}T[0-9]{6}Z$' || true; } | sort -t- -k2 -r)"
 
-  # Newest first: count backed runs until the limit is reached; what follows is old.
+  # Newest first: count backed runs until the limit is reached; what follows is
+  # beyond the count and goes if it is also old enough.
   local backed=0 past_limit=0 oldest_backed="" old=""
   for name in $names; do
     [[ -d "$runs_dir/$name" && ! -L "$runs_dir/$name" ]] || continue
-    if [[ "$past_limit" == 1 && "$name" != "$latest" ]]; then
+    if [[ "$past_limit" == 1 && "$name" != "$latest" \
+          && -n "$oldest_kept_stamp" && "${name#*-}" < "$oldest_kept_stamp" ]]; then
       old="$old $name"
     fi
-    if [[ -s "$runs_dir/$name/backup/manifest.txt" ]]; then
+    if rehearsal::run_has_backup "$runs_dir/$name"; then
       oldest_backed="$name"
       backed=$((backed + 1))
       [[ "$backed" -lt "$keep" ]] || past_limit=1
@@ -186,9 +213,12 @@ rehearsal::prune_runs() {
     [[ "$name" != "$oldest_backed" ]] || continue
     size="$(du -sh "$runs_dir/$name" 2>/dev/null | awk '{print $1}')"
     rm -rf "${runs_dir:?}/$name"
-    rehearsal::info "removed $name (${size:-?}), older than the newest $keep runs with a backup"
+    rehearsal::info "removed $name (${size:-?}), beyond the newest $keep runs with a backup and older than $days days"
   done
-  rehearsal::info "$REHEARSAL_STATE_DIR now holds $(du -sh "$REHEARSAL_STATE_DIR" 2>/dev/null | awk '{print $1}')"
+  local total candidates
+  total="$(du -sh "$REHEARSAL_STATE_DIR" 2>/dev/null | awk '{print $1}')"
+  candidates="$(du -sh "$REHEARSAL_STATE_DIR/candidates" 2>/dev/null | awk '{print $1}')"
+  rehearsal::info "$REHEARSAL_STATE_DIR now holds ${total:-?}, of which candidates/ ${candidates:-0B}, which is never pruned"
 }
 
 rehearsal::free_disk_kb() {
@@ -198,6 +228,8 @@ rehearsal::free_disk_kb() {
 # A full disk does not fail cleanly: the engine cannot be unpacked and the app
 # shows a repair screen that looks like a product fault (#556, #560).
 rehearsal::require_free_disk() {
+  [[ "$REHEARSAL_MIN_FREE_GB" =~ ^[0-9]+$ ]] \
+    || rehearsal::die "REHEARSAL_MIN_FREE_GB must be a whole number of GB, got '$REHEARSAL_MIN_FREE_GB'"
   local free_kb=""
   free_kb="$(rehearsal::free_disk_kb "$REHEARSAL_STATE_DIR")"
   [[ "$free_kb" =~ ^[0-9]+$ ]] || { rehearsal::warn 'could not read the free disk space'; return 0; }
