@@ -1556,6 +1556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
     private var providerShortcutRegistered = false
     private var menuBarItem: NSStatusItem?
+    private var menuBarStatusRead: Task<Void, Never>?
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -2419,8 +2420,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: menuBarStatusRequestTimeout
         )
-        Task { [weak self] in
+        // Only the newest read is shown: an older one that is still under way
+        // when the menu opens again would otherwise answer last.
+        menuBarStatusRead?.cancel()
+        menuBarStatusRead = Task { [weak self] in
             let answer = try? await URLSession.shared.data(for: request)
+            guard !Task.isCancelled else {
+                return
+            }
             let answered = (answer?.1 as? HTTPURLResponse)?.statusCode == 200
             self?.showMenuBarStatus(menuBarStatus(statusJSON: answered ? answer?.0 : nil))
         }
