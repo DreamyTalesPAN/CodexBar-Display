@@ -536,3 +536,18 @@ it("answers a file that could not be imported where Save, Export and Send answer
   fireEvent.click(button("Export ZIP"));
   expect(screen.queryByText(rejected)).toBeNull();
 });
+
+// Seen on the Windows app on 2026-10-09: after only the id was changed in the
+// JSON text, Apply JSON renamed "New Theme" to a name made up from that id.
+// The JSON holds no name, so it cannot change one.
+it("keeps the theme's name when JSON is applied", () => {
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  const json = screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  fireEvent.change(json, { target: { value: json.value.replace('"my-theme"', '"myqa-theme-7"') } });
+  fireEvent.click(button("Apply JSON"));
+  expect(json.value).toContain('"id": "myqa-theme-7"');
+  expect(screen.getByDisplayValue("New Theme")).toBeTruthy();
+  expect(screen.queryByDisplayValue("Myqa Theme 7")).toBeNull();
+});

@@ -708,7 +708,8 @@ export function ThemeStudioScreen({
       );
       replaceLoadedTheme({
         assets,
-        packName: titleFromThemeId(imported.themeId),
+        // The JSON holds no name; the one the customer gave stays.
+        packName,
         spec: imported,
         status: { tone: "ready", message: "JSON applied." },
       });
