@@ -605,7 +605,7 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 		usageArgs = append([]string(nil), args...)
 		return []byte(`[
 			{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}},
-			{"provider":"antigravity","source":"cli","status":{"indicator":"major"},"usage":{"primary":{"usedPercent":17},"secondary":{"usedPercent":23},"updatedAt":"2026-07-24T08:00:00Z"}}
+			{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":17},"secondary":{"usedPercent":23},"updatedAt":"2026-07-24T08:00:00Z"}}
 		]`), nil
 	}
 
@@ -616,14 +616,9 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	if got.Providers[0].Source != "cli" || got.Providers[0].CollectedAt != "2026-07-24T08:00:00Z" {
 		t.Fatalf("missing safe source/freshness diagnostics: %+v", got.Providers[0])
 	}
-	// The polls of an open window read serve's answer, which has no status
-	// page in it. The check the customer starts is the one that asks (#555).
-	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--status", "--web-timeout", "8"}
+	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
-	}
-	if got.Providers[0].Service != ProviderServiceOutage {
-		t.Fatalf("the provider's reported outage was dropped: %+v", got.Providers[0])
 	}
 }
 

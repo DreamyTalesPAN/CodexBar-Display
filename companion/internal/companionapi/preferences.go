@@ -639,8 +639,6 @@ func enabledProviderIDs(settings []codexbar.ProviderSetting) map[string]struct{}
 // setup-completion gate -- so it is spelled once.
 const providerHealthStateStale = "stale"
 
-const providerServiceOutageMessage = "This provider is reporting a service outage."
-
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
 	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
@@ -678,7 +676,6 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	items := make([]preferenceDescriptor, 0, len(settings))
 	for _, setting := range settings {
 		state := string(setting.Health)
-		service := setting.Service
 		message := providerHealthMessage(setting.Health)
 		// Only worth carrying while the provider is on and actually needs the
 		// customer; a healthy row has nothing to report and an off one is off.
@@ -730,15 +727,6 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			checkedAt = readiness.CheckedAt.UTC().Format(time.RFC3339)
 			nextAction = providerReadinessNextAction(readiness.Status)
 			signInURL = readiness.SignInURL
-			// The polls read the usage service's last answer, which carries no
-			// status page. "Check again" asks the provider for it, so an
-			// outage reaches the row through this check (#555).
-			if health := providerHealthFromReadiness(readiness.Status); readiness.Service == codexbar.ProviderServiceOutage &&
-				(health == codexbar.ProviderHealthHealthy || health == codexbar.ProviderHealthUnavailable) {
-				state = "service_outage"
-				service = readiness.Service
-				message = providerServiceOutageMessage
-			}
 		} else if _, ready := freshSuccess[setting.ID]; ready && providerCanUseUsageEvidence(setting) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
@@ -747,7 +735,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				setting.Health == codexbar.ProviderHealthChecking ||
 				setting.Health == codexbar.ProviderHealthUnavailable) {
 			state = "service_outage"
-			message = providerServiceOutageMessage
+			message = "This provider is reporting a service outage."
 		} else if (setting.Health == codexbar.ProviderHealthUnavailable ||
 			setting.Health == codexbar.ProviderHealthRateLimited) && lastSuccess[setting.ID] != "" {
 			state = providerHealthStateStale
@@ -787,7 +775,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			Writable:       true,
 			Health: &preferenceHealth{
 				State:          state,
-				Service:        string(service),
+				Service:        string(setting.Service),
 				Message:        message,
 				Reported:       reported,
 				LastSuccessAt:  lastSuccess[setting.ID],

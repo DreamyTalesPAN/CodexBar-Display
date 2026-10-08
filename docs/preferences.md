@@ -57,7 +57,7 @@ After enabling or retrying a provider, the adapter verifies that exact inventory
 entry with:
 
 ```text
-codexbar usage --json --provider <id> --source auto --status --web-timeout 8
+codexbar usage --json --provider <id> --source auto --web-timeout 8
 ```
 
 Another working provider cannot make the requested provider appear ready.
