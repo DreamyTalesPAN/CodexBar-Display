@@ -104,6 +104,13 @@ type InstallError struct {
 	Hint string
 }
 
+// PreviousThemeRestoredError wraps a failed live theme install after which
+// VibeTV is using the theme it had before again.
+type PreviousThemeRestoredError struct{ Err error }
+
+func (e *PreviousThemeRestoredError) Error() string { return e.Err.Error() }
+func (e *PreviousThemeRestoredError) Unwrap() error { return e.Err }
+
 func (e *InstallError) Error() string {
 	if e == nil {
 		return ""
@@ -297,7 +304,12 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		if (retErr == nil && live) || !installScreenShown {
 			return
 		}
-		restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+		restored := restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+		// A screensaver install only takes its install screen off again here;
+		// the previous screensaver's selection stays cleared.
+		if restored && live {
+			retErr = &PreviousThemeRestoredError{Err: retErr}
+		}
 	}()
 	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
 		if authRequired(err) {
@@ -709,6 +721,8 @@ func currentStoredThemePath(wifi transportlayer.WiFiTransport, target string) (s
 	return path, nil
 }
 
+// restoreThemeInstallScreen reports whether the previous live theme is active
+// again.
 func restoreThemeInstallScreen(
 	ctx context.Context,
 	wifi transportlayer.WiFiTransport,
@@ -718,7 +732,7 @@ func restoreThemeInstallScreen(
 	store PairTokenStore,
 	fetchFrame func(context.Context) (protocol.Frame, error),
 	out io.Writer,
-) {
+) bool {
 	previousThemePath = strings.TrimSpace(previousThemePath)
 	if previousThemePath != "" {
 		fmt.Fprintln(out, "Restoring previous theme...")
@@ -727,14 +741,15 @@ func restoreThemeInstallScreen(
 		} else {
 			fmt.Fprintln(out, "Restore previous theme: activated")
 			sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
-			return
+			return true
 		}
 	}
 	if err := sendClearThemeSpecFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame); err != nil {
 		fmt.Fprintf(out, "Clear install screen: skipped (%v)\n", err)
-		return
+		return false
 	}
 	fmt.Fprintln(out, "Clear install screen: refreshed")
+	return false
 }
 
 type themeActivationError struct {

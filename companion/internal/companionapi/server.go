@@ -9515,6 +9515,15 @@ func writeThemeInstallError(w http.ResponseWriter, slot string, err error) {
 // The failure of an install into slot, in the words of that slot: a
 // screensaver that failed is not called a theme (issue #558).
 func themeInstallErrorPayload(slot string, err error) (int, apiError) {
+	status, api := themeInstallFailurePayload(slot, err)
+	var restored *themeinstall.PreviousThemeRestoredError
+	if errors.As(err, &restored) {
+		api.NextAction = strings.TrimSpace("Your previous theme is back on VibeTV. " + api.NextAction)
+	}
+	return status, api
+}
+
+func themeInstallFailurePayload(slot string, err error) (int, apiError) {
 	var apiStatus *statusAPIError
 	if errors.As(err, &apiStatus) {
 		api := apiStatus.api
