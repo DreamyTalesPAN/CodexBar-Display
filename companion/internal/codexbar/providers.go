@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"runtime"
 	"strings"
@@ -64,6 +65,24 @@ func providerInventoryArgs() []string {
 		return []string{"config", "providers"}
 	}
 	return []string{"config", "providers", "--json"}
+}
+
+// dashboardUsageQueries is the serve-endpoint side of the same Windows join.
+// On macOS, omitting the override selects the configured enabled set, just
+// like the dashboard. Win-CodexBar 0.60.3 instead defaults to Claude, and its
+// explicit "all" fetches every provider it knows, switched on or not: on
+// every collection it looked for browser cookies of providers the customer
+// never chose and started the Antigravity CLI (#554). So Windows asks for
+// exactly the providers the dashboard snapshot lists, one request each.
+func dashboardUsageQueries(providerIDs []string) []string {
+	if !providerProbePerProvider {
+		return []string{""}
+	}
+	queries := make([]string, 0, len(providerIDs))
+	for _, id := range providerIDs {
+		queries = append(queries, "?provider="+url.QueryEscape(id))
+	}
+	return queries
 }
 
 // runUsageAllEnabled asks for usage of every switched-on provider. The Mac

@@ -605,6 +605,44 @@ func TestRateLimitedHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	}
 }
 
+// Review of #572: the exact check can report the throttle too. A saved
+// reading the device can still show must keep the row stale then, exactly as
+// for the background scan, or setup refuses to continue although the display
+// has something to render.
+func TestRateLimitedExactCheckKeepsSavedReadingStale(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"claude": {
+			Status:    codexbar.ProviderRateLimited,
+			Detail:    "Claude received too many usage checks and is pausing them for a few minutes.",
+			CheckedAt: now.Add(-time.Minute),
+		},
+	}
+	setting := []codexbar.ProviderSetting{{
+		ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+	}}
+
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		usage := freshProviderUsage("claude", "Claude", now.Add(-10*time.Minute))
+		usage.Providers[0].Stale = true
+		return usage, true
+	}
+	items := server.providerDescriptors(setting)
+	if len(items) != 1 || items[0].Health.State != providerHealthStateStale ||
+		items[0].Health.Message != providerHealthMessage(codexbar.ProviderHealthRateLimited) ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("a saved reading must keep a throttled row stale and explained: %#v", items[0].Health)
+	}
+
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	if items := server.providerDescriptors(setting); items[0].Health.State != "rate_limited" ||
+		items[0].Health.NextAction != codexbar.RateLimitedNextAction {
+		t.Fatalf("without a reading the row must stay rate_limited: %#v", items[0].Health)
+	}
+}
+
 func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {

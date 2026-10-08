@@ -206,9 +206,9 @@ func TestFetchDashboardProvidersDoesNotProbeDisabledProviders(t *testing.T) {
 // On the test laptop that was 71 providers every 30 seconds with only Claude
 // switched on, including a start of the Antigravity CLI each time (#554).
 func TestFetchDashboardProvidersAsksTheWindowsEngineOnlyForListedProviders(t *testing.T) {
-	previous := dashboardUsageByProvider
-	dashboardUsageByProvider = true
-	t.Cleanup(func() { dashboardUsageByProvider = previous })
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
 
 	var asked []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +236,71 @@ func TestFetchDashboardProvidersAsksTheWindowsEngineOnlyForListedProviders(t *te
 	}
 }
 
+// On Windows each listed provider is a request of its own. When one of them
+// fails, the others must still reach the display; only the failed provider
+// shows as unavailable (#500 review).
+func TestFetchDashboardProvidersKeepsOtherProvidersWhenOneWindowsRequestFails(t *testing.T) {
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[
+			  {"id":"claude","name":"Claude","windows":[{"kind":"weekly","label":"Weekly","usedPercent":12,"resetAt":"2026-08-01T00:00:00Z"}]},
+			  {"id":"codex","name":"Codex","windows":[{"kind":"weekly","label":"Weekly","usedPercent":68,"resetAt":"2026-08-01T00:00:00Z"}]}
+			]}`))
+		case dashboardUsagePath:
+			if r.URL.Query().Get("provider") == "claude" {
+				http.Error(w, "probe failed", http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"provider":"codex","usage":{"secondary":{"usedPercent":68,"windowMinutes":10080}}}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 7, 28, 8, 30, 0, 0, time.UTC)
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), now)
+	if err != nil || len(providers) != 2 {
+		t.Fatalf("one failed request must not drop the other provider: providers=%+v err=%v", providers, err)
+	}
+	byKey := map[string]ParsedFrame{}
+	for _, p := range providers {
+		byKey[providerKey(p)] = p
+	}
+	if claude := byKey["claude"]; !claude.Frame.UsageUnavailable || !claude.Stale {
+		t.Fatalf("the failed provider must show as unavailable: %+v", claude)
+	}
+	if codex := byKey["codex"]; codex.Frame.UsageUnavailable || codex.Stale || len(codex.Frame.UsageWindows) != 1 || codex.Frame.UsageWindows[0].Percent != 68 {
+		t.Fatalf("the answering provider must keep its reading: %+v", codex.Frame)
+	}
+}
+
+// Only when every request fails is the collection itself failed, so the
+// caller can fall back like before.
+func TestFetchDashboardProvidersFailsWhenEveryWindowsRequestFails(t *testing.T) {
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == dashboardSnapshotPath {
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[{"id":"claude","name":"Claude","windows":[]}]}`))
+			return
+		}
+		http.Error(w, "probe failed", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err == nil {
+		t.Fatal("a collection where every usage request fails must return an error")
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -251,7 +316,7 @@ func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server
 		// Windows asks once per listed provider; this stub answers each with
 		// the whole list.
 		wrongQuery := r.URL.RawQuery != ""
-		if dashboardUsageByProvider {
+		if providerProbePerProvider {
 			wrongQuery = r.URL.Query().Get("provider") == "" || r.URL.Query().Get("provider") == "all"
 		}
 		if r.Header.Get("Authorization") != "Bearer test-token" || wrongQuery {
