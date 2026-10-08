@@ -26,10 +26,11 @@ type LiveSlotDevice = Pick<DeviceInfo, "activeTheme" | "standby">;
 // Theme Studio saves every theme as revision 1 under the first seven
 // characters of its id, so a customer's copy of Mini Classic lands on VibeTV as
 // mini-cl-1-<hash> beside the catalog's mini-cl-9-<hash>. In standby the path
-// is all VibeTV reports of the live slot, so a revision-1 path only names a
-// catalog theme when it is that theme's exact path; taking it for an old
-// revision installed the catalog theme over the customer's own. The catalog's
-// own first revision is updated once VibeTV is awake and reports its id.
+// is all VibeTV reports of the live slot. A catalog that does not name its
+// earlier files is therefore taken at its exact path for revision 1; taking
+// such a path for an old revision installed the catalog theme over the
+// customer's own. That catalog's own first revision is updated once VibeTV is
+// awake and reports its id.
 const FIRST_REVISION_PATH = /-1-[0-9a-f]{6,}\.json$/i;
 
 export function resolveActiveLiveTheme(
@@ -42,9 +43,9 @@ export function resolveActiveLiveTheme(
     return themes.find(
       (candidate) =>
         candidate.usage !== "screensaver" &&
-        (mayBeCustomerTheme
+        (mayBeCustomerTheme && !candidate.earlierThemeSpecPaths
           ? candidate.themeSpecPath?.trim() === livePath
-          : sameVersionedThemePath(candidate.themeSpecPath, livePath)),
+          : isCatalogThemeFile(candidate, livePath)),
     );
   }
   return themes.find(
@@ -110,13 +111,19 @@ export function resolveActiveThemeUpgrade(
     ? standbyLivePath
     : device.display?.themeSpec?.path?.trim();
   // Awake, VibeTV names its theme by id, and a later catalog can give one of
-  // its themes the id of a theme the customer saved. Under a path one of their
+  // its themes the id of a theme the customer made. Under a path one of their
   // saved themes is sent under, VibeTV draws that theme and not the catalog's;
-  // taking it for an old revision installed the catalog theme over it.
+  // taking it for an old revision installed the catalog theme over it. A
+  // catalog that names its earlier files settles it without the app's storage:
+  // any other file under that id is not the catalog theme's.
+  const named = resolveActiveLiveTheme(themes, device);
   const theme =
-    !standbyActive && activePath && ownPaths.includes(activePath)
+    !standbyActive &&
+    activePath &&
+    (ownPaths.includes(activePath) ||
+      (named?.earlierThemeSpecPaths && !isCatalogThemeFile(named, activePath)))
       ? undefined
-      : resolveActiveLiveTheme(themes, device);
+      : named;
   if (!theme) {
     return {
       needed: false,
@@ -169,9 +176,9 @@ export function ownThemePaths(userThemes: UserThemeRecord[]): string[] {
 // customer made can start like a catalog one's. So a path one of their saved
 // screensavers is sent under is never a catalog screensaver: taking it for an
 // old revision would install the catalog pack over the customer's own. Every
-// other path is told by its file name, revision 1 included, because catalog
-// screensavers were shipped at revision 1 too (Token Fire as tf-1-874fd8e2)
-// and VibeTVs that still hold one must get the update.
+// other path is a catalog screensaver's when the catalog names it, revision 1
+// included, because catalog screensavers were shipped at revision 1 too (Token
+// Fire as tf-1-874fd8e2) and VibeTVs that still hold one must get the update.
 export function resolveInstalledScreensaver(
   themes: ThemeProduct[],
   screensaverPath: string | null | undefined,
@@ -184,7 +191,7 @@ export function resolveInstalledScreensaver(
   return themes.find(
     (candidate) =>
       candidate.usage === "screensaver" &&
-      sameVersionedThemePath(candidate.themeSpecPath, installedPath),
+      isCatalogThemeFile(candidate, installedPath),
   );
 }
 
@@ -239,36 +246,47 @@ export function resolveScreensaverUpgrade(
 
 // Whether a file VibeTV holds can be this catalog theme's, for a caller that
 // knows the theme by id too. Awake, VibeTV reports the id of a theme the
-// customer made as well, so the id alone does not make it the catalog theme. A
-// file with a revision in its name is the catalog theme's only under that
-// theme's file name. One without, as early packs had, cannot be told by its
-// name and is left to the id, like a path that is not known.
-export function pathMayNameCatalogTheme(
-  themeSpecPath: string | undefined,
+// customer made as well, so the id alone does not make it the catalog theme.
+// With no file known on either side the id decides. So it does for a file
+// without a revision in its name, as early packs had, when the catalog does
+// not name its earlier files.
+export function fileMayBeCatalogThemes(
+  theme: CatalogThemeFiles | null | undefined,
   heldPath: string | undefined,
 ): boolean {
   return (
-    !themeSpecPath ||
+    !theme?.themeSpecPath ||
     !heldPath ||
-    !versionedThemePathBase(heldPath) ||
-    sameVersionedThemePath(themeSpecPath, heldPath)
+    (!theme.earlierThemeSpecPaths && !versionedThemePathBase(heldPath)) ||
+    isCatalogThemeFile(theme, heldPath)
   );
 }
 
-function sameVersionedThemePath(
-  candidatePath: string | undefined,
-  activePath: string | undefined,
+type CatalogThemeFiles = Pick<
+  ThemeProduct,
+  "earlierThemeSpecPaths" | "themeSpecPath"
+>;
+
+// Whether a file VibeTV holds is this catalog theme's: its current file or one
+// the catalog names as an earlier revision (#559). A catalog from before that
+// list is told by the file name, which a theme the customer made can share.
+function isCatalogThemeFile(
+  theme: CatalogThemeFiles,
+  heldPath: string | undefined,
 ): boolean {
-  const candidate = candidatePath?.trim();
-  if (!candidate || !activePath) {
+  const current = theme.themeSpecPath?.trim();
+  if (!current || !heldPath) {
     return false;
   }
-  if (candidate === activePath) {
+  if (current === heldPath) {
     return true;
   }
-  const candidateBase = versionedThemePathBase(candidate);
+  if (theme.earlierThemeSpecPaths) {
+    return theme.earlierThemeSpecPaths.includes(heldPath);
+  }
+  const currentBase = versionedThemePathBase(current);
   return Boolean(
-    candidateBase && candidateBase === versionedThemePathBase(activePath),
+    currentBase && currentBase === versionedThemePathBase(heldPath),
   );
 }
 

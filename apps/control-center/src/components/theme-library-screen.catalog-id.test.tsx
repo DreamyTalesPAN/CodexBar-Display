@@ -123,7 +123,10 @@ const tab = (name: string) =>
 // The automatic update's verdict on an awake VibeTV showing this theme. The
 // pack is built the way installCustomTheme in control-center-app.tsx builds
 // it; VibeTV reports the id from the theme file and the path from the manifest.
-function automaticUpdate({ assets, packName, spec, usage }: ThemeStudioInstallPayload) {
+function automaticUpdate(
+  { assets, packName, spec, usage }: ThemeStudioInstallPayload,
+  themes = catalog,
+) {
   const pack = buildThemePack(spec, packName, assets, usage);
   const device: DeviceInfo = {
     activeTheme: JSON.parse(pack.themeJson).id,
@@ -131,7 +134,7 @@ function automaticUpdate({ assets, packName, spec, usage }: ThemeStudioInstallPa
     connected: true,
     display: { themeSpec: { active: true, path: pack.manifest.themeSpec.path } },
   };
-  return resolveActiveThemeUpgrade(catalog, device);
+  return resolveActiveThemeUpgrade(themes, device);
 }
 
 it.each<[string, () => void]>([
@@ -189,12 +192,19 @@ it.each<[string, () => void]>([
       unresolved: false,
     });
   }
-  // Why the id matters: the same theme under the catalog id would be replaced.
+  // Under the catalog id the same theme is left alone too, because the
+  // catalog names the files of its earlier revisions (#559). A catalog that
+  // does not would have it replaced.
+  const underCatalogId = {
+    ...sent[0],
+    spec: { ...sent[0].spec, themeId: "mini-classic" },
+  };
+  expect(automaticUpdate(underCatalogId).needed).toBe(false);
   expect(
-    automaticUpdate({
-      ...sent[0],
-      spec: { ...sent[0].spec, themeId: "mini-classic" },
-    }),
+    automaticUpdate(
+      underCatalogId,
+      catalog.map((theme) => ({ ...theme, earlierThemeSpecPaths: undefined })),
+    ),
   ).toMatchObject({ needed: true, theme: { themeId: "mini-classic" } });
 });
 

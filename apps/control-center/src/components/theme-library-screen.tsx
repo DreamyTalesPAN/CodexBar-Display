@@ -62,7 +62,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   activeLiveThemeId,
   installedScreensaver,
-  pathMayNameCatalogTheme,
+  fileMayBeCatalogThemes,
 } from "@/lib/active-theme-upgrade";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
@@ -1010,7 +1010,7 @@ function ThemeListItem({
         ? installedPath === ownPathOfSharedId
         : Boolean(installedPath) && installedPath !== ownPathOfSharedId)) &&
     (isCustom ||
-      (pathMayNameCatalogTheme(theme?.themeSpecPath, installedPath) &&
+      (fileMayBeCatalogThemes(theme, installedPath) &&
         // A file this app sent for a theme the customer made is theirs, also
         // when its name starts like the catalog theme's.
         !sentOwnPaths.includes(installedPath ?? "")));

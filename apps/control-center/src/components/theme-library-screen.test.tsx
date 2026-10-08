@@ -216,7 +216,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
   // another id. The awake VibeTV still reports the id and holds the old file,
   // and the catalog row read Installed with its Install closed.
   it("offers Install for a catalog theme while VibeTV holds another theme's file under its id", () => {
-    const render = (path?: string) =>
+    const render = (path?: string, earlierThemeSpecPaths?: string[]) =>
       renderToStaticMarkup(
         <ThemeLibraryScreen
           busyAction={null}
@@ -240,6 +240,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
               id: "my-theme",
               themeId: "my-theme",
               themeSpecPath: "/themes/u/mt-4-abcdef.json",
+              earlierThemeSpecPaths,
               title: "Catalog Namesake",
             },
           ]}
@@ -256,6 +257,15 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       "Theme is already installed.",
     );
     expect(render()).toContain("Theme is already installed.");
+    // #559: a catalog that names its earlier files tells an own file that
+    // starts like its own from a revision it shipped.
+    const earlier = ["/themes/u/mt-3-123456.json"];
+    expect(render("/themes/u/mt-3-0a1b2c.json", earlier)).toContain(
+      'title="Install Catalog Namesake"',
+    );
+    for (const held of [earlier[0], "/themes/u/mt-4-abcdef.json", undefined]) {
+      expect(render(held, earlier)).toContain("Theme is already installed.");
+    }
   });
 
   // Seen on the Windows app on 2026-10-07: Retro 3D said "Install" again after
