@@ -2899,7 +2899,7 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
     "A search that has not answered must not report a count",
   );
   await createSetupSupportReport(page);
-  await page.getByText(/^Report saved/).waitFor({ timeout: 15_000 });
+  await page.getByText(/^Report (saved|created)/).waitFor({ timeout: 15_000 });
   await page.keyboard.press("Escape");
   // An empty scan keeps Welcome and offers recovery in the existing dialog.
   await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
@@ -4018,7 +4018,7 @@ async function testHostedEntryShowsMacAppDownload(
   // The download page is the only thing a customer without the app can reach,
   // so the way to ask for help has to be on it.
   await createSetupSupportReport(page);
-  await page.getByText(/^Report saved|^Report could not be created/).waitFor({
+  await page.getByText(/^Report saved|^Report created|^Report could not be created/).waitFor({
     timeout: 15_000,
   });
   assert(
