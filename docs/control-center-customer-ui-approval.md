@@ -5414,3 +5414,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
 - Approved customer-visible result: Connecting an OpenAI key succeeds again: the check of the text model is no longer blocked before it leaves the Mac. When the Mac App was restarted during a transfer and no longer knows it, Send to VibeTV starts a new transfer instead of staying on Check transfer.
+
+
+## 2026-10-08 — Longer text stays on the display
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Typing longer text or enlarging it widens the text box only up to the display edge, so the design stays valid and Save and Send to VibeTV stay available.

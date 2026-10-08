@@ -347,7 +347,8 @@ export function AIThemeStudioScreen({
       if (p) {
         setPrimitiveField(p, field, value);
         if (p.type === "text" && (field === "fontSize" || field === "text")) {
-          p.width = Math.max(p.width || 0, textPrimitiveNaturalWidth(p));
+          // Longer text widens its box, but never past the display edge.
+          p.width = Math.min(DISPLAY_SIZE - p.x, Math.max(p.width || 0, textPrimitiveNaturalWidth(p)));
         }
       }
     });
