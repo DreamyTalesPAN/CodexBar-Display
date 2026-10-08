@@ -5846,10 +5846,13 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	defer s.repairMu.Unlock()
 
 	streamPaused := false
-	if s.pauseDisplayStream != nil {
-		s.pauseDisplayStream(true)
-		streamPaused = true
+	pauseStream := func() {
+		if !streamPaused && s.pauseDisplayStream != nil {
+			s.pauseDisplayStream(true)
+			streamPaused = true
+		}
 	}
+	pauseStream()
 	logThemeInstallTiming(out, "device-maintenance", maintenanceStartedAt)
 	resumeStream := func() {
 		if streamPaused && s.pauseDisplayStream != nil {
@@ -5942,6 +5945,93 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
+	// The app's own last check of a live theme: the stream restarts and VibeTV
+	// has to draw a fresh image. The installer runs it before it removes the
+	// previous theme's files, so a failure here can still go back (#583).
+	confirmed := false
+	confirmLiveTheme := func(ctx context.Context) error {
+		confirmed = true
+		fmt.Fprintln(out, "Refreshing display stream...")
+		resumeStream()
+		streamRefreshStartedAt := time.Now()
+		streamStartedAt := time.Now().UTC()
+		if err := s.startDisplayStream(ctx, displayTarget); err != nil {
+			logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
+			return &statusAPIError{
+				status: http.StatusBadGateway,
+				api: apiError{
+					Code:       "display_stream_refresh_failed",
+					Message:    "Theme installed, but Mac App could not refresh the VibeTV display.",
+					NextAction: "Run setup again or restart the Mac App, then retry.",
+				},
+			}
+		}
+		var stream displayStreamInfo
+		if pairedDuringThemeInstall {
+			stream = s.waitForFreshDisplayStreamAfterPair(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
+		} else {
+			stream = s.waitForFreshDisplayStreamUpTo(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
+		}
+		logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
+		// A stream that restarted, owns this exact VibeTV, and is only held back by
+		// provider setup has nothing left to prove about the theme install. It draws
+		// no usage picture because no provider is ready, so waiting for one reports
+		// a failed install to a customer whose theme is already on the device. The
+		// firmware update path makes the same call for the same reason.
+		if providerSetupStreamForTarget(&stream, displayTarget) {
+			fmt.Fprintln(out, "Display stream: waiting for AI provider")
+			return nil
+		}
+		renderVerificationStartedAt := time.Now()
+		var health deviceHealth
+		var err error
+		if cableMode {
+			health, err = s.waitForVerifiedCableDisplayRender(ctx, cablePort, cableHello.DeviceID, cfg.DeviceToken, baseline, stream)
+		} else {
+			health, err = s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+		}
+		logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
+		if err != nil {
+			if !stream.Healthy {
+				return &statusAPIError{
+					status: http.StatusBadGateway,
+					api: apiError{
+						Code:       "display_stream_refresh_failed",
+						Message:    "Theme installed, but Mac App did not send a fresh image to VibeTV.",
+						NextAction: "Keep VibeTV connected and try installing the theme again.",
+					},
+				}
+			}
+			return &statusAPIError{
+				status: http.StatusBadGateway,
+				api: apiError{
+					Code:       "display_render_failed",
+					Message:    "Theme installed, but VibeTV could not redraw the image.",
+					NextAction: "Keep VibeTV connected and try installing the theme again.",
+				},
+			}
+		}
+		if cableMode {
+			device := withDisplayStreamInfo(deviceInfo{
+				DeviceID:  cfg.DeviceID,
+				Target:    publicTarget(displayTarget),
+				Connected: true,
+				Paired:    true,
+			}, stream)
+			if !s.withVerifiedDeviceHealth(device, health, displayTarget, cfg.DeviceToken, true).Ready {
+				return &statusAPIError{
+					status: http.StatusBadGateway,
+					api: apiError{
+						Code:       "display_stream_refresh_failed",
+						Message:    "Theme installed, but the continuous VibeTV display stream is not running.",
+						NextAction: "Keep VibeTV connected and try installing the theme again.",
+					},
+				}
+			}
+		}
+		fmt.Fprintln(out, "Theme render: verified")
+		return nil
+	}
 	deviceInstallStartedAt := time.Now()
 	result, err := s.installTheme(ctx, themeinstall.Options{
 		Slot:               req.Slot,
@@ -5957,6 +6047,12 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		Out:                out,
 		HTTPClient:         s.client,
 		Cable:              cableInstall,
+		ConfirmLiveTheme: func(ctx context.Context) error {
+			err := confirmLiveTheme(ctx)
+			// The installer's remaining writes need a quiet device again.
+			pauseStream()
+			return err
+		},
 		PairTokenStore: func(target, token string) error {
 			pairedDuringThemeInstall = true
 			target = normalizeTarget(target)
@@ -5983,90 +6079,12 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			fmt.Fprintln(out, "Preview cache: ready")
 		}
 	}
-	if !live {
-		// Screensaver selection owns its brief preview. Resume usage without
-		// verifying it as a replacement for the selected live theme.
-		resumeStream()
-		return result, nil
-	}
-	fmt.Fprintln(out, "Refreshing display stream...")
-	resumeStream()
-	streamRefreshStartedAt := time.Now()
-	streamStartedAt := time.Now().UTC()
-	if err := s.startDisplayStream(ctx, displayTarget); err != nil {
-		logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_stream_refresh_failed",
-				Message:    "Theme installed, but Mac App could not refresh the VibeTV display.",
-				NextAction: "Run setup again or restart the Mac App, then retry.",
-			},
+	if live && !confirmed {
+		// The check never depends on the installer having asked for it.
+		if err := confirmLiveTheme(ctx); err != nil {
+			return themeinstall.Result{}, err
 		}
 	}
-	var stream displayStreamInfo
-	if pairedDuringThemeInstall {
-		stream = s.waitForFreshDisplayStreamAfterPair(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
-	} else {
-		stream = s.waitForFreshDisplayStreamUpTo(ctx, displayTarget, streamStartedAt, themeInstallStreamWaitTime)
-	}
-	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
-	// A stream that restarted, owns this exact VibeTV, and is only held back by
-	// provider setup has nothing left to prove about the theme install. It draws
-	// no usage picture because no provider is ready, so waiting for one reports
-	// a failed install to a customer whose theme is already on the device. The
-	// firmware update path makes the same call for the same reason.
-	if providerSetupStreamForTarget(&stream, displayTarget) {
-		fmt.Fprintln(out, "Display stream: waiting for AI provider")
-		return result, nil
-	}
-	renderVerificationStartedAt := time.Now()
-	var health deviceHealth
-	if cableMode {
-		health, err = s.waitForVerifiedCableDisplayRender(ctx, cablePort, cableHello.DeviceID, cfg.DeviceToken, baseline, stream)
-	} else {
-		health, err = s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
-	}
-	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
-	if err != nil {
-		if !stream.Healthy {
-			return themeinstall.Result{}, &statusAPIError{
-				status: http.StatusBadGateway,
-				api: apiError{
-					Code:       "display_stream_refresh_failed",
-					Message:    "Theme installed, but Mac App did not send a fresh image to VibeTV.",
-					NextAction: "Keep VibeTV connected and try installing the theme again.",
-				},
-			}
-		}
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_render_failed",
-				Message:    "Theme installed, but VibeTV could not redraw the image.",
-				NextAction: "Keep VibeTV connected and try installing the theme again.",
-			},
-		}
-	}
-	if cableMode {
-		device := withDisplayStreamInfo(deviceInfo{
-			DeviceID:  cfg.DeviceID,
-			Target:    publicTarget(displayTarget),
-			Connected: true,
-			Paired:    true,
-		}, stream)
-		if !s.withVerifiedDeviceHealth(device, health, displayTarget, cfg.DeviceToken, true).Ready {
-			return themeinstall.Result{}, &statusAPIError{
-				status: http.StatusBadGateway,
-				api: apiError{
-					Code:       "display_stream_refresh_failed",
-					Message:    "Theme installed, but the continuous VibeTV display stream is not running.",
-					NextAction: "Keep VibeTV connected and try installing the theme again.",
-				},
-			}
-		}
-	}
-	fmt.Fprintln(out, "Theme render: verified")
 	return result, nil
 }
 
