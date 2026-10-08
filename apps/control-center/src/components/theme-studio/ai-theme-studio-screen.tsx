@@ -74,6 +74,7 @@ import { importSpriteFile, uniqueAssetPath } from "@/lib/theme-studio-assets";
 import {
   loadUserThemes,
   loadThemeStudioRecovery,
+  clearThemeStudioRecovery,
   writeThemeStudioRecovery,
   writeUserThemes,
   type UserThemeRecord,
@@ -99,6 +100,10 @@ import {
 import { AI_THEME_SCREENMASTER_ASSET_PATH } from "@/lib/ai-theme";
 import { isAttachedSceneAnimation } from "@/lib/ai-theme";
 import {applyAIThemeLayout,layoutContext} from "@/lib/ai-theme-layout";
+import type { ThemeStudioScreenProps } from "../theme-studio-screen";
+import { themeRenderPackUrl } from "../control-center-runtime";
+import { copyForHost } from "@/lib/customer-platform";
+import { validateThemeAgainstCapabilities } from "@/lib/theme-studio-capabilities";
 import { sendThemeToVibeTV } from "@/lib/theme-install";
 
 function blank(): ThemeStudioDocument {
@@ -110,14 +115,22 @@ function blank(): ThemeStudioDocument {
   };
 }
 
-export function AIThemeStudioScreen() {
+export function AIThemeStudioScreen({
+  initialTheme, onBackToLibrary, onSaveToLibrary, onInstallTheme,
+  installStatus, deviceCapabilities, saveBlockedReason, windowsHost = false,
+}: ThemeStudioScreenProps = {}) {
   const [state, dispatch] = useReducer(
     themeStudioEditorReducer,
     undefined,
-    () => createThemeStudioEditorState(blank()),
+    () => createThemeStudioEditorState(initialTheme ? {
+      assets: initialTheme.assets || {}, packName: initialTheme.packName,
+      spec: initialTheme.spec, usage: initialTheme.usage || "live",
+    } : blank()),
   );
+  const nativeInstall = Boolean(onInstallTheme);
   const document = state.present;
   const dirty = isThemeStudioDirty(state);
+  const visibleInstallStatus = installStatus?.themeId === document.spec.themeId ? installStatus : null;
   // Async import paths read this after awaiting file contents so an edit made
   // meanwhile still triggers the unsaved-changes confirmation.
   const dirtyRef = useRef(dirty);
@@ -152,7 +165,10 @@ export function AIThemeStudioScreen() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [library, setLibrary] = useState<UserThemeRecord[]>([]);
-  const [libraryId, setLibraryId] = useState<string>();
+  const [libraryId, setLibraryId] = useState(initialTheme?.libraryId);
+  const source = useRef(initialTheme?.source || "blank");
+  const [saving, setSaving] = useState(false);
+  const savingRequest = useRef(false);
   const [pending, setPending] = useState<{
     document: ThemeStudioDocument;
     id?: string;
@@ -175,7 +191,7 @@ export function AIThemeStudioScreen() {
       : resetBinding === "usageSlot2Reset"
         ? 2
         : undefined;
-  const locked = busy || sending;
+  const locked = busy || sending || saving || installStatus?.phase === "installing";
   const canCancel = busy && !loadingSample;
   const aiReady = configured === true && consent;
   const elementName = primitive
@@ -206,7 +222,7 @@ export function AIThemeStudioScreen() {
     const hydration = window.setTimeout(() => {
       try {
         setConsent(sessionStorage.getItem("vibetv.aiTheme.consent") === "1");
-        setTransferJob(sessionStorage.getItem("vibetv.themeStudio.transferJob"));
+        if (!nativeInstall) setTransferJob(sessionStorage.getItem("vibetv.themeStudio.transferJob"));
       } catch {
         /* Keep consent and transfer state per-page when storage is unavailable. */
       }
@@ -218,11 +234,16 @@ export function AIThemeStudioScreen() {
       const restored = recovery.ok ? recovery.value : null;
       const latest = loaded.ok ? loaded.value.themes[0] : undefined;
       const saved = restored || latest;
-      if (saved && !dirtyRef.current) {
+      if (initialTheme?.recovered && !dirtyRef.current) {
+        const savedDocument = loaded.ok ? loaded.value.themes.find((theme) => theme.id === initialTheme.libraryId)?.document : undefined;
+        dispatch({ type: "load", document: documentRef.current, savedDocument: savedDocument || blank() });
+      }
+      if (!initialTheme && saved && !dirtyRef.current) {
         documentVersion.current++;
         const baseline = restored ? (loaded.ok ? loaded.value.themes.find((theme) => theme.id === restored.libraryId)?.document : undefined) || blank() : undefined;
         dispatch({ type: "load", document: saved.document, savedDocument: baseline });
         setLibraryId(restored ? restored.libraryId : latest?.id);
+        source.current = restored?.source || "custom";
       }
       setRecoveryReady(recovery.ok);
     }, 0);
@@ -232,13 +253,21 @@ export function AIThemeStudioScreen() {
       request.current?.abort();
       request.current = null;
     };
-  }, []);
+  }, [initialTheme, nativeInstall]);
   useEffect(() => {
     if (!recoveryReady || state.transactionBase) return;
+    if (nativeInstall && !dirty) {
+      const cleared = clearThemeStudioRecovery();
+      if (!cleared.ok) {
+        const timer = window.setTimeout(() => setError(cleared.error.message), 0);
+        return () => window.clearTimeout(timer);
+      }
+      return;
+    }
     const result = writeThemeStudioRecovery({
       document,
       libraryId,
-      source: libraryId ? "custom" : "blank",
+      source: source.current,
       updatedAt: new Date().toISOString(),
     });
     if (!result.ok) {
@@ -246,7 +275,7 @@ export function AIThemeStudioScreen() {
       return () => window.clearTimeout(timer);
     }
     persistedDraft.current = document;
-  }, [document, libraryId, recoveryReady, state.transactionBase]);
+  }, [document, libraryId, recoveryReady, state.transactionBase, dirty, nativeInstall]);
   useEffect(() => {
     if (!dirty) return;
     const guard = (event: BeforeUnloadEvent) => {
@@ -254,9 +283,14 @@ export function AIThemeStudioScreen() {
       event.preventDefault();
       event.returnValue = "";
     };
+    const persist = () => writeThemeStudioRecovery({ document, libraryId, source: source.current, updatedAt: new Date().toISOString() });
     window.addEventListener("beforeunload", guard);
-    return () => window.removeEventListener("beforeunload", guard);
-  }, [dirty, document]);
+    window.addEventListener("vibetv:native-window-will-close", persist);
+    return () => {
+      window.removeEventListener("beforeunload", guard);
+      window.removeEventListener("vibetv:native-window-will-close", persist);
+    };
+  }, [dirty, document, libraryId]);
 
   function updateCapabilities(capabilities: AIThemeCapabilities) {
     setEnabled(capabilities.enabled);
@@ -350,6 +384,7 @@ export function AIThemeStudioScreen() {
     documentVersion.current++;
     dispatch({ type: "load", document: next.document });
     setLibraryId(next.id);
+    source.current = next.id ? "custom" : "blank";
     setSelected([]);
     setPrompt("");
     setAttachments([]);
@@ -367,7 +402,7 @@ export function AIThemeStudioScreen() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/theme-pack/token-fire");
+      const response = await fetch(themeRenderPackUrl("token-fire"));
       if (!response.ok) throw new Error("Sample unavailable");
       const sample = await response.json();
       const spec = importThemeSpec(sample.spec);
@@ -386,7 +421,7 @@ export function AIThemeStudioScreen() {
         spec,
         assets,
         packName: "Token Fire · sample",
-        usage: "live" as const,
+        usage: document.usage || "live",
       };
       setAIAnimationSpeed(next, AI_THEME_ANIMATION_ASSET_PATH, 4);
       if (validateThemeSpec(spec, assets).errors.length)
@@ -402,9 +437,31 @@ export function AIThemeStudioScreen() {
       setBusy(false);
     }
   }
-  function save() {
+  async function save() {
+    if (savingRequest.current || locked) return;
+    if (saveBlockedReason) { setError(saveBlockedReason); return; }
     if (validation.errors.length) {
       setError(validation.errors[0]);
+      return;
+    }
+    if (onSaveToLibrary) {
+      savingRequest.current = true;
+      setSaving(true);
+      try {
+        const saved = await onSaveToLibrary({ ...document, libraryId, source: source.current });
+        setLibraryId(saved.libraryId);
+        source.current = "custom";
+        const loaded = loadUserThemes();
+        if (loaded.ok) setLibrary(loaded.value.themes);
+        dispatch({ type: "mark_saved", document: saved.document });
+        setStatus("Saved.");
+        setError("");
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Could not save this design.");
+      } finally {
+        savingRequest.current = false;
+        setSaving(false);
+      }
       return;
     }
     const loaded = loadUserThemes();
@@ -423,7 +480,8 @@ export function AIThemeStudioScreen() {
     setLibrary(records);
     setLibraryId(id);
     dispatch({ type: "mark_saved" });
-    setStatus("Saved in this browser.");
+    source.current = "custom";
+    setStatus("Saved.");
     setError("");
   }
   function download(data: BlobPart, name: string, type: string) {
@@ -440,6 +498,7 @@ export function AIThemeStudioScreen() {
         document.spec,
         document.packName,
         document.assets,
+        document.usage,
       );
       download(new Uint8Array(pack.zipBytes), pack.fileName, "application/zip");
       setStatus("Theme pack exported. No device was contacted.");
@@ -451,12 +510,21 @@ export function AIThemeStudioScreen() {
   }
   async function send() {
     if (locked || sendRequest.current || (!transferJob && (!document.spec.primitives.length || validation.errors.length))) return;
+    if (deviceCapabilities) {
+      const check = validateThemeAgainstCapabilities(document.spec, document.assets, deviceCapabilities);
+      if (check.errors.length) { setError(check.errors[0]); return; }
+    }
     let acceptedJob = transferJob;
     sendRequest.current = true;
     setSending(true);
     setError("");
     setTransferStatus("Sending…");
     try {
+      if (onInstallTheme) {
+        const installed = await onInstallTheme(document);
+        setTransferStatus(installed ? "Theme sent to VibeTV." : "Check the transfer status.");
+        return;
+      }
       setTransferStatus(await sendThemeToVibeTV(document, setTransferStatus, transferJob, (id) => {
         acceptedJob = id;
         setTransferJob(id);
@@ -467,7 +535,7 @@ export function AIThemeStudioScreen() {
       }));
     } catch (error) {
       setTransferStatus(acceptedJob ? "Check the existing transfer before sending again." : "");
-      setError(error instanceof Error ? error.message : "Theme transfer failed. Check the VibeTV Mac App.");
+      setError(error instanceof Error ? error.message : copyForHost("Theme transfer failed. Check the VibeTV Mac App.", windowsHost));
     } finally {
       sendRequest.current = false;
       setSending(false);
@@ -482,7 +550,7 @@ export function AIThemeStudioScreen() {
     const version = documentVersion.current;
     try {
       if (sprite) {
-        const imported = await importSpriteFile(file, "live", "image");
+        const imported = await importSpriteFile(file, document.usage || "live", "image");
         if (request.current || sendRequest.current || version !== documentVersion.current) return;
         if (
           documentRef.current.spec.primitives.some((p) =>
@@ -805,6 +873,7 @@ export function AIThemeStudioScreen() {
   }
   return (
     <div
+      data-theme-studio-root
       className="h-dvh overflow-y-auto [scrollbar-gutter:stable] bg-background p-3 text-foreground sm:p-6"
       onKeyDown={(event) => {
         if (isTypingTarget(event.target) || locked || panel || pending || event.nativeEvent.isComposing)
@@ -847,8 +916,9 @@ export function AIThemeStudioScreen() {
     >
       <div className="mx-auto max-w-6xl">
         <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
+          {onBackToLibrary ? <Button variant="ghost" size="icon" aria-label="Back to library" title="Back to library" disabled={locked} onClick={onBackToLibrary}><ArrowLeft /></Button> : null}
           <ControlCenterBrand showTagline={false} />
-          <h1 className="text-sm font-medium">Theme Studio</h1>
+          <h1 className="text-sm font-medium">{document.usage === "screensaver" ? "Screensaver Studio" : "Theme Studio"}</h1>
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
@@ -862,8 +932,9 @@ export function AIThemeStudioScreen() {
             </Button>
             <Button
               variant="outline"
-              disabled={locked || !document.spec.primitives.length || validation.errors.length > 0}
-              onClick={save}
+              disabled={locked || Boolean(saveBlockedReason) || !document.spec.primitives.length || validation.errors.length > 0}
+              title={saveBlockedReason}
+              onClick={() => void save()}
             >
               Save
             </Button>
@@ -873,7 +944,7 @@ export function AIThemeStudioScreen() {
             </Button>
           </div>
         </header>
-        {transferStatus ? <p role="status" className="px-6 pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
+        {visibleInstallStatus ? <p role="status" className="px-6 pt-3 text-right text-sm text-muted-foreground">{copyForHost(visibleInstallStatus.error || visibleInstallStatus.message || "Sending…", windowsHost)}</p> : transferStatus ? <p role="status" className="px-6 pt-3 text-right text-sm text-muted-foreground">{transferStatus}</p> : null}
           <main className="px-6 py-5">
             <div className="mx-auto mb-4 flex max-w-[680px] items-center justify-end gap-2">
               <div className="flex gap-1">
@@ -1392,7 +1463,7 @@ export function AIThemeStudioScreen() {
                   : panel === "add"
                     ? "Choose what you want to show. You can move and change it afterwards."
                     : panel === "library"
-                      ? "Designs saved in this browser on this Mac."
+                      ? "Your saved designs."
                       : "Your design, saved files and other tools."}
             </DialogDescription>
           </DialogHeader>

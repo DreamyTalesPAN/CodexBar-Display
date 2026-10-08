@@ -199,6 +199,7 @@ type Options struct {
 }
 
 type Server struct {
+	aiThemeServer          *aiThemeServer
 	logf                   func(string, ...any)
 	addr                   string
 	home                   string
@@ -1011,7 +1012,10 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("load embedded control center: %w", err)
 		}
 	}
+	ai := &aiThemeServer{aiTheme: newAIThemeState(nil, nil)}
+	ai.aiTheme.enabled = true
 	server := &Server{
+		aiThemeServer:          ai,
 		addr:                   addr,
 		home:                   home,
 		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json")},
@@ -1124,6 +1128,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerControlCenterRoutes(mux)
+	s.aiThemeServer.registerAIThemeRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)

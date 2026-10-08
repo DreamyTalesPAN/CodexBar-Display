@@ -5373,3 +5373,8 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul requested moving attachments beside the manual add action below the prompt and using a clearer element-add icon.
 - Approved customer-visible result: A square-with-plus icon adds elements; the paperclip attaches reference images in the same left-aligned toolbar beneath the prompt. The prompt uses its full width.
 
+
+## 2026-10-08 — Native Theme Studio candidate
+
+- User approval: Paul requested replacing the existing Theme Studio inside the Mac and Windows app with this new editor, enabling API-key entry and AI creation, and building an unsigned quick DMG from PR #422 for his own testing.
+- Approved customer-visible result: Appearance opens the new Theme Studio for new, saved, published and recovered themes and screensavers. Create connects OpenAI on first use; Settings replaces an existing key. Save uses the app library, Send to VibeTV uses the existing app install flow, and Back returns to the library. The Companion serves the local AI endpoints by default. Keys stay in the running Companion memory and require entry after a runtime restart. No signing, release, main push or hardware write test is authorized.
