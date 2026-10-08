@@ -65,62 +65,50 @@ export function serializeSupportReport(report: SupportDiagnostics): string {
   // Windows app says what that app's screens say (issue #558).
   const windowsHost =
     report.client?.environment.surface === "native-windows-app";
+  const homeAsTilde = homeFolderAsTilde(report);
   return JSON.stringify(
     redactSensitiveValues(report),
     (_key, value) =>
       typeof value === "string"
-        ? copyForHost(homeFolderAsTilde(value), windowsHost)
+        ? copyForHost(homeAsTilde(value), windowsHost)
         : value,
     2,
   );
 }
 
-// The folder under the home root is the account name of the computer. The
-// report says `~` for the root and that one name in every text it holds
-// (issue #580); the app itself keeps the real path. Everything else stays: a
-// path that is missed is the smaller harm than a sentence that loses words.
-//
-// A home root is `/Users/` or `/home/`, spelled exactly so, and on Windows
-// `C:\Users\` on any drive or `\\server\Users\`, with either slash, also
-// doubled inside JSON text. It counts only where a path starts -- at the
-// start of the text or after a space, a quote, `=`, `(` or `:` -- and never
-// inside a web address. `Public` and `Shared` are on every computer and name
-// nobody.
-const homeRoot = String.raw`(?:[\s"'=(:]|^)/(?:Users|home)/+|(?:(?:[^A-Za-z0-9]|^)[A-Za-z]:|(?:[\s"'=(]|^)\\{2,}[\w.$-]+)[\\/]+[Uu]sers[\\/]+`;
-// One word of a name inside a sentence: it ends before a space, a bracket,
-// `=` and punctuation, and a full stop behind it belongs to the sentence.
-const homeNameEnd = String.raw`\\/\s"'<>|:*?;,()\[\]{}=`;
-const homeNameWord = `[^${homeNameEnd}]*[^${homeNameEnd}.]`;
-// A name with spaces is a name only where the path goes on right behind it,
-// and inside a sentence it has at most three words.
-const homePath = new RegExp(
-  `(${homeRoot})(${homeNameWord}(?: ${homeNameWord}){0,2}(?=[\\\\/])|${homeNameWord})`,
-  "g",
-);
-// A text that is one path, as the usage engine's own paths are: the name is
-// what stands before the next separator, however many words, and where no
-// separator follows, everything to the end of the text. `/Users/Jane Doe`
-// must not keep half a name, so a sentence of that shape loses its words.
-const wholeHomePath = new RegExp(
-  String.raw`^(${homeRoot})([^\\/\r\n"<>|:*?]+)(?=[\\/]|$)`,
-);
+// The home folder's last part is the account name of the computer, and the
+// report does not need it (issue #580). The report's own paths say which
+// folder that is: the first of them that lies in `/Users/<name>`,
+// `/home/<name>`, `C:\Users\<name>` or `\\server\Users\<name>`. Exactly that
+// folder reads `~` in every text of the report and nothing else is touched;
+// a report without such a path stays as it is. The app keeps the real path.
+const homeFolder =
+  /^(?:\/(?:Users|home)\/[^/]+|(?:[A-Za-z]:|\\\\[^\\/]+)[\\/]Users[\\/][^\\/]+)(?=[\\/])/;
 
-function homeFolderAsTilde(value: string): string {
-  const shorten = (
-    match: string,
-    root: string,
-    name: string,
-    offset: number,
-    text: string,
-  ) => {
-    // The character in front of the root is not part of the path.
-    const before = root.slice(0, root.search(/[A-Za-z]:|\\{2}|\/(?:Users|home)/));
-    const token = text.slice(0, offset).split(/\s/).pop() ?? "";
-    return /^(?:public|shared)$/i.test(name) || token.includes("://")
-      ? match
-      : `${before}~`;
-  };
-  return value.replace(wholeHomePath, shorten).replace(homePath, shorten);
+function homeFolderAsTilde(
+  report: SupportDiagnostics,
+): (value: string) => string {
+  const engine = report.providerSetup?.engine;
+  const home = [report.usageEngine?.path, engine?.path, engine?.configPath]
+    .map((path) => homeFolder.exec(path ?? "")?.[0])
+    // `Shared` and `Public` are on every computer and name nobody.
+    .find((folder) => folder && !/[\\/](?:Shared|Public)$/i.test(folder));
+  if (!home) {
+    return (value) => value;
+  }
+  if (home.startsWith("/")) {
+    return (value) => value.split(home).join("~");
+  }
+  // Windows takes either slash and any case for the same folder, and a line
+  // printed as JSON doubles the backslashes.
+  const spellings = new RegExp(
+    home
+      .split(/[\\/]/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(String.raw`(?:\\\\|[\\/])`),
+    "gi",
+  );
+  return (value) => value.replace(spellings, "~");
 }
 
 export function downloadSupportReport(report: SupportDiagnostics): void {

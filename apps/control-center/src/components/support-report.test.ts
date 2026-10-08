@@ -211,90 +211,6 @@ describe("support report timeline", () => {
   });
 });
 
-// Issue #580: the folder under the home root is the account name of the
-// computer. Support needs the rest of the path, not the name.
-describe("support report home folder", () => {
-  const timeline = {
-    version: 1,
-    events: [
-      { id: 7, at: "2026-10-06T08:00:00Z", component: "device", state: "unreachable", reason: "runtime/serial-write", correlationId: "9f3c2b1a5d6e7f80" },
-      { id: 8, at: "2026-10-06T08:00:40Z", component: "provider_check/home", deviceId: "vibetv-8caab5", state: "failed" },
-    ],
-  };
-
-  it("writes the home folder as ~ in every path of a Mac report", async () => {
-    const exported = JSON.parse(
-      serializeSupportReport(
-        await report({
-          ok: true,
-          providerSetup: {
-            engine: {
-              path: "/Users/Jane Doe/Library/Application Support/codexbar-display/bin/codexbar",
-              configPath: "/Users/Jane Doe/.codexbar/config.json",
-            },
-          },
-          usageEngine: { path: "/Users/paulanduschus/Library/Application Support/codexbar-display/bin/codexbar" },
-          checks: [
-            { name: "usage_engine", status: "fail", detail: "Could not read /Users/paulanduschus/.codexbar/config.json: permission denied (/home/jane)" },
-          ],
-          companion: { update: { feedUrl: "https://vibetv.shop/home/updates/Users/appcast.xml" } },
-          timeline,
-        } as unknown as SupportDiagnostics),
-      ),
-    );
-
-    expect(exported.providerSetup.engine).toEqual({
-      path: "~/Library/Application Support/codexbar-display/bin/codexbar",
-      configPath: "~/.codexbar/config.json",
-    });
-    expect(exported.usageEngine.path).toBe("~/Library/Application Support/codexbar-display/bin/codexbar");
-    expect(exported.checks[0].detail).toBe("Could not read ~/.codexbar/config.json: permission denied (~)");
-    // A web address is not a path on this computer.
-    expect(exported.companion.update.feedUrl).toBe("https://vibetv.shop/home/updates/Users/appcast.xml");
-    expect(exported.timeline).toEqual(timeline);
-    expect(JSON.stringify(exported)).not.toMatch(/Jane|paulanduschus/);
-  });
-
-  it("does the same for a Windows report, on any drive and with either slash", async () => {
-    visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
-    const windows = await collectSupportReport(
-      async () =>
-        ({
-          ok: true,
-          providerSetup: {
-            engine: {
-              path: "C:\\Users\\Jane Doe\\AppData\\Local\\VibeTV\\codexbar.exe",
-              configPath: "d:/users/jane/.codexbar/config.json",
-            },
-          },
-          usageEngine: { path: "C:\\Users\\jane\\AppData\\Local\\VibeTV\\codexbar.exe" },
-          // A line the engine printed as JSON keeps its doubled backslashes.
-          checks: [{ name: "usage_engine", status: "fail", detail: '{"path":"C:\\\\Users\\\\jane\\\\AppData\\\\x.json"}' }],
-        }) as unknown as SupportDiagnostics,
-      clientState,
-      true,
-    );
-    const exported = JSON.parse(serializeSupportReport(windows));
-
-    expect(exported.providerSetup.engine).toEqual({
-      path: "~\\AppData\\Local\\VibeTV\\codexbar.exe",
-      configPath: "~/.codexbar/config.json",
-    });
-    expect(exported.usageEngine.path).toBe("~\\AppData\\Local\\VibeTV\\codexbar.exe");
-    expect(exported.checks[0].detail).toBe('{"path":"~\\\\AppData\\\\x.json"}');
-    expect(JSON.stringify(exported)).not.toMatch(/jane/i);
-  });
-
-  it("does the same for a Linux home", async () => {
-    const exported = JSON.parse(
-      serializeSupportReport(
-        await report({ ok: true, usageEngine: { path: "/home/jane/.local/share/codexbar-display/bin/codexbar" } } as unknown as SupportDiagnostics),
-      ),
-    );
-    expect(exported.usageEngine.path).toBe("~/.local/share/codexbar-display/bin/codexbar");
-  });
-});
-
 // Issue #579: the name carried the UTC time, so a report saved late in the
 // evening or early in the morning was dated another day than the customer's.
 describe("support report file name", () => {
@@ -308,65 +224,162 @@ describe("support report file name", () => {
   });
 });
 
-// A review of the first rule (issue #580): it took words after a path and
-// read web routes as home folders. Only the name behind the home root goes.
-describe("support report home folder, in a sentence", () => {
-  async function exportedDetail(detail: string): Promise<string> {
-    const exported = JSON.parse(
-      serializeSupportReport(
-        await report({ ok: true, checks: [{ name: "x", status: "fail", detail }] } as unknown as SupportDiagnostics),
-      ),
+// Issue #580: the report does not name the computer's account. It learns the
+// home folder from its own path fields and writes exactly that folder as `~`.
+describe("support report home folder", () => {
+  const timeline = {
+    version: 1,
+    events: [
+      { id: 7, at: "2026-10-06T08:00:00Z", component: "device", state: "unreachable", reason: "runtime/serial-write", correlationId: "9f3c2b1a5d6e7f80" },
+      { id: 8, at: "2026-10-06T08:00:40Z", component: "provider_check/home", deviceId: "vibetv-8caab5", state: "failed" },
+    ],
+  };
+
+  async function exported(diagnostics: object, details: string[] = [], windowsHost = false) {
+    const collected = await collectSupportReport(
+      async () =>
+        ({
+          ok: true,
+          ...diagnostics,
+          checks: details.map((detail) => ({ name: "x", status: "fail", detail })),
+        }) as unknown as SupportDiagnostics,
+      clientState,
+      windowsHost,
     );
-    return exported.checks[0].detail;
+    const out = JSON.parse(serializeSupportReport(collected));
+    return { out, details: out.checks.map((check: { detail: string }) => check.detail) as string[] };
   }
 
-  it.each([
-    // The words after the name stay.
-    ["No such directory /Users/paul. Run setup again, then retry.", "No such directory ~. Run setup again, then retry."],
-    ["Log in as /Users/paul (admin) please", "Log in as ~ (admin) please"],
-    ["HOME=/Users/paul PATH=/usr/bin:/bin", "HOME=~ PATH=/usr/bin:/bin"],
-    ["cwd=/Users/paul cmd=/Applications/VibeTV.app/Contents/MacOS/x", "cwd=~ cmd=/Applications/VibeTV.app/Contents/MacOS/x"],
-    ["open /Users/paul or use the app at Applications/VibeTV", "open ~ or use the app at Applications/VibeTV"],
-    ["/Users/paul: missing", "~: missing"],
-    ["/Users/paul is missing\nRun setup again.", "~ is missing\nRun setup again."],
-    // A text that is a home path to its end is the name to its end: half a
-    // name must not stay. A sentence of this shape loses its words instead.
-    ["/Users/Jane Doe", "~"],
-    ["/home/jane", "~"],
-    ["C:\\Users\\Jane Doe", "~"],
-    ["C:\\\\Users\\\\Jane Doe", "~"],
-    ["d:/users/Jane van der Doe", "~"],
-    ["\\\\fileserver\\Users\\Jane Doe", "~"],
-    ["/Users/Jane Doe/Library/x", "~/Library/x"],
-    ["/Users/paul is missing", "~"],
-    // A name with spaces is a name where the path goes on behind it.
-    ["/Users/Paul Anduschus/Library/x", "~/Library/x"],
-    ["Could not open /Users/Paul Anduschus/Library/x today", "Could not open ~/Library/x today"],
-    ["C:\\Users\\Jane van Doe\\AppData\\Local\\VibeTV\\codexbar.exe", "~\\AppData\\Local\\VibeTV\\codexbar.exe"],
-    // A share on another computer names the account too.
-    ["\\\\fileserver\\Users\\paul\\AppData\\Roaming\\codexbar-display", "~\\AppData\\Roaming\\codexbar-display"],
-    ["Cannot read \\\\fileserver\\Users\\paul\\x.json now", "Cannot read ~\\x.json now"],
-    // What stands in front of the path stays.
-    ["[/Users/paul/x] and \\\\?\\C:\\Users\\paul\\x", "[/Users/paul/x] and \\\\?\\~\\x"],
-    ["see https://vibetv.shop/help and /home/jane/.codexbar", "see https://vibetv.shop/help and ~/.codexbar"],
-  ])("%s", async (detail, want) => {
-    expect(await exportedDetail(detail)).toBe(want);
+  const macHome = {
+    providerSetup: {
+      engine: {
+        path: "/Users/Jane Doe/Library/Application Support/codexbar-display/bin/codexbar",
+        configPath: "/Users/Jane Doe/.codexbar/config.json",
+      },
+    },
+    usageEngine: { path: "/Users/Jane Doe/Library/Application Support/codexbar-display/bin/codexbar" },
+  };
+
+  // What the reviews of the earlier rules tried: none of it holds this home
+  // folder, so none of it changes.
+  const untouched = [
+    "/home/jane and /home/bob differ",
+    "/Users/jane is not writable. Check the folder and try again.",
+    "GET /home/feed returned 500",
+    "GET /users/123/profile failed",
+    "/Users/Shared/VibeTV/x",
+    "C:\\Users\\Public\\Documents\\x",
+    "https://example.com/?next=/home/dashboard/x",
+    "https://vibetv.shop/home/updates/Users/appcast.xml",
+    "HOME=/Users/paul PATH=/usr/bin:/bin",
+    "open /Users/paul or use the app at Applications/VibeTV",
+    "/users/jane doe/x",
+  ];
+
+  it("writes a Mac home folder with spaces as ~ in the three fields and in every text", async () => {
+    const { out, details } = await exported({ ...macHome, timeline }, [
+      "exec failed: [/Users/Jane Doe/bin/codexbar usage --json]",
+      "file:///Users/Jane Doe/Library/x.json",
+      "Could not read /Users/Jane Doe. Try again.",
+      "/Users/Jane Doe",
+      "cwd=/Users/Jane Doe cmd=/Users/Jane Doe/x, {/Users/Jane Doe/y}",
+      ...untouched,
+    ]);
+
+    expect(out.providerSetup.engine).toEqual({
+      path: "~/Library/Application Support/codexbar-display/bin/codexbar",
+      configPath: "~/.codexbar/config.json",
+    });
+    expect(out.usageEngine.path).toBe("~/Library/Application Support/codexbar-display/bin/codexbar");
+    expect(details).toEqual([
+      "exec failed: [~/bin/codexbar usage --json]",
+      "file://~/Library/x.json",
+      "Could not read ~. Try again.",
+      "~",
+      "cwd=~ cmd=~/x, {~/y}",
+      ...untouched,
+    ]);
+    expect(out.timeline).toEqual(timeline);
+    expect(JSON.stringify(out)).not.toContain("Jane");
   });
 
-  it.each([
-    // Folders every computer has are not an account.
-    "C:\\Users\\Public\\Documents\\x",
-    "/Users/Shared/VibeTV/x",
-    "/Users/Shared",
-    "C:\\Users\\Public",
-    // A web route, a query and a folder deeper in a path are not a home folder.
-    "GET /users/123/profile failed",
-    "https://example.com/?next=/home/dashboard/x",
-    "https://example.com/Users/paul/x",
-    "/Volumes/Backup/Users/paul/x",
-    "D:\\Data\\Users\\paul\\x",
-    '{"path":"D:\\\\Data\\\\Users\\\\paul\\\\x"}',
-  ])("leaves %s as it is", async (detail) => {
-    expect(await exportedDetail(detail)).toBe(detail);
+  it("takes the home folder from the settings path when the usage engine is installed for everyone", async () => {
+    const { out, details } = await exported(
+      {
+        providerSetup: {
+          engine: { path: "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI", configPath: "/home/jane/.codexbar/config.json" },
+        },
+        usageEngine: { path: "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI" },
+      },
+      ["Could not read /home/jane/.codexbar/config.json: permission denied", "GET /home/feed returned 500"],
+    );
+    expect(out.usageEngine.path).toBe("/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI");
+    expect(out.providerSetup.engine.configPath).toBe("~/.codexbar/config.json");
+    expect(details).toEqual(["Could not read ~/.codexbar/config.json: permission denied", "GET /home/feed returned 500"]);
+  });
+
+  it("writes a Windows home folder as ~ in any spelling Windows takes for it", async () => {
+    visit("http://127.0.0.1:47832/control-center", nativeUserAgent);
+    const { out, details } = await exported(
+      {
+        providerSetup: {
+          engine: {
+            path: "C:\\Program Files\\VibeTV\\codexbar.exe",
+            configPath: "C:\\Users\\Jane Doe\\AppData\\Roaming\\CodexBar\\settings.json",
+          },
+        },
+        usageEngine: { path: "C:\\Program Files\\VibeTV\\codexbar.exe" },
+      },
+      [
+        "open c:/users/jane doe/AppData/x.json failed",
+        // A line the engine printed as JSON keeps its doubled backslashes.
+        '{"path":"C:\\\\Users\\\\Jane Doe\\\\AppData\\\\x.json"}',
+        "C:\\Users\\Jane Doe",
+        "C:\\Users\\Public\\Documents\\x",
+        "D:\\Users\\Jane Doe\\x",
+      ],
+      true,
+    );
+    expect(out.providerSetup.engine.configPath).toBe("~\\AppData\\Roaming\\CodexBar\\settings.json");
+    expect(details).toEqual([
+      "open ~/AppData/x.json failed",
+      '{"path":"~\\\\AppData\\\\x.json"}',
+      "~",
+      "C:\\Users\\Public\\Documents\\x",
+      "D:\\Users\\Jane Doe\\x",
+    ]);
+  });
+
+  it("does the same for a home folder on a share", async () => {
+    const { out, details } = await exported(
+      { usageEngine: { path: "\\\\fileserver\\Users\\Jane Doe\\AppData\\Local\\VibeTV\\codexbar.exe" } },
+      ["Cannot read \\\\fileserver\\Users\\Jane Doe\\x.json now"],
+    );
+    expect(out.usageEngine.path).toBe("~\\AppData\\Local\\VibeTV\\codexbar.exe");
+    expect(details).toEqual(["Cannot read ~\\x.json now"]);
+  });
+
+  it("changes nothing when the report names no home folder", async () => {
+    const texts = ["exec failed: [/Users/Jane Doe/bin/codexbar usage --json]", "C:\\Users\\Jane Doe\\x", ...untouched];
+    for (const diagnostics of [
+      {},
+      { usageEngine: { path: "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI" } },
+      { usageEngine: { path: "/Users/Shared/VibeTV/codexbar" } },
+      { usageEngine: { path: "see /Users/Jane Doe/bin/codexbar" } },
+    ]) {
+      expect((await exported(diagnostics, texts)).details).toEqual(texts);
+    }
+  });
+
+  it("takes a megabyte of log lines in one pass", async () => {
+    const line = "open /Users/Jane Doe/Library/x.json failed; /Users/jane /home/feed C:\\Users\\x\n";
+    const log = line.repeat(Math.ceil((1 << 20) / line.length));
+    for (const diagnostics of [macHome, { usageEngine: { path: "C:\\Users\\Jane Doe\\AppData\\Local\\VibeTV\\codexbar.exe" } }]) {
+      const collected = await report({ ok: true, ...diagnostics, checks: [{ name: "x", status: "fail", detail: log }] } as unknown as SupportDiagnostics);
+      const started = performance.now();
+      const text = serializeSupportReport(collected);
+      expect(performance.now() - started).toBeLessThan(100);
+      expect(text.length).toBeGreaterThan(1 << 19);
+    }
   });
 });
