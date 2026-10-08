@@ -70,7 +70,7 @@ describe('AI native layout edits',()=>{
  });
  it('rejects recoloring sprite pixels and off-scene or distorted companion geometry',()=>{
   const doc=structuredClone(before);doc.spec.primitives[0].assetPath='/themes/u/ai-pet-1.cba';
-  for(const edit of [{color:'#FF0000'},{width:60,height:40},{y:110},{width:81,height:81},{text:'cat'}])
+  for(const edit of [{color:'#FF0000'},{width:60,height:40},{y:230},{width:81,height:81},{text:'cat'}])
    expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:0,...edit}]))).toThrow();
  });
  it('enlarges the displayed companion beyond 64px without enlarging or rewriting its source frames',()=>{
@@ -117,7 +117,14 @@ describe('AI native layout edits',()=>{
   expect(next.spec.primitives.map(p=>p.y)).toEqual([112,172,20]);
   for(const edit of [{width:120},{color:'#FF0000'}]) expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:0,...edit}]))).toThrow();
   expect(()=>applyAIThemeLayout(doc,plan([{action:'remove',index:0}]))).toThrow();
-  expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:1,y:120}]))).toThrow();
+  // A figure the customer put beside the picture does not block other edits, and may be moved there.
+  expect(applyAIThemeLayout(doc,plan([{action:'update',index:1,y:180}])).spec.primitives[1].y).toBe(180);
+  const beside=structuredClone(doc);beside.spec.primitives[1].y=180;
+  expect(applyAIThemeLayout(beside,plan([{action:'update',index:2,color:'#FF0000'}])).spec.primitives[2].color).toBe('#FF0000');
+  expect(()=>applyAIThemeLayout(beside,plan([{action:'update',index:0,y:112}]))).toThrow();
+  // A longer text near the right edge is widened only up to the edge instead of failing the edit.
+  const edge=structuredClone(doc);edge.spec.primitives[2]={type:'text',x:200,y:140,width:20,text:'HI',fontSize:1,color:'#FFFFFF'};
+  expect(applyAIThemeLayout(edge,plan([{action:'update',index:2,text:'A MUCH LONGER LABEL'}])).spec.primitives[2].width).toBe(40);
  });
  it('lets the AI use every text size the editor offers',()=>{
   const doc=structuredClone(before);
@@ -125,5 +132,13 @@ describe('AI native layout edits',()=>{
   const index=doc.spec.primitives.length-1;
   expect(applyAIThemeLayout(doc,plan([{action:'update',index,fontSize:8}])).spec.primitives[index].fontSize).toBe(8);
   expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index,fontSize:9}]))).toThrow();
+ });
+ it('names only the AI picture as movable artwork and keeps a picture with an attached motion in place',()=>{
+  const doc=structuredClone(before);
+  doc.spec.primitives=[{type:'sprite',assetPath:'/themes/u/ai-screen.cbi',x:0,y:0,width:240,height:128},{type:'sprite',assetPath:'/themes/u/ai-animation.cba',x:90,y:40,width:48,height:48},{type:'sprite',assetPath:'/themes/u/photo.cbi',x:0,y:140,width:40,height:40}];
+  expect(layoutContext(doc).map(e=>e.role)).toEqual(['artwork','image','image']);
+  expect(applyAIThemeLayout(doc,plan([{action:'update',index:0,y:100}])).spec.primitives.map(p=>p.y)).toEqual([100,140,140]);
+  doc.spec.primitives[1].assetPath='/themes/u/ai-scene-loop.cba';
+  expect(()=>applyAIThemeLayout(doc,plan([{action:'update',index:0,y:100}]))).toThrow();
  });
 });

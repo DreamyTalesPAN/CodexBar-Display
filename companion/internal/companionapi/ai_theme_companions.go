@@ -127,8 +127,9 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 	if len(previous) == 0 {
 		plan.Style.PreserveArtwork = false
 	}
-	if plan.Style.PreserveArtwork {
-		plan.FullScreen = previousHeight == 240
+	// A picture can only be kept at its own size; asking for the other size draws a new one.
+	if plan.FullScreen != (previousHeight == 240) {
+		plan.Style.PreserveArtwork = false
 	}
 	artHeight, shape, imageSize := 128, "front-on 15:8 composition for a 240x128", openAIImageSize
 	if plan.FullScreen {
@@ -168,7 +169,7 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 		}
 		// A picture of another shape is drawn afresh; the old one would be stretched.
 		reference := previous
-		if previousHeight != artHeight {
+		if (previousHeight == 240) != plan.FullScreen {
 			reference = nil
 		}
 		result.ImageBase64, e = a.createConceptImageSized(ctx, key, prompt, reference, imageSize)

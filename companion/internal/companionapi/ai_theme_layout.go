@@ -15,7 +15,7 @@ type aiLayoutPlan struct {
 	Edits []map[string]any `json:"edits"`
 }
 
-const aiLayoutCompanionInstructions = `The display uses a tiny classic ASCII font: use short ASCII labels (German e.g. WOCHE or WOCHENLIMIT, ae/oe/ue/ss instead of umlauts). Localize notes normally. Never insert emoji or unsupported scripts into native text; clarify when the requested writing cannot be rendered. usageGroup identifies all elements belonging to one usage section, including the usageMode/used/remaining caption. When the customer removes an entire usage limit/section, remove every element of that usageGroup and its heading, not just the bar or number; do not leave an orphaned caption. When they only change/remove the bar, keep the other section elements. Existing role=companion sprites are editable layout elements, NOT protected artwork. For requests to enlarge/shrink, move, remove, pause/resume or speed up/slow down the existing pet/character/object, choose mode=layout. Never regenerate its image for these requests. Only update x/y/width/height/fps or remove it, using kind=sprite or null. These dimensions are DISPLAY size, independent of the source animation resolution. Keep width=height between 16 and 80; position must stay inside the rectangle of the role=artwork picture (its x, y, width and height are in the element list), not on the UI beside it. Preserve the feet baseline (y+height) and horizontal center when resizing unless asked otherwise; adjust within bounds. A modest size increase is about 25 percent, bounded by available scene space and the device display-size limit of 80. At the maximum, return empty edits and explicitly explain the device display-size limit rather than claiming an enlargement. fps is 0 (pause), 1, 2, 4 or 8. Keep other fields null. Identify the companion from its indexed preview image first, then sceneName, spatial position and selected=true. Two different visible subjects are distinguishable: use their indexed previews instead of asking the customer to select them. With one companion, a reference to the scene's pet usually means it. With multiple indistinguishable companions ask the user to select one rather than guess. The display supports at most two animated companions: when two role=companion sprites already exist and the customer asks to add another animated subject, choose mode=unsupported, explain the two-companion limit and suggest replacing or removing one instead; never route this to scene generation. Requests about what an existing subject DOES or LOOKS LIKE, not merely its geometry/speed, require mode=scene. This distinction takes priority over generic artwork routing rules below. Never claim a native change without the matching edits. `
+const aiLayoutCompanionInstructions = `The display uses a tiny classic ASCII font: use short ASCII labels (German e.g. WOCHE or WOCHENLIMIT, ae/oe/ue/ss instead of umlauts). Localize notes normally. Never insert emoji or unsupported scripts into native text; clarify when the requested writing cannot be rendered. usageGroup identifies all elements belonging to one usage section, including the usageMode/used/remaining caption. When the customer removes an entire usage limit/section, remove every element of that usageGroup and its heading, not just the bar or number; do not leave an orphaned caption. When they only change/remove the bar, keep the other section elements. Existing role=companion sprites are editable layout elements, NOT protected artwork. For requests to enlarge/shrink, move, remove, pause/resume or speed up/slow down the existing pet/character/object, choose mode=layout. Never regenerate its image for these requests. Only update x/y/width/height/fps or remove it, using kind=sprite or null. These dimensions are DISPLAY size, independent of the source animation resolution. Keep width=height between 16 and 80; position should stay inside the rectangle of the role=artwork picture (its x, y, width and height are in the element list) unless the customer asks for a place beside it; it must always fit on the 240x240 display. Preserve the feet baseline (y+height) and horizontal center when resizing unless asked otherwise; adjust within bounds. A modest size increase is about 25 percent, bounded by available scene space and the device display-size limit of 80. At the maximum, return empty edits and explicitly explain the device display-size limit rather than claiming an enlargement. fps is 0 (pause), 1, 2, 4 or 8. Keep other fields null. Identify the companion from its indexed preview image first, then sceneName, spatial position and selected=true. Two different visible subjects are distinguishable: use their indexed previews instead of asking the customer to select them. With one companion, a reference to the scene's pet usually means it. With multiple indistinguishable companions ask the user to select one rather than guess. The display supports at most two animated companions: when two role=companion sprites already exist and the customer asks to add another animated subject, choose mode=unsupported, explain the two-companion limit and suggest replacing or removing one instead; never route this to scene generation. Requests about what an existing subject DOES or LOOKS LIKE, not merely its geometry/speed, require mode=scene. This distinction takes priority over generic artwork routing rules below. Never claim a native change without the matching edits. `
 
 // The customer talks to the editor in one continuing conversation, so a message
 // may be a question or a discussion rather than a change.
@@ -92,6 +92,7 @@ func (a *aiThemeState) planLayout(ctx context.Context, key string, req aiThemeCo
 		return plan, invalid
 	}
 	seen := map[int]bool{}
+	movesPicture, editsCompanion := false, false
 	for _, edit := range plan.Edits {
 		for k := range edit {
 			if _, ok := fields[k]; !ok {
@@ -114,12 +115,22 @@ func (a *aiThemeState) planLayout(ctx context.Context, key string, req aiThemeCo
 			}
 			seen[i] = true
 			if req.Layout[i]["role"] == "artwork" && req.Layout[i]["type"] == "sprite" {
-				// The picture may only be moved.
+				// The picture may only be moved, and only to where it fits.
 				for field, value := range edit {
 					if edit["action"] != "update" || (value != nil && field != "action" && field != "index" && field != "kind" && field != "x" && field != "y") {
 						return plan, invalid
 					}
 				}
+				for _, axis := range [][2]string{{"x", "width"}, {"y", "height"}} {
+					at, _ := req.Layout[i][axis[0]].(float64)
+					if moved, ok := edit[axis[0]].(float64); ok {
+						at = moved
+					}
+					if size, _ := req.Layout[i][axis[1]].(float64); at+size > 240 {
+						return plan, invalid
+					}
+				}
+				movesPicture = true
 				continue
 			}
 			if req.Layout[i]["protected"] == true {
@@ -127,6 +138,7 @@ func (a *aiThemeState) planLayout(ctx context.Context, key string, req aiThemeCo
 			}
 			kind := req.Layout[i]["type"]
 			companion := kind == "sprite" && req.Layout[i]["role"] == "companion"
+			editsCompanion = editsCompanion || companion
 			if !companion && kind != "text" && kind != "rect" && kind != "progress" {
 				return plan, invalid
 			}
@@ -142,6 +154,10 @@ func (a *aiThemeState) planLayout(ctx context.Context, key string, req aiThemeCo
 		default:
 			return plan, invalid
 		}
+	}
+	// Its companions travel with the picture; a second edit would move them twice.
+	if movesPicture && editsCompanion {
+		return plan, invalid
 	}
 	if plan.Edits == nil {
 		plan.Edits = []map[string]any{}

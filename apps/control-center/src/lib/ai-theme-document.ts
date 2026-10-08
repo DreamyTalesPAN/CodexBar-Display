@@ -52,8 +52,23 @@ export function applyAIThemeCandidate(
     // A picture of another size is another layout: the old readouts would sit
     // on top of it, so the new design replaces the old one as a whole.
     const drawnHeight = (path: Record<string, { data: string }>) => Number(path[ART]?.data.split("\n", 2)[1]?.split(" ")[1]);
-    if (artwork && incomingArt && !candidate.preserveArtwork && drawnHeight(candidate.assets) !== drawnHeight(current.assets))
-      return { assets: candidate.assets, spec: candidate.spec, packName: current.packName, usage: current.usage };
+    // Only full screen against not full screen counts: a legacy picture such
+    // as the sample's is a little shorter than 128 and still the same layout.
+    if (artwork && incomingArt && !candidate.preserveArtwork && (drawnHeight(candidate.assets) === 240) !== (drawnHeight(current.assets) === 240)) {
+      const replaced: ThemeStudioDocument = {
+        assets: { ...candidate.assets },
+        // The design stays the same theme on the device and in the library.
+        spec: { ...candidate.spec, themeId: current.spec.themeId, themeRev: current.spec.themeRev },
+        packName: current.packName,
+        usage: current.usage,
+      };
+      for (const path of candidate.retainedCompanions || []) {
+        if (!current.assets[path]) continue;
+        replaced.assets[path] = { ...current.assets[path] };
+        setAIAnimationSpeed(replaced, path, replaced.spec.primitives.find((p) => p.assetPath === path)?.fps ?? 4);
+      }
+      return replaced;
+    }
     const keepsPlace = Boolean(artwork && incomingArt && !hasLoop);
     if (candidate.hideUsage) {
       const usage = new Set(usageSectionIndices(next.spec.primitives).flat());

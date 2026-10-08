@@ -106,4 +106,16 @@ describe("flexible picture layouts",()=>{
   Object.assign(f.concept.companions![0],{x:100,y:40});
   expect(applyAIThemeCandidate(document,f.candidate(),'auto').spec.primitives.find(p=>p.assetPath==='/themes/u/ai-pet-1.cba')).toMatchObject({x:100,y:40});
  });
+ it('keeps the theme identity and an unchanged companion when the picture changes size, and treats a shorter legacy picture as the same layout',()=>{
+  const f=fixture(1);const current=f.candidate();
+  const document={assets:current.assets,spec:{...current.spec,themeId:'my-saved-theme',themeRev:7},packName:'Mine',usage:'live' as const};
+  const g=fixture(1);Object.assign(g.concept,{artHeight:240,hideUsage:true});Object.assign(g.concept.companions![0],{reuse:true});
+  const replaced=applyAIThemeCandidate(document,buildAIThemeCompanionCandidateFromRGBA(g.concept,new Uint8ClampedArray(240*240*4).fill(255),g.frames),'auto');
+  expect(replaced.spec).toMatchObject({themeId:'my-saved-theme',themeRev:7});
+  expect(replaced.assets['/themes/u/ai-pet-1.cba']).toEqual(document.assets['/themes/u/ai-pet-1.cba']);
+  const legacy=structuredClone(document);
+  legacy.assets[ART]={...legacy.assets[ART],data:legacy.assets[ART].data.replace('240 128','240 117')};
+  expect(applyAIThemeCandidate(legacy,fixture(1).candidate(),'auto').spec.primitives.some(p=>p.binding==='session')).toBe(true);
+  expect(applyAIThemeCandidate(legacy,fixture(1).candidate(),'auto').spec.themeId).toBe('my-saved-theme');
+ });
 });

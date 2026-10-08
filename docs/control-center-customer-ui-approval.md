@@ -5432,3 +5432,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
 - Approved customer-visible result: An animated figure the customer placed beside the picture stays where it is when the AI changes something else in the scene; it only moves when the AI is asked to move it.
+
+
+## 2026-10-08 — Theme Studio review round
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: A figure beside the picture no longer blocks AI layout changes. Text the AI makes longer near the right edge is widened only up to the edge. Starting from the built-in example keeps its layout when the AI redraws the scene. Making a saved design full screen keeps it the same theme and keeps an unchanged figure exactly as it was. Moving the picture in the chat carries the example's animated figure along, a picture with an attached motion stays in place, and a move that would not fit is declined. A request that fails or is cancelled appears in the chat only once it has an answer, and reference images are not sent again after an answer. Keyboard shortcuts do nothing while the leave dialog is open.

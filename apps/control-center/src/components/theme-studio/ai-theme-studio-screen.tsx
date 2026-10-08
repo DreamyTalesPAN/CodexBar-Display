@@ -698,8 +698,11 @@ export function AIThemeStudioScreen({
     setError("");
     setStatus("");
     const history = messages;
-    const say = (role: AIThemeMessage["role"], content: string) =>
-      setMessages((all) => [...all, { role, content: content.slice(0, 2000), createdAt: new Date().toISOString() }].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
+    // A turn enters the conversation once it has an answer, so a failed or
+    // cancelled request is not shown twice and not sent as an earlier turn.
+    const asked = prompt;
+    const reply = (content: string) =>
+      setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString() }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
     try {
       const capabilities = await fetchAIThemeCapabilities(controller.signal);
       if (
@@ -719,10 +722,10 @@ export function AIThemeStudioScreen({
       }));
       const layout = await planAIThemeLayout(prompt, context, controller.signal, attachments.map((image) => image.data), history);
       if (request.current !== controller || controller.signal.aborted) return;
-      say("user", prompt);
       if (layout.mode === "unsupported" || layout.mode === "answer") {
-        say("assistant", layout.notes);
+        reply(layout.notes);
         setPrompt("");
+        setAttachments([]);
         return;
       }
       if (layout.mode === "layout") {
@@ -735,7 +738,7 @@ export function AIThemeStudioScreen({
         setSelected([]);
         setPrompt("");
         setAttachments([]);
-        say("assistant", layout.notes);
+        reply(layout.notes);
         return;
       }
       if (layout.mode !== "scene" || layout.edits.length) throw new Error("The AI edit plan is invalid. Your design is unchanged.");
@@ -744,8 +747,9 @@ export function AIThemeStudioScreen({
         const path = document.spec.primitives[i]?.assetPath;
         return path && path !== AI_THEME_SCREENMASTER_ASSET_PATH && !isCompanionSprite(path) && !isAttachedSceneAnimation(path) && path !== AI_THEME_ANIMATION_ASSET_PATH;
       })) {
-        say("assistant", "I can only redraw pictures I created. Your imported image stays as it is; you can move, resize or replace it yourself.");
+        reply("I can only redraw pictures I created. Your imported image stays as it is; you can move, resize or replace it yourself.");
         setPrompt("");
+        setAttachments([]);
         return;
       }
       const concept = await generateAIThemeConcept(
@@ -776,7 +780,7 @@ export function AIThemeStudioScreen({
       setSelected([]);
       setPrompt("");
       setAttachments([]);
-      say("assistant", concept.style.notes);
+      reply(concept.style.notes);
     } catch (e) {
       if (!controller.signal.aborted) {
         setStatus("");
@@ -902,7 +906,7 @@ export function AIThemeStudioScreen({
       data-theme-studio-root
       className="flex min-h-[calc(100svh-86px)] flex-col pb-6 text-foreground lg:h-[calc(100svh-86px)]"
       onKeyDown={(event) => {
-        if (isTypingTarget(event.target) || locked || panel || pending || event.nativeEvent.isComposing)
+        if (isTypingTarget(event.target) || locked || panel || pending || leaving || event.nativeEvent.isComposing)
           return;
         const command = event.metaKey || event.ctrlKey;
         const key = event.key.toLowerCase();

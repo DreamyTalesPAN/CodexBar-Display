@@ -141,3 +141,29 @@ func TestLayoutRejectsInvalidIdentityReferencesBeforeProviderCall(t *testing.T) 
 		}
 	}
 }
+
+func TestLayoutMovesOnlyAPictureThatFits(t *testing.T) {
+	picture := `{"type":"sprite","role":"artwork","protected":true,"x":0,"y":0,"width":240,"height":128}`
+	pet := `{"type":"sprite","role":"companion","protected":false,"x":100,"y":60,"width":32,"height":32}`
+	for name, tc := range map[string]struct {
+		edits string
+		ok    bool
+	}{
+		"to the bottom":         {`[{"action":"update","index":0,"y":112}]`, true},
+		"past the edge":         {`[{"action":"update","index":0,"y":113}]`, false},
+		"resized":               {`[{"action":"update","index":0,"y":10,"height":64}]`, false},
+		"removed":               {`[{"action":"remove","index":0}]`, false},
+		"with a companion edit": {`[{"action":"update","index":0,"y":112},{"action":"update","index":1,"x":10}]`, false},
+	} {
+		s := aiTestServer(t, aiRoundTrip(func(r *http.Request) (*http.Response, error) {
+			var edits []any
+			_ = json.Unmarshal([]byte(tc.edits), &edits)
+			return autoTextResponse(map[string]any{"mode": "layout", "notes": "Moved", "edits": edits}), nil
+		}))
+		_ = s.aiTheme.store.Set("openai", "fixture-secret")
+		resp := aiCall(s, "POST", "/v1/ai-theme/concepts", `{"prompt":"Move the picture","target":"layout","layout":[`+picture+`,`+pet+`]}`)
+		if (resp.Code == 200) != tc.ok {
+			t.Fatalf("%s: %d %s", name, resp.Code, resp.Body.String())
+		}
+	}
+}

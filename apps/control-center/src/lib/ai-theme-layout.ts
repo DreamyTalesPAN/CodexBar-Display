@@ -2,7 +2,7 @@ import {cloneDocument,type ThemeStudioDocument} from '@/components/theme-studio/
 import {LIVE_READINGS,setReading,usageSectionIndices} from '@/components/theme-studio/design-controls';
 import {primitiveBounds,textPrimitiveNaturalWidth} from '@/components/theme-studio/editor-geometry';
 import type {ThemeStudioPrimitive} from './theme-studio';
-import {AI_THEME_SCREENMASTER_ASSET_PATH as ART,isCompanionSprite} from './ai-theme';
+import {AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,AI_THEME_SCREENMASTER_ASSET_PATH as ART,isAttachedSceneAnimation,isCompanionSprite} from './ai-theme';
 import {setAIAnimationSpeed} from './ai-theme-document';
 
 export type AIThemeLayoutEdit={
@@ -17,7 +17,7 @@ export type AIThemeLayoutPlan={mode:'layout'|'scene'|'answer'|'unsupported';note
 // Send geometry and native labels only, never sprite bytes or credentials.
 export function layoutContext(document:ThemeStudioDocument, selected:number[]=[]){
   const groups=usageSectionIndices(document.spec.primitives);
-  return document.spec.primitives.map((p,index)=>({type:p.type,x:p.x,y:p.y,width:p.width,height:p.height,fontSize:p.fontSize,color:p.color,bgColor:p.bgColor,text:p.text,binding:p.binding,slot:p.slot,fps:p.fps,selected:selected.includes(index),sceneName:document.packName,usageGroup:groups.findIndex(group=>group.includes(index))+1||undefined,role:isCompanionSprite(p.assetPath)?'companion':p.assetPath?'artwork':'ui',protected:isCompanionSprite(p.assetPath)?false:!!p.assetPath || !['text','rect','progress'].includes(p.type)}));
+  return document.spec.primitives.map((p,index)=>({type:p.type,x:p.x,y:p.y,width:p.width,height:p.height,fontSize:p.fontSize,color:p.color,bgColor:p.bgColor,text:p.text,binding:p.binding,slot:p.slot,fps:p.fps,selected:selected.includes(index),sceneName:document.packName,usageGroup:groups.findIndex(group=>group.includes(index))+1||undefined,role:isCompanionSprite(p.assetPath)?'companion':p.assetPath===ART?'artwork':p.assetPath?'image':'ui',protected:isCompanionSprite(p.assetPath)?false:!!p.assetPath || !['text','rect','progress'].includes(p.type)}));
 }
 
 // All indices refer to the original document. Apply atomically, preserving all
@@ -53,8 +53,10 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
       if(artwork){
         // The picture can only be moved; its companions travel with it.
         if([edit.width,edit.height,edit.fontSize,edit.color,edit.text,edit.reading,edit.fps].some(v=>v!=null)) return fail();
+        // A motion attached to the picture is drawn for its place; such a picture stays put.
+        if(next.spec.primitives.some(q=>isAttachedSceneAnimation(q.assetPath))) return fail();
         const dx=(edit.x??p.x)-p.x,dy=(edit.y??p.y)-p.y;
-        for(const q of next.spec.primitives) if(isCompanionSprite(q.assetPath)){q.x+=dx;q.y+=dy;}
+        for(const q of next.spec.primitives) if(isCompanionSprite(q.assetPath)||q.assetPath===ANIMATION){q.x+=dx;q.y+=dy;}
       }
     }
     for(const key of ['x','y','width','height','fontSize'] as const){
@@ -87,14 +89,13 @@ export function applyAIThemeLayout(current:ThemeStudioDocument,plan:AIThemeLayou
     if(p.type==='text'&&!p.text&&!p.binding) return fail();
     // Text widths are clipping boxes; grow them like the manual controls do so
     // a longer label, reading or font size is never cut off.
-    if(p.type==='text'&&p.width&&(edit.text!=null||edit.reading!=null||edit.fontSize!=null)) p.width=Math.max(p.width,textPrimitiveNaturalWidth(p));
+    if(p.type==='text'&&p.width&&(edit.text!=null||edit.reading!=null||edit.fontSize!=null)) p.width=Math.min(240-p.x,Math.max(p.width,textPrimitiveNaturalWidth(p)));
     if(p.type!=='text'&&(!p.width||!p.height)) return fail();
     const bounds=primitiveBounds({...p,x:0,y:0});
     if(p.x<0||p.y<0||p.x+bounds.width>240||p.y+bounds.height>240) return fail();
   }
   next.spec.primitives=next.spec.primitives.filter((_,i)=>!removed.has(i));
-  // On the device a companion only shows its surroundings while it lies on the picture.
-  const art=next.spec.primitives.find(p=>p.assetPath===ART)||{x:0,y:0,width:240,height:128};
-  if(next.spec.primitives.some(p=>isCompanionSprite(p.assetPath)&&(p.x<art.x||p.y<art.y||p.x+(p.width||0)>art.x+(art.width||240)||p.y+(p.height||0)>art.y+(art.height||128)))) return fail();
+  // Companions carried along with a moved picture must still be on the display.
+  if(next.spec.primitives.some(p=>(isCompanionSprite(p.assetPath)||p.assetPath===ANIMATION)&&(p.x<0||p.y<0||p.x+(p.width||0)>240||p.y+(p.height||0)>240))) return fail();
   return next;
 }
