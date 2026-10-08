@@ -615,3 +615,22 @@ func TestSetupLogFilesARefusedScreensaverUploadUnderItsOwnStage(t *testing.T) {
 		}
 	}
 }
+
+// A search retried all night must not push the rest of the history out of the
+// timeline: the setup log folds the repeated pair, and the timeline follows it.
+func TestARetriedSetupStepDoesNotFloodTheTimeline(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	for i := 0; i < 50; i++ {
+		server.recordSetupEvent(setupEvent{Stage: "device_search", Status: "started", Message: "Searching for VibeTV."})
+		server.recordSetupEvent(setupEvent{Stage: "device_search", Status: "failed", Message: "No VibeTV found.", Code: "vibetv_not_found"})
+	}
+	server.recordSetupEvent(setupEvent{Stage: "device_search", Status: "succeeded", Message: "Found VibeTV."})
+
+	var got []string
+	for _, event := range server.Timeline().Snapshot(server.currentTime()).Events {
+		got = append(got, event.State)
+	}
+	if want := "started,failed,started,succeeded"; strings.Join(got, ",") != want {
+		t.Fatalf("timeline states = %v, want %s", got, want)
+	}
+}

@@ -144,7 +144,9 @@ func (l *setupEventLog) reset(now time.Time) {
 	l.record(now, setupEvent{Stage: "setup_reset", Status: "started", Message: "New setup session started."})
 }
 
-func (l *setupEventLog) record(now time.Time, event setupEvent) {
+// record logs one setup step and reports whether it became a new entry; a
+// repeat folded into an earlier entry reports false.
+func (l *setupEventLog) record(now time.Time, event setupEvent) bool {
 	event.Message = sanitizeErrorDetail(errors.New(event.Message))
 	event.At = now.UTC().Format(time.RFC3339)
 	l.mu.Lock()
@@ -156,7 +158,7 @@ func (l *setupEventLog) record(now time.Time, event setupEvent) {
 		if sameSetupEvent(*last, event) {
 			last.Count++
 			last.At = event.At
-			return
+			return false
 		}
 		// A repeated start/result pair (a retried search that found the same
 		// nothing) folds into the previous pair instead of growing the list.
@@ -165,10 +167,11 @@ func (l *setupEventLog) record(now time.Time, event setupEvent) {
 			l.session.Events[n-3].Count++
 			l.session.Events[n-2].Count++
 			l.session.Events[n-2].At = event.At
-			return
+			return false
 		}
 	}
 	l.appendLocked(event)
+	return true
 }
 
 func (l *setupEventLog) appendLocked(event setupEvent) {
@@ -219,10 +222,12 @@ func (l *setupEventLog) sessionID(now time.Time) string {
 }
 
 // recordSetupEvent is the one place a setup step is logged: in the setup log
-// the customer sees, and as a transition in the support timeline.
+// the customer sees, and as a transition in the support timeline. A repeat the
+// setup log folds (a search retried with the same result) is no transition.
 func (s *Server) recordSetupEvent(event setupEvent) {
-	s.setupEvents.record(s.currentTime(), event)
-	s.recordTimeline(timeline.Event{Component: event.Stage, State: event.Status, Reason: event.Code})
+	if s.setupEvents.record(s.currentTime(), event) {
+		s.recordTimeline(timeline.Event{Component: event.Stage, State: event.Status, Reason: event.Code})
+	}
 }
 
 // Timeline is the support timeline. The runtime hands it to its display
