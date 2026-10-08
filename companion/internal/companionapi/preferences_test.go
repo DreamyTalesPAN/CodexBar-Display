@@ -88,6 +88,42 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	}
 }
 
+// Issue #368: a provider that stopped delivering says since when, also once
+// its saved reading is too old to show and lastSuccessAt is gone. A provider
+// the collector never stored says nothing.
+func TestPreferencesReportNoReadingSinceFromStoredCollectionTime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+			{ID: "cursor", Label: "Cursor", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "claude", Frame: protocol.Frame{Provider: "claude", UsageUnavailable: true}, CollectedAt: collectedAt, Stale: true,
+		}}}, true
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 2 {
+		t.Fatalf("expected two providers, got %#v", response.Items)
+	}
+	claude, cursor := response.Items[0].Health, response.Items[1].Health
+	if claude.State != "auth_required" || claude.LastSuccessAt != "" || claude.NoReadingSince != "2026-07-28T08:29:00Z" {
+		t.Fatalf("unexpected health for the failing provider: %#v", claude)
+	}
+	if cursor.NoReadingSince != "" {
+		t.Fatalf("a provider that was never read must not name a time: %#v", cursor)
+	}
+}
+
 func TestPreferencesKeepRetainedUsageStaleAcrossHealthRefresh(t *testing.T) {
 	for _, health := range []codexbar.ProviderHealthState{
 		codexbar.ProviderHealthAuthRequired,

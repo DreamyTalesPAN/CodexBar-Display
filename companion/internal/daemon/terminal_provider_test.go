@@ -177,3 +177,32 @@ func TestTerminalVerdictSurvivesRestartAndDropsLastGood(t *testing.T) {
 		t.Fatalf("obsolete Gemini last-good survived the restart")
 	}
 }
+
+// Issue #368: "no usage reading since" is read from the stored collection
+// time, so that time must not move while a provider keeps failing. It is the
+// last good reading, or the first failed one for a provider that never
+// delivered -- also after the reading expired and the Companion restarted.
+func TestPersistedUsageKeepsCollectionTimeWhileProviderKeepsFailing(t *testing.T) {
+	prepareFastTestEnv(t)
+	start := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	now := start
+	frames := []codexbar.ParsedFrame{testParsedFrame("gemini", 73, 21, 3600), terminalTestFrame("claude", false)}
+	collector := terminalTestCollector(&now, &frames)
+	collector.collectOnce(context.Background())
+
+	frames = []codexbar.ParsedFrame{terminalTestFrame("gemini", false), terminalTestFrame("claude", false)}
+	for _, later := range []time.Duration{time.Minute, 16 * 24 * time.Hour} {
+		now = start.Add(later)
+		collector.collectOnce(context.Background())
+	}
+
+	usage, ok := LoadPersistedUsage(now)
+	if !ok || len(usage.Providers) != 2 {
+		t.Fatalf("expected both providers on disk, got ok=%v %#v", ok, usage.Providers)
+	}
+	for _, provider := range usage.Providers {
+		if !provider.CollectedAt.Equal(start) || !provider.Frame.UsageUnavailable {
+			t.Fatalf("%s: collection time moved or usage survived: %#v", provider.Provider, provider)
+		}
+	}
+}

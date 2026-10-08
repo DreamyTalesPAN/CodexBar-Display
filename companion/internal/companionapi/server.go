@@ -732,6 +732,9 @@ type diagnosticsResponse struct {
 	LastCollection *daemon.CollectorCycle `json:"lastCollection,omitempty"`
 	SetupLog       setupLog               `json:"setupLog"`
 	Checks         []diagnosticCheck      `json:"checks"`
+	// NoReadingSince names, per provider, since when no newer usage reading
+	// arrived (#368); see noReadingSinceByProvider.
+	NoReadingSince map[string]string `json:"noReadingSince,omitempty"`
 }
 
 type diagnosticsEnvironment struct {
@@ -2494,6 +2497,12 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			lastCollection = &cycle
 		}
 	}
+	var noReadingSince map[string]string
+	if s.loadUsage != nil {
+		if usage, ok := s.loadUsage(s.currentTime().UTC()); ok {
+			noReadingSince = noReadingSinceByProvider(usage)
+		}
+	}
 	writeReport := func(device deviceInfo) {
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
 			OK:            true,
@@ -2518,6 +2527,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			ProviderSetup:    providerSetup,
 			UsageEngine:      usageEngineDiagnostics(providerSetup.Engine),
 			LastCollection:   lastCollection,
+			NoReadingSince:   noReadingSince,
 			SetupLog:         s.setupEvents.snapshot(s.currentTime()),
 			Checks:           checks,
 		})

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 )
 
 const (
@@ -87,6 +88,10 @@ type preferenceHealth struct {
 	// What the usage service itself said, with its home path redacted. Empty
 	// only when it said nothing, so the screen falls back to generic Detail.
 	Reported string `json:"reported,omitempty"`
+	// NoReadingSince says how long the provider has gone without a newer usage
+	// reading; see noReadingSinceByProvider. LastSuccessAt cannot: it is gone
+	// as soon as the saved reading is too old to show (#368).
+	NoReadingSince string `json:"noReadingSince,omitempty"`
 }
 
 type preferencesResponse struct {
@@ -639,8 +644,10 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	lastSuccess := make(map[string]string)
 	retainedSuccess := make(map[string]struct{})
 	freshSuccess := make(map[string]codexbar.ProviderReadiness)
+	var noReadingSince map[string]string
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok {
+			noReadingSince = noReadingSinceByProvider(usage)
 			for _, provider := range usage.Providers {
 				id := strings.TrimSpace(strings.ToLower(provider.Provider))
 				if id == "" {
@@ -767,18 +774,35 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			WriteStrategy:  "codexbar_command",
 			Writable:       true,
 			Health: &preferenceHealth{
-				State:         state,
-				Service:       string(setting.Service),
-				Message:       message,
-				Reported:      reported,
-				LastSuccessAt: lastSuccess[setting.ID],
-				CheckedAt:     checkedAt,
-				NextAction:    nextAction,
-				SignInURL:     signInURL,
+				State:          state,
+				Service:        string(setting.Service),
+				Message:        message,
+				Reported:       reported,
+				LastSuccessAt:  lastSuccess[setting.ID],
+				CheckedAt:      checkedAt,
+				NextAction:     nextAction,
+				SignInURL:      signInURL,
+				NoReadingSince: noReadingSince[setting.ID],
 			},
 		})
 	}
 	return items
+}
+
+// noReadingSinceByProvider is, per provider, when the collector last stored a
+// usage state for it. The collector leaves that time alone while a provider
+// keeps failing, so it is the last good reading -- or, for a provider that
+// never delivered, its first failed one. Either way no reading came after it,
+// which is all the name claims; a provider without an entry was never read.
+func noReadingSinceByProvider(usage daemon.PersistedUsage) map[string]string {
+	since := make(map[string]string)
+	for _, provider := range usage.Providers {
+		id := strings.TrimSpace(strings.ToLower(provider.Provider))
+		if id != "" && !provider.CollectedAt.IsZero() {
+			since[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
+		}
+	}
+	return since
 }
 
 func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {

@@ -7257,6 +7257,30 @@ func TestDiagnosticsReportsLastCollectionCounts(t *testing.T) {
 	}
 }
 
+// Issue #368: the support report says since when a provider has no newer
+// usage reading, so "enabled but silent for 16 days" is one line of JSON.
+func TestDiagnosticsReportsNoReadingSincePerProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{
+			{Provider: "claude", CollectedAt: time.Date(2026, 7, 28, 8, 29, 0, 0, time.UTC)},
+			{Provider: "codex"},
+		}}, true
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+
+	var got struct {
+		NoReadingSince map[string]string `json:"noReadingSince"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if want := map[string]string{"claude": "2026-07-28T08:29:00Z"}; !reflect.DeepEqual(got.NoReadingSince, want) {
+		t.Fatalf("noReadingSince = %#v, want %#v", got.NoReadingSince, want)
+	}
+}
+
 func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode: "cable",
