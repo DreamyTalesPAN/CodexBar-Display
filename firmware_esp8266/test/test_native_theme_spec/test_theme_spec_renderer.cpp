@@ -45,6 +45,7 @@ using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ActivityTtlRemainingSecs;
 using codexbar_display::core::ConsumeFrameLine;
 using codexbar_display::core::ExpireActivity;
+using codexbar_display::core::HoldActivityTtl;
 using codexbar_display::core::CurrentRemainingSecs;
 using codexbar_display::core::CurrentResetTrust;
 using codexbar_display::core::DecodeResetTrustRecord;
@@ -1506,6 +1507,34 @@ void testActivityExpirySurvivesMillisWrapAround() {
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
   TEST_ASSERT_TRUE(ExpireActivity(state, 7000UL, event));
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+}
+
+// While the device takes a theme or an update it accepts no frames, so it
+// cannot tell whether the writer is still there. That time does not count
+// against the bound: a customer who codes through a long install must not see
+// idle between the end of the install and the next frame.
+void testActivityTtlDoesNotRunWhileTheDeviceAcceptsNoFrames() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding","activityTtlSecs":10})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  for (unsigned long now = 2000; now <= 45000; now += 1000) {
+    HoldActivityTtl(state, now);  // the install runs for 45 s
+  }
+  TEST_ASSERT_FALSE(ExpireActivity(state, 45001, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_EQUAL_UINT32(10, ActivityTtlRemainingSecs(state, 45001));
+  // From the end of the install the frame's own bound applies again.
+  TEST_ASSERT_FALSE(ExpireActivity(state, 54999, event));
+  TEST_ASSERT_TRUE(ExpireActivity(state, 55000, event));
+
+  // Holding does not invent a bound for a frame that carried none.
+  RuntimeState unbounded;
+  const char* legacy = R"JSON({"v":2,"provider":"codex","session":7,"weekly":7,"activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(unbounded, legacy, 1000, event));
+  HoldActivityTtl(unbounded, 5000);
+  TEST_ASSERT_EQUAL_UINT32(0, ActivityTtlRemainingSecs(unbounded, 5000));
+  TEST_ASSERT_FALSE(ExpireActivity(unbounded, 900000, event));
 }
 
 // The bound is capped at a day, so its millisecond count cannot overflow.
@@ -4414,6 +4443,7 @@ int main() {
   RUN_TEST(testActivityWithoutATtlNeverExpires);
   RUN_TEST(testReconnectAfterExpiryTakesTheNewFrameAtItsWord);
   RUN_TEST(testActivityExpirySurvivesMillisWrapAround);
+  RUN_TEST(testActivityTtlDoesNotRunWhileTheDeviceAcceptsNoFrames);
   RUN_TEST(testActivityTtlIsCappedAtOneDay);
   RUN_TEST(testReportsWorkingIgnoresErrorFramesAndReplenishment);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);

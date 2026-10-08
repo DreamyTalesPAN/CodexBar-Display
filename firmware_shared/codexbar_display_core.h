@@ -1404,6 +1404,14 @@ inline bool ExpireActivity(RuntimeState& runtimeState, unsigned long nowMillis, 
   return true;
 }
 
+// While the device accepts no frames (a theme transfer, an update) it cannot
+// tell whether the writer is still there, so that time does not count against
+// the bound. Call it every loop of such a phase; the countdown then starts
+// again in full when the phase ends.
+inline void HoldActivityTtl(RuntimeState& runtimeState, unsigned long nowMillis) {
+  runtimeState.activityBaseMillis = static_cast<uint32_t>(nowMillis);
+}
+
 // Diagnostics: seconds the current activity still holds without a fresh frame.
 inline uint32_t ActivityTtlRemainingSecs(const RuntimeState& runtimeState, unsigned long nowMillis) {
   const uint32_t elapsed = static_cast<uint32_t>(nowMillis) - runtimeState.activityBaseMillis;

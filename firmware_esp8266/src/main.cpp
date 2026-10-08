@@ -4764,7 +4764,14 @@ void loop() {
       millis() - themeInstallStatusActivityMs >= kCableTransferTimeoutMs) {
     finishThemeInstallStatus();
   }
-  if (otaUploadInProgress || assetUploadInProgress || themeInstallStatusVisible) {
+  const bool installing = otaUploadInProgress || assetUploadInProgress || themeInstallStatusVisible;
+  if (installing || cableTransfer.flow.active) {
+    // No frame is accepted now, so the activity bound waits: otherwise a
+    // customer coding through a long install would see idle between its end
+    // and the next frame.
+    codexbar_display::core::HoldActivityTtl(runtimeCtx.runtime, millis());
+  }
+  if (installing) {
     delay(1);
     return;
   }

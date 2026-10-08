@@ -194,6 +194,10 @@ firmware renders it and decides nothing itself.
   Silence therefore means the writer is gone or cannot reach the device
   (stopped, Mac asleep, cable pulled, device writes held for setup or a
   firmware update), and only then does the bound run out.
+- **The countdown waits while the device accepts no frames.** During a theme
+  transfer or an update the device cannot tell whether the writer is still
+  there, so that time does not count; the full bound applies again from the
+  end of that phase.
 - **Every accepted frame restarts the countdown** with its own value. After
   the writer returns, the first frame is taken at its word; nothing from before
   the gap is replayed.
