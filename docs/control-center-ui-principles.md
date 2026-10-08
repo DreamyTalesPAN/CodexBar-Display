@@ -105,11 +105,12 @@ Every approval entry therefore ends with a line `- What's new:`. Its value is on
 - the ids of the entries this change adds to that list, each in backticks, for example ``- What's new: `provider-shortcut` ``;
 - `none — <reason>`, for example `- What's new: none — a fix, nothing new to use`.
 
-The gate fails when the line is missing, when `none` has no reason, or when an id is not in the list.
+The gate fails when the line is missing, when `none` has no reason, or when an id is not in the list. When one change adds several approval entries, each needs its own line.
 
 - An entry is one title plus one sentence that says how to use the feature. It is customer-facing copy and needs the same approval as any other.
 - A new entry goes to the end of the list, with a new kebab-case id. An id never changes and is never used again: the app stores the ids a customer has seen.
 - The dialog shows at most three entries at once, the newest the customer has not seen. So add an entry only for something a customer would look for.
+- A theme that is added to the catalog always gets an entry: its title is `New theme: <name>`, and it carries the theme's catalog id as `theme`. Theme entries stand first, link to Themes, and are shown beside the three others (at most three themes). `whats-new.test.ts` fails when a live theme in `dist/theme-packs/vibetv-theme-packs-v2.json` has no entry, or an entry names a theme the catalog does not hold. This holds for themes, not for screensavers.
 - Pure fixes get `none`, and so does every change that gives the customer nothing new to do.
 
 ## Verification Budget

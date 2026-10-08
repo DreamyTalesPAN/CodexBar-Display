@@ -2,13 +2,22 @@
 // can read again under Updates. Newest last. An entry is one title and one
 // sentence that says how to use it; pure fixes get none.
 //
+// A theme that is added to the catalog always gets an entry, with its catalog
+// id as `theme`. Those are told first and beside the three others.
+//
 // An id never changes: the app stores the ones a customer has seen, and each
 // approval entry names the ones its change adds
 // (docs/control-center-ui-principles.md). The approval gate and the customer
 // flows read the ids from this file, so each stays a plain string on its
 // `id:` line.
 
-import { Keyboard, Percent, Repeat, type LucideIcon } from "lucide-react";
+import {
+  Keyboard,
+  PanelsTopLeft,
+  Percent,
+  Repeat,
+  type LucideIcon,
+} from "lucide-react";
 
 export type WhatsNewEntry = {
   id: string;
@@ -18,9 +27,25 @@ export type WhatsNewEntry = {
   body: string;
   /** The entry offers "Show me in Settings". */
   inSettings?: boolean;
+  /** The catalog id of the theme the entry announces; offers "Show me in Themes". */
+  theme?: string;
 };
 
 export const WHATS_NEW: WhatsNewEntry[] = [
+  {
+    id: "theme-gauge",
+    icon: PanelsTopLeft,
+    title: "New theme: Gauge",
+    body: "A half ring that fills as you use your limit.",
+    theme: "gauge",
+  },
+  {
+    id: "theme-token-counter",
+    icon: PanelsTopLeft,
+    title: "New theme: Token Counter",
+    body: "The tokens of your session as one large number.",
+    theme: "token-counter",
+  },
   {
     id: "provider-shortcut",
     icon: Keyboard,
@@ -44,7 +69,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
 ];
 
 const STORAGE_KEY = "vibetv.controlCenter.seenWhatsNew";
-/** More than three at once is a list nobody reads. */
+/** More than three of a kind at once is a list nobody reads. */
 const SHOWN = 3;
 
 /** The ids this customer has seen, or null while nothing is stored. */
@@ -76,7 +101,14 @@ export function markWhatsNewSeen(): string[] {
   return seen;
 }
 
-/** The newest entries that are not in `seen`, at most three. */
+/**
+ * The newest entries that are not in `seen`: new themes first, at most three,
+ * then at most three of the others.
+ */
 export function newestWhatsNew(seen: string[] | null = null): WhatsNewEntry[] {
-  return WHATS_NEW.filter(({ id }) => !seen?.includes(id)).slice(-SHOWN);
+  const unseen = WHATS_NEW.filter(({ id }) => !seen?.includes(id));
+  return [
+    ...unseen.filter(({ theme }) => theme).slice(-SHOWN),
+    ...unseen.filter(({ theme }) => !theme).slice(-SHOWN),
+  ];
 }

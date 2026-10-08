@@ -5653,6 +5653,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             closeWhatsNew();
             setActiveTab("settings");
           }}
+          onShowThemes={() => {
+            closeWhatsNew();
+            setAppearanceSection("themes");
+            setActiveTab("theme-library");
+          }}
           windowsHost={windowsHost}
         />
       ) : null}

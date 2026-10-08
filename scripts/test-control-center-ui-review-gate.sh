@@ -219,6 +219,23 @@ test_unknown_whats_new_entry_id_does_not_reset_gate() {
   expect_gate_due "$repo"
 }
 
+# Two entries in one change: each needs its own line.
+test_every_added_entry_needs_its_whats_new_line() {
+  local repo="${TMP_ROOT}/whats-new-two-entries"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  approval_entry "First change" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  commit_approval "$repo" "Second change" ""
+  expect_gate_due "$repo"
+
+  approval_entry "Third change" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  commit_approval "$repo" "Fourth change"
+  expect_gate_success "$repo"
+}
+
 test_pull_request_merge_commit_uses_pr_head() {
   local repo="${TMP_ROOT}/pull-request-merge"
   setup_repo "$repo"
@@ -255,6 +272,7 @@ test_approval_without_whats_new_line_does_not_reset_gate
 test_whats_new_none_needs_a_reason
 test_whats_new_entry_id_resets_gate
 test_unknown_whats_new_entry_id_does_not_reset_gate
+test_every_added_entry_needs_its_whats_new_line
 test_pull_request_merge_commit_uses_pr_head
 
 printf 'control-center UI review gate tests passed\n'

@@ -22,12 +22,14 @@ export function WhatsNewDialog({
   entries,
   onClose,
   onShowSettings,
+  onShowThemes,
   windowsHost,
 }: {
   appVersion?: string;
   entries: WhatsNewEntry[];
   onClose: () => void;
   onShowSettings: () => void;
+  onShowThemes: () => void;
   windowsHost: boolean;
 }) {
   const gotIt = useRef<HTMLButtonElement>(null);
@@ -65,15 +67,15 @@ export function WhatsNewDialog({
                 <p className="text-sm text-muted-foreground">
                   <EntryBody body={entry.body} windowsHost={windowsHost} />
                 </p>
-                {entry.inSettings ? (
+                {entry.theme || entry.inSettings ? (
                   <Button
                     className="h-auto px-0"
-                    onClick={onShowSettings}
+                    onClick={entry.theme ? onShowThemes : onShowSettings}
                     size="sm"
                     type="button"
                     variant="link"
                   >
-                    Show me in Settings
+                    {entry.theme ? "Show me in Themes" : "Show me in Settings"}
                   </Button>
                 ) : null}
               </div>

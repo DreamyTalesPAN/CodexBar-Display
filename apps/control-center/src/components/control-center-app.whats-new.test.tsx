@@ -190,6 +190,10 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   const text = notice()?.textContent ?? "";
   expect(text).toContain("Version 1.0.63");
   for (const sentence of [
+    "New theme: Gauge",
+    "A half ring that fills as you use your limit.",
+    "New theme: Token Counter",
+    "The tokens of your session as one large number.",
     "Switch providers with a shortcut",
     "Press ⌃⌥⌘P in any app to show the next provider on VibeTV.",
     "Choose how often VibeTV switches",
@@ -202,6 +206,16 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   }
   expect(keyCaps()).toEqual(["⌃", "⌥", "⌘", "P"]);
   expect(within(notice()!).getAllByRole("button", { name: "Show me in Settings" })).toHaveLength(2);
+  // New themes stand first.
+  expect(
+    within(notice()!).getAllByRole("heading", { level: 3 }).map((title) => title.textContent),
+  ).toEqual([
+    "New theme: Gauge",
+    "New theme: Token Counter",
+    "Switch providers with a shortcut",
+    "Choose how often VibeTV switches",
+    "Show what is used or what is left",
+  ]);
   // Enter closes the notice instead of opening Settings.
   expect(document.activeElement?.textContent).toBe("Got it");
   expect(seen()).toBeNull();
@@ -287,6 +301,19 @@ it("opens Settings from the notice and counts it as read", async () => {
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
   expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+});
+
+it("opens Themes from a new theme and counts the notice as read", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+  );
+  await window.wait(1);
+
+  expect(notice()).toBeNull();
+  expect(seen()).toEqual(allIds);
+  expect(screen.getByRole("heading", { name: "Themes" })).toBeTruthy();
 });
 
 it("opens again from Updates with the keys of a Windows computer", async () => {
