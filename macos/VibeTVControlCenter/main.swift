@@ -1368,6 +1368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         case waiting, installing, abandoned, done
     }
     private var launchUpdateCheck = LaunchUpdateCheck.done
+    private var launchUpdateTurnedDown = false
 #endif
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
@@ -1410,6 +1411,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // Sparkle installs without its dialog only while this default is set,
         // and reads it when the updater is created.
         UserDefaults.standard.set(true, forKey: "SUAutomaticallyUpdate")
+        // "Skip This Version" in Sparkle's dialog would otherwise keep that
+        // version away from the launch check as well.
+        UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")
         launchUpdateCheck = .waiting
         presentInstallationStatus(
             title: "Starting Control Center",
@@ -1448,7 +1452,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             launchUpdateCheck = .done
             // Later checks show Sparkle's dialog: a silent install would
             // restart the app under a customer who is using it.
-            updaterController.updater.automaticallyDownloadsUpdates = false
+            let updater = updaterController.updater
+            updater.automaticallyDownloadsUpdates = false
+            if launchUpdateTurnedDown {
+                // The feed answered after the limit. Offer that update in
+                // Sparkle's dialog now instead of dropping it for a day.
+                launchUpdateTurnedDown = false
+                updater.checkForUpdatesInBackground()
+            }
         }
         if previous != .abandoned {
             startRuntimePreparation()
@@ -4289,6 +4300,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         untilInvokingBlock installHandler: @escaping () -> Void
     ) -> Bool {
         Task { @MainActor in
+            // A firmware update or theme install lives inside the runtime
+            // and dies with it. The Mac App update is the one that can wait.
+            if await runtimeShouldDeferRepairForUpdate() {
+                NSLog(
+                    "VibeTV Control Center held back its own update while a VibeTV update is running"
+                )
+                if launchUpdateCheck == .done {
+                    let alert = NSAlert()
+                    alert.messageText = "Update paused"
+                    alert.informativeText =
+                        "The update was not installed because a VibeTV update or theme install is running. Try again when it has finished."
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+                finishLaunchUpdateCheck(timedOut: false)
+                return
+            }
             // The replaced app must never leave its old runtime alive and
             // polling the device: that is the stale/duplicate-writer state
             // the whole update handoff exists to prevent. Retry the shutdown
@@ -4301,6 +4329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 stopped = await unregisterBundledRuntimeService()
             }
             guard stopped else {
+                await runtimeReleaseUpdateHold()
                 NSLog(
                     "VibeTV Control Center refused to install the update: runtime shutdown failed"
                 )
@@ -4335,7 +4364,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             )
         case .abandoned:
             // The start already went on. Installing now would restart the
-            // app in the middle of setup; the next check offers the update.
+            // app in the middle of setup; the dialog offers the update once
+            // this check has ended.
+            launchUpdateTurnedDown = true
             throw CocoaError(.userCancelled)
         case .installing, .done:
             break

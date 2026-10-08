@@ -706,7 +706,8 @@ required_source = [
     'detail: "Checking for a Mac App update."',
     'title: "Updating the Mac App"',
     "updater.checkForUpdatesInBackground()",
-    "updaterController.updater.automaticallyDownloadsUpdates = false",
+    "updater.automaticallyDownloadsUpdates = false",
+    'UserDefaults.standard.removeObject(forKey: "SUSkippedVersion")',
     "retryTitle: status.retryTitle",
     "kind: status.kind",
     "case .failure(let failure):",
@@ -800,6 +801,14 @@ if not (
 ):
     raise SystemExit(
         "native app must stop at the install dialog before starting Sparkle, and check for its own update before the runtime or WebView"
+    )
+
+postpone_start = source.find("shouldPostponeRelaunchForUpdate item:")
+postpone_hold = source.find("await runtimeShouldDeferRepairForUpdate()", postpone_start)
+postpone_stop = source.find("await unregisterBundledRuntimeService()", postpone_start)
+if not (0 <= postpone_start < postpone_hold < postpone_stop):
+    raise SystemExit(
+        "native app must not stop the runtime for its own update while a VibeTV update or theme install runs"
     )
 
 prepare_start = source.find("private func startRuntimePreparation()")
