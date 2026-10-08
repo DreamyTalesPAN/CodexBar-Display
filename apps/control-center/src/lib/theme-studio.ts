@@ -789,7 +789,7 @@ export function buildThemePack(
   return {
     // Named after what the customer called the theme; the id is theirs only
     // when they typed one, and a name without a usable character has no other.
-    fileName: `vibetv-theme-${slug(packName) || normalized.themeId}.zip`,
+    fileName: `vibetv-theme-${fileSlug(packName) || normalized.themeId}.zip`,
     manifest,
     themeJson,
     themeSpecPath: validation.themeSpecPath,
@@ -1833,6 +1833,19 @@ function slug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+// The name part of the exported file: ä, ö, ü and ß spelled out the German
+// way, other accents dropped, and at most 80 characters like the name itself.
+function fileSlug(name: string): string {
+  const latin = name
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[äöü]/g, (letter) => `${letter.normalize("NFD")[0]}e`)
+    .replace(/ß/g, "ss")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "");
+  return slug(slug(latin).slice(0, 80));
 }
 
 function slugThemeId(value: string): string {
