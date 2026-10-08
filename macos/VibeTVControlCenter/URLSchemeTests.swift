@@ -1212,6 +1212,12 @@ private func testLegacyTerminalAppDetection() {
             ),
         "a theme VibeTV cannot draw must be named"
     )
+    // Without a place of its own the item lands off the screen on a full
+    // menu bar; macOS reads the place under this key, for this name.
+    require(
+        menuBarItemDefaults["NSStatusItem Preferred Position VibeTVMenuBarItem"] == 400,
+        "the menu bar item must start at a place right of the notch"
+    )
     // The state is told without colour: by the symbol, a mark, and in words.
     require(
         [MenuBarIcon.starting, .healthy, .actionRequired, .offline, .updating]

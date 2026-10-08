@@ -1050,6 +1050,17 @@ enum MenuBarIcon: Equatable {
     }
 }
 
+// A new menu bar item gets the place furthest to the left. On a Mac whose
+// menu bar holds many items, hidden ones included (CodexBar keeps dozens),
+// that place is off the screen: the item exists and nothing is drawn. So the
+// first start names a place about 400 points from the right edge, which is
+// right of the notch on every MacBook. It is a registered default only: the
+// place macOS saves, or the customer chooses with a Command-drag, wins.
+let menuBarItemAutosaveName = "VibeTVMenuBarItem"
+let menuBarItemDefaults: [String: Int] = [
+    "NSStatusItem Preferred Position \(menuBarItemAutosaveName)": 400,
+]
+
 struct MenuBarStatus: Equatable {
     let icon: MenuBarIcon
     let lines: [String]
@@ -2344,7 +2355,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // the app watches the status, and the item starts no watch of its own: it
     // asks once when the Control Center loads and each time its menu opens.
     private func configureMenuBarItem() {
+        UserDefaults.standard.register(defaults: menuBarItemDefaults)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = menuBarItemAutosaveName
         item.button?.imagePosition = .imageLeading
         let menu = NSMenu()
         menu.delegate = self
