@@ -36,6 +36,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { copyForHost } from "@/lib/customer-platform";
+import { validateThemeSpec } from "@/lib/theme-studio";
+import {
+  loadUserThemes,
+  type ThemeStudioDocument,
+} from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   deviceIsCustomerConnected,
@@ -286,14 +291,35 @@ function activeThemeLabel(
   themes: ThemeProduct[],
   device: DeviceInfo | null | undefined,
 ): string {
+  // The customer's own themes are saved in this browser, by Theme Studio, with
+  // the name they gave them.
+  const saved = loadUserThemes();
+  const ownName = (matches: (document: ThemeStudioDocument) => boolean) =>
+    (saved.ok ? saved.value.themes : saved.data?.themes || []).find(
+      ({ document }) => document.usage !== "screensaver" && matches(document),
+    )?.document.packName;
   const theme = activeLiveThemeId(themes, device)?.trim();
   if (!theme) {
-    // During standby a Theme Studio theme in the live slot has no name here;
-    // the screensaver on screen is not it.
-    if (device?.standby?.active === true && device.standby.liveThemePath?.trim()) {
-      return "Custom theme";
+    // During standby VibeTV reports a Theme Studio theme in the live slot as
+    // its file only; the screensaver on screen is not it.
+    const livePath =
+      device?.standby?.active === true && device.standby.liveThemePath?.trim();
+    if (livePath) {
+      return (
+        ownName(
+          (document) =>
+            validateThemeSpec(document.spec, document.assets, "live")
+              .themeSpecPath === livePath,
+        ) || "Custom theme"
+      );
     }
     return deviceIsReady(device) ? "Default" : "Not available";
+  }
+  const own =
+    !themes.some((listed) => listed.themeId === theme) &&
+    ownName((document) => document.spec.themeId === theme);
+  if (own) {
+    return own;
   }
   return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
