@@ -645,6 +645,17 @@ describe("SettingsScreen standby controls", () => {
       expect(one).not.toContain("This switches to Manual.");
     }
 
+    // Until usage has been read, nobody knows how many providers have usage,
+    // and a press may well work: the line claims neither.
+    const unread = render(
+      standbyDevice, savedStandby,
+      { ...providerPicker, usage: null, items: twoWithUsage,
+        display: { mode: "automatic", providerIds: ["claude"], configured: true, valid: true } },
+      70, "cable", false, [], [], "available",
+    );
+    expect(unread).toContain("Press ⌃⌥⌘P in any app to show the next provider.</p>");
+    expect(unread).not.toContain("This needs two providers with usage.");
+
     // A browser has no global shortcut, so Settings names none.
     expect(displayMode(null)).not.toContain("shortcut");
     expect(displayMode(null)).not.toContain("Press ");

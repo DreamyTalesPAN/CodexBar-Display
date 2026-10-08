@@ -398,13 +398,16 @@ export function SettingsScreen({
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
                 // providers Manual offers, so one of them leaves nothing to
-                // show next, and Manual cannot be switched to twice.
+                // show next, and Manual cannot be switched to twice. Until
+                // usage has been read, neither is known and neither is said.
                 `Press ${shortcutKeys} in any app to show the next provider.${
-                  displayable.length < 2
-                    ? " This needs two providers with usage."
-                    : displayMode === "fixed"
-                      ? ""
-                      : " This switches to Manual."
+                  !providerPicker.usage
+                    ? ""
+                    : displayable.length < 2
+                      ? " This needs two providers with usage."
+                      : displayMode === "fixed"
+                        ? ""
+                        : " This switches to Manual."
                 }`
               : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
           </p>
