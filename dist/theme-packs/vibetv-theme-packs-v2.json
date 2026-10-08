@@ -33,6 +33,24 @@
       "bytes": 18640
     },
     {
+      "id": "gauge",
+      "title": "Gauge",
+      "usage": "live",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/u/ga-2-ad19500f.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "color-stops-v1",
+        "text-valign-v1",
+        "progress-arc-v1"
+      ],
+      "downloadAsset": "vibetv-theme-gauge-v0.1.0.zip",
+      "sha256": "730086b3b38bb7a45d28c057368a59eb801db55dcc34d426ce14e8f26af2d085",
+      "bytes": 883
+    },
+    {
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
