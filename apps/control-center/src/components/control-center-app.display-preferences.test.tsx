@@ -406,12 +406,21 @@ it("keeps Brightness focused through two arrow keys and saves both in order", as
 
 // The answer to the first save set the thumb back to the saved value while the
 // customer was already dragging on, until the pointer moved again.
-it("leaves the Brightness thumb where it is dragged when an earlier save is answered", async () => {
+it.each([
+  ["Brightness", (brightnessPercent: number) => ({ brightnessPercent })],
+  [
+    "Brightness in screensaver",
+    (brightnessPercent: number) => ({
+      standby: { enabled: true, timeoutMinutes: 10, brightnessPercent },
+    }),
+  ],
+])("leaves the %s thumb where it is dragged when an earlier save is answered", async (name, write) => {
   const window = startWindow();
+  window.companion.settings.standby = { enabled: true, timeoutMinutes: 10, brightnessPercent: 20 };
   await window.wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
-  const slider = screen.getByRole("slider", { name: "Brightness" });
+  const slider = screen.getByRole("slider", { name });
   // jsdom lays nothing out and holds no pointer: the track is 100 px wide
   // here, and the pointer stays down from pointerDown to pointerUp.
   const track = slider.closest<HTMLElement>('[data-slot="slider"]')!;
@@ -433,10 +442,7 @@ it("leaves the Brightness thumb where it is dragged when an earlier save is answ
   await window.step(() => fireEvent.pointerUp(track, { clientX: 60 }));
   await window.wait(1);
   expect(slider.getAttribute("aria-valuenow")).toBe(dragged);
-  expect(window.settingsWrites()).toEqual([
-    { brightnessPercent: 21 },
-    { brightnessPercent: Number(dragged) },
-  ]);
+  expect(window.settingsWrites()).toEqual([write(21), write(Number(dragged))]);
 });
 
 // A brightness change that was still on its way, and one waiting behind it,

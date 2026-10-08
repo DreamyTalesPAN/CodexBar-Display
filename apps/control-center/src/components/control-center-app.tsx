@@ -604,7 +604,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<SupportDiagnostics | null>(null);
   // The brightness the customer chose and VibeTV has not confirmed yet.
   const brightnessDirtyRef = useRef<number | null>(null);
-  const standbyDirtyRef = useRef(false);
+  // The same for "Brightness in screensaver"; the switch and "Show after" are
+  // saved together with it and set this too.
+  const standbyDirtyRef = useRef<number | null>(null);
   const deviceSettingWritesRef = useRef({
     queue: Promise.resolve(),
     brightness: 0,
@@ -1060,7 +1062,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (brightnessDirtyRef.current === null) {
         setBrightness(loadedBrightness);
       }
-      if (!standbyDirtyRef.current) {
+      if (standbyDirtyRef.current === null) {
         lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
       }
@@ -2025,7 +2027,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       brightnessDirtyRef.current = null;
       setBrightness(null);
-      standbyDirtyRef.current = false;
+      standbyDirtyRef.current = null;
       lastSavedStandbyRef.current = null;
       setStandby(null);
       setLastInstall(undefined);
@@ -2254,7 +2256,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const saveStandby = useCallback(
     (value: StandbySettings) => {
       const setupGeneration = setupGenerationRef.current;
-      standbyDirtyRef.current = true;
+      standbyDirtyRef.current = value.brightnessPercent;
       setStandby(value);
       return queueDeviceSettingWrite("standby", async (newest) => {
         try {
@@ -2275,8 +2277,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (!newest()) {
             return;
           }
-          standbyDirtyRef.current = false;
-          setStandby(saved);
+          // As for Brightness: a thumb the customer has dragged on stays
+          // where they hold it.
+          if (standbyDirtyRef.current === value.brightnessPercent) {
+            standbyDirtyRef.current = null;
+            setStandby(saved);
+          }
           addEvent({
             label: "Screensaver saved",
             detail: saved.enabled
@@ -2288,7 +2294,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           if (!newest()) {
             return;
           }
-          standbyDirtyRef.current = false;
+          standbyDirtyRef.current = null;
           setStandby(lastSavedStandbyRef.current);
           const normalized = normalizeCaughtError(
             error,
@@ -2318,7 +2324,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const changeStandbyBrightness = useCallback((value: number) => {
-    standbyDirtyRef.current = true;
+    standbyDirtyRef.current = value;
     setStandby((current) =>
       current ? { ...current, brightnessPercent: value } : current,
     );
