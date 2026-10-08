@@ -428,7 +428,6 @@ export type UsageProviderInfo = {
   resetCredits?: UsageResetCreditsInfo;
   cost?: UsageCostInfo;
   costSettled?: boolean;
-  pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
 };
 
@@ -438,6 +437,16 @@ export type UsageWindowInfo = {
   usedPercent: number;
   resetSecs?: number;
   windowMinutes?: number;
+  pace?: UsageWindowPace;
+};
+
+// The usage engine's pace for one window; absent when it sent none.
+// etaSeconds counts from the provider's collectedAt and comes with
+// lasts: false only.
+export type UsageWindowPace = {
+  state: "reserve" | "on pace" | "deficit" | string;
+  lasts?: boolean;
+  etaSeconds?: number;
 };
 
 export type UsageStatusInfo = {
@@ -480,16 +489,6 @@ export type UsageCostModel = {
   name: string;
   totalTokens?: number;
   costUSD?: number;
-};
-
-export type UsagePaceInfo = {
-  window: string;
-  stage?: string;
-  deltaPercent?: number;
-  expectedUsedPercent?: number;
-  willLastToReset?: boolean;
-  etaSeconds?: number;
-  summary?: string;
 };
 
 export type UsageOverTimePoint = {

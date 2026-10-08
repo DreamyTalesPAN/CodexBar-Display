@@ -45,6 +45,7 @@ import type {
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
+  UsageWindowPace,
 } from "./control-center-types";
 
 type UsageScreenProps = {
@@ -447,6 +448,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         {provider.windows.map((window) => (
           <UsageWindowBar
             key={window.id}
+            etaSecs={resetSecsLeft(window.pace?.etaSeconds)}
             mode={provider.usageMode}
             unavailable={provider.usageUnavailable}
             unavailableDetail={unavailableDetail}
@@ -585,11 +587,13 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
 }
 
 function UsageWindowBar({
+  etaSecs,
   mode,
   unavailable,
   unavailableDetail,
   window,
 }: {
+  etaSecs: number;
   mode?: string;
   unavailable?: boolean;
   unavailableDetail?: string;
@@ -597,6 +601,12 @@ function UsageWindowBar({
 }) {
   const percent = clampPercent(window.usedPercent);
   const detail = unavailableDetail || "Usage limits unavailable.";
+  // The engine paced this window against its reset: no pace once that has
+  // passed, or while the reading is unavailable.
+  const pace =
+    !unavailable && resetSecs > 0 && window.pace
+      ? usagePaceLine(window.pace, etaSecs)
+      : "";
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
@@ -621,8 +631,46 @@ function UsageWindowBar({
       {unavailable ? (
         <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
       ) : null}
+      {pace ? (
+        <p
+          className={cn(
+            "mt-1 text-xs font-semibold",
+            window.pace?.lasts === false ? "text-[#6A5B00]" : "text-[#444933]",
+          )}
+        >
+          {pace}
+        </p>
+      ) : null}
     </div>
   );
+}
+
+/**
+ * What the usage engine says about a window's pace, in the page's words. The
+ * page adds nothing: without the engine's "lasts until reset" it promises
+ * none, and the sentences name no percentage, so they read the same under
+ * Used and Remaining.
+ */
+export function usagePaceLine(pace: UsageWindowPace, etaSecs: number): string {
+  if (pace.lasts === false) {
+    return etaSecs >= 60
+      ? `At this pace it runs out in ${formatResetCountdown(etaSecs)}, before the reset.`
+      : "At this pace it runs out before the reset.";
+  }
+  switch (pace.state) {
+    case "on pace":
+      return pace.lasts ? "On pace to last until the reset." : "On pace.";
+    case "reserve":
+      return pace.lasts
+        ? "Below the expected pace: lasts until the reset."
+        : "Below the expected pace.";
+    case "deficit":
+      return pace.lasts
+        ? "Above the expected pace, but it lasts until the reset."
+        : "Above the expected pace.";
+    default:
+      return "";
+  }
 }
 
 function UsageEmptyState({
