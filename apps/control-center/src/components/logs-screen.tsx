@@ -39,6 +39,7 @@ import { copyForHost } from "@/lib/customer-platform";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   deviceIsCustomerConnected,
+  deviceUsesCable,
   deviceIsReady,
   type DeviceInfo,
   type SupportDiagnostics,
@@ -125,10 +126,15 @@ export function LogsScreen({
                 label="Device"
                 value={device?.deviceId || device?.board || "Not available"}
               />
-              <SupportFact
-                label="Address"
-                value={formatDeviceAddress(device?.target)}
-              />
+              {/* A VibeTV on the cable has no address (issue #558). */}
+              {deviceUsesCable(device) ? (
+                <SupportFact label="Connection" value="USB-C cable" />
+              ) : (
+                <SupportFact
+                  label="Address"
+                  value={formatDeviceAddress(device?.target)}
+                />
+              )}
               <SupportFact
                 label="Firmware"
                 value={device?.firmware || "Not available"}

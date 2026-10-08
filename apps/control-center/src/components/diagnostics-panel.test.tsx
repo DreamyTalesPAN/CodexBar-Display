@@ -99,7 +99,7 @@ describe("DiagnosticsPanel", () => {
   });
 
   it.each([
-    ["bundled", "Built into VibeTV"],
+    ["bundled", "Included with the app"],
     ["override", "Custom location"],
     ["system", "Installed app"],
     ["path", "Command line install"],
@@ -176,6 +176,16 @@ describe("customer support text", () => {
 
   it("hides the engine name in text from the Mac App", () => {
     expect(formatCustomerSupportText("CodexBarCLI failed")).toBe("Usage engine failed");
+  });
+
+  // Issue #558: the healthy check read "Display stream is sending usage frames."
+  it("says in plain words that VibeTV gets the usage", () => {
+    const text = show({
+      checks: [{ name: "display_stream", status: "pass", detail: "Display stream is sending usage frames." }],
+    });
+    expect(text).toContain("Display updates");
+    expect(text).toContain("VibeTV is receiving your usage.");
+    expect(text).not.toMatch(/stream|frames/i);
   });
 
   it("says App instead of Mac App in the Windows app", () => {

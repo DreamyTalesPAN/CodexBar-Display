@@ -23,6 +23,23 @@ it("shows a connected VibeTV as connected while its theme fails to render", () =
   expect(html).not.toContain("No VibeTV is currently connected.");
 });
 
+// Issue #558: Support showed "ADDRESS cable://vibetv" for a VibeTV on the cable.
+it("shows the cable as the connection and an address only for a VibeTV on WiFi", () => {
+  const support = (target: string) =>
+    renderToStaticMarkup(
+      <LogsScreen device={{ active: true, connected: true, paired: true, ready: true, target }} />,
+    );
+
+  const cable = support("cable://vibetv");
+  expect(cable).toMatch(/>Connection<\/dt><dd[^>]*>USB-C cable</);
+  expect(cable).not.toContain("cable://");
+  expect(cable).not.toContain(">Address<");
+
+  const wifi = support("http://192.168.1.42");
+  expect(wifi).toMatch(/>Address<\/dt><dd[^>]*>192\.168\.1\.42</);
+  expect(wifi).not.toContain(">Connection<");
+});
+
 // Seen on a real VibeTV in standby: Support named the screensaver as the
 // active theme while the customer's live theme was Mini Classic.
 it("names the live theme while the screensaver is on screen", () => {

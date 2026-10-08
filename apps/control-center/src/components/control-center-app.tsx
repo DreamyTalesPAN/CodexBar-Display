@@ -4073,7 +4073,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             : "Support report ready",
           detail: partial
             ? "Browser and setup details were saved even though the Mac App did not answer."
-            : `${payload.checks?.length || 0} items ready for support.`,
+            : `The report has ${payload.checks?.length || 0} checks.`,
           tone:
             partial || payload.checks?.some((check) => check.status === "fail")
               ? "attention"
