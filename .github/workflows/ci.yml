@@ -216,6 +216,12 @@ jobs:
       - name: Test hosted VibeTV gate contracts
         run: ./scripts/test-vibetv-hosted-gates.sh
 
+      - name: Test rehearsal run pruning
+        run: ./scripts/test-vibetv-rehearsal-prune.sh
+
+      - name: Test rehearsal web storage purge and restore
+        run: ./scripts/test-vibetv-rehearsal-web-storage.sh
+
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
 
@@ -265,6 +271,12 @@ jobs:
 
       - name: Test hosted VibeTV gate contracts on macOS
         run: ./scripts/test-vibetv-hosted-gates.sh
+
+      - name: Test rehearsal run pruning on macOS
+        run: ./scripts/test-vibetv-rehearsal-prune.sh
+
+      - name: Test rehearsal web storage purge and restore on macOS
+        run: ./scripts/test-vibetv-rehearsal-web-storage.sh
 
   theme-studio-tests:
     runs-on: ubuntu-latest
