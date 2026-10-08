@@ -289,6 +289,29 @@ it("waits until another dialog over Overview is gone", async () => {
   expect(seen()).toBeNull();
 });
 
+// Opened again from Updates, it gives way to a dialog that needs the customer
+// just like the one that opens by itself.
+it("steps back for another dialog when it was opened from Updates", async () => {
+  window.localStorage.setItem(SEEN_KEY, JSON.stringify(allIds));
+  const app = startWindow();
+  await app.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  await app.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "What's new" }));
+  expect(notice()).not.toBeNull();
+  const usageDialog = () => screen.queryByRole("dialog", { name: "AI usage is not set up" });
+
+  app.companion.usageBroken = true;
+  await app.wait(6);
+  expect(usageDialog()).not.toBeNull();
+  expect(notice()).toBeNull();
+
+  app.companion.usageBroken = false;
+  await app.wait(6);
+  expect(usageDialog()).toBeNull();
+  expect(notice()).not.toBeNull();
+});
+
 it("opens Settings from the notice and counts it as read", async () => {
   const window = startWindow();
   await window.wait(10);

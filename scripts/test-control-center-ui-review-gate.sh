@@ -219,6 +219,17 @@ test_unknown_whats_new_entry_id_does_not_reset_gate() {
   expect_gate_due "$repo"
 }
 
+# An entry is added once: a later approval cannot name it again.
+test_whats_new_entry_id_is_named_by_one_approval_only() {
+  local repo="${TMP_ROOT}/whats-new-id-twice"
+  approve_ui_change_with "$repo" "- What's new: \`provider-shortcut\`"
+  expect_gate_success "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI again"
+  commit_approval "$repo" "Overview again" "- What's new: \`provider-shortcut\`"
+  expect_gate_due "$repo"
+}
+
 # Two entries in one change: each needs its own line.
 test_every_added_entry_needs_its_whats_new_line() {
   local repo="${TMP_ROOT}/whats-new-two-entries"
@@ -272,6 +283,7 @@ test_approval_without_whats_new_line_does_not_reset_gate
 test_whats_new_none_needs_a_reason
 test_whats_new_entry_id_resets_gate
 test_unknown_whats_new_entry_id_does_not_reset_gate
+test_whats_new_entry_id_is_named_by_one_approval_only
 test_every_added_entry_needs_its_whats_new_line
 test_pull_request_merge_commit_uses_pr_head
 

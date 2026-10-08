@@ -5012,18 +5012,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const timer = window.setTimeout(() => setWhatsNewSeen(markWhatsNewSeen()), 0);
     return () => window.clearTimeout(timer);
   }, [whatsNewIsNotNews]);
-  // The notice opens by itself on Overview, once nothing else asks for the
-  // customer: not during setup or a firmware update, and under no other dialog.
-  const whatsNewEntries = whatsNewReopened
-    ? newestWhatsNew()
-    : !setupOwnsScreen &&
-        activeShellTab === "overview" &&
-        !firmwareUpdateInProgress &&
-        !needsRuntimeRecovery &&
-        !lostDevicePickerOpen &&
-        !(usageFailure && !usageFailureHidden)
-      ? newestWhatsNew(whatsNewSeen)
-      : [];
+  // The notice opens by itself on Overview, and again from Updates, once
+  // nothing else asks for the customer: not during setup or a firmware update,
+  // and under no other dialog.
+  const somethingElseAsks =
+    setupOwnsScreen ||
+    firmwareUpdateInProgress ||
+    needsRuntimeRecovery ||
+    lostDevicePickerOpen ||
+    (usageFailure && !usageFailureHidden);
+  const whatsNewEntries = somethingElseAsks
+    ? []
+    : whatsNewReopened
+      ? newestWhatsNew()
+      : activeShellTab === "overview"
+        ? newestWhatsNew(whatsNewSeen)
+        : [];
   const closeWhatsNew = () => {
     setWhatsNewSeen(markWhatsNewSeen());
     setWhatsNewReopened(false);

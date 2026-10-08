@@ -105,7 +105,7 @@ Every approval entry therefore ends with a line `- What's new:`. Its value is on
 - the ids of the entries this change adds to that list, each in backticks, for example ``- What's new: `provider-shortcut` ``;
 - `none — <reason>`, for example `- What's new: none — a fix, nothing new to use`.
 
-The gate fails when the line is missing, when `none` has no reason, or when an id is not in the list. When one change adds several approval entries, each needs its own line.
+The gate fails when the line is missing, when `none` has no reason, when an id is not in the list, or when an id is named by more than one approval entry: an entry is added once. When one change adds several approval entries, each needs its own line.
 
 - An entry is one title plus one sentence that says how to use the feature. It is customer-facing copy and needs the same approval as any other.
 - A new entry goes to the end of the list, with a new kebab-case id. An id never changes and is never used again: the app stores the ids a customer has seen.

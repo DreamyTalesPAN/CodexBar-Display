@@ -165,7 +165,18 @@ function namesWhatsNew(line) {
     return true;
   }
   const ids = [...value.matchAll(/`([^`]*)`/g)].map((match) => match[1]);
-  return ids.length > 0 && ids.every((id) => whatsNewIds().includes(id));
+  return (
+    ids.length > 0 &&
+    ids.every((id) => whatsNewIds().includes(id) && timesNamed(id) === 1)
+  );
+}
+
+// An entry is added to the list once, so one approval entry names it. A later
+// change cannot pass by naming an entry that is already there.
+function timesNamed(id) {
+  return lines(readFileSync(APPROVAL_FILE, "utf8")).filter(
+    (line) => line.trim().startsWith(WHATS_NEW_PREFIX) && line.includes(`\`${id}\``),
+  ).length;
 }
 
 function whatsNewIds() {
