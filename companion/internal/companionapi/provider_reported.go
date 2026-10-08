@@ -23,9 +23,10 @@ var (
 	// The Windows engine names files under the profile folder, whose name is
 	// the account name: `C:\Users\Alice\.claude\...`, in JSON also with
 	// doubled backslashes. A folder name may hold spaces and apostrophes
-	// (`Jane Doe`), so when a separator follows, the whole component up to it
-	// goes; a colon cannot be part of it, which keeps a later `D:\` out.
-	reportedWindowsHomePath = regexp.MustCompile(`(?i)\b[A-Z]:\\+Users\\+(?:[^\\\r\n"<>|:*?]+?\\|[^\\\s)"']+)`)
+	// (`Jane O'Doe`), so the whole component goes, up to the next separator
+	// or closing punctuation. Words after an unterminated name go with it: a
+	// support report may lose some prose but never part of the account name.
+	reportedWindowsHomePath = regexp.MustCompile(`(?i)\b[A-Z]:\\+Users\\+[^\\\r\n"<>|:*?)\]},;]+`)
 	// URL userinfo carries credentials before the host (`https://token@host` or
 	// `https://user:pass@host`).
 	// Redact it as one span so neither the username nor password reaches the UI.
@@ -83,12 +84,7 @@ func reportedProviderMessage(raw string) string {
 	message = reportedCodexBarAntigravity.ReplaceAllString(message, "Antigravity")
 	// Order matters: a redacted span must never be rescanned as a secret, and
 	// the pair rule must claim `Authorization: Bearer x` before the bare rule.
-	message = reportedWindowsHomePath.ReplaceAllStringFunc(message, func(match string) string {
-		if strings.HasSuffix(match, `\`) {
-			return `~\`
-		}
-		return "~"
-	})
+	message = reportedWindowsHomePath.ReplaceAllString(message, "~")
 	message = reportedHomePath.ReplaceAllString(message, "~")
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")
 	message = reportedCookieHeader.ReplaceAllString(message, "${1}"+reportedRedacted)

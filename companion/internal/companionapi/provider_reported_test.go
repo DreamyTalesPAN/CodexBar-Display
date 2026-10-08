@@ -94,7 +94,11 @@ func TestReportedProviderMessageRedactsTheWindowsHomePath(t *testing.T) {
 		},
 		{
 			in:   `Profile C:\Users\Jane is missing; see D:\logs\run.txt`,
-			want: `Profile ~ is missing; see D:\logs\run.txt`,
+			want: `Profile ~; see D:\logs\run.txt`,
+		},
+		{
+			in:   `Missing profile (C:\Users\Jane O'Doe), try again.`,
+			want: `Missing profile (~), try again.`,
 		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
