@@ -23,7 +23,9 @@ Companion for everything it needs.
   (8 s before re-registering, 35 s after) until the runtime reports this exact
   Companion version, app version+build and listener owner, and only then loads
   the Control Center. The daemon is skipped when a healthy runtime of this
-  build already answers.
+  build already answers. The task is registered at normal priority
+  (4); Task Scheduler's default of 7 would run the daemon and the usage engine
+  as BelowNormal, which leaves them without CPU time while every core is busy.
 - `vibetv://` links from the UI are intercepted in the webview:
   `restart-control-center`, `repair-runtime` (re-registers and re-checks the
   task, answers with `vibetv:runtime-repair-result`), `repair-codexbar`
