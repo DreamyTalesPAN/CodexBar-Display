@@ -2,6 +2,7 @@ package companionapi
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -110,7 +111,14 @@ func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDi
 		return
 	}
 	selection.Valid = true
+	// A provider switch saves the selection again. Only another mode or
+	// another pinned provider is a change for the setup log (#579); the
+	// providers Automatic switches between are logged as provider choices.
+	changed := false
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
+		stored := cfg.ProviderDisplay
+		changed = stored == nil || stored.Mode != selection.Mode ||
+			selection.Mode == providerDisplayModeFixed && !slices.Equal(stored.ProviderIDs, selection.ProviderIDs)
 		cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
 			Mode:        selection.Mode,
 			ProviderIDs: append([]string(nil), selection.ProviderIDs...),
@@ -123,7 +131,10 @@ func (s *Server) saveProviderDisplay(w http.ResponseWriter, selection providerDi
 	if s.renderDisplayStream != nil {
 		s.renderDisplayStream()
 	}
-	s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "succeeded", Message: providerDisplayMessage(selection, settings)})
+	// After a failed save the log must not end on "failed".
+	if last, ok := s.timeline.Latest("display_mode"); changed || ok && last.State == "failed" {
+		s.recordSetupEvent(setupEvent{Stage: "display_mode", Status: "succeeded", Message: providerDisplayMessage(selection, settings)})
+	}
 	writeJSON(w, http.StatusOK, providerDisplayResponse{OK: true, Selection: selection})
 }
 

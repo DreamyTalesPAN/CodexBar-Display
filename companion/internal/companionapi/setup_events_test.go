@@ -279,6 +279,69 @@ func TestSetupLogRecordsProviderChoicesChecksAndDisplayMode(t *testing.T) {
 	}
 }
 
+// Seen in the Windows app (#579): every provider switch saved the display
+// selection again and the setup log got one more "Automatic: ..." line. Only a
+// changed selection is a line: another mode, or another pinned provider.
+func TestSetupLogRecordsDisplayModeOnlyWhenTheSelectionChanged(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	save := func(body string, want int) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/provider-display", strings.NewReader(body)))
+		if rec.Code != want {
+			t.Fatalf("PATCH %s: status %d, want %d, body=%s", body, rec.Code, want, rec.Body.String())
+		}
+	}
+	automatic := `{"mode":"automatic","providerIds":["codex","claude"]}`
+
+	save(automatic, http.StatusOK)
+	save(automatic, http.StatusOK)
+	save(`{"mode":"automatic","providerIds":["claude","codex"]}`, http.StatusOK)
+	save(`{"mode":"fixed","providerIds":["codex"]}`, http.StatusOK)
+	save(`{"mode":"fixed","providerIds":["codex"]}`, http.StatusOK)
+	save(`{"mode":"fixed","providerIds":["claude"]}`, http.StatusOK)
+	// A save that failed is followed by a line again, also for the selection
+	// that was stored before it: the log must not end on "failed".
+	save(`{"mode":"fixed","providerIds":["claude","codex"]}`, http.StatusConflict)
+	save(`{"mode":"fixed","providerIds":["claude"]}`, http.StatusOK)
+	save(automatic, http.StatusOK)
+
+	want := []string{
+		"succeeded Automatic: VibeTV switches between your providers.",
+		"succeeded Always show Codex.",
+		"succeeded Always show Claude.",
+		"failed Always show needs one provider.",
+		"succeeded Always show Claude.",
+		"succeeded Automatic: VibeTV switches between your providers.",
+	}
+	var got []string
+	for _, event := range getSetupLog(t, server).Events {
+		if event.Stage != "display_mode" || event.Count > 1 {
+			t.Fatalf("unexpected setup log entry: %+v", event)
+		}
+		got = append(got, event.Status+" "+event.Message)
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("setup log =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	var states []string
+	for _, event := range server.Timeline().Snapshot(server.currentTime()).Events {
+		if event.Component == "display_mode" {
+			states = append(states, event.State)
+		}
+	}
+	if strings.Join(states, ",") != "succeeded,failed,succeeded" {
+		t.Fatalf("display_mode in the timeline = %v, want succeeded,failed,succeeded", states)
+	}
+}
+
 func TestProviderCheckLogsReadyProviderByName(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.recordProviderSetupEvents(codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{ID: "codex", Label: "Codex", Status: codexbar.ProviderReady}}}, "codex", "Codex")

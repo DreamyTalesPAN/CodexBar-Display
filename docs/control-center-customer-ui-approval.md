@@ -6345,3 +6345,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new wording. In Appearance › Themes and Screensavers, the button of the row whose notice reads `Installed` reads `Installed` from the same moment, also while the app still reads VibeTV's settings after the install. The button stays switched off during that read, as before. The other rows read `Wait` during it, as before, and once the read has ended every button shows what VibeTV holds, as before.
 - Scope: `labelForInstallButton` and its call in `apps/control-center/src/components/theme-library-screen.tsx`, one test in `theme-library-screen.install-notice.test.tsx`, and this approval record; checked with unit tests only.
 - What's new: none — a correction
+
+## 2026-10-09 — Support: the setup log names the display mode only when it changed (#579)
+
+- User approval: Covered by Paul's blanket approval for the night shift of 2026-10-08/09; wording not yet seen by him. It answers a finding from the click-through of the Windows app: every time a provider was switched on or off, Support › Setup log got one more line `Display mode` / `Done` / `Automatic: VibeTV switches between your providers.`, although the display mode had not been touched.
+- Approved customer-visible result: No new wording. Support › Setup log gets a `Display mode` line when the customer chooses another display mode or, under Manual, another provider to show, in Settings, in the setup wizard or with the keyboard shortcut. Switching a provider on or off leaves its own line (`Claude turned on.`) and no `Display mode` line, because the app only saves the same display mode again. After a `Display mode` line that failed, the next save that works is logged in any case, so the log does not end on a failure that is over. The same holds for the report's timeline. Recent activity is unchanged.
+- Scope: `saveProviderDisplay` in `companion/internal/companionapi/provider_display.go`, `TestSetupLogRecordsDisplayModeOnlyWhenTheSelectionChanged` in `setup_events_test.go`, and this approval record; checked with unit tests only.
+- What's new: none — a correction
