@@ -36,7 +36,7 @@ func TestWindowsTaskLifecycleHermetic(t *testing.T) {
 	if err != nil || status.State != "running" || !status.Enabled {
 		t.Fatalf("%+v %v", status, err)
 	}
-	for _, required := range []string{"GetCurrent().User.Value", "$task.Principal.LogonType = 3", "$task.Principal.RunLevel = 0", "$task.Triggers.Create(9)", "$trigger.UserId = $sid", "$task.Settings.RestartInterval = 'PT1M'", "$task.Settings.RestartCount = 999", "$task.Settings.ExecutionTimeLimit = 'PT0S'", "$task.Settings.MultipleInstances = 2", "RegisterTaskDefinition($name, $task, 6, $sid, $null, 3)"} {
+	for _, required := range []string{"GetCurrent().User.Value", "$task.Principal.LogonType = 3", "$task.Principal.RunLevel = 0", "$task.Triggers.Create(9)", "$trigger.UserId = $sid", "$task.Settings.RestartInterval = 'PT1M'", "$task.Settings.RestartCount = 999", "$task.Settings.ExecutionTimeLimit = 'PT0S'", "$task.Settings.Priority = 4", "$task.Settings.MultipleInstances = 2", "RegisterTaskDefinition($name, $task, 6, $sid, $null, 3)"} {
 		if !strings.Contains(scripts[0], required) {
 			t.Errorf("missing %s", required)
 		}
