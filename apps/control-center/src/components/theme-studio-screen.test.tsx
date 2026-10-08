@@ -435,3 +435,23 @@ it("does not send while the library says why nothing can be installed", () => {
   expect(button("Send to VibeTV").disabled).toBe(true);
   expect(screen.getByText(reason)).toBeTruthy();
 });
+
+// Seen on the Windows app on 2026-10-09: Apply JSON answered with the
+// parser's own sentence, "Unexpected token 'Q', ... is not valid JSON".
+it("says in one plain sentence that typed or imported JSON is not valid, and keeps the text", async () => {
+  renderStudio("blank");
+  fireEvent.click(button("Advanced"));
+  const file = new File(['{"p": [QA'], "broken.json", { type: "application/json" });
+  fireEvent.change(document.querySelector('input[accept="application/json,.json"]')!, {
+    target: { files: [file] },
+  });
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "JSON" }));
+  expect(await screen.findByText("This file is not valid JSON. Nothing was changed.")).toBeTruthy();
+
+  const json = screen.getByLabelText("Theme JSON") as HTMLTextAreaElement;
+  fireEvent.change(json, { target: { value: '{"p": [QA-TYPED' } });
+  fireEvent.click(button("Apply JSON"));
+  expect(screen.getByText("This text is not valid JSON. Nothing was changed.")).toBeTruthy();
+  expect(screen.queryByText(/Unexpected token/)).toBeNull();
+  expect(json.value).toBe('{"p": [QA-TYPED');
+});

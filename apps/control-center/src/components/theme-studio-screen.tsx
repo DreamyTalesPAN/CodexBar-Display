@@ -674,8 +674,13 @@ export function ThemeStudioScreen({
     } catch (error) {
       setJsonStatus({
         tone: "attention",
+        // The parser's own sentence quotes the text and is written for developers.
         message:
-          error instanceof Error ? error.message : say("Theme file was not opened."),
+          error instanceof SyntaxError
+            ? "This file is not valid JSON. Nothing was changed."
+            : error instanceof Error
+              ? error.message
+              : say("Theme file was not opened."),
       });
     } finally {
       if (fileInputRef.current) {
@@ -699,7 +704,11 @@ export function ThemeStudioScreen({
       setJsonStatus({
         tone: "attention",
         message:
-          error instanceof Error ? error.message : "JSON was not applied.",
+          error instanceof SyntaxError
+            ? "This text is not valid JSON. Nothing was changed."
+            : error instanceof Error
+              ? error.message
+              : "JSON was not applied.",
       });
     }
   }
