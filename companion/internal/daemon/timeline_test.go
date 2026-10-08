@@ -309,3 +309,37 @@ func TestARestatedFrameWithoutAFreshReadingIsRecordedAsStale(t *testing.T) {
 		t.Fatalf("usage entries = %v, want %s", got, want)
 	}
 }
+
+// Fourth review: the display was just moved to a provider whose reading is
+// only retained and there is no last good frame (#369). That frame goes out
+// marked as not live, so the timeline must not call it shown either.
+func TestARetainedReadingWithoutALastGoodFrameIsRecordedAsStale(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	var got []string
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	sent := 0
+	deps := runtimeDeps{
+		now:         func() time.Time { return time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC) },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 12, 30, 3600)
+			frame.Stale = true
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		transportName: "usb",
+		logf:          func(string, ...any) {},
+		sendLine:      func(string, []byte) error { sent++; return nil },
+		record: func(event timeline.Event) {
+			if event.Component == "usage" {
+				got = append(got, event.State+"("+event.Reason+")")
+			}
+		},
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil || sent != 1 || state.hasLastGood {
+		t.Fatalf("err=%v sent=%d hasLastGood=%t; the test needs one retained frame sent", err, sent, state.hasLastGood)
+	}
+	if want := "stale(usage-not-fresh)"; strings.Join(got, ",") != want {
+		t.Fatalf("usage entries = %v, want %s", got, want)
+	}
+}

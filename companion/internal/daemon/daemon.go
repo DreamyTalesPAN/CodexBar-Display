@@ -1853,9 +1853,10 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	// the changes. Every frame has a provider and every hello a firmware, so a
 	// missing one (an error frame) is recorded as unknown instead of leaving
 	// the last value standing. A frame names a theme only when it carries one.
-	// Both restatements of the last good frame are old values: after a failed
-	// collection, and while the provider has no fresh reading (#369).
-	restated := result.usageSource == "last-good"
+	// A frame without a fresh reading carries old values: the last good frame
+	// restated after a failed collection or while the provider has nothing
+	// new, or a retained reading sent because there is no last good (#369).
+	restated := !result.usageFresh
 	failureKind := string(result.failureKind)
 	if restated && failureKind == "" {
 		failureKind = "usage-not-fresh"
