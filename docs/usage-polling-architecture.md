@@ -122,6 +122,40 @@ Token fields are merged only when reliable values are available. A slow or
 failed token scan does not start another token path, does not refresh quota age,
 and does not make otherwise valid quota windows unavailable.
 
+### Token scan latency budget
+
+The numbers below are constants in the code; change them there and here
+together.
+
+| What | Value | Where |
+| --- | --- | --- |
+| One `cost` command | 120 s | `tokenStatsCommandTimeout`, `companion/internal/codexbar/token_stats.go` |
+| One scan as the collector runs it | 125 s | `tokenStatsCollectorTimeout`, `companion/internal/daemon/collector.go` |
+| Wait after a completed scan whose history has settled | 5 min | `tokenStatsScanCooldown`, same file |
+| Wait after a failed scan | 1 min | `tokenStatsFailedScanCooldown`, same file |
+| Stored totals stay usable | 10 min | `defaultProviderMaxAge`, `companion/internal/daemon/daemon.go` |
+
+- The command budget is above the slowest measured scan: a cold history took
+  about 78 s on 2026-07-29. The collector adds 5 s so the scan is not cancelled
+  at the same instant as the command.
+- A scan is asked for after the first collection, after every usage collection
+  (every 30 to 60 s, `collectorInterval`), after a wake, and on every activity
+  poll (2 s by default, `activityPollInterval`). Only one scan runs at a time;
+  a request while one is running is dropped (`requestTokenStatsScan`).
+- Both waits count from the end of the scan, not from its start.
+- The 5 min wait applies only once the history has settled: every provider
+  with a cost history returned the same history as in the scan before
+  (`tokenHistoryFingerprint`). Until then, the first scan included, the next
+  scan starts at the next request, so scans run back to back.
+- A failed scan (timeout, cancelled, unreadable answer) is tried again after
+  1 min instead of 5. The full wait made the retry find the stored totals
+  already expired.
+- A provider that was just switched on skips the wait once
+  (`tokenStatsRescan`, set in `applyProviderInventoryLocked`, PR #541): the
+  last scan could not know about it. A running scan is still not interrupted.
+- Longest gap between two settled scans: 5 min wait plus 125 s scan, 7 min 5 s,
+  which stays inside the 10 min the stored totals are usable.
+
 ## Debugging Order
 
 Do not start by adding a fallback, cache, timeout, or provider condition. Find
