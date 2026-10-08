@@ -4,7 +4,7 @@
 // draft waits in it wrote over that draft with the first change, and Discard
 // in the editor removed it: the older draft was gone without a question.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
@@ -31,8 +31,17 @@ vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
 }));
 
 vi.mock("./theme-studio-screen", () => ({
-  ThemeStudioScreen: ({ installBlockedReason }: { installBlockedReason?: string }) => (
-    <p>Editor open{installBlockedReason ? `, no send: ${installBlockedReason}` : ""}</p>
+  ThemeStudioScreen: ({
+    initialTheme,
+    installBlockedReason,
+  }: {
+    initialTheme?: { packName: string };
+    installBlockedReason?: string;
+  }) => (
+    <>
+      <p>Editor open{installBlockedReason ? `, no send: ${installBlockedReason}` : ""}</p>
+      <p>Editing {initialTheme?.packName}</p>
+    </>
   ),
 }));
 
@@ -99,6 +108,60 @@ it("keeps the older draft when what should replace it cannot be opened", async (
   expect(screen.getByText("Continue your unsaved theme")).toBeTruthy();
   expect(screen.queryByText("Editor open")).toBeNull();
   vi.unstubAllGlobals();
+});
+
+// Found in review of the fix above: the draft's card stayed usable while the
+// catalog theme was being fetched. Whatever the customer opened in that time,
+// the fetch then removed the draft and put its theme into the open editor.
+function libraryWithSlowCatalogTheme() {
+  let answer: (response: unknown) => void = () => {};
+  const pending = new Promise((resolve) => {
+    answer = resolve;
+  });
+  vi.stubGlobal("fetch", () => pending);
+  renderLibrary({
+    themes: [
+      { id: "drift", isFree: true, priceLabel: "Free", source: "github-catalog", themeId: "drift", title: "Drift" },
+    ],
+  });
+  return async () => {
+    answer({ ok: true, json: async () => ({ name: "Drift", spec: createBlankThemeSpec() }) });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    vi.unstubAllGlobals();
+  };
+}
+
+it("offers neither Resume nor Discard while the theme that replaces the draft is loading", async () => {
+  const answerFetch = libraryWithSlowCatalogTheme();
+  await screen.findByText("Continue your unsaved theme");
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+  for (const name of ["Resume", "Discard"]) {
+    expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+  }
+  expect(stored.cleared).toBe(0);
+
+  await answerFetch();
+  expect(screen.getByText("Editing Drift Custom")).toBeTruthy();
+  expect(stored.cleared).toBe(1);
+});
+
+it("leaves the editor and the draft alone when a theme arrives after something else was opened", async () => {
+  const answerFetch = libraryWithSlowCatalogTheme();
+  await screen.findByText("Continue your unsaved theme");
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+  // Create Theme is still there while the row loads.
+  fireEvent.click(screen.getByRole("button", { name: "Create Theme" }));
+  fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+  expect(screen.getByText("Editing New Theme")).toBeTruthy();
+  expect(stored.cleared).toBe(1);
+
+  await answerFetch();
+  expect(screen.getByText("Editing New Theme")).toBeTruthy();
+  expect(stored.cleared).toBe(1);
 });
 
 it("opens a new theme at once when no unsaved draft waits", () => {

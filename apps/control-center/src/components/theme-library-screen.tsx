@@ -277,6 +277,8 @@ export function ThemeLibraryScreen({
   const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
   const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
   const [loadingEditorRow, setLoadingEditorRow] = useState("");
+  // Counts what was opened in the editor, to tell a theme that arrives late.
+  const editorOpensRef = useRef(0);
   const [preparingInstallRow, setPreparingInstallRow] = useState("");
   const [installRow, setInstallRow] = useState("");
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
@@ -398,6 +400,7 @@ export function ThemeLibraryScreen({
   // to be fetched first, and when that fails nothing takes its place.
   function openReplacingRecovery(theme: ThemeStudioEditorTheme) {
     if (!recovery || discardRecovery()) {
+      editorOpensRef.current += 1;
       setEditingTheme(theme);
     }
   }
@@ -434,11 +437,17 @@ export function ThemeLibraryScreen({
     }
 
     setLoadingEditorRow(rowKey(item));
+    const opensBefore = editorOpensRef.current;
     try {
       const payload = await fetchThemePackForEditing(
         item.product.themeId,
         item.product.themeSpecPath,
       );
+      // The customer opened something else while this was loading: that stays
+      // in the editor, and this theme is not what replaces the draft.
+      if (opensBefore !== editorOpensRef.current) {
+        return;
+      }
       const spec = importThemeSpec(payload.spec);
       const existingIds = allThemeIds(themes, userThemes);
       spec.themeId = uniqueThemeId(`${item.product.themeId}-custom`, existingIds);
@@ -718,6 +727,8 @@ export function ThemeLibraryScreen({
         ) : null}
         {recovery && recoveryMatchesUsage ? (
           <RecoveryCard
+            // The theme that takes the draft's place is on its way.
+            busy={Boolean(loadingEditorRow)}
             onDiscard={discardRecovery}
             onResume={resumeRecovery}
             recovery={recovery}
@@ -840,11 +851,13 @@ function themeStudioCapabilitiesFromDevice(
 }
 
 function RecoveryCard({
+  busy,
   onDiscard,
   onResume,
   recovery,
   title,
 }: {
+  busy: boolean;
   onDiscard: () => void;
   onResume: () => void;
   recovery: ThemeStudioRecovery;
@@ -861,10 +874,10 @@ function RecoveryCard({
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Button onClick={onDiscard} type="button" variant="outline">
+        <Button disabled={busy} onClick={onDiscard} type="button" variant="outline">
           Discard
         </Button>
-        <Button onClick={onResume} type="button">
+        <Button disabled={busy} onClick={onResume} type="button">
           Resume
         </Button>
       </div>
