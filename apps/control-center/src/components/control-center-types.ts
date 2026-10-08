@@ -150,6 +150,8 @@ export type TimelineEvent = {
 export type SupportTimeline = {
   version: number;
   events: TimelineEvent[];
+  /** The latest transition of every component, also when `events` no longer holds it. */
+  current?: TimelineEvent[];
 };
 
 export type ProviderSelectionSetup = {

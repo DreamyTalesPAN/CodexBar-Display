@@ -9,10 +9,12 @@
 package timeline
 
 import (
+	"cmp"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +29,11 @@ const (
 	maxEvents   = 400
 	maxAge      = 30 * 24 * time.Hour
 	maxFieldLen = 64
+	// One component keeps at most this many events, so a state that changes
+	// every few seconds cannot push the other components out.
+	maxPerComponent = 100
+	// The latest state is kept for at most this many components.
+	maxComponents = 64
 
 	redacted = "redacted"
 )
@@ -55,6 +62,9 @@ type Event struct {
 type Log struct {
 	Version int     `json:"version"`
 	Events  []Event `json:"events"`
+	// Current is the latest event of every component, oldest first: what each
+	// part is now and since when, also after retention dropped it from Events.
+	Current []Event `json:"current,omitempty"`
 }
 
 // Store owns the timeline file. One process writes it: the runtime, which
@@ -64,7 +74,10 @@ type Store struct {
 	path   string
 	loaded bool
 	events []Event
-	nextID int64
+	// current is the latest event of every component. Retention never
+	// shortens it, so a repeated state is recognised after its event is gone.
+	current map[string]Event
+	nextID  int64
 }
 
 // Open returns the store saved at path. The file is read on first use; an
@@ -93,19 +106,13 @@ func (s *Store) Record(at time.Time, event Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
-	for i := len(s.events) - 1; i >= 0; i-- {
-		last := s.events[i]
-		if last.Component != event.Component {
-			continue
-		}
-		if last.DeviceID == event.DeviceID && last.State == event.State &&
-			last.Reason == event.Reason && last.CorrelationID == event.CorrelationID {
-			return
-		}
-		break
+	if last, ok := s.current[event.Component]; ok && last.DeviceID == event.DeviceID && last.State == event.State &&
+		last.Reason == event.Reason && last.CorrelationID == event.CorrelationID {
+		return
 	}
 	s.nextID++
 	event.ID = s.nextID
+	s.setCurrentLocked(event)
 	s.events = prune(append(s.events, event), at)
 	s.saveLocked()
 }
@@ -120,6 +127,32 @@ func (s *Store) Snapshot(now time.Time) Log {
 	defer s.mu.Unlock()
 	s.loadLocked()
 	out.Events = append(out.Events, prune(s.events, now)...)
+	out.Current = s.currentLocked()
+	return out
+}
+
+// setCurrentLocked makes event the latest of its component. The component
+// that changed longest ago gives way when there are too many.
+func (s *Store) setCurrentLocked(event Event) {
+	if s.current == nil {
+		s.current = map[string]Event{}
+	}
+	if last, ok := s.current[event.Component]; ok && last.ID > event.ID {
+		return
+	}
+	s.current[event.Component] = event
+	if len(s.current) > maxComponents {
+		delete(s.current, s.currentLocked()[0].Component)
+	}
+}
+
+// currentLocked lists the latest event of every component, oldest first.
+func (s *Store) currentLocked() []Event {
+	out := make([]Event, 0, len(s.current))
+	for _, event := range s.current {
+		out = append(out, event)
+	}
+	slices.SortFunc(out, func(a, b Event) int { return cmp.Compare(a.ID, b.ID) })
 	return out
 }
 
@@ -155,6 +188,13 @@ func (s *Store) loadLocked() {
 		s.nextID = event.ID
 		s.events = append(s.events, event)
 	}
+	// A file from before the current states were saved has only the events.
+	for _, event := range append(saved.Current, s.events...) {
+		if event.Component != "" && event.State != "" {
+			s.setCurrentLocked(event)
+			s.nextID = max(s.nextID, event.ID)
+		}
+	}
 }
 
 // saveLocked replaces the file in one step, so a reader never sees half of it.
@@ -163,7 +203,7 @@ func (s *Store) saveLocked() {
 	if s.path == "" {
 		return
 	}
-	raw, err := json.Marshal(Log{Version: Version, Events: s.events})
+	raw, err := json.Marshal(Log{Version: Version, Events: s.events, Current: s.currentLocked()})
 	if err != nil {
 		return
 	}
@@ -179,21 +219,25 @@ func (s *Store) saveLocked() {
 	}
 }
 
-// prune drops events older than maxAge, then the oldest beyond maxEvents. An
-// event dated after now (the clock was set back since) is kept: only the
-// count bound removes it.
+// prune keeps the newest events: none older than maxAge, at most
+// maxPerComponent of one component and maxEvents in all. An event dated after
+// now (the clock was set back since) is kept: only the count bounds remove it.
 func prune(events []Event, now time.Time) []Event {
 	cutoff := now.Add(-maxAge)
-	kept := events[:0:0]
-	for _, event := range events {
+	perComponent := map[string]int{}
+	kept := make([]Event, 0, min(len(events), maxEvents))
+	for i := len(events) - 1; i >= 0 && len(kept) < maxEvents; i-- {
+		event := events[i]
 		if at, err := time.Parse(time.RFC3339, event.At); err == nil && at.Before(cutoff) {
 			continue
 		}
+		if perComponent[event.Component] == maxPerComponent {
+			continue
+		}
+		perComponent[event.Component]++
 		kept = append(kept, event)
 	}
-	if len(kept) > maxEvents {
-		kept = kept[len(kept)-maxEvents:]
-	}
+	slices.Reverse(kept)
 	return kept
 }
 

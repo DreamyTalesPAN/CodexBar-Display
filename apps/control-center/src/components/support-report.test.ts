@@ -192,6 +192,11 @@ describe("support report timeline", () => {
         { id: 8, at: "2026-10-06T08:00:40Z", component: "device", deviceId: "vibetv-8caab5", state: "reachable", correlationId: "9f3c2b1a5d6e7f80" },
         { id: 9, at: "2026-10-06T08:05:00Z", component: "firmware_update", deviceId: "vibetv-8caab5", state: "rebooting" },
       ],
+      current: [
+        { id: 2, at: "2026-10-01T07:00:00Z", component: "companion", state: "started", correlationId: "9f3c2b1a5d6e7f80" },
+        { id: 8, at: "2026-10-06T08:00:40Z", component: "device", deviceId: "vibetv-8caab5", state: "reachable", correlationId: "9f3c2b1a5d6e7f80" },
+        { id: 9, at: "2026-10-06T08:05:00Z", component: "firmware_update", deviceId: "vibetv-8caab5", state: "rebooting" },
+      ],
     };
     const exported = JSON.parse(serializeSupportReport(await report({ ok: true, timeline })));
     expect(exported.timeline).toEqual(timeline);

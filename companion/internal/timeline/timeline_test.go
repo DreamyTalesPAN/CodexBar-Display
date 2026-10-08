@@ -108,7 +108,8 @@ func TestRetentionIsBoundedByCountAgeAndSize(t *testing.T) {
 	long := strings.Repeat("x-", maxFieldLen/2)
 	for i := 0; i < maxEvents+150; i++ {
 		store.Record(t0.Add(time.Duration(i)*time.Second), Event{
-			Component: long, DeviceID: long, State: fmt.Sprintf("%s%04d", long[:maxFieldLen-4], i), Reason: long, CorrelationID: long,
+			// Eight components, so the bound per component is not the one tested.
+			Component: fmt.Sprintf("%s%d", long[:maxFieldLen-1], i%8), DeviceID: long, State: fmt.Sprintf("%s%04d", long[:maxFieldLen-4], i), Reason: long, CorrelationID: long,
 		})
 	}
 	log := store.Snapshot(t0.Add(time.Hour))
@@ -274,5 +275,91 @@ func TestANilStoreRecordsNothing(t *testing.T) {
 	store.Record(t0, Event{Component: "device", State: "reachable"})
 	if log := store.Snapshot(t0); log.Version != Version || len(log.Events) != 0 {
 		t.Fatalf("nil store = %+v", log)
+	}
+}
+
+// Review of the port: with two providers shown in turn every 30 seconds the
+// provider changes 960 times in eight hours. That must not push the start of
+// the runtime, the VibeTV's state or an update out of the timeline.
+func TestOneBusyComponentCannotPushOutTheRest(t *testing.T) {
+	store := Open("")
+	store.Record(t0, Event{Component: "companion", State: "started"})
+	store.Record(t0, Event{Component: "device", State: "reachable"})
+	store.Record(t0, Event{Component: "firmware", State: "1.14.2"})
+	for i := 0; i < 960; i++ {
+		provider := []string{"codex", "claude"}[i%2]
+		store.Record(t0.Add(time.Duration(i)*30*time.Second), Event{Component: "provider", State: provider})
+	}
+	at := t0.Add(8 * time.Hour)
+	store.Record(at, Event{Component: "device", State: "unreachable", Reason: "runtime/serial-write"})
+
+	log := store.Snapshot(at)
+	got := strings.Join(states(log), " ")
+	for _, want := range []string{"companion=started", "device=reachable", "firmware=1.14.2", "device=unreachable"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s was pushed out by %d provider changes", want, strings.Count(got, "provider="))
+		}
+	}
+	if n := strings.Count(got, "provider="); n != maxPerComponent {
+		t.Fatalf("provider events kept = %d, want the newest %d", n, maxPerComponent)
+	}
+	// Which provider was shown when the VibeTV stopped answering.
+	if before := log.Events[len(log.Events)-2]; before.Component != "provider" || before.State != "claude" {
+		t.Fatalf("event before the failure = %+v", before)
+	}
+}
+
+// Review of the port: once retention had dropped the event that said "device
+// reachable", the next report of the same state was recorded as a new event
+// with the current time. The latest state of every component is kept, and
+// saved, apart from the list retention shortens.
+func TestAnUnchangedStateIsNotRecordedAgainAfterItsEventWasDropped(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.json")
+	store := Open(path)
+	store.Record(t0, Event{Component: "device", DeviceID: "vibetv-1", State: "reachable"})
+	for i := 0; i < maxEvents+50; i++ {
+		store.Record(t0.Add(time.Duration(i)*time.Second), Event{Component: fmt.Sprintf("c%d", i%6), State: fmt.Sprintf("s%d", i)})
+	}
+	later := t0.Add(5 * time.Hour)
+	if got := strings.Join(states(store.Snapshot(later)), " "); strings.Contains(got, "device=") {
+		t.Fatalf("the test needs the device event dropped: %s", got)
+	}
+
+	for _, s := range []*Store{store, Open(path)} {
+		s.Record(later, Event{Component: "device", DeviceID: "vibetv-1", State: "reachable"})
+		log := s.Snapshot(later)
+		if got := strings.Join(states(log), " "); strings.Contains(got, "device=") {
+			t.Fatalf("an unchanged state was recorded again: %s", got)
+		}
+		var current []string
+		for _, event := range log.Current {
+			if event.Component == "device" {
+				current = append(current, event.State+"@"+event.At)
+			}
+		}
+		if strings.Join(current, " ") != "reachable@2026-10-06T08:00:00Z" {
+			t.Fatalf("current device state = %v, want reachable since the first report", current)
+		}
+	}
+
+	// The same after the event aged out, and a real change is still recorded.
+	old := t0.Add(maxAge + time.Hour)
+	store.Record(old, Event{Component: "device", DeviceID: "vibetv-1", State: "reachable"})
+	if got := len(store.Snapshot(old).Events); got != 0 {
+		t.Fatalf("an aged-out state was recorded again: %d events", got)
+	}
+	store.Record(old, Event{Component: "device", State: "unreachable"})
+	if got := states(store.Snapshot(old)); len(got) != 1 || got[0] != "device=unreachable" {
+		t.Fatalf("a change after eviction = %v", got)
+	}
+}
+
+func TestTheCurrentStatesAreBounded(t *testing.T) {
+	store := Open("")
+	for i := 0; i < maxComponents+20; i++ {
+		store.Record(t0, Event{Component: fmt.Sprintf("c%d", i), State: "x"})
+	}
+	if got := len(store.Snapshot(t0).Current); got != maxComponents {
+		t.Fatalf("current states = %d, want at most %d", got, maxComponents)
 	}
 }
