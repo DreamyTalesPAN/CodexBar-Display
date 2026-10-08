@@ -3447,6 +3447,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshDisplayPreferences = useCallback(async () => {
+    // Start after the changes that are on their way: a read beside one finds
+    // the value from before it and may answer after it.
+    for (;;) {
+      const pendingWrites = displayPreferenceWritesRef.current;
+      await pendingWrites;
+      if (pendingWrites === displayPreferenceWritesRef.current) {
+        break;
+      }
+    }
     const revision = displayPreferencesRevisionRef.current;
     try {
       const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(

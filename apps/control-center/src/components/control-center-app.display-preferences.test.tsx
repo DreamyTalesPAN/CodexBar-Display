@@ -324,6 +324,36 @@ it("keeps a saved usage display when an older read answers afterwards", async ()
   expect(window.usageDisplay().textContent).toBe("Remaining");
 });
 
+// A read that starts while a change is still on its way to the Mac App finds
+// the value from before it. Answered after the change, it must not put that
+// value back.
+it("keeps a saved usage display when a read beside the write answers afterwards", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const store = window.holdNextWrite();
+  await window.choose("Remaining");
+  let answerRead = () => {};
+  window.companion.holdRead = new Promise<void>((resolve) => {
+    answerRead = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  store();
+  await window.wait(1);
+  window.companion.holdRead = null;
+  answerRead();
+  await window.wait(1);
+
+  expect(window.companion.stored.value).toBe("remaining");
+  expect(window.usageDisplay().textContent).toBe("Remaining");
+});
+
 // Two changes in a row: the Mac App must end up with the second one, also when
 // it is slow to store the first.
 it("stores two quick changes of the usage display in the order they were made", async () => {
