@@ -390,6 +390,15 @@ rehearsal::purge_mac() {
   rehearsal::stash "$HOME/Library/Caches/$REHEARSAL_BUNDLE_ID"
   rehearsal::stash "$HOME/Library/Caches/org.sparkle-project.Sparkle/$REHEARSAL_BUNDLE_ID"
 
+  # The Control Center's localStorage (device target, saved themes, seen
+  # "What's new" entries) lives in WebKit's per-bundle folders. Left in place, a
+  # cold start reads what an earlier run stored and is not a new customer.
+  rehearsal::stash "$HOME/Library/WebKit/$REHEARSAL_BUNDLE_ID"
+  local web_storage
+  for web_storage in "$HOME/Library/HTTPStorages/${REHEARSAL_BUNDLE_ID}"*; do
+    [[ -e "$web_storage" ]] && rehearsal::stash "$web_storage"
+  done
+
   local agent
   for agent in "$HOME/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}"*.plist; do
     [[ -e "$agent" ]] && rehearsal::stash "$agent"
