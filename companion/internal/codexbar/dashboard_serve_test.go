@@ -213,8 +213,9 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 }
 
 // A config written while the child was starting may not be the one it read,
-// so only a write clearly before the launch proves the serve is current.
-func TestConfigChangedSinceCountsEveryWriteFromTheLaunchSecondOn(t *testing.T) {
+// so only a write before the launch proves the serve is current. That
+// includes the config a cold start creates just before launching.
+func TestConfigChangedSinceCountsEveryWriteFromTheLaunchOn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
@@ -224,9 +225,10 @@ func TestConfigChangedSinceCountsEveryWriteFromTheLaunchSecondOn(t *testing.T) {
 		written time.Time
 		changed bool
 	}{
-		"written before the launch":               {launchedAt.Add(-2 * time.Second), false},
-		"written in the launch second, truncated": {launchedAt.Truncate(time.Second), true},
-		"written after the launch":                {launchedAt.Add(time.Millisecond), true},
+		"written well before the launch": {launchedAt.Add(-2 * time.Second), false},
+		"created just before the launch": {launchedAt.Add(-time.Millisecond), false},
+		"written at the launch":          {launchedAt, true},
+		"written after the launch":       {launchedAt.Add(time.Millisecond), true},
 	} {
 		if err := os.Chtimes(path, tc.written, tc.written); err != nil {
 			t.Fatal(err)

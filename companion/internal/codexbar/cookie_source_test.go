@@ -198,6 +198,26 @@ func TestUseBrowserCookiesKeepsBothOfTwoSignInsAtOnce(t *testing.T) {
 	}
 }
 
+// A config that is a symlink (dotfiles, a synced folder) keeps its link; the
+// switch lands in the file it points to.
+func TestUseBrowserCookiesWritesThroughASymlinkedConfig(t *testing.T) {
+	_, managed := writePinnedConfig(t, twoPinnedProviders)
+	link := filepath.Join(t.TempDir(), "config.json")
+	if err := os.Symlink(managed, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", link)
+	if changed, err := UseBrowserCookies("", "claude"); err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the config link must stay a link: %v %v", info, err)
+	}
+	if providersIn(t, managed)["claude"]["cookieSource"] != "auto" {
+		t.Fatal("the switch must land in the linked file")
+	}
+}
+
 // CodexBar 0.71.0 and later write the config under an flock on
 // config.json.lock. While it holds that lock the sign-in must wait, so the
 // change CodexBar publishes there survives.

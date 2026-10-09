@@ -60,8 +60,14 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 		return false, fmt.Errorf("lock CodexBar config: %w", err)
 	}
 	defer lock.Release()
+	// The lock stays where CodexBar takes it; a symlinked config is replaced
+	// at its target, so the link and whatever manages it stay in place.
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false, err
+	}
 	for attempt := 0; attempt < 3; attempt++ {
-		changed, err := switchCookieSource(path, providerID)
+		changed, err := switchCookieSource(target, providerID)
 		if !errors.Is(err, errConfigChanged) {
 			return changed, err
 		}

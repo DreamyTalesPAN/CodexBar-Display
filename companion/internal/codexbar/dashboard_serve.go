@@ -375,13 +375,12 @@ func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 	}
 }
 
-// configChangedSince reports whether the config at path was written after t.
-// A write in the same second counts too, for file systems that keep whole
-// seconds, and so does a config it cannot read: a serve is never kept for
-// lack of proof that it is current.
+// configChangedSince reports whether the config at path was written at or
+// after t. A config it cannot read counts as changed, so a serve is never kept
+// for lack of proof that it is current.
 func configChangedSince(path string, t time.Time) bool {
 	info, err := os.Stat(path)
-	return err != nil || !info.ModTime().Before(t.Truncate(time.Second))
+	return err != nil || !info.ModTime().Before(t)
 }
 
 func environmentValue(env []string, key string) string {
