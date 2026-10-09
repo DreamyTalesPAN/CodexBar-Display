@@ -1327,6 +1327,11 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 			}
 		}
 	}
+	if cfg.ProviderDisplay.Mode == providerDisplayModePair {
+		// Two at once shows the current member alone while the other has no
+		// current reading, so the selection must not settle on that other one.
+		return preferAvailableProviders(filtered)
+	}
 	return filtered
 }
 

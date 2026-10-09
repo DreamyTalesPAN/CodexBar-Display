@@ -212,3 +212,22 @@ func TestProviderDisplayKeepsThePairsLastGoodFrame(t *testing.T) {
 		t.Fatalf("One provider kept the pair's last-good frame")
 	}
 }
+
+// Two at once with one member that delivers nothing current: the selection
+// sees only the other one, so VibeTV shows it alone instead of the error the
+// unavailable member would bring.
+func TestProviderDisplayPairSelectsOnlyTheCurrentMember(t *testing.T) {
+	pair := runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"claude", "codex"}}
+	claude := testParsedFrame("claude", 1, 2, 60)
+	claude.Frame.UsageUnavailable = true
+	codex := testParsedFrame("codex", 3, 4, 60)
+	stale := testParsedFrame("claude", 5, 6, 60)
+	stale.Stale = true
+	for _, other := range []codexbar.ParsedFrame{claude, stale} {
+		state := &runtimeState{selector: codexbar.NewProviderSelector()}
+		got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{other, codex}, providerDisplayTestDeps(pair), nil)
+		if len(got) != 1 || got[0].Frame.Provider != "codex" {
+			t.Fatalf("pair selection=%+v want only codex", got)
+		}
+	}
+}
