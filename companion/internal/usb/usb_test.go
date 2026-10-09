@@ -134,6 +134,7 @@ func TestDeviceHelloRevalidatesStableIdentityOnSamePath(t *testing.T) {
 }
 
 func TestResolverRejectsReplacementForPreviousIdentity(t *testing.T) {
+	listSerialPorts(t, "/dev/mock")
 	for _, control := range []bool{false, true} {
 		t.Run(fmt.Sprint(control), func(t *testing.T) {
 			port := newMockSerialPort()
@@ -204,7 +205,7 @@ func TestReadHelloKeepsFullSupplierCapabilityLine(t *testing.T) {
 		line = line[n:]
 	}
 
-	hello, ok := readHelloFromPort(port, 100*time.Millisecond, nil)
+	hello, ok, _ := readHelloFromPort(port, 100*time.Millisecond, nil)
 	if !ok || hello.DeviceID != "16199051" {
 		t.Fatalf("expected full supplier-sized hello, got ok=%t hello=%+v", ok, hello)
 	}
@@ -215,11 +216,11 @@ func TestReadHelloFromPortKeepsALineThatSpansTwoWindows(t *testing.T) {
 	port := newMockSerialPort()
 	port.readQueue = [][]byte{[]byte("boot noise\n" + line[:30])}
 	var carry []byte
-	if _, ok := readHelloFromPort(port, 20*time.Millisecond, &carry); ok {
+	if _, ok, _ := readHelloFromPort(port, 20*time.Millisecond, &carry); ok {
 		t.Fatal("half a hello must not parse")
 	}
 	port.readQueue = [][]byte{[]byte(line[30:] + "\n")}
-	hello, ok := readHelloFromPort(port, 20*time.Millisecond, &carry)
+	hello, ok, _ := readHelloFromPort(port, 20*time.Millisecond, &carry)
 	if !ok || hello.Firmware != "1.0.39" {
 		t.Fatalf("hello cut at a window boundary was lost: ok=%t hello=%+v", ok, hello)
 	}
@@ -469,6 +470,7 @@ func TestResolverConfirmsPendingCableTransitionAfterIdentityMatch(t *testing.T) 
 func TestSenderReusesResolvedCablePortWithoutReopeningOtherDevices(t *testing.T) {
 	targetPath := filepath.Join(t.TempDir(), "cu.usbserial-target")
 	otherPath := filepath.Join(t.TempDir(), "cu.usbserial-other")
+	listSerialPorts(t, targetPath, otherPath)
 	for _, path := range []string{targetPath, otherPath} {
 		if err := os.WriteFile(path, nil, 0o600); err != nil {
 			t.Fatalf("create serial candidate: %v", err)
@@ -824,6 +826,7 @@ type mockSerialPort struct {
 	mu sync.Mutex
 
 	readQueue     [][]byte
+	readErr       error
 	readCalls     int
 	readHook      func(int)
 	writeCalls    int
@@ -845,9 +848,13 @@ func (m *mockSerialPort) Read(p []byte) (int, error) {
 	readCall := m.readCalls
 	hook := m.readHook
 	if len(m.readQueue) == 0 {
+		readErr := m.readErr
 		m.mu.Unlock()
 		if hook != nil {
 			hook(readCall)
+		}
+		if readErr != nil {
+			return 0, readErr
 		}
 		return 0, io.EOF
 	}
