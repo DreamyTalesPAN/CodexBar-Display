@@ -17,6 +17,8 @@ const files = [
 );
 
 const approvedCustomerCopy = new Set([
+  // The customer supplies their OpenAI credential in Theme Studio.
+  "Change API key",
   "Open the downloaded DMG.",
   "Drag VibeTV Control Center to Applications and wait for the copy to finish.",
   "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",
@@ -188,7 +190,7 @@ function shouldIgnoreText(text) {
   if (!text) {
     return true;
   }
-  if (text.startsWith("/") || text.startsWith("http://") || text.startsWith("https://")) {
+  if (text.startsWith("/") || text.startsWith("./") || text.startsWith("../") || text.startsWith("http://") || text.startsWith("https://")) {
     return true;
   }
   if (text.includes("VibeTV-Companion-API-")) {

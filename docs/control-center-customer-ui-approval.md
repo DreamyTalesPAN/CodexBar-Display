@@ -3778,6 +3778,180 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `companion/internal/companionapi/provider_reported.go`, its
   test, and this approval record.
 
+## 2026-09-16 — Local AI Theme Studio preview with animated companions
+
+- User approval: Marcus tested the local preview at
+  `/internal/theme-studio-preview` as a customer during the September 16
+  session and approved the direction step by step: a still background with
+  one or two AI-chosen animated companion sprites ("das ist glaube ich der
+  beste Ansatz"), only the spinner inside the Create button, no lock between
+  requests, companions that resize only uniformly, and "cool dann jetzt commit
+  und push in den PR".
+- Approved customer-visible result: **The Theme Studio has one text field
+  "Your idea" and one primary "Create with AI" button that shows a spinner and
+  "Creating…" while the AI works, with a "Cancel" button that leaves the design
+  unchanged. The result is a still background plus one or two animated
+  companion sprites on the display, each selectable, movable, and resizable
+  only as a square through the corner handle or a single "Size" field. Plain
+  layout wishes (size, position, labels, timers, removal) change the design
+  directly with an "AI plan:" note and Undo; wishes that cannot be done (third
+  companion, mixed image and UI changes, contradictory or unclear requests)
+  answer with a short clarification instead of changing anything. Settings hold
+  the OpenAI key only in memory and state the consent with at most five
+  generated images per creation.**
+- Approved files: `apps/control-center/src/app/internal/theme-studio-preview/`,
+  `apps/control-center/src/app/api/local-companion/[...path]/`,
+  `apps/control-center/src/components/theme-studio/`,
+  `apps/control-center/src/components/live-vibetv-preview.tsx`,
+  `apps/control-center/src/lib/ai-theme*.ts`,
+  `apps/control-center/src/lib/ai-companion-sprites.ts`,
+  `apps/control-center/src/lib/theme-studio-assets.ts`, their tests, the
+  companion `ai_theme*` Go files, and this approval record.
+
+## 2026-09-16 — Companion size bounds and artwork placement after companion edits
+
+- User approval: Marcus asked that animated companions only resize
+  uniformly and approved the push to PR #422; the exact-head Codex review of
+  `c1acf1c7` found that the manual "Size" field and corner handle accepted
+  1..240 although the AI helper only accepts 16..80, and that adding or
+  revising a companion reset manually moved artwork.
+- Approved customer-visible result: **The "Size" field and the corner handle
+  of an animated companion stop at 16 and 80 pixels. After a companion-only
+  AI change, artwork the customer moved or resized stays where it was.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`,
+  `apps/control-center/src/lib/ai-theme-document.ts`, their tests, and this
+  approval record.
+
+## 2026-09-16 — Companions stay inside the scene area
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ad67c9eb` found that a companion could be dragged, nudged or enlarged
+  below the 128 px scene, which the AI helper later rejects.
+- Approved customer-visible result: **An animated companion cannot be moved or
+  enlarged past the bottom of the picture area; dragging, arrow keys, the
+  corner handle and the "Size" field stop at that edge. Other elements move
+  as before.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editable-theme-preview.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`, its
+  test, and this approval record.
+
+## 2026-09-16 — Companions saved outside the scene are repaired on open
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `d384ea8c` found that a design saved or imported with a companion below
+  the scene could be shrunk under 16 px by the new bottom clamp.
+- Approved customer-visible result: **Opening or importing a design moves an
+  animated companion back inside the picture area at its saved size. Enlarging
+  a companion near the bottom edge moves it up instead of stopping early.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  `apps/control-center/src/components/theme-studio/editor-geometry.ts`,
+  `apps/control-center/src/components/theme-studio/theme-studio-editor-state.ts`
+  (the same repair also applies to the design restored automatically on
+  open, per the exact-head review of `26ce55ee`), their tests, and this
+  approval record.
+
+## 2026-09-16 — Automatically restored designs get the same companion repair
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `26ce55ee` found that the design restored automatically on open
+  bypassed the companion repair.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  design that opens automatically shows its animated companion inside the
+  picture area at a valid size, exactly like a design opened from the library
+  or a file.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/theme-studio-editor-state.ts`,
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  their tests, and this approval record.
+
+## 2026-09-16 — Imported pictures fit the display's picture budget
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `6b41ecba` found that a large square picture imported through "Add
+  element" became a 240x240 asset that the design could no longer save or
+  export.
+- Approved customer-visible result: **An imported picture is scaled down a
+  little further when needed (for example a square photo appears at 181x181
+  instead of 240x240) so the design can always be saved and exported. No new
+  screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
+  test, and this approval record.
+
+## 2026-09-16 — Unsaved edits made while a file is being read are protected
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `43ed2c3b` found that an edit made while a design file was still being
+  read could be replaced without the unsaved-changes confirmation.
+- Approved customer-visible result: **No new screen, wording, or control. The
+  existing unsaved-changes confirmation also appears when the customer edits
+  the design while an opened file is still loading.**
+- Approved files:
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`
+  and this approval record.
+
+## 2026-09-16 — AI bar reading changes drop the old window owner
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `9d7cb30f` found that an AI reading change on a usage bar kept stale
+  provider/usage ownership fields, so the bar could stay hidden or gated by
+  the old window.
+- Approved customer-visible result: **No new screen, wording, or control. When
+  the AI switches a usage bar to another reading, the bar shows that reading
+  exactly like the manual reading selector does.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
+## 2026-09-16 — AI text edits widen the label box
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ae040f25` found that an AI edit giving a narrow label longer text, a
+  longer reading or a bigger font kept the old width and clipped the value.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  label the AI changes shows its full new text, exactly like a label edited by
+  hand.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
+## 2026-09-16 — AI literal-text edits drop the old reading owner
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `ac2f4f41` found that replacing a live reading with fixed text kept the
+  old provider/window ownership, so the new label could stay hidden.
+- Approved customer-visible result: **No new screen, wording, or control. A
+  fixed label the AI writes over a live reading is always shown, exactly like
+  one typed by hand.**
+- Approved files: `apps/control-center/src/lib/ai-theme-layout.ts`, its test,
+  and this approval record.
+
+## 2026-09-16 — Imported pictures with the same file name keep both pictures
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `6109837d` found that importing a second file with the same name
+  silently replaced the first picture.
+- Approved customer-visible result: **Importing two pictures that share a
+  file name keeps both on the display; the earlier picture no longer changes.
+  No new screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`,
+  `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`,
+  their tests, and this approval record.
+
+## 2026-09-16 — Imported files never take an AI-generated name
+
+- User approval: Same push approval for PR #422; the exact-head Codex review
+  of `47eeac88` found that an imported file named like generated artwork
+  (for example `ai-pet-1.cba`) would be replaced by the next AI creation.
+- Approved customer-visible result: **A picture or animation the customer
+  imports stays on the display after later AI creations, whatever its file
+  name. No new screen, wording, or control.**
+- Approved files: `apps/control-center/src/lib/theme-studio-assets.ts`, its
+  test, and this approval record.
+
 ## 2026-09-04 — Failed setup reset finishes pending provider changes
 
 - User approval: Same instruction as above: fix every real Bug Detector finding
@@ -5160,3 +5334,225 @@ issue scope, or release permission never implies UI permission.
 - User approval: On 2026-10-07 Paul asked to be shown everything he has to approve, was given the list of all entries of 2026-10-06 and 2026-10-07 that were marked "not yet confirmed by Paul", asked about two of them (the Overview Display tile "Theme not shown" with "VibeTV can't show this theme. Choose another theme.", and the increased-contrast styles), and answered "ok passt beides, trag meine freigabe ein".
 - Approved customer-visible result: The results of those entries as written, without changes to their wording: the theme-install dialog "VibeTV can't show this theme." with "Choose another theme."; the Display tile "Theme not shown" for a theme the VibeTV reports twice that it cannot draw, with "Waiting for first image" unchanged for every other case; "Connected" on the Support page in that state; "No active session" for an idle window and for an account with no reset time anywhere, "Reset unavailable" otherwise; the rate-limit message for a "credentials were preserved" answer; Install staying usable while a theme is not shown; the lost-VibeTV dialog closing once the Companion reports a connected VibeTV; and, in PR #525, the support timeline in the downloaded report, the screen-reader names and focus behaviour, and the styles that apply only with the system setting "Increase contrast".
 - Scope: the entries above that now read "Confirmed by Paul on 2026-10-07" and this approval record. This approves the customer-visible results on the pull-request branch only, not merge, release, installation, or a device operation.
+
+## 2026-10-08 — Theme Studio desktop refinement
+
+- User approval: Paul requested the visible changes through browser comments in this chat, then authorized refactoring and pushing the complete batch.
+- Approved customer-visible result: One desktop canvas with a larger rounded display, a wide prompt beneath it, selected-element reference chips, rotating typewriter inspirations, image attachments, Create with AI and Add manually actions, collapsed element Details, automatic draft recovery and Save theme in the header. One Settings menu replaces the ellipsis menu; it supports changing an existing API key, while first-use connection remains in the creation flow. Remove the display caption, pause control, elements list, shortcut help and preview-specific explanatory copy. Use existing shared UI controls; no mobile work.
+
+## 2026-10-08 — Theme Studio review fixes
+
+- User approval: Paul authorized refactoring, simplification and pushing this Theme Studio batch in the current chat.
+- Approved customer-visible result: Async imports stay with their originating draft; removing the last reference to an image removes its stored bytes from the current draft while Undo can restore it.
+
+## 2026-10-08 — Theme Studio autosave failure protection
+
+- User approval: Paul authorized refactoring, simplification and pushing this Theme Studio batch in the current chat.
+- Approved customer-visible result: Successfully saved drafts close normally; changes that could not be saved show the browser's standard warning before closing or reloading.
+
+## 2026-10-08 — Theme Studio creation and device actions
+
+- User approval: Paul requested Create beside the prompt, an icon-only manual add action below it, removal of the OpenAI status row, and primary Send to VibeTV with secondary Save in the header.
+- Approved customer-visible result: Settings, Save and Send to VibeTV appear in that order. Create shares the prompt row; the manual add control is a left-aligned plus. Sending uses the existing Mac App install endpoint and shared install-job polling, surfaces its result and locks edits during transfer. No hardware write test was authorized or performed.
+
+
+## 2026-10-08 — Remaining Theme Studio review corrections
+
+- User approval: Paul authorized refactoring and pushing this Theme Studio batch, then explicitly requested restoring the flat display instead of the 3D model.
+- Approved customer-visible result: Keep the existing flat display with no 3D model or additional graphics dependency. Static scenes include the requested subject; recovered edits retain their unsaved status; concurrent image imports select the correct element. Device transfers resolve the installed Mac App's owned listener and retain an accepted job across polling errors and page reloads, allowing Check transfer without uploading again. No hardware write test was performed.
+
+
+## 2026-10-08 — Prompt action alignment
+
+- User approval: Paul requested keeping Create vertically centered when the prompt spans multiple lines.
+- Approved customer-visible result: Create stays vertically centered beside the prompt box at every prompt height.
+
+
+## 2026-10-08 — Prompt toolbar
+
+- User approval: Paul requested moving attachments beside the manual add action below the prompt and using a clearer element-add icon.
+- Approved customer-visible result: A square-with-plus icon adds elements; the paperclip attaches reference images in the same left-aligned toolbar beneath the prompt. The prompt uses its full width.
+
+
+## 2026-10-08 — Native Theme Studio candidate
+
+- User approval: Paul explicitly requested replacing the existing Theme Studio inside the Mac and Windows app with this new editor, enabling API-key entry and AI creation, and building an unsigned quick DMG from PR #422 for his own testing; completing that integration includes retaining the existing recovery and screensaver safeguards.
+- Approved customer-visible result: Appearance opens the new Theme Studio for new, saved, published and recovered themes and screensavers. Create connects OpenAI on first use; Settings replaces an existing key. Save uses the app library, Send to VibeTV uses the existing app install flow, and Back returns to the library. The Companion serves the local AI endpoints by default. Keys stay in the running Companion memory and require entry after a runtime restart. Opening a clean design preserves unrelated recovery; screensaver document changes, saved-design selection and validation retain the screensaver slot and size limit. No signing, release, main push or hardware write test is authorized.
+
+
+## 2026-10-08 — Theme Studio inside the app shell
+
+- User approval: Paul requested removing the editor's own VIBETV bar so Theme Studio sits in the original shell again, collapsing the sidebar when the editor opens, and moving the prompt box further down, then asked for the invisible result message after Create to be shown under the prompt box.
+- Approved customer-visible result: Theme Studio keeps the app header and the navigation sidebar, which collapses to icons when the editor opens and returns to its earlier state on leaving; the customer can still expand it. The editor shows no brand bar of its own, only Back, Settings, Save and Send to VibeTV. The display is centered in the free space and the prompt box with Create sits at the bottom of the window. The development preview renders the editor inside the same shell. The result message of each action, such as the AI plan after Create, is visible under the prompt box, so a request that changes nothing no longer ends without feedback.
+
+
+## 2026-10-08 — Send to VibeTV from the development preview
+
+- User approval: Paul requested that Send to VibeTV in the development preview reaches his VibeTV on the cable.
+- Approved customer-visible result: No customer-visible change. The development proxy also accepts the runtime of a locally built preview app as the owner of the local listener, so Send to VibeTV in the development preview installs the design through that app. Paul's cable VibeTV received and activated a design this way.
+
+
+## 2026-10-08 — Animated companions keep their surroundings on the device
+
+- User approval: Paul reported that the cat sent to his VibeTV sat in a solid box while the preview showed it cut out, and asked for it to be fixed.
+- Approved customer-visible result: On VibeTV an animated companion shows the artwork around it, as in the preview, instead of a box in the theme background colour. Send to VibeTV and the exported theme pack paint the artwork behind each companion into its frames; the saved, editable design is unchanged.
+
+
+## 2026-10-08 — Theme Studio chat
+
+- User approval: Paul asked for a chat instead of the single prompt box, so the AI keeps the context and can explain things such as why an artwork cannot fill the whole display.
+- Approved customer-visible result: Beside the display Theme Studio shows a conversation with the customer's messages and the AI's replies above the prompt box; below wide-window width it sits under the display. Earlier turns are sent with each request, so follow-ups such as "do it" refer to them. Questions are answered in the chat without changing the design, and a request that is not possible is explained there instead of as a red error. The conversation belongs to the open editor and starts empty with a new or opened design. The editor's settings button is named Design settings to tell it apart from the app's Settings.
+
+
+## 2026-10-08 — Flexible Theme Studio designs
+
+- User approval: Paul asked why AI artwork is limited to the top of the display, said this is our own rule and not a technical one, and asked for a far more flexible editor: artwork over the whole screen or at the bottom, designs such as a virtual pet with no session and weekly limits, a name field at the top like in the old editor, the Details section under the display on the left instead of in the chat, and Create as an arrow inside the prompt box.
+- Approved customer-visible result: The AI can draw the picture over the whole 240x240 display or over the top 240x128, and decides from the request whether the design shows the session and weekly readouts; over a full-screen picture the readouts sit directly on it. Asking for a picture of another size draws a new one and replaces the layout. In the chat the picture can be moved, for example to the bottom, and its animated figures move with it. Figures can be placed anywhere on the display, and on VibeTV they show the picture and coloured areas behind them. The design name is edited in a field at the top left of the editor. Details for the selected element opens under the display. Create is an arrow button inside the prompt box. Connecting an OpenAI key checks both models the editor needs. Leaving with edits that could not be stored as a draft asks first. Asking the AI to redraw an imported image is declined in the chat instead of drawing an unrelated picture.
+
+
+## 2026-10-08 — Connection check and forgotten transfers
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Connecting an OpenAI key succeeds again: the check of the text model is no longer blocked before it leaves the Mac. When the Mac App was restarted during a transfer and no longer knows it, Send to VibeTV starts a new transfer instead of staying on Check transfer.
+
+
+## 2026-10-08 — Longer text stays on the display
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Typing longer text or enlarging it widens the text box only up to the display edge, so the design stays valid and Save and Send to VibeTV stay available.
+
+
+## 2026-10-08 — Provider readings and AI text sizes
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: Choosing a provider name, usage or reset countdown for a text keeps its box as wide as the reading, so right-aligned and centred provider texts stay in place. The AI can set every text size the editor offers, up to 8.
+
+
+## 2026-10-08 — Figures beside the picture stay put
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: An animated figure the customer placed beside the picture stays where it is when the AI changes something else in the scene; it only moves when the AI is asked to move it.
+
+
+## 2026-10-08 — Theme Studio review round
+
+- User approval: Paul asked for the review findings on this pull request to be fixed where relevant.
+- Approved customer-visible result: A figure beside the picture no longer blocks AI layout changes. Text the AI makes longer near the right edge is widened only up to the edge. Starting from the built-in example keeps its layout when the AI redraws the scene. Making a saved design full screen keeps it the same theme and keeps an unchanged figure exactly as it was. Moving the picture in the chat carries the example's animated figure along, a picture with an attached motion stays in place, and a move that would not fit is declined. A request that fails or is cancelled appears in the chat only once it has an answer, and reference images are not sent again after an answer. Keyboard shortcuts do nothing while the leave dialog is open.
+
+
+## 2026-10-09 — OpenAI key survives restarts, readouts stay over animated figures
+
+- User approval: Paul asked for issues #577 and #578 to be fixed in this pull request, because merging it releases the whole feature.
+- Approved customer-visible result: The OpenAI key a customer connected and OpenAI accepted is kept across restarts of the app: in the login keychain on the Mac, and on Windows in a file only that Windows user can decrypt. A key that was not verified, was replaced or was disconnected is not kept. The agreement to send prompts to OpenAI is remembered with it, so after a restart Create works without entering anything again; disconnecting clears both. This replaces the earlier rule that the key must be entered again after a restart. On VibeTV, text and usage bars placed over an animated figure stay visible while the figure moves; this needs the firmware of this pull request.
+
+
+## 2026-10-09 — Layer order and honest disconnect
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: Details for one selected element offers Bring forward and Send backward, so a shape added later can be put behind a label or bar; the picture and its attached motion keep their place at the back. If the kept OpenAI key cannot be removed, disconnecting or replacing it reports a failure instead of claiming the key is gone.
+
+
+## 2026-10-09 — Overlapping figures and a key that could not be kept
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A design in which the two animated figures overlap cannot be saved or sent; the editor says "Move the two animated figures apart. VibeTV cannot show them overlapping." When OpenAI accepted the key but the app could not save it, the editor says "AI is ready. The key could not be saved on this Mac, so it is needed again after the Mac App restarts." (on Windows with the app's Windows wording) instead of only "AI is ready."
+
+
+## 2026-10-09 — Overlap rule for every animation
+
+- User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
+- Approved customer-visible result: The rule against overlapping animations also covers imported animations and GIFs, not only the AI figures. The message now reads "Move the animated elements apart. VibeTV cannot show them overlapping."
+
+
+## 2026-10-09 — Working indicator in the chat and usage shown again
+
+- User approval: Paul asked that while the AI works, his message appears at once as a chat message at the top right with three animated dots under it, instead of the spinner with "Working…".
+- Approved customer-visible result: After Create the customer's message appears immediately as their chat message and the prompt box empties; three animated dots under it show that the AI is working (still dots with reduced motion). When the request fails or is cancelled the message leaves the chat and returns to the prompt box. A design without usage readouts that is asked to show usage again gets the standard readouts; the AI is told whether the current design shows them and keeps that unless asked.
+
+
+## 2026-10-09 — A described picture fills the display
+
+- User approval: Paul reported that "a jellyfish drifting through the sea. Fullscreen, animated." produced the standard layout with the usage readouts below and a black area where the jellyfish should be, and asked for it to be fixed: the prompt should simply have made a full-screen jellyfish.
+- Approved customer-visible result: A request that describes a picture and says nothing about usage produces a full-screen picture without the session and weekly readouts; the readouts come only when the customer asks for usage, limits, bars or similar, or when the design being refined already shows them. In the Mac and Windows app a new theme no longer hides the generated picture and figures behind its black starting background.
+
+
+## 2026-10-09 — Usage lanes named by the limit, discarded drafts stay discarded
+
+- User approval: Paul asked for the review comment on fixed SESSION and WEEKLY labels to be fixed in this pull request, and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A generated design titles each usage lane with the name of the limit it shows (for example Session, Weekly or a model limit) instead of the fixed words SESSION and WEEKLY, shrinking a long name to fit; values and bars follow the first and second limit the provider reports. A draft the customer explicitly discards is not offered again later.
+
+
+## 2026-10-09 — Findings from building five themes through the chat
+
+- User approval: Paul asked for five very different, demanding themes to be built through the chat interface, including changes and undo, and for the review findings to be fixed where relevant.
+- Approved customer-visible result: A request that asks for a picture together with native elements such as a clock, a date or a usage bar delivers both in one go. A generated figure shows only that figure, without pieces of the scene around it. The chat answers and names labels in the customer's language, with real umlauts. Two animated figures are never placed on top of each other; asking for that is declined with an explanation and the design stays unchanged. Undo clears an old error message, and loading a design clears an old transfer status. Generated pictures no longer contain a painted clock or text. Width and height typed into the size fields, and text resized on the canvas, stop at the edge of the display, so Save and Send stay available.
+
+
+## 2026-10-09 — The picture of an existing design can be redrawn
+
+- User approval: Paul asked the chat to rework an existing Synthwave design and got "I can only redraw pictures I created"; he said the helper must of course be able to change existing themes and their images, and asked for it to be fixed. He also reported a send that left the VibeTV without the usage limits and with a boxed figure after the transfer was interrupted.
+- Approved customer-visible result: When a design from the library, an imported design or an older design has a picture, the chat redraws that picture on request: the new picture takes the place, size and layer of the old one, and the usage readouts and other elements stay as they are. Only a second image beside the main picture is left alone, with an explanation. The chat describes a new scene in the customer's language. A cable transfer that misses one acknowledgement sends that file again instead of failing with half of the new files on the VibeTV.
+
+
+## 2026-10-09 — Moving the picture of an existing design through the chat
+
+- User approval: Paul said the helper must be able to change existing themes and their images, and asked for the review findings to be fixed where relevant.
+- Approved customer-visible result: Asking the chat to move or resize the main picture of a library, imported or older design works like it does for a generated picture, instead of being refused as a protected image.
+
+## 2026-10-09: Theme Studio library transfer and fullscreen preservation
+
+- User approval: Marcus reviewed the two reproduced findings in PR #422 and explicitly requested both fixes. Installation and personal testing on his Mac must wait until the other chat finishes its Mac tests.
+- Approved customer-visible result: A saved animated design has the same composited background when installed from the library or sent from the editor. Switching the picture to fullscreen and back preserves independent manual text, images and their layer order. Existing controls and wording remain unchanged.
+- Validation: Targeted regression tests fail before the fixes and pass afterward; automated local tests and an isolated build are used without replacing the installed Mac app or writing to hardware. Personal Mac and physical-display testing is deferred as requested.
+
+## 2026-10-09: Keep manual layers between generated artwork and figures
+
+- User approval: Marcus requested the two reproduced review fixes, including retaining manual elements through fullscreen changes. This follow-up completes the same approved result after a regression test reproduced the bot's layering finding.
+- Approved customer-visible result: A manual element between the background picture and an animated figure remains behind that figure when switching picture layouts, in addition to retaining elements below and above the generated design.
+
+## 2026-10-09: Preserve complete manual ordering during picture layout changes
+
+- User approval: Marcus requested preserving manual additions when fixing PR #422's fullscreen transition. The follow-up addresses the verified bot finding about shapes beneath usage readouts within that same requested fix.
+- Approved customer-visible result: Existing manual elements and usage readouts retain their ordering when the picture changes size. Only generated image layers and the standard readout panel are replaced; explicit requests to remove or add usage still apply.
+
+## 2026-10-09: Preserve the layer of a replaced legacy animation
+
+- User approval: Marcus requested fixing PR #422's loss of manual design additions and preserving their layering; this follow-up covers the verified legacy-animation transition in that same edit path.
+- Approved customer-visible result: When an older animation becomes new animated figures, the replacement occupies the previous animation layer so manual text behind it stays behind it.
+
+## 2026-10-09: Restore the usage background below retained layers
+
+- User approval: Marcus requested the fullscreen preservation fix; this follow-up addresses the reproduced review finding in the same transition.
+- Approved customer-visible result: Returning from fullscreen restores the usage background behind existing readouts and manual layers, including designs whose animated figure was moved above the readouts.
+
+## 2026-10-09: Keep customized panel backgrounds without duplication
+
+- User approval: Marcus requested fixing fullscreen transitions while preserving customer additions. This follow-up covers the verified duplicate-panel finding within that same change.
+- Approved customer-visible result: A customer-colored usage background survives the fullscreen round trip without an extra hidden panel, so a valid 32-element design remains saveable and sendable.
+
+## 2026-10-09: Remove the standard background together with hidden readouts
+
+- User approval: Marcus requested the design-preservation fixes. This follow-up corrects the verified leftover standard panel in the same usage/layout transition path.
+- Approved customer-visible result: Asking to hide usage removes its unchanged standard background even when picture size stays the same. Customer-customized backgrounds remain intact.
+
+## 2026-10-09: Reuse custom backgrounds and preserve rounded composition
+
+- User approval: Marcus requested fixing the library rendering and manual-layer preservation findings. These follow-ups address verified cases in those two paths.
+- Approved customer-visible result: Restoring usage reuses an existing custom panel without hiding it or consuming an extra element. Animated figures retain the rounded corners of static rectangles beneath them in the prepared device image.
+- Validation: Regression tests cover hidden/restored usage at the 32-element limit and every pixel in four animation frames over a rounded rectangle. Real Mac/display rehearsal remains deferred as requested.
+
+## 2026-10-09: Restore readout backgrounds above full-display backdrops
+
+- User approval: Marcus requested preserving custom design elements during fullscreen transitions. This follow-up corrects the reproduced backdrop-order finding in that transition.
+- Approved customer-visible result: A restored usage panel remains visible above retained full-display backdrops while manual overlays and usage labels remain above it, even with a reordered animated figure.
+
+## 2026-10-09: Recognize imported backgrounds at their native size
+
+- User approval: Marcus requested the fullscreen/manual-layer preservation fix. This follow-up completes the same backdrop handling for imported and legacy images.
+- Approved customer-visible result: Background images without explicit dimensions are recognized at the size encoded in their image data, so the restored usage panel remains visible over them just as with explicitly sized images and rectangles.
+
+## 2026-10-09: Preserve the original panel boundary and companion palette
+
+- User approval: Marcus requested the library-rendering and manual-layer preservation fixes; these corrections address verified follow-up failures in those same paths.
+- Approved customer-visible result: The draft remembers which elements were below or above its usage background, so fullscreen round trips preserve that boundary for partial backgrounds too, including after save/reopen. Device exports omit that editor-only information. Preparing an animation prioritizes its original figure colors before filling remaining palette slots with background colors.
+- Validation: Regression tests reproduce the partial-background and rare-figure-color failures. Library write/read and device-export checks verify the stored boundary survives saving without adding device fields.

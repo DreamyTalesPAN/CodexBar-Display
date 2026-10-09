@@ -622,6 +622,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	var workerRunning atomic.Bool
 	server, err := companionapi.New(companionapi.Options{
 		Logf:                 logf,
+		AIThemeSecrets:       companionapi.NewDurableAIThemeSecrets(""),
 		DisplayStreamRunning: workerRunning.Load,
 		Addr:                 actualAddr,
 		AllowedOrigins:       []string{opts.APIDevOrigin},

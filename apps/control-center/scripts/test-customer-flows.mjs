@@ -549,7 +549,7 @@ async function main() {
       console.log("control-center startup timeout test passed");
       return;
     }
-    await testStartupStateMachine(browser, appContext.appUrl);
+    if (!themeStudioSafetyOnly) await testStartupStateMachine(browser, appContext.appUrl);
     if (wifiRescanOnly) {
       await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
       await testSettingsWiFiWaitEndsAfterStatusConfirmation(browser, appContext.appUrl);
@@ -10283,527 +10283,92 @@ async function themePreviewVectorSnapshot(preview) {
   };
 }
 
-async function testThemeStudioUsesLocalRenderAndCompanionInstall(
-  browser,
-  appUrl,
-) {
-  const localAppUrl = "http://127.0.0.1:47832/control-center";
-  const page = await browser.newPage({ viewport: themeStudioViewport });
-  const installRequests = [];
-  const themeInstallRequests = [];
-  const browserRequests = [];
-  const activeRenderPack = await readTrackedThemeRenderPackFixture("clippy");
-
-  await page.addInitScript(() => {
-    window.localStorage.setItem(
-      "vibetv.controlCenter.aiThemeSettings",
-      JSON.stringify({ provider: "retired-test-provider", apiKey: "retired" }),
-    );
-  });
-  page.on("request", (request) => {
-    browserRequests.push(request.url());
-  });
-  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
-  for (const themeId of ["synthwave", "clippy"]) {
-    const renderPack = await readTrackedThemeRenderPackFixture(themeId);
-    // The editor requests the spec file named by the catalog fixture, which
-    // intentionally lags behind the tracked pack revision; serve the tracked
-    // render pack for any requested revision of this theme.
-    await page.route(
-      new RegExp(`/theme-packs/render/${themeId}/`),
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(renderPack),
-        });
-      },
-    );
-  }
-  await page.route(/\/theme-packs\/render\/my-theme\//, async (route) => {
-    await route.fulfill({ json: {
-      themeId: "my-theme", specPath: "/themes/u/my-theme.json",
-      spec: { p: [] }, assets: {},
-    } });
-  });
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    companionVersion: "1.0.33",
-    device: {
-      ...companionDevice,
-      firmware: "1.0.40",
-      display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } },
-      capabilities: {
-        ...companionDevice.capabilities,
-        theme: {
-          supportsThemeSpecV1: true,
-          supportsUsageSlotsV1: true,
-          supportsStoredThemes: true,
-        },
-      },
-    },
-    installStatusSequence: [
-      {
-        phase: "complete",
-        message: "Theme installed.",
-        progress: 100,
-        logs: ["Preparing theme files.", "Theme installed."],
-        result: {
-          themeId: "my-theme",
-          packId: "my-theme-1",
-          name: "New Theme",
-          activePath: "/themes/u/my-theme.json",
-          themeRev: 1,
-        },
-      },
-    ],
-    onThemeInstallRequest: (request) => {
-      themeInstallRequests.push(request);
-    },
-  });
-
-  const aiResponse = await fetch(`${appUrl}/api/ai-theme`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "generate" }),
-  });
-  assert(
-    aiResponse.status === 404,
-    `retired AI theme endpoint should return 404, got ${aiResponse.status}`,
-  );
-
-  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Themes");
-  const publishedThemeRow = page
-    .getByRole("listitem")
-    .filter({ hasText: "Fixture Synthwave Theme" });
-  await publishedThemeRow.waitFor({ timeout: 10_000 });
-  await publishedThemeRow.getByRole("button", { name: "Edit" }).click();
-
-  const sendButton = page.getByRole("button", { name: "Send to VibeTV" });
-  await sendButton.waitFor({ timeout: 10_000 });
-  assert(
-    await page.locator(".control-center-shell__sidebar").isHidden(),
-    "Theme Studio should hide the normal shell sidebar",
-  );
-  assert(
-    await page.locator(".control-center-shell__header").isHidden(),
-    "Theme Studio should hide the normal shell header",
-  );
-  const layersBox = await page
-    .getByText("Layers", { exact: true })
-    .boundingBox();
-  const previewBox = await page
-    .getByLabel("Editable 240x240 preview")
-    .boundingBox();
-  const inspectorBox = await page
-    .getByText("Inspector", { exact: true })
-    .boundingBox();
-  assert(
-    layersBox &&
-      previewBox &&
-      inspectorBox &&
-      layersBox.x < previewBox.x &&
-      previewBox.x < inspectorBox.x,
-    "Theme Studio should show Layers, Preview, and Inspector side by side at 1180x820",
-  );
-  assert(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-    "Theme Studio should not create horizontal body overflow at 1180x820",
-  );
-  const firstUsageLaneLayer = page.getByText("Usage window 1 %", {
-    exact: true,
-  });
-  assert(
-    (await firstUsageLaneLayer.count()) === 1,
-    "migrated theme should expose exactly one first-slot progress layer",
-  );
-  assert(
-    (await page.getByText("usageSlot1Percent", { exact: true }).count()) === 0,
-    "migrated theme should not expose stored usage binding names in Layers",
-  );
-  await firstUsageLaneLayer.click();
-  assert(
-    (await page.getByLabel("Show when").innerText()) ===
-      "Usage window 1 has data",
-    "migrated first-window layer should explain when it is visible",
-  );
-  await captureMigrationScreenshot(page, "08-theme-studio-1180x820.png");
-  assert(
-    await sendButton.isEnabled(),
-    "published themes with validated large static sprites should remain editable and installable",
-  );
-  assert(
-    await page.getByRole("button", { name: "Save theme" }).isEnabled(),
-    "published themes with validated large static sprites should remain saveable",
-  );
-  assert(
-    await page.getByRole("button", { name: "Export ZIP" }).isEnabled(),
-    "published themes with validated large static sprites should remain exportable",
-  );
-  assert(
-    browserRequests.some(
-      (url) =>
-        new URL(url).pathname ===
-        "/theme-packs/render/synthwave/synthwa-3-619665.json",
-    ),
-    "local Theme Studio should open a published theme from the embedded render pack",
-  );
-  assert(
-    !browserRequests.some((url) =>
-      new URL(url).pathname.startsWith("/api/theme-pack/"),
-    ),
-    "local Theme Studio must not depend on the removed Next theme-pack API",
-  );
-  assert(
-    (await page.getByText("Generate with AI", { exact: true }).count()) === 0,
-    "retired AI builder action should stay hidden",
-  );
-  assert(
-    (await page.getByRole("dialog", { name: "AI theme builder" }).count()) ===
-      0,
-    "retired AI builder dialog should stay absent",
-  );
-  assert(
-    (await page.evaluate(() =>
-      window.localStorage.getItem("vibetv.controlCenter.aiThemeSettings"),
-    )) === null,
-    "retired AI provider settings should be removed from local storage",
-  );
-
-  await page.getByText("Advanced", { exact: true }).click();
-  const previewSelection = page.locator('[aria-label^="Select "]').nth(1);
-  await previewSelection.click();
-  const undoButton = page.getByRole("button", { name: "Undo" });
-  assert(
-    await undoButton.isDisabled(),
-    "selecting an element should not create an undo step",
-  );
-  await page.getByRole("tab", { name: "Project" }).press("ArrowRight");
-  await page.waitForFunction(
-    () =>
-      document
-        .getElementById("theme-studio-tab-assets")
-        ?.getAttribute("aria-selected") === "true",
-  );
-  assert(
-    (await page
-      .getByRole("tab", { name: "Assets" })
-      .getAttribute("aria-selected")) === "true",
-    "ArrowRight should switch the Advanced tab",
-  );
-  assert(
-    await undoButton.isDisabled(),
-    "Advanced tab keyboard navigation must not move preview elements",
-  );
-  await page.getByRole("tab", { name: "Project" }).click();
-  await page
-    .getByLabel("Name", { exact: true })
-    .fill("Synthwave Customer Copy");
-  await page.getByLabel("ID", { exact: true }).fill("synthwave-copy");
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: "Export ZIP" }).click(),
-  ]);
-  assert(
-    download.suggestedFilename() === "vibetv-theme-synthwave-copy.zip",
-    `Theme Studio should export the edited theme ID, got ${download.suggestedFilename()}`,
-  );
-  const downloadPath = await download.path();
-  assert(
-    downloadPath,
-    "Theme Studio export should create a local ZIP download",
-  );
-  const downloadedZip = await readFile(downloadPath);
-  assert(
-    downloadedZip.length >= 4 &&
-      downloadedZip[0] === 0x50 &&
-      downloadedZip[1] === 0x4b &&
-      downloadedZip[2] === 0x03 &&
-      downloadedZip[3] === 0x04,
-    "Theme Studio export should start with the ZIP PK signature",
-  );
-  await runCommand("unzip", ["-t", downloadPath], { cwd: root });
-  await page.getByRole("button", { name: "Save theme" }).click();
-  await page.getByText("Saved to library.", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  assert(
-    await page.locator("[data-theme-studio-root]").isVisible(),
-    "saving should keep Theme Studio open",
-  );
-  await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page.getByText("Synthwave Customer Copy", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-
-  const clippyThemeRow = page
-    .getByRole("listitem")
-    .filter({ hasText: "Fixture Clippy Theme" });
-  await clippyThemeRow.waitFor({ timeout: 10_000 });
-  await clippyThemeRow.getByRole("button", { name: "Edit" }).click();
-  await page.waitForFunction(() =>
-    Array.from(document.querySelectorAll("button")).some(
-      (button) =>
-        button.textContent?.trim() === "Send to VibeTV" && !button.disabled,
-    ),
-  );
-  assert(
-    await page.getByRole("button", { name: "Send to VibeTV" }).isEnabled(),
-    "Clippy's validated large static background should remain editable and installable",
-  );
-  assert(
-    await page.getByRole("button", { name: "Save theme" }).isEnabled(),
-    "Clippy's validated large static background should remain saveable",
-  );
-  assert(
-    await page.getByRole("button", { name: "Export ZIP" }).isEnabled(),
-    "Clippy's validated large static background should remain exportable",
-  );
-  await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page.getByRole("button", { name: "Create Theme" }).click();
-  const blankThemeSendButton = page.getByRole("button", {
-    name: "Send to VibeTV",
-  });
-  await blankThemeSendButton.waitFor({ timeout: 10_000 });
-  await blankThemeSendButton.click();
-  await waitForCondition(
-    () => themeInstallRequests.length === 1,
-    "expected one Companion ZIP theme install request",
-  );
-  await page.waitForFunction(() =>
-    Array.from(document.querySelectorAll("button")).some(
-      (button) =>
-        button.textContent?.trim() === "Send to VibeTV" && !button.disabled,
-    ),
-  );
-  assert(
-    (await page.getByText("Theme installed through the Mac App.").count()) ===
-      1,
-    "Theme Studio should report the Companion install as complete",
-  );
-
-  assert(
-    themeInstallRequests.length === 1,
-    `Theme Studio should send exactly one install request, got ${themeInstallRequests.length}`,
-  );
-  const installRequest = themeInstallRequests[0];
-  const installUrl = new URL(installRequest.url);
-  assert(
-    installUrl.pathname === "/v1/themes/install" &&
-      installUrl.searchParams.get("async") === "true" &&
-      installUrl.searchParams.get("slot") === "live",
-    `Theme Studio should use the asynchronous Companion install route, got ${installRequest.url}`,
-  );
-  assert(
-    installRequest.headers["content-type"] === "application/zip",
-    `Theme Studio should send application/zip, got ${installRequest.headers["content-type"]}`,
-  );
-  assert(
-    installRequest.body.length >= 4 &&
-      installRequest.body[0] === 0x50 &&
-      installRequest.body[1] === 0x4b &&
-      installRequest.body[2] === 0x03 &&
-      installRequest.body[3] === 0x04,
-    "Theme Studio install body should start with the ZIP PK signature",
-  );
-  const unsafeRequests = browserRequests.filter(isDirectDeviceWriteUrl);
-  assert(
-    unsafeRequests.length === 0,
-    `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
-  );
-
-  await page.getByText("Advanced", { exact: true }).click();
-  await page.getByLabel("Name", { exact: true }).fill("Recovery scratch");
-  const closeRecovery = await page.evaluate(() => {
-    window.dispatchEvent(new Event("vibetv:native-window-will-close"));
-    const raw = window.localStorage.getItem(
-      "vibetv.controlCenter.themeStudioDraft",
-    );
-    return raw ? JSON.parse(raw) : null;
-  });
-  assert(
-    closeRecovery?.recovery?.document?.packName === "Recovery scratch",
-    "Native window close must synchronously flush the latest Theme Studio draft",
-  );
-  await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page.getByRole("dialog", { name: "Save your changes?" }).waitFor();
-  await page.getByRole("button", { name: "Discard", exact: true }).click();
-  await page.getByRole("heading", { name: "Themes", exact: true }).waitFor();
-  assert(
-    (await page
-      .getByText("Continue your unsaved theme", { exact: true })
-      .count()) === 0,
-    "discarding an editor draft should also clear the in-memory recovery card",
-  );
-
-  await page.evaluate(() => {
-    window.localStorage.setItem(
-      "vibetv.controlCenter.themeStudioDraft",
-      JSON.stringify({
-        schemaVersion: 1,
-        recovery: {
-          document: {
-            assets: {},
-            packName: "Recovered Draft",
-            spec: {
-              bgColor: "#000000",
-              fallbackTheme: "mini",
-              primitives: [
-                {
-                  color: "#FFFFFF",
-                  height: 20,
-                  type: "rect",
-                  width: 20,
-                  x: 10,
-                  y: 10,
-                },
-              ],
-              themeId: "recovered-draft",
-              themeRev: 1,
-              themeSpecVersion: 1,
-            },
-          },
-          source: "blank",
-          updatedAt: "2026-07-15T10:00:00.000Z",
-        },
-      }),
-    );
-  });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Themes");
-  await page
-    .getByText("Continue your unsaved theme", { exact: true })
-    .waitFor();
-  await page.getByRole("button", { name: "Resume", exact: true }).click();
-  await page.getByText("Unsaved changes", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page.getByRole("dialog", { name: "Save your changes?" }).waitFor();
-  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
-  await page.waitForFunction(
-    () => document.activeElement?.textContent?.trim() === "Library",
-  );
-  assert(
-    await page
-      .getByRole("button", { name: "Library", exact: true })
-      .evaluate((button) => button === document.activeElement),
-    "closing the leave dialog should return focus to Library",
-  );
-  await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page.getByRole("button", { name: "Discard", exact: true }).click();
-  await page.getByRole("heading", { name: "Themes", exact: true }).waitFor();
-  assert(
-    (await page
-      .getByText("Continue your unsaved theme", { exact: true })
-      .count()) === 0,
-    "discarding a resumed recovery should remove the recovery card",
-  );
-
-  await page.evaluate(() => {
-    window.localStorage.setItem(
-      "vibetv.controlCenter.themeStudioDraft",
-      "{broken-recovery",
-    );
-  });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Themes");
-  await page
-    .getByText("Theme storage needs attention", { exact: true })
-    .waitFor();
-  await page.getByRole("button", { name: "Create Theme" }).click();
-  assert(
-    await page.getByRole("button", { name: "Save theme" }).isDisabled(),
-    "invalid recovery data should lock theme saving until it is handled",
-  );
-
-  await page.unrouteAll({ behavior: "ignoreErrors" });
-  await page.close();
+async function testThemeStudioUsesLocalRenderAndCompanionInstall(browser, appUrl) {
+  await testNativeThemeStudio(browser, appUrl, false);
 }
 
-async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
-  browser,
-  appUrl,
-) {
-  const localAppUrl = "http://127.0.0.1:47832/control-center";
-  const page = await browser.newPage({ viewport: themeStudioViewport });
-  const installRequests = [];
-  const themeInstallRequests = [];
-  const browserRequests = [];
-  const activeRenderPack = await readTrackedThemeRenderPackFixture("clippy");
+async function testThemeStudioScreensaverInstallUsesScreensaverSlot(browser, appUrl) {
+  await testNativeThemeStudio(browser, appUrl, true);
+}
 
-  page.on("request", (request) => {
-    browserRequests.push(request.url());
+async function testNativeThemeStudio(browser, appUrl, screensaver) {
+  const page = await browser.newPage({ viewport: themeStudioViewport,
+    userAgent: screensaver ? "VibeTVControlCenter/1.0.33+1 Windows NT 10.0; Win64" : "VibeTVControlCenter/1.0.33+1 Macintosh",
   });
+  const errors = [], requests = [], writes = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => requests.push(request.url()));
   await routeLocalCompanionAppThroughLocalNext(page, appUrl);
-  await page.route(/\/theme-packs\/render\/clippy\//, async (route) => {
-    await route.fulfill({ json: activeRenderPack });
-  });
-  await routeCompanionOnline(page, installRequests, () => {}, {
+  const activeRenderPack = await readTrackedThemeRenderPackFixture("clippy");
+  await page.route(/\/theme-packs\/render\/clippy\//, (route) => route.fulfill({ json: activeRenderPack }));
+  await routeCompanionOnline(page, [], () => {}, {
     companionVersion: "1.0.33",
-    device: {
-      ...companionDevice,
-      firmware: "1.0.32",
-      display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } },
-    },
-    installStatusSequence: [
-      {
-        phase: "complete",
-        message: "Screensaver is ready on VibeTV.",
-        progress: 100,
-        logs: ["Screensaver is ready on VibeTV."],
-        result: {
-          themeId: "my-screensaver",
-          packId: "my-screensaver-1",
-          name: "New Screensaver",
-          activePath: "/themes/s/my-screensaver.json",
-          themeRev: 1,
-        },
-      },
-    ],
-    onThemeInstallRequest: (request) => {
-      themeInstallRequests.push(request);
-    },
+    device: { ...companionDevice, firmware: "1.0.40", display: { themeSpec: { active: true, renderOk: true, path: activeRenderPack.specPath } } },
+    installStatusSequence: [{ phase: "complete", message: "Theme installed.", progress: 100, logs: [], result: {
+      themeId: screensaver ? "my-screensaver" : "my-theme", name: "New Theme", activePath: "/themes/u/test.json", themeRev: 1,
+    } }],
+    onThemeInstallRequest: (request) => writes.push(request),
   });
-
-  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Screensavers");
-  await page.getByRole("button", { name: "Create Screensaver" }).click();
-  await page.getByRole("button", { name: "Send to VibeTV" }).click();
-  await waitForCondition(
-    () => themeInstallRequests.length === 1,
-    "expected one custom screensaver install request",
-  );
-  await page
-    .getByText("Screensaver is ready on VibeTV.", { exact: true })
-    .waitFor({ timeout: 10_000 });
-
-  const installRequest = themeInstallRequests[0];
-  const installUrl = new URL(installRequest.url);
-  assert(
-    installUrl.pathname === "/v1/themes/install" &&
-      installUrl.searchParams.get("async") === "true" &&
-      installUrl.searchParams.get("slot") === "screensaver",
-    `custom screensavers must use the asynchronous screensaver slot, got ${installRequest.url}`,
-  );
-  assert(
-    installRequest.headers["content-type"] === "application/zip",
-    `custom screensavers should send application/zip, got ${installRequest.headers["content-type"]}`,
-  );
-  assert(
-    installRequest.body.length >= 4 &&
-      installRequest.body[0] === 0x50 &&
-      installRequest.body[1] === 0x4b &&
-      installRequest.body[2] === 0x03 &&
-      installRequest.body[3] === 0x04,
-    "custom screensaver install body should start with the ZIP PK signature",
-  );
-  const unsafeRequests = browserRequests.filter(isDirectDeviceWriteUrl);
-  assert(
-    unsafeRequests.length === 0,
-    `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
-  );
-
+  let configured = false, verified = false, plans = 0;
+  await page.route("**/v1/ai-theme/**", (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/capabilities")) return route.fulfill({ json: { enabled: true, providers: [{ id: "openai", configured, verificationRequired: configured && !verified }] } });
+    if (path.endsWith("/credential")) { configured = true; return route.fulfill({ json: { configured } }); }
+    if (path.endsWith("/verify")) { verified = true; return route.fulfill({ json: { verified, keptAcrossRestarts: true } }); }
+    plans++;
+    assert(verified, "Generation must wait for credential verification");
+    assert(request.postDataJSON().layout.length > 0, "Native editing must pass the opened document to AI");
+    return route.fulfill({ json: { mode: "layout", notes: "Updated", edits: [] } });
+  });
+  await page.goto("http://127.0.0.1:47832/control-center", { waitUntil: "domcontentloaded" });
+  await page.getByRole("navigation", { name: "Control Center", exact: true }).waitFor({ timeout: 20000 });
+  const navigation = page.getByRole("navigation", { name: "Control Center", exact: true });
+  await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
+  await navigation.getByRole("button", { name: screensaver ? "Screensavers" : "Themes", exact: true }).click();
+  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByLabel("Your idea", { exact: true }).waitFor();
+  await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
+  assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
+  await page.getByLabel("Your idea", { exact: true }).fill("Make it blue");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByLabel("OpenAI key", { exact: true }).fill("fixture-key-not-a-secret");
+  await page.getByLabel(/I agree to send/).check();
+  await page.getByRole("button", { name: "Connect and continue", exact: true }).click();
+  await page.getByRole("log", { name: "Conversation", exact: true }).getByText("Updated", { exact: true }).waitFor();
+  assert(plans === 1, "One create click continues after connection");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("Saved.", { exact: true }).waitFor();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.userThemes")));
+  assert(saved.themes.length === 1, "Native Save writes the app library");
+  assert((saved.themes[0].document.usage || "live") === (screensaver ? "screensaver" : "live"));
+  await page.getByRole("button", { name: "Send to VibeTV", exact: true }).click();
+  await page.getByText("Theme installed.", { exact: true }).waitFor();
+  assert(writes.length === 1, "Native send uses one existing Companion install");
+  assert(new URL(writes[0].url).searchParams.get("slot") === (screensaver ? "screensaver" : "live"));
+  assert(writes[0].headers["content-type"] === "application/zip");
+  assert(requests.filter(isDirectDeviceWriteUrl).length === 0, "All hardware traffic stays mocked");
+  await page.getByRole("button", { name: "Back to library", exact: true }).click();
+  await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  await page.evaluate((document) => localStorage.setItem("vibetv.controlCenter.themeStudioDraft", JSON.stringify({
+    schemaVersion: 1, recovery: { document: { ...document, packName: "Unsaved other design" }, source: "blank", updatedAt: new Date().toISOString() },
+  })), saved.themes[0].document);
+  await page.getByRole("button", { name: screensaver ? "Create Screensaver" : "Create Theme", exact: true }).click();
+  await page.getByLabel("Your idea", { exact: true }).waitFor();
+  if (screensaver) {
+    await page.getByRole("button", { name: "Design settings", exact: true }).click();
+    await page.getByRole("button", { name: "New design", exact: true }).click();
+    await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
+    await page.locator('input[accept="application/json,.json"]').setInputFiles({
+      name: "theme.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ ...saved.themes[0].document, usage: "live" })),
+    });
+    await page.getByText("Design opened.", { exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Screensaver Studio", exact: true }).waitFor();
+  }
+  await page.getByRole("button", { name: "Back to library", exact: true }).click();
+  await page.getByRole("heading", { name: screensaver ? "Screensavers" : "Themes", exact: true }).waitFor();
+  assert(await page.evaluate(() => JSON.parse(localStorage.getItem("vibetv.controlCenter.themeStudioDraft"))?.recovery?.document?.packName) === "Unsaved other design", "Opening a clean design preserves unrelated recovery");
+  assert(errors.length === 0, errors.join("\n"));
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
 }

@@ -1,11 +1,27 @@
 import type { NextRequest } from "next/server";
+import { proxyAITheme } from "./ai-theme-proxy";
+import { execFile } from "node:child_process";
+import { resolve } from "node:path";
+import { promisify } from "node:util";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const LOCAL_MAC_APP_ORIGIN =
-  process.env.VIBETV_LOCAL_MAC_APP_ORIGIN?.trim() ||
-  "http://127.0.0.1:47832";
+const execFileAsync = promisify(execFile);
+
+async function localMacAppOrigin() {
+  const configured = process.env.VIBETV_LOCAL_MAC_APP_ORIGIN?.trim();
+  // Reuse the native runtime's existing port discovery and listener ownership
+  // check. A stale endpoint must never receive a customer's theme pack. A
+  // locally built preview app registers its runtime under its own label.
+  const stdout = configured || (await execFileAsync("/bin/bash", ["-c",
+    'source "$1"; owned() { origin=$(bench::resolve_api); bench::api_owned_by_runtime "$origin"; }; { owned || { BENCH_RUNTIME_LABEL=shop.vibetv.control-center.preview-runtime; owned; }; } && printf "%s" "$origin"',
+    "vibetv", resolve(process.cwd(), "../../scripts/lib/vibetv-bench-api.sh"),
+  ], { timeout: 10_000 })).stdout.trim();
+  const url = new URL(stdout);
+  if (url.protocol !== "http:" || !isLoopbackHostname(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error("Invalid local Mac App origin");
+  return url.origin;
+}
 
 type RouteContext = {
   params: Promise<{ path?: string[] }> | { path?: string[] };
@@ -48,10 +64,12 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
 
   const params = await context.params;
   const pathname = `/${(params.path || []).map(encodeURIComponent).join("/")}`;
-  const targetUrl = new URL(`${LOCAL_MAC_APP_ORIGIN}${pathname}`);
-  targetUrl.search = request.nextUrl.search;
-
+  if (pathname === "/v1/ai-theme" || pathname.startsWith("/v1/ai-theme/")) {
+    return proxyAITheme(request, pathname);
+  }
   try {
+    const targetUrl = new URL(`${await localMacAppOrigin()}${pathname}`);
+    targetUrl.search = request.nextUrl.search;
     const upstream = await fetch(targetUrl, {
       body: request.method === "GET" ? undefined : await request.arrayBuffer(),
       cache: "no-store",

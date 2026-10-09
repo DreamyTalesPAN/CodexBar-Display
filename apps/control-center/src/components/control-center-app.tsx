@@ -17,7 +17,7 @@ import {
   resolveScreensaverUpgrade,
 } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import { buildThemePack } from "@/lib/theme-studio";
+import { buildDeviceThemePack, pollThemeInstallJob } from "@/lib/theme-install";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
@@ -1137,7 +1137,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       themeInstallPollJobRef.current = job.id;
       setBusyAction("install");
       try {
-        const finishedJob = await pollThemeInstallJob({
+        const finishedJob = await pollThemeInstallJob<ThemeInstallJob>({
           applyInstallJob: (nextJob) => applyThemeInstallJob(nextJob),
           jobId: job.id,
           runCompanion,
@@ -2360,7 +2360,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           installJobId = payload.job.id;
           themeInstallPollJobRef.current = installJobId;
           applyInstallJob(payload.job);
-          const finishedJob = await pollThemeInstallJob({
+          const finishedJob = await pollThemeInstallJob<ThemeInstallJob>({
             applyInstallJob,
             jobId: payload.job.id,
             runCompanion,
@@ -2474,7 +2474,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       spec,
       usage = "live",
     }: ThemeStudioInstallPayload): Promise<boolean> => {
-      const pack = buildThemePack(spec, packName, assets, usage);
+      const pack = buildDeviceThemePack({ spec, packName, assets, usage });
       return installTheme({
         packBytes: pack.zipBytes,
         themeId: pack.manifest.id,
@@ -5450,36 +5450,6 @@ function normalizeError(error: unknown, status: number): ApiError {
     message: "Request failed.",
     nextAction: "Try again.",
   };
-}
-
-async function pollThemeInstallJob({
-  applyInstallJob,
-  jobId,
-  runCompanion,
-}: {
-  applyInstallJob: (job: ThemeInstallJob) => void;
-  jobId: string;
-  runCompanion: RunCompanion;
-}): Promise<ThemeInstallJob> {
-  // The server may spend the full five-minute budget waiting for the first
-  // fresh display frame after it has already installed the theme.
-  for (let attempt = 0; attempt < 900; attempt += 1) {
-    await delay(500);
-    const payload = await runCompanion<{ job: ThemeInstallJob }>(
-      `/v1/themes/install/status?jobId=${encodeURIComponent(jobId)}`,
-      undefined,
-      { preserveLastError: true },
-    );
-    applyInstallJob(payload.job);
-    if (payload.job.phase === "complete" || payload.job.phase === "error") {
-      return payload.job;
-    }
-  }
-  throw {
-    code: "theme_install_timeout",
-    message: "Theme install is taking longer than expected.",
-    nextAction: "Keep VibeTV powered on, then check the theme again.",
-  } satisfies ApiError;
 }
 
 export async function pollFirmwareUpdateJob({
