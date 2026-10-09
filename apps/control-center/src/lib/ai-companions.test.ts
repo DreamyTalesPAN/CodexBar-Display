@@ -162,6 +162,19 @@ describe("flexible picture layouts",()=>{
   expect(panel).toBeLessThan(reduced.spec.primitives.findIndex(p=>p.text==='{usageSlot1Label}'));
   expect(reduced.spec.primitives.filter((_,i)=>i!==panel)).toEqual(expanded.spec.primitives.map(p=>p.assetPath===ART?{...p,height:128}:p));
  });
+ it('does not duplicate a customized panel in a design at the element limit',()=>{
+  const current=fixture(1).candidate();
+  const panel=current.spec.primitives.find(p=>p.type==='rect'&&p.height===112)!;
+  panel.color='#123456';
+  while(current.spec.primitives.length<32) current.spec.primitives.push({type:'text',x:4,y:4,text:'Manual',color:'#FFFFFF'});
+  const f=fixture(1);f.concept.artHeight=240;
+  const fullscreen=buildAIThemeCompanionCandidateFromRGBA(f.concept,new Uint8ClampedArray(240*240*4).fill(255),f.frames);
+  const expanded=applyAIThemeCandidate({...current,usage:'live'},fullscreen,'auto');
+  const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
+  expect(reduced.spec.primitives).toHaveLength(32);
+  expect(reduced.spec.primitives.filter(p=>p.type==='rect'&&p.height===112)).toEqual([panel]);
+  expect(validateThemeSpec(reduced.spec,reduced.assets).errors).toEqual([]);
+ });
  it('replaces a legacy animation at its original layer when upgrading to companions',()=>{
   const current=fixture(1).candidate();
   const pet='/themes/u/ai-pet-1.cba';

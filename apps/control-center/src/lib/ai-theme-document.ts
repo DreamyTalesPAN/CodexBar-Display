@@ -62,8 +62,9 @@ export function applyAIThemeCandidate(
     const usage = new Set(usageSectionIndices(current.spec.primitives).flat());
     const dropped = candidate.hideUsage ? usage : new Set<number>();
     // Only the unchanged standard readout panel belongs to the template.
-    const isPanel = (p: ThemeStudioPrimitive) => p.type === "rect" && p.x === 0 && p.y === 128 &&
-      p.width === 240 && p.height === 112 && p.borderRadius === 0 &&
+    const isPanelShape = (p: ThemeStudioPrimitive) => p.type === "rect" && p.x === 0 && p.y === 128 &&
+      p.width === 240 && p.height === 112;
+    const isPanel = (p: ThemeStudioPrimitive) => isPanelShape(p) && p.borderRadius === 0 &&
       p.color === p.bgColor && p.color === p.borderColor && !p.binding;
     for (const path of Object.keys(next.assets))
       if (managed(path)) delete next.assets[path];
@@ -121,7 +122,7 @@ export function applyAIThemeCandidate(
     if (layoutChanged && usage.size > 0 && !candidate.hideUsage) {
       const panel = candidate.spec.primitives.find(isPanel);
       // This is a background, so it must stay below every retained customer layer.
-      if (panel) next.spec.primitives.unshift({ ...panel });
+      if (panel && !next.spec.primitives.some(isPanelShape)) next.spec.primitives.unshift({ ...panel });
     }
     // A design without readouts that is asked to show usage again gets the
     // standard readouts of the new scene; one that has them keeps its own.

@@ -5524,3 +5524,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested the fullscreen preservation fix; this follow-up addresses the reproduced review finding in the same transition.
 - Approved customer-visible result: Returning from fullscreen restores the usage background behind existing readouts and manual layers, including designs whose animated figure was moved above the readouts.
+
+## 2026-10-09: Keep customized panel backgrounds without duplication
+
+- User approval: Marcus requested fixing fullscreen transitions while preserving customer additions. This follow-up covers the verified duplicate-panel finding within that same change.
+- Approved customer-visible result: A customer-colored usage background survives the fullscreen round trip without an extra hidden panel, so a valid 32-element design remains saveable and sendable.
