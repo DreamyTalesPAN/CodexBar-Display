@@ -901,11 +901,14 @@ type usageWindowInfo struct {
 
 // usageWindowPaceInfo is the usage engine's pace for one window, as the device
 // frame carries it (protocol.UsagePace). ETASeconds counts from collectedAt and
-// is set only when Lasts is false.
+// is set only when Lasts is false. ExpectedPercent is where the window's
+// percentage would stand on pace, in the same sense (used or remaining) as the
+// window's UsedPercent.
 type usageWindowPaceInfo struct {
-	State      string `json:"state"`
-	Lasts      *bool  `json:"lasts,omitempty"`
-	ETASeconds int64  `json:"etaSeconds,omitempty"`
+	State           string `json:"state"`
+	Lasts           *bool  `json:"lasts,omitempty"`
+	ETASeconds      int64  `json:"etaSeconds,omitempty"`
+	ExpectedPercent int    `json:"expectedPercent"`
 }
 
 type usageStatusInfo struct {
@@ -2949,7 +2952,12 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta, stale bool) []usageWi
 			WindowMinutes: window.WindowMinutes,
 		}
 		if pace, eta := codexbar.UsageWindowPace(meta.Pace, window.ID); !stale && window.ResetSec > 0 && pace.State != "" {
-			info.Pace = &usageWindowPaceInfo{State: pace.State, Lasts: pace.Lasts}
+			info.Pace = &usageWindowPaceInfo{
+				State: pace.State,
+				Lasts: pace.Lasts,
+				// CodexBar's delta is used minus expected.
+				ExpectedPercent: clampUsagePercent(window.UsedPercent - pace.Delta),
+			}
 			if pace.Lasts != nil && !*pace.Lasts {
 				info.Pace.ETASeconds = eta
 			}
@@ -3163,6 +3171,11 @@ func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) 
 		provider.Weekly = 100 - clampUsagePercent(provider.Weekly)
 		for i := range provider.Windows {
 			provider.Windows[i].UsedPercent = 100 - clampUsagePercent(provider.Windows[i].UsedPercent)
+			if pace := provider.Windows[i].Pace; pace != nil {
+				flipped := *pace
+				flipped.ExpectedPercent = 100 - clampUsagePercent(pace.ExpectedPercent)
+				provider.Windows[i].Pace = &flipped
+			}
 		}
 	}
 	provider.UsageMode = usageModeOrDefault(targetMode)
