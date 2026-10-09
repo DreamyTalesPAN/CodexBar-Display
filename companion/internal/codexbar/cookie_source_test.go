@@ -131,13 +131,15 @@ func providersIn(t *testing.T, path string) map[string]map[string]any {
 // must report it instead of answering as if the pin were gone.
 func TestUseBrowserCookiesReportsAConfigThatIsNotJSON(t *testing.T) {
 	for name, broken := range map[string]string{
-		"cut off":           `{"providers": [{"id": "claude", "cookieSource": "manual"`,
-		"data after it":     `{"providers": [{"id": "claude", "cookieSource": "manual"}]} {"providers": []}`,
-		"garbage after it":  `{"providers": [{"id": "claude", "cookieSource": "manual"}]}x`,
-		"null":              `null`,
-		"providers no list": `{"providers": {"claude": {"cookieSource": "manual"}}}`,
-		"providers null":    `{"version": 1, "providers": null}`,
-		"no providers":      `{"version": 1}`,
+		"cut off":             `{"providers": [{"id": "claude", "cookieSource": "manual"`,
+		"data after it":       `{"providers": [{"id": "claude", "cookieSource": "manual"}]} {"providers": []}`,
+		"garbage after it":    `{"providers": [{"id": "claude", "cookieSource": "manual"}]}x`,
+		"null":                `null`,
+		"providers no list":   `{"providers": {"claude": {"cookieSource": "manual"}}}`,
+		"providers null":      `{"version": 1, "providers": null}`,
+		"no providers":        `{"version": 1}`,
+		"null provider":       `{"providers": [null, {"id": "claude", "cookieSource": "manual"}]}`,
+		"provider without id": `{"providers": [{"cookieSource": "manual"}, {"id": "claude", "cookieSource": "manual"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			home, path := writePinnedConfig(t, broken)

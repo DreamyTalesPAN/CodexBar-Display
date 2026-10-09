@@ -96,14 +96,19 @@ func switchCookieSource(path, providerID string) (bool, error) {
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return false, errors.New("CodexBar config has data after its JSON object")
 	}
-	// CodexBar itself cannot read a config without a provider list.
+	// CodexBar itself cannot read a config without a provider list whose
+	// entries are objects with an id. Field values beyond that stay CodexBar's
+	// to judge; it names a config it cannot decode on the next check.
 	providers, ok := config["providers"].([]any)
 	if !ok {
 		return false, errors.New("CodexBar config has no provider list")
 	}
 	changed := false
 	for _, item := range providers {
-		provider, _ := item.(map[string]any)
+		provider, ok := item.(map[string]any)
+		if _, hasID := provider["id"].(string); !ok || !hasID {
+			return false, errors.New("CodexBar config has a provider entry without an id")
+		}
 		if provider["id"] == providerID && provider["cookieSource"] == "manual" {
 			provider["cookieSource"] = "auto"
 			changed = true
