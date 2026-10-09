@@ -5662,15 +5662,14 @@ func TestCableHelloProvesConnectionWithoutHealthFeature(t *testing.T) {
 			hello := cableHelloForTest("cable-a")
 			hello.Features = nil
 			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
-			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+			server.resolveCablePort = func(string, string) (string, error) {
+				if tc.liveID != "cable-a" {
+					return "", cableResolveTestError(errcode.TransportNoMatchingDevice)
+				}
+				return "/dev/mock", nil
+			}
 			server.streamStatus = func(context.Context, string) displayStreamInfo {
 				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: tc.streamError}
-			}
-			server.readCableHello = func(string) (protocol.DeviceHello, error) {
-				if tc.liveID == "" {
-					return protocol.DeviceHello{}, errors.New("unplugged")
-				}
-				return cableHelloForTest(tc.liveID), nil
 			}
 			rec := httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
@@ -13274,6 +13273,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	}
 	server.currentCableHello = func() (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{}, false
+	}
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "", errors.New("no test cable responder configured")
 	}
 	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 		return nil, nil

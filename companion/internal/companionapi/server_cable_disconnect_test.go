@@ -42,8 +42,12 @@ func TestCableCurrentResolverErrorOverridesStaleAbsence(t *testing.T) {
 			server.withConfiguredConnectionState(cfg, deviceInfo{Target: cableDeviceTarget, DeviceID: cfg.DeviceID, Paired: true, Connected: true}, true, false, false)
 			hello := cableHelloForTest(cfg.DeviceID)
 			hello.Features = []string{protocol.FeatureCableHealthV1}
-			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
-			server.resolveCablePort = func(string, string) (string, error) { return "", cableResolveTestError(tc.code) }
+			helloAvailable := true
+			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, helloAvailable }
+			server.resolveCablePort = func(string, string) (string, error) {
+				helloAvailable = false // A failed production probe closes the sender and clears its hello.
+				return "", cableResolveTestError(tc.code)
+			}
 			server.streamStatus = func(context.Context, string) displayStreamInfo {
 				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
 			}
@@ -61,9 +65,36 @@ func TestCableCurrentResolverErrorOverridesStaleAbsence(t *testing.T) {
 			if got := read(); got.Connected == tc.absent || got.Ready || !got.Paired {
 				t.Fatalf("current resolver result must own absence certainty: %+v", got)
 			}
+			clock = clock.Add(time.Second)
+			if got := read(); got.Connected == tc.absent || got.Ready || !got.Paired {
+				t.Fatalf("the next poll must retain uncertainty after the sender loses its hello: %+v", got)
+			}
 			clock = clock.Add(deviceConnectedGraceWindow)
 			if got := read(); got.Connected {
 				t.Fatal("uncertain resolution must not extend the bounded grace")
+			}
+		})
+	}
+}
+
+func TestCurrentCableAbsenceOverridesLastAcknowledgedFrame(t *testing.T) {
+	for _, code := range []errcode.Code{errcode.TransportNoUSBSerialPorts, errcode.TransportSerialPortNotFound} {
+		t.Run(string(code), func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.resolveCablePort = func(string, string) (string, error) { return "", cableResolveTestError(code) }
+			// The sender has already closed; only its last acknowledged frame remains.
+			server.streamStatus = func(context.Context, string) displayStreamInfo {
+				return displayStreamInfo{DeviceID: cfg.DeviceID, Running: true, Healthy: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget, LastSentAt: time.Now().Add(-5 * time.Second).UTC().Format(time.RFC3339)}
+			}
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+			var got statusResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Device.Connected || got.Device.Ready || !got.Device.Paired || got.Device.DeviceID != cfg.DeviceID || got.Device.Stream == nil || got.Device.Stream.ErrorCode != "device_not_found" {
+				t.Fatalf("current missing-port proof must override a recent frame without losing pairing: %+v", got.Device)
 			}
 		})
 	}

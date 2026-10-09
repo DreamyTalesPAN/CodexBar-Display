@@ -1448,7 +1448,40 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	cableAbsenceUnconfirmed := false
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
-		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) {
+		hello, helloKnown := s.currentCableHello()
+		// Resolution reads a fresh matching hello and repopulates the sender
+		// after a failed probe cleared it. A cached hello is metadata, not a
+		// prerequisite for asking whether the configured device is connected.
+		s.firmwareUpdateStartMu.Lock()
+		_, updateRunning := s.activeFirmwareUpdateJob()
+		cableAbsenceUnconfirmed = updateRunning || s.themeInstallInFlight()
+		port := ""
+		if !cableAbsenceUnconfirmed && strings.TrimSpace(cfg.DeviceID) != "" {
+			var portErr error
+			port, portErr = s.resolveCablePort("", cfg.DeviceID)
+			if portErr == nil {
+				reachable = true
+				if freshHello, ok := s.currentCableHello(); ok {
+					hello, helloKnown = freshHello, true
+				}
+			} else {
+				// A current busy or unanswered probe cannot refresh an old
+				// absence report. Only explicitly missing ports confirm it.
+				switch errcode.Of(portErr) {
+				case errcode.TransportNoUSBSerialPorts, errcode.TransportSerialPortNotFound:
+					// Current port absence overrides the daemon's last
+					// acknowledged frame, even before its next send fails.
+					stream.Healthy = false
+					stream.Target = cableDeviceTarget
+					stream.ErrorCode = "device_not_found"
+					stream.Detail = "VibeTV's USB connection is disconnected."
+					device.Stream = streamPointer(stream)
+				default:
+					cableAbsenceUnconfirmed = true
+				}
+			}
+		}
+		if helloKnown && cableHelloMatchesConfig(hello, cfg.DeviceID) {
 			observed := deviceFromHello(cableDeviceTarget, cfg.DeviceToken, hello)
 			device.Paired = observed.Paired || hello.Capabilities.Auth == nil
 			device.Board = observed.Board
@@ -1458,36 +1491,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			// status cannot distinguish a live usage screen from the firmware's
 			// "Theme missing" screen and incorrectly skips the existing theme
 			// chooser. The shared Sender serializes this probe with frame writes.
-			s.firmwareUpdateStartMu.Lock()
-			_, updateRunning := s.activeFirmwareUpdateJob()
-			cableAbsenceUnconfirmed = updateRunning || s.themeInstallInFlight()
-			if !cableAbsenceUnconfirmed {
-				if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
-					if hello.HasFeature(protocol.FeatureCableHealthV1) {
-						// Resolution already read a fresh matching hello; a later
-						// health timeout cannot make that connection disappear.
-						reachable = true
-						if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
-							// The device just answered. Usage may not exist yet on a fresh Mac.
-							reachable = true
-							device.Connected = true
-							device = s.withVerifiedDeviceHealth(device, health, cableDeviceTarget, cfg.DeviceToken, false)
-						}
-					} else if liveHello, err := s.readCableHello(port); err == nil {
-						reachable = cableHelloMatchesConfig(liveHello, cfg.DeviceID)
-					}
-				} else {
-					// A current busy or unanswered probe cannot refresh an old
-					// absence report. Only explicitly missing ports confirm it.
-					switch errcode.Of(portErr) {
-					case errcode.TransportNoUSBSerialPorts, errcode.TransportSerialPortNotFound:
-					default:
-						cableAbsenceUnconfirmed = true
-					}
+			if reachable && hello.HasFeature(protocol.FeatureCableHealthV1) {
+				if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
+					device.Connected = true
+					device = s.withVerifiedDeviceHealth(device, health, cableDeviceTarget, cfg.DeviceToken, false)
 				}
 			}
-			s.firmwareUpdateStartMu.Unlock()
 		}
+		s.firmwareUpdateStartMu.Unlock()
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 		if identity, ok := protocol.HelloIdentity(err); ok && strings.EqualFold(strings.TrimSpace(cfg.DeviceID), identity.DeviceID) {
