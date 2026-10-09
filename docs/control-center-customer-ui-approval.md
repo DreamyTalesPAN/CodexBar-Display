@@ -5534,3 +5534,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested the design-preservation fixes. This follow-up corrects the verified leftover standard panel in the same usage/layout transition path.
 - Approved customer-visible result: Asking to hide usage removes its unchanged standard background even when picture size stays the same. Customer-customized backgrounds remain intact.
+
+## 2026-10-09: Reuse custom backgrounds and preserve rounded composition
+
+- User approval: Marcus requested fixing the library rendering and manual-layer preservation findings. These follow-ups address verified cases in those two paths.
+- Approved customer-visible result: Restoring usage reuses an existing custom panel without hiding it or consuming an extra element. Animated figures retain the rounded corners of static rectangles beneath them in the prepared device image.
+- Validation: Regression tests cover hidden/restored usage at the 32-element limit and every pixel in four animation frames over a rounded rectangle. Real Mac/display rehearsal remains deferred as requested.

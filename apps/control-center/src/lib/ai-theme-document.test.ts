@@ -1,3 +1,4 @@
+import { decodeSprite } from "@/components/live-vibetv-preview";
 import { describe, expect, it, vi } from "vitest";
 import {
   applyAIThemeCandidate,
@@ -199,6 +200,23 @@ describe("companion sprites on the device", () => {
     expect(pixels[0]).toMatch(/^[ab]15[ab]$/);
     expect(pixels[3]).not.toContain(".");
     expect(pixels[4]).toBe("16.");
+  });
+  it("preserves the device's rounded rectangle pixels in every animation frame", () => {
+    const pet="/themes/u/ai-pet-1.cba";
+    const frames=Array.from({length:4},()=>{const p=new Uint8ClampedArray(16*16*4);p.set([0,0,255,255],(8*16+8)*4);return p;});
+    const document={packName:"Rounded",assets:{[pet]:{contentType:"text/plain",encoding:"text",data:encodeAIThemeCBA1(frames,16,16,2)}},spec:{primitives:[
+      {type:"rect",x:0,y:0,width:16,height:16,color:"#FF0000"},
+      {type:"rect",x:0,y:0,width:16,height:16,color:"#00FF00",borderRadius:4},
+      {type:"sprite",x:0,y:0,width:16,height:16,assetPath:pet},
+    ]}} as unknown as ThemeStudioDocument;
+    const original=structuredClone(document);
+    const sprite=decodeSprite(flattenCompanionSprites(document).assets[pet].data)!;
+    const inset=[3,1,1,0,0,0,0,0,0,0,0,0,0,1,1,3];
+    for(const frame of sprite.frames) for(let y=0;y<16;y++) for(let x=0;x<16;x++) {
+      const color=frame.find(r=>x>=r.x&&x<r.x+r.width&&y>=r.y&&y<r.y+r.height)?.color;
+      expect(color).toBe(x===8&&y===8?'#0000FF':x<inset[y]||x>=16-inset[y]?'#FF0000':'#00FF00');
+    }
+    expect(document).toEqual(original);
   });
   it("redraws the picture of an older design in its place and keeps the rest", () => {
     const old = "/themes/s/synth-bg.cbi";

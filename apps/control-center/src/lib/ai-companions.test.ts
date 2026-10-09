@@ -175,6 +175,18 @@ describe("flexible picture layouts",()=>{
   expect(reduced.spec.primitives.filter(p=>p.type==='rect'&&p.height===112)).toEqual([panel]);
   expect(validateThemeSpec(reduced.spec,reduced.assets).errors).toEqual([]);
  });
+ it('reuses a customized background when usage is hidden and shown at the same picture size',()=>{
+  const current=fixture(1).candidate();
+  const panel=current.spec.primitives.find(p=>p.type==='rect'&&p.height===112)!;panel.color='#123456';
+  while(current.spec.primitives.length<32) current.spec.primitives.push({type:'text',x:4,y:4,text:'Manual',color:'#FFFFFF'});
+  const hidden=fixture(1);hidden.concept.hideUsage=true;
+  const without=applyAIThemeCandidate({...current,usage:'live'},hidden.candidate(),'auto');
+  const shown=fixture(1);shown.concept.showUsage=true;
+  const restored=applyAIThemeCandidate(without,shown.candidate(),'auto');
+  expect(restored.spec.primitives).toHaveLength(32);
+  expect(restored.spec.primitives.filter(p=>p.type==='rect'&&p.height===112)).toEqual([panel]);
+  expect(validateThemeSpec(restored.spec,restored.assets).errors).toEqual([]);
+ });
  it('replaces a legacy animation at its original layer when upgrading to companions',()=>{
   const current=fixture(1).candidate();
   const pet='/themes/u/ai-pet-1.cba';

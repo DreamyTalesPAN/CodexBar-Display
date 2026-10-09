@@ -119,7 +119,7 @@ export function applyAIThemeCandidate(
       return replacement ? [replacement] : [];
     });
     next.spec.primitives.splice(next.spec.primitives.findLastIndex((p) => managed(p.assetPath)) + 1, 0, ...newLayers);
-    if (layoutChanged && usage.size > 0 && !candidate.hideUsage) {
+    if (((layoutChanged && usage.size > 0) || (candidate.showUsage && usage.size === 0)) && !candidate.hideUsage) {
       const panel = candidate.spec.primitives.find(isPanel);
       // This is a background, so it must stay below every retained customer layer.
       if (panel && !next.spec.primitives.some(isPanelShape)) next.spec.primitives.unshift({ ...panel });
@@ -127,7 +127,7 @@ export function applyAIThemeCandidate(
     // A design without readouts that is asked to show usage again gets the
     // standard readouts of the new scene; one that has them keeps its own.
     if (candidate.showUsage && usageSectionIndices(current.spec.primitives).flat().length === 0)
-      next.spec.primitives.push(...candidate.spec.primitives.filter((p) => !managed(p.assetPath)).map((p) => ({ ...p })));
+      next.spec.primitives.push(...candidate.spec.primitives.filter((p) => !managed(p.assetPath) && !isPanel(p)).map((p) => ({ ...p })));
     Object.assign(next.assets, candidate.assets);
     if (candidate.preserveArtwork && current.assets[ART]) next.assets[ART] = {...current.assets[ART]};
     for (const path of candidate.retainedCompanions || []) {
@@ -410,7 +410,29 @@ export function flattenCompanionSprites(document: ThemeStudioDocument): ThemeStu
   const next = cloneDocument(document);
   for (const p of next.spec.primitives) {
     const sprite = p.type === "sprite" ? decodeSprite(next.assets[p.assetPath || ""]?.data || "") : null;
-    if (p.type === "rect" && p.color) fill(backdrop, SIZE, SIZE, p.x, p.y, p.x + (p.width || 0), p.y + (p.height || 0), p.color);
+    if (p.type === "rect" && p.color) {
+      const width = p.width || 0, height = p.height || 0;
+      const radius = Math.max(0, Math.min(Math.trunc(p.borderRadius || 0), Math.floor(Math.min(width, height) / 2)));
+      fill(backdrop, SIZE, SIZE, p.x, p.y + radius, p.x + width, p.y + height - radius, p.color);
+      // Match TFT_eSPI's integer fillRoundRect/fillCircleHelper rasterization,
+      // which the firmware uses, rather than baking square corners into frames.
+      // https://github.com/Bodmer/TFT_eSPI/blob/master/TFT_eSPI.cpp
+      const rowPair = (extent: number, offset: number) => {
+        const left = p.x + radius - extent, right = p.x + width - radius + extent;
+        const top = p.y + radius - offset, bottom = p.y + height - radius - 1 + offset;
+        fill(backdrop, SIZE, SIZE, left, top, right, top + 1, p.color!);
+        fill(backdrop, SIZE, SIZE, left, bottom, right, bottom + 1, p.color!);
+      };
+      let edge = radius, offset = 0, error = 1 - radius, stepX = 1, stepY = -2 * radius;
+      while (offset < edge) {
+        if (error >= 0) {
+          rowPair(offset, edge);
+          edge--; stepY += 2; error += stepY;
+        }
+        offset++; stepX += 2; error += stepX;
+        rowPair(edge, offset);
+      }
+    }
     if (!sprite) continue;
     const scaleX = (p.width || sprite.width) / sprite.width, scaleY = (p.height || sprite.height) / sprite.height;
     if (!isCompanionSprite(p.assetPath)) {
