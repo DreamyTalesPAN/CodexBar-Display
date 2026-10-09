@@ -546,16 +546,6 @@ describe("UsageScreen", () => {
     it("shows no pace for a window whose reset has passed or is unknown", () => {
       expect(withWindows([{ ...session, resetSecs: 0 }])).not.toMatch(paceWords);
       expect(withWindows([{ ...session, resetSecs: undefined }])).not.toMatch(paceWords);
-      expect(
-        withWindows([session], { collectedAt: new Date(Date.now() - 10000 * 1000).toISOString() }),
-      ).not.toMatch(paceWords);
-    });
-
-    it("counts the engine's ETA down from the reading, like the reset", () => {
-      const html = withWindows([weekly], {
-        collectedAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-      });
-      expect(html).toContain("At this pace it runs out in 1d 7h, before the reset.");
     });
 
     it("says the same under Remaining, where the percentage is turned round", () => {

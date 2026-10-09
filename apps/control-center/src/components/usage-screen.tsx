@@ -448,7 +448,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         {provider.windows.map((window) => (
           <UsageWindowBar
             key={window.id}
-            etaSecs={resetSecsLeft(window.pace?.etaSeconds)}
+            etaSecs={window.pace?.etaSeconds ?? 0}
             mode={provider.usageMode}
             unavailable={provider.usageUnavailable}
             unavailableDetail={unavailableDetail}
@@ -604,7 +604,7 @@ function UsageWindowBar({
   // The engine paced this window against its reset: no pace once that has
   // passed, or while the reading is unavailable.
   const pace =
-    !unavailable && resetSecs > 0 && window.pace
+    !unavailable && (window.resetSecs ?? 0) > 0 && window.pace
       ? usagePaceLine(window.pace, etaSecs)
       : "";
   return (
@@ -654,7 +654,7 @@ function UsageWindowBar({
 export function usagePaceLine(pace: UsageWindowPace, etaSecs: number): string {
   if (pace.lasts === false) {
     return etaSecs >= 60
-      ? `At this pace it runs out in ${formatResetCountdown(etaSecs)}, before the reset.`
+      ? `At this pace it runs out in ${formatDurationShort(etaSecs)}, before the reset.`
       : "At this pace it runs out before the reset.";
   }
   switch (pace.state) {
@@ -914,17 +914,21 @@ export function formatReset(seconds?: number): string {
   if (!seconds || seconds <= 0) {
     return "Reset unknown";
   }
+  return `Reset in ${formatDurationShort(seconds)}`;
+}
+
+function formatDurationShort(seconds: number): string {
   const totalMinutes = Math.ceil(seconds / 60);
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
   const minutes = totalMinutes % 60;
   if (days > 0) {
-    return `Reset in ${days}d ${hours}h`;
+    return `${days}d ${hours}h`;
   }
   if (hours > 0) {
-    return `Reset in ${hours}h ${minutes}m`;
+    return `${hours}h ${minutes}m`;
   }
-  return `Reset in ${minutes}m`;
+  return `${minutes}m`;
 }
 
 function formatTokenCount(value: number): string {
