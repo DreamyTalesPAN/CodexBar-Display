@@ -27,9 +27,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
+  defaultPairIds,
   DisplayModeChoice,
   type SetupDisplayModePreview,
 } from "./setup/setup-display-mode-screen";
+import { pairDisplayPreview } from "./setup/setup-display-previews";
+import { DisplayLimitsSettings } from "./display-limits-settings";
+import { useActiveThemeLimits } from "./live-vibetv-preview";
 import {
   ProviderList,
   setupProviderCanDisplay,
@@ -154,6 +158,24 @@ export function SettingsScreen({
     ? currentProviderId
     : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
+  const displayChoices = displayable.map((item) => ({
+    id: item.providerId,
+    label: item.label,
+  }));
+  const pairIds = defaultPairIds(
+    providerPicker.display?.mode === "pair"
+      ? providerPicker.display.providerIds
+      : [],
+    manualProviderId,
+    displayChoices,
+  );
+  const previewOf = (providerId: string | null | undefined) =>
+    automaticPreviews.find(
+      (preview) =>
+        preview.providerLabel ===
+        displayable.find((item) => item.providerId === providerId)?.label,
+    );
+  const activeTheme = useActiveThemeLimits(device);
   // Optional prop: `undefined` means "nothing pending", the same as null.
   // Comparing against null alone left both mode cards disabled forever.
   const displaySavePending = Boolean(providerPicker.displayPendingProviderId);
@@ -269,16 +291,7 @@ export function SettingsScreen({
         <DisplayModeChoice
           automaticPreview={automaticPreviews[0] ?? null}
           automaticPreviews={automaticPreviews}
-          manualPreview={
-            automaticPreviews.find(
-              (preview) =>
-                preview.providerLabel ===
-                displayable.find(
-                  (item) =>
-                    item.providerId === providerPicker.display?.providerIds[0],
-                )?.label,
-            ) ?? null
-          }
+          manualPreview={previewOf(providerPicker.display?.providerIds[0]) ?? null}
           mode={displayMode}
           onSelectMode={(mode) =>
             void providerPicker.onDisplayChange(
@@ -287,25 +300,64 @@ export function SettingsScreen({
                 providerIds:
                   mode === "automatic"
                     ? enabledProviderIds
-                    : manualProviderId
-                      ? [manualProviderId]
-                      : [],
+                    : mode === "pair"
+                      ? pairIds
+                      : manualProviderId
+                        ? [manualProviderId]
+                        : [],
               },
-              manualProviderId ?? enabledProviderIds[0] ?? "",
+              (mode === "pair" ? pairIds[0] : manualProviderId) ??
+                enabledProviderIds[0] ??
+                "",
             )
           }
+          onSelectPair={(providerIds) => {
+            // Settings saves on every pick, so only a full pair is written.
+            if (providerIds[0] && providerIds[1]) {
+              void providerPicker.onDisplayChange(
+                { mode: "pair", providerIds },
+                providerIds[0],
+              );
+            }
+          }}
           onSelectProvider={(providerId) =>
             void providerPicker.onDisplayChange(
               { mode: "fixed", providerIds: [providerId] },
               providerId,
             )
           }
-          providers={displayable.map((item) => ({
-            id: item.providerId,
-            label: item.label,
-          }))}
+          pairPreview={pairDisplayPreview(previewOf(pairIds[0]), previewOf(pairIds[1]))}
+          pairProviderIds={pairIds}
+          providers={displayChoices}
           saving={displaySavePending}
           selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
+        />
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection
+        description="VibeTV shows the ticked limits from the top, as many as your theme has room for. Two at once shows the first ticked limit of each provider."
+        title="Limits on VibeTV"
+      >
+        <DisplayLimitsSettings
+          display={providerPicker.display}
+          onChange={(change) => {
+            const display = providerPicker.display;
+            if (!display) {
+              return;
+            }
+            const providerIds =
+              display.mode === "automatic" ? enabledProviderIds : display.providerIds;
+            void providerPicker.onDisplayChange(
+              { mode: display.mode, providerIds, ...change },
+              providerIds[0] ?? "",
+            );
+          }}
+          providers={displayChoices}
+          saving={displaySavePending}
+          theme={activeTheme}
+          usage={providerPicker.usage}
         />
       </SettingsSection>
 

@@ -137,11 +137,21 @@ export type ProviderSelectionSetup = {
 };
 
 export type ProviderDisplaySelection = {
-  mode: "automatic" | "fixed";
+  mode: "automatic" | "fixed" | "pair";
   providerIds: string[];
+  /** Usage windows taken off VibeTV, by provider id. Absent: none. */
+  hiddenWindows?: Record<string, string[]>;
+  /** Themes that can show reserve or deficit show it. Absent: true. */
+  showPace?: boolean;
   configured: boolean;
   valid: boolean;
 };
+
+/** What a display-choice write sends; fields left out stay as stored. */
+export type ProviderDisplayChange = Pick<
+  ProviderDisplaySelection,
+  "mode" | "providerIds" | "hiddenWindows" | "showPace"
+>;
 
 export type SupportDiagnostics = {
   ok?: boolean;
@@ -890,7 +900,8 @@ export function deviceCompletedThemeSetup(
  * provider is switched off. Kept as it is, the selection pins VibeTV to a
  * provider that no longer reports anything, and the device went blank while
  * other providers had usage. It then becomes Automatic over the providers that
- * are still on. Only a provider listed as off counts: one missing from the
+ * are still on; Two at once does the same once either of its two is off.
+ * Only a provider listed as off counts: one missing from the
  * inventory is unknown, and that Manual choice is left for the customer to
  * resolve. An empty pool is a selection the companion refuses, and
  * switching off the last provider is a real state -- it is what the provider
@@ -912,7 +923,7 @@ export function automaticPoolForEnabledProviders(
   const currentPool = display.providerIds || [];
   if (display.mode !== "automatic") {
     return currentPool.length > 0 &&
-      currentPool.every((id) => disabledProviderIds.includes(id))
+      currentPool.some((id) => disabledProviderIds.includes(id))
       ? { mode: "automatic", providerIds }
       : null;
   }

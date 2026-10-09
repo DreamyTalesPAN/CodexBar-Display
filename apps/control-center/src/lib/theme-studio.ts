@@ -808,6 +808,32 @@ export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
   );
 }
 
+/**
+ * How many of the customer's usage limits a theme has a place for: its
+ * highest usage slot (1 or 2) or usage window (`usage.N`, counted from 0).
+ * The provider-wide bindings (`session`, `weekly`, provider slots) do not
+ * count; they name a provider's lane, not the customer's ticked limits.
+ */
+export function themeStudioSpecUsageLimitCount(spec: ThemeStudioSpec): number {
+  let count = 0;
+  for (const primitive of spec.primitives) {
+    if (primitive.slot) {
+      count = Math.max(count, primitive.slot);
+    }
+    if (primitive.usageIndex !== undefined) {
+      count = Math.max(count, primitive.usageIndex + 1);
+    }
+    const bound = `${primitive.binding ?? ""} ${primitive.text ?? ""}`;
+    for (const match of bound.matchAll(/\b(?:usageSlot|us)([12])/g)) {
+      count = Math.max(count, Number(match[1]));
+    }
+    for (const match of bound.matchAll(/\busage\.(\d+)\./g)) {
+      count = Math.max(count, Number(match[1]) + 1);
+    }
+  }
+  return count;
+}
+
 export function themeStudioSpecUsesProviderSlots(
   spec: ThemeStudioSpec,
 ): boolean {

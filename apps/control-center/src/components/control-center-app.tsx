@@ -60,6 +60,7 @@ import {
   type DeviceSearchState,
   type DeviceState,
   type ProviderSetupInfo,
+  type ProviderDisplayChange,
   type ProviderDisplaySelection,
   type ProviderSelectionSetup,
   type PreferenceDescriptor,
@@ -3478,10 +3479,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const updateProviderDisplay = useCallback(
     (
       next:
-        | Pick<ProviderDisplaySelection, "mode" | "providerIds">
+        | ProviderDisplayChange
         | ((
             current: ProviderDisplaySelection | null,
-          ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
+          ) => ProviderDisplayChange | null),
       providerId: string,
     ) => {
       if (setupResetInProgressRef.current) {
@@ -3503,7 +3504,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // the reason VibeTV switches automatically is still the same.
         const retiresNotice =
           selection.mode !== "automatic" || previous?.mode !== "automatic";
-        const optimistic = { ...selection, configured: true, valid: true };
+        // The limits and the reserve switch ride along unchanged when only
+        // the mode is written, as the companion keeps them.
+        const optimistic = {
+          hiddenWindows: previous?.hiddenWindows,
+          showPace: previous?.showPace,
+          ...selection,
+          configured: true,
+          valid: true,
+        };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;
         setProviderDisplay(optimistic);
@@ -4781,6 +4790,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id: item.providerId,
       label: item.label,
     })),
+    providerDisplay?.hiddenWindows,
   );
   // Step 05 keeps offering every live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the
@@ -5009,6 +5019,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           displayFrame={displayFrame}
           displayMode={providerDisplay?.mode ?? "automatic"}
           displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
+          displayProviderIds={providerDisplay?.providerIds ?? []}
           firmwareProgress={firmwareUpdateStatus?.progress}
           firmwareWrittenPercent={
             firmwareUpdateInProgress
