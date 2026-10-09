@@ -27,7 +27,7 @@ func TestProviderResetSlotsPickSoonestResetPerProvider(t *testing.T) {
 		),
 	}
 
-	slots := providerResetSlots(providers, basis)
+	slots := providerResetSlots(providers, basis, nil)
 	if len(slots) != 2 {
 		t.Fatalf("expected 2 provider slots, got %d", len(slots))
 	}
@@ -52,7 +52,7 @@ func TestProviderResetSlotsReanchorOlderSnapshotsToTheSelectedBasis(t *testing.T
 		),
 	}
 
-	slots := providerResetSlots(providers, basis)
+	slots := providerResetSlots(providers, basis, nil)
 	if len(slots) != 1 {
 		t.Fatalf("expected 1 provider slot, got %d", len(slots))
 	}
@@ -78,7 +78,7 @@ func TestProviderResetSlotsExcludeStaleUnavailableAndCountdownFreeProviders(t *t
 		protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600},
 	)
 
-	slots := providerResetSlots([]codexbar.ParsedFrame{stale, unavailable, noCountdown, live}, basis)
+	slots := providerResetSlots([]codexbar.ParsedFrame{stale, unavailable, noCountdown, live}, basis, nil)
 	if len(slots) != 1 || slots[0].Label != "claude" {
 		t.Fatalf("only the live provider with a countdown may appear: %+v", slots)
 	}
@@ -93,7 +93,7 @@ func TestProviderResetSlotsCapAtTheWireLimit(t *testing.T) {
 		))
 	}
 
-	slots := providerResetSlots(providers, basis)
+	slots := providerResetSlots(providers, basis, nil)
 	if len(slots) != protocol.MaxProviderSlots {
 		t.Fatalf("expected the %d-slot wire cap, got %d", protocol.MaxProviderSlots, len(slots))
 	}
