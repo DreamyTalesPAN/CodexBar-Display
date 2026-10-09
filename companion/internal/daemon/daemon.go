@@ -586,10 +586,11 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 					err,
 				)
 			} else {
-				deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
+				deps.logf("cycle error: code=%s op=%s retry=%s cause=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
 					waitFor,
+					errcode.Of(runtimeErr.Err),
 					runtimeErr.RecoveryAction(),
 					err,
 				)
