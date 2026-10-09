@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 // configWriteMu serializes the Companion's own changes to CodexBar's config:
@@ -41,8 +45,21 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 	}
 	configWriteMu.Lock()
 	defer configWriteMu.Unlock()
-	// CodexBar writes this file without the Companion's lock. When it changed
-	// it between our read and our replace, start over from its new content.
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	// CodexBar's app and CLI from 0.71.0 on publish this file under an flock on
+	// config.json.lock. Holding the same lock keeps them out of the whole
+	// read-modify-write. The bundled 0.63.0 writes without it, so when the
+	// file changed between our read and our replace, start over from its new
+	// content.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	lock, err := writerlock.AcquireAtContext(ctx, path+".lock")
+	if err != nil {
+		return false, fmt.Errorf("lock CodexBar config: %w", err)
+	}
+	defer lock.Release()
 	for attempt := 0; attempt < 3; attempt++ {
 		changed, err := switchCookieSource(path, providerID)
 		if !errors.Is(err, errConfigChanged) {

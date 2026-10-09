@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 // The Mac on 2026-10-09: Claude pinned to an expired saved cookie, so a fresh
@@ -192,5 +195,39 @@ func TestUseBrowserCookiesKeepsBothOfTwoSignInsAtOnce(t *testing.T) {
 		if providers["claude"]["cookieSource"] != "auto" || providers["cursor"]["cookieSource"] != "auto" {
 			t.Fatalf("round %d lost a switch: claude=%v cursor=%v", round, providers["claude"], providers["cursor"])
 		}
+	}
+}
+
+// CodexBar 0.71.0 and later write the config under an flock on
+// config.json.lock. While it holds that lock the sign-in must wait, so the
+// change CodexBar publishes there survives.
+func TestUseBrowserCookiesWaitsForCodexBarsConfigLock(t *testing.T) {
+	home, path := writePinnedConfig(t, twoPinnedProviders)
+	codexBar, err := writerlock.AcquireAt(path + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := UseBrowserCookies(home, "claude")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		codexBar.Release()
+		t.Fatalf("the sign-in changed the config while CodexBar held its lock: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	codexOff := strings.Replace(twoPinnedProviders, `"id": "codex", "enabled": true`, `"id": "codex", "enabled": false`, 1)
+	if err := os.WriteFile(path, []byte(codexOff), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	codexBar.Release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	providers := providersIn(t, path)
+	if providers["codex"]["enabled"] != false || providers["claude"]["cookieSource"] != "auto" {
+		t.Fatalf("both changes must survive: codex=%v claude=%v", providers["codex"], providers["claude"])
 	}
 }
