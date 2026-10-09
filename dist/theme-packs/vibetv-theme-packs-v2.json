@@ -120,6 +120,24 @@
       ]
     },
     {
+      "id": "pace-meter",
+      "title": "Pace Meter",
+      "usage": "live",
+      "version": "0.1.0",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/pm-4-d0dddb01.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "usage-pace-v1",
+        "color-stops-v1"
+      ],
+      "downloadAsset": "vibetv-theme-pace-meter-v0.1.0.zip",
+      "sha256": "ed1b088765e986eafad5776da2f7f1f040887040bf03d6026621a096671e3322",
+      "bytes": 882,
+      "earlierThemeSpecPaths": []
+    },
+    {
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
