@@ -104,6 +104,19 @@ func TestReportedProviderMessageRedactsTheWindowsHomePath(t *testing.T) {
 			in:   `Claude credentials not found at C:\Users\Jane (Work)\.claude\.credentials.json.`,
 			want: `Claude credentials not found at ~\.claude\.credentials.json.`,
 		},
+		{
+			// Review of #572: closing punctuation is legal inside the name.
+			in:   `Missing file C:\Users\Jane)Doe)`,
+			want: `Missing file ~)`,
+		},
+		{
+			in:   `Missing profile (C:\Users\Jane;Doe,Work]x), try again.`,
+			want: `Missing profile (~), try again.`,
+		},
+		{
+			in:   `Missing profile [C:\Users\Jane (Work)]`,
+			want: `Missing profile [~)]`,
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("windows home path redaction:\n got %q\nwant %q", got, tc.want)

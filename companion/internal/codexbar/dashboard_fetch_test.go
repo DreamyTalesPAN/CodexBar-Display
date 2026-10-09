@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -210,6 +212,8 @@ func TestFetchDashboardProvidersAsksTheWindowsEngineOnlyForListedProviders(t *te
 	providerProbePerProvider = true
 	t.Cleanup(func() { providerProbePerProvider = previous })
 
+	// Windows asks side by side, like the CLI join.
+	var mu sync.Mutex
 	var asked []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -219,7 +223,9 @@ func TestFetchDashboardProvidersAsksTheWindowsEngineOnlyForListedProviders(t *te
 			  {"id":"codex","name":"Codex","windows":[{"id":"session","kind":"session","usedPercent":34}]}
 			]}`))
 		case dashboardUsagePath:
+			mu.Lock()
 			asked = append(asked, r.URL.RawQuery)
+			mu.Unlock()
 			_, _ = fmt.Fprintf(w, `[{"provider":%q,"usage":{}}]`, r.URL.Query().Get("provider"))
 		default:
 			http.NotFound(w, r)
@@ -231,6 +237,7 @@ func TestFetchDashboardProvidersAsksTheWindowsEngineOnlyForListedProviders(t *te
 	if err != nil || len(providers) != 2 {
 		t.Fatalf("both listed providers must come back: providers=%+v err=%v", providers, err)
 	}
+	sort.Strings(asked)
 	if got := strings.Join(asked, " "); got != "provider=claude provider=codex" {
 		t.Fatalf("usage must be asked for the listed providers only, got %q", got)
 	}

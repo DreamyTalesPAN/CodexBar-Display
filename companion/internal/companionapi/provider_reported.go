@@ -25,10 +25,12 @@ var (
 	// doubled backslashes. A folder name may hold spaces, apostrophes and
 	// brackets (`Jane O'Doe`, `Jane (Work)`), so the whole component goes:
 	// through the next separator when one follows (a colon cannot be part of
-	// the name, which keeps a later `D:\` out), otherwise up to closing
-	// punctuation. Words after an unterminated name go with it: a support
-	// report may lose some prose but never part of the account name.
-	reportedWindowsHomePath = regexp.MustCompile(`(?i)\b[A-Z]:\\+Users\\+(?:[^\\\r\n"<>|:*?]+?\\|[^\\\r\n"<>|:*?)\]},;]+)`)
+	// the name, which keeps a later `D:\` out). Without a separator the name
+	// may also hold `)`, `]`, `}`, `,` and `;`, so the match runs to the
+	// next character a name cannot hold and windowsHomeNameEnd picks the end.
+	// Words after an unterminated name go with it: a support report may lose
+	// some prose but never part of the account name.
+	reportedWindowsHomePath = regexp.MustCompile(`(?i)\b[A-Z]:\\+Users\\+(?:[^\\\r\n"<>|:*?]+?\\|[^\\\r\n"<>|:*?]+)`)
 	// URL userinfo carries credentials before the host (`https://token@host` or
 	// `https://user:pass@host`).
 	// Redact it as one span so neither the username nor password reaches the UI.
@@ -76,6 +78,26 @@ var (
 
 const reportedRedacted = "[redacted]"
 
+// windowsHomeNameEnd returns where the profile name of an unterminated
+// `C:\Users\<name>` match ends. `)`, `]`, `}`, `,` and `;` are legal
+// inside the name, so one of them ends it only where no further name text
+// follows it: at the end of the match, before whitespace, or before more
+// closing punctuation. `(C:\Users\Jane)Doe)` keeps the whole `Jane)Doe` in
+// the redaction, and `(C:\Users\Jane O'Doe), try again` keeps the prose.
+// Without such a point the whole rest of the match is the name.
+func windowsHomeNameEnd(match string) int {
+	const closing = ")]},;"
+	for i := 0; i < len(match); i++ {
+		if !strings.ContainsRune(closing, rune(match[i])) {
+			continue
+		}
+		if i+1 == len(match) || strings.ContainsRune(" \t"+closing+".", rune(match[i+1])) {
+			return i
+		}
+	}
+	return len(match)
+}
+
 // reportedProviderMessage keeps the usage service's sentence and replaces the
 // secret-shaped material inside it with a visible marker.
 func reportedProviderMessage(raw string) string {
@@ -90,7 +112,7 @@ func reportedProviderMessage(raw string) string {
 		if strings.HasSuffix(match, `\`) {
 			return `~\`
 		}
-		return "~"
+		return "~" + match[windowsHomeNameEnd(match):]
 	})
 	message = reportedHomePath.ReplaceAllString(message, "~")
 	message = reportedURLUserinfo.ReplaceAllString(message, "${1}"+reportedRedacted+"@")

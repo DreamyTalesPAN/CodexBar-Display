@@ -40,32 +40,13 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	for _, provider := range snapshot.Providers {
 		providerIDs = append(providerIDs, provider.ID)
 	}
-	// One request on macOS. On Windows one per listed provider (see
-	// dashboardUsageQueries); there a failed request costs only its own
-	// provider, which then shows as unavailable below, the same as a failed
-	// probe in the CLI join. Only when every request fails is the collection
-	// itself failed.
-	var usageProviders []dashboardusage.UsageProvider
-	var usageErr error
-	answered := 0
-	queries := dashboardUsageQueries(providerIDs)
-	for _, query := range queries {
-		usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+query, strings.TrimSpace(info.Token))
-		if err == nil {
-			var decoded []dashboardusage.UsageProvider
-			if decoded, err = dashboardusage.DecodeUsage(usageRaw); err != nil {
-				err = fmt.Errorf("decode dashboard usage: %w", err)
-			} else {
-				usageProviders = append(usageProviders, decoded...)
-				answered++
-			}
-		}
-		if err != nil && usageErr == nil {
-			usageErr = err
-		}
-	}
-	if answered == 0 && usageErr != nil {
-		return nil, usageErr
+	// The platform join lives in providers.go; a provider it leaves out
+	// shows as unavailable below.
+	usageProviders, err := fetchDashboardUsage(ctx, providerIDs, func(ctx context.Context, query string) ([]byte, error) {
+		return fetchDashboardJSON(ctx, endpoint+dashboardUsagePath+query, strings.TrimSpace(info.Token))
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	snapshotCollectedAt := time.Time{}
