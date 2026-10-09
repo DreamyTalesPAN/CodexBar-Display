@@ -5743,3 +5743,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No wording, no new control. A new customer whose AI providers were set up before, so that setup has no provider step, got the notice right after setup. The app now also takes a VibeTV that has no theme yet as a first setup and counts every entry as read. A set-up customer who starts the app after an update still gets the notice, also when their VibeTV is not plugged in at that moment.
 - Scope: when the entries count as read during setup, in `apps/control-center/src/components/control-center-app.tsx`, one test in `control-center-app.whats-new.test.tsx`, and this approval record; checked with unit tests only.
 - What's new: none — a correction to the notice itself
+
+## 2026-10-09 — A cleaner What's new dialog
+
+- User approval: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
+- Approved customer-visible result: The same five updates appear as a compact, divided list. The large icon tiles are gone, titles and descriptions are smaller, and the links sit quietly beside their entries on wider windows. The heading reads `What's new in version <installed version>` when the version is known, saving a separate line. The footer and its Got it button stay visible when the list scrolls.
+- Scope: the What's new dialog and its entry data only. The wording, navigation, ordering, and notice behavior are unchanged.
+- What's new: none — this changes only the design of the existing notice

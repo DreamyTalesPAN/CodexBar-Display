@@ -180,7 +180,7 @@ function startWindow({
   };
 }
 
-const notice = () => screen.queryByRole("dialog", { name: "What's new" });
+const notice = () => screen.queryByRole("dialog", { name: /^What's new(?: in version .+)?$/ });
 const keyCaps = () =>
   Array.from(notice()!.querySelectorAll("kbd"), (key) => key.textContent);
 const seen = () => JSON.parse(window.localStorage.getItem(SEEN_KEY) || "null");
@@ -204,7 +204,7 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   expect(list.contains(within(notice()!).getByRole("button", { name: "Got it" }))).toBe(false);
 
   const text = notice()?.textContent ?? "";
-  expect(text).toContain("Version 1.0.63");
+  expect(text).toContain("What's new in version 1.0.63");
   for (const sentence of [
     "New theme: Gauge",
     "A half ring that fills as you use your limit.",
