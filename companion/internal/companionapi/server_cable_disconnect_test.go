@@ -101,7 +101,7 @@ func TestCableResolveErrorsOnlyDisconnectWhenPortIsAbsent(t *testing.T) {
 		absent bool
 	}{
 		{"transport/no-usb-serial-ports", true},
-		{"transport/no-serial-ports", true},
+		{"transport/no-serial-ports", false},
 		{"transport/serial-port-not-found", true},
 		{"transport/serial-open", false},
 		{"transport/no-matching-vibetv", false},

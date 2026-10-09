@@ -10087,7 +10087,7 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			} else if op == "resolve-target" {
 				// An unanswered or busy port does not prove that USB was unplugged.
 				switch errcode.Code(displayStreamLogValue(line, "cause")) {
-				case errcode.TransportNoUSBSerialPorts, errcode.TransportNoSerialPorts, errcode.TransportSerialPortNotFound:
+				case errcode.TransportNoUSBSerialPorts, errcode.TransportSerialPortNotFound:
 					detail = "Display stream could not find VibeTV and is reconnecting."
 					code = "device_not_found"
 				}
