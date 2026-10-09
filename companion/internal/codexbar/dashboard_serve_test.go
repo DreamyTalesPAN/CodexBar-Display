@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -144,6 +145,100 @@ func TestDashboardServeSupervisorRestartsCrashedChildWithBackoff(t *testing.T) {
 		if argValue(record.Args, "--port") == "8080" {
 			t.Fatalf("restart used forbidden port 8080: %v", record.Args)
 		}
+	}
+}
+
+// "Check again" replaces a serve that kept failing a provider a fresh CodexBar
+// reads fine (Mac, 2026-10-09) once CodexBar's config changed after the serve
+// started. A serve already running on the current config keeps running. The
+// replacement starts at once, not after the crash backoff, and Restart
+// returns only once it answers.
+func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("APPDATA", configDir)
+	configPath := filepath.Join(configDir, "CodexBar", "settings.json")
+	if runtime.GOOS != "windows" {
+		configPath = filepath.Join(configDir, "config.json")
+		t.Setenv("CODEXBAR_CONFIG", configPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("{\"enabled_providers\":[]}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeStart := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(configPath, beforeStart, beforeStart); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	supervisor.backoffBase = time.Hour
+	supervisor.backoffMax = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		waitForDashboardSupervisorDone(t, done)
+	}()
+
+	first := waitForDashboardServeHealthy(t, supervisor)
+	restartCtx, cancelRestart := context.WithTimeout(context.Background(), dashboardServeTestWait)
+	defer cancelRestart()
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if unchanged := supervisor.Info(); unchanged.PID != first.PID {
+		t.Fatalf("a serve running on the current config must keep running, first=%#v now=%#v", first, unchanged)
+	}
+
+	changed := time.Now().Add(time.Minute)
+	if err := os.Chtimes(configPath, changed, changed); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	second := supervisor.Info()
+	if !second.Healthy || second.PID == 0 || second.PID == first.PID {
+		t.Fatalf("expected a new healthy child, first=%#v second=%#v", first, second)
+	}
+	if records := waitForDashboardServeRecords(t, recordPath, 2); records[1].PID != second.PID {
+		t.Fatalf("expected the second start to be the running child, got %#v", records)
+	}
+}
+
+// A config written while the child was starting may not be the one it read,
+// so only a write before the launch proves the serve is current. That
+// includes the config a cold start creates just before launching.
+func TestConfigChangedSinceCountsEveryWriteFromTheLaunchOn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launchedAt := time.Date(2026, 10, 9, 8, 0, 0, 500_000_000, time.UTC)
+	for name, tc := range map[string]struct {
+		written time.Time
+		changed bool
+	}{
+		"written well before the launch": {launchedAt.Add(-2 * time.Second), false},
+		"created just before the launch": {launchedAt.Add(-time.Millisecond), false},
+		"written at the launch":          {launchedAt, true},
+		"written after the launch":       {launchedAt.Add(time.Millisecond), true},
+	} {
+		if err := os.Chtimes(path, tc.written, tc.written); err != nil {
+			t.Fatal(err)
+		}
+		if got := configChangedSince(path, launchedAt); got != tc.changed {
+			t.Fatalf("%s: changed=%v, want %v", name, got, tc.changed)
+		}
+	}
+	if !configChangedSince(filepath.Join(t.TempDir(), "missing.json"), launchedAt) {
+		t.Fatal("a config that cannot be read must count as changed")
 	}
 }
 
@@ -489,4 +584,64 @@ func argValue(args []string, name string) string {
 
 func errorsIsNotExist(err error) bool {
 	return err != nil && os.IsNotExist(err)
+}
+
+// A serve keeps reading the file it started with. When CodexBar would now
+// read another one, the serve is stale even though its own file is old: a
+// ~/.config/codexbar/config.json that appeared later takes priority, and a
+// repointed symlink names a file whose time can predate the start.
+func TestConfigSelectionChangedSeesAnotherFileThanTheRunningServe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar reads one fixed settings file")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEXBAR_CONFIG", "")
+	legacy := filepath.Join(home, ".codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started := resolvedConfigFile(legacy)
+	if configSelectionChanged(started) {
+		t.Fatal("the file the serve started with is still the selected one")
+	}
+	preferred := filepath.Join(home, ".config", "codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(preferred), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preferred, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !configSelectionChanged(started) {
+		t.Fatal("a later ~/.config/codexbar/config.json must make the serve stale")
+	}
+
+	older := filepath.Join(home, "older.json")
+	newer := filepath.Join(home, "newer.json")
+	for _, path := range []string{older, newer} {
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(home, "linked.json")
+	if err := os.Symlink(newer, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", link)
+	started = resolvedConfigFile(link)
+	if configSelectionChanged(started) {
+		t.Fatal("an unchanged symlink is still the selected file")
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(older, link); err != nil {
+		t.Fatal(err)
+	}
+	if !configSelectionChanged(started) {
+		t.Fatal("a repointed symlink must make the serve stale")
+	}
 }

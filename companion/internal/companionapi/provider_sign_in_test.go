@@ -14,17 +14,15 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
-// The shortened provider list and the sign-in button are Windows-only launch
-// decisions. The Mac app must keep CodexBar's full provider inventory and the
-// rows it shows today, so the flag the app reads stays off there.
-func TestProviderSignInFeatureIsWindowsOnly(t *testing.T) {
-	if !providerSignInFeatureEnabledFor("windows") {
-		t.Fatal("Windows must switch the provider sign-in feature on")
-	}
-	for _, goos := range []string{"darwin", "linux"} {
-		if providerSignInFeatureEnabledFor(goos) {
-			t.Fatalf("%s must keep the provider sign-in feature off", goos)
+// Windows and the Mac look and work the same: both offer the sign-in button.
+func TestProviderSignInFeatureIsOnForWindowsAndMac(t *testing.T) {
+	for _, goos := range []string{"windows", "darwin"} {
+		if !providerSignInFeatureEnabledFor(goos) {
+			t.Fatalf("%s must switch the provider sign-in feature on", goos)
 		}
+	}
+	if providerSignInFeatureEnabledFor("linux") {
+		t.Fatal("linux has no shell for the sign-in button")
 	}
 }
 
@@ -236,9 +234,25 @@ func TestPlanProviderSignIn(t *testing.T) {
 	if plan.Action != providerSignInActionDownload || plan.URL != "https://antigravity.google/download" {
 		t.Fatalf("antigravity missing: %#v", plan)
 	}
+	// CodexBar on macOS reads Claude and Cursor from the browser sign-in, so
+	// the button opens that page even when the app or CLI is installed.
 	plan, _ = planProviderSignIn("cursor", "darwin", "/Users/x", none, exists("/Applications/Cursor.app"))
-	if plan.Action != providerSignInActionApp || plan.Path != "/Applications/Cursor.app" {
+	if plan.Action != providerSignInActionBrowser || plan.URL != "https://cursor.com/dashboard" {
 		t.Fatalf("cursor on macOS: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("claude", "darwin", "/Users/x", func(string) (string, error) { return "/usr/local/bin/claude", nil }, exists())
+	if plan.Action != providerSignInActionBrowser || plan.URL != "https://claude.ai/login" {
+		t.Fatalf("claude on macOS: %#v", plan)
+	}
+	// The ChatGPT app ships the Codex CLI; the Companion's PATH misses it.
+	chatGPTCodex := "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
+	plan, _ = planProviderSignIn("codex", "darwin", "/Users/x", none, exists(chatGPTCodex))
+	if plan.Action != providerSignInActionCLILogin || plan.Path != chatGPTCodex || strings.Join(plan.Args, " ") != "login" {
+		t.Fatalf("codex from the ChatGPT app: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("antigravity", "darwin", "/Users/x", none, exists("/Applications/Antigravity.app"))
+	if plan.Action != providerSignInActionApp || plan.Path != "/Applications/Antigravity.app" {
+		t.Fatalf("antigravity on macOS: %#v", plan)
 	}
 	if _, ok := planProviderSignIn("copilot", "windows", home, none, exists()); ok {
 		t.Fatal("copilot has no plan")

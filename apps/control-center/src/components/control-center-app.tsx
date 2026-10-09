@@ -106,6 +106,8 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
+  PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
+  providerRowHealthState,
   setupProviderCanDisplay,
 } from "./setup/setup-providers-screen";
 import {
@@ -163,7 +165,6 @@ const PROVIDER_POOL_RECONCILE_RETRY_MS = 5_000;
 // nobody signs in. The window is wall-clock, not a check count: probe
 // duration must not stretch it.
 const PROVIDER_SIGN_IN_FOLLOW_UP_INTERVAL_MS = 15_000;
-const PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS = 180_000;
 // launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
 // (main.swift:3759-3761), then the process start, then the 5s poll that sees it
 // -- about seventeen seconds before the app has learnt anything. Repairing at
@@ -3427,9 +3428,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         providerPreferencesRef.current?.some(
           (preference) =>
             preference.providerId?.trim().toLowerCase() === providerId &&
-            (preference.health?.state === "browser_sign_in_required" ||
-              preference.health?.state === "auth_required" ||
-              preference.health?.state === "setup_required"),
+            preference.health !== undefined &&
+            ["browser_sign_in_required", "auth_required", "setup_required"].includes(
+              providerRowHealthState(preference.health),
+            ),
         ) ?? false;
       const tick = async () => {
         timer = null;
@@ -4411,9 +4413,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
-  // Windows adds the sign-in button for the providers the Companion can sign
-  // in; the Mac app keeps its existing rows exactly as they are today. Both
-  // list every provider CodexBar reports.
+  // The sign-in button for the providers the Companion can sign in, on
+  // Windows and the Mac alike. Both list every provider CodexBar reports.
   const providerSignInEnabled =
     companionInfo?.features?.providerSignInEnabled === true;
   const providerPickerProps = {

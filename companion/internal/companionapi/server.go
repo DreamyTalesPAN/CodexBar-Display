@@ -192,6 +192,10 @@ type Options struct {
 	PauseDisplayStream   func(bool)
 	WakeDisplayStream    func()
 	RenderDisplayStream  func()
+	// RestartUsageService replaces the running CodexBar serve with a fresh
+	// one when CodexBar's config changed after it started, and waits until it
+	// answers. Nil when no serve is supervised.
+	RestartUsageService func(context.Context) error
 	// Supplied only by the process supervising the actual worker. Running alone
 	// never establishes frame freshness or device readiness.
 	DisplayStreamRunning func() bool
@@ -243,9 +247,13 @@ type Server struct {
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
 	renderDisplayStream    func()
-	displayStreamRunning   func() bool
-	firmwareUpdateActive   atomic.Bool
-	firmwareUpdateStartMu  sync.Mutex
+	restartUsageService    func(context.Context) error
+	usageServiceRestarting atomic.Bool
+	// A successful check that arrived while a replacement was running.
+	usageServiceRestartPending atomic.Bool
+	displayStreamRunning       func() bool
+	firmwareUpdateActive       atomic.Bool
+	firmwareUpdateStartMu      sync.Mutex
 	// Serial ports already asked on behalf of a legacy WiFi VibeTV.
 	legacyCableProbeMu     sync.Mutex
 	legacyCableProbePorts  string
@@ -775,10 +783,9 @@ type companionRuntimeInfo struct {
 type companionFeatures struct {
 	ThemeInstallEnabled     bool `json:"themeInstallEnabled"`
 	MacAppSelfUpdateEnabled bool `json:"macAppSelfUpdateEnabled"`
-	// ProviderSignInEnabled and the shortened provider list are Windows-only
-	// launch decisions. The Mac app keeps CodexBar's full provider inventory
-	// and its existing rows, so the app must be told which platform it runs
-	// on rather than deciding from the user agent.
+	// ProviderSignInEnabled tells the app that this Companion can start a
+	// provider sign-in. Older Mac Companions cannot, so the app asks rather
+	// than deciding from the user agent.
 	ProviderSignInEnabled bool `json:"providerSignInEnabled"`
 }
 
@@ -1057,6 +1064,7 @@ func New(opts Options) (*Server, error) {
 		pauseDisplayStream:    opts.PauseDisplayStream,
 		wakeDisplayStream:     opts.WakeDisplayStream,
 		renderDisplayStream:   opts.RenderDisplayStream,
+		restartUsageService:   opts.RestartUsageService,
 		displayStreamRunning:  opts.DisplayStreamRunning,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,

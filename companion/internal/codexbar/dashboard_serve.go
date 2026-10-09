@@ -9,7 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -74,8 +76,18 @@ type DashboardServeSupervisor struct {
 	testArgsPrefix  []string
 	testEnv         []string
 
-	mu   sync.RWMutex
-	info DashboardServeInfo
+	mu      sync.RWMutex
+	info    DashboardServeInfo
+	process *os.Process
+	// startedAt and configPath describe the running child: when it started
+	// and the CodexBar config it read then. configFile is that config with
+	// symlinks resolved, the file the child actually read.
+	startedAt  time.Time
+	configPath string
+	configFile string
+	// restart marks the next child exit as one Restart asked for, so the
+	// replacement starts at once instead of after the crash backoff.
+	restart bool
 }
 
 func StartDashboardServe(ctx context.Context, logf func(string, ...any)) DashboardServe {
@@ -174,6 +186,14 @@ func (s *DashboardServeSupervisor) Run(ctx context.Context) {
 			s.setStopped("", err)
 			return
 		}
+		s.mu.Lock()
+		restart := s.restart
+		s.restart = false
+		s.mu.Unlock()
+		if restart {
+			backoff = dashboardServeBackoff{base: s.backoffBase, max: s.backoffMax}
+			continue
+		}
 		if err != nil && s.logf != nil {
 			s.logf("codexbar-dashboard event=child-exited retry=%s err=%v\n", backoff.Peek(), err)
 		}
@@ -226,11 +246,14 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 
+	// Taken before the child exists, so it cannot have read a config written
+	// after this moment.
+	launchedAt := time.Now()
 	if err := cmd.Start(); err != nil {
 		s.setStopped(endpoint, err)
 		return err
 	}
-	s.setStarted(endpoint, cmd.Process.Pid)
+	s.setStarted(endpoint, cmd.Process, launchedAt, environmentValue(env, "CODEXBAR_CONFIG"))
 	if s.logf != nil {
 		s.logf("codexbar-dashboard event=child-started endpoint=%s pid=%d refreshInterval=%s\n", endpoint, cmd.Process.Pid, s.refreshInterval)
 	}
@@ -312,6 +335,91 @@ func (s *DashboardServeSupervisor) stopUnhealthyDashboardServeChild(endpoint str
 	return errors.New("unhealthy codexbar serve exited")
 }
 
+// Restart replaces the running serve when CodexBar's config changed after it
+// started, and waits until the new one answers /health. A serve keeps the
+// settings it started with: after a Mac restart it kept reporting Claude as
+// signed out once Claude's saved cookie had been switched off, until the
+// process was replaced (2026-10-09). A serve started after the latest change
+// already runs on it; a reading it has not delivered yet is a collection still
+// under way, so it keeps running.
+func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
+	s.mu.Lock()
+	process := s.process
+	oldPID := s.info.PID
+	stale := process != nil &&
+		(configSelectionChanged(s.configFile) || configChangedSince(s.configPath, s.startedAt))
+	s.restart = stale
+	s.mu.Unlock()
+	if process == nil {
+		return errors.New("codexbar serve is not running")
+	}
+	if !stale {
+		if s.logf != nil {
+			s.logf("codexbar-dashboard event=restart-skipped pid=%d reason=settings-unchanged\n", oldPID)
+		}
+		return nil
+	}
+	if s.logf != nil {
+		s.logf("codexbar-dashboard event=restart-requested pid=%d\n", oldPID)
+	}
+	if err := process.Kill(); err != nil {
+		return fmt.Errorf("stop codexbar serve: %w", err)
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if info := s.Info(); info.Healthy && info.PID != 0 && info.PID != oldPID {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+// configChangedSince reports whether the config at path was written at or
+// after t. A config it cannot read counts as changed, so a serve is never kept
+// for lack of proof that it is current.
+func configChangedSince(path string, t time.Time) bool {
+	info, err := os.Stat(path)
+	return err != nil || !info.ModTime().Before(t)
+}
+
+// configSelectionChanged reports whether a new serve would read another file
+// than the running one: on the Mac a ~/.config/codexbar/config.json that
+// appeared later takes priority, and a repointed symlink names another file
+// whose time can predate the start. Win-CodexBar reads one fixed file.
+func configSelectionChanged(startedFile string) bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
+	current, err := macConfigPath("")
+	if err != nil {
+		return true
+	}
+	return resolvedConfigFile(current) != startedFile
+}
+
+// resolvedConfigFile is path with symlinks resolved, or path itself when it
+// cannot be resolved (for example before CodexBar created it).
+func resolvedConfigFile(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+func environmentValue(env []string, key string) string {
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, key+"="); ok {
+			return value
+		}
+	}
+	return ""
+}
+
 func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint string) bool {
 	if s == nil || s.client == nil {
 		return false
@@ -335,11 +443,15 @@ func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint str
 	return true
 }
 
-func (s *DashboardServeSupervisor) setStarted(endpoint string, pid int) {
+func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Process, launchedAt time.Time, configPath string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.info.Endpoint = endpoint
-	s.info.PID = pid
+	s.process = process
+	s.startedAt = launchedAt
+	s.configPath = configPath
+	s.configFile = resolvedConfigFile(configPath)
+	s.info.PID = process.Pid
 	s.info.Running = true
 	s.info.Healthy = false
 	s.info.LastError = ""
@@ -352,6 +464,7 @@ func (s *DashboardServeSupervisor) setStopped(endpoint string, err error) {
 	if endpoint != "" {
 		s.info.Endpoint = endpoint
 	}
+	s.process = nil
 	s.info.PID = 0
 	s.info.Running = false
 	s.info.Healthy = false

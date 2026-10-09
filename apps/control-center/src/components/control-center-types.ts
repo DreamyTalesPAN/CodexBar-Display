@@ -49,7 +49,7 @@ export type CompanionInfo = {
   features?: {
     themeInstallEnabled?: boolean;
     macAppSelfUpdateEnabled?: boolean;
-    /** Windows-only: the shortened provider list and the sign-in button. */
+    /** The Companion can start a provider sign-in (Windows and the Mac). */
     providerSignInEnabled?: boolean;
   };
 };
@@ -583,6 +583,12 @@ export type PreferenceDescriptor = {
      * companion opens it; the UI only shows that it exists.
      */
     signInUrl?: string;
+    /**
+     * Set only on a "stale" row whose live check waits for a sign-in
+     * ("auth_required", "setup_required" or "browser_sign_in_required"). The
+     * row keeps its saved reading and still offers that sign-in.
+     */
+    signInState?: PreferenceHealthState;
   };
 };
 
