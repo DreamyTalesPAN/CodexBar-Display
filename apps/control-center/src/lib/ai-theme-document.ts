@@ -125,9 +125,12 @@ export function applyAIThemeCandidate(
         const firstReadout = Math.min(...usageSectionIndices(next.spec.primitives).flat(), next.spec.primitives.length);
         // Place the readout background over full-display backdrops, but below
         // retained readouts and their manual overlays, irrespective of figure order.
-        const backdrop = next.spec.primitives.findLastIndex((p, i) => i < firstReadout &&
-          (p.type === "rect" || p.type === "sprite") && p.x <= 0 && p.y <= 0 &&
-          p.x + (p.width || 0) >= 240 && p.y + (p.height || 0) >= 240);
+        const backdrop = next.spec.primitives.findLastIndex((p, i) => {
+          if (i >= firstReadout || (p.type !== "rect" && p.type !== "sprite")) return false;
+          const sprite = p.type === "sprite" ? decodeSprite(next.assets[p.assetPath || ""]?.data || "") : null;
+          return p.x <= 0 && p.y <= 0 && p.x + (p.width || sprite?.width || 0) >= 240 &&
+            p.y + (p.height || sprite?.height || 0) >= 240;
+        });
         next.spec.primitives.splice(backdrop + 1, 0, { ...panel });
       }
     }

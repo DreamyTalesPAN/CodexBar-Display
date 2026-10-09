@@ -5545,3 +5545,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested preserving custom design elements during fullscreen transitions. This follow-up corrects the reproduced backdrop-order finding in that transition.
 - Approved customer-visible result: A restored usage panel remains visible above retained full-display backdrops while manual overlays and usage labels remain above it, even with a reordered animated figure.
+
+## 2026-10-09: Recognize imported backgrounds at their native size
+
+- User approval: Marcus requested the fullscreen/manual-layer preservation fix. This follow-up completes the same backdrop handling for imported and legacy images.
+- Approved customer-visible result: Background images without explicit dimensions are recognized at the size encoded in their image data, so the restored usage panel remains visible over them just as with explicitly sized images and rectangles.

@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from "vitest";
-import {buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
+import {encodeAIThemeCBI1,buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_THEME_SCREENMASTER_ASSET_PATH as ART,AI_THEME_ANIMATION_ASSET_PATH as ANIMATION,type AIThemeConcept} from "./ai-theme";
 import {applyAIThemeCandidate,conceptFromDocument} from "./ai-theme-document";
 import {registerCompanionFrames} from "./ai-companion-sprites";
 import {decodeSprite} from "@/components/live-vibetv-preview";
@@ -187,9 +187,12 @@ describe("flexible picture layouts",()=>{
   expect(restored.spec.primitives.filter(p=>p.type==='rect'&&p.height===112)).toEqual([panel]);
   expect(validateThemeSpec(restored.spec,restored.assets).errors).toEqual([]);
  });
- it('restores the usage panel above a retained full-display backdrop and below manual overlays',()=>{
+ it.each(['rect','sized-image','native-image'] as const)('restores the usage panel above a retained %s backdrop and below manual overlays',kind=>{
   const current=fixture(1).candidate();
-  const backdrop={type:'rect' as const,x:0,y:0,width:240,height:240,color:'#445566'};
+  const path='/themes/u/manual-background.cbi';
+  current.assets[path]={contentType:'text/plain',encoding:'text',data:encodeAIThemeCBI1(new Uint8ClampedArray(240*240*4).fill(255),240,240)};
+  const backdrop=kind==='rect'?{type:'rect' as const,x:0,y:0,width:240,height:240,color:'#445566'}:
+    {type:'sprite' as const,x:0,y:0,assetPath:path,...(kind==='sized-image'?{width:240,height:240}:{})};
   const shape={type:'rect' as const,x:8,y:130,width:225,height:90,color:'#123456'};
   current.spec.primitives.splice(3,0,shape);current.spec.primitives.unshift(backdrop);
   const f=fixture(1);f.concept.artHeight=240;
