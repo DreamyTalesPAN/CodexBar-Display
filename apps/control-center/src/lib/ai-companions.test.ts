@@ -3,7 +3,7 @@ import {buildAIThemeCompanionCandidateFromRGBA,buildAIThemeCandidateFromRGBA,AI_
 import {applyAIThemeCandidate,conceptFromDocument} from "./ai-theme-document";
 import {registerCompanionFrames} from "./ai-companion-sprites";
 import {decodeSprite} from "@/components/live-vibetv-preview";
-import {buildThemePack,validateThemeSpec} from "./theme-studio";
+import {buildThemePack,createBlankThemeSpec,validateThemeSpec} from "./theme-studio";
 import {createThemeStudioEditorState,themeStudioEditorReducer} from "@/components/theme-studio/theme-studio-editor-state";
 
 const base: AIThemeConcept={imageBase64:"fixture",imageContentType:"image/png",companions:[],style:{packName:"Forest",title:"Forest",notes:"Companions",artPrompt:"Fox",environmentPrompt:"Forest",animationMode:"four_frame",animationPrompt:"Swish",backgroundColor:"#112233",panelColor:"#112233",textColor:"#FFFFFF",sessionColor:"#FFFFFF",weeklyColor:"#FFFFFF",borderRadius:0,progressStyle:"solid"}};
@@ -127,5 +127,14 @@ describe("flexible picture layouts",()=>{
   const shown=applyAIThemeCandidate(document,asked.candidate(),'auto');
   expect(shown.spec.primitives.filter(p=>p.binding==='session')).toHaveLength(1);
   expect(applyAIThemeCandidate(shown,asked.candidate(),'auto').spec.primitives.filter(p=>p.binding==='session')).toHaveLength(1);
+ });
+ it('draws the scene into a new design of the app instead of under its black backdrop',()=>{
+  const fresh={assets:{},spec:createBlankThemeSpec(),packName:'New Theme',usage:'live' as const};
+  expect(fresh.spec.primitives).toHaveLength(1);
+  const c=fixture(1).candidate();
+  const made=applyAIThemeCandidate(fresh,c,'auto');
+  expect(made.spec.primitives[0].assetPath).toBe(ART);
+  expect(made.spec.primitives.some(p=>p.type==='rect'&&p.color==='#000000'&&p.height===240)).toBe(false);
+  expect(made.spec.primitives).toEqual(c.spec.primitives);
  });
 });

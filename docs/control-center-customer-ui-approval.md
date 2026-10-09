@@ -5468,3 +5468,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked that while the AI works, his message appears at once as a chat message at the top right with three animated dots under it, instead of the spinner with "Working…".
 - Approved customer-visible result: After Create the customer's message appears immediately as their chat message and the prompt box empties; three animated dots under it show that the AI is working (still dots with reduced motion). When the request fails or is cancelled the message leaves the chat and returns to the prompt box. A design without usage readouts that is asked to show usage again gets the standard readouts; the AI is told whether the current design shows them and keeps that unless asked.
+
+
+## 2026-10-09 — A described picture fills the display
+
+- User approval: Paul reported that "a jellyfish drifting through the sea. Fullscreen, animated." produced the standard layout with the usage readouts below and a black area where the jellyfish should be, and asked for it to be fixed: the prompt should simply have made a full-screen jellyfish.
+- Approved customer-visible result: A request that describes a picture and says nothing about usage produces a full-screen picture without the session and weekly readouts; the readouts come only when the customer asks for usage, limits, bars or similar, or when the design being refined already shows them. In the Mac and Windows app a new theme no longer hides the generated picture and figures behind its black starting background.

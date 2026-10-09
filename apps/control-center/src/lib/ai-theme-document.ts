@@ -30,7 +30,12 @@ export function applyAIThemeCandidate(
   candidate: AIThemeCandidate,
   target: "scene" | "animation" | "auto",
 ): ThemeStudioDocument {
-  if (current.spec.primitives.length === 0)
+  // A new design in the app starts as one display-filling backdrop. Drawn on
+  // top of the scene it would hide the whole picture, so it counts as empty.
+  const untouched = current.spec.primitives.every(
+    (p) => p.type === "rect" && p.x === 0 && p.y === 0 && p.width === 240 && p.height === 240 && !p.binding,
+  );
+  if (untouched)
     return {
       assets: candidate.assets,
       spec: candidate.spec,
