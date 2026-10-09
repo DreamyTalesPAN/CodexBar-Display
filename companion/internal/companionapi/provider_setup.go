@@ -518,7 +518,9 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
 			return
 		}
-		s.useBrowserCookies(providerID)
+		if !s.useBrowserCookies(w, providerID) {
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": providerSignInActionBrowser, "url": url})
 		return
 	}
@@ -536,8 +538,8 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The sign-in could not be started.", nextAction)
 		return
 	}
-	if plan.Action == providerSignInActionBrowser {
-		s.useBrowserCookies(providerID)
+	if plan.Action == providerSignInActionBrowser && !s.useBrowserCookies(w, providerID) {
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": plan.Action, "url": plan.URL})
 }
@@ -546,17 +548,21 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 // pinned to a saved cookie would never see that sign-in, so it goes back to
 // CodexBar's browser import. CodexBar 0.63.0 has no command for this (its
 // config CLI only enables, disables and stores API keys), so the Companion
-// changes that one field.
-func (s *Server) useBrowserCookies(providerID string) {
+// changes that one field. When it cannot, the sign-in reports the failure:
+// the provider would stay pinned, and checking again could never succeed.
+func (s *Server) useBrowserCookies(w http.ResponseWriter, providerID string) bool {
 	changed, err := codexbar.UseBrowserCookies(s.home, providerID)
-	if s.logf == nil {
-		return
-	}
 	if err != nil {
-		s.logf("VibeTV provider sign-in: could not switch %s to browser cookies: %v", providerID, err)
-	} else if changed {
+		if s.logf != nil {
+			s.logf("VibeTV provider sign-in: could not switch %s to browser cookies: %v", providerID, err)
+		}
+		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", providerReadinessMessage(codexbar.ProviderConfigError), providerReadinessNextAction(codexbar.ProviderConfigError))
+		return false
+	}
+	if changed && s.logf != nil {
 		s.logf("VibeTV provider sign-in: %s now reads the browser sign-in instead of a saved cookie", providerID)
 	}
+	return true
 }
 
 // providerSignInURL is the page CodexBar named in this provider's latest

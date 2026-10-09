@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -171,5 +172,46 @@ func TestExpiredSavedClaudeCookieRecoversWithTheRowButtonsAlone(t *testing.T) {
 	retry()
 	if restarts.Load() != 1 {
 		t.Fatalf("a working usage service must not be restarted again: restarts=%d", restarts.Load())
+	}
+}
+
+// When the saved cookie cannot be lifted, the provider stays pinned and no
+// later check can succeed, so the sign-in says so instead of reporting
+// success and starting three minutes of checks that cannot help.
+func TestProviderSignInReportsASavedCookieItCannotLift(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win-CodexBar keeps saved cookies in a file of its own")
+	}
+	t.Setenv("CODEXBAR_CONFIG", "")
+	server := newTestServer(t, runtimeconfig.Config{})
+	dir := filepath.Join(server.home, ".codexbar")
+	configPath := filepath.Join(dir, "config.json")
+	original := `{"providers":[{"id":"claude","cookieSource":"manual","cookieHeader":"sessionKey=expired"}]}`
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	server.providerReadinessMu.Lock()
+	server.providerReadiness = map[string]providerReadinessRecord{"claude": {
+		Status: codexbar.ProviderBrowserSignInRequired, SignInURL: "https://claude.ai/login", CheckedAt: time.Now(),
+	}}
+	server.providerReadinessMu.Unlock()
+	originalOpen := openProviderSignInFn
+	defer func() { openProviderSignInFn = originalOpen }()
+	openProviderSignInFn = func(string) error { return nil }
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=claude", nil))
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "Provider settings could not be read or saved.") {
+		t.Fatalf("expected the settings failure, got status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if raw, _ := os.ReadFile(configPath); string(raw) != original {
+		t.Fatalf("the config must be left as it was: %s", raw)
 	}
 }
