@@ -461,7 +461,9 @@ func (s *Server) hasFreshUsage(providerID string) bool {
 
 // replaceUsageService swaps the running usage service for a fresh one, then
 // collects again. "Check again" just read the provider with a fresh CodexBar,
-// so a running service that still has nothing for it is the stale part.
+// so a running service that still has nothing for it may be the stale part.
+// The supervisor replaces it only when CodexBar's config changed after it
+// started; one already running on the current config is still collecting.
 func (s *Server) replaceUsageService(providerID string) {
 	defer s.usageServiceRestarting.Store(false)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

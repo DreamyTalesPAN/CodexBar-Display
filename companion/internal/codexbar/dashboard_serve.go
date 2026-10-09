@@ -78,6 +78,10 @@ type DashboardServeSupervisor struct {
 	mu      sync.RWMutex
 	info    DashboardServeInfo
 	process *os.Process
+	// startedAt and configPath describe the running child: when it started
+	// and the CodexBar config it read then.
+	startedAt  time.Time
+	configPath string
 	// restart marks the next child exit as one Restart asked for, so the
 	// replacement starts at once instead of after the crash backoff.
 	restart bool
@@ -243,7 +247,7 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		s.setStopped(endpoint, err)
 		return err
 	}
-	s.setStarted(endpoint, cmd.Process)
+	s.setStarted(endpoint, cmd.Process, environmentValue(env, "CODEXBAR_CONFIG"))
 	if s.logf != nil {
 		s.logf("codexbar-dashboard event=child-started endpoint=%s pid=%d refreshInterval=%s\n", endpoint, cmd.Process.Pid, s.refreshInterval)
 	}
@@ -325,18 +329,28 @@ func (s *DashboardServeSupervisor) stopUnhealthyDashboardServeChild(endpoint str
 	return errors.New("unhealthy codexbar serve exited")
 }
 
-// Restart replaces the running serve with a fresh one and waits until the new
-// one answers /health. A long-running serve can keep failing a provider that a
-// fresh CodexBar reads fine: after a Mac restart it kept reporting Claude as
-// signed out until the process was replaced (2026-10-09).
+// Restart replaces the running serve when CodexBar's config changed after it
+// started, and waits until the new one answers /health. A serve keeps the
+// settings it started with: after a Mac restart it kept reporting Claude as
+// signed out once Claude's saved cookie had been switched off, until the
+// process was replaced (2026-10-09). A serve started after the latest change
+// already runs on it; a reading it has not delivered yet is a collection still
+// under way, so it keeps running.
 func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 	s.mu.Lock()
 	process := s.process
 	oldPID := s.info.PID
-	s.restart = process != nil
+	stale := process != nil && configChangedSince(s.configPath, s.startedAt)
+	s.restart = stale
 	s.mu.Unlock()
 	if process == nil {
 		return errors.New("codexbar serve is not running")
+	}
+	if !stale {
+		if s.logf != nil {
+			s.logf("codexbar-dashboard event=restart-skipped pid=%d reason=settings-unchanged\n", oldPID)
+		}
+		return nil
 	}
 	if s.logf != nil {
 		s.logf("codexbar-dashboard event=restart-requested pid=%d\n", oldPID)
@@ -356,6 +370,23 @@ func (s *DashboardServeSupervisor) Restart(ctx context.Context) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// configChangedSince reports whether the config at path was written after t.
+// A config it cannot read counts as changed, so a serve is never kept for lack
+// of proof that it is current.
+func configChangedSince(path string, t time.Time) bool {
+	info, err := os.Stat(path)
+	return err != nil || info.ModTime().After(t)
+}
+
+func environmentValue(env []string, key string) string {
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, key+"="); ok {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint string) bool {
@@ -381,11 +412,13 @@ func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint str
 	return true
 }
 
-func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Process) {
+func (s *DashboardServeSupervisor) setStarted(endpoint string, process *os.Process, configPath string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.info.Endpoint = endpoint
 	s.process = process
+	s.startedAt = time.Now()
+	s.configPath = configPath
 	s.info.PID = process.Pid
 	s.info.Running = true
 	s.info.Healthy = false

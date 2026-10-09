@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -148,9 +149,28 @@ func TestDashboardServeSupervisorRestartsCrashedChildWithBackoff(t *testing.T) {
 }
 
 // "Check again" replaces a serve that kept failing a provider a fresh CodexBar
-// reads fine (Mac, 2026-10-09). The replacement starts at once, not after the
-// crash backoff, and Restart returns only once it answers.
+// reads fine (Mac, 2026-10-09) once CodexBar's config changed after the serve
+// started. A serve already running on the current config keeps running. The
+// replacement starts at once, not after the crash backoff, and Restart
+// returns only once it answers.
 func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("APPDATA", configDir)
+	configPath := filepath.Join(configDir, "CodexBar", "settings.json")
+	if runtime.GOOS != "windows" {
+		configPath = filepath.Join(configDir, "config.json")
+		t.Setenv("CODEXBAR_CONFIG", configPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("{\"enabled_providers\":[]}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeStart := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(configPath, beforeStart, beforeStart); err != nil {
+		t.Fatal(err)
+	}
 	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
 	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
 	supervisor.backoffBase = time.Hour
@@ -169,6 +189,17 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	first := waitForDashboardServeHealthy(t, supervisor)
 	restartCtx, cancelRestart := context.WithTimeout(context.Background(), dashboardServeTestWait)
 	defer cancelRestart()
+	if err := supervisor.Restart(restartCtx); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if unchanged := supervisor.Info(); unchanged.PID != first.PID {
+		t.Fatalf("a serve running on the current config must keep running, first=%#v now=%#v", first, unchanged)
+	}
+
+	changed := time.Now().Add(time.Minute)
+	if err := os.Chtimes(configPath, changed, changed); err != nil {
+		t.Fatal(err)
+	}
 	if err := supervisor.Restart(restartCtx); err != nil {
 		t.Fatalf("restart: %v", err)
 	}

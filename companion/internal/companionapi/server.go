@@ -192,7 +192,8 @@ type Options struct {
 	WakeDisplayStream    func()
 	RenderDisplayStream  func()
 	// RestartUsageService replaces the running CodexBar serve with a fresh
-	// one and waits until it answers. Nil when no serve is supervised.
+	// one when CodexBar's config changed after it started, and waits until it
+	// answers. Nil when no serve is supervised.
 	RestartUsageService func(context.Context) error
 	// Supplied only by the process supervising the actual worker. Running alone
 	// never establishes frame freshness or device readiness.
