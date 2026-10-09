@@ -25,6 +25,7 @@ using codexbar_display::themespec::AnyAnimatedCompiledPrimitiveOverlaps;
 using codexbar_display::themespec::Bounds;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
 using codexbar_display::themespec::RenderCompiledThemeSpecAnimatedPrimitives;
+using codexbar_display::themespec::RenderCompiledThemeSpecOverAnimatedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecRegionPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecStaticPrimitives;
@@ -2158,6 +2159,37 @@ void testCompiledThemeSpecSeparatesGifAssetsFromAnimatedSprites() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testOverAnimatedPassRedrawsOnlyWhatLiesOnTheSprite() {
+  CompiledThemeSpec scene;
+  JsonDocument doc;
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "p": [
+      {"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/bg.cbi"},
+      {"t":"tx","x":100,"y":150,"v":"UNDER","s":1},
+      {"t":"sp","x":90,"y":140,"w":64,"h":64,"a":"/themes/u/pet.cba"},
+      {"t":"tx","x":100,"y":160,"v":"OVER","s":1},
+      {"t":"tx","x":4,"y":4,"v":"AWAY","s":1}
+    ]
+  })JSON";
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+
+  RecordingSink sink;
+  RenderCompiledThemeSpecOverAnimatedPrimitives(scene, testFrame(), sink);
+  TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(90, sink.commands[0].x);
+  TEST_ASSERT_EQUAL_INT(140, sink.commands[0].y);
+  TEST_ASSERT_EQUAL_INT(64, sink.commands[0].width);
+  TEST_ASSERT_EQUAL_INT(64, sink.commands[0].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("OVER", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[2].type));
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testChangedPrimitivePassReplaysDirtyRegion() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -4245,6 +4277,7 @@ int main() {
   RUN_TEST(testStaticPrimitivePassSkipsAnimatedAssets);
   RUN_TEST(testStaticPrimitivePassKeepsFullScreenSpriteBehindCenteredLabel);
   RUN_TEST(testCompiledThemeSpecSeparatesGifAssetsFromAnimatedSprites);
+  RUN_TEST(testOverAnimatedPassRedrawsOnlyWhatLiesOnTheSprite);
   RUN_TEST(testChangedPrimitivePassReplaysDirtyRegion);
   RUN_TEST(testChangedPrimitivePassReportsSkippedAnimatedOverlap);
   RUN_TEST(testChangedPrimitivePassDoesNotBridgeUnchangedGif);

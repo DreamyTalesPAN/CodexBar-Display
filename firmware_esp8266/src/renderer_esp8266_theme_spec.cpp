@@ -1425,7 +1425,13 @@ bool TickThemeSpecGifs() {
 
   ThemeSpecSink sink(false, SpriteRenderMode::AnimatedOnly, true);
   cbaRenderJobInProgress = false;
+  const unsigned long framesBefore = cbaCompletedFrames;
   const bool ok = themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), sink);
+  if (cbaCompletedFrames != framesBefore) {
+    // A new sprite frame just covered whatever lies on top of the sprite.
+    ThemeSpecSink over(false, SpriteRenderMode::StaticOnly);
+    themespec::RenderCompiledThemeSpecOverAnimatedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), over);
+  }
   nextThemeSpecAnimatedTickAtMs = now +
       (cbaRenderJobInProgress ? kThemeSpecAnimatedResumeTickMs : kThemeSpecAnimatedTickMs);
   return ok;

@@ -2063,6 +2063,36 @@ inline bool RenderCompiledThemeSpecAnimatedPrimitives(const CompiledThemeSpec& s
   return rendered;
 }
 
+// An animated sprite replaces its whole rectangle with every frame. Draw again,
+// inside that rectangle only, whatever the scene places on top of it, so a
+// label or a usage bar over a moving figure stays on the display.
+inline void RenderCompiledThemeSpecOverAnimatedPrimitives(const CompiledThemeSpec& scene, const FrameData& frame, Sink& sink) {
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    Bounds animated;
+    if (!CompiledPrimitiveIsAnimated(scene, scene.primitives[i], frame) ||
+        !CompiledPrimitiveBounds(scene, scene.primitives[i], frame, false, animated)) {
+      continue;
+    }
+    bool clipped = false;
+    for (size_t j = i + 1; j < scene.primitiveCount; ++j) {
+      Bounds above;
+      if (CompiledPrimitiveIsAnimated(scene, scene.primitives[j], frame) ||
+          !CompiledPrimitiveBounds(scene, scene.primitives[j], frame, false, above) ||
+          !BoundsOverlap(animated, above)) {
+        continue;
+      }
+      if (!clipped) {
+        sink.BeginClip(animated.x, animated.y, animated.width, animated.height);
+        clipped = true;
+      }
+      DrawCompiledPrimitive(scene, scene.primitives[j], frame, sink);
+    }
+    if (clipped) {
+      sink.EndClip();
+    }
+  }
+}
+
 inline bool RenderCompiledThemeSpecRegionPrimitives(
     const CompiledThemeSpec& scene,
     const FrameData& frame,
