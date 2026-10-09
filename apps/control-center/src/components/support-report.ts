@@ -96,8 +96,15 @@ function homeFolderAsTilde(
   if (!home) {
     return (value) => value;
   }
+  // A separator or end finishes a path. Also keep the report's existing
+  // sentence and key=value forms without consuming a longer account name.
+  const homeEnd = String.raw`(?=$|[\\/]|[.!?,;:)}\]](?:\s|$)|\s+\w+=)`;
   if (home.startsWith("/")) {
-    return (value) => value.split(home).join("~");
+    const exactHome = new RegExp(
+      home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + homeEnd,
+      "g",
+    );
+    return (value) => value.replace(exactHome, "~");
   }
   // Windows takes either slash and any case for the same folder, and a line
   // printed as JSON doubles the backslashes.
@@ -105,7 +112,7 @@ function homeFolderAsTilde(
     home
       .split(/[\\/]/)
       .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-      .join(String.raw`(?:\\\\|[\\/])`),
+      .join(String.raw`(?:\\\\|[\\/])`) + homeEnd,
     "gi",
   );
   return (value) => value.replace(spellings, "~");

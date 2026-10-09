@@ -6394,6 +6394,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No new control. Settings › Setup: below `Run setup again` stands `Connect this Mac to another VibeTV.` (`this computer` on Windows), the line that stood under the heading `Setup` before; it is no longer there. Below `Reset to factory settings` stands `VibeTV forgets its WiFi details, pairing, settings and themes.`, the first part of the sentence its dialog asks with. The two buttons stay side by side in one row, as Paul asked on 2026-10-08, each above its line, and the second with its line wraps below the first on a narrow window. A VibeTV on WiFi has no reset button and no line for it. Screen readers read each line with its button. The dialog `Reset VibeTV to factory settings?` and the setup question are unchanged.
 - Scope: the Setup block and the section heading helper in `apps/control-center/src/components/settings-screen.tsx`, the test in `settings-screen.test.tsx`, and this approval record. The customer-flow script asserts neither line. Checked with unit tests only; how the two columns sit and wrap was not seen in the built app.
 - What's new: none — helper lines only
+
 ## 2026-10-09 — A cleaner What's new dialog
 
 - User approval: Paul shared a screenshot of the built dialog and asked for a cleaner design on 2026-10-09.
@@ -6407,3 +6408,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Links remain beside their entries and the footer keeps its standard desktop button layout. A short desktop window still scrolls only the update list.
 - Scope: layout classes in `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record.
 - What's new: none — this simplifies the design of the existing notice
+
+## 2026-10-09 — Support report keeps other accounts' paths intact (#576)
+
+- User approval: Paul asked in this chat to fix valid Codex bug review comments on PR #576. This corrects the approved 2026-10-09 home-folder rule above, which says other folders under `/Users` stay unchanged.
+- Approved customer-visible result: In the copied or downloaded support report, the computer's known home folder still reads `~` in paths and the existing diagnostic sentence forms. A different account whose name merely starts the same way stays intact: for home `/Users/Jane Doe`, `/Users/Jane Doer/file` and `/Users/Jane Doe Smith/file` remain exactly those paths; the same holds for Windows and network-share paths. No screen wording or action changes.
+- Scope: `apps/control-center/src/components/support-report.ts`, `support-report.test.ts`, and this approval record; checked with unit tests and lint.
+- What's new: none — a correction to support report redaction

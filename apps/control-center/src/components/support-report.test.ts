@@ -283,6 +283,8 @@ describe("support report home folder", () => {
       "Could not read /Users/Jane Doe. Try again.",
       "/Users/Jane Doe",
       "cwd=/Users/Jane Doe cmd=/Users/Jane Doe/x, {/Users/Jane Doe/y}",
+      "/Users/Jane Doer/file",
+      "/Users/Jane Doe Smith/file",
       ...untouched,
     ]);
 
@@ -297,10 +299,12 @@ describe("support report home folder", () => {
       "Could not read ~. Try again.",
       "~",
       "cwd=~ cmd=~/x, {~/y}",
+      "/Users/Jane Doer/file",
+      "/Users/Jane Doe Smith/file",
       ...untouched,
     ]);
     expect(out.timeline).toEqual(timeline);
-    expect(JSON.stringify(out)).not.toContain("Jane");
+    expect(JSON.stringify(out)).not.toContain("/Users/Jane Doe/");
   });
 
   it("takes the home folder from the settings path when the usage engine is installed for everyone", async () => {
@@ -335,6 +339,8 @@ describe("support report home folder", () => {
         // A line the engine printed as JSON keeps its doubled backslashes.
         '{"path":"C:\\\\Users\\\\Jane Doe\\\\AppData\\\\x.json"}',
         "C:\\Users\\Jane Doe",
+        "C:\\Users\\Jane Doer\\file",
+        "C:\\Users\\Jane Doe Smith\\file",
         "C:\\Users\\Public\\Documents\\x",
         "D:\\Users\\Jane Doe\\x",
       ],
@@ -345,6 +351,8 @@ describe("support report home folder", () => {
       "open ~/AppData/x.json failed",
       '{"path":"~\\\\AppData\\\\x.json"}',
       "~",
+      "C:\\Users\\Jane Doer\\file",
+      "C:\\Users\\Jane Doe Smith\\file",
       "C:\\Users\\Public\\Documents\\x",
       "D:\\Users\\Jane Doe\\x",
     ]);
@@ -353,10 +361,10 @@ describe("support report home folder", () => {
   it("does the same for a home folder on a share", async () => {
     const { out, details } = await exported(
       { usageEngine: { path: "\\\\fileserver\\Users\\Jane Doe\\AppData\\Local\\VibeTV\\codexbar.exe" } },
-      ["Cannot read \\\\fileserver\\Users\\Jane Doe\\x.json now"],
+      ["Cannot read \\\\fileserver\\Users\\Jane Doe\\x.json now", "\\\\fileserver\\Users\\Jane Doer\\x.json"],
     );
     expect(out.usageEngine.path).toBe("~\\AppData\\Local\\VibeTV\\codexbar.exe");
-    expect(details).toEqual(["Cannot read ~\\x.json now"]);
+    expect(details).toEqual(["Cannot read ~\\x.json now", "\\\\fileserver\\Users\\Jane Doer\\x.json"]);
   });
 
   it("changes nothing when the report names no home folder", async () => {
