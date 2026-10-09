@@ -5190,3 +5190,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul authorized the autonomous VibeTV issue nightshift on 2026-10-09 and expressly delegated implementation decisions ("DU ENTSCHEIDEST ALLES" and "du darfst alles machen, nutzen, usw usw"). He did not review this exact test assertion; Codex aligned it with the customer-visible sentence recorded above under that delegation.
 - Approved customer-visible result: The provider-recovery screen contains the same sentence recorded above: "VibeTV includes CodexBar to read your AI usage. Follow each provider's sign-in or permission instructions below." No additional customer text or control changes in this follow-up.
 - Scope: Replace the old customer-flow assertion forbidding the word CodexBar in `apps/control-center/scripts/test-customer-flows.mjs`; this record applies to the pull-request branch only, not merge or release.
+
+## 2026-10-09 — Confirm before running setup again (#546)
+
+- User approval: Paul delegated customer-visible decisions for the 2026-10-09 night shift to the team. He has not reviewed this exact dialog wording.
+- Approved customer-visible result: In Settings, clicking `Run setup again` opens a confirmation dialog titled `Run setup again?` with `You’ll choose a VibeTV and display mode again. Nothing on VibeTV is erased.` `Cancel` closes it without resetting setup. The dialog’s `Run setup again` button starts the existing setup reset. The factory-reset dialog and other setup entry points are unchanged.
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, the interaction test in `settings-connection.test.tsx`, and this approval record. This is approval to prepare the branch, not to merge, release, or write to a VibeTV.
