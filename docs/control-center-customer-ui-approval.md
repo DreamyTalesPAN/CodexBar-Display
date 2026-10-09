@@ -5529,3 +5529,8 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Marcus requested fixing fullscreen transitions while preserving customer additions. This follow-up covers the verified duplicate-panel finding within that same change.
 - Approved customer-visible result: A customer-colored usage background survives the fullscreen round trip without an extra hidden panel, so a valid 32-element design remains saveable and sendable.
+
+## 2026-10-09: Remove the standard background together with hidden readouts
+
+- User approval: Marcus requested the design-preservation fixes. This follow-up corrects the verified leftover standard panel in the same usage/layout transition path.
+- Approved customer-visible result: Asking to hide usage removes its unchanged standard background even when picture size stays the same. Customer-customized backgrounds remain intact.

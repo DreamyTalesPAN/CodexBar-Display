@@ -93,7 +93,7 @@ describe("flexible picture layouts",()=>{
   const plain=fixture(1);Object.assign(plain.concept,{hideUsage:true});
   const kept=applyAIThemeCandidate(document,plain.candidate(),'auto');
   expect(kept.spec.primitives.some(p=>p.binding==='usageSlot1Percent')).toBe(false);
-  expect(kept.spec.primitives.some(p=>p.type==='rect')).toBe(true);
+  expect(kept.spec.primitives.some(p=>p.type==='rect')).toBe(false);
  });
  it('keeps manual labels, images and their layers through fullscreen and back',()=>{
   const current=fixture(1).candidate();

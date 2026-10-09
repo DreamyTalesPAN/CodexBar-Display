@@ -107,7 +107,7 @@ export function applyAIThemeCandidate(
     const oldPaths = new Set(current.spec.primitives.filter((p) => managed(p.assetPath)).map((p) => p.assetPath));
     const newLayers = generated.filter((p) => !oldPaths.has(p.assetPath));
     next.spec.primitives = next.spec.primitives.flatMap((p, i) => {
-      if (dropped.has(i) || (layoutChanged && isPanel(p))) return [];
+      if (dropped.has(i) || ((layoutChanged || candidate.hideUsage) && isPanel(p))) return [];
       if (!managed(p.assetPath)) return [p];
       let replacement = generated.find((q) => q.assetPath === p.assetPath);
       // An animation can become companions (or a scene loop) with new paths.
