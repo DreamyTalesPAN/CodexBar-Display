@@ -20,8 +20,10 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 
 ## Setup Flow Rules
 
-1. The hosted website owns exactly one customer action: download the verified
-   Mac App DMG. It never owns VibeTV WiFi, discovery, pairing, or local checks.
+1. The hosted website offers the verified app download. A valid theme install
+   link may first open that theme in the installed app, with the download as a
+   fallback. The hosted website never owns VibeTV WiFi, discovery, pairing, or
+   local checks.
 2. The installed Mac App never asks the customer to download itself during
    normal onboarding. A fresh setup searches the current WiFi for VibeTVs
    before showing setup instructions.
