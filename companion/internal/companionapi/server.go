@@ -889,7 +889,6 @@ type usageProviderInfo struct {
 	CostSettled           bool                     `json:"costSettled,omitempty"`
 	TokenUsageReady       bool                     `json:"-"`
 	TokenStatsCollectedAt time.Time                `json:"-"`
-	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
 	UsageOverTime         []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
 }
 
@@ -899,6 +898,20 @@ type usageWindowInfo struct {
 	UsedPercent   int    `json:"usedPercent"`
 	ResetSec      int64  `json:"resetSecs,omitempty"`
 	WindowMinutes int    `json:"windowMinutes,omitempty"`
+	// Pace is absent when the usage engine sent none for this window.
+	Pace *usageWindowPaceInfo `json:"pace,omitempty"`
+}
+
+// usageWindowPaceInfo is the usage engine's pace for one window, as the device
+// frame carries it (protocol.UsagePace). ETASeconds counts from collectedAt and
+// is set only when Lasts is false. ExpectedPercent is where the window's
+// percentage would stand on pace, in the same sense (used or remaining) as the
+// window's UsedPercent.
+type usageWindowPaceInfo struct {
+	State           string `json:"state"`
+	Lasts           *bool  `json:"lasts,omitempty"`
+	ETASeconds      int64  `json:"etaSeconds,omitempty"`
+	ExpectedPercent int    `json:"expectedPercent"`
 }
 
 type usageStatusInfo struct {
@@ -943,16 +956,6 @@ type usageCostModelInfo struct {
 	Name        string  `json:"name"`
 	TotalTokens int64   `json:"totalTokens,omitempty"`
 	CostUSD     float64 `json:"costUSD,omitempty"`
-}
-
-type usagePaceInfo struct {
-	Window              string `json:"window"`
-	Stage               string `json:"stage,omitempty"`
-	DeltaPercent        int    `json:"deltaPercent,omitempty"`
-	ExpectedUsedPercent int    `json:"expectedUsedPercent,omitempty"`
-	WillLastToReset     bool   `json:"willLastToReset"`
-	ETASeconds          int64  `json:"etaSeconds,omitempty"`
-	Summary             string `json:"summary,omitempty"`
 }
 
 type usageOverTimePointInfo struct {
@@ -2970,7 +2973,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
-		Windows:               usageWindowsFromMeta(snapshot.Meta),
+		Windows:               usageWindowsFromMeta(snapshot.Meta, snapshot.Stale),
 		Status:                usageStatusFromMeta(snapshot.Meta),
 		Credits:               usageCreditsFromMeta(snapshot.Meta),
 		ResetCredits:          usageResetCreditsFromMeta(snapshot.Meta),
@@ -2978,7 +2981,6 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		CostSettled:           snapshot.TokenHistorySettled,
 		TokenUsageReady:       !snapshot.TokenStatsCollectedAt.IsZero(),
 		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
-		Pace:                  usagePaceFromMeta(snapshot.Meta),
 		UsageOverTime:         usageOverTimeFromMeta(snapshot.Meta),
 	}, true
 }
@@ -3002,7 +3004,9 @@ func snapshotHasUsableUsage(frame protocol.Frame, meta codexbar.ProviderUsageMet
 		len(frame.UsageSlots) > 0
 }
 
-func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
+// A stale reading keeps its windows and loses their pace: the engine paced a
+// window against its reset, as it stood when the reading was fresh.
+func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta, stale bool) []usageWindowInfo {
 	if len(meta.Windows) == 0 {
 		return nil
 	}
@@ -3013,13 +3017,25 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 		if id == "" || label == "" {
 			continue
 		}
-		out = append(out, usageWindowInfo{
+		info := usageWindowInfo{
 			ID:            id,
 			Label:         label,
 			UsedPercent:   clampUsagePercent(window.UsedPercent),
 			ResetSec:      window.ResetSec,
 			WindowMinutes: window.WindowMinutes,
-		})
+		}
+		if pace, eta := codexbar.UsageWindowPace(meta.Pace, window.ID); !stale && window.ResetSec > 0 && pace.State != "" {
+			info.Pace = &usageWindowPaceInfo{
+				State: pace.State,
+				Lasts: pace.Lasts,
+				// CodexBar's delta is used minus expected.
+				ExpectedPercent: clampUsagePercent(window.UsedPercent - pace.Delta),
+			}
+			if pace.Lasts != nil && !*pace.Lasts {
+				info.Pace.ETASeconds = eta
+			}
+		}
+		out = append(out, info)
 	}
 	if len(out) == 0 {
 		return nil
@@ -3134,32 +3150,6 @@ func usageCostDaysFromMeta(days []codexbar.ProviderCostDay) []usageCostDayInfo {
 	return out
 }
 
-func usagePaceFromMeta(meta codexbar.ProviderUsageMeta) []usagePaceInfo {
-	if len(meta.Pace) == 0 {
-		return nil
-	}
-	out := make([]usagePaceInfo, 0, len(meta.Pace))
-	for _, pace := range meta.Pace {
-		window := strings.TrimSpace(strings.ToLower(pace.Window))
-		if window == "" {
-			continue
-		}
-		out = append(out, usagePaceInfo{
-			Window:              window,
-			Stage:               strings.TrimSpace(pace.Stage),
-			DeltaPercent:        pace.DeltaPercent,
-			ExpectedUsedPercent: clampUsagePercent(pace.ExpectedUsedPercent),
-			WillLastToReset:     pace.WillLastToReset,
-			ETASeconds:          pace.ETASeconds,
-			Summary:             strings.TrimSpace(pace.Summary),
-		})
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 func usageOverTimeFromMeta(meta codexbar.ProviderUsageMeta) []usageOverTimePointInfo {
 	if len(meta.OverTime) == 0 {
 		return nil
@@ -3254,6 +3244,11 @@ func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) 
 		provider.Weekly = 100 - clampUsagePercent(provider.Weekly)
 		for i := range provider.Windows {
 			provider.Windows[i].UsedPercent = 100 - clampUsagePercent(provider.Windows[i].UsedPercent)
+			if pace := provider.Windows[i].Pace; pace != nil {
+				flipped := *pace
+				flipped.ExpectedPercent = 100 - clampUsagePercent(pace.ExpectedPercent)
+				provider.Windows[i].Pace = &flipped
+			}
 		}
 	}
 	provider.UsageMode = usageModeOrDefault(targetMode)

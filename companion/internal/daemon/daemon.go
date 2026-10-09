@@ -1256,7 +1256,12 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
-	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
+	var display *runtimeconfig.ProviderDisplayConfig
+	if cfg, ok := loadRuntimeConfig(deps); ok {
+		display = cfg.ProviderDisplay
+	}
+	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt, display)
+	result.frame = applyDisplayLimits(result.frame, allProviders, display, collectedAt)
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
@@ -1311,7 +1316,7 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 		state.providerDisplayFallback = ""
 	}
 	if state != nil && state.hasLastGood {
-		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
+		if !providerDisplayShowsProvider(cfg.ProviderDisplay, state.lastGood.Provider) {
 			state.lastGood = protocol.Frame{}
 			state.lastGoodAt = time.Time{}
 			state.hasLastGood = false
@@ -1322,6 +1327,11 @@ func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.Par
 				state.selector.SetCurrentProvider("")
 			}
 		}
+	}
+	if cfg.ProviderDisplay.Mode == providerDisplayModePair {
+		// Two at once shows the current member alone while the other has no
+		// current reading, so the selection must not settle on that other one.
+		return preferAvailableProviders(filtered)
 	}
 	return filtered
 }
@@ -1371,8 +1381,8 @@ func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.Parse
 // of resetBasisAt — the selected frame's basis — because ApplyResetTrust later
 // re-anchors the whole frame from exactly that instant. Stale or unavailable
 // providers stay out: a countdown the collector cannot vouch for must not tick
-// on the customer's screen.
-func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.Time) []protocol.UsageSlot {
+// on the customer's screen. Windows the customer took off VibeTV stay out too.
+func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.Time, display *runtimeconfig.ProviderDisplayConfig) []protocol.UsageSlot {
 	var slots []protocol.UsageSlot
 	for _, provider := range allProviders {
 		if provider.Stale || provider.Frame.UsageUnavailable {
@@ -1380,7 +1390,7 @@ func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.T
 		}
 		var soonest int64
 		var percent int
-		for _, window := range provider.Frame.UsageWindows {
+		for _, window := range visibleUsageWindows(provider.Frame.Provider, provider.Frame.UsageWindows, display) {
 			reset := window.ResetSec
 			if reset > 0 && !provider.CollectedAt.IsZero() && !resetBasisAt.IsZero() {
 				reset -= int64(resetBasisAt.Sub(provider.CollectedAt) / time.Second)
@@ -1573,6 +1583,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		// Firmware without provider-slots-v1 would carry these rows as dead
 		// wire bytes against its frame budget.
 		frame.ProviderSlots = nil
+	}
+	if !caps.SupportsUsagePaceV1 {
+		frame = frame.WithoutUsagePace()
 	}
 	now := deps.now()
 	frame = attachClockFields(frame, now)
@@ -1946,8 +1959,16 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	if state == nil || !state.hasLastGood {
 		return
 	}
-	enabled, known := collector.providerEnabledByInventory(state.lastGood.Provider)
-	if !known || enabled {
+	// A Two at once frame goes as soon as either member is switched off; the
+	// pair itself is never an inventory entry.
+	disabled := false
+	for _, member := range frameProviderMembers(state.lastGood.Provider) {
+		if enabled, known := collector.providerEnabledByInventory(member); known && !enabled {
+			disabled = true
+			break
+		}
+	}
+	if !disabled {
 		return
 	}
 
@@ -1985,10 +2006,8 @@ func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeD
 	}
 	state.providerDisplayFallback = ""
 	provider := normalizeProviderKey(state.lastGood.Provider)
-	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
-		if normalizeProviderKey(providerID) == provider {
-			return
-		}
+	if providerDisplayShowsProvider(cfg.ProviderDisplay, provider) {
+		return
 	}
 
 	state.lastGood = protocol.Frame{}
@@ -2024,8 +2043,14 @@ func invalidateLastGoodTerminal(state *runtimeState, providers []codexbar.Parsed
 		return
 	}
 	provider := normalizeProviderKey(state.lastGood.Provider)
+	// A Two at once frame names both providers ("claude+codex"); it is void
+	// as soon as either of them is.
+	members := map[string]bool{}
+	for _, member := range frameProviderMembers(provider) {
+		members[member] = true
+	}
 	for _, parsed := range providers {
-		if !parsed.Terminal || normalizeProviderKey(parsed.Provider) != provider {
+		if !parsed.Terminal || !members[normalizeProviderKey(parsed.Provider)] {
 			continue
 		}
 		state.lastGood = protocol.Frame{}
@@ -2896,6 +2921,17 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		}
 		frame.ProviderSlots = nil
 	}
+
+	// Pace only qualifies its window, so the window outlives its pace.
+	noPace := frame.WithoutUsagePace()
+	line, err = noPace.MarshalNormalizedLine()
+	if err != nil {
+		return nil, protocol.Frame{}, err
+	}
+	if len(line) <= maxBytes {
+		return line, noPace, nil
+	}
+	frame = noPace
 
 	usageWindowsActive := len(frame.UsageWindows) > 0
 	usageCount := len(frame.UsageWindows)

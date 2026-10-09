@@ -502,12 +502,14 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	missingProviderAssets := isMissingUsageCapabilityError(err, protocol.FeatureProviderAssetsV1)
 	missingColorStops := isMissingUsageCapabilityError(err, protocol.FeatureColorStopsV1)
 	missingTextValign := isMissingUsageCapabilityError(err, protocol.FeatureTextValignV1)
+	missingUsagePace := isMissingUsageCapabilityError(err, protocol.FeatureUsagePaceV1)
 	if (!missingSlots || caps.SupportsUsageSlotsV1) &&
 		(!missingWindows || caps.SupportsUsageWindowsV1) &&
 		(!missingProviderSlots || caps.SupportsProviderSlotsV1) &&
 		(!missingProviderAssets || caps.SupportsProviderAssetsV1) &&
 		(!missingColorStops || caps.SupportsColorStopsV1) &&
-		(!missingTextValign || caps.SupportsTextValignV1) {
+		(!missingTextValign || caps.SupportsTextValignV1) &&
+		(!missingUsagePace || caps.SupportsUsagePaceV1) {
 		return false
 	}
 	updatedCaps := caps
@@ -517,6 +519,7 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	updatedCaps.SupportsProviderAssetsV1 = true
 	updatedCaps.SupportsColorStopsV1 = true
 	updatedCaps.SupportsTextValignV1 = true
+	updatedCaps.SupportsUsagePaceV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 
@@ -622,6 +625,9 @@ func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, 
 	frame.Theme = ""
 	frame.ThemeSpec = nil
 	frame.ConfirmClearThemeSpec = false
+	// These frames are not trimmed to the device budget like the stream's,
+	// so they carry no pace (#412); the next streamed frame brings it.
+	frame = frame.WithoutUsagePace()
 	line, err := frame.MarshalLine()
 	if err != nil {
 		return fmt.Errorf("build live frame: %w", err)
@@ -653,6 +659,9 @@ func sendClearThemeSpecFrame(ctx context.Context, wifi transportlayer.WiFiTransp
 	frame.Theme = ""
 	frame.ThemeSpec = json.RawMessage("null")
 	frame.ConfirmClearThemeSpec = true
+	// These frames are not trimmed to the device budget like the stream's,
+	// so they carry no pace (#412); the next streamed frame brings it.
+	frame = frame.WithoutUsagePace()
 	line, err := frame.MarshalLine()
 	if err != nil {
 		return fmt.Errorf("build clear-theme frame: %w", err)

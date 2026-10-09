@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { copyForHost } from "@/lib/customer-platform";
 import type {
@@ -45,6 +46,7 @@ import type {
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
+  UsageWindowPace,
 } from "./control-center-types";
 
 type UsageScreenProps = {
@@ -447,6 +449,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         {provider.windows.map((window) => (
           <UsageWindowBar
             key={window.id}
+            etaSecs={window.pace?.etaSeconds ?? 0}
             mode={provider.usageMode}
             unavailable={provider.usageUnavailable}
             unavailableDetail={unavailableDetail}
@@ -585,11 +588,13 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
 }
 
 function UsageWindowBar({
+  etaSecs,
   mode,
   unavailable,
   unavailableDetail,
   window,
 }: {
+  etaSecs: number;
   mode?: string;
   unavailable?: boolean;
   unavailableDetail?: string;
@@ -597,18 +602,15 @@ function UsageWindowBar({
 }) {
   const percent = clampPercent(window.usedPercent);
   const detail = unavailableDetail || "Usage limits unavailable.";
-  return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="font-bold text-[#1B1B1B]">
-          {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
-        </span>
-        {!unavailable && window.resetSecs ? (
-          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
-            {formatReset(window.resetSecs)}
-          </span>
-        ) : null}
-      </div>
+  // The engine paced this window against its reset: no pace once that has
+  // passed, or while the reading is unavailable.
+  const resetSecs = window.resetSecs ?? 0;
+  const pace = !unavailable && resetSecs > 0 ? window.pace : undefined;
+  const paceWord = pace ? usagePaceWord(pace) : "";
+  const paceHint = pace && paceWord ? usagePaceHint(pace, etaSecs) : "";
+  const mark = paceWord ? pace?.expectedPercent : undefined;
+  const bar = (
+    <div className="relative py-1">
       <Progress
         aria-label={
           unavailable
@@ -618,11 +620,99 @@ function UsageWindowBar({
         className="h-2"
         value={unavailable ? 0 : percent}
       />
+      {mark === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className="absolute top-0 h-4 w-[3px] -translate-x-1/2 rounded-full bg-[#1B1B1B] ring-2 ring-card"
+          data-testid="usage-pace-mark"
+          style={{ left: `${clampPercent(mark)}%` }}
+        />
+      )}
+    </div>
+  );
+  const paceLine = paceWord ? (
+    <p
+      className={cn(
+        "text-xs font-semibold",
+        pace?.state === "deficit" ? "text-[#6A5B00]" : pace?.state === "reserve" ? "text-[#3B5200]" : "text-[#444933]",
+      )}
+    >
+      {paceWord}
+    </p>
+  ) : null;
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+        <span className="font-bold text-[#1B1B1B]">
+          {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
+        </span>
+        {!unavailable && resetSecs ? (
+          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
+            {formatReset(resetSecs)}
+          </span>
+        ) : null}
+      </div>
+      {paceHint ? (
+        // The app's layout has a provider; the card also renders without it.
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40" tabIndex={0}>
+                {bar}
+                {paceLine}
+                <span className="sr-only">{paceHint}</span>
+              </div>
+            </TooltipTrigger>
+            {/* Below, so the limit's own name and reset stay readable. */}
+            <TooltipContent aria-hidden="true" side="bottom">
+              {paceHint}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        <>
+          {bar}
+          {paceLine}
+        </>
+      )}
       {unavailable ? (
-        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
+        <p className="text-xs font-semibold text-[#6A5B00]">{detail}</p>
       ) : null}
     </div>
   );
+}
+
+/**
+ * The usage engine's pace of a window in one word pair: under, on or over
+ * pace. A state the engine does not define says nothing.
+ */
+export function usagePaceWord(pace: UsageWindowPace): string {
+  switch (pace.state) {
+    case "reserve":
+      return "Under pace";
+    case "on pace":
+      return "On pace";
+    case "deficit":
+      return "Over pace";
+    default:
+      return "";
+  }
+}
+
+/**
+ * How long the limit lasts at this pace, shown on hover. The page adds
+ * nothing: without the engine's "lasts until reset" it promises none.
+ */
+export function usagePaceHint(pace: UsageWindowPace, etaSecs: number): string {
+  if (pace.lasts === true) {
+    return "At this pace your limit lasts until the reset.";
+  }
+  if (pace.lasts === false) {
+    return etaSecs >= 60
+      ? `At this pace your limit runs out in ${formatDurationShort(etaSecs)}, before the reset.`
+      : "At this pace your limit runs out before the reset.";
+  }
+  return "";
 }
 
 function UsageEmptyState({
@@ -866,17 +956,21 @@ export function formatReset(seconds?: number): string {
   if (!seconds || seconds <= 0) {
     return "Reset unknown";
   }
+  return `Reset in ${formatDurationShort(seconds)}`;
+}
+
+function formatDurationShort(seconds: number): string {
   const totalMinutes = Math.ceil(seconds / 60);
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
   const minutes = totalMinutes % 60;
   if (days > 0) {
-    return `Reset in ${days}d ${hours}h`;
+    return `${days}d ${hours}h`;
   }
   if (hours > 0) {
-    return `Reset in ${hours}h ${minutes}m`;
+    return `${hours}h ${minutes}m`;
   }
-  return `Reset in ${minutes}m`;
+  return `${minutes}m`;
 }
 
 function formatTokenCount(value: number): string {

@@ -219,7 +219,7 @@ export function SetupPreviewGallery() {
     candidateKey(CANDIDATES[0]),
   );
   const [connectPhase, setConnectPhase] = useState<ConnectPhase>("idle");
-  const [displayMode, setDisplayMode] = useState<"automatic" | "fixed">(
+  const [displayMode, setDisplayMode] = useState<"automatic" | "fixed" | "pair">(
     "automatic",
   );
   const [displayProvider, setDisplayProvider] = useState<string | null>(null);

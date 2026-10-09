@@ -29,8 +29,12 @@ constexpr size_t kUsageWindowPercentWireDigits = 3;
 constexpr size_t kUsageWindowResetSecsWireDigits = 19;
 constexpr size_t kUsageWindowObjectSyntaxBytes =
     sizeof("{\"id\":\"\",\"label\":\"\",\"percent\":,\"resetSecs\":}") - 1;
+// usage-pace-v1: every state token has seven bytes.
+constexpr size_t kUsageWindowPaceWireBytes =
+    sizeof(",\"pace\":{\"delta\":-100,\"state\":\"reserve\",\"lasts\":false}") - 1;
 constexpr size_t kUsageWindowWireBudgetBytes =
     kUsageWindowObjectSyntaxBytes +
+    kUsageWindowPaceWireBytes +
     kUsageWindowIDWireBytes +
     kUsageWindowLabelWireBytes +
     kUsageWindowPercentWireDigits +
@@ -47,6 +51,7 @@ constexpr size_t kUsageWindowEscapedLabelWireBytes =
     kUsageWindowLabelWireBytes * kUsageWindowJSONStringWorstCaseExpansionBytes;
 constexpr size_t kAdvertisedUsageWindowWireBudgetBytes =
     kUsageWindowObjectSyntaxBytes +
+    kUsageWindowPaceWireBytes +
     kUsageWindowEscapedIDWireBytes +
     kUsageWindowEscapedLabelWireBytes +
     kUsageWindowPercentWireDigits +
@@ -91,6 +96,7 @@ struct UsageWindow {
   int percent = 0;
   int64_t resetSecs = 0;
   bool available = false;
+  usage_window_contract::Pace pace;
 };
 
 // How long a collected reset deadline stays trustworthy without fresh data.
@@ -201,6 +207,7 @@ struct ThemeSpecLiveUse {
   uint32_t fields = 0;
   uint8_t usageWindows = 0;       // bit i: usage window i
   uint8_t usageWindowResets = 0;  // bit i: usage window i's countdown
+  uint8_t usageWindowPaces = 0;   // bit i: usage window i's CodexBar pace
   uint8_t providerSlots = 0;
   uint8_t providerSlotResets = 0;
 
@@ -209,6 +216,7 @@ struct ThemeSpecLiveUse {
     use.fields = 0xFFFFFFFFUL;
     use.usageWindows = 0xFF;
     use.usageWindowResets = 0xFF;
+    use.usageWindowPaces = 0xFF;
     use.providerSlots = 0xFF;
     use.providerSlotResets = 0xFF;
     return use;
@@ -216,6 +224,7 @@ struct ThemeSpecLiveUse {
   bool Uses(uint32_t field) const { return (fields & field) != 0; }
   bool UsesUsageWindow(size_t i) const { return (usageWindows >> i) & 1U; }
   bool UsesUsageWindowReset(size_t i) const { return (usageWindowResets >> i) & 1U; }
+  bool UsesUsageWindowPace(size_t i) const { return (usageWindowPaces >> i) & 1U; }
   bool UsesProviderSlot(size_t i) const { return (providerSlots >> i) & 1U; }
   bool UsesProviderSlotReset(size_t i) const { return (providerSlotResets >> i) & 1U; }
 };
@@ -575,6 +584,12 @@ inline bool ResetCountdownDisplayChanged(int64_t previousSecs, int64_t nextSecs)
   return ResetCountdownDisplayBucket(previousSecs) != ResetCountdownDisplayBucket(nextSecs);
 }
 
+// Only themes that show CodexBar's pace repaint for it: when the pace changes,
+// or when the countdown it ends with runs out or starts again.
+inline bool UsageWindowPaceChanged(const UsageWindow& previous, const UsageWindow& next) {
+  return previous.pace != next.pace || (previous.resetSecs > 0) != (next.resetSecs > 0);
+}
+
 inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& next, bool includeReset = true) {
   return previous.id != next.id ||
          previous.label != next.label ||
@@ -650,17 +665,11 @@ inline bool ThemeSpecRawLooksRenderable(const String& raw) {
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-inline bool ThemeSpecSlotKeyIsReset(const char* key) {
-  // The compact countdown keys are us1r/us2r and pv1r/pv2r.
-  return std::strcmp(themespec::UsageWindowField(key), "reset") == 0 ||
-         (std::strlen(key) == 4 && key[3] == 'r');
-}
-
 inline void AddThemeSpecSlotKeyUse(const char* key, ThemeSpecLiveUse& use) {
   int index = themespec::ProviderSlotBindingIndex(key);
   if (index >= 0) {
     use.providerSlots |= static_cast<uint8_t>(1U << index);
-    if (ThemeSpecSlotKeyIsReset(key)) {
+    if (themespec::UsageWindowKeyFollowsReset(key)) {
       use.providerSlotResets |= static_cast<uint8_t>(1U << index);
     }
     return;
@@ -668,8 +677,11 @@ inline void AddThemeSpecSlotKeyUse(const char* key, ThemeSpecLiveUse& use) {
   index = themespec::UsageWindowBindingIndex(key);
   if (index >= 0 && static_cast<size_t>(index) < kMaxUsageWindows) {
     use.usageWindows |= static_cast<uint8_t>(1U << index);
-    if (ThemeSpecSlotKeyIsReset(key)) {
+    if (themespec::UsageWindowKeyFollowsReset(key)) {
       use.usageWindowResets |= static_cast<uint8_t>(1U << index);
+    }
+    if (themespec::UsageWindowKeyShowsPace(key)) {
+      use.usageWindowPaces |= static_cast<uint8_t>(1U << index);
     }
   }
 }
@@ -775,9 +787,12 @@ inline const ThemeSpecLiveUse& ThemeSpecLiveUseForFrame(const RuntimeState& runt
 // The fields the periodic countdown redraw repaints. Provider-slot countdowns
 // tick locally too and share one field with the slot's label and percent, so
 // that field is requested only when the theme draws a slot countdown.
+// A usage window's pace is hidden once its countdown runs out or loses trust,
+// so pace fields are repainted with the countdowns.
 inline uint32_t ThemeSpecCountdownFields(const ThemeSpecLiveUse& use) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  return (use.fields & (themespec::kThemeSpecFieldReset | themespec::kThemeSpecFieldUsageWindowReset)) |
+  return (use.fields & (themespec::kThemeSpecFieldReset | themespec::kThemeSpecFieldUsageWindowReset |
+                        themespec::kThemeSpecFieldUsageWindowPace)) |
          (use.providerSlotResets != 0 ? themespec::kThemeSpecFieldProviderSlots : 0);
 #else
   (void)use;
@@ -828,7 +843,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     if (use.UsesUsageWindow(i) &&
-        UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], use.UsesUsageWindowReset(i))) {
+        (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i], use.UsesUsageWindowReset(i)) ||
+         (use.UsesUsageWindowPace(i) && UsageWindowPaceChanged(previous.usageWindows[i], next.usageWindows[i])))) {
       return true;
     }
   }
@@ -888,6 +904,10 @@ inline uint32_t ThemeSpecLiveChangedFields(
     if (ResetCountdownDisplayChanged(previous.usageWindows[i].resetSecs, next.usageWindows[i].resetSecs) &&
         use.UsesUsageWindowReset(i)) {
       fields |= themespec::kThemeSpecFieldUsageWindowReset;
+    }
+    if (use.UsesUsageWindowPace(i) &&
+        UsageWindowPaceChanged(previous.usageWindows[i], next.usageWindows[i])) {
+      fields |= themespec::kThemeSpecFieldUsageWindowPace;
     }
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
@@ -1072,6 +1092,19 @@ inline void ParseUsageWindows(JsonArrayConst slots, UsageWindow* out, size_t cap
     out[slotIndex].percent = ClampPct(slot["percent"] | 0);
     out[slotIndex].resetSecs = NonNegativeInt64(slot["resetSecs"]);
     out[slotIndex].available = true;
+    JsonObjectConst pace = slot["pace"].as<JsonObjectConst>();
+    const char* paceState = pace["state"] | "";
+    for (uint8_t state = 1; state < usage_window_contract::kPaceRunsOut; ++state) {
+      if (std::strcmp(paceState, usage_window_contract::PaceText(state)) == 0) {
+        usage_window_contract::Pace& parsed = out[slotIndex].pace;
+        parsed.state = state;
+        parsed.delta = static_cast<int16_t>(pace["delta"] | 0);
+        if (pace["lasts"].is<bool>()) {
+          parsed.lasts = pace["lasts"].as<bool>() ? usage_window_contract::kPaceLasts
+                                                  : usage_window_contract::kPaceRunsOut;
+        }
+      }
+    }
     ++slotIndex;
   }
 }

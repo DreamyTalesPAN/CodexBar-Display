@@ -26,10 +26,12 @@ import { SetupDialog } from "./setup-dialog";
 import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupStepFailedDialog } from "./setup-provider-dialogs";
 import {
+  defaultPairIds,
   SetupDisplayModeScreen,
   type SetupDisplayModePreview,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
+import { pairDisplayPreview } from "./setup-display-previews";
 import {
   SetupFirmwareBlockedDialog,
   SetupFirmwareUpdateFailedDialog,
@@ -81,6 +83,8 @@ export type SetupWizardProps = {
   displayFrame: DisplayFrameSnapshot | null;
   displayMode: ProviderDisplaySelection["mode"];
   displayProviderId: string | null;
+  /** Every stored provider of the display choice, for Two at once. */
+  displayProviderIds?: string[];
   displayProviders: SetupDisplayModeProvider[];
   /** A display choice is being written; its step has not finished yet. */
   displaySavePending: boolean;
@@ -217,6 +221,7 @@ export function SetupWizard(props: SetupWizardProps) {
   const [displayDraft, setDisplayDraft] = useState<{
     mode: ProviderDisplaySelection["mode"];
     providerId: string | null;
+    pairIds?: string[];
   } | null>(null);
   // The counterpart to goBack. Without it the override outlives the visit it
   // was made for. The device step moves forward when its connect sequence ends.
@@ -980,21 +985,27 @@ export function SetupWizard(props: SetupWizardProps) {
     const displayMode = displayDraft?.mode ?? props.displayMode;
     const displayProviderId =
       displayDraft?.providerId ?? props.displayProviderId;
+    const pairIds =
+      displayDraft?.pairIds ??
+      defaultPairIds(
+        props.displayProviderIds ?? [],
+        displayProviderId,
+        props.displayProviders,
+      );
+    const previewOf = (providerId: string | null | undefined) =>
+      props.automaticPreviews.find(
+        (preview) =>
+          preview.providerLabel ===
+          props.displayProviders.find((provider) => provider.id === providerId)
+            ?.label,
+      );
     return (
       <>
         <SetupDisplayModeScreen
           {...help}
           automaticPreview={props.automaticPreviews[0] ?? null}
           automaticPreviews={props.automaticPreviews}
-          manualPreview={
-            props.automaticPreviews.find(
-              (preview) =>
-                preview.providerLabel ===
-                props.displayProviders.find(
-                  (provider) => provider.id === displayProviderId,
-                )?.label,
-            ) ?? null
-          }
+          manualPreview={previewOf(displayProviderId) ?? null}
           mode={displayMode}
           onBack={goBack}
           onContinue={() => {
@@ -1009,7 +1020,9 @@ export function SetupWizard(props: SetupWizardProps) {
                 providerIds:
                   displayMode === "fixed" && displayProviderId
                     ? [displayProviderId]
-                    : props.displayProviders.map((provider) => provider.id),
+                    : displayMode === "pair"
+                      ? pairIds
+                      : props.displayProviders.map((provider) => provider.id),
               }),
             ).then((saved) => {
               // A Back press while the save was running is the customer's
@@ -1021,11 +1034,23 @@ export function SetupWizard(props: SetupWizardProps) {
             });
           }}
           onSelectMode={(mode) =>
-            setDisplayDraft({ mode, providerId: displayProviderId })
+            setDisplayDraft({ mode, providerId: displayProviderId, pairIds })
+          }
+          onSelectPair={(ids) =>
+            setDisplayDraft({
+              mode: displayMode,
+              providerId: displayProviderId,
+              pairIds: ids,
+            })
           }
           onSelectProvider={(providerId) =>
-            setDisplayDraft({ mode: displayMode, providerId })
+            setDisplayDraft({ mode: displayMode, providerId, pairIds })
           }
+          pairPreview={pairDisplayPreview(
+            previewOf(pairIds[0]),
+            previewOf(pairIds[1]),
+          )}
+          pairProviderIds={pairIds}
           providers={props.displayProviders}
           saving={props.displaySavePending}
           selectedProviderId={displayProviderId}

@@ -7757,14 +7757,14 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   // saved from the live inventory rather than from whatever was stored before.
   const displayScreen = setupScreen(page, SETUP_DISPLAY_SCREEN);
   await displayScreen.waitFor({ timeout: 15_000 });
-  await displayScreen.getByRole("button", { name: /Manual/ }).waitFor();
+  await displayScreen.getByRole("button", { name: /One provider/ }).waitFor();
   assert(await displayScreen.getByText("Usage unavailable", { exact: true }).count() === 0,
     "the display preview must use the same available usage that admitted setup");
   assert(await displayScreen.getByText("0%", { exact: true }).count() > 0,
     "the real zero must be visible in the display preview");
-  // Picking a mode is a draft until Continue: choosing Manual and coming back
+  // Picking a mode is a draft until Continue: choosing One provider and coming back
   // to Automatic must leave exactly one write, made from the live inventory.
-  await displayScreen.getByRole("button", { name: /Manual/ }).click();
+  await displayScreen.getByRole("button", { name: /One provider/ }).click();
   await displayScreen.getByRole("button", { name: /Automatic/ }).click();
   assert(
     requests.filter(
@@ -7935,7 +7935,7 @@ async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
     timeout: 10_000,
   });
   await clickNavigation(page, "Settings");
-  await page.getByRole("button", { name: /Manual/ }).click();
+  await page.getByRole("button", { name: /One provider/ }).click();
   await waitForCondition(
     () => timeline.some((entry) => entry.pathname === "/v1/provider-display"),
     "choosing a display mode in Settings must save it",

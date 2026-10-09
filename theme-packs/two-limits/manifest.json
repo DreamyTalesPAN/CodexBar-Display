@@ -1,0 +1,22 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "two-limits",
+  "name": "Two Limits",
+  "version": "0.1.0",
+  "minFirmware": "1.0.63",
+  "usage": "live",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "color-stops-v1",
+    "usage-pace-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/u/tl-2-aaeb9f9d.json",
+    "file": "theme.json",
+    "bytes": 1850,
+    "sha256": "aaeb9f9dfae88e6addcf70c8732428fc6ba4a8bccee288a1d523e94fa8cb5f45",
+    "contentType": "application/json"
+  },
+  "assets": []
+}

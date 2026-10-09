@@ -18,6 +18,11 @@ import {
   themeRenderPackUrl,
 } from "./control-center-runtime";
 import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
+import {
+  importThemeSpec,
+  themeStudioSpecUsageLimitCount,
+  themeStudioSpecUsesUsagePace,
+} from "@/lib/theme-studio";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
@@ -65,7 +70,10 @@ type UsageSlotFrame = {
   label?: string;
   percent?: number;
   resetSecs?: number;
+  pace?: UsagePaceFrame;
 };
+// CodexBar's pace for a usage window, as the Companion sends it (usage-pace-v1).
+type UsagePaceFrame = { delta?: number; state?: string; lasts?: boolean };
 type UsageWindowFrame = UsageSlotFrame;
 
 type DisplayFrame = {
@@ -179,6 +187,7 @@ type FrameData = {
     resetSecs: number;
     available: boolean;
     idle: boolean;
+    pace?: UsagePaceFrame;
   }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
@@ -220,8 +229,22 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "used",
   usageWindows: [
-    { label: "Session", percent: 64, resetSecs: 3600, available: true, idle: false },
-    { label: "Weekly", percent: 28, resetSecs: 7200, available: true, idle: false },
+    {
+      label: "Session",
+      percent: 64,
+      resetSecs: 3600,
+      available: true,
+      idle: false,
+      pace: { delta: -12, state: "reserve", lasts: true },
+    },
+    {
+      label: "Weekly",
+      percent: 28,
+      resetSecs: 7200,
+      available: true,
+      idle: false,
+      pace: { delta: 8, state: "deficit", lasts: false },
+    },
   ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
@@ -735,7 +758,11 @@ function ThemePrimitiveNode({
     return (
       <ThemeTextPrimitive
         align={primitive.align || primitive.al}
-        color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
+        color={
+          (primitive.binding || primitive.b || "").includes("Pace")
+            ? resolveProgressFillColor(primitive, 0, frame)
+            : colorFor(primitive.color || primitive.c, "#FFFFFF")
+        }
         font={font}
         fontSize={fontSize}
         fontWeight={themeFontWeight(font)}
@@ -994,11 +1021,7 @@ function ThemeProgress({
     "#7BEF7B",
   );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
-  const fillColor = resolveProgressFillColor(
-    primitive,
-    percent,
-    frame.usageMode,
-  );
+  const fillColor = resolveProgressFillColor(primitive, percent, frame);
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
@@ -1325,6 +1348,7 @@ export function buildFrameData(
       resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
       idle: windowIsIdle(slot),
+      pace: slot.pace,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
@@ -1484,6 +1508,90 @@ export function themeRenderPackMatchesActiveRevision(
       receivedSpecHash === themeSpecHash ||
       (!receivedSpecHash && Boolean(themeSpecPath)))
   );
+}
+
+/** What the active theme has room for, as Settings explains it. */
+export type ActiveThemeLimits = {
+  name: string;
+  /** How many of the customer's ticked limits the theme shows. */
+  limits: number;
+  /** The theme has a place for the reserve or deficit. */
+  showsPace: boolean;
+};
+
+export function themeLimitsFromPack(
+  pack: Pick<ThemeRenderPack, "name" | "spec" | "themeId">,
+): ActiveThemeLimits | null {
+  if (!pack.spec) {
+    return null;
+  }
+  try {
+    const spec = importThemeSpec(pack.spec);
+    return {
+      name: pack.name || pack.themeId || "Your theme",
+      limits: themeStudioSpecUsageLimitCount(spec),
+      showsPace: themeStudioSpecUsesUsagePace(spec),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the theme VibeTV runs, once per installed revision. Until it is read,
+ * or when it cannot be, the answer is null and Settings says nothing about
+ * the theme rather than guessing.
+ */
+export function useActiveThemeLimits(
+  device: DeviceInfo | null,
+): ActiveThemeLimits | null {
+  const themeId = activeThemeId(device);
+  const themeSpecPath = device?.display?.themeSpec?.path || "";
+  const themeSpecHash = normalizeThemeSpecHash(
+    device?.display?.themeSpec?.hash,
+  );
+  const key = [themeId, themeSpecPath, themeSpecHash].join("|");
+  const [state, setState] = useState<{
+    key: string;
+    limits: ActiveThemeLimits | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!themeId) {
+      return;
+    }
+    const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
+    if (localPack && (!themeSpecHash || localPack.specHash === themeSpecHash)) {
+      const timer = window.setTimeout(
+        () => setState({ key, limits: themeLimitsFromPack(localPack) }),
+        0,
+      );
+      return () => window.clearTimeout(timer);
+    }
+    const controller = new AbortController();
+    fetchThemeRenderPackRevision(
+      themeId,
+      themeSpecPath,
+      themeSpecHash,
+      controller.signal,
+    )
+      .then((pack) =>
+        setState({
+          key,
+          limits: themeRenderPackMatchesActiveRevision(
+            pack,
+            themeSpecPath,
+            themeSpecHash,
+          )
+            ? themeLimitsFromPack(pack)
+            : null,
+        }),
+      )
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [key, themeId, themeSpecHash, themeSpecPath]);
+
+  return state?.key === key ? state.limits : null;
 }
 
 // The firmware renders this wherever a countdown has expired or its basis went
@@ -1655,7 +1763,47 @@ export function formatTokenCount(value: number): string {
   return `${whole}.${String(frac).padStart(2, "0")}${unit}`;
 }
 
+// Mirrors the firmware: CodexBar's pace in its own words, and nothing once the
+// window's countdown is gone.
+function usagePaceText(
+  window: FrameData["usageWindows"][number] | undefined,
+  field: string,
+): string {
+  const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
+  if (!pace?.state) {
+    return "";
+  }
+  if (field.startsWith("D")) {
+    const delta = pace.delta ?? 0;
+    return `${delta > 0 ? "+" : ""}${delta}%`;
+  }
+  if (field.startsWith("S")) {
+    return pace.state;
+  }
+  if (!field.startsWith("L") || pace.lasts === undefined) {
+    return "";
+  }
+  return pace.lasts ? "lasts until reset" : "runs out";
+}
+
+// Mirrors the firmware, which reads a pace from every usage window key form:
+// usageSlot1PaceDelta and us1PaceDelta name window 1, and so does
+// usage.0.PaceDelta. The field is what follows "Pace".
+function paceBinding(binding: string): { index: number; field: string } | null {
+  const match = /^(?:usageSlot([12])|us([12])|usage\.(\d+)\.)Pace(\w*)$/.exec(binding);
+  if (!match) {
+    return null;
+  }
+  const index =
+    match[3] !== undefined ? Number(match[3]) : Number(match[1] ?? match[2]) - 1;
+  return { index, field: match[4] };
+}
+
 export function boundValue(key: string, frame: FrameData): string {
+  const pace = paceBinding(key);
+  if (pace) {
+    return usagePaceText(frame.usageWindows[pace.index], pace.field);
+  }
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
   );
@@ -1792,6 +1940,28 @@ export function progressPercent(
     const window = frame.usageWindows[Number(usageMatch[1])];
     return window?.available ? window.percent : 0;
   }
+  // Mirrors the firmware: PaceExpected is where CodexBar expects the window
+  // to be by now (its delta counts used percent); other pace bindings fill
+  // like the window's percent.
+  const paceMatch = paceBinding(binding);
+  if (paceMatch) {
+    const window = frame.usageWindows[paceMatch.index];
+    if (!window?.available) {
+      return 0;
+    }
+    if (!paceMatch.field.startsWith("E")) {
+      return window.percent;
+    }
+    const pace = boundPace(binding, frame);
+    if (!pace) {
+      return 0;
+    }
+    const delta = pace.delta ?? 0;
+    return Math.max(
+      0,
+      Math.min(100, window.percent + (frame.usageMode === "used" ? -delta : delta)),
+    );
+  }
   if (binding === "usageSlot1Percent" || binding === "us1p") {
     return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
   }
@@ -1804,11 +1974,30 @@ export function progressPercent(
   return frame.sessionUnavailable ? 0 : frame.session;
 }
 
-function resolveProgressFillColor(
+// The pace behind a pace binding while its window still runs.
+function boundPace(binding: string, frame: FrameData): UsagePaceFrame | undefined {
+  const match = paceBinding(binding);
+  const window = match ? frame.usageWindows[match.index] : undefined;
+  const pace = window?.available && window.resetSecs > 0 ? window.pace : undefined;
+  return pace?.state ? pace : undefined;
+}
+
+const PACE_STATE_LEVEL: Record<string, number> = { reserve: 100, "on pace": 50, deficit: 0 };
+
+// A pace binding matches its stops against CodexBar's state instead of the
+// quota, like the firmware; without a pace it keeps the solid colour.
+export function resolveProgressFillColor(
   primitive: ThemePrimitive,
   percent: number,
-  usageMode?: string,
+  frame: Pick<FrameData, "usageMode" | "usageWindows">,
 ): string {
+  const usageMode = frame.usageMode;
+  const binding = primitive.binding || primitive.b || "";
+  const paceBound = paceBinding(binding) !== null;
+  const pace = paceBound ? boundPace(binding, frame as FrameData) : undefined;
+  if (paceBound && !pace) {
+    return colorFor(primitive.color || primitive.c, "#FFFFFF");
+  }
   const stops = [...(primitive.colorStops || primitive.cs || [])]
     .map((stop) => ({
       gte: typeof stop.gte === "number" ? stop.gte : -1,
@@ -1817,8 +2006,11 @@ function resolveProgressFillColor(
     .filter((stop) => stop.gte >= 0 && stop.gte <= 100 && stop.color)
     .sort((a, b) => b.gte - a.gte);
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
-  const remainingStyle =
-    usageMode === "used" ? 100 - clamped : clamped;
+  const remainingStyle = pace
+    ? (PACE_STATE_LEVEL[pace.state ?? ""] ?? 0)
+    : usageMode === "used"
+      ? 100 - clamped
+      : clamped;
   for (const stop of stops) {
     if (remainingStyle >= stop.gte) {
       return colorFor(stop.color, "#FFFFFF");

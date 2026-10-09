@@ -555,7 +555,9 @@ type ProviderPace struct {
 	ExpectedUsedPercent int
 	WillLastToReset     bool
 	ETASeconds          int64
-	Summary             string
+	// HasETA tells a zero ETA ("Runs out now") from none at all.
+	HasETA  bool
+	Summary string
 }
 
 type UsageOverTimePoint struct {
@@ -808,7 +810,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	}
 
 	meta := parseProviderUsageMeta(payload)
-	usageWindows := usageWindowsFromWindows(meta.Windows)
+	usageWindows := usageWindowsFromWindows(meta.Windows, meta.Pace)
 	if len(usageWindows) > 0 {
 		session = usageWindows[0].Percent
 		resetSecs = usageWindows[0].ResetSec
@@ -839,7 +841,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	}, nil
 }
 
-func usageWindowsFromWindows(windows []UsageWindow) []protocol.UsageWindow {
+func usageWindowsFromWindows(windows []UsageWindow, paces []ProviderPace) []protocol.UsageWindow {
 	if len(windows) == 0 {
 		return nil
 	}
@@ -848,20 +850,64 @@ func usageWindowsFromWindows(windows []UsageWindow) []protocol.UsageWindow {
 		if strings.TrimSpace(window.ID) == "" || strings.TrimSpace(window.Label) == "" {
 			continue
 		}
+		pace, _ := UsageWindowPace(paces, window.ID)
 		out = append(out, protocol.UsageWindow{
 			ID:       window.ID,
 			Label:    window.Label,
 			Percent:  window.UsedPercent,
 			ResetSec: window.ResetSec,
+			Pace:     pace,
 		})
 	}
 	return out
 }
 
+// paceStates is CodexBar's own grouping of its pace stages: the split its pace
+// text makes between "On pace", "N% in deficit" and "N% in reserve".
+var paceStates = map[string]string{
+	"onTrack":        protocol.PaceOnPace,
+	"slightlyAhead":  protocol.PaceDeficit,
+	"ahead":          protocol.PaceDeficit,
+	"farAhead":       protocol.PaceDeficit,
+	"slightlyBehind": protocol.PaceReserve,
+	"behind":         protocol.PaceReserve,
+	"farBehind":      protocol.PaceReserve,
+}
+
+// UsageWindowPace returns CodexBar's pace for one usage window and, when
+// CodexBar projects the quota to run out (Lasts is false), the seconds until
+// then. CodexBar keys pace by its structural lanes; the dashboard names the
+// first two session and weekly (see dashboard.indexUsageMetadata). A stage
+// CodexBar does not document leaves the pace unknown.
+func UsageWindowPace(paces []ProviderPace, windowID string) (protocol.UsagePace, int64) {
+	lane := windowID
+	switch windowID {
+	case "session":
+		lane = "primary"
+	case "weekly":
+		lane = "secondary"
+	}
+	for _, pace := range paces {
+		state := paceStates[pace.Stage]
+		if pace.Window != lane || state == "" {
+			continue
+		}
+		out := protocol.UsagePace{Delta: pace.DeltaPercent, State: state}
+		// CodexBar says "Lasts until reset", or with an ETA that the quota runs
+		// out first. Without either it projects nothing.
+		if pace.WillLastToReset || pace.HasETA {
+			lasts := pace.WillLastToReset
+			out.Lasts = &lasts
+		}
+		return out, pace.ETASeconds
+	}
+	return protocol.UsagePace{}, 0
+}
+
 func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
 	meta := ProviderUsageMeta{
 		Windows:  parseUsageWindows(payload),
-		Pace:     parseProviderPace(payload),
+		Pace:     parseProviderPace(payload["pace"]),
 		OverTime: parseUsageOverTime(payload),
 	}
 	if status, ok := parseProviderStatus(payload); ok {
@@ -1351,11 +1397,7 @@ func parseProviderResetCredits(payload map[string]any) (ProviderResetCredits, bo
 	}, true
 }
 
-func parseProviderPace(payload map[string]any) []ProviderPace {
-	paceAny, ok := payload["pace"]
-	if !ok {
-		return nil
-	}
+func parseProviderPace(paceAny any) []ProviderPace {
 	paceMap, ok := paceAny.(map[string]any)
 	if !ok {
 		return nil
@@ -1372,13 +1414,15 @@ func parseProviderPace(payload map[string]any) []ProviderPace {
 		if !ok {
 			continue
 		}
+		eta, hasETA := intAtPathsWithPresence(itemMap, "etaSeconds")
 		pace := ProviderPace{
 			Window:              strings.TrimSpace(strings.ToLower(key)),
 			Stage:               firstString(itemMap, "stage"),
 			DeltaPercent:        intAtPaths(itemMap, "deltaPercent"),
 			ExpectedUsedPercent: intAtPaths(itemMap, "expectedUsedPercent"),
 			WillLastToReset:     boolAtPaths(itemMap, "willLastToReset"),
-			ETASeconds:          int64(intAtPaths(itemMap, "etaSeconds")),
+			ETASeconds:          int64(eta),
+			HasETA:              hasETA,
 			Summary:             firstString(itemMap, "summary"),
 		}
 		if pace.Stage == "" && pace.Summary == "" {

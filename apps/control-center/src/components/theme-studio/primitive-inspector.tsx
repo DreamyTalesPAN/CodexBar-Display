@@ -20,6 +20,12 @@ const VARIABLE_TOKENS = [
   { label: "Usage window 2 label", token: "{usageSlot2Label}" },
   { label: "Usage window 2 %", token: "{usageSlot2Percent}" },
   { label: "Usage window 2 reset", token: "{usageSlot2Reset}" },
+  { label: "Usage window 1 pace %", token: "{usageSlot1PaceDelta}" },
+  { label: "Usage window 1 pace", token: "{usageSlot1PaceState}" },
+  { label: "Usage window 1 lasts", token: "{usageSlot1PaceLasts}" },
+  { label: "Usage window 2 pace %", token: "{usageSlot2PaceDelta}" },
+  { label: "Usage window 2 pace", token: "{usageSlot2PaceState}" },
+  { label: "Usage window 2 lasts", token: "{usageSlot2PaceLasts}" },
   { label: "Provider 1 name", token: "{providerSlot1Label}" },
   { label: "Provider 1 next reset", token: "{providerSlot1Reset}" },
   { label: "Provider 2 name", token: "{providerSlot2Label}" },
@@ -110,6 +116,9 @@ export function PrimitiveInspector({
               onChange("text", value);
               if (value) {
                 onChange("binding", "");
+                if ((primitive.colorStops || []).length > 0) {
+                  onChange("colorStops", "");
+                }
               }
             }}
           />
@@ -121,6 +130,11 @@ export function PrimitiveInspector({
               if (value) {
                 onChange("text", "");
               }
+              // Only a pace binding colours text by state; other text keeps
+              // one colour, so its stops would no longer validate.
+              if (!value.includes("Pace") && (primitive.colorStops || []).length > 0) {
+                onChange("colorStops", "");
+              }
             }}
             options={[
               ["", "None"],
@@ -131,6 +145,12 @@ export function PrimitiveInspector({
               ["usageSlot2Label", "Usage window 2 label"],
               ["usageSlot2Percent", "Usage window 2 %"],
               ["usageSlot2Reset", "Usage window 2 reset"],
+              ["usageSlot1PaceDelta", "Usage window 1 pace %"],
+              ["usageSlot1PaceState", "Usage window 1 pace"],
+              ["usageSlot1PaceLasts", "Usage window 1 lasts"],
+              ["usageSlot2PaceDelta", "Usage window 2 pace %"],
+              ["usageSlot2PaceState", "Usage window 2 pace"],
+              ["usageSlot2PaceLasts", "Usage window 2 lasts"],
               ["providerSlot1Label", "Provider 1 name"],
               ["providerSlot1Reset", "Provider 1 next reset"],
               ["providerSlot2Label", "Provider 2 name"],
@@ -189,11 +209,24 @@ export function PrimitiveInspector({
               </Button>
             </div>
           ) : null}
-          <ColorField
-            label="Text color"
-            value={primitive.color || "#FFFFFF"}
-            onChange={(value) => onChange("color", value)}
-          />
+          {(primitive.binding || "").includes("Pace") ? (
+            <ProgressColorStopsEditor
+              color={primitive.color || "#FFFFFF"}
+              pace
+              stops={primitive.colorStops || []}
+              target="text"
+              onColorChange={(value) => onChange("color", value)}
+              onStopsChange={(value) =>
+                onChange("colorStops", value.length > 0 ? value : "")
+              }
+            />
+          ) : (
+            <ColorField
+              label="Text color"
+              value={primitive.color || "#FFFFFF"}
+              onChange={(value) => onChange("color", value)}
+            />
+          )}
           <div className="grid gap-2">
             <span className="text-xs font-black uppercase tracking-normal text-muted-foreground">
               Variables
@@ -227,6 +260,10 @@ export function PrimitiveInspector({
             options={[
               ["usageSlot1Percent", "Usage window 1 %"],
               ["usageSlot2Percent", "Usage window 2 %"],
+              ["usageSlot1PaceUsed", "Usage window 1 pace: used"],
+              ["usageSlot1PaceExpected", "Usage window 1 pace: expected"],
+              ["usageSlot2PaceUsed", "Usage window 2 pace: used"],
+              ["usageSlot2PaceExpected", "Usage window 2 pace: expected"],
               ["session", "Session (legacy)"],
               ["weekly", "Weekly (legacy)"],
             ]}
@@ -258,7 +295,9 @@ export function PrimitiveInspector({
           ) : null}
           <ProgressColorStopsEditor
             color={primitive.color || "#C7FF68"}
+            pace={(primitive.binding || "").includes("Pace")}
             stops={primitive.colorStops || []}
+            target="bar"
             onColorChange={(value) => onChange("color", value)}
             onStopsChange={(value) =>
               onChange("colorStops", value.length > 0 ? value : "")
@@ -347,18 +386,31 @@ const DEFAULT_REMAINING_COLOR_STOPS: Array<{ gte: number; color: string }> = [
   { gte: 0, color: "#EF4444" },
 ];
 
+// VibeTV matches pace stops against the state: reserve 100, on pace 50,
+// deficit 0.
+const DEFAULT_PACE_COLOR_STOPS: Array<{ gte: number; color: string }> = [
+  { gte: 100, color: "#22C55E" },
+  { gte: 50, color: "#A1A1AA" },
+  { gte: 0, color: "#EF4444" },
+];
+
 function ProgressColorStopsEditor({
   color,
   onColorChange,
   onStopsChange,
+  pace = false,
   stops,
+  target,
 }: {
   color: string;
   onColorChange: (value: string) => void;
   onStopsChange: (value: Array<{ gte: number; color: string }>) => void;
+  pace?: boolean;
   stops: Array<{ gte: number; color: string }>;
+  target: "bar" | "text";
 }) {
   const hasStops = stops.length > 0;
+  const thresholdKind = pace ? "pace" : "remaining";
   // Keep editing order stable; the renderer sorts thresholds when selecting a color.
 
   const handleStopChange = (
@@ -384,27 +436,34 @@ function ProgressColorStopsEditor({
     }
     onStopsChange([
       ...stops,
-      { color, gte: nextUnusedGte(stops) },
+      { color, gte: nextUnusedGte(stops, pace ? [100, 50, 0] : [75, 50, 25, 0]) },
     ]);
   };
+
+  let help: string;
+  if (pace) {
+    help = hasStops
+      ? "The color follows the pace: reserve counts as 100, on pace as 50, deficit as 0. The fallback color shows while there is no pace."
+      : `Solid ${target} color is the visible color. Add pace colors to show reserve, on pace and deficit in their own color.`;
+  } else {
+    help = hasStops
+      ? "Visible fill comes from remaining-% thresholds below. Bar color is only the fallback if no threshold matches."
+      : "Solid bar color is the visible fill. Add remaining-% thresholds to change color as quota drops.";
+  }
+  let colorLabel = target === "text" ? "Text color" : "Bar color";
+  if (hasStops) {
+    colorLabel = pace
+      ? "Fallback color (no pace)"
+      : "Fallback color (no matching threshold)";
+  }
 
   return (
     <>
       <div className="grid gap-2 rounded-[var(--radius-control)] border bg-muted px-3 py-2">
         <span className="text-xs font-black uppercase tracking-normal text-muted-foreground">
-          Fill color
+          {target === "text" ? "Text color" : "Fill color"}
         </span>
-        {hasStops ? (
-          <p className="text-xs text-muted-foreground">
-            Visible fill comes from remaining-% thresholds below. Bar color is
-            only the fallback if no threshold matches.
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Solid bar color is the visible fill. Add remaining-% thresholds to
-            change color as quota drops.
-          </p>
-        )}
+        <p className="text-xs text-muted-foreground">{help}</p>
         {hasStops
           ? stops.map((stop, index) => (
               <div
@@ -412,7 +471,7 @@ function ProgressColorStopsEditor({
                 key={index}
               >
                 <NumberField
-                  label={index === 0 ? "At remaining ≥" : "≥"}
+                  label={index === 0 ? `At ${thresholdKind} ≥` : "≥"}
                   max={100}
                   value={stop.gte}
                   onChange={(value) => handleStopChange(index, "gte", value)}
@@ -423,7 +482,7 @@ function ProgressColorStopsEditor({
                   onChange={(value) => handleStopChange(index, "color", value)}
                 />
                 <Button
-                  aria-label={`Remove remaining threshold ${stop.gte}`}
+                  aria-label={`Remove ${thresholdKind} threshold ${stop.gte}`}
                   className="mb-0.5"
                   onClick={() => handleRemoveStop(index)}
                   size="sm"
@@ -455,24 +514,28 @@ function ProgressColorStopsEditor({
                 type="button"
                 variant="ghost"
               >
-                Use solid bar color
+                Use solid {target} color
               </Button>
             </>
           ) : (
             <Button
-              onClick={() => onStopsChange(DEFAULT_REMAINING_COLOR_STOPS)}
+              onClick={() =>
+                onStopsChange(
+                  pace ? DEFAULT_PACE_COLOR_STOPS : DEFAULT_REMAINING_COLOR_STOPS,
+                )
+              }
               size="sm"
               type="button"
               variant="outline"
             >
               <Plus size={14} aria-hidden />
-              Add remaining-% colors
+              {pace ? "Add pace colors" : "Add remaining-% colors"}
             </Button>
           )}
         </div>
       </div>
       <ColorField
-        label={hasStops ? "Fallback color (no matching threshold)" : "Bar color"}
+        label={colorLabel}
         value={color}
         onChange={onColorChange}
       />
@@ -480,9 +543,9 @@ function ProgressColorStopsEditor({
   );
 }
 
-function nextUnusedGte(stops: Array<{ gte: number }>): number {
+function nextUnusedGte(stops: Array<{ gte: number }>, candidates: number[]): number {
   const used = new Set(stops.map((stop) => stop.gte));
-  for (const candidate of [75, 50, 25, 0]) {
+  for (const candidate of candidates) {
     if (!used.has(candidate)) {
       return candidate;
     }
