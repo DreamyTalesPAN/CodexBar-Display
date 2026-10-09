@@ -76,6 +76,8 @@ describe("MacAppDownloadScreen on a recognised system", () => {
       { ...shopTheme, isFree: false },
       { ...shopTheme, source: "github-catalog" as const },
       { ...shopTheme, themeId: "clippy/extra" },
+      { ...shopTheme, themeId: "ab" },
+      { ...shopTheme, themeId: "a".repeat(65) },
       { ...shopTheme, packSha256: undefined },
     ]) {
       const html = renderToStaticMarkup(

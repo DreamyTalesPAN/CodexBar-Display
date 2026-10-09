@@ -5208,3 +5208,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact behavior or wording.
 - Approved customer-visible result: Opening `vibetv://install-theme/<id>` on Windows brings VibeTV Control Center forward and opens its existing local `/control-center/install/<id>` page, including when the app was not running. It does not start a theme installation or write to the VibeTV. Invalid links leave the current page unchanged.
 - Scope: Windows Tauri deep-link registration, link parsing and navigation, their tests, and this approval record. This records the delegated nightshift decision for the pull request; it does not approve merging, releasing, installation on customer machines, or a hardware write.
+
+## 2026-10-09 — Theme link accepts the actual free shop products (#63)
+
+- User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact refinement. The live shop readback showed the three free digital theme products are deliberately not purchasable, so the earlier entry's "available" condition would hide the action from all of them.
+- Approved customer-visible result: The hosted install page offers `Open Control Center` for a free Shopify catalog theme with a safe 3–64 character ID and complete pack URL, checksum, and size metadata. It keeps the app download as a secondary action. A missing, paid, or untrusted theme retains the download page without the deep link. The action opens the local theme page; it does not install a theme by itself.
+- Scope: `apps/control-center/src/components/setup/mac-app-download-screen.tsx`, its focused test, and this approval record. This records the delegated branch decision only, not deployment, merge, or release.

@@ -55,6 +55,8 @@ export function MacAppDownloadScreen({
   const openThemeUrl =
     theme?.source === "shopify" &&
     theme.isFree &&
+    theme.themeId.length >= 3 &&
+    theme.themeId.length <= 64 &&
     /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(theme.themeId) &&
     isRemoteThemePackUrl(theme.packUrl) &&
     /^[a-f0-9]{64}$/i.test(theme.packSha256 || "") &&
