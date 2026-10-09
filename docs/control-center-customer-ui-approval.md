@@ -5,6 +5,12 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-09 — Return to the shop theme page after first install (#63)
+
+- User approval: Paul delegated customer UI decisions for the autonomous overnight issue work on 2026-10-09. He has not personally previewed this exact wording or layout.
+- Approved customer-visible result: On a valid shop theme handoff page, the app download now explains that after installing Control Center, the customer should return to this page and click `Open Control Center` to choose the theme. The plain download page has no extra instruction.
+- Scope: `mac-app-download-screen.tsx`, its focused test, and this approval record. No deployment, device write, or automatic theme installation is implied.
+
 ## 2026-10-09 — Hosted theme handoff to the installed app (#63)
 
 - User approval: On 2026-10-09 Paul granted all approvals for autonomous overnight VibeTV issue work and delegated the choice of issues and implementation decisions. Under that delegation, this task selected the #63 hosted-to-app handoff. Paul has not personally previewed this exact copy or layout.
