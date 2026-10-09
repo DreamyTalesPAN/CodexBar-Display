@@ -22,6 +22,24 @@ type cableResolveTestError errcode.Code
 func (e cableResolveTestError) Error() string           { return string(e) }
 func (e cableResolveTestError) ErrorCode() errcode.Code { return errcode.Code(e) }
 
+func TestDeviceCableReplugOverridesOldAbsenceBeforeNextFrame(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"})
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return cableHelloForTest("cable-a"), nil }
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "device_not_found"}
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/device", nil))
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || !got.OK || !got.Device.Connected || got.Device.Ready || !got.Device.Paired || got.Device.DeviceID != "cable-a" {
+		t.Fatalf("a matching live hello must reconnect without claiming a new frame: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCableCurrentResolverErrorOverridesStaleAbsence(t *testing.T) {
 	for _, tc := range []struct {
 		code   errcode.Code

@@ -5023,7 +5023,7 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 		Active:       true,
 		Paired:       strings.TrimSpace(cfg.DeviceToken) != "" || hello.Capabilities.Auth == nil,
 		Capabilities: &hello.Capabilities,
-	}, stream), providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false, false)
+	}, stream), true, false, false)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
