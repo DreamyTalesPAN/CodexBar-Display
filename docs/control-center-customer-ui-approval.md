@@ -5462,3 +5462,9 @@ issue scope, or release permission never implies UI permission.
 
 - User approval: Paul asked for this pull request to release the whole feature and for the review findings to be fixed where relevant.
 - Approved customer-visible result: The rule against overlapping animations also covers imported animations and GIFs, not only the AI figures. The message now reads "Move the animated elements apart. VibeTV cannot show them overlapping."
+
+
+## 2026-10-09 — Working indicator in the chat and usage shown again
+
+- User approval: Paul asked that while the AI works, his message appears at once as a chat message at the top right with three animated dots under it, instead of the spinner with "Working…".
+- Approved customer-visible result: After Create the customer's message appears immediately as their chat message and the prompt box empties; three animated dots under it show that the AI is working (still dots with reduced motion). When the request fails or is cancelled the message leaves the chat and returns to the prompt box. A design without usage readouts that is asked to show usage again gets the standard readouts; the AI is told whether the current design shows them and keeps that unless asked.

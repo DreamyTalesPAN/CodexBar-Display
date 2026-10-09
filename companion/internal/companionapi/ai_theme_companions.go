@@ -88,6 +88,9 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 			previousHeight = config.Height
 		}
 		style, _ := json.Marshal(req.Previous.Style)
+		if req.Previous.ShowsUsage != nil {
+			content = append(content, aiText(fmt.Sprintf("The current design shows the usage readouts: %t. Keep showUsage at that value unless the customer asks to add or remove them.", *req.Previous.ShowsUsage)))
+		}
 		content = append(content, aiText("Current style: "+string(style)), aiText(fmt.Sprintf("Current BACKGROUND layer, 240x%d:", previousHeight)), aiVisionImage(req.Previous.ImageBase64))
 		if req.Previous.ReferenceImageBase64 != "" {
 			if _, e := validateConceptImage(req.Previous.ReferenceImageBase64, "image/png"); e != nil {
@@ -155,7 +158,7 @@ func (a *aiThemeState) createCompanionConcept(ctx context.Context, key string, r
 			}
 		}
 	}
-	result = aiThemeConcept{Style: plan.Style, ImageContentType: "image/png", Companions: []aiCompanion{}, ArtHeight: artHeight, HideUsage: !plan.ShowUsage}
+	result = aiThemeConcept{Style: plan.Style, ImageContentType: "image/png", Companions: []aiCompanion{}, ArtHeight: artHeight, HideUsage: !plan.ShowUsage, ShowUsage: plan.ShowUsage}
 	result.ImageBase64 = base64.StdEncoding.EncodeToString(previous)
 	if !plan.Style.PreserveArtwork {
 		stage = "artwork"

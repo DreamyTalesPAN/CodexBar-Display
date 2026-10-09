@@ -118,4 +118,14 @@ describe("flexible picture layouts",()=>{
   expect(applyAIThemeCandidate(legacy,fixture(1).candidate(),'auto').spec.primitives.some(p=>p.binding==='session')).toBe(true);
   expect(applyAIThemeCandidate(legacy,fixture(1).candidate(),'auto').spec.themeId).toBe('my-saved-theme');
  });
+ it('adds the readouts again when a design without them is asked to show usage',()=>{
+  const bare=fixture(1);Object.assign(bare.concept,{hideUsage:true});const c=bare.candidate();
+  const document={assets:c.assets,spec:c.spec,packName:'Mine',usage:'live' as const};
+  expect(document.spec.primitives.some(p=>p.binding==='session')).toBe(false);
+  expect(applyAIThemeCandidate(document,fixture(1).candidate(),'auto').spec.primitives.some(p=>p.binding==='session')).toBe(false);
+  const asked=fixture(1);Object.assign(asked.concept,{showUsage:true});
+  const shown=applyAIThemeCandidate(document,asked.candidate(),'auto');
+  expect(shown.spec.primitives.filter(p=>p.binding==='session')).toHaveLength(1);
+  expect(applyAIThemeCandidate(shown,asked.candidate(),'auto').spec.primitives.filter(p=>p.binding==='session')).toHaveLength(1);
+ });
 });

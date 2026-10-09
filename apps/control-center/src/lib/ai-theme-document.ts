@@ -114,6 +114,10 @@ export function applyAIThemeCandidate(
         return { ...p };
       });
     next.spec.primitives.unshift(...generated);
+    // A design without readouts that is asked to show usage again gets the
+    // standard readouts of the new scene; one that has them keeps its own.
+    if (candidate.showUsage && usageSectionIndices(current.spec.primitives).flat().length === 0)
+      next.spec.primitives.push(...candidate.spec.primitives.filter((p) => !managed(p.assetPath)).map((p) => ({ ...p })));
     Object.assign(next.assets, candidate.assets);
     if (candidate.preserveArtwork && current.assets[ART]) next.assets[ART] = {...current.assets[ART]};
     for (const path of candidate.retainedCompanions || []) {
@@ -234,6 +238,7 @@ export function conceptFromDocument(
     ...(companions.length ? {companions} : {}),
     imageBase64: spritePNG(art.data, false),
     referenceImageBase64: sceneReferencePNG(document),
+    showsUsage: usageSectionIndices(document.spec.primitives).flat().length > 0,
     imageContentType: "image/png",
     ...(animated
       ? {

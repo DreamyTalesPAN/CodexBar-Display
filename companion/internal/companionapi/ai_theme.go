@@ -72,6 +72,8 @@ type aiThemePreviousConcept struct {
 	ImageContentType     string        `json:"imageContentType"`
 	AnimationSheetBase64 string        `json:"animationSheetBase64,omitempty"`
 	Style                aiThemeStyle  `json:"style"`
+	// Whether the design being refined shows the usage readouts right now.
+	ShowsUsage *bool `json:"showsUsage,omitempty"`
 }
 
 type aiThemeConceptRequest struct {
@@ -84,8 +86,10 @@ type aiThemeConceptRequest struct {
 }
 
 type aiThemeConcept struct {
-	ArtHeight        int               `json:"artHeight,omitempty"`
-	HideUsage        bool              `json:"hideUsage,omitempty"`
+	ArtHeight int  `json:"artHeight,omitempty"`
+	HideUsage bool `json:"hideUsage,omitempty"`
+	// Set when the planner decided for the readouts, so a design that has none gets them.
+	ShowUsage        bool              `json:"showUsage,omitempty"`
 	Companions       []aiCompanion     `json:"companions,omitempty"`
 	SceneAnimation   *aiSceneAnimation `json:"sceneAnimation,omitempty"`
 	SceneMotion      *aiSceneMotion    `json:"sceneMotion,omitempty"`

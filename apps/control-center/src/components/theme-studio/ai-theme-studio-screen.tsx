@@ -162,10 +162,13 @@ export function AIThemeStudioScreen({
   // The conversation lives with the open editor: it gives the AI the context
   // of earlier turns and is not part of the saved design.
   const [messages, setMessages] = useState<AIThemeMessage[]>([]);
+  // The request the AI is working on: shown as the customer's message right
+  // away, and added to the conversation for good once it has an answer.
+  const [asking, setAsking] = useState<string | null>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ block: "nearest" });
-  }, [messages]);
+  }, [messages, asking]);
   const [attachments, setAttachments] = useState<{ name: string; data: string }[]>([]);
   const [attaching, setAttaching] = useState(false);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -708,6 +711,7 @@ export function AIThemeStudioScreen({
     // A turn enters the conversation once it has an answer, so a failed or
     // cancelled request is not shown twice and not sent as an earlier turn.
     const asked = prompt;
+    setAsking(asked);
     const reply = (content: string) =>
       setMessages((all) => [...all, ...([["user", asked], ["assistant", content]] as const).map(([role, text]) => ({ role, content: text.slice(0, 2000), createdAt: new Date().toISOString() }))].slice(-AI_THEME_LOCAL_HISTORY_LIMIT));
     try {
@@ -801,6 +805,7 @@ export function AIThemeStudioScreen({
       if (request.current === controller) {
         request.current = null;
         setBusy(false);
+        setAsking(null);
       }
     }
   }
@@ -808,6 +813,7 @@ export function AIThemeStudioScreen({
     request.current?.abort();
     request.current = null;
     setBusy(false);
+    setAsking(null);
     setStatus(
       "Cancelled. Your scene is unchanged. OpenAI may still bill work already started.",
     );
@@ -1365,7 +1371,7 @@ export function AIThemeStudioScreen({
             </div>
             <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:pl-6">
             <div className="flex min-h-24 flex-1 flex-col gap-3 overflow-y-auto pb-4" role="log" aria-label="Conversation">
-              {messages.length ? messages.map((message, i) => (
+              {messages.length || asking !== null ? messages.map((message, i) => (
                 <p
                   key={i}
                   className={message.role === "user"
@@ -1379,7 +1385,17 @@ export function AIThemeStudioScreen({
                   Describe a design, ask for a change, or ask what is possible.
                 </p>
               )}
-              {busy ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="motion-reduce:animate-none" />Working…</p> : null}
+              {asking !== null ? (
+                <>
+                  <p className="ml-8 self-end whitespace-pre-wrap rounded-xl bg-muted px-3 py-2 text-sm [overflow-wrap:anywhere]">{asking}</p>
+                  <p role="status" className="flex h-5 items-center gap-1">
+                    <span className="sr-only">AI is working</span>
+                    {[0, 150, 300].map((delay) => (
+                      <span key={delay} aria-hidden className="size-1.5 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
+                    ))}
+                  </p>
+                </>
+              ) : null}
               <div ref={chatEnd} />
             </div>
             <section className="flex w-full flex-col gap-3" aria-label="AI creation">
@@ -1431,7 +1447,7 @@ export function AIThemeStudioScreen({
                 id="ai-scene-request"
                 ref={promptInput}
                 rows={1}
-                value={prompt}
+                value={asking !== null ? "" : prompt}
                 aria-describedby={[selected.length ? "ai-selection-context" : "", error ? "ai-theme-error" : ""].filter(Boolean).join(" ") || undefined}
                 maxLength={2000}
                 disabled={locked}

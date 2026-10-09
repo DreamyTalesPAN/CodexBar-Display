@@ -36,8 +36,12 @@ export type AIThemeConcept = {
   artHeight?: number;
   // A design that is not about usage carries no session and weekly readouts.
   hideUsage?: boolean;
+  // The planner decided for the readouts: a design that has none gets them.
+  showUsage?: boolean;
   companions?: AIThemeCompanion[];
   referenceImageBase64?: string;
+  // Sent with a refinement: whether the design shows the usage readouts now.
+  showsUsage?: boolean;
   sceneAnimation?: {
     x: number;
     y: number;
@@ -59,6 +63,7 @@ export type AIThemeConcept = {
 };
 export type AIThemeCandidate = {
   hideUsage?: boolean;
+  showUsage?: boolean;
   preserveArtwork?: boolean;
   retainedCompanions?: string[];
   assets: Record<string, ThemeStudioAsset>;
@@ -165,6 +170,7 @@ export async function generateAIThemeConcept(
             animationSheetBase64: input.previous.animation?.spriteSheetBase64,
             companions: input.previous.companions,
             referenceImageBase64: input.previous.referenceImageBase64,
+            showsUsage: input.previous.showsUsage,
             imageBase64: input.previous.imageBase64,
             imageContentType: input.previous.imageContentType,
             style: input.previous.style,
@@ -583,7 +589,7 @@ function buildCandidate(
   };
   const validation = validateThemeSpec(spec, assets);
   if (validation.errors.length > 0) throw new Error(validation.errors[0]);
-  return { assets, notes: style.notes, packName: style.packName, spec, preserveArtwork: style.preserveArtwork, hideUsage: concept.hideUsage };
+  return { assets, notes: style.notes, packName: style.packName, spec, preserveArtwork: style.preserveArtwork, hideUsage: concept.hideUsage, showUsage: concept.showUsage };
 }
 
 function validateCompanions(concept: AIThemeConcept) {
