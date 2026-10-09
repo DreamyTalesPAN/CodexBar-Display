@@ -91,6 +91,29 @@ describe("SetupProviderRow", () => {
 });
 
 describe("provider popup guidance", () => {
+  // CodexBar's sentence for a throttled Claude lists the blocked browser
+  // import and the empty CLI screen too, which reads like a sign-in problem.
+  it("explains a throttled check instead of showing every failed source", () => {
+    expect(setupProviderIssueMessage({
+      health: "rate_limited", label: "Claude",
+      detail: "Claude is pausing usage checks.", nextAction: "Nothing to fix.",
+      reportedMessage: "Claude usage failed from all configured sources. Web: App-Bound Encryption ...",
+    })).toBe("Claude is pausing usage checks. Nothing to fix.");
+  });
+
+  it("explains a throttle behind a saved reading the same way", () => {
+    expect(setupProviderIssueMessage({
+      health: "stale", label: "Claude",
+      detail: "Claude is pausing usage checks.", nextAction: "Nothing to fix.",
+      reportedMessage: "Live usage is unavailable; ... Claude usage failed from all configured sources.",
+    })).toBe("Claude is pausing usage checks. Nothing to fix.");
+    expect(setupProviderIssueMessage({
+      health: "stale", label: "Claude",
+      detail: "Live usage is unavailable; the last successful reading is still saved.",
+      reportedMessage: "Live usage is unavailable; the last successful reading is still saved. Sign-in expired.",
+    })).toBe("Live usage is unavailable; the last successful reading is still saved. Sign-in expired.");
+  });
+
   it("preserves the exact reported message before generic detail", () => {
     const reportedMessage = "Codex connection failed: account authentication required to read rate limits";
     expect(setupProviderIssueMessage({ health: "auth_required", label: "Codex",

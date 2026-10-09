@@ -2,9 +2,12 @@ package codexbar
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
+	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -177,10 +180,7 @@ func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
 	}
 }
 
-func TestFetchDashboardProvidersDoesNotProbeDisabledMacProviders(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Win-CodexBar defaults to Claude, not the configured provider set")
-	}
+func TestFetchDashboardProvidersDoesNotProbeDisabledProviders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case dashboardSnapshotPath:
@@ -204,6 +204,156 @@ func TestFetchDashboardProvidersDoesNotProbeDisabledMacProviders(t *testing.T) {
 	}
 }
 
+// Win-CodexBar answers "provider=all" by fetching every provider it knows.
+// On the test laptop that was 71 providers every 30 seconds with only Claude
+// switched on, including a start of the Antigravity CLI each time (#554).
+func TestFetchDashboardProvidersAsksTheWindowsEngineOnlyForListedProviders(t *testing.T) {
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
+
+	// Windows asks side by side, like the CLI join.
+	var mu sync.Mutex
+	var asked []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[
+			  {"id":"claude","name":"Claude","windows":[{"id":"session","kind":"session","usedPercent":12}]},
+			  {"id":"codex","name":"Codex","windows":[{"id":"session","kind":"session","usedPercent":34}]}
+			]}`))
+		case dashboardUsagePath:
+			mu.Lock()
+			asked = append(asked, r.URL.RawQuery)
+			mu.Unlock()
+			_, _ = fmt.Fprintf(w, `[{"provider":%q,"usage":{}}]`, r.URL.Query().Get("provider"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+	if err != nil || len(providers) != 2 {
+		t.Fatalf("both listed providers must come back: providers=%+v err=%v", providers, err)
+	}
+	sort.Strings(asked)
+	if got := strings.Join(asked, " "); got != "provider=claude provider=codex" {
+		t.Fatalf("usage must be asked for the listed providers only, got %q", got)
+	}
+}
+
+// On Windows each listed provider is a request of its own. When one of them
+// fails, the others must still reach the display; only the failed provider
+// shows as unavailable (#500 review).
+func TestFetchDashboardProvidersKeepsOtherProvidersWhenOneWindowsRequestFails(t *testing.T) {
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case dashboardSnapshotPath:
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[
+			  {"id":"claude","name":"Claude","windows":[{"kind":"weekly","label":"Weekly","usedPercent":12,"resetAt":"2026-08-01T00:00:00Z"}]},
+			  {"id":"codex","name":"Codex","windows":[{"kind":"weekly","label":"Weekly","usedPercent":68,"resetAt":"2026-08-01T00:00:00Z"}]}
+			]}`))
+		case dashboardUsagePath:
+			if r.URL.Query().Get("provider") == "claude" {
+				http.Error(w, "probe failed", http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"provider":"codex","usage":{"secondary":{"usedPercent":68,"windowMinutes":10080}}}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 7, 28, 8, 30, 0, 0, time.UTC)
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), now)
+	if err != nil || len(providers) != 2 {
+		t.Fatalf("one failed request must not drop the other provider: providers=%+v err=%v", providers, err)
+	}
+	byKey := map[string]ParsedFrame{}
+	for _, p := range providers {
+		byKey[providerKey(p)] = p
+	}
+	if claude := byKey["claude"]; !claude.Frame.UsageUnavailable || !claude.Stale {
+		t.Fatalf("the failed provider must show as unavailable: %+v", claude)
+	}
+	if codex := byKey["codex"]; codex.Frame.UsageUnavailable || codex.Stale || len(codex.Frame.UsageWindows) != 1 || codex.Frame.UsageWindows[0].Percent != 68 {
+		t.Fatalf("the answering provider must keep its reading: %+v", codex.Frame)
+	}
+}
+
+// Only when every request fails is the collection itself failed, so the
+// caller can fall back like before.
+func TestFetchDashboardProvidersFailsWhenEveryWindowsRequestFails(t *testing.T) {
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == dashboardSnapshotPath {
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[{"id":"claude","name":"Claude","windows":[]}]}`))
+			return
+		}
+		http.Error(w, "probe failed", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	if _, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now()); err == nil {
+		t.Fatal("a collection where every usage request fails must return an error")
+	}
+}
+
+// With more providers than parallel slots, a provider the shared budget never
+// started sends no request. When every started request fails as well, the
+// collection must still fail instead of settling with only unavailable
+// providers (#500 review).
+func TestFetchDashboardUsageFailsWhenBudgetSkipsTheRest(t *testing.T) {
+	previous, previousBudget := providerProbePerProvider, dashboardProbeBudget
+	providerProbePerProvider, dashboardProbeBudget = true, 100*time.Millisecond
+	t.Cleanup(func() { providerProbePerProvider, dashboardProbeBudget = previous, previousBudget })
+
+	ids := make([]string, maxParallelProviderProbes+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("p%d", i)
+	}
+	var mu sync.Mutex
+	requests := 0
+	usage, err := fetchDashboardUsage(context.Background(), ids, func(ctx context.Context, query string) ([]byte, error) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if requests >= len(ids) {
+		t.Fatalf("the test needs a provider the budget skipped, got %d requests for %d providers", requests, len(ids))
+	}
+	if err == nil {
+		t.Fatalf("no provider answered, the collection must fail: usage=%+v", usage)
+	}
+}
+
+// A request that decodes but has no entry for the provider asked for, such as
+// [], did not answer that provider. When every request does that, the
+// collection must fail (#500 review).
+func TestFetchDashboardUsageFailsWhenNoAnswerMatchesTheProvider(t *testing.T) {
+	previous := providerProbePerProvider
+	providerProbePerProvider = true
+	t.Cleanup(func() { providerProbePerProvider = previous })
+
+	usage, err := fetchDashboardUsage(context.Background(), []string{"claude", "codex"}, func(ctx context.Context, query string) ([]byte, error) {
+		return []byte(`[]`), nil
+	})
+	if err == nil {
+		t.Fatalf("no request answered its provider, the collection must fail: usage=%+v", usage)
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -216,11 +366,13 @@ func newDashboardFetchTestServer(t *testing.T, snapshot string) *httptest.Server
 		_, _ = w.Write([]byte(snapshot))
 	})
 	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, r *http.Request) {
-		wantQuery := ""
-		if runtime.GOOS == "windows" {
-			wantQuery = "provider=all"
+		// Windows asks once per listed provider; this stub answers each with
+		// the whole list.
+		wrongQuery := r.URL.RawQuery != ""
+		if providerProbePerProvider {
+			wrongQuery = r.URL.Query().Get("provider") == "" || r.URL.Query().Get("provider") == "all"
 		}
-		if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.RawQuery != wantQuery {
+		if r.Header.Get("Authorization") != "Bearer test-token" || wrongQuery {
 			http.Error(w, "usage requires bearer and platform provider selection", http.StatusUnauthorized)
 			return
 		}
