@@ -5196,3 +5196,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: Paul delegated customer-visible decisions for the 2026-10-09 night shift to the team. He has not reviewed this exact dialog wording.
 - Approved customer-visible result: In Settings, clicking `Run setup again` opens a confirmation dialog titled `Run setup again?` with `You’ll choose a VibeTV and display mode again. Nothing on VibeTV is erased.` `Cancel` closes it without resetting setup. The dialog’s `Run setup again` button starts the existing setup reset. The factory-reset dialog and other setup entry points are unchanged.
 - Scope: `apps/control-center/src/components/settings-screen.tsx`, the interaction test in `settings-connection.test.tsx`, and this approval record. This is approval to prepare the branch, not to merge, release, or write to a VibeTV.
+
+## 2026-10-09 — Windows shop theme link opens the local install page (#63)
+
+- User approval: Paul delegated VibeTV issue selection, implementation, and testing for the unattended nightshift on 2026-10-09. He has not personally reviewed this exact behavior or wording.
+- Approved customer-visible result: Opening `vibetv://install-theme/<id>` on Windows brings VibeTV Control Center forward and opens its existing local `/control-center/install/<id>` page, including when the app was not running. It does not start a theme installation or write to the VibeTV. Invalid links leave the current page unchanged.
+- Scope: Windows Tauri deep-link registration, link parsing and navigation, their tests, and this approval record. This records the delegated nightshift decision for the pull request; it does not approve merging, releasing, installation on customer machines, or a hardware write.

@@ -33,6 +33,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["vibetv"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1MjlDMEJEODJGOTEwNzIKUldSeUVQbUN2Y0FwSlNPRnpnZmV1Yk5EZlJXSnhVUzh6cXFCRFdBRmcyY3VYMklkM2JVY3A2dFQK",
       "endpoints": [

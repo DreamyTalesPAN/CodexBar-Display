@@ -18,6 +18,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
@@ -45,6 +46,7 @@ const BUILD: &str = match option_env!("VIBETV_BUILD") {
 
 struct Shell {
     runtime_origin: Mutex<Url>,
+    pending_theme: Mutex<Option<String>>,
     preparing: Mutex<bool>,
     // Bumped on every present; a delayed hide only applies if nothing
     // presented the window again while it waited.
@@ -60,6 +62,7 @@ fn main() {
         // relaunch) brings the existing window forward instead of starting a
         // second shell that would fight over the same Companion.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| present_window(app)))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -68,6 +71,7 @@ fn main() {
         )
         .manage(Shell {
             runtime_origin: Mutex::new(Url::parse(DEFAULT_RUNTIME_ORIGIN).expect("static origin")),
+            pending_theme: Mutex::new(None),
             preparing: Mutex::new(false),
             presentations: AtomicU64::new(0),
             updating: AtomicBool::new(false),
@@ -79,6 +83,16 @@ fn main() {
                 log(&format!("could not enable autostart: {error}"));
             }
             create_window(&handle)?;
+            let opened = handle.clone();
+            app.deep_link().on_open_url(move |event| {
+                if queue_install_link(&opened, &event.urls()) && !navigate_to_pending_theme(&opened) {
+                    let handle = opened.clone();
+                    std::thread::spawn(move || prepare_and_load(handle));
+                }
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                queue_install_link(&handle, &urls);
+            }
             std::thread::spawn(move || prepare_and_load(handle));
             Ok(())
         })
@@ -237,6 +251,69 @@ fn present_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+fn theme_id_from_deep_link(url: &Url) -> Option<&str> {
+    if url.scheme() != "vibetv"
+        || url.host_str() != Some("install-theme")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return None;
+    }
+    let theme_id = url.path().strip_prefix('/')?;
+    if !(3..=64).contains(&theme_id.len())
+        || !theme_id.split('-').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+    {
+        return None;
+    }
+    Some(theme_id)
+}
+
+fn queue_install_link(app: &AppHandle, urls: &[Url]) -> bool {
+    let Some(theme_id) = urls.iter().find_map(theme_id_from_deep_link) else {
+        return false;
+    };
+    *app.state::<Shell>().pending_theme.lock().unwrap() = Some(theme_id.to_string());
+    present_window(app);
+    true
+}
+
+fn navigate_to_pending_theme(app: &AppHandle) -> bool {
+    let shell = app.state::<Shell>();
+    if *shell.preparing.lock().unwrap() {
+        return false;
+    }
+    let origin = shell.runtime_origin.lock().unwrap().clone();
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return false;
+    };
+    if !window
+        .url()
+        .map(|url| url.origin() == origin.origin())
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let mut pending = shell.pending_theme.lock().unwrap();
+    let Some(theme_id) = pending.as_ref() else {
+        return false;
+    };
+    let navigated = window
+        .navigate(origin.join(&format!("/control-center/install/{theme_id}")).expect("validated theme ID"))
+        .is_ok();
+    if navigated {
+        pending.take();
+    }
+    navigated
 }
 
 // Theme Studio saves unsaved work on this event; give it a moment, then hide.
@@ -436,7 +513,14 @@ fn prepare_and_load(app: AppHandle) -> bool {
         Ok(origin) => {
             *shell.runtime_origin.lock().unwrap() = origin.clone();
             if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-                let _ = window.navigate(origin.join("/control-center").expect("static path"));
+                let mut pending = shell.pending_theme.lock().unwrap();
+                let path = pending
+                    .as_ref()
+                    .map(|theme_id| format!("/control-center/install/{theme_id}"))
+                    .unwrap_or_else(|| "/control-center".to_string());
+                if window.navigate(origin.join(&path).expect("validated local path")).is_ok() {
+                    pending.take();
+                }
             }
         }
         Err(error) => {
@@ -445,6 +529,10 @@ fn prepare_and_load(app: AppHandle) -> bool {
         }
     }
     *shell.preparing.lock().unwrap() = false;
+    if result.is_ok() {
+        // A second link may have arrived while the first navigation held the queue.
+        navigate_to_pending_theme(&app);
+    }
     result.is_ok()
 }
 
@@ -687,4 +775,39 @@ fn show_message(message: &str) {
     }
     #[cfg(not(windows))]
     log(message);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::theme_id_from_deep_link;
+    use url::Url;
+
+    #[test]
+    fn theme_link_accepts_only_one_safe_catalog_id() {
+        for (input, expected) in [
+            ("vibetv://install-theme/clippy", Some("clippy")),
+            ("vibetv://install-theme/claude-creature", Some("claude-creature")),
+            ("vibetv://install-theme/ab", None),
+            ("vibetv://install-theme/Clippy", None),
+            ("vibetv://install-theme/a_b", None),
+            ("vibetv://install-theme/a--b", None),
+            ("vibetv://install-theme/-abc", None),
+            ("vibetv://install-theme/abc-", None),
+            ("vibetv://install-theme/abc/other", None),
+            ("vibetv://install-theme/abc/", None),
+            ("vibetv://install-theme/%61bc", None),
+            ("vibetv://install-theme/abc?next=other", None),
+            ("vibetv://install-theme/abc#other", None),
+            ("vibetv://user@install-theme/abc", None),
+            ("vibetv://install-theme:123/abc", None),
+            ("vibetv://open-control-center/abc", None),
+            ("https://install-theme/abc", None),
+        ] {
+            assert_eq!(theme_id_from_deep_link(&Url::parse(input).unwrap()), expected, "{input}");
+        }
+        let longest = format!("vibetv://install-theme/{}", "a".repeat(64));
+        assert!(theme_id_from_deep_link(&Url::parse(&longest).unwrap()).is_some());
+        let long = format!("vibetv://install-theme/{}", "a".repeat(65));
+        assert_eq!(theme_id_from_deep_link(&Url::parse(&long).unwrap()), None);
+    }
 }
