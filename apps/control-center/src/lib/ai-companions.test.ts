@@ -116,6 +116,19 @@ describe("flexible picture layouts",()=>{
   expect(reduced.spec.primitives.find(p=>p.assetPath===ART)?.height).toBe(128);
   expect(document).toEqual(original);
  });
+ it('keeps a manual layer between the picture and its animated companion',()=>{
+  const current=fixture(1).candidate();
+  const text={type:'text' as const,x:24,y:45,text:'Behind the cat',fontSize:1,color:'#FFFFFF'};
+  current.spec.primitives.splice(1,0,text);
+  const document={...current,usage:'live' as const};
+  const expanded=applyAIThemeCandidate(document,full(),'auto');
+  const reduced=applyAIThemeCandidate(expanded,fixture(1).candidate(),'auto');
+  for(const result of [expanded,reduced]) {
+    expect(result.spec.primitives[0].assetPath).toBe(ART);
+    expect(result.spec.primitives[1]).toEqual(text);
+    expect(result.spec.primitives[2].assetPath).toBe('/themes/u/ai-pet-1.cba');
+  }
+ });
  it('leaves a companion beside the picture where the customer put it when the AI changes something else',()=>{
   const f=fixture(1);const first=f.candidate();
   const document={assets:first.assets,spec:first.spec,packName:'Mine',usage:'live' as const};

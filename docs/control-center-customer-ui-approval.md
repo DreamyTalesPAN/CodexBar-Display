@@ -5504,3 +5504,8 @@ issue scope, or release permission never implies UI permission.
 - User approval: Marcus reviewed the two reproduced findings in PR #422 and explicitly requested both fixes. Installation and personal testing on his Mac must wait until the other chat finishes its Mac tests.
 - Approved customer-visible result: A saved animated design has the same composited background when installed from the library or sent from the editor. Switching the picture to fullscreen and back preserves independent manual text, images and their layer order. Existing controls and wording remain unchanged.
 - Validation: Targeted regression tests fail before the fixes and pass afterward; automated local tests and an isolated build are used without replacing the installed Mac app or writing to hardware. Personal Mac and physical-display testing is deferred as requested.
+
+## 2026-10-09: Keep manual layers between generated artwork and figures
+
+- User approval: Marcus requested the two reproduced review fixes, including retaining manual elements through fullscreen changes. This follow-up completes the same approved result after a regression test reproduced the bot's layering finding.
+- Approved customer-visible result: A manual element between the background picture and an animated figure remains behind that figure when switching picture layouts, in addition to retaining elements below and above the generated design.

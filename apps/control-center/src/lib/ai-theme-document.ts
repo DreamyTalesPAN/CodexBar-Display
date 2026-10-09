@@ -55,13 +55,12 @@ export function applyAIThemeCandidate(
     const hasLoop = candidate.spec.primitives.some((p) => p.assetPath === LOOP);
     const incomingArt = candidate.spec.primitives.find((p) => p.assetPath === ART);
     // A picture of another size changes its generated layout. Independent
-    // customer elements keep their assets and their layer above/below the art.
+    // customer elements keep their assets and their place between managed layers.
     const drawnHeight = (path: Record<string, { data: string }>) => Number(path[ART]?.data.split("\n", 2)[1]?.split(" ")[1]);
     // Only full screen against not full screen counts: a legacy picture such
     // as the sample's is a little shorter than 128 and still the same layout.
     if (artwork && incomingArt && !candidate.preserveArtwork && (drawnHeight(candidate.assets) === 240) !== (drawnHeight(current.assets) === 240)) {
       const usage = new Set(usageSectionIndices(current.spec.primitives).flat());
-      const artworkIndex = current.spec.primitives.indexOf(artwork);
       const manual = current.spec.primitives.flatMap((p, i) => {
         // Only the unchanged standard readout panel belongs to the template;
         // resized or restyled shapes belong to the customer.
@@ -70,14 +69,17 @@ export function applyAIThemeCandidate(
           p.color === p.bgColor && p.color === p.borderColor && !p.binding;
         return managed(p.assetPath) || usage.has(i) || panel ? [] : [{ primitive: { ...p }, index: i }];
       });
+      const primitives = candidate.spec.primitives.map((p) => ({ ...p }));
+      for (const { primitive, index } of manual) {
+        const above = current.spec.primitives.slice(index + 1).find((p) =>
+          managed(p.assetPath) && primitives.some((q) => q.assetPath === p.assetPath));
+        const at = above ? primitives.findIndex((p) => p.assetPath === above.assetPath) : primitives.length;
+        primitives.splice(at, 0, primitive);
+      }
       const replaced: ThemeStudioDocument = {
         assets: { ...current.assets, ...candidate.assets },
         // The design stays the same theme on the device and in the library.
-        spec: { ...candidate.spec, themeId: current.spec.themeId, themeRev: current.spec.themeRev, primitives: [
-          ...manual.filter((p) => p.index < artworkIndex).map((p) => p.primitive),
-          ...candidate.spec.primitives.map((p) => ({ ...p })),
-          ...manual.filter((p) => p.index > artworkIndex).map((p) => p.primitive),
-        ] },
+        spec: { ...candidate.spec, themeId: current.spec.themeId, themeRev: current.spec.themeRev, primitives },
         packName: current.packName,
         usage: current.usage,
       };
