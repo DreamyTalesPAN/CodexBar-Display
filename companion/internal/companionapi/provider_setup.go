@@ -513,20 +513,12 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
-	// A saved cookie that pins the provider would hide the browser sign-in
-	// the customer is about to make, so hand the provider back to the browser.
-	if changed, err := codexbar.UseBrowserCookies(s.home, providerID); err != nil {
-		if s.logf != nil {
-			s.logf("VibeTV provider sign-in: could not switch %s to browser cookies: %v", providerID, err)
-		}
-	} else if changed && s.logf != nil {
-		s.logf("VibeTV provider sign-in: %s now reads the browser sign-in instead of a saved cookie", providerID)
-	}
 	if url := s.providerSignInURL(providerID); url != "" {
 		if err := openProviderSignInFn(url); err != nil {
 			writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The browser could not be opened.", "Open "+url+" in your browser, sign in, then check again.")
 			return
 		}
+		s.useBrowserCookies(providerID)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": providerSignInActionBrowser, "url": url})
 		return
 	}
@@ -544,7 +536,27 @@ func (s *Server) handleProviderSignIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "provider_sign_in_failed", "The sign-in could not be started.", nextAction)
 		return
 	}
+	if plan.Action == providerSignInActionBrowser {
+		s.useBrowserCookies(providerID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": plan.Action, "url": plan.URL})
+}
+
+// useBrowserCookies runs once the browser sign-in page is open. A provider
+// pinned to a saved cookie would never see that sign-in, so it goes back to
+// CodexBar's browser import. CodexBar 0.63.0 has no command for this (its
+// config CLI only enables, disables and stores API keys), so the Companion
+// changes that one field.
+func (s *Server) useBrowserCookies(providerID string) {
+	changed, err := codexbar.UseBrowserCookies(s.home, providerID)
+	if s.logf == nil {
+		return
+	}
+	if err != nil {
+		s.logf("VibeTV provider sign-in: could not switch %s to browser cookies: %v", providerID, err)
+	} else if changed {
+		s.logf("VibeTV provider sign-in: %s now reads the browser sign-in instead of a saved cookie", providerID)
+	}
 }
 
 // providerSignInURL is the page CodexBar named in this provider's latest

@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -127,7 +128,18 @@ func TestExpiredSavedClaudeCookieRecoversWithTheRowButtonsAlone(t *testing.T) {
 
 	// 2. "Sign in to Claude" opens claude.ai in the browser, never a
 	// terminal, and lets CodexBar read that browser sign-in again.
+	// A browser that does not open leaves the customer's settings alone.
+	launchProviderSignInFn = func(providerSignInPlan) error { return errors.New("no browser") }
 	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=claude", nil))
+	if rec.Code != http.StatusInternalServerError || claudeReadsBrowser() {
+		t.Fatalf("a failed sign-in must not change the cookie source: status=%d", rec.Code)
+	}
+	launchProviderSignInFn = func(plan providerSignInPlan) error {
+		launched = append(launched, plan)
+		return nil
+	}
+	rec = httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/sign-in?provider=claude", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("sign in: status=%d body=%s", rec.Code, rec.Body.String())
