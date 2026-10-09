@@ -5750,21 +5750,27 @@ func TestCablePairingRequiresTokenWhenDeviceSupportsAuth(t *testing.T) {
 }
 
 func TestCableHelloProvesConnectionWithoutHealthFeature(t *testing.T) {
-	for _, liveID := range []string{"cable-a", "other-device", ""} {
-		t.Run(liveID, func(t *testing.T) {
+	for _, tc := range []struct{ liveID, streamError string }{
+		{"cable-a", "provider_setup_required"},
+		{"other-device", "provider_setup_required"},
+		{"", "provider_setup_required"},
+		{"cable-a", "device_not_found"},
+		{"other-device", "device_not_found"},
+		{"", "device_not_found"},
+	} {
+		t.Run(tc.liveID+"/"+tc.streamError, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a"})
 			hello := cableHelloForTest("cable-a")
 			hello.Features = nil
 			server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
-			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
-			server.streamStatus = func(context.Context, string) displayStreamInfo {
-				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: "provider_setup_required"}
-			}
-			server.readCableHello = func(string) (protocol.DeviceHello, error) {
-				if liveID == "" {
-					return protocol.DeviceHello{}, errors.New("unplugged")
+			server.resolveCablePort = func(string, string) (string, error) {
+				if tc.liveID != "cable-a" {
+					return "", cableResolveTestError(errcode.TransportNoMatchingDevice)
 				}
-				return cableHelloForTest(liveID), nil
+				return "/dev/mock", nil
+			}
+			server.streamStatus = func(context.Context, string) displayStreamInfo {
+				return displayStreamInfo{Running: true, Target: cableDeviceTarget, ErrorCode: tc.streamError}
 			}
 			rec := httptest.NewRecorder()
 			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
@@ -5772,7 +5778,7 @@ func TestCableHelloProvesConnectionWithoutHealthFeature(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			if got.Device.Connected != (liveID == "cable-a") {
+			if got.Device.Connected != (tc.liveID == "cable-a") {
 				t.Fatalf("only a live matching hello proves connectivity: %+v", got.Device)
 			}
 		})
@@ -5807,7 +5813,8 @@ func TestCableHealthProvesConnectionBeforeFirstFrame(t *testing.T) {
 				t.Fatalf("live health must prove connection, not first-frame readiness: %+v", got.Device)
 			}
 			// A cached hello is not live proof. Once the bounded existing grace expires,
-			// a failed health read must report the device offline again.
+			// failed live resolution must report the device offline again.
+			server.resolveCablePort = func(string, string) (string, error) { return "", errors.New("unplugged") }
 			server.readCableHealth = func(string, string) (deviceHealth, error) { return deviceHealth{}, errors.New("unplugged") }
 			server.now = func() time.Time { return time.Now().Add(deviceConnectedGraceWindow + time.Second) }
 			rec = httptest.NewRecorder()
@@ -13347,6 +13354,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		t.Fatalf("new server: %v", err)
 	}
 	server.probeCacheTime = 0
+	// Tests model a Companion that already knows the VibeTV's port from
+	// pairing or a frame. The restart case sets this to "" itself.
+	server.lastCablePort = func() string { return "/dev/mock" }
 	// Provider checks finish on their own goroutines and log when they do. A
 	// log saved from there lands in the temp directory while the test removes
 	// it; saving has its own tests in setup_events_test.go.
@@ -13367,6 +13377,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	}
 	server.currentCableHello = func() (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{}, false
+	}
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "", errors.New("no test cable responder configured")
 	}
 	server.discoverCableDevices = func(context.Context) ([]usb.CableDevice, error) {
 		return nil, nil
