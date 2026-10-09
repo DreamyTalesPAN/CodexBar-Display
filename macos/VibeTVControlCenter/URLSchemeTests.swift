@@ -189,6 +189,34 @@ func runURLSchemeTests() {
             == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.63.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
         "the Companion must use the exact private CodexBarCLI path"
     )
+    let managedApp = appManagedCodexBarAppURL(applicationSupportURL: appSupportURL)
+    let managedCLI = appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL)
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: appSupportURL,
+            validatedCLIURL: managedCLI
+        ) == managedApp,
+        "recovery must choose the validated private CodexBar app"
+    )
+    for unrelatedCLI in [
+        URL(fileURLWithPath: "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"),
+        appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL, version: "0.62.0"),
+    ] {
+        require(
+            managedCodexBarRecoveryURL(
+                applicationSupportURL: appSupportURL,
+                validatedCLIURL: unrelatedCLI
+            ) == nil,
+            "recovery must reject a different CodexBar bundle"
+        )
+    }
+    require(
+        managedCodexBarRecoveryURL(
+            applicationSupportURL: appSupportURL,
+            validatedCLIURL: nil
+        ) == nil,
+        "recovery must reject an unverified private app"
+    )
 
     let commandFixtureDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("vibetv-command-\(UUID().uuidString)")

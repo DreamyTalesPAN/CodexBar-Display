@@ -359,6 +359,17 @@ func appManagedCodexBarCLIURL(
     .appendingPathComponent("CodexBarCLI")
 }
 
+func managedCodexBarRecoveryURL(
+    applicationSupportURL: URL,
+    validatedCLIURL: URL?
+) -> URL? {
+    guard validatedCLIURL?.standardizedFileURL == appManagedCodexBarCLIURL(
+        applicationSupportURL: applicationSupportURL
+    ).standardizedFileURL else {
+        return nil
+    }
+    return appManagedCodexBarAppURL(applicationSupportURL: applicationSupportURL)
+}
 
 
 struct CodexBarCommandResult {
@@ -1632,21 +1643,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // into CodexBar rather than after a download they already have.
     // Stopgap until #245 moves provider selection into setup and settings.
     private func openManagedCodexBar() {
-        let running = NSRunningApplication.runningApplications(
-            withBundleIdentifier: codexBarBundleIdentifier
-        )
-        let appURL: URL
-        if let bundleURL = running.first?.bundleURL {
-            appURL = bundleURL
-        } else {
-            let managed = appManagedCodexBarAppURL(
-                applicationSupportURL: applicationSupportURL()
-            )
-            guard validatedPinnedCodexBarCLI(at: managed) != nil else {
-                NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
-                return
-            }
-            appURL = managed
+        let supportURL = applicationSupportURL()
+        let managed = appManagedCodexBarAppURL(applicationSupportURL: supportURL)
+        guard let appURL = managedCodexBarRecoveryURL(
+            applicationSupportURL: supportURL,
+            validatedCLIURL: validatedPinnedCodexBarCLI(at: managed)
+        ) else {
+            NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
+            return
         }
         // From here the app is the customer's to use. Recovery cleanup must not
         // terminate it under them, so drop our claim on it.
@@ -1655,6 +1659,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         configuration.addsToRecentItems = false
+        configuration.allowsRunningApplicationSubstitution = false
         NSWorkspace.shared.openApplication(
             at: appURL,
             configuration: configuration
